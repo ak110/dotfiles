@@ -62,6 +62,7 @@ class CwdResolution:
 
     path: str
     resolved: bool
+    unresolved_expression: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -77,6 +78,8 @@ class GitEvent:
     - `cwd_resolved`: `cwd`が実効作業ディレクトリとして解決済みなら真。
       `cd`・`pushd`・`git -C`の引数にシェル展開が含まれる場合や、初期cwdが不明な場合は偽。
       解決不能なイベントでは、消費側がpayloadのcwdへ戻って状態を参照しない。
+    - `unresolved_expression`: cwdを解決不能にした式。式以外の理由で解決不能な場合と
+      解決済みの場合は`None`。
     - `global_options`: サブコマンド前に出現したgitのグローバルオプションのトークン列。
     - `subcommand_args`: サブコマンド名以降のトークン列。
     """
@@ -86,6 +89,7 @@ class GitEvent:
     global_options: list[str]
     subcommand_args: list[str]
     cwd_resolved: bool = True
+    unresolved_expression: str | None = None
 
 
 def split_bash_segments(command: str) -> list[str]:
@@ -220,7 +224,7 @@ def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdR
         target = arguments[target_index]
     else:
         target = arguments[0]
-    if not target or target.startswith("-") or _contains_shell_expansion(target):
+    if not target or target.startswith("-"):
         return CwdResolution("", False)
     return _normalize_relative(target, current_cwd)
 
@@ -237,11 +241,11 @@ def _contains_shell_expansion(value: str) -> bool:
 def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolution:
     """相対パスを現在cwd基点で正規化し、解決結果を返す。"""
     if _contains_shell_expansion(target):
-        return CwdResolution("", False)
+        return CwdResolution("", False, target)
     if os.path.isabs(target):
         return CwdResolution(os.path.normpath(target), True)
     if not current_cwd.resolved:
-        return CwdResolution("", False)
+        return CwdResolution("", False, current_cwd.unresolved_expression)
     return CwdResolution(os.path.normpath(os.path.join(current_cwd.path, target)), True)
 
 
@@ -292,6 +296,7 @@ def _parse_git_call(tokens: list[str], current_cwd: CwdResolution) -> GitEvent |
             global_options=global_options,
             subcommand_args=list(tokens[i + 1 :]),
             cwd_resolved=effective_cwd.resolved,
+            unresolved_expression=effective_cwd.unresolved_expression,
         )
     return GitEvent(
         subcommand="",
@@ -299,4 +304,5 @@ def _parse_git_call(tokens: list[str], current_cwd: CwdResolution) -> GitEvent |
         global_options=global_options,
         subcommand_args=[],
         cwd_resolved=effective_cwd.resolved,
+        unresolved_expression=effective_cwd.unresolved_expression,
     )

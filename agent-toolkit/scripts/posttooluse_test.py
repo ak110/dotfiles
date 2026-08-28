@@ -598,7 +598,7 @@ class TestGitLogChecked:
             {
                 "session_id": sid,
                 "tool_name": "Bash",
-                "tool_input": {"command": 'cd "$TARGET" && git log --oneline -5'},
+                "tool_input": {"command": 'cd "$HOME/repo" && git log --oneline -5'},
                 "cwd": "/repo/a",
             },
             state_dir=tmp_path,
@@ -613,7 +613,7 @@ class TestGitLogChecked:
             {
                 "session_id": sid,
                 "tool_name": "Bash",
-                "tool_input": {"command": 'cd "$TARGET" && git log --oneline'},
+                "tool_input": {"command": "cd ~/repo && git log --oneline"},
                 "cwd": "/repo/a",
             },
             state_dir=tmp_path,
@@ -1196,7 +1196,7 @@ class TestAmendPendingStatusCheck:
             {
                 "session_id": sid,
                 "tool_name": "Bash",
-                "tool_input": {"command": 'cd "$TARGET" && git commit --amend --no-edit'},
+                "tool_input": {"command": 'cd "$HOME/repo" && git commit --amend --no-edit'},
                 "cwd": "/repo/a",
             },
             state_dir=tmp_path,
@@ -1230,7 +1230,7 @@ class TestAmendPendingStatusCheck:
             {
                 "session_id": sid,
                 "tool_name": "Bash",
-                "tool_input": {"command": 'cd "$TARGET" && git push origin master'},
+                "tool_input": {"command": "git -C ~/repo push origin master"},
                 "cwd": "/repo/a",
             },
             state_dir=tmp_path,

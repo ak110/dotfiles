@@ -207,6 +207,7 @@ class TestExtractGitEvents:
         events = extract_git_events("popd && git log", "/cwd")
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
+        assert events[0].unresolved_expression is None
 
     def test_unparsable_segment_skipped(self) -> None:
         """shlex解析に失敗するセグメントは無視する。"""
@@ -223,32 +224,55 @@ class TestExtractGitEvents:
         assert events[0].cwd == os.path.normpath("/cwd/sub")
 
     @pytest.mark.parametrize(
-        "command",
+        ("command", "expected_expression"),
         [
-            "cd $VAR && git log",
-            "cd `pwd` && git log",
-            "cd ~ && git log",
-            "cd agent-* && git log",
-            "cd foo? && git log",
-            "cd [ab] && git log",
-            "cd {a,b} && git log",
+            ("cd $VAR && git log", "$VAR"),
+            ("cd `pwd` && git log", "`pwd`"),
+            ("cd ~ && git log", "~"),
+            ("cd '~/repo' && git log", "~/repo"),
+            ('cd "$HOME" && git log', "$HOME"),
+            ('cd "$HOME/repo" && git log', "$HOME/repo"),
+            ("cd agent-* && git log", "agent-*"),
+            ("cd foo? && git log", "foo?"),
+            ("cd [ab] && git log", "[ab]"),
+            ("cd {a,b} && git log", "{a,b}"),
         ],
     )
-    def test_cd_shell_expansion_is_unresolved(self, command: str) -> None:
+    def test_cd_shell_expansion_is_unresolved(self, command: str, expected_expression: str) -> None:
         events = extract_git_events(command, "/cwd")
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
+        assert events[0].unresolved_expression == expected_expression
 
     def test_pushd_shell_expansion_is_unresolved(self) -> None:
-        events = extract_git_events("pushd $DIR && git log", "/cwd")
+        events = extract_git_events('pushd "$HOME/repo" && git log', "/cwd")
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
+        assert events[0].unresolved_expression == "$HOME/repo"
 
-    @pytest.mark.parametrize("command", ["git -C $DIR log", "git -C `pwd` log", "git -C ~ log"])
-    def test_git_dash_capital_c_shell_expansion_is_unresolved(self, command: str) -> None:
+    @pytest.mark.parametrize(
+        ("command", "expected_expression"),
+        [
+            ("git -C $DIR log", "$DIR"),
+            ("git -C `pwd` log", "`pwd`"),
+            ("git -C ~ log", "~"),
+            ('git -C "$HOME/repo" log', "$HOME/repo"),
+        ],
+    )
+    def test_git_dash_capital_c_shell_expansion_is_unresolved(self, command: str, expected_expression: str) -> None:
         events = extract_git_events(command, "/cwd")
         assert events[0].cwd == ""
         assert events[0].cwd_resolved is False
+        assert events[0].unresolved_expression == expected_expression
+
+    @pytest.mark.parametrize(
+        "command",
+        ['cd "$HOME" && cd repo && git log', 'git -C "$HOME" -C repo log'],
+    )
+    def test_relative_change_preserves_prior_unresolved_expression(self, command: str) -> None:
+        events = extract_git_events(command, "/cwd")
+        assert events[0].cwd_resolved is False
+        assert events[0].unresolved_expression == "$HOME"
 
     @pytest.mark.parametrize(
         ("command", "expected_cwd"),

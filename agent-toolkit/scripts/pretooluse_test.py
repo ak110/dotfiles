@@ -2258,9 +2258,22 @@ class TestBashAmendRebaseBlock:
         """shell展開を含むcwdは、payloadのcwdに記録された確認結果へフォールバックしない。"""
         sid = "unresolved-amend-cwd"
         self._write_state(tmp_path, sid, {"git_log_checked": {"/repo/a": True}})
-        result = self._invoke('cd "$TARGET" && git commit --amend --no-edit', sid, state_dir, cwd="/repo/a")
+        result = self._invoke('cd "$HOME/repo" && git commit --amend --no-edit', sid, state_dir, cwd="/repo/a")
         assert result.returncode == 2
-        assert "unresolved" in result.stderr
+        assert "'$HOME/repo'" in result.stderr
+        assert "git -C <absolute path> log --oneline --decorate" in result.stderr
+        assert "history rewrite" in result.stderr
+
+    def test_unresolved_cwd_without_expression_keeps_general_guidance(
+        self, state_dir: dict[str, str], tmp_path: pathlib.Path
+    ) -> None:
+        """式を保持できないスタック操作では既存の一般案内を維持する。"""
+        sid = "unresolved-amend-stack"
+        self._write_state(tmp_path, sid, {"git_log_checked": {"/repo/a": True}})
+        result = self._invoke("popd && git commit --amend --no-edit", sid, state_dir, cwd="/repo/a")
+        assert result.returncode == 2
+        assert "unresolved shell expression" in result.stderr
+        assert "<absolute path>" not in result.stderr
 
     @pytest.mark.parametrize(
         ("label", "repo_relative", "remote_url", "command_template", "expected_returncode"),
@@ -2745,9 +2758,10 @@ class TestBashGitPushAfterAmendDirty:
         """解決不能なpushは、いずれかのworktreeにamend後確認待ちがあれば遮断する。"""
         sid = "push-unresolved"
         self._write_state(tmp_path, sid, {"amend_pending_status_check": {"/repo/a": True}})
-        result = self._invoke('cd "$TARGET" && git push origin master', sid, state_dir, cwd=str(tmp_path))
+        result = self._invoke("cd ~/repo && git push origin master", sid, state_dir, cwd=str(tmp_path))
         assert result.returncode == 2
-        assert "amend" in result.stderr
+        assert "'~/repo'" in result.stderr
+        assert "git -C <absolute path> push ..." in result.stderr
 
     def test_dry_run_dirty_block_range_matches_real_push(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """判定範囲の統一: `--dry-run`でもdirty判定は実施される（再確認）。"""
