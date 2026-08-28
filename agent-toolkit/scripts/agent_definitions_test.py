@@ -61,7 +61,7 @@ _SESSION_REVIEW_ADVISOR = _AGENTS_DIR / "session-review-advisor.md"
 _SESSION_REVIEW_EVIDENCE = _AGENTS_DIR.parent / "scripts" / "_session_review_evidence.py"
 _PLAN_REVIEW_DELEGATION = _PLAN_MODE_REFERENCES / "plan-review-delegation.md"
 _PLAN_IMPL_CALLER = _PLAN_MODE_REFERENCES / "plan-impl-caller-reception.md"
-_REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents"}
+_REQUIRED_TOOLS = {"Agent", "SendMessage", "Bash", "ListAgents", "CronCreate", "CronList", "CronDelete"}
 _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。"
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _CONCEPTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "concepts.md"
@@ -265,7 +265,7 @@ def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
         "`ToolSearch`",
         "実行時に公開されたツール一覧又は検索機能を確認",
         "必須能力が公開されない場合は差し戻す",
-        "`ScheduleWakeup`・`CronCreate`",
+        "`ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete`",
         "現行セッションで公開された能力を確認できない場合",
         "手動運用又はユーザーへの依頼へ切り替える",
         "`tools`制約をCodexの公開能力へ写像",
@@ -2403,6 +2403,10 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "queued",
         "中継不能時",
         "`agent-toolkit:delegation`の完了通知と中継の実行順を正本",
+        "`CronCreate`、`CronList`及び`CronDelete`",
+        "`atk wait-schedule --request-bucket main`",
+        "`atk wait-schedule --request-bucket subagent`",
+        "全対象が未完了なら利用者向け報告を出力せず待機を継続",
     ):
         assert phrase in waiting
     for phrase in (
@@ -2421,6 +2425,14 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "`needs_escalation`として呼出元へ返す",
         "No transcript found for agent ID",
         "`CronDelete`",
+        "### Cronによる定期再確認",
+        "`atk wait-schedule --request-bucket main`",
+        "`atk wait-schedule --request-bucket subagent`",
+        "`recur=true`で1件だけ作成する",
+        "resume又はcompaction後",
+        "全対象が未完了なら利用者向け報告を出力せず待機を継続",
+        "`ScheduleWakeup`は`/loop`専用",
+        "シェルの`sleep`や背景タイマーへ切り替えず",
         "`claude --version`",
         "単独で完了判定に用いず",
     ):
@@ -2437,6 +2449,8 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
         "最上位主体は完了報告を逐語で",
         "完了通知が最上位セッションへ配送される場合でも",
         'to: "main"',
+        "`ScheduleWakeup`または",
+        "ディスクへ書かれず",
     ):
         assert forbidden not in runtime
     assert "上限付きの前景待機" not in waiting

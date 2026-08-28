@@ -418,7 +418,7 @@ def _bash_no_bg() -> dict:
 class TestIsPendingAsyncWork:
     """`is_pending_async_work` の判定を網羅するテスト。
 
-    tool_use 種別 × {Agent / ScheduleWakeup / Monitor / Bash背景 / Bash前景 / その他 / なし}
+    tool_use 種別 × {Agent / ScheduleWakeup / CronCreate / Monitor / Bash背景 / Bash前景 / その他 / なし}
     と未完了background task（Agent・Bash双方）× {なし / 起動のみ / 起動と通知ペア} の
     同値分割で組み合わせを検証する。
 
@@ -443,6 +443,11 @@ class TestIsPendingAsyncWork:
         [
             ({"type": "tool_use", "id": "x", "name": "Agent", "input": {}}, True),
             ({"type": "tool_use", "id": "x", "name": "ScheduleWakeup", "input": {}}, True),
+            pytest.param(
+                {"type": "tool_use", "id": "x", "name": "CronCreate", "input": {}},
+                True,
+                id="CronCreate",
+            ),
             ({"type": "tool_use", "id": "x", "name": "Monitor", "input": {}}, True),
             (
                 {

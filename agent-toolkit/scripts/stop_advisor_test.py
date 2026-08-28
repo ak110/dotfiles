@@ -196,7 +196,7 @@ class TestApproveConditions:
         decision_second = _parse_decision(result_second)
         assert "decision" not in decision_second
 
-    @pytest.mark.parametrize("tool_name", ["Agent", "ScheduleWakeup", "Monitor"])
+    @pytest.mark.parametrize("tool_name", ["Agent", "ScheduleWakeup", "CronCreate", "Monitor"])
     def test_async_tool_approves(self, tmp_path: pathlib.Path, tool_name: str):
         """直前ターンの最後のtool_useが非同期待機系 → approve。"""
         transcript = _write_transcript(

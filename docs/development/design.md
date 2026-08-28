@@ -256,6 +256,12 @@ Codexが名前付きagentを呼び出す場合だけ、配布されたMarkdown�
 特殊経路以外は変更せず、定義の役割が実際の別主体を必要とする場合は従来の工程別モデル設定と`runtime-routing.md`に従って委譲する。
 Codexの`running`は終端未観測の状態であり、補助観測値から停滞へ変換しない。待機報告の観測値は書込主体と対象範囲を伴う。作業ツリー全体値は並行更新を含む補助情報としてだけ扱う。ホスト観測手段は一覧掲載と実際の呼び出し成功を別に検証する。`ListAgents`が不在か、呼び出しを拒否された場合は、保持済みのID、完了通知、成果物観測と自身が起動して識別子を保持したプロセスの生存を`fallback`で照合する。プロセス名の一致だけから生存状態や対象を推定しない。複数委譲先の能力比較は全対象への同一機械照会が成立した場合だけ確定し、成立しない場合は未検証を返す。
 同一turn内の補助観測だけを理由とする状態照会の反復は禁止する。完了通知の不着、次の定時turn、終端statusの確認では再照会を許可する。
+Claude Codeの委譲・背景処理の待機は、機械的な完了通知を待機解除の既定手段とし、`CronCreate`、`CronList`、`CronDelete`が実行主体へ公開される場合だけ定期再確認を併用する。
+定期再確認は`atk wait-schedule`が出力したcron式を変更せずに1件だけ作成し、保持した待機対象IDとtask IDを正本状態へ照合しながら再利用し、全対象の終端後に削除する。
+`ScheduleWakeup`は`/loop`専用であり、一般の委譲待機へ広げない。定期起動を完了・停滞の証拠にせず、シェルの`sleep`や背景タイマーを追加しない。
+`claude-code-runtime.md`はClaude Codeの能力とCron所有を、`waiting-and-monitoring.md`は完了通知を優先する再待機を正本として保持する。
+3つのagent定義はtool許可を、`_stop_gate.py`はCron作成後も継続中とするStop判定を正本として保持する。
+この分離により即時通知を定期再確認へ置換せず、独自設定resolver・フックの永続状態を追加せずに、同じ待機対象のライフサイクルを各境界で検査できる。
 Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意味論的に一対一変換できず、正本、生成器、配布先を増やすため採用しない。
 調査・採否と通常型の計画化はClaude CodeとCodexで共通の`feedbacks-planner`委譲経路を使う。
 agent定義の欠落、frontmatterの写像不能、起動失敗をメイン主体の別経路へ迂回しない。
@@ -756,6 +762,8 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/skills/process-f
 
 Stopの未完了判定は`agent-toolkit/scripts/_stop_gate.py`の共有`is_pending_async_work`を生産者とする。
 `agent-toolkit/scripts/stop_advisor.py`、`agent-toolkit/scripts/autonomous_exit.py`及び`scripts/claude_hook_stop_bell.py`の3消費者が同じ真偽を利用する。
+共有判定器は`CronCreate`を非同期待機系として扱い、`CronCreate`後のStopでも機械的な完了通知を待つ経路を維持する。
+`ScheduleWakeup`の判定は`/loop`専用の既存契約として残し、Cronの作成・再利用・照合・削除をフックの永続状態へ移さない。
 最上位Stopはpayloadの`transcript_path`から生JSONLを読み、同じstemの`subagents`配下にある固定名
 `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読む。直接の子の記録にあるAgent起動を孫起動として起動集合へ加え、
 最上位生transcriptの`queue-operation`で`operation`が`enqueue`又は`remove`の完了通知をtool-use-id又はtask-idで相殺する。

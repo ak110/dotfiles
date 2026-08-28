@@ -61,7 +61,7 @@ from _file_lock import locked_rotate_and_append as _locked_rotate_and_append
 # 非同期待機系ツール名。これらのtool_useで直前アシスタントターンが終端している場合は
 # セッション継続中と判断する。
 # Bashはrun_in_backgroundフラグで別途判定するため、ここには含めない。
-_ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "Monitor"})
+_ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronCreate", "Monitor"})
 
 # `<task-notification>...</task-notification>`要素を非貪欲に切り出す正規表現。
 # `re.DOTALL`で本文中の改行も拾う。
@@ -106,7 +106,7 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
 
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
-      `Monitor`、または`Bash`かつ`input.run_in_background == true`）
+      `CronCreate`・`Monitor`、または`Bash`かつ`input.run_in_background == true`）
     - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
 
     後者はtranscript全体を走査して判定する。

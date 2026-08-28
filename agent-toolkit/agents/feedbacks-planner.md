@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 # Sonnet指定: 1レーンの計画起草と計画レビューを同じ計画担当へ継続し、指摘を収束させるため、指示追従を要する。
 # ツール制限: 調整と検収に専念し、成果物を直接編集しない。名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲は明示した`agents_server` MCPツールで起動する。
-tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, CronCreate, CronList, CronDelete, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
 skills:
   - agent-toolkit:delegation
 user-invocable: false
