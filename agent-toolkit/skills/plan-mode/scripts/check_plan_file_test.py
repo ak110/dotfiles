@@ -397,8 +397,8 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
 
 
 def _review_table_row(round_value: str = "1") -> str:
-    """レビュー表の8列JSON文字列行を組み立てる。"""
-    values = [round_value, "plan-review", "中程度", "計画本文", "確認が必要な欠落", "", "", ""]
+    """レビュー表の7列JSON文字列行を組み立てる。"""
+    values = [round_value, "plan-review", "計画本文", "確認が必要な欠落", "", "", ""]
     return "\t".join(json.dumps(value, ensure_ascii=False) for value in values) + "\n"
 
 
