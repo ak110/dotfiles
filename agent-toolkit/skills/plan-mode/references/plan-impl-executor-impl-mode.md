@@ -20,26 +20,20 @@
 
 渡された専用worktreeを計画の実装単位と統合順に照合する。作成主体、所有主体、管理対象領域の絶対パス及び回収対象の記録がそろわない場合は受理せず、一覧にないworktreeを作成又は補完しない。
 
-各単位の最初のfast担当を新規起動する直前に`atk config get execute_fast_model`を1回実行する。複数単位でも前の単位の解決値を流用せず、実効値が一致する場合も前の担当のthreadを継続しない。検収済みの先行commitを渡し、解決した実行系で新規起動する。単位の分割理由と各単位の独立した検証結果を受領時に照合する。
+各単位の最初のfast担当を新規起動する直前に`atk config get execute_fast_model`を1回実行する。複数単位でも前の単位の解決値を流用せず、実効値が一致する場合も前の担当のthreadを継続しない。検収済みの先行commitを渡し、解決した実行系で新規起動する。
 
 起動時は`agent-toolkit:plan-mode`の実装担当契約、計画ファイル、対象worktree、プロジェクト規範の絶対パスを渡す。実装するコミット単位、その目的と変更説明、適用する作成規範スキル名と絶対パス、受領している場合は受領順を保持したフィードバックファイル名一覧も渡す。追加指示、許容済みの挙動変化、git操作に用いるworktree絶対パス、複製元と対象外worktree及びgit操作の制約も渡す。起動文へ担当種別を`fast担当`として明示する。対象ファイル集合と近接検証が独立する連続単位だけは1回へまとめてもよいが、commitと単位IDの対応を維持する。
 
-fast担当は失敗箇所をテストID・診断識別子等で記録し、原因を修正して同じコマンドを直後に1回再実行する。修正対象が解消して別の失敗箇所だけが現れた場合は、fast担当が新しい失敗箇所を初回修正として扱う。
+fast担当からエスカレーションを受領した場合は、fast担当の終端を確認し、`atk config get execute_fix_model`を解決する。同一threadを継続せず、新規threadとして同じworktreeへfix担当を1件だけ逐次起動する。元の実装入力、同じworktreeの現行状態、エスカレーション内容及びfast担当の終端確認を渡し、担当種別を`fix担当`として明示する。fast担当以外のエスカレーション又はfix担当の続行不能はメインへ返す。
 
-`status: fast_fix_handoff`を受領した場合だけ、戻り値を受領した後にfast担当のagentの終端を直接確認する。プロセス終了、基準OID、未コミット差分、失敗コマンド、修正前後2回の結果と同一失敗箇所の残存を照合する。全て一致した場合は`atk config get execute_fix_model`を解決し、同一threadを継続せず、新規threadとして同じworktreeへfix担当を1件だけ逐次起動する。`agent-toolkit:plan-mode`の実装担当契約にある共通必須入力一式、受領順を保持したフィードバックファイル名一覧、追加指示、許容済み挙動変化を渡す。修正前後の検証結果、fast担当の終端確認とdirty worktreeも渡す。担当種別は`fix担当`として明示する。それ以外は後続単位を開始せず`needs_escalation`で返す。`status: completed`は通常のcommit済み完了として扱い、`status: needs_escalation`又は状態・`repair_handoff`の欠落や不一致を完了へ読み替えない。
-
-各担当の完了後にcommit、差分、近接検証、HEADの直進、clean状態を実測する。追加変更の目的への帰属と必要性も確認する。検収済みの先行commitを巻き戻さず、全単位後に生成同期と最終検証を実測して同worktreeのHEADをレビュー対象HEADとする。用途、正確な絶対パス、管理対象領域の絶対パス、状態、完全OID、作成主体、所有主体、回収対象を完了報告へ返す。
-
-検収は読み取り専用で行う。必要な検証の再実行と`check_dash.py`による文書検収は行えるが、シェル経由のファイル書換え、成果物を変更するformat、生成又は実装目的のコマンドは実行しない。不足は同じ実装担当へ返す。
+各単位の現在担当を保持し、全単位の完了後に生成同期と最終検証を最後の担当へ指示する。同worktreeのHEADをレビュー対象とし、単一の実装レビューへ進む。
 
 ## レビュー修正
 
 通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。
 
-実装担当が終端し、レーンのworktreeがcleanであることを確認してHEADの完全OIDをレビュー対象の最終HEADとして内部確定する。採用指摘を実装単位commitへ対応付け、対応不能、複数単位へ不可分にまたがる修正又は中間commitの公開契約を維持できない修正は`needs_escalation`で返す。同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
+採用指摘を実装単位commitへ対応付け、対応不能、複数単位へ不可分にまたがる修正又は中間commitの公開契約を維持できない修正は`needs_escalation`で返す。同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
-採用指摘がある場合、修正担当を起動する前に同ラウンドの`review_round`を`stage: before_fix`、`pre_rewrite_head: <現行HEADの完全OID>`、`post_rewrite_head: なし`として返す。呼び出し元が現行HEADとの一致を実測し、`## 進捗ログ（実行時）`へ保存して再開を指示するまで修正担当を起動しない。修正担当の起動後は履歴書換え完了まで中間引継ぎを設けず、同じ実装担当が再判定から履歴統合までを完結する。
+`agent-toolkit:plan-mode`の実装担当契約、フィードバックファイル名一覧、複製元と対象外worktreeを渡す。レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表も渡す。レビュー表の絶対パスと修正対象として確定した採用指摘の`implementation-review`の`track`及び`reviewee-standards/SKILL.md`を渡し、起動文へ担当種別を`レビュー修正担当`として明示する。
 
-`agent-toolkit:plan-mode`の実装担当契約、フィードバックファイル名一覧、複製元と対象外worktreeを渡す。レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表も渡す。レビュー表の絶対パスと修正対象として確定した採用指摘の`implementation-review`の`track`及び`reviewee-standards/SKILL.md`を渡し、起動文へ担当種別を`レビュー修正担当`として明示する。実装担当への受け渡しには保持した初回実装担当routeと実効3値、今回routeと実効3値、継続又は新規起動に用いる識別子、前担当の終端確認結果を明示する。
-
-レビュー修正の実装と履歴統合は`agent-toolkit:plan-mode`の実装担当契約、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。修正・履歴検収後に同じラウンドの`review_round`を`stage: after_fix`として返し、`pre_rewrite_head`には`before_fix`と同じOID、`post_rewrite_head`には修正後の現行HEAD完全OIDを記録する。指摘なしのラウンドは`stage: no_fix`として両OIDに同じ現行HEADを記録する。完了後に全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果、clean状態及び`履歴書換え防止`を検収する。
+レビュー修正の実装と履歴統合は`agent-toolkit:plan-mode`の実装担当契約、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。修正担当が`対応完了`を返した場合は同じレビューthreadへ`再レビューせよ`を送り、`対応完了（再レビュー不要）`の場合はレビューを省略する。

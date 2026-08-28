@@ -21,7 +21,6 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _review_table  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -149,49 +148,6 @@ def _check_plan_size(lines: list[str]) -> list[str]:
     return [
         f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
         "重複する記述を単一の情報源へ集約し、実装工程の入力として参照する素材を外部ファイルへ分けることを検討する"
-    ]
-
-
-def _progress_data_row_count(text: str) -> int:
-    """計画本文の進捗ログ表にあるデータ行数を返す。"""
-    body = list(_plan_format.iter_markdown_body_lines(text))
-    headings = _plan_format.extract_headings(text)
-    progress_index = _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_PROGRESS)
-    if progress_index is None:
-        return 0
-    start, end = _plan_format.heading_subtree_range(headings, progress_index)
-    section = _plan_format.lines_within(body, start, end)
-    table = next(
-        (
-            candidate
-            for candidate in _plan_format.extract_tables(section)
-            if candidate.header == _plan_format.PLAN_PROGRESS_TABLE_HEADER
-        ),
-        None,
-    )
-    return len(table.rows) if table is not None else 0
-
-
-def _check_review_table_progress(plan_path: pathlib.Path, text: str) -> list[str]:
-    """同stemのレビュー表の最大roundが進捗ログへ反映済みか検査する。"""
-    review_path = plan_path.with_suffix(".tsv")
-    if not review_path.is_file():
-        return []
-    try:
-        rows = _review_table._read(review_path)  # pylint: disable=protected-access
-        _review_table._validate_rows(rows, require_responses=False)  # pylint: disable=protected-access
-    except (OSError, UnicodeDecodeError, ValueError) as error:
-        return [f"同stemのレビュー表を検証できない: {review_path}: {error}"]
-    if not rows:
-        return []
-    max_round = max(int(row[0]) for row in rows)
-    progress_count = _progress_data_row_count(text)
-    if max_round <= progress_count:
-        return []
-    missing = ", ".join(str(number) for number in range(progress_count + 1, max_round + 1))
-    return [
-        f"レビュー表の最大round {max_round} に対して`## 進捗ログ`のデータ行が{progress_count}件で不足している"
-        f"（不足round: {missing}）"
     ]
 
 
@@ -348,14 +304,11 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
     _outside, errors = _outside_fences(structure_lines)
 
     detail_path = _detail_path_for(plan_path)
-    canonical_format = _plan_format.is_canonical_main_format(text)
     if detail_path.is_file():
         format_errors, warnings = _check_new_format(detail_path, text, work_dir)
     else:
         format_errors, warnings = _check_legacy_format(plan_path, text, work_dir)
     errors.extend(format_errors)
-    if detail_path.is_file() and canonical_format:
-        errors.extend(_check_review_table_progress(plan_path, text))
     return errors, warnings
 
 

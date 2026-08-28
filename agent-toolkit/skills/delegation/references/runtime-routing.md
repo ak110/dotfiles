@@ -45,7 +45,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
 | `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
-| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、レビュー修正及びCI失敗修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン | `agents_server` MCP | Agentツール |
+| `execute_fix_model` | fast担当のエスカレーション引継ぎ、レビュー修正及びCI失敗修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン | `agents_server` MCP | Agentツール |
 | `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
@@ -72,9 +72,8 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    いずれかの実効値が異なる場合、同じ担当へ同じタスクを返さない場合、又は中断済み・完了配送不能・前提無効化の場合は、
    同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。
-   レビュー修正の実装担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、
-   起動直前に解決した今回の実効3値がすべて一致し、同じ担当へ同じタスクを返す場合だけ同一threadへ継続接続する。
-   それ以外の組合せでは、旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。
+   初回レビューの指摘対応では、最後に完了した実装単位の現在担当がfast担当なら新規fix担当を起動し、fix担当なら同じthreadを継続する。
+   2回目以降の指摘対応は同じfix担当threadを継続する。継続直前に解決した実効3値が現在のthreadと異なる場合は、`needs_escalation`でメインへ返す。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用し、旧担当の終端と書込所有権の解放を確認してから行う。
    計画、進捗ログ、保存済みのレビュー表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
@@ -104,11 +103,8 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する。
 Codexで各実装単位の最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う。
 
-`execute_fast_model`から`execute_fix_model`への昇格は、検証コマンドの終了コードだけで判定しない。
-fast担当が修正対象として記録したテストID・診断識別子等が、同じコマンドの直後の再検証にも残った場合だけ、
-fast担当を終端して修正引継ぎ記録を作成し、fix担当へdirtyな同一worktreeを渡す。
+fast担当がエスカレーションを返した場合だけ、fast担当を終端し、元の実装入力、同じworktreeの作業状態及びエスカレーション内容を新規fix担当へ渡す。
 Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う。
-修正対象が解消して別の失敗箇所だけが現れた場合は昇格せず、fast担当が新しい失敗箇所を次の初回修正として扱う。
 
 ## modelとreasoning effort
 
