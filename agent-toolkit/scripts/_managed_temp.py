@@ -1204,6 +1204,19 @@ def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
     return True
 
 
+def _cleanup_missing_registered_temp(path: pathlib.Path) -> None:
+    """実体不在の登録と、同じnonceの消費途中状態を順に除去する。"""
+    registry_path = _registry_path(path)
+    registry = _load_private_json(registry_path)
+    if registry.get("path") != str(path) or os.path.lexists(path):
+        raise ManagedTempError(f"実体不在の管理対象として再検証できない: {path}")
+    nonce = registry.get("nonce")
+    if isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{64}", nonce) is not None:
+        consuming = registry_path.with_name(f"{registry_path.name}.consuming-{nonce}")
+        consuming.unlink(missing_ok=True)
+    registry_path.unlink(missing_ok=True)
+
+
 def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
     """真正性検証を通過した管理対象を作成時刻順で返す。
 
@@ -1475,7 +1488,7 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
     """
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     if is_missing_registered_temp(path):
-        _registry_path(path).unlink(missing_ok=True)
+        _cleanup_missing_registered_temp(path)
         return
     validated = _validate_posix(path) if os.name == "posix" else _validate_windows(path)
     if os.name == "nt":

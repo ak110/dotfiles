@@ -933,6 +933,36 @@ class TestManagedTempPosix:
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(target)
 
+    def test_cleanup_retry_removes_consuming_state_after_target_removal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """対象削除後の外部状態削除失敗は、原因除去後の再試行で残存状態ごと回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("consuming-retry")
+        registry = subject._registry_path(target)
+        original_unlink = pathlib.Path.unlink
+
+        def fail_consuming_unlink(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+            if ".consuming-" in path.name:
+                raise PermissionError("injected consuming unlink failure")
+            original_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "unlink", fail_consuming_unlink)
+        with pytest.raises(subject.ManagedTempError, match="再試行できる"):
+            subject.cleanup_managed_temp(target)
+
+        consuming_pattern = f"{registry.name}.consuming-*"
+        assert not target.exists()
+        assert registry.exists()
+        assert len(list(registry.parent.glob(consuming_pattern))) == 1
+
+        monkeypatch.setattr(pathlib.Path, "unlink", original_unlink)
+        subject.cleanup_managed_temp(target)
+        assert not registry.exists()
+        assert not list(registry.parent.glob(consuming_pattern))
+
     def test_cleanup_without_symlink_safe_primitive_preserves_target(
         self,
         monkeypatch: pytest.MonkeyPatch,
