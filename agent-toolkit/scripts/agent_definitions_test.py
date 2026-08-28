@@ -955,6 +955,81 @@ def test_plan_creation_and_review_external_command_contracts_are_synchronized() 
     assert "理由と証拠不足範囲" in review_task
 
 
+def test_plan_structure_check_runs_as_independent_gate() -> None:
+    """計画構造検査を独立実行し、直接の終了コード0だけで後続工程へ進める。"""
+    delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
+    task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    independent = (
+        "計画構造検査は、検索、レビュー表検証及びその他の検査と同じシェル呼び出しへ連結せず、独立したコマンドとして実行する。"
+    )
+    direct_gate = "計画構造検査が直接返した終了コードと警告を検収し、終了コード0の場合だけ計画自己監査と計画レビューへ進む。"
+    task_independent = (
+        "他の点検へ進む前に、受領した絶対パスの`check_plan_file.py`を、検索、レビュー表検証及びその他の検査と同じシェル呼び出しへ連結せず、"
+        "独立したコマンドとして実行する。"
+    )
+    task_direct_gate = "同スクリプトが直接返した終了コードと警告を検収し、終了コード0の場合だけ後続の計画レビューへ進む。"
+
+    assert independent in delegation
+    assert direct_gate in delegation
+    assert delegation.index(independent) < delegation.index(direct_gate)
+
+    for phrase in (task_independent, task_direct_gate):
+        assert phrase in task
+    assert task.index(task_independent) < task.index(task_direct_gate)
+    assert task_direct_gate in task
+
+    assert "非0の場合は計画レビューを完了せず、終了コードと出力を返す。" in task
+
+
+def test_explicit_user_requirement_changes_require_confirmed_answer() -> None:
+    """明示要件との差を確認済み回答なしで起草又はレビュー完了にしない。"""
+    plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+
+    assert "ユーザーが明示した対象" in plan_mode
+    assert "元のユーザー指示が明示する対象" in review_task
+    for document in (plan_mode, review_task):
+        for phrase in ("範囲", "外部可視結果", "確認済み回答"):
+            assert phrase in document
+    assert "この提示は確認済み回答の代替ではない。" in plan_mode
+    assert "`## エージェント判断`と自律確定事項の提示は確認済み回答として扱わない" in review_task
+    assert "回答が無い場合は指摘し、計画レビューを完了しない。" in review_task
+
+    confirmed_answer_definition = (
+        "確認済み回答には、`AskUserQuestion`で受領した回答と、確認事項を記録したTBDの`## 回答`節へ記録された回答を含める。"
+    )
+    assert confirmed_answer_definition in standards
+    assert confirmed_answer_definition not in plan_mode
+    assert confirmed_answer_definition not in review_task
+
+
+def test_implementation_units_cover_intermediate_commit_dependencies() -> None:
+    """実装単位が中間commitの近接検証に必要な直接依存を同じ単位へ含める。"""
+    standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+    review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    executor = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    for document in (standards, review_task, executor, design):
+        for phrase in (
+            "変更する定義",
+            "直接消費側",
+            "契約テスト",
+            "生成・配布物",
+            "正式な近接検証",
+        ):
+            assert phrase in document
+
+    for document in (standards, review_task, design):
+        assert "推測した間接依存" in document
+        assert "無関係な同語使用" in document
+    assert "同じ単位へ含まれることを照合する" in executor
+    assert "別の実装単位へ分かれていないことを確認する" in review_task
+    assert "対象ファイル集合は" in standards
+    assert "先行commitだけで後続単位着手前の近接検証が成功する場合だけ分割する。" in design
+
+
 def test_reviewee_and_plan_review_keep_independent_evidence_and_detail_boundary() -> None:
     """レビューイーの独立検証と計画レビューの細部境界を双方の正本へ反映する。"""
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
