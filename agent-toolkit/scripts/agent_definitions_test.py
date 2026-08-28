@@ -1501,9 +1501,23 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
     stage_two = progress.index("第1段階で確定した操作へ同節の第2段階を必ず適用")
     design_compare = progress.index("質問候補の作成前に適用する")
     question_round = progress.index("現在の質問候補")
+    codex_autonomous = progress.index(
+        "ユーザー接点を持つ主体がCodexの自律モードで確認候補を扱う場合は、質問機能の有無にかかわらず"
+    )
+    general_autonomous = progress.index("Codex以外の自律モードで、`AskUserQuestion`を発行でき")
     autonomous = progress.index("質問しなかった計画上の判断")
     draft = progress.index("`references/plan-file-standards.md`を全文読み")
-    assert decision_list < stage_one < stage_two < design_compare < question_round < autonomous < draft
+    assert (
+        decision_list
+        < stage_one
+        < stage_two
+        < design_compare
+        < question_round
+        < codex_autonomous
+        < general_autonomous
+        < autonomous
+        < draft
+    )
 
     for phrase in (
         "広い要求の具体化や解釈によって対象、成果、完了条件のいずれかが変わる事項も列挙する",
@@ -1531,8 +1545,8 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
         "各回答の組合せについて技術的成立性を実機又は実装で検査し",
         "成立しない組合せは理由とともに選択肢から除外する",
         "協調モード（Default mode）では利用者へ直接質問して回答を待つ",
-        "自律モードでも、`AskUserQuestion`を発行でき、ユーザー接点を持つ主体は利用者へ直接質問して回答を待ち、回答を得られない場合だけ確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
-        "Codexの自律モードで`AskUserQuestion`を発行できないが、ユーザー接点を持つ主体は確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
+        "ユーザー接点を持つ主体がCodexの自律モードで確認候補を扱う場合は、質問機能の有無にかかわらず質問を発行せず、確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
+        "Codex以外の自律モードで、`AskUserQuestion`を発行でき、ユーザー接点を持つ主体は利用者へ直接質問して回答を待ち、回答を得られない場合だけ確認事項をTBDへ記録して暫定判断で依存しない工程を続行する",
         "ユーザー接点を持たない委譲先は確認を発行せず、判断を呼び出し元へ返す",
         "回答後は依存関係を更新して第1段階と第2段階を再適用し、質問候補が無くなるまで反復する",
         "自律確定した結論、根拠、最有力対案、対案を採用しない理由",
@@ -1543,6 +1557,9 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
 
     assert "相互依存する判断（循環を含む）を同じ確認単位へまとめる前に候補を選ぶ" not in progress
     assert "自律モードでは質問を発行せず、確認事項をTBDへ記録して暫定判断で依存しない工程を続行する" not in progress
+    assert "自律モードでも、`AskUserQuestion`を発行でき" not in progress
+    assert "Codexの自律モードで`AskUserQuestion`を発行できないが" not in progress
+    assert "Codexの自律モードでは、質問機能の有無にかかわらず" not in progress
     assert "技術的に確定できないユーザー依存事項だけを確認へ送る" not in progress
 
     for phrase in (
