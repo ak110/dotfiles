@@ -77,6 +77,7 @@ class _ValidatedTemp(typing.NamedTuple):
     inode: int
     nonce: str
     registry_path: pathlib.Path
+    record: dict[str, typing.Any]
     root_device: int
     root_inode: int
     root_owner: int | None
@@ -1128,6 +1129,7 @@ def _validate_posix(path_arg: pathlib.Path | str) -> _ValidatedTemp:
         opened.st_ino,
         typing.cast(str, registry["nonce"]),
         registry_path,
+        registry,
         root_state.device,
         root_state.inode,
         root_state.owner,
@@ -1160,6 +1162,7 @@ def _validate_windows(path_arg: pathlib.Path | str) -> _ValidatedTemp:
         identity[1],
         typing.cast(str, registry["nonce"]),
         registry_path,
+        registry,
         root_state.device,
         root_state.inode,
         root_state.owner,
@@ -1319,6 +1322,50 @@ def _restore_registry(consuming: pathlib.Path, registry: pathlib.Path) -> None:
         os.replace(consuming, registry)
 
 
+def _restore_cleanup_marker(validated: _ValidatedTemp) -> None:
+    """検証済みidentityを持つ実体へ欠落したmarkerだけを復元する。"""
+    marker = validated.path / _MARKER_NAME
+    if os.name == "posix":
+        descriptor = os.open(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            metadata = os.fstat(descriptor)
+            if (metadata.st_dev, metadata.st_ino) != (validated.device, validated.inode):
+                raise ManagedTempError(f"管理対象が復元中に置換された: {validated.path}")
+            try:
+                os.stat(_MARKER_NAME, dir_fd=descriptor, follow_symlinks=False)
+            except FileNotFoundError:
+                _write_marker(validated.path, validated.record, directory_descriptor=descriptor)
+        finally:
+            os.close(descriptor)
+        return
+    if _path_identity(validated.path) != (validated.device, validated.inode):
+        raise ManagedTempError(f"管理対象が復元中に置換された: {validated.path}")
+    if not os.path.lexists(marker):
+        _write_marker(validated.path, validated.record)
+
+
+def _restore_cleanup_state(
+    validated: _ValidatedTemp,
+    consuming: pathlib.Path,
+    quarantine: pathlib.Path,
+) -> None:
+    """検証済みrecordを復元し、同じcleanupを再試行できる状態か検証する。"""
+    if not os.path.lexists(validated.registry_path):
+        _write_private_json(validated.registry_path, validated.record)
+    if os.path.lexists(quarantine):
+        raise ManagedTempError(f"隔離対象を元のpathへ復元できない: {quarantine}")
+    if not os.path.lexists(validated.path):
+        if not is_missing_registered_temp(validated.path):
+            raise ManagedTempError(f"実体不在時の登録を復元できない: {validated.path}")
+    else:
+        _restore_cleanup_marker(validated)
+        restored = _validate_posix(validated.path) if os.name == "posix" else _validate_windows(validated.path)
+        if (restored.device, restored.inode) != (validated.device, validated.inode):
+            raise ManagedTempError(f"復元した管理対象のidentityが一致しない: {validated.path}")
+    with contextlib.suppress(OSError):
+        consuming.unlink(missing_ok=True)
+
+
 def _cleanup_posix(
     root: pathlib.Path,
     validated: _ValidatedTemp,
@@ -1456,10 +1503,11 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
             raise ManagedTempError(f"未対応platform: {os.name}")
         consuming.unlink()
     except (ManagedTempError, OSError) as error:
-        with contextlib.suppress(OSError):
+        recovery_error: ManagedTempError | OSError | None = None
+        try:
             if (
-                quarantine.exists()
-                and not path.exists()
+                os.path.lexists(quarantine)
+                and not os.path.lexists(path)
                 and _path_identity(quarantine)
                 == (
                     validated.device,
@@ -1467,11 +1515,17 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
                 )
             ):
                 os.replace(quarantine, path)
-        with contextlib.suppress(OSError):
-            _restore_registry(consuming, validated.registry_path)
-        if isinstance(error, ManagedTempError):
-            raise
-        raise ManagedTempError(f"管理対象を後始末できない: {path}: {error}") from error
+            _restore_cleanup_state(validated, consuming, quarantine)
+        except (ManagedTempError, OSError) as restore_error:
+            recovery_error = restore_error
+        failure = str(error) if isinstance(error, ManagedTempError) else f"管理対象を後始末できない: {path}: {error}"
+        if recovery_error is None:
+            raise ManagedTempError(
+                f"{failure}。管理情報の復元を検証したため、原因を除去した後に同じcleanupを再試行できる"
+            ) from error
+        raise ManagedTempError(
+            f"{failure}。管理情報の復元を検証できないため、同じcleanupを再試行できない: {recovery_error}"
+        ) from error
 
 
 def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "command") -> None:

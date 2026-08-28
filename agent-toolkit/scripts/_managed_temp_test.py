@@ -877,6 +877,62 @@ class TestManagedTempPosix:
             subject.cleanup_managed_temp(target)
         assert target.exists()
 
+    def test_cleanup_failure_after_marker_removal_restores_records_for_retry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """marker削除後の失敗では二重管理情報を復元し、同じcleanupを再試行できる。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("retry-cleanup")
+        registry = subject._registry_path(target)
+        original_clear_directory = subject._clear_directory
+
+        def fail_after_marker_removal(descriptor: int) -> None:
+            os.unlink(_MARKER_NAME, dir_fd=descriptor)
+            raise PermissionError("injected failure after marker removal")
+
+        monkeypatch.setattr(subject, "_clear_directory", fail_after_marker_removal)
+        with pytest.raises(subject.ManagedTempError, match="再試行できる"):
+            subject.cleanup_managed_temp(target)
+
+        assert subject.validate_managed_temp(target) == target
+        assert json.loads((target / _MARKER_NAME).read_text(encoding="utf-8")) == subject._load_private_json(registry)
+
+        monkeypatch.setattr(subject, "_clear_directory", original_clear_directory)
+        subject.cleanup_managed_temp(target)
+        assert not target.exists()
+        assert not registry.exists()
+
+    def test_cleanup_reports_retry_unavailable_when_marker_restore_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """markerを復元できない場合は再試行不能を表示し、registry単独回収を許可しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("failed-restore")
+        registry = subject._registry_path(target)
+
+        def fail_after_marker_removal(descriptor: int) -> None:
+            os.unlink(_MARKER_NAME, dir_fd=descriptor)
+            raise PermissionError("injected failure after marker removal")
+
+        def fail_marker_restore(*_args: typing.Any, **_kwargs: typing.Any) -> None:
+            raise PermissionError("injected marker restore failure")
+
+        monkeypatch.setattr(subject, "_clear_directory", fail_after_marker_removal)
+        monkeypatch.setattr(subject, "_write_marker", fail_marker_restore)
+        with pytest.raises(subject.ManagedTempError, match="再試行できない"):
+            subject.cleanup_managed_temp(target)
+
+        assert target.exists()
+        assert not (target / _MARKER_NAME).exists()
+        assert registry.exists()
+        assert subject.is_missing_registered_temp(target) is False
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target)
+
     def test_cleanup_without_symlink_safe_primitive_preserves_target(
         self,
         monkeypatch: pytest.MonkeyPatch,
