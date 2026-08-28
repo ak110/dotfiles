@@ -24,9 +24,9 @@ reject・hold判定の主体、時機、責務境界は`../skills/process-feedba
 計画レビューの`track`は`plan-review`とし、表の共通ライフサイクル、モデル解決及び収束判定は
 `plan-mode/references/review-loop-coordination.md`を正本として適用する。
 
-実装レビュー表は呼び出し元が指定するmanaged temp領域の`review.tsv`へ保存し、準拠系は`plan-conformance`、盲検系は`independent`の`track`を使う。
+実装レビュー表は呼び出し元が指定するmanaged temp領域の`review.tsv`へ保存し、`implementation-review`の`track`を使う。
+実装レビュー担当は計画照合の後に同じコンテキストで成果物を評価し、候補を統合して同じ表へ追加する。
 実装レビューの表ライフサイクル、モデル解決及び収束判定は`plan-mode/references/review-loop-coordination.md`を正本として適用する。
-各レビュー担当へ自系統以外の`track`の行や出力を渡さず、同じ表へ異なる`track`で指摘を追加する。
 
 計画レビュー用managed temp領域は、手順5から手順8までの計画ごとの反復内で1計画につき1つ作成する。
 各領域を計画ファイル（メイン）の絶対パスと対応付け、別の計画と共有せず、同じ計画の保存・検収・機械差分・全ラウンドだけに使用する。

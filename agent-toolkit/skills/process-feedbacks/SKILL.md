@@ -188,7 +188,7 @@ PR/MRの作成、マージ又は作成＋マージ、リリースは、全レー
   `references/plan-impl-feedback-flow.md`の計画実装型経路へ移行する
 - 計画実装型は`references/plan-impl-feedback-flow.md`に従い、計画ファイルを正本として実装する
 - commit前に実行主体が`agent-toolkit:commit`をSkill機能で起動する
-- 実装と準拠系・盲検系のレビューの完了後、呼び出し元がpushとCI通過確認を完遂する
+- 実装と`implementation-review`のレビューの完了後、呼び出し元がpushとCI通過確認を完遂する
 - 計画の完了条件を満たした対象だけを後始末へ進める
 
 メインはキュー操作、`feedbacks-planner`・`plan-impl-executor`の起動、レーン起動前の計画読解と検証区分の指定を担当する。

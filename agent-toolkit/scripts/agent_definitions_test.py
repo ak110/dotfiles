@@ -739,9 +739,9 @@ def test_implementation_review_table_lifecycle_is_separate_and_restart_safe() ->
         assert "初期化せず保持" in document
     assert "統合差分レビュー用専用managed temp領域と`review.tsv`" in flow
     assert "メインを作成・検収主体" in flow
-    assert "全ての再レビューround" in flow
-    assert "`agent-toolkit:plan-mode`の計画準拠レビュー担当契約" in flow
-    assert "独立実装レビュー担当契約" in flow
+    assert "初回は同じ表の絶対パス、round、着手前SHA" in flow
+    assert "`review_contract`を`implementation-review-task.md`へ渡す。" in flow
+    assert "実装レビュー担当は過去roundの行を変更せず" in flow
     assert "実装担当契約にある`差分限定レビュー修正担当`" in flow
     assert "保持した専用managed temp領域・`review.tsv`・未解消行" in flow
     assert "managed temp領域の絶対パス>`を単独で実行する" in flow
@@ -1988,6 +1988,22 @@ def test_plan_review_cleanup_evidence_fields_match_both_direct_callers() -> None
         assert receiver_fields == expected_fields
 
 
+def test_plan_and_add_feedback_cleanup_has_no_pre_evidence_shortcut() -> None:
+    """直接呼び出し元が証拠検収前の条件だけで領域を回収しない。"""
+    direct_skill = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
+    natural_language_mode = _h2_section(direct_skill, "自然言語要件モード")
+    evidence_contract = "自然言語要件モードで`plan-review-executor`を直接起動した実行主体"
+    cleanup_command = "`atk managed-temp cleanup --path <計画レビュー用managed temp領域の絶対パス>`"
+    old_shortcut = "計画ファイルの実在と分量を照合してから、保持した絶対パスを"
+
+    evidence_at = natural_language_mode.index(evidence_contract)
+    cleanup_at = natural_language_mode.index(cleanup_command)
+    assert cleanup_command not in natural_language_mode[:evidence_at]
+    assert old_shortcut not in natural_language_mode
+    assert natural_language_mode.count(cleanup_command) == 1
+    assert evidence_at < cleanup_at
+
+
 def test_feedback_source_contract_uses_bounded_queue_reads() -> None:
     """調査担当の担当件数別取得と起草・初回レビューの一括取得境界を固定する。"""
     sender = _FEEDBACKS_PLANNER_RECEPTION.read_text(encoding="utf-8")
@@ -2769,7 +2785,7 @@ def test_ci_repair_commits_are_delegated_by_caller() -> None:
         assert "`execute_fix_model`を" in text
         assert "起動直前に解決" in text
         assert "単一の実装担当" in text
-        assert "準拠系・盲検系のレビュー、再push、CI確認" in text
+        assert "呼び出し元は`implementation-review`、再push、CI確認へ戻る。" in text
         assert "外部基盤障害など修正commitを要しない失敗" in text
     assert "`execute_fix_model`" in routing
     assert "直接修正して再push" not in ci_failure
@@ -5012,7 +5028,7 @@ def test_review_round_checkpoint_preserves_impact_and_evidence_gaps() -> None:
         assert phrase in executor
     assert "top_findings_summary" not in executor
     assert "重要度上位の指摘概要" not in executor
-    assert "系統別指摘件数、実害の概要、修正内容の要約、残る証拠不足、次ラウンドの要否" in caller
+    assert "指摘件数（ラウンド合計）、被覆結果、実害の概要、修正内容の要約、残る証拠不足、次ラウンドの要否" in caller
     assert "重要度上位の指摘概要" not in caller
 
 
@@ -5815,7 +5831,7 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     coordination = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
     normal_repair = _h2_section(_PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8"), "レビュー修正")
     scoped_repair = _PLAN_IMPL_EXECUTOR_DIFF_REVIEW_MODE.read_text(encoding="utf-8")
-    track_set_handoff = "レビュー表の絶対パスと修正対象として確定した採用指摘の`track`集合"
+    track_set_handoff = "レビュー表の絶対パスと修正対象として確定した採用指摘の`implementation-review`の`track`"
     assert track_set_handoff in normal_repair
     assert "reviewee-standards/SKILL.md" in normal_repair
     assert track_set_handoff in scoped_repair
@@ -5854,10 +5870,10 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     assert writer_reviewee_phrase in writer
     assert "計画担当は`agent-toolkit:reviewee-standards`の`SKILL.md`を適用し、" in plan_review
     assert track_set_handoff in flow
-    assert "修正対象の`track`集合" in writer
-    assert "渡された修正対象の`track`集合" in reviewee
+    assert "実装レビューでは`implementation-review`の単一trackを対象とする。" in writer
+    assert "実装レビューでは、修正対象を`implementation-review`の単一trackに限定する。" in reviewee
     assert "渡された集合の外に属する`track`の行を採否判断と更新の対象にせず" in reviewee
-    assert "修正対象として確定した採用指摘の`track`集合を渡す" in coordination
+    assert "レビューイーへは同じ表の絶対パス、ラウンド番号、修正対象として確定した採用指摘の`track`集合を渡す。" in coordination
     assert "修正を新規commitで積む" in writer
     assert "指摘の根拠不足、計画との衝突、認可外の変更" in writer
 

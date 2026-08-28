@@ -46,7 +46,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
 | `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 | `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | `agents_server` MCP | Agentツール |
-| `execute_review_model` | 実装後の準拠系・盲検系のレビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
+| `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 上表の未設定時の実効値は、`execute_fast_model`が`codex:gpt-5.6-luna/max`、その他のキーが`codex:gpt-5.6-sol/medium`とする。effort省略時は`medium`とする。
@@ -161,7 +161,7 @@ Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後�
   ただし、fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す、`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外とする
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない
-- レビュー担当は実装担当の終端後に起動し、準拠系・盲検系のレビュー担当は別識別子で並列起動できる
+- 実装レビュー担当は実装担当の終端後に起動し、同じ最終HEADへ1ラウンド1回だけ割り当てる
 - 作業用の複製（git worktree等）内でセッションを起動する場合は、調査・計画作成への着手前に
   `git fetch`後の分岐元との差分を双方向で確認し、分岐元が進んでいる場合は先に追随してから着手するよう
   起動文で指示する（努力目標）
