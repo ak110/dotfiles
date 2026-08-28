@@ -299,6 +299,10 @@ class TestWatchRun:
             _watch_run(42, sleep=sleeps.append, random_uniform=_upper_bound)
         watch_calls = [call for call in run.call_args_list if call.args[0][2] == "watch"]
         assert len(watch_calls) == 2
+        assert [call.args[0] for call in watch_calls] == [
+            ["gh", "run", "watch", "42", "--compact", "--exit-status"],
+            ["gh", "run", "watch", "42", "--compact", "--exit-status"],
+        ]
         assert sleeps == [1.0]
 
     def test_incomplete_run_exhaustion_is_api_error(self) -> None:

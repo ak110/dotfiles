@@ -341,7 +341,7 @@ class TestProductionManagedSettings:
                 "`gh api`",
                 "`gh run list`",
                 "`gh run view`",
-                "`gh run watch <id> --exit-status`",
+                "`gh run watch <id> --compact --exit-status`",
                 "`git fetch --tags --prune`",
                 "`git pull --ff-only`",
                 "hard_deny",
