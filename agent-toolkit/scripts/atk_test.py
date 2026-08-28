@@ -437,11 +437,11 @@ def test_review_table_subcommands_are_public() -> None:
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
         if subcommand == "add":
-            argv.extend(["--round=1", "--track=plan-conformance", "位置", "指摘"])
+            argv.extend(["--round=1", "--track=implementation-review", "位置", "指摘"])
         elif subcommand == "respond":
             argv.extend(
                 [
-                    "--track=plan-conformance",
+                    "--track=implementation-review",
                     "位置",
                     "指摘",
                     "--response-needed=yes",
@@ -460,7 +460,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "位置", "指摘", "", "", ""))
+        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "implementation-review", "位置", "指摘", "", "", ""))
         + "\n",
         encoding="utf-8",
     )
@@ -507,6 +507,7 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     error = capsys.readouterr().err
     assert "--track" in error
     assert "plan-review" in error
+    assert "implementation-review" in error
     assert "plan-conformance" in error
     assert "independent" in error
 
@@ -530,7 +531,7 @@ def test_public_review_table_old_column_count_error_explains_recovery(
     error = capsys.readouterr().err
     assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
-    assert "plan-review, plan-conformance, independent" in error
+    assert "plan-review, implementation-review, plan-conformance, independent" in error
 
 
 @pytest.mark.parametrize(
@@ -577,7 +578,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     error = capsys.readouterr().err
     assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
-    assert "plan-review, plan-conformance, independent" in error
+    assert "plan-review, implementation-review, plan-conformance, independent" in error
 
 
 class TestSpaceSeparatedOptionWarning:

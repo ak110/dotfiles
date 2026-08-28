@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import _review_table as table
 import pytest
 
-_TRACK = "plan-conformance"
+_TRACK = "implementation-review"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -35,14 +35,14 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
 def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
-    table.add(path, "1", "plan-conformance", "module.py:10", "準拠指摘")
+    table.add(path, "1", _TRACK, "module.py:10", "統合後指摘")
     table.add(path, "1", "independent", "module.py:10", "盲検指摘")
     capsys.readouterr()
 
-    assert table.show(path, track="independent") == 0
+    assert table.show(path, track=_TRACK) == 0
     output = capsys.readouterr().out
-    assert "盲検指摘" in output
-    assert "準拠指摘" not in output
+    assert "統合後指摘" in output
+    assert "盲検指摘" not in output
 
 
 def test_table_lock_is_kept_as_the_sibling_management_artifact(tmp_path: pathlib.Path) -> None:
@@ -247,7 +247,7 @@ def test_legacy_column_count_has_recovery_guidance_for_all_mutations(tmp_path: p
         assert path.read_text(encoding="utf-8") == before
         assert "期待列数は7" in message
         assert "trackの位置はroundの直後" in message
-        assert "plan-review, plan-conformance, independent" in message
+        assert "plan-review, implementation-review, plan-conformance, independent" in message
         assert "旧8列形式はseverity列を除いて7列形式で再作成する" in message
 
 

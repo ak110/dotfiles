@@ -28,8 +28,7 @@ _PLAN_FILE_STANDARDS = _PLAN_MODE_REFERENCES / "plan-file-standards.md"
 _PLAN_FORMAT = _AGENTS_DIR.parent / "scripts" / "_plan_format.py"
 _PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "plan-review-task.md"
 _PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
-_PLAN_IMPL_PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-plan-review-task.md"
-_PLAN_IMPL_INDEPENDENT_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-independent-review-task.md"
+_IMPLEMENTATION_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-review-task.md"
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
 _CROSS_REPOSITORY_SUBMISSION = _ADD_FEEDBACK.parent / "references" / "cross-repository-submission.md"
 _TBD_FORMAT = _ADD_FEEDBACK.parent / "references" / "tbd-format.md"
@@ -642,7 +641,7 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
 
 
 def test_review_table_coordination_and_role_contracts_are_split() -> None:
-    """表の構造とループ運営を正本へ集約し、役割固有契約を各文書へ残す。"""
+    """表の構造とループ運営を正本へ集約し、単一実装レビュー契約を残す。"""
     coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
     assert "レビュー収束ループの調整" in coordinator
     assert "atk review-table init <レビュー表>" in coordinator
@@ -666,7 +665,7 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
 
     table = _REVIEW_TABLE.read_text(encoding="utf-8")
     assert '"round",\n    "track",' in table
-    assert 'TRACK_VALUES = ("plan-review", "plan-conformance", "independent")' in table
+    assert 'TRACK_VALUES = ("plan-review", "implementation-review", "plan-conformance", "independent")' in table
     assert '"--track", required=True' in table
     assert "def show(path: str | Path, track: str | None = None)" in table
 
@@ -676,8 +675,7 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
         _REVIEWEE_STANDARDS,
         _PLAN_IMPL_TASK,
         _PLAN_REVIEW_TASK,
-        _PLAN_IMPL_PLAN_REVIEW_TASK,
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _IMPLEMENTATION_REVIEW_TASK,
     )
     for path in role_contracts:
         assert "review-loop-coordination.md" not in path.read_text(encoding="utf-8"), path
@@ -713,8 +711,9 @@ def test_review_table_coordination_and_role_contracts_are_split() -> None:
     assert "atk review-table add --round <ラウンド> --track <track>" not in reviewer
     assert "atk review-table respond --track <track>" not in reviewee
     assert "`atk review-table`の公開CLI契約" in reviewee
-    assert "`plan-conformance`" in _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "`independent`" in _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "計画照合と成果物評価を同一コンテキストで順番に実施" in implementation_review
+    assert "`implementation-review`" in implementation_review
 
     old_patterns = ("固定" + "7列", "固定" + "6列", "plan-conformance" + ".tsv", "independent" + ".tsv")
     for path in coordination_referrers + (_REVIEW_STANDARDS, _REVIEWEE_STANDARDS):
@@ -1215,21 +1214,20 @@ def test_plan_review_keeps_author_as_the_only_writer() -> None:
 
 
 def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
-    """実装担当と準拠系・盲検系のレビュー担当の責務を一方向のタスク文書で分離する。"""
+    """実装担当と単一の実装レビュー担当の責務を一方向のタスク文書で分離する。"""
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
 
     assert writer.startswith("# 計画実装担当タスク\n\n指定されたコミット単位を実装し")
     assert "stage、commitまで完了" in writer
     assert "委譲の内部資料は読まず" in writer
     assert "`git push`、タグ作成、リモートrefも変更しない" in writer
-    assert "計画からの逸脱、実装漏れ" in plan_review
-    assert "境界条件と回帰は盲検系が担う" in plan_review
-    assert "計画ファイル、進捗ログ、コミットメッセージ" in independent_review
-    assert "公開契約、正確性、回帰、境界条件、安全性" in independent_review
-    assert "計画との照合と実装漏れは準拠系が担う" in independent_review
-    for task in (writer, plan_review, independent_review):
+    assert "計画からの逸脱、実装漏れ" in implementation_review
+    assert "計画ファイル（メイン・詳細）" in implementation_review
+    assert "公開契約、正確性、回帰、境界条件、安全性" in implementation_review
+    assert "第1段階：計画照合" in implementation_review
+    assert "第2段階：成果物評価" in implementation_review
+    for task in (writer, implementation_review):
         assert "skills/delegation" not in task
         assert "runtime-routing.md" not in task
 
@@ -1252,7 +1250,7 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
 
     reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
-    independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     for command in (
         "validate --allow-unanswered",
         "show --track <track>",
@@ -1262,26 +1260,27 @@ def test_review_table_validation_modes_match_review_lifecycle() -> None:
     assert "validate --allow-unanswered" not in reviewee
     assert "respond --track <track>" not in reviewee
     assert "`atk review-table`の公開CLI契約" in reviewee
-    assert "validate --allow-unanswered <レビュー表>" in independent
-    assert "show --track independent <レビュー表>" in independent
+    assert "validate --allow-unanswered <レビュー表>" in implementation_review
+    assert "show --track implementation-review <レビュー表>" in implementation_review
     assert "review-loop-coordination.md" in _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     assert "`agent-toolkit:plan-mode`のレビュー継続契約" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
 
 
 def test_review_table_paths_use_one_file_and_track_attribution() -> None:
-    """実装レビューの二観点を同じ表へ収め、計画レビューを別の一表として維持する。"""
+    """実装レビューの二段階を同じ表へ収め、計画レビューを別の一表として維持する。"""
     implementation_documents = (
         _FEEDBACKS_PLANNER,
         _PLAN_IMPL_EXECUTOR,
-        _PLAN_IMPL_PLAN_REVIEW_TASK,
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK,
+        _IMPLEMENTATION_REVIEW_TASK,
     )
     for path in implementation_documents:
         document = path.read_text(encoding="utf-8")
         assert "review.tsv" in document, path
 
-    assert "plan-conformance" in _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "independent" in _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
+    assert "implementation-review" in implementation_review
+    assert "第1段階：計画照合" in implementation_review
+    assert "第2段階：成果物評価" in implementation_review
     assert "plan-review" in _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     assert "plan-review" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
@@ -1291,17 +1290,19 @@ def test_review_table_paths_use_one_file_and_track_attribution() -> None:
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_DIFF_REVIEW_MODE.read_text(
         encoding="utf-8"
     )
-    independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
-    assert "各レビュー担当へ自系統以外の`track`の行や出力を渡さず" in executor
-    assert "自系統以外の`track`の行や出力を受け取らず" in independent
-    assert "担当する`track`" in executor
-    assert "表ファイルを全文読取しない" in independent
+    assert "implementation-review`の`track`" in executor
+    assert "計画照合と成果物評価" in implementation_review
+    assert "対象worktreeと計画ファイルは読み取り専用" in implementation_review
+    assert "指定されたレビュー表への`implementation-review`行追加だけを許可" in implementation_review
+    assert "他の成果物、他の`track`及び過去ラウンドの行は変更しない" in implementation_review
+    assert "write_status: <review_table_only|unchanged>" in implementation_review
+    assert "レビュー表を変更しない" not in implementation_review
+    assert "いかなる成果物も変更しない" not in implementation_review
 
 
 def test_review_table_rereviews_require_delta_inputs_and_current_table_additions() -> None:
     """同一thread継続でも履歴とtrackを入力し、指摘を今回表へ追加する契約を固定する。"""
-    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     executor = (
@@ -1312,12 +1313,11 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
-    for reviewer in (plan_review, independent_review):
-        assert "今回のラウンド番号と今回のレビュー表の絶対パスを必須差分入力として" in reviewer
-        assert "`review.tsv`" in reviewer
+    assert "今回のラウンド番号と今回のレビュー表の絶対パスを必須差分入力として" in implementation_review
+    assert "`review.tsv`" in implementation_review
     assert "今回のラウンド番号と今回の表の絶対パスを必須差分入力として" in plan_review_task
     assert "今回のラウンド番号と今回の表の絶対パスを必須差分入力として" in delegation
-    for reviewer in (plan_review, independent_review, plan_review_task):
+    for reviewer in (implementation_review, plan_review_task):
         for phrase in (
             "同一thread継続でも新規起動でも",
             "必須差分入力",
@@ -1328,13 +1328,12 @@ def test_review_table_rereviews_require_delta_inputs_and_current_table_additions
     assert "継続接続では、前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
     assert "同一threadでは「再レビューを実施せよ」に相当する指示を送る" not in delegation
     assert "再レビューでは既知でない情報だけを渡す" not in delegation
-    assert "自系統以外の`track`の行や出力はこの必須差分入力へ含めない" in independent_review
-    assert "各レビュー担当へ自系統以外の`track`の行や出力を渡さない" in executor
+    assert "implementation-review`の`track`" in implementation_review
     assert "修正対象となるレビュー表" in executor
     for phrase in (
         "通常の実装レビュー用managed temp領域の絶対パス",
-        "各レビュー担当の新規起動と同じレビュー担当への継続接続のいずれでも",
-        "担当する`track`と同じ表の絶対パス",
+        "単一の実装レビュー担当の新規起動又は継続接続へ",
+        "`implementation-review`の`track`と同じ表の絶対パス",
         "必須差分入力として渡す",
     ):
         assert phrase in executor
@@ -1349,8 +1348,7 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
     """採用フィードバックの文書契約と影響検証を計画担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    implementation_plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    independent = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_review = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     push_and_ci = _PUSH_AND_CI.read_text(encoding="utf-8")
@@ -1362,7 +1360,7 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
         "説明文又はコメントへ置換すると規定が技術的に成立しない",
     ):
         assert phrase in agent_standards
-    for task in (writer, independent):
+    for task in (writer, implementation_review):
         for phrase in (
             "共有の判定処理、振り分け処理、解析処理",
             "変更分岐へ到達する全呼び出し元",
@@ -1371,7 +1369,7 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
             "局所識別子の対応",
         ):
             assert phrase in task
-    conditional_documents = (writer, implementation_plan_review)
+    conditional_documents = (writer,)
     conditional_trigger = "入力拒否条件、必須項目の判定条件、`block`・`warning`の発火条件を新設・変更"
     for document in conditional_documents:
         assert conditional_trigger in document
@@ -1384,7 +1382,6 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
         ):
             assert phrase in document
     assert writer.count("conditional_obligation_verification:\n  - condition:") == 1
-    assert implementation_plan_review.count("conditional_obligation_verification") == 1
     for field in (
         "source:",
         "tests:",
@@ -1395,7 +1392,6 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
     ):
         assert field in writer
     assert "条件変更に該当しない実装へ、この検証と完了報告項目を追加しない" in writer
-    assert "条件変更のない差分へ条件付き義務を拡大しない" in implementation_plan_review
     for phrase in ("1回だけ起動", "60秒未満", "同一process", "短い`--timeout`"):
         assert phrase in push_and_ci
     assert "`session-review-advisor`の起動前に`agent-toolkit:delegation`をSkill機能で起動" in session_review
@@ -1614,26 +1610,22 @@ def test_plan_mode_confirmation_tree_reuses_two_stage_boundary() -> None:
 
 
 def test_plan_implementation_reads_fixed_and_variable_regions() -> None:
-    """実装担当と計画準拠レビュー担当の参照範囲を固定領域と実装者向け領域で分ける。"""
+    """実装担当と実装レビュー担当の参照範囲を固定領域と実装者向け領域で分ける。"""
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
 
     assert "人間向け固定領域（`## 概要`から`## 変更履歴`まで）をユーザー要求の正本" in writer
     assert "実装者向け領域を実装詳細の正本" in writer
     assert "実装担当は人間向け固定領域と`## 進捗ログ`を編集せず" in writer
-    assert "`## 概要`、`## 実施内容`、実装者向け領域、`## 完了条件`" in plan_review
+    assert "計画ファイル（メイン・詳細）の実装単位、変更説明、変更履歴、完了条件" in implementation_review
     assert "呼び出し元は各commit単位の受領時と実装レビュー収束時に`## 進捗ログ`の3列表へ行を追記する" in caller
     assert "`## 変更履歴`へ内容を判別できる見出しを追加し、起点、内容、採否、現在の結論及び同期先を記録" in caller
     assert (
         "同じ計画ファイルへ書き込む起草側の実行主体（調整主体と計画担当）が終端していることを、"
         "起動時に保持した実行識別子の直接照会で確認してから実装担当を起動する。" in caller
     )
-    assert (
-        "`## 進捗ログ`のうち呼び出し元だけが記入する項目（実装commitの受領記録、統合差分レビューの収束記録）は、"
-        "実装commitの受領又はレーン内レビューの収束という記入時点に達していない場合、欠落として扱わない。"
-        "記入時点を過ぎた欠落はレビュー表へ行を追加せず、欠落項目と根拠を`needs_escalation`で呼び出し元へ返す" in plan_review
-    )
+    assert "進捗の現在状態及び開始時点の完全OIDを現行差分・実体へ照合する" in implementation_review
 
 
 def test_plan_impl_executor_is_coordinator_not_writer() -> None:
@@ -1659,8 +1651,7 @@ def test_plan_impl_executor_is_coordinator_not_writer() -> None:
     assert "同じ計画ファイルに属する実装単位" in text
     for task_name in (
         "implementation-task.md",
-        "implementation-plan-review-task.md",
-        "implementation-independent-review-task.md",
+        "implementation-review-task.md",
     ):
         assert task_name in text
 
@@ -2172,7 +2163,7 @@ def test_plan_contracts_keep_search_ownership_and_progress_timing() -> None:
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_mode = _PLAN_MODE.read_text(encoding="utf-8")
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
-    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
 
     assert "用いた識別子、検索コマンド文字列及び一致件数" in standards
     assert (
@@ -2180,7 +2171,7 @@ def test_plan_contracts_keep_search_ownership_and_progress_timing() -> None:
         "実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない" in plan_and_add
     )
     assert "完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない" in plan_mode
-    assert "記入時点に達していない場合、欠落として扱わない" in plan_review
+    assert "進捗の現在状態" in implementation_review
 
 
 def test_feedback_source_and_viability_contracts_preserve_order_and_values() -> None:
@@ -2749,9 +2740,7 @@ def test_all_stage_continuations_recheck_effective_routing_values() -> None:
             "レビュー担当の再レビュー直前は`plan_review_model`",
         ),
         _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
-        _PLAN_IMPL_EXECUTOR: (
-            "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
-        ),
+        _PLAN_IMPL_EXECUTOR: ("単一の実装レビュー担当の新規起動又は継続接続の直前に`atk config get execute_review_model`",),
         _PLAN_IMPL_FEEDBACK_FLOW: ("`atk config get execute_fix_model`で解決）へ委譲し",),
     }
     for path, phrases in launch_contracts.items():
@@ -3176,9 +3165,7 @@ def test_start_processing_failure_resolves_management_repo_before_git_checks() -
 def test_launch_points_reread_routing_before_launch_or_continuation() -> None:
     """全起動地点で新規起動・継続接続の直前に実効routeを再取得する契約を固定する。"""
     launch_points = {
-        _PLAN_IMPL_EXECUTOR: (
-            "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前に`atk config get execute_review_model`",
-        ),
+        _PLAN_IMPL_EXECUTOR: ("単一の実装レビュー担当の新規起動又は継続接続の直前に`atk config get execute_review_model`",),
         _FEEDBACKS_PLANNER: ("計画担当への新規起動又は継続接続の直前は`plan_model`",),
         _PLAN_REVIEW_DELEGATION: ("レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`",),
         _PLAN_IMPL_FEEDBACK_FLOW: ("`atk config get execute_fix_model`で解決）へ委譲し",),
@@ -3311,8 +3298,8 @@ def test_plan_impl_executor_requires_inputs_only_for_selected_mode() -> None:
     assert "既存の入力変換・レビュー表" in integrated_launch
 
 
-def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
-    """両モードにタスク文書指定を持つ実装レビュー・統合差分レビュー共通の手順を適用する。"""
+def test_plan_impl_executor_routes_both_modes_to_single_final_review() -> None:
+    """両モードに単一タスク・単一起動の実装レビュー手順を適用する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     execution = _h2_section(executor, "実行")
     normal = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
@@ -3322,32 +3309,41 @@ def test_plan_impl_executor_routes_both_modes_to_common_final_review() -> None:
     assert "同worktreeのHEADをレビュー対象HEAD" in normal
     assert "レビュー対象は`merge_review_pending`が報告した解消箇所" in integrated
     assert "同じ最終HEAD" in common_review
-    assert "別識別子" in common_review
-    assert "implementation-plan-review-task.md" in common_review
-    assert "implementation-independent-review-task.md" in common_review
-    assert "各レビュー担当の新規起動又は同じレビュー担当への継続接続の直前" in common_review
+    assert "implementation-review-task.md" in common_review
+    assert "1ラウンド1回だけ" in common_review
+    assert "`review_contract`" in common_review
+    assert "単一の実装レビュー担当" in common_review
+    assert "別識別子" not in common_review
+    assert "並列起動" not in common_review
     assert "review-loop-coordination.md" in common_review
     for mode_preparation in (normal, integrated):
-        assert "implementation-plan-review-task.md" not in mode_preparation
-        assert "implementation-independent-review-task.md" not in mode_preparation
+        assert "implementation-review-task.md" not in mode_preparation
         assert "atk config get execute_review_model" not in mode_preparation
     assert "手順2から7までは実行しない" not in executor
 
 
-def test_scoped_file_limit_input_is_declared_by_sender_and_both_reviewers() -> None:
-    """任意入力`対象ファイル限定`の受け渡しを、発火元と両レビュータスクの入力節で同期させる。"""
-    flow = _PLAN_IMPL_FEEDBACK_FLOW.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR_DIFF_REVIEW_MODE.read_text(encoding="utf-8")
-    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    independent_review = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+def test_review_round_checkpoint_matches_caller_reception() -> None:
+    """review_roundの本文と出力をラウンド合計・被覆結果へ統一する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
 
-    assert "変更ファイル一覧は両レビュータスクへ任意入力`対象ファイル限定`として渡す" in flow
+    assert "指摘件数（ラウンド合計）" in executor
+    assert "初回被覆結果" in executor
+    assert "findings_count: <指摘件数のラウンド合計>" in executor
+    assert "coverage_result: <被覆結果>" in executor
+    assert "findings_count_by_track" not in executor
+    assert "系統別指摘件数" not in executor
+
+
+def test_scoped_file_limit_input_is_declared_by_sender_and_reviewer() -> None:
+    """任意入力`対象ファイル限定`の受け渡しを、executorと単一レビュータスクで同期させる。"""
+    executor = _PLAN_IMPL_EXECUTOR_DIFF_REVIEW_MODE.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
+
     assert "`対象ファイル限定`としてレビュータスクへ渡す" in executor
-    for reviewer in (plan_review, independent_review):
-        inputs = _h2_section(reviewer, "入力")
-        assert "任意入力`対象ファイル限定`" in inputs
-        assert "指定されたファイルの差分だけをレビュー対象とする。範囲内の他ファイルは非レビュー対象として扱い、" in inputs
-        assert "未レビューと扱わない" in inputs
+    inputs = _h2_section(implementation_review, "入力")
+    assert "任意入力`対象ファイル限定`" in inputs
+    assert "指定されたファイルの差分だけをレビュー対象とする。範囲内の他ファイルは非レビュー対象として扱い、" in inputs
+    assert "未レビューとは扱わない" in inputs
 
 
 def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> None:
@@ -3374,9 +3370,9 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
         "契約条項の出典及び適用範囲",
         "適用される全計画と条項を対応付け",
         "全適用条項と両立する修正だけを認可",
-        "計画準拠のレビュー担当の対象計画又は指摘の出所だけに限定しない",
+        "関係計画パス一覧の現在状態",
         "最初の実装担当以降のHEAD又は`review_contract`へ混入した未承認契約",
-        "累積差分検証用の計画ベースコミットを公開契約基準に用いない",
+        "計画ベースコミットを公開契約基準に用いない",
         "対応付け不能、計画間衝突又は修正認可の上限を実際に超える方針は実装担当へ渡さず",
         "事象、期待値、実際値、発生条件、直接的原因、対応案及び超過内容",
         "`needs_escalation`で呼び出し元へ返す",
@@ -3392,7 +3388,7 @@ def test_plan_impl_executor_checks_review_repairs_before_writer_handoff() -> Non
     assert "着手前SHA＝メイン許可時の統合ブランチtip完全OID" in flow
     assert "レビュー対象＝rebase後HEAD" in flow
     assert "照合先計画＝" in flow
-    assert "実装レビュー開始時点のHEADから現行`HEAD`までの累積差分" in common_review
+    assert "直前レビュー対象の完全OIDから現行`HEAD`までの修正差分" in common_review
 
 
 def test_normal_review_fixes_advance_the_reviewed_worktree() -> None:
@@ -3826,19 +3822,22 @@ def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
 
 
 def test_implementation_review_internal_procedures_exist_only_in_receiver_tasks() -> None:
-    """二系統実装レビューの再走査・累積再監査・新欠陥分類を受信タスク文書へ集約する。"""
+    """単一実装レビューの二段階走査・被覆・再レビュー範囲を受信タスクへ集約する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    tasks = (
-        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
-    )
+    task = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     for receiver_contract in (
-        "指摘候補を内部的に網羅列挙",
-        "レビュー開始時点の基準OIDから現行HEADまでの累積差分全体を再監査",
-        "計画時に判断可能だった事項、初回レビューの見逃し、直前の修正による混入",
+        "二段階の候補を違反契約単位で統合",
+        "各単位について、実読箇所、実行結果またはシナリオを根拠とする`確認済み`",
+        "未変更かつ直接影響範囲外の既存部分は再走査しない",
+        "初回被覆不足として不足範囲を返す",
     ):
-        assert all(receiver_contract in task for task in tasks)
-        assert receiver_contract not in executor
+        assert receiver_contract in task
+    for forbidden in (
+        "レビュー開始時点の基準OIDから現行HEADまでの累積差分全体を再監査",
+        "全修正と累積計画全体を再監査",
+    ):
+        assert forbidden not in task
+        assert forbidden not in executor
 
 
 def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_events() -> None:
@@ -5026,8 +5025,7 @@ def test_review_contract_excludes_severity_and_unverified_findings() -> None:
         plan_review_task,
         _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8"),
         _REVIEWEE_STANDARDS.read_text(encoding="utf-8"),
-        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+        _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8"),
         _PLAN_IMPL_TASK.read_text(encoding="utf-8"),
         _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8"),
         _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8"),
@@ -5322,19 +5320,19 @@ def test_plan_change_descriptions_replace_target_list_contracts() -> None:
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    plan_review = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
     commit = _COMMIT_SKILL.read_text(encoding="utf-8")
 
     assert "ファイル群別の変更説明を正本" in standards
     assert "同じパス集合の一覧を複製しない" in standards
-    for text in (standards, review_task, writer, plan_review, executor, commit):
+    for text in (standards, review_task, writer, implementation_review, executor, commit):
         assert "### 対象ファイル一覧" not in text
         assert "対象一覧にない" not in text
     assert "追加機構で内部契約を保存する案より、契約の簡素化または撤去を先に指摘" in review_task
     assert "目的と変更説明" in writer
     assert "計画との差異" in writer
-    assert "計画の目的とファイル群別の変更説明" in plan_review
+    assert "変更説明" in implementation_review
     assert "追加変更の目的への帰属と必要性" in executor
     assert "実装中に目的への帰属と必要性を確認した追加変更" in commit
 
@@ -5707,24 +5705,23 @@ def test_managed_temp_workflows_use_canonical_create_and_cleanup() -> None:
 def test_review_workflows_gate_findings_by_original_purpose() -> None:
     """レビュー出力と受領側が目的・前提・非目標を基準に指摘を選別する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review_task = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
 
     for phrase in (
         "元のユーザー目的、公開契約、適用規範、入力生成主体、信頼境界、通常入力及び非目標を確認し、通常運用で実害が生じる契約違反だけを指摘する。",
         "lint、format、textlint、型検査、スペル検査、補助スクリプト、構文エラー・構文の合法性及び機械的に算出できる定量値で検出できる事項は指摘しない。",
     ):
         assert phrase in review_standards
-    assert "`review_contract`" in independent_task
-    assert "ユーザー目的、現行の公開契約" in independent_task
-    assert "ユーザー発話全文、作者の推論、変更意図、実装方針" in independent_task
+    assert "`review_contract`" in implementation_review_task
+    assert "ユーザー目的、現行の公開契約" in implementation_review_task
+    assert "計画情報を受け取らない別担当のレビューは行わず" in implementation_review_task
 
 
 def test_review_findings_recheck_operational_proportionality() -> None:
     """レビュー担当が実害、証拠及び解消方向で指摘を選別する。"""
     reviewers = (
         _PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8"),
-        _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8"),
+        _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8"),
     )
     common_review = _REVIEW_STANDARDS.read_text(encoding="utf-8")
 
@@ -5881,16 +5878,15 @@ def test_reviewee_contract_is_centralized_by_role() -> None:
     )
 
 
-def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
-    """指摘の根拠を修正担当まで保持し、各レビュー後に目的へ累積照合する。"""
+def test_review_findings_preserve_evidence_and_bounded_purpose() -> None:
+    """指摘の根拠を修正担当まで保持し、再レビューを直接影響範囲へ限定する。"""
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
     delegation = _DELEGATION_SKILL.read_text(encoding="utf-8")
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    implementation_plan_review_task = _PLAN_IMPL_PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    independent_review_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_review_task = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
@@ -5903,12 +5899,12 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
         assert phrase in review_standards
     assert "`未検証`" not in review_standards
 
-    for reviewer in (plan_review_task, implementation_plan_review_task, independent_review_task):
+    for reviewer in (plan_review_task, implementation_review_task):
         assert "対象への適用根拠" in reviewer
         assert "修正方針" in reviewer
         assert "変更する認可ではない" in reviewer
     for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "実施内容に記録された採否と除外・保持"):
-        assert phrase in _h2_section(independent_review_task, "入力")
+        assert phrase in _h2_section(implementation_review_task, "入力")
 
     for adopter in (delegation, executor):
         assert "適用" in adopter
@@ -5937,26 +5933,24 @@ def test_review_findings_preserve_evidence_and_cumulative_purpose() -> None:
     assert "別の永続状態を設けない" in plan_review_delegation
     assert "採否の確定前と反映後" in plan_review_delegation
     assert "前回ラウンドとの差分だけで完了を判定しない" in plan_review_delegation
-    assert "実装レビュー開始時点のHEADから現行`HEAD`までの累積差分" in executor
+    assert "直前レビュー対象の完全OIDから現行`HEAD`までの修正差分" in implementation_review_task
+    assert "未変更かつ直接影響範囲外の既存部分は再走査しない" in implementation_review_task
     assert "照合成功後だけ最終検証と次のレビューへ進む" in executor
 
 
 def test_policy_parser_review_contract_declares_operating_boundary() -> None:
-    """自動判定の作成規範と盲検系レビュー入力が同じ運用境界を共有する。"""
+    """自動判定の作成規範と実装レビュー入力が同じ運用境界を共有する。"""
     coding_standards = _CODING_STANDARDS.read_text(encoding="utf-8")
     review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    independent_task = _PLAN_IMPL_INDEPENDENT_REVIEW_TASK.read_text(encoding="utf-8")
-    independent_input_contract = _h2_section(independent_task, "入力")
+    implementation_review_task = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
+    implementation_input_contract = _h2_section(implementation_review_task, "入力")
 
     for phrase in ("入力生成主体", "信頼境界", "通常入力"):
         assert phrase in coding_standards
         assert phrase in review_standards
-        assert phrase in independent_input_contract
-    for phrase in ("対象外入力", "誤許可と誤拒否"):
-        assert phrase in coding_standards
-        assert phrase in independent_input_contract
-    assert "`review_contract`" in independent_input_contract
-    assert "ユーザー発話全文、作者の推論、変更意図、実装方針は含めない" in independent_input_contract
+        assert phrase in implementation_input_contract
+    assert "`review_contract`" in implementation_input_contract
+    assert "入力生成主体" in implementation_review_task
 
 
 def test_agent_toolkit_bin_contains_only_atk_launchers() -> None:

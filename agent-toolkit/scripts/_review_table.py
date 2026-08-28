@@ -23,7 +23,7 @@ COLUMNS = (
 )
 _COLUMN_COUNT = len(COLUMNS)
 _KEY_COLUMN_COUNT = 4
-TRACK_VALUES = ("plan-review", "plan-conformance", "independent")
+TRACK_VALUES = ("plan-review", "implementation-review", "plan-conformance", "independent")
 _RECOVERY_GUIDANCE = (
     f"期待列数は{_COLUMN_COUNT}、trackの位置はroundの直後、"
     f"trackの正規値集合は{', '.join(TRACK_VALUES)}。"

@@ -57,8 +57,7 @@ description: >
 - 計画レビュー時は`agent-toolkit/skills/review-standards/references/judgment-details.md`を全文読む
 - レビュー継続時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を全文読む
 - 実装担当へ引き継ぐ時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
-- 計画準拠レビュー時は`agent-toolkit/skills/plan-mode/references/implementation-plan-review-task.md`を全文読む
-- 独立レビュー時は`agent-toolkit/skills/plan-mode/references/implementation-independent-review-task.md`を全文読む
+- 実装レビュー時は`agent-toolkit/skills/plan-mode/references/implementation-review-task.md`を全文読む
 - 実装担当のモード判定時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-impl-mode.md`を全文読む
 - 差分限定レビュー修正時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-diff-review-mode.md`を全文読む
 - 採否記録を計画へ反映する時は`agent-toolkit/skills/process-feedbacks/references/decision-format.md`を全文読む

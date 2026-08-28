@@ -30,10 +30,7 @@ _SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
 _SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
 
 # 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
-_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = (
-    "implementation-plan-review-task.md",
-    "implementation-independent-review-task.md",
-)
+_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review-task.md",)
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -4301,7 +4298,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-plan-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review-task.mdを読んでレビューする。",
                 },
                 "session_id": "execute-review-claude",
                 "isSidechain": True,
@@ -4319,7 +4316,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-independent-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review-task.mdを読んでレビューする。",
                 },
                 "session_id": session_id,
                 "isSidechain": False,
