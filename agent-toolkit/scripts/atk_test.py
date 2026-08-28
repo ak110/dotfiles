@@ -437,12 +437,11 @@ def test_review_table_subcommands_are_public() -> None:
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
         if subcommand == "add":
-            argv.extend(["--round=1", "--track=plan-conformance", "重大", "位置", "指摘"])
+            argv.extend(["--round=1", "--track=plan-conformance", "位置", "指摘"])
         elif subcommand == "respond":
             argv.extend(
                 [
                     "--track=plan-conformance",
-                    "重大",
                     "位置",
                     "指摘",
                     "--response-needed=yes",
@@ -461,9 +460,7 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(
-            json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "重大", "位置", "指摘", "", "", "")
-        )
+        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "位置", "指摘", "", "", ""))
         + "\n",
         encoding="utf-8",
     )
@@ -487,9 +484,7 @@ def test_public_review_table_validate_rejects_whitespace_around_stored_track(
     """公開CLIは表示時に選択不能となる空白付きtrackを構造検証で拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(
-            json.dumps(value, ensure_ascii=False) for value in ("1", " independent ", "重大", "位置", "指摘", "yes", "修正", "")
-        )
+        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", " independent ", "位置", "指摘", "yes", "修正", ""))
         + "\n",
         encoding="utf-8",
     )
@@ -507,7 +502,7 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     """公開CLIは追加時のtrack省略をusageと正規値集合付きで拒否する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["review-table", "add", "review.tsv", "--round=1", "重大", "位置", "指摘"])
+        parser.parse_args(["review-table", "add", "review.tsv", "--round=1", "位置", "指摘"])
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
     assert "--track" in error
@@ -523,14 +518,17 @@ def test_public_review_table_old_column_count_error_explains_recovery(
     """公開CLIが旧列数を検出したとき、列位置とtrack値を修復案内へ含める。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "重大", "位置", "指摘", "", "", "")) + "\n",
+        "\t".join(
+            json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "重大", "位置", "指摘", "", "", "")
+        )
+        + "\n",
         encoding="utf-8",
     )
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は8" in error
+    assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
     assert "plan-review, plan-conformance, independent" in error
 
@@ -542,7 +540,6 @@ def test_public_review_table_old_column_count_error_explains_recovery(
             "review-table",
             "respond",
             "--track=plan-conformance",
-            "重大",
             "位置",
             "指摘",
             "--response-needed=yes",
@@ -553,7 +550,6 @@ def test_public_review_table_old_column_count_error_explains_recovery(
             "add",
             "--round=2",
             "--track=independent",
-            "重大",
             "別位置",
             "別指摘",
         ],
@@ -564,10 +560,13 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     capsys: pytest.CaptureFixture[str],
     argv: list[str],
 ) -> None:
-    """公開CLIの応答と追加も旧列数を拒否し、移行に必要な3情報を示す。"""
+    """公開CLIの応答と追加も旧列数を拒否し、移行に必要な情報を示す。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "重大", "位置", "指摘", "", "", "")) + "\n",
+        "\t".join(
+            json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "重大", "位置", "指摘", "", "", "")
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -576,7 +575,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は8" in error
+    assert "期待列数は7" in error
     assert "trackの位置はroundの直後" in error
     assert "plan-review, plan-conformance, independent" in error
 
