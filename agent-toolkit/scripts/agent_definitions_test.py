@@ -289,6 +289,31 @@ def test_codex_tool_compatibility_covers_major_missing_tools() -> None:
         assert phrase in base
 
 
+def test_process_termination_contract_uses_host_specific_stop_identifiers() -> None:
+    """共有停止契約とClaude Code固有のTaskStop契約を対応させる。"""
+    shared = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    claude = _CLAUDE_CODE_RULE.read_text(encoding="utf-8")
+
+    for phrase in (
+        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し、起動結果から停止用の識別子を取得して"
+        "保持した対象に限る。",
+        "直接起動したOSプロセスの停止にはPIDを用いる。ホスト管理ジョブの停止には、起動結果や背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と"
+        "停止手段を組み合わせる。",
+        "別種の識別子へ推測変換せず、パターン一致で対象を特定しない。",
+        "パターン一致で該当プロセスをまとめて終了させる操作（`pkill`・`killall`・`pkill -f`等）は、対象の所有権を"
+        "確認できないため実行しない。",
+    ):
+        assert phrase in shared
+    assert "直接起動したOSプロセスではPID、ホスト管理ジョブでは" not in shared
+    for phrase in (
+        "Bashツールで`run_in_background=true`により背景実行したコマンドを停止する場合は、",
+        "起動結果が返したタスクIDを`TaskStop`ツールへ渡す。",
+        "前景起動が実行環境の判断で背景実行へ移行し、移行通知がタスクIDを示した場合も同様とする。",
+        "シェルの`kill`等でPIDを推測して停止しない",
+    ):
+        assert phrase in claude
+
+
 def test_codex_running_status_is_not_overridden_by_auxiliary_observations() -> None:
     """Codexの稼働中statusを補助観測だけで中断へ変換しない。"""
     base = _CODEX_AGENTS_BASE.read_text(encoding="utf-8")
