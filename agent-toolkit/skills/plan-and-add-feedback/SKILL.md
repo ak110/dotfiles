@@ -9,6 +9,7 @@ description: >
 
 本スキルは、レビュー済み計画を後続処理へ引き継ぐ手順を提供する。本スキルはplan mode外で実行する。計画ファイルの作成・改訂と
 フィードバック投入以外の変更を対象リポジトリへ加えない。
+フィードバックの共通概念、本文、由来及び投入は`agent-toolkit:feedback-standards`を正本とする。ユーザー起動経路では条件付き重複判定を実行しない。
 
 本スキルを起動したセッションの追加指示は、同一主題の計画本文又は計画型フィードバックへ反映する。
 対象リポジトリは実装しない。
@@ -33,7 +34,7 @@ description: >
 3. 計画作成、レビュー及び確認待ちの再開では、入力として確定した対象worktreeの絶対パスを保持する。計画時の旧worktreeパスが本文に残っていても、実行時に渡された対象worktreeへ解決し、対象外のworktreeを操作しない。
 4. 計画レビューまで完了した後、最古の項目だけを対象に、
    `atk mq edit <oldest> <message> --plan-file=<main-plan-absolute-path> --depends-on=<filename>... --target-repo=<repo>`を実行する。
-   `message`は計画型feedback本文とし、依存は全入力の外部依存を初出順で統合して対象自身を除く。絶対かつ実在するメイン計画パス、計画のベースcommit及び`source: plan`を同じ原子的編集で保存する。
+   `message`は計画型feedback本文とし、依存は全入力の外部依存を初出順で統合して対象自身を除く。絶対かつ実在するメイン計画パス、計画のベースcommit、`source: plan`及び計画へ記録した要求単位の由来を同じ原子的編集で保存する。
 5. 最古の変換結果を再取得し、`source`、本文、`plan_file`、`target_commit`、依存及びinbox配置を照合する。planningに残る項目が1件以上なら、統合先ファイル名と計画パスをnoteへ記録した1回の`atk mq rm <filename>... --force --note=<統合先ファイル名と計画パス>`で残りだけを除去する。単一入力で残りが0件ならrmを呼ばない。
 6. 計画型編集前に中断した場合は、全対象を`atk mq return-to-inbox <filename>... --state=planning`で一括して戻す。変換開始後は最古の項目を戻さず、現在の差分、upstream包含、保存本文及びplanning件数を再取得して、滞留commitのpush又は未完了のrmだけを前方回復する。対象外差分又は別項目のprocessing移動を検出した場合は追加操作を止める。
 
@@ -42,17 +43,17 @@ description: >
 ## 自然言語要件モード
 
 1. 作業途中で本スキルが起動された場合は、現時点までの調査結果を計画へ引き継ぎ、実装せずフィードバック投入でセッションを完了する意図として扱う。既存の未コミット差分を変更せず、確認済みの事実だけを計画へ再利用する。
-2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/cross-repository-submission.md`も全文読む。
+2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/feedback-standards/references/cross-repository-submission.md`も全文読む。
 3. 計画に使うworktreeの絶対パスとbase commitを保持する。
 4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
    起草完了後、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と提示素材の出所・引用範囲を渡して`plan-review-executor`を起動する。
    起動後は計画ファイルの書込所有権が`plan-review-executor`配下の計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`計画レビュー完了`を受領したら次へ進む。
-5. 完成後、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan`（人間由来）、依存及び吸収元のファイル名を渡す。新しい計画型のフィードバックを追加する。
+5. 完成後、実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
 
-計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:add-feedback`をSkill機能で起動し、source `plan`（人間由来）を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
+計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
-本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文をadd-feedbackへ渡した後は問い直さない。
+本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`feedback-standards`へ渡した後は問い直さない。
 
 ## 完了報告の形式
 

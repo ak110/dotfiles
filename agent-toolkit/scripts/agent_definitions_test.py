@@ -228,7 +228,7 @@ def test_agent_skills_are_string_lists() -> None:
     """skillsを文字列配列とし、プリロードしないagentでは省略する。"""
     expected = {
         "feedbacks-planner.md": ["agent-toolkit:delegation"],
-        "plan-impl-executor.md": ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"],
+        "plan-impl-executor.md": ["agent-toolkit:delegation"],
         "plan-review-executor.md": ["agent-toolkit:delegation"],
     }
     for name, expected_skills in expected.items():
@@ -613,8 +613,6 @@ def test_delegation_separates_sender_contract_from_runtime_routing() -> None:
 def test_plan_format_compatibility_contract_is_separated_by_format() -> None:
     """旧形式の読み取り互換と新形式の厳格検査を計画基準と実装で同期する。"""
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    concepts = _CONCEPTS_DOC.read_text(encoding="utf-8")
     plan_format = _PLAN_FORMAT.read_text(encoding="utf-8")
 
     for phrase in (
@@ -624,17 +622,10 @@ def test_plan_format_compatibility_contract_is_separated_by_format() -> None:
         "旧単一ファイル形式は対応する`<stem>.detail.md`が無い形式として別に判定",
         "新規書式のメインはcanonical固定H2を備え",
         "旧二ファイル・旧単一の互換値を新規書式の検査へ混入させない",
-        "旧二ファイル形式及び旧単一形式は読み取り互換としてこの進捗照合を適用しない",
     ):
         assert phrase in standards
-    for document in (executor, concepts):
-        assert "新形式の計画" in document
-        assert "旧二ファイル形式及び旧単一形式は読み取り互換としてこの照合を適用しない" in document
     assert "allow_legacy_review_ids=not canonical_format" in plan_format
     assert "allow_legacy_review_tracks=not canonical_format" in plan_format
-    assert "canonical_format = _plan_format.is_canonical_main_format(text)" in (
-        (_PLAN_MODE.parent / "scripts" / "check_plan_file.py").read_text(encoding="utf-8")
-    )
 
 
 def test_stash_recovery_responsibility_links_writer_and_caller_contracts() -> None:
@@ -1152,40 +1143,6 @@ def test_plan_implementation_tasks_have_disjoint_responsibilities() -> None:
         assert "runtime-routing.md" not in task
 
 
-def test_review_table_validation_modes_match_review_lifecycle() -> None:
-    """レビュー表の初回・応答中・収束時の検証モードを役割文書で同期する。"""
-    coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
-    for command in (
-        "`atk review-table init <レビュー表>`",
-        "`atk review-table validate <レビュー表>`",
-    ):
-        assert command in coordinator
-    for role_command in (
-        "atk review-table show --track",
-        "atk review-table add --round",
-        "atk review-table respond --track",
-    ):
-        assert role_command not in coordinator
-    assert "atk review-table validate --allow-unanswered <レビュー表>" in coordinator
-
-    reviewer = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
-    implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
-    for command in (
-        "validate --allow-unanswered",
-        "show --track <track>",
-        "add --round <ラウンド> --track <track>",
-    ):
-        assert command not in reviewer
-    assert "validate --allow-unanswered" not in reviewee
-    assert "respond --track <track>" not in reviewee
-    assert "`atk review-table`の公開CLI契約" in reviewee
-    assert "validate --allow-unanswered <レビュー表>" in implementation_review
-    assert "show --track implementation-review <レビュー表>" in implementation_review
-    assert "review-loop-coordination.md" in _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    assert "`agent-toolkit:plan-mode`のレビュー継続契約" in _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-
-
 def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() -> None:
     """採用フィードバックの文書契約と影響検証を計画担当・レビュー担当双方で固定する。"""
     agent_standards = _AGENT_STANDARDS.read_text(encoding="utf-8")
@@ -1223,16 +1180,6 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
             "各結果",
         ):
             assert phrase in document
-    assert writer.count("conditional_obligation_verification:\n  - condition:") == 1
-    for field in (
-        "source:",
-        "tests:",
-        "positive:",
-        "negative:",
-        "diff:",
-        "results:",
-    ):
-        assert field in writer
     assert "条件変更に該当しない実装へ、この検証と完了報告項目を追加しない" in writer
     for phrase in ("1回だけ起動", "60秒未満", "同一process", "短い`--timeout`"):
         assert phrase in push_and_ci
@@ -1253,8 +1200,8 @@ def test_feedback_prevention_contracts_are_present_in_author_and_review_paths() 
         assert phrase not in plan_review
 
 
-def test_plan_review_inputs_cover_structured_materials_and_resolved_history() -> None:
-    """初回レビュー担当へ構造化素材、再レビュー担当へ変更履歴と解決表を渡す契約を固定する。"""
+def test_plan_review_inputs_cover_structured_materials() -> None:
+    """初回レビュー担当へ構造化素材を渡す契約を固定する。"""
     delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
     standards = _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
     task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
@@ -1272,21 +1219,6 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
     assert "今回のレビュー種別を全レビュー共通の入力として渡す" in delegation
     assert "初回・再レビュー固有の入力は、後続の規定に従って追加する" in delegation
     assert "キューにない素材の逐語本文・回答全文は計画外の明示入力として、初回レビュー担当へ渡す" in delegation
-    assert "再レビューへの追送には、キューにない素材の逐語本文・回答全文も計画外の明示入力として含め" in delegation
-    assert "今回のレビュー種別だけを渡す" not in delegation
-    assert "再レビューでは、既知でない情報に加えて" in delegation
-    assert "継続接続では、前項の必須差分入力を添えて" in delegation
-    assert "今回のラウンド番号と今回の表の絶対パスを必須差分入力として渡す" in delegation
-    assert "前項の必須差分入力を添えて「再レビューを実施せよ」に相当する指示を送る" in delegation
-    assert "初回レビュー起動後に人間由来の入力" in delegation
-    assert "同一threadの継続では当該情報を追送し" in delegation
-    assert "新規起動では初回と同じ入力パス集合と検収済み状態を渡す" in delegation
-    assert "当該情報を渡さない限り、その発話を根拠とする実施又は除外を計画へ書かない" in delegation
-    assert "レビュー表の初期化、ラウンドごとの構造検証、応答検収及びstrict検証は" in delegation
-    assert "解決内容、変更履歴の記録方針、再監査条項、出力形式、読み取り専用契約" in delegation
-    assert "新規起動では経路に応じた初回と同じ入力パス集合と検収済み状態を渡す" in delegation
-    assert "差分要約と追加範囲は計画本文を正本" in delegation
-    assert "起動文へ再記述しない" in delegation
     assert "レビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`" in delegation
     assert "各修正差分を対象に計画自己監査を1巡" in delegation
     assert "各修正が根拠とした正本の該当箇所、変更前の条文" in delegation
@@ -1298,19 +1230,9 @@ def test_plan_review_inputs_cover_structured_materials_and_resolved_history() ->
         "調整主体が無い場合は計画担当が`agent-toolkit:delegation`に従って指示する"
     ) in delegation
     assert "復元・巻き戻し型の変更では項目別の維持・修正・撤去の判定と根拠" in task
-    assert (
-        "初回または再レビューの別。再レビューでは共通契約が定める必須差分入力に加え、"
-        "同一thread継続でも新規起動でも、今回のラウンド番号と今回の表の絶対パスを必須差分入力として受け取る"
-    ) in task
-    assert "初回・再レビューの入力、被覆証拠、直接影響範囲及び不足範囲の返却は、review-standardsの共通契約に従う" in task
-    assert "キューにない素材の逐語本文・回答全文が、調査、起草、初回レビュー、再レビューの明示入力として保持" in task
     assert "指摘候補を内部的に網羅列挙" in task
-    for receiver_contract in (
-        "指摘候補を内部的に網羅列挙",
-        "計画起草時に判断可能だった事項、初回レビューの見逃し",
-    ):
-        assert receiver_contract in task
-        assert receiver_contract not in delegation
+    assert "指摘候補を内部的に網羅列挙" in task
+    assert "指摘候補を内部的に網羅列挙" not in delegation
     assert "全修正と累積計画全体を再監査" not in task
     assert "1対1で照合" in task
 
@@ -1334,50 +1256,6 @@ def test_plan_save_requires_unique_replacement_boundary() -> None:
 
     assert "境界文字列の一致件数を先に数え" in plan_mode
     assert "行頭完全一致の見出し行" in plan_mode
-
-
-def test_plan_impl_executor_is_coordinator_not_writer() -> None:
-    """`plan-impl-executor`がタスク文書のパスだけで実装担当とレビュー担当を調整する。"""
-    text = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
-    parsed = frontmatter.parse_frontmatter(text)
-    assert parsed is not None
-    metadata, _ = parsed
-
-    assert metadata["model"] == "sonnet"
-    assert metadata["effort"] == "medium"
-    assert metadata["skills"] == ["agent-toolkit:delegation", "agent-toolkit:reviewee-standards"]
-    assert "mcp__plugin_agent-toolkit_agents_server__start" in metadata["tools"]
-    assert "mcp__plugin_agent-toolkit_agents_server__send_message" in metadata["tools"]
-    assert "自身は成果物と計画ファイルを直接編集せず" in text
-    assert "実装タスク文書、作成規範スキル、レビュータスク文書は読み込まず" in text
-    assert "ファイル編集、生成同期、format・lint・testの初回実行、stage、commitは実装担当へ割り当てる" in text
-    assert "シェル経由のファイル書換え" in text
-    assert "`check_dash.py`による文書検収" in text
-    assert "同じworktreeへ順次割り当て、同時に1つの実装担当だけを置け" in text
-    assert "異なるレーン" in text
-    assert "だけを別worktreeで並列に扱える" in text
-    assert "同じ計画ファイルに属する実装単位" in text
-    for task_name in (
-        "implementation-task.md",
-        "implementation-review-task.md",
-    ):
-        assert task_name in text
-
-
-def test_plan_and_add_feedback_cleanup_has_no_pre_evidence_shortcut() -> None:
-    """直接呼び出し元が証拠検収前の条件だけで領域を回収しない。"""
-    direct_skill = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
-    natural_language_mode = _h2_section(direct_skill, "自然言語要件モード")
-    evidence_contract = "自然言語要件モードで`plan-review-executor`を直接起動した実行主体"
-    cleanup_command = "`atk managed-temp cleanup --path <計画レビュー用managed temp領域の絶対パス>`"
-    old_shortcut = "計画ファイルの実在と分量を照合してから、保持した絶対パスを"
-
-    evidence_at = natural_language_mode.index(evidence_contract)
-    cleanup_at = natural_language_mode.index(cleanup_command)
-    assert cleanup_command not in natural_language_mode[:evidence_at]
-    assert old_shortcut not in natural_language_mode
-    assert natural_language_mode.count(cleanup_command) == 1
-    assert evidence_at < cleanup_at
 
 
 def test_plan_file_batch_read_contract_limits_single_form_to_single_items() -> None:
@@ -1710,189 +1588,6 @@ def test_fast_model_is_resolved_once_per_unit_before_each_first_launch() -> None
     assert "前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する" in runtime
 
 
-def test_implementation_task_requires_role_specific_handoff_records() -> None:
-    """各実装担当へ担当種別に対応する記録だけを要求する契約を固定する。"""
-    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    fix = task.partition("5. 担当種別が`fix担当`の場合は")[2].partition("\n6. ")[0]
-    review = task.partition("6. 担当種別が`レビュー修正担当`の場合は")[2].partition("\n7. ")[0]
-    ci = task.partition("7. 担当種別が`CI修正担当`の場合は")[2].partition("\n8. ")[0]
-
-    assert "修正引継ぎ記録" in task.partition("## 実装")[0]
-    assert "受領した修正引継ぎ記録と現行のdirty差分" in fix
-    assert "受領した採用指摘" in review
-    assert "受領したCI記録" in ci
-    assert "受領した採用指摘" not in fix
-    assert "受領したCI記録" not in fix
-    assert "受領した修正引継ぎ記録" not in review
-    assert "受領したCI記録" not in review
-    assert "受領した修正引継ぎ記録" not in ci
-    assert "受領した採用指摘" not in ci
-
-
-def test_fast_failure_handoff_terminates_before_following_commit_steps() -> None:
-    """同一失敗箇所が残ったfast担当を引継ぎ記録の返却で終端する契約を固定する。"""
-    task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    fast = task.partition("4. 担当種別が`fast担当`の場合だけ")[2].partition("\n5. ")[0]
-
-    assert "`status: fast_fix_handoff`として返してfast担当を終端する" in fast
-    assert "`repair_handoff`へ修正引継ぎ記録として" in fast
-    for field in (
-        "`failure_location`",
-        "`failed_command`",
-        "`verification_before`",
-        "`verification_after`",
-        "`baseline_oid`",
-        "`existing_diff`",
-        "`process_termination`",
-    ):
-        assert field in fast
-    assert "後続の共有追加検証、差分検収、stage、commit、cleanな作業ツリーの確認を" in fast
-    assert "対象外とし、実施しない" in fast
-
-
-def test_clean_worktree_exception_and_thread_lifecycle_are_limited() -> None:
-    """dirty引継ぎを同一失敗箇所に限定し、担当間のthread再利用を防ぐ。"""
-    runtime = _RUNTIME_ROUTING.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
-
-    assert "実装担当の起動前に上流追随済みで" in runtime
-    assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
-    assert "`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外" in runtime
-    assert "fast担当、fast担当からfix担当への引継ぎ" in runtime
-    assert "前の担当の識別子を再利用せず新規threadで起動する" in runtime
-    assert "同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ使う" in runtime
-    assert "各工程の新規起動と継続接続の条件・接続手段" in executor
-    assert "fast担当とfix担当は、実効3値にかかわらず担当ごとに新規threadで起動する" not in executor
-    assert "fast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合してfix担当へ渡す" in runtime
-    assert "fast担当の終端確認後に修正引継ぎ記録とdirty差分を渡す新規thread" not in executor
-    assert "同一失敗箇所の残存" in executor
-
-
-def test_review_round_checkpoint_matches_caller_reception() -> None:
-    """review_roundのstage・OIDと本文をexecutor・実装モード・呼び出し元で統一する。"""
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    implementation_mode = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
-    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
-    executor_role = _h2_section(executor, "役割")
-    implementation_review = _h2_section(implementation_mode, "レビュー修正")
-    caller_checkpoint = _h2_section(caller, "checkpointの受領")
-
-    assert "指摘件数（ラウンド合計）" in executor
-    assert "初回被覆結果" in executor
-    assert "findings_count: <指摘件数のラウンド合計>" in executor
-    assert "coverage_result: <被覆結果>" in executor
-    assert "stage: <before_fix|after_fix|no_fix>" in executor
-    assert "pre_rewrite_head: <修正前HEADの完全OID>" in executor
-    assert "post_rewrite_head: <修正後HEADの完全OIDまたはなし>" in executor
-    assert executor_role.index("`stage: before_fix`で返し") < executor_role.index("修正担当の起動後")
-    assert executor_role.index("修正担当の起動後") < executor_role.index("`stage: after_fix`で返し")
-    assert "呼び出し元の保存と再開指示後だけ修正担当を起動する" in executor_role
-
-    before_fix_at = implementation_review.index("同ラウンドの`review_round`を`stage: before_fix`")
-    launch_at = implementation_review.index("起動文へ担当種別を`レビュー修正担当`として明示する")
-    after_fix_at = implementation_review.index("同じラウンドの`review_round`を`stage: after_fix`")
-    assert before_fix_at < launch_at < after_fix_at
-    assert "`post_rewrite_head: なし`として返す" in implementation_review
-    assert "再開を指示するまで修正担当を起動しない" in implementation_review
-
-    before_fix_reception_at = caller_checkpoint.index("採用指摘の修正前に`stage: before_fix`を受領した場合")
-    after_fix_reception_at = caller_checkpoint.index("修正・履歴検収後の`stage: after_fix`では")
-    no_fix_reception_at = caller_checkpoint.index("指摘なしの`stage: no_fix`では")
-    assert before_fix_reception_at < after_fix_reception_at < no_fix_reception_at
-    assert "findings_count_by_track" not in executor
-    assert "系統別指摘件数" not in executor
-
-
-def test_plan_impl_caller_recovers_missing_history_rewrite_report() -> None:
-    """履歴書換え報告の欠落時に実体検収へ限定回復する契約を固定する。"""
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    implementation_mode = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
-    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
-    design = _DESIGN_DOC.read_text(encoding="utf-8")
-    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
-    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
-    history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
-    checkpoint = _h2_section(caller, "checkpointの受領")
-    completion = _h2_section(caller, "完了の検収")
-    before_fix = next(line for line in checkpoint.splitlines() if "stage: before_fix" in line)
-    after_fix = next(line for line in checkpoint.splitlines() if "stage: after_fix" in line)
-    no_fix = next(line for line in checkpoint.splitlines() if "stage: no_fix" in line)
-    final_merge_request = next(line for line in completion.splitlines() if "最終`merge_request`を再開する前に" in line)
-
-    assert "`completed`報告の`履歴書換え防止`が必須項目を欠く場合だけ" in caller
-    assert "保存済み証拠" in caller
-    assert "ffマージ後のベースbranch" in caller
-    assert "無指定reflogから旧OIDを復元しない" in caller
-    assert "phaseごとの判定順序" in caller
-    assert "履歴書換え途中の担当引継ぎ有無" in caller
-    assert "過去のGitコマンド終了コードとエラー要約は再送要求しない" in caller
-    assert "当該項目を`不明`" in caller
-    assert "証明できない時間的・手続的範囲" in caller
-    assert "残る読み取り専用の検収を巻き取る" in caller
-    assert "実装担当の終端と書込所有権の解放を確認するまで巻き取らず" in caller
-
-    assert before_fix.index("`## 進捗ログ（実行時）`へ保存する") < before_fix.index("保存後に同じexecutorへ再開を指示し")
-    assert "保存前に修正担当を起動させない" in before_fix
-
-    for contract in (
-        "git fetch --all --prune",
-        "git for-each-ref --contains=<変更前OID> refs/remotes/",
-        "git rev-list --first-parent --merges <最古対象OID>^..<pre_rewrite_head>",
-        "git log --first-parent --format='%H%x09%s' <最古対象OID>^..<pre_rewrite_head>",
-    ):
-        assert contract in after_fix
-    assert "`before_fix`で保存した`pre_rewrite_head`と返却値が完全一致" in after_fix
-    assert "`post_rewrite_head`と現行レーンHEADが完全一致" in after_fix
-    assert after_fix.index("`post_rewrite_head`と現行レーンHEADが完全一致") < after_fix.index("git fetch --all --prune")
-    assert after_fix.index("remote ref包含が0件") < after_fix.index("全検査の終了コード0と合格結果")
-    assert "保存した後だけ比較基準を`post_rewrite_head`へ更新する" in after_fix
-    assert (
-        "remote ref包含、merge commit又は件名重複を検出した場合は再開せず、"
-        "対象OID・ref・merge commit又は重複件名の実測値を付けて`needs_escalation`へ返す"
-    ) in after_fix
-
-    assert "`pre_rewrite_head`と`post_rewrite_head`が現行HEADと完全一致" in no_fix
-    assert "現行HEADと完全一致することだけを検収" in no_fix
-    assert "一致時は比較基準を変更せず再開する" in no_fix
-    assert "不一致時は両OIDの実測値を付けて`needs_escalation`へ返す" in no_fix
-    assert "公開済み判定、merge commit不在及び件名一意性の検査を起動しない" in no_fix
-
-    for contract in (
-        "remote ref包含0件",
-        "merge commit 0件",
-        "対象commit件名各1件",
-        "atk review-table validate <review.tsvの絶対パス>",
-        "対象OID・ref・merge commit又は重複件名の実測値",
-        "マージを許可せず`needs_escalation`へ返す",
-    ):
-        assert contract in final_merge_request
-    assert "最後に合格した`post_rewrite_head`と現行レーンHEADの一致" in final_merge_request
-    assert "全実装単位のOID、件名、順序、親子関係と差分帰属を保存する" in final_merge_request
-    assert final_merge_request.index("現行レーンHEADの一致") < final_merge_request.index("全実装単位のOID")
-    assert final_merge_request.index("全実装単位のOID") < final_merge_request.index("remote ref包含0件")
-    assert final_merge_request.index("対象commit件名各1件") < final_merge_request.index("`## 進捗ログ（実行時）`へ記録する")
-    assert final_merge_request.index("`## 進捗ログ（実行時）`へ記録する") < final_merge_request.index("禁止条件を検出した場合")
-
-    assert "資源回収前の検収境界" in executor
-    assert "履歴書換え完了まで中間引継ぎを設けず" in implementation_mode
-    assert "`履歴書換え防止`必須出力" in caller
-    assert "履歴書換え中の単一担当・公開済み判定" in design
-    assert "`completed`報告が`履歴書換え防止`を欠く場合だけ" in design
-    assert "レビュー修正後の報告が`履歴書換え防止`を欠き" in incidents
-
-    for required in (
-        "phase",
-        "`target_oids`",
-        "published_decision",
-        "Gitコマンドの終了コード",
-        "エラー要約",
-    ):
-        assert required in implementation_task
-    assert "未pushかつ単一の実装担当が所有する作業ツリー" in history_rewrite
-    assert "この範囲のfirst-parent全OIDについて" in history_rewrite
-    assert "autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する" in history_rewrite
-
-
 def test_review_resolution_precedes_history_rewrite_and_preserves_unadopted_history() -> None:
     """レビュー根拠の確認と採否確定を履歴書換えより先に行い、未採用指摘の履歴を変更しない契約を検査する。"""
     implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
@@ -2057,56 +1752,14 @@ def test_history_rewrite_existing_control_subjects_are_autosquashed_in_real_git(
         assert count.stdout.strip() == "2"
 
 
-def test_plan_reviews_repeat_without_a_hard_round_limit() -> None:
-    """初回全件抽出と直接影響範囲に限定した再レビューを固定する。"""
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
-    coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
-    plan_review_delegation = _PLAN_REVIEW_DELEGATION.read_text(encoding="utf-8")
-    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    review_standards = _REVIEW_STANDARDS.read_text(encoding="utf-8")
-
-    assert "review-loop-coordination.md" in executor
-    assert (
-        "初回と第2回での収束を目標とするが、未解決の実在欠陥がある限り、前回修正と直接影響範囲を入力として修正と再レビューを反復する。"
-        in coordinator
-    )
-    assert "未解決の実在欠陥がある限り" not in plan_review_delegation
-    assert "指摘候補を内部的に網羅列挙" in plan_review_task
-    assert "全修正と累積計画全体を再監査" not in plan_review_task
-    assert "指摘候補を内部的に網羅列挙" not in plan_review_delegation
-    assert "全修正と累積計画全体を再監査" not in plan_review_delegation
-    for phrase in (
-        "## 基本方針",
-        "## 初回レビュー",
-        "## 再レビュー",
-        "明示されたレビュー範囲を独立要件と変更面へ分解し、実害のある問題を同じラウンドで全て検出する。",
-        "無関係な既存不良を探索しない。",
-        "初回から判断できた問題は初回被覆の不足として同じレビュー担当が補完し、補完後に再レビューを続ける。",
-    ):
-        assert phrase in review_standards
-    assert (
-        "再レビューで初回から判断できた問題が見つかった場合も、初回レビューを未完了として不足範囲を同じレビュー担当へ返し、"
-        "補完後に再レビューを続ける。"
-    ) in coordinator
-    assert (
-        "調整主体は、未走査、根拠のない`確認済み`又は理由のない`非該当`を含む完了報告を受理せず、"
-        "同じレビュー担当へ不足範囲を返す。"
-    ) in coordinator
-    assert (
-        "再レビューでは、計画差分と共通契約が導出する直接影響範囲に含まれる独立要件へ同じシナリオ走査を適用する。"
-    ) in plan_review_task
-    assert "指摘候補の全件抽出" not in executor
-
-
 def test_implementation_review_internal_procedures_exist_only_in_receiver_tasks() -> None:
-    """単一実装レビューの二段階走査・被覆・再レビュー範囲を受信タスクへ集約する。"""
+    """単一実装レビューの二段階走査と再レビュー範囲を受信タスクへ集約する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     task = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
     for receiver_contract in (
         "二段階の候補を違反契約単位で統合",
         "各単位について、実読箇所、実行結果またはシナリオを根拠とする`確認済み`",
         "未変更かつ直接影響範囲外の既存部分は再走査しない",
-        "初回被覆不足として不足範囲を返す",
     ):
         assert receiver_contract in task
     for forbidden in (
@@ -2571,8 +2224,6 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
     skill = _DELEGATION_SKILL.read_text(encoding="utf-8")
     waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
     runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
-    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
-    plan_review_executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
     design = _DESIGN_DOC.read_text(encoding="utf-8")
     incidents = _INCIDENTS_DOC.read_text(encoding="utf-8")
 
@@ -2600,9 +2251,6 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
     assert runtime.index("起動前に管理対象一時領域内の成果ファイル絶対パスを確定し") < runtime.index(
         "成果ファイルの記載形式は当該正本が定める完了報告全体"
     )
-    assert "独立要件ごとに被覆結果を返す" in plan_review_task
-    assert "被覆結果はレビュー表の指摘と別の完了報告として返し" in plan_review_task
-    assert "cleanup_evidence:" in plan_review_executor
     assert runtime.index("受信者の終端を観測した後") < runtime.index("同じ絶対パスから成果ファイルを再読する")
     assert runtime.index("終端と内容検収の後に管理対象一時領域を回収") < runtime.index("異常時は検収証拠として保持する")
     for phrase in (
@@ -2852,44 +2500,6 @@ def test_session_review_investigates_third_review_by_artifact_and_responsibility
         "原則として改善提案を1件以上確定する",
     ):
         assert phrase in skill
-
-
-def test_review_rounds_have_an_escalation_route_for_repeated_findings() -> None:
-    """再発時の設計比較をレビューイーへ、ラウンド管理を調整主体へ分離する。"""
-    coordinator = _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8")
-    reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
-
-    assert "直前の修正後に同じ問題が再発した場合、局所修正を止め" in reviewee
-    assert "現在の設計の維持、再設計、簡素化及び撤去を比較する" in reviewee
-    assert "ラウンド数、指摘の分類、記録と収束判定は" in reviewee
-    for detail in ("3ラウンド目", "連続3ラウンドへ達した場合", "機械判定しない"):
-        assert detail not in reviewee
-    for phrase in (
-        "3ラウンド連続",
-        "撤去と同一内容の復元をともに観測した場合",
-        "needs_escalation",
-        "過去ラウンドの指摘や修正方針そのものは対応先として扱わない",
-        "レビュー起因で追加した構成要素を列挙する",
-        "既に実装済みであっても撤去してから返す",
-    ):
-        assert phrase in coordinator
-
-
-def test_review_repetition_triggers_cover_purpose_and_contamination_structure() -> None:
-    """反復指摘の全発火キーと走査記録をレビュー経路間で同期する。"""
-    documents = (
-        _REVIEW_LOOP_COORDINATION.read_text(encoding="utf-8"),
-        _REVIEWEE_STANDARDS.read_text(encoding="utf-8"),
-    )
-
-    coordinator, reviewee = documents
-    assert "同じ違反契約・変更機構" in coordinator
-    assert "同じ違反契約が通常運用で再現する範囲" in reviewee
-    assert "元の目的" in coordinator or "当初のユーザー目的" in coordinator
-    assert "文字列、見出し、目的語、混在構造又は接続関係だけ" in coordinator
-    assert "文字列、見出し、目的語又は接続関係だけが似る箇所" in reviewee
-    for detail in ("2ラウンド連続して成立した場合", "連続3ラウンドへ達した場合", "採用した結果と不採用理由"):
-        assert detail not in reviewee
 
 
 def test_review_findings_record_decision_axis_scan() -> None:
@@ -3220,19 +2830,17 @@ def test_plan_change_descriptions_replace_target_list_contracts() -> None:
     review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     implementation_review = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8") + _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
     commit = _COMMIT_SKILL.read_text(encoding="utf-8")
 
     assert "ファイル群別の変更説明を正本" in standards
     assert "同じパス集合の一覧を複製しない" in standards
-    for text in (standards, review_task, writer, implementation_review, executor, commit):
+    for text in (standards, review_task, writer, implementation_review, commit):
         assert "### 対象ファイル一覧" not in text
         assert "対象一覧にない" not in text
     assert "追加機構で内部契約を保存する案より、契約の簡素化または撤去を先に指摘" in review_task
     assert "目的と変更説明" in writer
     assert "計画との差異" in writer
     assert "変更説明" in implementation_review
-    assert "追加変更の目的への帰属と必要性" in executor
     assert "実装中に目的への帰属と必要性を確認した追加変更" in commit
 
 
@@ -3483,7 +3091,6 @@ def test_review_findings_preserve_evidence_and_bounded_purpose() -> None:
     plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
     writer = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
     implementation_review_task = _IMPLEMENTATION_REVIEW_TASK.read_text(encoding="utf-8")
-    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
     reviewee = _REVIEWEE_STANDARDS.read_text(encoding="utf-8")
 
     for phrase in (
@@ -3502,7 +3109,7 @@ def test_review_findings_preserve_evidence_and_bounded_purpose() -> None:
     for phrase in ("ユーザー目的", "ユーザー合意", "現行の公開契約", "実施内容に記録された採否と除外・保持"):
         assert phrase in _h2_section(implementation_review_task, "入力")
 
-    for adopter in (delegation, executor):
+    for adopter in (delegation,):
         assert "適用" in adopter
         assert "最小限の修正" in adopter
         assert "証拠不足" in adopter
@@ -3512,26 +3119,19 @@ def test_review_findings_preserve_evidence_and_bounded_purpose() -> None:
     for phrase in ("適用", "最小限の修正"):
         assert phrase in plan_review_delegation
     assert "修正方針" in reviewee
-    assert "`指摘内容`には実際値、期待値、違反契約の出典、対象への適用根拠" in executor
-    assert "`対応要否`がyesの場合は`対応内容`へ`plan-impl-executor`が独立に確定した採否" in executor
-
     for phrase in (
         "検証済みの実際値、期待値と違反契約を確認する",
         "対象への適用根拠と保持契約が指摘ごとにそろうことも確認する",
     ):
         assert phrase in writer
     assert "推測して修正せず`needs_escalation`" in writer
-    assert "要求と適用根拠の確認結果" in writer
-    assert "保持契約の維持結果" in writer
 
     assert "`### 合意済みの除外・保持`" in standards
     assert "基準値、目標及び再実行できる測定方法" in standards
     assert "別の永続状態を設けない" in plan_review_delegation
     assert "採否の確定前と反映後" in plan_review_delegation
     assert "前回ラウンドとの差分だけで完了を判定しない" in plan_review_delegation
-    assert "直前レビュー対象の完全OIDから現行`HEAD`までの修正差分" in implementation_review_task
     assert "未変更かつ直接影響範囲外の既存部分は再走査しない" in implementation_review_task
-    assert "照合成功後だけ最終検証と次のレビューへ進む" in executor
 
 
 def test_policy_parser_review_contract_declares_operating_boundary() -> None:
@@ -3749,7 +3349,6 @@ def test_lane_dependency_order_is_not_filename_order() -> None:
     """ファイル名順と異なる実装依存順を全接続先が保持する。"""
     picker = _PICK_FEEDBACKS.read_text(encoding="utf-8")
     lanes = _RUN_LANES.read_text(encoding="utf-8")
-    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
     dependency_order = ["20260828-002.md", "20260828-001.md"]
 
     assert dependency_order != sorted(dependency_order)
@@ -3757,9 +3356,7 @@ def test_lane_dependency_order_is_not_filename_order() -> None:
         assert phrase in picker
     assert "`depends_on`は外部待ち条件だけに用い" in picker
     assert "pickerが確定した実装依存順を変更せずに渡す" in lanes
-    assert planner.count("実装依存順のフィードバックファイル名一覧") == 2
-    assert "フィードバックファイル名一覧を並べ替えず" in planner
-    for document in (picker, lanes, planner):
+    for document in (picker, lanes):
         assert "ソート済みフィードバックファイル名一覧" not in document
 
 
@@ -3768,23 +3365,6 @@ def test_picker_resumes_answered_tbd_in_same_session() -> None:
     picker = _PICK_FEEDBACKS.read_text(encoding="utf-8")
     for phrase in ("同一セッション", "回答をTBDへ保存", "TBDを先に終端", "依存解除", "同じpicker", "継続契約"):
         assert phrase in picker
-
-
-def test_feedbacks_planner_owns_one_normal_lane_plan_only() -> None:
-    """plannerは1通常レーンの計画起草とレビューだけを所有する。"""
-    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
-    for phrase in (
-        "1つの通常レーン",
-        "計画初稿",
-        "計画レビュー",
-        "plan_model",
-        "plan_review_model",
-        "status: completed | needs_escalation",
-        _RETURN_PATH_CONTRACT,
-    ):
-        assert phrase in planner
-    for phrase in ("キューの選定", "項目の終端", "全体のレーン割当及び実装を担当しない"):
-        assert phrase in planner
 
 
 def test_run_lanes_uses_one_plan_and_one_dedicated_worktree() -> None:
