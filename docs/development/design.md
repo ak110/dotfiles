@@ -603,7 +603,6 @@ shallow複製への追加防御は、対応する観測事象を得るまで導�
 期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返す。
 初回実装担当と今回routeの実効`engine`、`model`及び`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 autosquash成功後は実装担当が`git rev-parse HEAD`で取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
-調整担当は元の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。
 実装担当は履歴書換え前後の完全OID対応とphaseごとの`rewrite_guard`反復証跡をレビュー表へ保存し、統合前に現行Git実体へ照合する。
 汎用判定の失敗（Gitコマンドの非0終了を含む）は履歴を書き換えず`needs_escalation`で返す。
