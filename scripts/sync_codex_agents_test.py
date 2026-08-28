@@ -179,7 +179,7 @@ def test_current_output_is_synced() -> None:
     assert "自身が起動して識別子（PID）を確認したものに限る。" not in shared_operations
 
     for skill_invocation in (
-        "`agent-toolkit:add-feedback`をSkill機能で起動",
+        "`agent-toolkit:feedback-standards`をSkill機能で起動",
         "`agent-toolkit:plan-and-add-feedback`の実行中",
         "`agent-toolkit:bugfix`が定義する",
         "`agent-toolkit:process-feedbacks`の起動中",

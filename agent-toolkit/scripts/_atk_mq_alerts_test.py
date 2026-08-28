@@ -186,6 +186,12 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
     content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
     assert "alert_keys: github-dependabot:21" in content
     assert "source: alert-monitor" in content
+    assert "# Dependabot未解決アラート1件" in content
+    assert "- 反映内容:" in content
+    assert "- 反映先: `github.com/owner/repo`" in content
+    assert "- 理由:" in content
+    assert "- メリット:" in content
+    assert "- デメリット:" in content
 
 
 def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

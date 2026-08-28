@@ -94,7 +94,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
-レーン自己マージの版数を更新する時点では、`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`を全文読む。
+全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-feedbacks/references/finish-session.md`を全文読む。
 `.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に同ファイルを全文読む。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
 実装資料の変更説明へ記載すべきファイル群を確定する。

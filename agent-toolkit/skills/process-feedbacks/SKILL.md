@@ -9,7 +9,8 @@ description: >
 # フィードバック処理
 
 本スキルは、フィードバック処理を3段階で完遂する入口を提供する。
-新規フィードバックとTBDの投入は`../add-feedback/SKILL.md`を正本とし、本スキルへ投入手順を複製しない。
+フィードバックとTBDの共通概念、由来、状態及び投入は`../feedback-standards/SKILL.md`を正本とし、本スキルへ複製しない。
+ユーザーが手動起動する投入だけは`../add-feedback/SKILL.md`を入口とする。
 
 本スキルの起動中は自律モードとする。ユーザー判断が必要な事項は
 `agent-toolkit/rules/01-agent.md`「協調と自律」節に従う。
@@ -22,6 +23,7 @@ description: >
 ## 実行順
 
 1. ①選定とレーン分け
+   - `normal`を含む全ての実装要求は計画工程へ送り、計画なしの実装経路を設けない。
    - ①を開始するときだけ`references/pick-feedbacks.md`を全文読む。
 2. ②レーンの計画から後始末
    - ①の出力を確定した後、②を開始するときだけ`references/run-lanes.md`を全文読む。

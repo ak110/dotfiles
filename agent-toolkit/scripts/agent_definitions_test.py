@@ -27,8 +27,9 @@ _PLAN_REVIEW_TASK = _PLAN_MODE_REFERENCES / "plan-review-task.md"
 _PLAN_IMPL_TASK = _PLAN_MODE_REFERENCES / "implementation-task.md"
 _IMPLEMENTATION_REVIEW_TASK = _PLAN_MODE_REFERENCES / "implementation-review-task.md"
 _ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "add-feedback" / "SKILL.md"
-_CROSS_REPOSITORY_SUBMISSION = _ADD_FEEDBACK.parent / "references" / "cross-repository-submission.md"
-_TBD_FORMAT = _ADD_FEEDBACK.parent / "references" / "tbd-format.md"
+_FEEDBACK_STANDARDS = _AGENTS_DIR.parent / "skills" / "feedback-standards" / "SKILL.md"
+_CROSS_REPOSITORY_SUBMISSION = _FEEDBACK_STANDARDS.parent / "references" / "cross-repository-submission.md"
+_TBD_FORMAT = _FEEDBACK_STANDARDS.parent / "references" / "tbd-format.md"
 _PROCESS_FEEDBACKS = _AGENTS_DIR.parent / "skills" / "process-feedbacks" / "SKILL.md"
 _PROCESS_FEEDBACKS_REFERENCES = _PROCESS_FEEDBACKS.parent / "references"
 _PICK_FEEDBACKS = _PROCESS_FEEDBACKS_REFERENCES / "pick-feedbacks.md"
@@ -36,7 +37,7 @@ _RUN_LANES = _PROCESS_FEEDBACKS_REFERENCES / "run-lanes.md"
 _FINISH_SESSION = _PROCESS_FEEDBACKS_REFERENCES / "finish-session.md"
 _EXIT_SESSION = _AGENTS_DIR.parent / "skills" / "exit-session" / "SKILL.md"
 _EXIT_SESSION_TERMINATION = _EXIT_SESSION.parent / "references" / "host-and-os-termination.md"
-_MANAGED_TEMP_BULK_SHOW = _ADD_FEEDBACK.parent / "references" / "managed-temp-bulk-show.md"
+_MANAGED_TEMP_BULK_SHOW = _FEEDBACK_STANDARDS.parent / "references" / "managed-temp-bulk-show.md"
 _ATK_MQ_MUTATIONS = _AGENTS_DIR.parent / "scripts" / "_atk_mq_mutations.py"
 _ATK_ENTRYPOINT = _AGENTS_DIR.parent / "scripts" / "atk.py"
 _PLAN_AND_ADD_FEEDBACK = _AGENTS_DIR.parent / "skills" / "plan-and-add-feedback" / "SKILL.md"
@@ -1401,27 +1402,19 @@ def test_plan_contracts_keep_search_ownership_and_progress_timing() -> None:
 
 
 def test_feedback_source_passthrough_and_storage_verification_contract() -> None:
-    """source指定時だけCLIへ値を渡し、保存後に既存show経路で照合する。"""
+    """sourceの既定由来と要求単位の例外を分離し、保存後に照合する。"""
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    standards = _FEEDBACK_STANDARDS.read_text(encoding="utf-8")
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
     session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
 
-    assert "sourceを受領又は確定した場合は同じ値を" in add_feedback
-    assert "`atk mq add --source=<source>`へ渡す" in add_feedback
-    assert "エージェント自身が投入元で人間由来の指示が無い場合は、`source`を必須とし" in add_feedback
-    assert "生成経路名を持つ起票は当該経路名（`session-review`・`alert-monitor`）を用い" in add_feedback
-    assert "経路名を持たない起票は`agent`を用いる" in add_feedback
-    assert "手動起動した投入と、対話中のユーザー指示による登録は人間由来とし、`human`を用いる" in add_feedback
-    assert "エージェント自身の投入で人間由来の指示が無い場合は、確定したsourceを省略しない" in add_feedback
-    assert "ユーザー発話を原文とする投入でsourceを受領していない場合は`--source`を省略" in add_feedback
-    assert "`atk mq show <filename> --target-repo=<repo-path> --skip-pull`" in add_feedback
-    assert "frontmatterのsourceが入力値と一致することを照合" in add_feedback
-    assert "照合対象のsourceが欠落しているか入力値と一致しない場合は完了扱いにせず" in add_feedback
-    assert "ユーザー発話を原文とする投入でsourceを受領していない場合は追加のsource照合をしない" in add_feedback
-    assert "エージェント自身が投入元で人間由来の指示が無い場合は、sourceを確定して保存し" in add_feedback
-    assert "手順8のsource照合後" in add_feedback
-    assert "手順7のsource照合後" not in add_feedback
-    assert "source `plan`（人間由来）を明示" in plan_and_add
+    assert "`source`欠落と`human`だけを既定で人間由来" in standards
+    assert "`plan`を含むその他の値は既定でエージェント由来" in standards
+    for phrase in ("## ユーザーコメント", "TBDの`## 回答`", "関連計画の実施内容", "出所と引用範囲を保持した対話回答"):
+        assert phrase in standards
+    assert "指定済み`source`" in standards
+    assert "ユーザー発話を原文とする投入で`source`を受領していない場合は推測しない" in add_feedback
+    assert "source `plan`と要求単位の由来" in plan_and_add
     assert "source `session-review`を明示" in session_review
 
 
@@ -2948,31 +2941,89 @@ def test_merge_pr_uses_compact_output_for_all_run_watches() -> None:
     assert failure_handling.index(failure_log_contract) < failure_handling.index(report_contract)
 
 
-def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
-    """対話・非対話の投入契約をadd-feedbackへ集約する。"""
-    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8") + _TBD_FORMAT.read_text(encoding="utf-8")
+def test_feedback_standards_owns_common_submission_contract() -> None:
+    """共通知識と投入契約をfeedback-standardsへ集約する。"""
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    standards = _FEEDBACK_STANDARDS.read_text(encoding="utf-8") + _TBD_FORMAT.read_text(encoding="utf-8")
     plan_and_add = _PLAN_AND_ADD_FEEDBACK.read_text(encoding="utf-8")
 
-    assert "投入するすべての経路で起動" in add_feedback
+    assert "disable-model-invocation: true" in add_feedback
     assert "完成済み本文は問い直さず" in add_feedback
-    assert "通常型の主題だけを受け取った場合" in add_feedback
-    assert "技術主張に該当する証拠集合を調査" in add_feedback
-    assert "投入元の証拠を同じ対象と主張へ照合" in add_feedback
-    assert "ユーザー依存事項は確認又はTBDへ分離" in add_feedback
-    assert "技術的未確定が通常型本文へ残っていない" in add_feedback
-    assert "`../plan-mode/SKILL.md`の調査成果を証拠として再利用" in add_feedback
+    assert "ユーザー依存事項を対話で確定" in add_feedback
     assert "正確なローカルworktreeが既知" in add_feedback
-    assert "その絶対パスを`atk mq add --target-repo`へ渡し" in add_feedback
-    assert "正規の対象リポジトリと作成時点のHEAD完全OID" in add_feedback
     assert "利用できるローカルworktreeがない場合だけURL" in add_feedback
-    assert "worktreeを推測せず" in add_feedback
+    assert "worktreeを推測しない" in add_feedback
     assert "processing項目を変更していない" in add_feedback
-    assert "全TBDは、回答者が回答対象を識別できる疑問文を1文以上含める" in add_feedback
-    assert "`--question-type=choice`では選択肢の提示を問いとして扱う" in add_feedback
-    assert "本文だけで判断できるよう、対象、背景及び判断根拠を含める" in add_feedback
-    assert "識別子は対象との関係を示す文脈語とともに用い" in add_feedback
-    assert "`agent-toolkit:add-feedback`をSkill機能で起動" in plan_and_add
+    assert "全TBDは、回答者が回答対象を識別できる疑問文を1文以上含める" in standards
+    assert "`--question-type=choice`では選択肢の提示を問いとして扱う" in standards
+    assert "本文だけで判断できるよう、対象、背景及び判断根拠を含める" in standards
+    assert "識別子は対象との関係を示す文脈語とともに用い" in standards
+    for field in ("反映内容", "反映先", "理由", "メリット", "デメリット"):
+        assert f"- {field}:" in standards
+    assert "`agent-toolkit:feedback-standards`をSkill機能で起動" in plan_and_add
+    assert "`agent-toolkit:add-feedback`をSkill機能で起動" not in plan_and_add
     assert "`atk mq add`を実行" not in plan_and_add
+
+
+def test_feedback_standards_covers_origin_approval_state_and_duplicates() -> None:
+    """由来、承認、状態、不採用及び条件付き重複判定を共通規範へ固定する。"""
+    standards = _FEEDBACK_STANDARDS.read_text(encoding="utf-8")
+    picker = _PICK_FEEDBACKS.read_text(encoding="utf-8")
+    lanes = _RUN_LANES.read_text(encoding="utf-8")
+    planner = _FEEDBACKS_PLANNER.read_text(encoding="utf-8")
+
+    for value in (
+        "`normal`",
+        "`plan`",
+        "`inbox`",
+        "`planning`",
+        "`processing`",
+        "`editing`",
+        "`hold`",
+        "`adopted`",
+        "`rejected`",
+        "`ready`",
+        "`blocked`",
+        "`active`",
+        "`processable`",
+    ):
+        assert value in standards
+    for phrase in (
+        "元項目を`inbox`かつ`blocked`で保持",
+        "確認未了で`rejected`へ終端しない",
+        "エージェント由来だけの独立した要求",
+        "外部操作、対象及び範囲が明記",
+        "`source`値だけの場合、空のコメント欄、エージェントの推奨、一般的な「進めて」は承認にしない",
+        "技術的失敗、入力不足、外部条件待ち又は計画不備",
+        "対象、期待結果、観測事象、根本原因及び必要な処置",
+        "既存項目が全てを覆う場合は新規投入せず既存ファイル名を再利用",
+        "部分的に覆う場合は未被覆部分だけを投入",
+        "ユーザーが手動起動した`add-feedback`、`plan-and-add-feedback`、TBD及び移行・復元",
+    ):
+        assert phrase in standards
+    assert "`plan`を含むその他の値を既定でエージェント由来" in picker
+    assert "要求単位の由来及び不採用確認結果" in lanes
+    assert "要求単位の由来、採否" in planner
+
+
+def test_feedback_standards_is_the_only_common_format_owner() -> None:
+    """移動資料と固定本文形式の正本をfeedback-standardsだけに置く。"""
+    standards = _FEEDBACK_STANDARDS.read_text(encoding="utf-8")
+    add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8")
+    session_review = _SESSION_REVIEW.read_text(encoding="utf-8")
+
+    assert _CROSS_REPOSITORY_SUBMISSION.is_file()
+    assert _TBD_FORMAT.is_file()
+    assert _MANAGED_TEMP_BULK_SHOW.is_file()
+    assert not (_ADD_FEEDBACK.parent / "references" / "tbd-format.md").exists()
+    assert not (_ADD_FEEDBACK.parent / "references" / "cross-repository-submission.md").exists()
+    assert not (_ADD_FEEDBACK.parent / "references" / "managed-temp-bulk-show.md").exists()
+    assert "`agent-toolkit:feedback-standards`" in add_feedback
+    assert "`agent-toolkit:feedback-standards`" in session_review
+    for field in ("反映内容", "反映先", "メリット", "デメリット"):
+        assert f"- {field}:" in standards
+        assert f"- {field}:" not in add_feedback
+        assert f"- {field}:" not in session_review
 
 
 def test_add_feedback_requires_bugfix_depth_and_decision_record_contracts() -> None:
@@ -2981,25 +3032,18 @@ def test_add_feedback_requires_bugfix_depth_and_decision_record_contracts() -> N
     procedure = _h2_section(add_feedback, "手順")
     completion = _h2_section(add_feedback, "完成条件")
 
-    evidence_at = procedure.index("3. 通常型は、適用規範")
-    bugfix_at = procedure.index("観測した欠陥を起点とする通常型本文")
     writing_at = procedure.index("本文の起草前に`agent-toolkit:writing-standards`")
-    assert evidence_at < bugfix_at < writing_at
+    evidence_at = procedure.index("主題だけを受け取った通常フィードバック")
+    bugfix_at = procedure.index("観測した欠陥を起点とする通常フィードバック")
+    assert writing_at < evidence_at < bugfix_at
     for phrase in (
-        "`git log -S`で当該記述を導入した変更を特定",
-        "`adopted/`にある対応するキュー項目の本文とユーザー追記を確認",
-        "ユーザーの逐語指示の有無を証拠へ含める",
-        "この追加確認は当該主張を含む本文に限って適用し、他の投入へ確認工程を課さない",
-        "`agent-toolkit:bugfix`の「初動と深掘り判定」を適用",
-        "TBDは判断を求める問いであり、原因分析の対象外とする",
-        "深掘り条件に該当する場合だけ同スキルをSkill機能で起動する。",
+        "`git log -S`で導入変更を特定",
+        "対応する採用済み項目とユーザー追記を確認",
+        "`agent-toolkit:bugfix`の初動と深掘り判定を適用",
+        "TBDは原因分析の対象にしない",
     ):
         assert phrase in procedure
-    assert (
-        "深掘り条件に該当する通常型本文が4原因区分、原因起点の類似見直し、是正・横展開・再発防止の3処置の結果を含んでいる"
-        in completion
-    )
-    assert "ユーザーの逐語指示の有無を含む決定記録の確認を完了している" in completion
+    assert "該当する場合の原因分析及び決定記録を確認済み" in completion
     assert "該当しないと判定した根拠" not in add_feedback
 
 

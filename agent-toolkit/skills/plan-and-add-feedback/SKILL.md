@@ -9,6 +9,7 @@ description: >
 
 本スキルは、レビュー済み計画を後続処理へ引き継ぐ手順を提供する。本スキルはplan mode外で実行する。計画ファイルの作成・改訂と
 フィードバック投入以外の変更を対象リポジトリへ加えない。
+フィードバックの共通概念、本文、由来及び投入は`agent-toolkit:feedback-standards`を正本とする。ユーザー起動経路では条件付き重複判定を実行しない。
 
 本スキルを起動したセッションの追加指示は、同一主題の計画本文又は計画型フィードバックへ反映する。
 対象リポジトリは実装しない。
@@ -33,7 +34,7 @@ description: >
 3. 計画作成、レビュー及び確認待ちの再開では、入力として確定した対象worktreeの絶対パスを保持する。計画時の旧worktreeパスが本文に残っていても、実行時に渡された対象worktreeへ解決し、対象外のworktreeを操作しない。
 4. 計画レビューまで完了した後、最古の項目だけを対象に、
    `atk mq edit <oldest> <message> --plan-file=<main-plan-absolute-path> --depends-on=<filename>... --target-repo=<repo>`を実行する。
-   `message`は計画型feedback本文とし、依存は全入力の外部依存を初出順で統合して対象自身を除く。絶対かつ実在するメイン計画パス、計画のベースcommit及び`source: plan`を同じ原子的編集で保存する。
+   `message`は計画型feedback本文とし、依存は全入力の外部依存を初出順で統合して対象自身を除く。絶対かつ実在するメイン計画パス、計画のベースcommit、`source: plan`及び計画へ記録した要求単位の由来を同じ原子的編集で保存する。
 5. 最古の変換結果を再取得し、`source`、本文、`plan_file`、`target_commit`、依存及びinbox配置を照合する。planningに残る項目が1件以上なら、統合先ファイル名と計画パスをnoteへ記録した1回の`atk mq rm <filename>... --force --note=<統合先ファイル名と計画パス>`で残りだけを除去する。単一入力で残りが0件ならrmを呼ばない。
 6. 計画型編集前に中断した場合は、全対象を`atk mq return-to-inbox <filename>... --state=planning`で一括して戻す。変換開始後は最古の項目を戻さず、現在の差分、upstream包含、保存本文及びplanning件数を再取得して、滞留commitのpush又は未完了のrmだけを前方回復する。対象外差分又は別項目のprocessing移動を検出した場合は追加操作を止める。
 
@@ -42,16 +43,16 @@ description: >
 ## 自然言語要件モード
 
 1. 作業途中で本スキルが起動された場合は、現時点までの調査結果を計画へ引き継ぎ、実装せずフィードバック投入でセッションを完了する意図として扱う。既存の未コミット差分を変更せず、確認済みの事実だけを計画へ再利用する。
-2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/add-feedback/references/cross-repository-submission.md`も全文読む。
+2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/feedback-standards/references/cross-repository-submission.md`も全文読む。
 3. 計画に使うworktreeの絶対パスとbase commitを保持する。
 4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
    起草完了後、実行主体が`atk managed-temp create --prefix plan-review-baseline`を単独で実行し、標準出力の絶対パスを保持する。その絶対パスを含めて`plan-review-executor`を起動する。
    計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と提示素材の出所・引用範囲を渡し、計画構造検査・自己監査・レビュー担当の起動・指摘の配送・修正の検収・収束判定を委譲する。
    起動後は計画ファイルの書込所有権が`plan-review-executor`配下の計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`status: completed`時の回収は、後段の`cleanup_evidence`必須検収に従う。
-5. 完成後、実行主体が`agent-toolkit:add-feedback`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan`（人間由来）、依存及び吸収元のファイル名を渡す。新しい計画型のフィードバックを追加する。
+5. 完成後、実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
 
-計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:add-feedback`をSkill機能で起動し、source `plan`（人間由来）を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
+計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
 自然言語要件モードで`plan-review-executor`を直接起動した実行主体は、`status: completed`で`cleanup_evidence`を受信する。受信する`cleanup_evidence`の項目は`plan`、`managed_temp`、`rereview_count`、`baseline_not_saved`、`rounds`を含む。
 `rounds`の各要素は`round`、`target_plan`、`previous_files`を含む。`previous_files`の各要素は`path`、`bytes_after_save`、`sha256_after_save`、`bytes_before_rereview`、`sha256_before_rereview`、`mechanical_diff`を含む。
@@ -60,8 +61,8 @@ description: >
 再レビュー1回以上では、`baseline_not_saved: false`であり、`rereview_count`と`rounds`の要素数が一致することを照合する。各再レビューについて保存した全前回版、保存直後と再レビュー直前のバイト数・SHA-256、機械差分の検収結果が当該計画、現存する前回版と該当ラウンドへ対応することも照合する。`verified: true`も必須とする。
 計画ファイルの実在と分量の照合だけでは回収前照合の成功としない。`cleanup_evidence`と必須項目が揃い、該当する回収前照合に成功した場合に限り、保持した絶対パスを`atk managed-temp cleanup --path <計画レビュー用managed temp領域の絶対パス>`へ渡して回収する。欠落、不一致、中断又は失敗時は領域を保持し、計画レビューを成功として扱わない。
 
-本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文をadd-feedbackへ渡した後は問い直さない。
+本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`feedback-standards`へ渡した後は問い直さない。
 
 ## 完了報告の形式
 
-手順6の完了報告は`../add-feedback/SKILL.md`「セッション主タスクとしての完了報告」の構成を正本とし、`## 成果`へ`計画`と`吸収元`の2項目を加える。種別は`計画型`とする。
+投入したフィードバックファイル名、計画ファイル、吸収元、対象リポジトリ及び実装へ着手していないことを報告する。種別は`計画型`とする。
