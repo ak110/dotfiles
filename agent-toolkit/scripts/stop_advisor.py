@@ -151,7 +151,11 @@ def main(payload_text: str) -> int:
     # 構造的にセッション継続中ならapprove。
     # 非同期待機ツールまたは未完了background task（Agent・Bash・MCP）が存在するケース。
     # ホスト（Claude Code・Codex）を問わず同じ判定を適用する。
-    if is_pending_async_work(transcript_path, session_id):
+    if is_pending_async_work(
+        transcript_path,
+        session_id,
+        background_tasks=payload.get("background_tasks"),
+    ):
         append_stop_log(session_id, "approve_pending_async", {})
         _approve()
         return 0

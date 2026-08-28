@@ -256,6 +256,36 @@ class TestApproveConditions:
         assert "decision" not in decision
         assert "systemMessage" not in decision
 
+    def test_background_tasks_payload_approves(self, tmp_path: pathlib.Path):
+        """transcriptに起動痕跡が無くてもStop payloadのtaskが未完了ならapproveする。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {
+                "session_id": "payload-pending",
+                "transcript_path": str(transcript),
+                "background_tasks": [{"type": "subagent", "id": "agent-restarted"}],
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    def test_empty_background_tasks_preserve_review_path(self, tmp_path: pathlib.Path):
+        """空のStop payloadでは現行の振り返り誘導判定へ戻る。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        _write_state(tmp_path, "payload-empty", {"process_feedbacks_skill_invoked": True})
+        result = _run(
+            {
+                "session_id": "payload-empty",
+                "transcript_path": str(transcript),
+                "background_tasks": [],
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+        assert _SESSION_REVIEW_SKILL in _block_reason(decision)
+
     def test_pending_mcp_background_task_approves(self, tmp_path: pathlib.Path):
         """MCPタイムアウトで背景化したタスクも完了通知まで`approve`する。"""
         transcript = _write_transcript(

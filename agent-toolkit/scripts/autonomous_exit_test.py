@@ -117,6 +117,34 @@ class TestApproveConditions:
         decision = _parse_decision(result)
         assert "decision" not in decision
 
+    def test_background_tasks_payload_approves(self, tmp_path: pathlib.Path):
+        """transcriptに起動痕跡が無くてもStop payloadのtaskが未完了ならapproveする。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {
+                "session_id": "payload-pending",
+                "transcript_path": str(transcript),
+                "background_tasks": [{"type": "subagent", "id": "agent-restarted"}],
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    def test_empty_background_tasks_preserve_block_path(self, tmp_path: pathlib.Path):
+        """空のStop payloadでは現行の終了工程再促へ戻る。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {
+                "session_id": "payload-empty",
+                "transcript_path": str(transcript),
+                "background_tasks": [],
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+
     def test_autonomous_exit_invoked_approves(self, tmp_path: pathlib.Path):
         """`autonomous_exit_invoked`フラグが真ならapproveする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])

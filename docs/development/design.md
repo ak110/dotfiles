@@ -769,17 +769,17 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/skills/process-f
 成果物の直接検査、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
-Stopの未完了判定は`agent-toolkit/scripts/_stop_gate.py`の共有`is_pending_async_work`を生産者とする。
-`agent-toolkit/scripts/stop_advisor.py`、`agent-toolkit/scripts/autonomous_exit.py`及び`scripts/claude_hook_stop_bell.py`の3消費者が同じ真偽を利用する。
+トップレベルStopの未完了非同期作業は`_stop_gate.is_pending_async_work`を単一の判定元とする。Claude CodeのStop入力に有効な`background_tasks`がある場合は、`teammate`を除くtaskの存在を現在の未完了作業として扱い、transcriptから復元した起動・完了差分とOR結合する。フィールドが無い旧ホストとCodexではtranscript推論だけを用いる。完了済みsubagentが通知又はSendMessageで同じIDのまま再開する経路を親transcriptの新規起動だけで推定しない。
 共有判定器は`CronCreate`を非同期待機系として扱い、`CronCreate`後のStopでも機械的な完了通知を待つ経路を維持する。
 `ScheduleWakeup`の判定は`/loop`専用の既存契約として残し、Cronの作成・再利用・照合・削除をフックの永続状態へ移さない。
 最上位Stopはpayloadの`transcript_path`から生JSONLを読み、同じstemの`subagents`配下にある固定名
 `agent-*.jsonl`をmetadataの親子関係で直接の子に限定して読む。直接の子の記録にあるAgent起動を孫起動として起動集合へ加え、
-最上位生transcriptの`queue-operation`で`operation`が`enqueue`又は`remove`の完了通知をtool-use-id又はtask-idで相殺する。
+最上位生transcriptの`queue-operation`で`operation`が`enqueue`若しくは`remove`である完了通知を、tool-use-id又はtask-idで相殺する。
 子記録の不在・破損・無関係な親子関係は最上位transcriptの既存判定を維持し、Hookが追加の永続状態を作成しない。
 
 最上位生transcriptの`queue-operation`を読む処理は、LLM実行主体が完了通知を受領・中継する委譲契約とは別のHook観測面である。
-LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ子孫待機のblockを復活させる案及びCodexの未確定transcript構造へ同じ探索を広げる案は採用しない。
+`SubagentStop`は子孫の未完了を理由にblockしない。親終了と子完了の循環待ちを避け、背景作業中の振り返り誘導、自律終了再促及びベルの抑止はトップレベルStopだけで行う。
+LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ子孫待機のblockを復活させる案、Codexの未確定transcript構造へ同じ探索を広げる案は採用しない。
 
 フックは現在の入力ペイロード、対象ファイル及びセッション状態だけを知る。
 利用者の意図、会話全体の意味又は工程の技術的な妥当性は判断しない。

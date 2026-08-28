@@ -123,6 +123,32 @@ class TestSilentConditions:
         )
         assert "terminalSequence" not in _output(result)
 
+    def test_background_tasks_payload_is_silent(self, tmp_path: pathlib.Path):
+        """transcriptに起動痕跡が無くてもStop payloadのtaskが未完了ならベルを鳴らさない。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
+        result = _run(
+            {
+                "session_id": "payload-pending",
+                "transcript_path": str(transcript),
+                "background_tasks": [{"type": "subagent", "id": "agent-restarted"}],
+            },
+            state_dir=tmp_path,
+        )
+        assert "terminalSequence" not in _output(result)
+
+    def test_empty_background_tasks_preserve_ring_path(self, tmp_path: pathlib.Path):
+        """空のStop payloadでは現行のベル判定へ戻る。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
+        result = _run(
+            {
+                "session_id": "payload-empty",
+                "transcript_path": str(transcript),
+                "background_tasks": [],
+            },
+            state_dir=tmp_path,
+        )
+        assert _output(result).get("terminalSequence") == _BELL
+
     def test_invalid_json_is_silent(self, tmp_path: pathlib.Path):
         result = _run("not json", state_dir=tmp_path)
         assert result.returncode == 0

@@ -339,6 +339,9 @@
   直接原因: 最上位transcriptだけを走査し、直接の子記録にある孫起動と、最上位の`queue-operation`にある完了通知を同じ集合へ統合していなかった。
   対策: 共有Stop判定器が固定された子記録から孫起動とtask-id対応を収集し、最上位生transcriptの`enqueue`・`remove`完了通知で相殺する。
   LLM実行主体への完了通知配送契約とは観測面を分離し、`SubagentStop`の子孫blockは復活させない
+- 2026年8月: 直接子がいったんCompletedを返した後、孫の完了通知又はSendMessageで同じagent IDのまま自動再開しても、親transcriptには新しい起動イベントが無く、Stopが未完了0件としてセッション振り返りを誘導した。
+  対策: Stop入力の`background_tasks`にある非`teammate` taskを現在状態の根拠として共有判定へ接続し、transcript推論は旧ホストとCodexの互換経路として併用する。
+  `SubagentStop`の子孫blockは循環待ちを再発させるため復元しない
 - 2026年8月28日: 複数レーンの計画レビュー中に、先に完了した計画担当へ指摘を返す時点で30分の結果保持期限を超え、`send_message`が`session retention expired`を返して同一会話を再開できなかった。
   直接原因: Codexの`thread/resume`とClaude Agent SDKの`resume`は保持中sessionの内部replyだけから利用でき、期限切れ後に呼び出し元の正確な識別子から到達する公開入力がなかった。
   背景原因: 初期移行時に結果本体とClaude接続の有限時間回収だけを検証し、長時間オーケストレーションが保持期限後も同じ担当へ指摘を返す利用シナリオを契約テストへ含めなかった。

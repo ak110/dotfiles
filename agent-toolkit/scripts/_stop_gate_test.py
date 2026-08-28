@@ -522,6 +522,73 @@ class TestIsPendingAsyncWork:
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "") is expected
 
+    @pytest.mark.parametrize(
+        ("background_tasks", "expected"),
+        [
+            ([], False),
+            ([{"type": "teammate", "id": "team-1"}], False),
+            ([{"type": "subagent", "status": "completed"}], True),
+            ([{"type": "shell"}, {"type": "monitor"}, {"type": "workflow"}], True),
+            ([{"type": "cloud session"}, {"type": "MCP task"}, {"type": "future-type"}], True),
+            ([{"type": "teammate"}, {"type": "subagent"}], True),
+            ([{}, {"type": ""}, {"type": 1}, "subagent", None], False),
+            ({"type": "subagent"}, False),
+        ],
+        ids=[
+            "empty",
+            "teammate-only",
+            "subagent-status-ignored",
+            "known-types",
+            "unknown-types",
+            "mixed",
+            "invalid-elements",
+            "non-list",
+        ],
+    )
+    def test_background_tasks_are_used_as_current_pending_state(
+        self, tmp_path: pathlib.Path, background_tasks: object, expected: bool
+    ) -> None:
+        """有効な非`teammate` taskだけをStop時点の未完了根拠として扱う。"""
+        transcript = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
+        assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks) is expected
+
+    def test_background_tasks_preserve_transcript_result(self, tmp_path: pathlib.Path) -> None:
+        """空一覧又は`teammate`だけの場合はtranscriptの未完了判定を維持する。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _user_async_launched_entry("toolu_bg1"),
+                _user_entry("続き"),
+                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+            ],
+        )
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is True
+        assert is_pending_async_work(str(transcript), "", background_tasks=[{"type": "teammate"}]) is True
+
+    def test_background_tasks_cover_auto_restart_after_completed_transcript(self, tmp_path: pathlib.Path) -> None:
+        """完了通知後に同じIDで再開したtaskをpayloadから未完了として扱う。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_entry("hello"),
+                _user_async_launched_entry("toolu_bg1"),
+                _user_task_notification_entry("toolu_bg1"),
+                _user_entry("続き"),
+                _assistant_entry([{"type": "text", "text": _TEXT}]),
+            ],
+        )
+        assert is_pending_async_work(str(transcript), "") is False
+        assert (
+            is_pending_async_work(
+                str(transcript),
+                "",
+                background_tasks=[{"type": "subagent", "id": "agent-restarted", "status": "running"}],
+            )
+            is True
+        )
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
+
     @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
     def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
         """`<status>`の値が`completed`／`failed`／`cancelled`のいずれでも完了扱い。"""
@@ -1168,6 +1235,9 @@ class TestDebugOutput:
         assert "launched=0" in captured.err
         assert "pending=0" in captured.err
         assert "pending_ids=-" in captured.err
+        assert "payload_valid=0" in captured.err
+        assert "payload_non_teammate=0" in captured.err
+        assert "source=none" in captured.err
 
     @pytest.mark.parametrize("value", ["0", "false", "no", "off", ""])
     def test_no_output_when_env_falsy(
@@ -1203,6 +1273,36 @@ class TestDebugOutput:
         assert "launched=2" in captured.err
         assert "pending=1" in captured.err
         assert "pending_ids=toolu_bg2" in captured.err
+        assert "payload_valid=0" in captured.err
+        assert "payload_non_teammate=0" in captured.err
+        assert "source=transcript" in captured.err
+
+    def test_output_with_background_tasks_omits_task_body(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """payload taskの件数と判定源だけを出力し、任意フィールドを記録しない。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])],
+        )
+        is_pending_async_work(
+            str(transcript),
+            "",
+            background_tasks=[
+                {"type": "teammate", "id": "ignored-team"},
+                {"type": "subagent", "id": "secret-agent", "description": "secret-description"},
+                {"type": "shell", "status": "completed"},
+                {"id": "invalid", "description": "secret-invalid"},
+            ],
+        )
+        captured = capsys.readouterr()
+        assert "payload_valid=3" in captured.err
+        assert "payload_non_teammate=2" in captured.err
+        assert "source=background_tasks" in captured.err
+        assert "secret-agent" not in captured.err
+        assert "secret-description" not in captured.err
+        assert "secret-invalid" not in captured.err
 
     def test_output_with_background_bash(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch

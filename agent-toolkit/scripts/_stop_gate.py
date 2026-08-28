@@ -1,10 +1,11 @@
 """Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
 
-判定はtranscript JSONLの内容のみを根拠とする。
+Claude CodeのStop入力に`background_tasks`が含まれる場合は、現在の非`teammate` taskを判定へ加える。
+フィールドが無い旧ホストとCodexでは、transcript JSONLから復元した判定へフォールバックする。
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 
-background task起動の検出条件は次の4種を統合して扱う。
+transcript上のbackground task起動の検出条件は次の4種を統合して扱う。
 - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
   `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent初回起動）
 - `toolUseResult.backgroundTaskId`が文字列として存在する（背景Bash起動）
@@ -44,7 +45,7 @@ SubagentStop判定ではsidechainを含める。
 `{tempdir}/claude-agent-toolkit-stop-{session_id}.log`へ1行ずつ追記し、
 1MB超過時に`.log.1`へ1世代ローリングする。詳細stderr出力は
 環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみ発火するDEBUG相当
-（last_tool・launched・pending・pending_ids）で、原因切り分け用途に限定する。
+（last_tool・launched・pending・pending_ids・payload task件数・判定源）で、原因切り分け用途に限定する。
 """
 
 import collections.abc
@@ -101,7 +102,23 @@ _TASK_STOP_SUCCESS_PREFIX = "Successfully stopped task"
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
 
-def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
+def _describe_background_tasks(background_tasks: object) -> tuple[int, int]:
+    """Stop入力の有効なtask件数と非`teammate`件数を返す。"""
+    if not isinstance(background_tasks, list):
+        return 0, 0
+    valid_tasks = [
+        task for task in background_tasks if isinstance(task, dict) and isinstance(task.get("type"), str) and task["type"]
+    ]
+    non_teammate_tasks = sum(task["type"] != "teammate" for task in valid_tasks)
+    return len(valid_tasks), non_teammate_tasks
+
+
+def is_pending_async_work(
+    transcript_path: str,
+    session_id: str,
+    *,
+    background_tasks: object = None,
+) -> bool:
     """セッションが構造的に継続中の場合に真を返す。
 
     以下のいずれかの場合に真を返す。
@@ -109,7 +126,12 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
       `CronCreate`・`Monitor`、または`Bash`かつ`input.run_in_background == true`）
     - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
 
-    後者はtranscript全体を走査して判定する。
+    Stop入力の`background_tasks`がlist中に有効な非`teammate` taskを含む場合も真を返す。
+    個別taskの`status`その他の任意フィールドは判定に使わない。
+    `background_tasks`のフィールド欠落・不正入力・空list・有効な`teammate`だけの場合は、
+    transcriptから復元した判定を維持する。
+
+    transcript由来の後者はtranscript全体を走査して判定する。
     起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
     - `toolUseResult.status == "async_launched"`、又は対応するAgent・Taskの`tool_result`本文に
       `_AGENT_ASYNC_LAUNCH_MARKER`を含み、同期完了statusでない（背景Agent起動）
@@ -156,9 +178,26 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
         transcript_path=transcript_path,
     )
     remainder = launched - completed
-    pending = last_async or bool(remainder)
+    payload_valid, payload_non_teammate = _describe_background_tasks(background_tasks)
+    pending_sources: list[str] = []
+    if payload_non_teammate:
+        pending_sources.append("background_tasks")
+    if last_async:
+        pending_sources.append("last_tool")
+    if remainder:
+        pending_sources.append("transcript")
+    source = "+".join(pending_sources) if pending_sources else "none"
+    pending = bool(last_async or remainder or payload_non_teammate)
     last_tool = _describe_last_tool_use(last_tool_use)
-    _emit_debug(pending, last_tool, launched, completed)
+    _emit_debug(
+        pending,
+        last_tool,
+        launched,
+        completed,
+        payload_valid=payload_valid,
+        payload_non_teammate=payload_non_teammate,
+        source=source,
+    )
     append_stop_log(
         session_id,
         "is_pending_async_work_result",
@@ -168,6 +207,9 @@ def is_pending_async_work(transcript_path: str, session_id: str) -> bool:
             "launched": len(launched),
             "pending": len(remainder),
             "pending_ids": ",".join(sorted(remainder)[:3]) if remainder else "-",
+            "payload_valid": payload_valid,
+            "payload_non_teammate": payload_non_teammate,
+            "source": source,
         },
     )
     return pending
@@ -255,11 +297,21 @@ def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], Non
     return session_id, payload
 
 
-def _emit_debug(result: bool, last_tool: str, launched: set[str], completed: set[str]) -> None:
+def _emit_debug(
+    result: bool,
+    last_tool: str,
+    launched: set[str],
+    completed: set[str],
+    *,
+    payload_valid: int,
+    payload_non_teammate: int,
+    source: str,
+) -> None:
     """環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみstderrへ判定根拠を1行出力する。
 
     出力形式は`key=value`空白区切りとする。
-    Stop hookの誤判定時にlast_tool_use名・launched件数・残差件数・残差ID先頭3件から原因を切り分けるために用いる。
+    Stop hookの誤判定時にlast_tool_use名・transcriptの起動と残差・payloadのtask件数及び判定源から
+    原因を切り分けるために用いる。
     """
     raw = os.environ.get("AGENT_TOOLKIT_STOP_GATE_DEBUG", "")
     if raw.lower() not in _DEBUG_TRUTHY_VALUES:
@@ -268,7 +320,8 @@ def _emit_debug(result: bool, last_tool: str, launched: set[str], completed: set
     head_ids = ",".join(sorted(remainder)[:3]) if remainder else "-"
     print(
         f"_stop_gate result={result} last_tool={last_tool} "
-        f"launched={len(launched)} pending={len(remainder)} pending_ids={head_ids}",
+        f"launched={len(launched)} pending={len(remainder)} pending_ids={head_ids} "
+        f"payload_valid={payload_valid} payload_non_teammate={payload_non_teammate} source={source}",
         file=sys.stderr,
     )
 
