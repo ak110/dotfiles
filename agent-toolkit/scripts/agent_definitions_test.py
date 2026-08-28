@@ -295,11 +295,10 @@ def test_process_termination_contract_uses_host_specific_stop_identifiers() -> N
     claude = _CLAUDE_CODE_RULE.read_text(encoding="utf-8")
 
     for phrase in (
-        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し、起動結果から停止用の識別子を取得して"
-        "保持した対象に限る。",
-        "直接起動したOSプロセスの停止にはPIDを用いる。ホスト管理ジョブの停止には、起動結果や背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と"
-        "停止手段を組み合わせる。",
-        "別種の識別子へ推測変換せず、パターン一致で対象を特定しない。",
+        "自身が起動し、起動結果から停止用の識別子を取得して保持した対象。直接起動したOSプロセスではPIDを用い、"
+        "ホスト管理ジョブでは起動結果や背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と"
+        "停止手段を組み合わせる",
+        "別種の識別子への推測変換やパターン一致で対象を特定しない。",
         "パターン一致で該当プロセスをまとめて終了させる操作（`pkill`・`killall`・`pkill -f`等）は、対象の所有権を"
         "確認できないため実行しない。",
     ):
@@ -4007,7 +4006,14 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
     cleanup = _h2_section(text, "5. 後始末")
     completion = _h2_section(text, "6. 振り返りと終了")
 
-    assert "`../exit-session/references/host-and-os-termination.md`で終了能力を判定し" in text
+    startup_reference = "`../exit-session/references/host-and-os-termination.md`を全文読み"
+    startup_probe = "同文書の副作用のない終了能力probeを実行する"
+    assert startup_reference in text
+    assert startup_probe in text
+    assert text.index(startup_reference) < text.index(startup_probe)
+    assert "probeの未実行、読取失敗又は値の不一致を含むそれ以外は停止不能" in text
+    assert "起動時の分岐値は後始末後のactive再取得の選択にだけ使い" in text
+    assert "終了時の停止可否は`exit-session`が停止直前に新規probeして判定する" in text
     assert "本体停止可能かつ連続処理モードでない場合は" in text
     assert "停止不能な場合と連続処理モードでは" in text
     assert "| 本体停止可能、通常処理 |" in text
@@ -4034,14 +4040,27 @@ def test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts() ->
     assert completion.count("`agent-toolkit:exit-session`をSkill機能で起動") == 1
 
 
-def test_exit_session_uses_identity_based_codex_termination_contract() -> None:
-    """Codexの停止対象を一意識別し、共有プロセスを停止しない契約を固定する。"""
+def test_exit_session_uses_identity_based_termination_contract() -> None:
+    """Claude CodeとCodexの停止対象を一意識別し、共有プロセスを停止しない契約を固定する。"""
     skill = _EXIT_SESSION.read_text(encoding="utf-8")
     termination = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
 
     assert "本体プロセスを一意に識別できる実行環境では" in skill
     assert "一意に識別できない実行環境ではプロセスを停止せず" in skill
     for phrase in (
+        "Claude Codeで既存のPOSIX直親又はWindows祖先を一意識別できる",
+        "`kill -TERM $PPID`",
+        "`Get-CimInstance Win32_Process`",
+        "`ParentProcessId`",
+        "`Stop-Process -Id <PID>`",
+        "実行ファイル名の一致だけを根拠にしない",
+        "## シグナル種別の見直し",
+        "`kill -INT $PPID`（SIGINT）",
+    ):
+        assert phrase in termination
+    for phrase in (
+        "副作用のない終了能力probe",
+        "`kill`、ファイルへの書込み及びCodex CLIその他のコマンドの起動をせず、環境変数も変更しない",
         "candidate_pid=$PPID",
         'readlink -f "/proc/$candidate_pid/exe"',
         "stat -Lc '%d:%i' \"/proc/$candidate_pid/exe\"",
@@ -4053,11 +4072,32 @@ def test_exit_session_uses_identity_based_codex_termination_contract() -> None:
         "pid`と`start`が正の10進整数",
         "`exe_id`が`<10進整数>:<10進整数>`",
         "`tty`が空でも`?`でもない",
+        "Codex CLI 0.150.1の`codex --help`で確認した通常起動は`codex [OPTIONS] [PROMPT]`",
+        "`candidate_argv`は`mapfile -d ''`で取得したNUL区切りの配列",
+        "`argv[1:]`を左から1要素ずつ解析",
+        "終端前のtop-level optionは次の表の引数数で次のNUL要素を消費",
+        "`--`はオプション終端を示す1要素",
+        "`-c`・`--config`",
+        "`-i`・`--image`は次の1要素以上",
+        "値を取る短縮alias`-c`、`-m`、`-i`、`-p`、`-s`、`-C`、`-a`",
+        "aliasと連結値は既知aliasごとに分離して解析し、値を再分割しない",
+        "通常起動と`resume`の共有optionへ同じ解析を適用する",
+        "`--help`・`-h`と`--version`・`-V`",
+        "既知のsubcommand又はalias",
+        "許可表にないoption、短縮alias単独の引数不足、必要な引数の欠落と余分な要素",
         "`argc=1`の`codex`",
-        "`codex resume`で始まるargv",
-        "`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`で、次のいずれかに一致するargv",
+        "`argv`の最初の非option要素が`resume`の場合",
+        "`codex resume [OPTIONS] [SESSION] [PROMPT]`",
+        "`resume`専用の引数なしoptionは`--last`、`--all`及び`--include-non-interactive`",
+        "`resume`の後の非option要素は先頭をsession、次を目的文として最大2要素まで",
+        "`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`では、通常形に加えて",
         "`codex --model <値> -c model_reasoning_effort=<値> <目的文>`",
         "`codex resume --model <値> -c model_reasoning_effort=<値> [session-id]`",
+        "Codex直接CLIの契約例では、表の各配列要素を1つのNUL要素",
+        '["codex","--model","o3","--search","inspect"]',
+        '["codex","resume","session-id","app-server is prompt"]',
+        '["codex","exec","inspect"]',
+        '["codex","--remote","server"]',
         "argvはNUL区切りの要素単位で照合",
         "`app-server`若しくは`remote-control`がsubcommand",
         "`--remote`を持つargv",
@@ -4068,6 +4108,8 @@ def test_exit_session_uses_identity_based_codex_termination_contract() -> None:
         "kill -TERM <表示されたpid>",
         "再照合が失敗した場合は`kill`を実行しない",
         "`pkill`、`killall`及び`codex remote-control stop`は使用しない",
+        "`process-feedbacks`の起動時probeが停止可能でも、このスキルは停止要求直前に終了能力probeを新規実行する",
+        "起動時の判定結果を再利用せず、probe未実行、読取失敗又は値の不一致は停止不能",
     ):
         assert phrase in termination
     assert "## LinuxのCodex直接CLIでの停止要求" in termination
@@ -4098,6 +4140,71 @@ def test_exit_session_uses_identity_based_codex_termination_contract() -> None:
         )
         assert syntax_check.returncode == 0, syntax_check.stderr
     assert executable_path not in stop_command
+
+
+def test_codex_direct_cli_contract_distinguishes_normal_and_resume_argv() -> None:
+    """Codexの通常起動とresume起動をNUL要素単位で解析する契約を固定する。"""
+    termination = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
+
+    for phrase in (
+        '| 停止可能 | `["codex"]` |',
+        '| 停止可能 | `["codex","--model","o3","--search","inspect"]` |',
+        '| 停止可能 | `["codex","--model","app-server"]` |',
+        '| 停止可能 | `["codex","--search","app-server is prompt"]` |',
+        '| 停止可能 | `["codex","-cmodel=o3","-mo3","-iimage.png","-pprofile",'
+        '"-sread-only","-C/tmp","-aon-request","--","inspect"]` |',
+        '| 停止可能 | `["codex","resume","--last"]` |',
+        '| 停止可能 | `["codex","resume","--model","o3","session-id","inspect"]` |',
+        '| 停止可能 | `["codex","resume","session-id","app-server is prompt"]` |',
+        '| 停止可能 | `["codex","resume","-cmodel=o3","-mo3","-iimage.png",'
+        '"-pprofile","-sread-only","-C/tmp","-aon-request","session-id","inspect"]` |',
+        '| 停止不能。非対話subcommand | `["codex","exec","inspect"]` |',
+        '| 停止不能。共有subcommand | `["codex","app-server"]` |',
+        '| 停止不能。remote subcommand | `["codex","remote-control"]` |',
+        '| 停止不能。remote option | `["codex","--remote","server"]` |',
+        '| 停止不能。remote token option | `["codex","--remote-auth-token-env","TOKEN"]` |',
+        '| 停止不能。非対話option | `["codex","--help"]` |',
+        '| 停止不能。引数不足 | `["codex","--model"]` |',
+        '| 停止不能。短縮aliasの引数不足 | `["codex","-m"]` |',
+        '| 停止不能。未知option | `["codex","-zvalue","inspect"]` |',
+        '| 停止不能。resume短縮aliasの引数不足 | `["codex","resume","-m"]` |',
+        '| 停止不能。resume未知option | `["codex","resume","-zvalue","session-id"]` |',
+    ):
+        assert phrase in termination
+
+
+def test_codex_capability_probe_is_repeated_at_process_boundaries() -> None:
+    """起動時の分岐値を再利用せず、停止直前に終了能力を再判定する契約を固定する。"""
+    process = _PROCESS_FEEDBACKS.read_text(encoding="utf-8")
+    skill = _EXIT_SESSION.read_text(encoding="utf-8")
+    termination = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
+
+    startup_reference = "`../exit-session/references/host-and-os-termination.md`を全文読み"
+    startup_probe = "同文書の副作用のない終了能力probeを実行する"
+    startup_branch = "本体停止可能かつ連続処理モードでない場合は"
+    assert process.index(startup_reference) < process.index(startup_probe)
+    assert process.index(startup_probe) < process.index(startup_branch)
+    assert "起動時の分岐値は後始末後のactive再取得の選択にだけ使い" in process
+    assert "終了時の停止可否は`exit-session`が停止直前に新規probeして判定する" in process
+    assert "起動時の終了能力判定を再利用せず、停止要求直前に参照文書のprobeを新規実行する" in skill
+    fresh_probe = "`process-feedbacks`の起動時probeが停止可能でも、このスキルは停止要求直前に終了能力probeを新規実行する"
+    assert termination.index(fresh_probe) < termination.index("2回目の`Bash`ツール呼び出し")
+    assert "起動時の判定結果を再利用せず、probe未実行、読取失敗又は値の不一致は停止不能" in termination
+
+
+def test_process_termination_safety_limits_targets_to_self_or_owned_processes() -> None:
+    """停止対象を一意識別した自身か、起動識別子を保持した対象だけに限定する。"""
+    rules = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    termination = _EXIT_SESSION_TERMINATION.read_text(encoding="utf-8")
+
+    for phrase in (
+        "現在のClaude Code又はCodex本体として、実行環境固有の条件で安全に一意識別した自身",
+        "自身が起動し、起動結果から停止用の識別子を取得して保持した対象",
+        "いずれにも該当しないプロセス又はホスト管理ジョブは終了させない",
+        "別種の識別子への推測変換やパターン一致で対象を特定しない",
+    ):
+        assert phrase in rules
+    assert "現在のClaude Code本体を安全に一意識別した自身の終了経路" in termination
 
 
 def test_process_feedbacks_terminates_answered_tbd_before_dependent_feedback() -> None:

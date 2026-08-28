@@ -156,7 +156,6 @@ def test_current_output_is_synced() -> None:
         "`sonnet`",
         "`opus`",
         "atk managed-temp",
-        "Claude Code",
         "idle_notification",
         "記録ファイル直接読み取り",
         "自動的に背景実行へ転換",
@@ -168,9 +167,11 @@ def test_current_output_is_synced() -> None:
     for shared_contract in (
         "1つの作業ツリーへ書き込む主体は同時に1つだけ",
         "担当外差分は保持して委譲元へ報告",
-        "プロセス又はホスト管理ジョブを終了させる操作は、自身が起動し、起動結果から停止用の識別子を取得して保持した対象に限る。",
-        "直接起動したOSプロセスの停止にはPIDを用いる。ホスト管理ジョブの停止には、起動結果や背景移行通知が返したタスクIDなど、対象の起動経路が指定する識別子と停止手段を組み合わせる。",
-        "別種の識別子へ推測変換せず、パターン一致で対象を特定しない。",
+        "プロセス又はホスト管理ジョブを終了させる操作は、次のいずれかに該当する対象に限る。",
+        "現在のClaude Code又はCodex本体として、実行環境固有の条件で安全に一意識別した自身。",
+        "自身が起動し、起動結果から停止用の識別子を取得して保持した対象。",
+        "いずれにも該当しないプロセス又はホスト管理ジョブは終了させない。",
+        "別種の識別子への推測変換やパターン一致で対象を特定しない。",
     ):
         assert shared_contract in operations_source
         assert shared_contract in shared_operations
