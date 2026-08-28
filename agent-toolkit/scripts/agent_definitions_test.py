@@ -2366,7 +2366,7 @@ def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
 
 
 def test_agents_server_timeout_defaults_are_synced_across_documents() -> None:
-    """agents_serverのwaitとkillの既定値を実装と委譲文書で一致させる。"""
+    """agents_serverのwaitとkillの既定値および省略契約を委譲文書で一致させる。"""
     documents = (
         _DELEGATION_SKILL,
         _RUNTIME_ROUTING,
@@ -2377,9 +2377,8 @@ def test_agents_server_timeout_defaults_are_synced_across_documents() -> None:
     )
     for path in documents:
         text = path.read_text(encoding="utf-8")
-        assert "通常の既定は240秒" in text
-        assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in text
-        assert "killの通常の既定は300秒" in text
+        assert "通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う" in text
+        assert "killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う" in text
 
 
 def test_removed_hook_contracts_are_not_described_as_active() -> None:

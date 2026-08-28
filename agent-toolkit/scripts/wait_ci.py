@@ -952,7 +952,7 @@ def main(argv: list[str] | None = None) -> int:
         "--sha",
         help="対象commit SHA（省略時はbaseline作成でsource ref、待機でbaseline保存SHAを使用）",
     )
-    parser.add_argument("--timeout", type=_positive_float, default=900.0, help="全体タイムアウト秒数（既定900）")
+    parser.add_argument("--timeout", type=_positive_float, default=270.0, help="全体タイムアウト秒数（既定270）")
     parser.add_argument("--poll-interval", type=_positive_float, default=20.0, help="ポーリング間隔秒数（既定20）")
     parser.add_argument("--registration-grace", type=_non_negative_float, default=60.0, help="run未登録許容秒数（既定60）")
     parser.add_argument(
