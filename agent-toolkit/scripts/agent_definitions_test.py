@@ -2309,9 +2309,88 @@ def test_session_review_advisor_scans_successful_warning_output_after_extraction
         "失敗した照会のフラグと終了コードを記録する",
         "末尾の照会の終了コードだけを連結照会全体の成否として扱わない",
         "連結照会の失敗だけでは`status: evidence_insufficient`とせず",
-        "既定の抽出実行が失敗した場合又はtranscriptを取得できない場合に限り同statusを返す",
+        (
+            "既定の抽出実行が失敗した場合、transcriptを取得できない場合又は完了前自己照合の"
+            "内部1回訂正後も値・件数・順序が一致しない場合に同statusを返す"
+        ),
     ):
         assert phrase in advisor
+
+
+def test_session_review_advisor_rechecks_completed_user_event_coverage() -> None:
+    """advisorの完了前自己照合、内部訂正及び再不一致終端を固定する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+
+    for phrase in (
+        "初回入力はtranscriptの絶対パス",
+        "継続入力は同一advisor sessionへの不足`(sequence, line)`列と余剰`(sequence, line)`列だけとする",
+        (
+            "各`status: completed`返却候補について、返却前に既定の抽出結果の全`kind=user`イベントから"
+            "作成した`(sequence, line)`列と、累積出力の`checked_user_events`の値・件数・順序を照合する"
+        ),
+        "初回不一致の場合は既定の抽出結果を根拠にadvisor内部で累積出力を1回だけ訂正して再照合する",
+        "再照合が一致した場合だけ`completed`を返し、再び不一致の場合は`status: evidence_insufficient`を返して終端する",
+        (
+            "同一advisor sessionへの継続入力として不足`(sequence, line)`列と余剰`(sequence, line)`列だけを受領した場合は、"
+            "メインが所有する1回の外部訂正要求として扱う"
+        ),
+        "保持している既定の抽出結果と初回報告を用い、初回報告を含む累積出力全体を訂正する",
+        "問題一覧と`checked_user_events`を累積出力として組み立て",
+        "advisor内部の完了前自己照合を適用する",
+        "照合済みの訂正済み`completed`又は内部再照合失敗時の`evidence_insufficient`を返す",
+        "利用者入力本文、問題分類又は対策を継続入力として要求しない",
+        "既定の抽出実行が失敗した場合、transcriptを取得できない場合又は完了前自己照合の内部1回訂正後も値・件数・順序が一致しない場合に同statusを返す",
+    ):
+        assert phrase in advisor
+
+    self_check_at = advisor.index("各`status: completed`返却候補について")
+    continuation_at = advisor.index("同一advisor sessionへの継続入力として不足")
+    continuation_correction_at = advisor.index("保持している既定の抽出結果と初回報告を用い")
+    continuation_self_check_at = advisor.index("advisor内部の完了前自己照合を適用する")
+    continuation_status_at = advisor.index("照合済みの訂正済み`completed`又は内部再照合失敗時の")
+    status_at = advisor.index("連結照会の失敗だけでは`status: evidence_insufficient`とせず")
+    assert (
+        self_check_at
+        < continuation_at
+        < continuation_correction_at
+        < continuation_self_check_at
+        < continuation_status_at
+        < status_at
+    )
+
+
+def test_session_review_coverage_recovery_contract_is_synchronized() -> None:
+    """advisor、メイン及び設計文書の訂正主体と終端条件を同期する。"""
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
+    skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+
+    for phrase in (
+        "完了前自己照合",
+        "内部1回訂正",
+        "内部再照合",
+        "同一advisor session",
+        "外部訂正要求",
+        "再検収",
+        "evidence_insufficient",
+    ):
+        assert phrase in advisor
+        assert phrase in design
+
+    for phrase in (
+        "advisorが初回報告又は外部訂正後の返却で`evidence_insufficient`を返した場合",
+        "不足ID列と余剰ID列だけを同一advisor sessionへ返し",
+        "advisor定義の継続入力契約に従って初回報告を含む累積出力全体の訂正を1回だけ求める",
+        "メインは訂正済み`completed`の累積出力へ",
+        "訂正後も値・件数・順序が一致しない場合",
+        "`evidence_insufficient`として既存の証拠不足報告経路へ進み",
+    ):
+        assert phrase in skill
+
+    assert "advisorは完了前自己照合、内部1回訂正及び内部再照合の返却statusを所有する" in advisor
+    assert "メインは初回`completed`不一致後に送る外部訂正要求の1回制限" in advisor
+    assert "advisor内部訂正とは別の外部訂正を1回だけ求める" in design
+    assert "新しい永続状態又は別advisor sessionは追加しない" in design
 
 
 def test_session_review_advisor_queries_before_reading_transcript_directly() -> None:
@@ -3662,6 +3741,7 @@ def test_session_review_evidence_extraction_is_advisor_owned_and_main_rechecks_e
 def test_session_review_preserves_evidence_insufficient_status_path() -> None:
     """証拠不足時は再抽出と構造検収を行わず既存報告経路を維持する。"""
     skill = _SESSION_REVIEW.read_text(encoding="utf-8")
+    advisor = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
     validation = skill.partition("### ユーザー入力イベントの構造検収")[2].partition("\n### ")[0]
 
     assert (
@@ -3669,6 +3749,12 @@ def test_session_review_preserves_evidence_insufficient_status_path() -> None:
         "証拠の再抽出、構造検収及び「提案無し」の確定へ進まない。"
     ) in validation
     assert "`status`が`completed`の場合だけ" in validation
+    assert "advisorが初回報告又は外部訂正後の返却で`evidence_insufficient`を返した場合" in validation
+    assert "訂正後も値・件数・順序が一致しない場合は`evidence_insufficient`として既存の証拠不足報告経路へ進み" in validation
+    assert (
+        "既定の抽出実行が失敗した場合、transcriptを取得できない場合又は完了前自己照合の内部1回訂正後も値・件数・順序が一致しない場合"
+        in advisor
+    )
 
 
 def test_session_review_separates_problem_observation_from_main_judgment() -> None:
@@ -3735,11 +3821,25 @@ def test_session_review_main_rechecks_user_events_and_problem_references() -> No
         "locatorの形式が異なる、又は対象イベントが存在しない証拠を持つ問題は判断材料に用いない",
         "再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し",
         "advisorの`checked_user_events`の値・件数・順序が一致することを機械的に確認する",
+        "advisorが初回報告又は外部訂正後の返却で`evidence_insufficient`を返した場合",
+        "初回照合で値・件数・順序が一致しない場合",
+        "不足ID列と余剰ID列だけを同一advisor sessionへ返し",
+        "初回報告を含む累積出力全体の訂正を1回だけ求める",
+        "メインは訂正済み`completed`の累積出力へ",
+        "訂正後も値・件数・順序が一致しない場合は`evidence_insufficient`として既存の証拠不足報告経路へ進み",
+        "集合差だけでなく順序不一致も初回不一致として扱う",
+        "不足・余剰がともに空でも順序が異なる場合は、空の2列を同一advisor sessionへ返し",
         "この照合で問題か否かを再分類しない",
         "advisorの問題一覧だけを対象に、利用者介入かその他の問題かを分類し",
         "観測事象、原因、予防処置、介入前の発火契機を確定する",
     ):
         assert phrase in validation
+
+    initial_check_at = validation.index("メインは再抽出結果の全`kind=user`イベントから`(sequence, line)`列を作成し")
+    correction_at = validation.index("初回照合で値・件数・順序が一致しない場合")
+    recheck_at = validation.index("メインは訂正済み`completed`の累積出力へ")
+    classification_at = validation.index("メインはこの照合で問題か否かを再分類しない")
+    assert initial_check_at < correction_at < recheck_at < classification_at
 
     receiver = _SESSION_REVIEW_ADVISOR.read_text(encoding="utf-8")
     for phrase in (
