@@ -2736,6 +2736,30 @@ def test_merge_pr_skips_develop_wait_only_for_identical_refs_without_extra_check
         assert phrase in skill
 
 
+def test_merge_pr_uses_compact_output_for_all_run_watches() -> None:
+    """GitHub Actionsの待機出力をcompact表示へ統一する。"""
+    skill = _MERGE_PR.read_text(encoding="utf-8")
+    watch_commands = [line for line in skill.splitlines() if line.startswith("gh run watch ")]
+    failure_handling = _h2_section(skill, "完了条件と失敗時の扱い")
+    failure_log_contract = (
+        "マージ後のCI又はReleaseが失敗した場合は、待機終了後の診断で次の読み取りコマンドを使って"
+        "詳細ログを取得する。\n\n"
+        "```sh\n"
+        "gh run view <失敗したrun ID> --repo ak110/dotfiles --log-failed\n"
+        "```\n\n"
+        "詳細ログを取得できない場合も、元のCI又はReleaseの失敗を失敗工程として保持し、"
+        "ログ取得の失敗を併記する。"
+    )
+    report_contract = "成立済みの外部状態、失敗した工程、run URL及び再開点を報告して停止する。"
+
+    assert watch_commands == [
+        "gh run watch <run ID> --repo ak110/dotfiles --compact --exit-status",
+        "gh run watch <Release run ID> --repo ak110/dotfiles --compact --exit-status",
+    ]
+    assert failure_log_contract in failure_handling
+    assert failure_handling.index(failure_log_contract) < failure_handling.index(report_contract)
+
+
 def test_add_feedback_owns_interactive_and_noninteractive_submission() -> None:
     """対話・非対話の投入契約をadd-feedbackへ集約する。"""
     add_feedback = _ADD_FEEDBACK.read_text(encoding="utf-8") + _TBD_FORMAT.read_text(encoding="utf-8")
