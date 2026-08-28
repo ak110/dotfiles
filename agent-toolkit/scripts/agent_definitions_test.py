@@ -66,6 +66,7 @@ _RETURN_PATH_CONTRACT = "完了報告はツール戻り値で1回返し、`SendM
 _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _CONCEPTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "concepts.md"
 _DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
+_INCIDENTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "incidents.md"
 _CLAUDE_CODE_GUIDE = _REPOSITORY_ROOT / "docs" / "guide" / "claude-code-guide.md"
 _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
@@ -2314,9 +2315,83 @@ def test_delegation_observes_only_identified_artifact_paths() -> None:
 
 def test_delegation_waiting_uses_notifications_and_measured_recovery() -> None:
     """待機、通知中継、配送不能時の復旧を単一経路で検査する。"""
+    skill = _DELEGATION_SKILL.read_text(encoding="utf-8")
     waiting = _WAITING_AND_MONITORING.read_text(encoding="utf-8")
     runtime = _CLAUDE_CODE_RUNTIME.read_text(encoding="utf-8")
+    plan_review_task = _PLAN_REVIEW_TASK.read_text(encoding="utf-8")
+    plan_review_executor = _PLAN_REVIEW_EXECUTOR.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    incidents = _INCIDENTS_DOC.read_text(encoding="utf-8")
 
+    for phrase in (
+        "起動前に管理対象一時領域内の成果ファイル絶対パスを確定し",
+        "成果ファイルの記載形式は当該正本が定める完了報告全体",
+        "返信先を解決できない場合も",
+        "最終完了報告を指定ファイルへ同期的に確定してから終端",
+        "書込みに失敗した場合は成功を返さず",
+        "指定ファイルを成果本文の受領経路とする",
+        "完了通知の到着・祖先からの中継を成果本文の受領条件にしない",
+        "稼働中に観測したファイルの存在、必須項目・全文は途中内容として扱う",
+        "完了通知、`ListAgents`又は起動結果が返した識別子に対応する状態",
+        "受信者の終端を観測した後",
+        "同じ絶対パスから成果ファイルを再読する",
+        "実装担当だけに適用される所有プロセスの識別子・終了証拠を要求しない",
+        "受信者の終端を観測できない場合",
+        "終端後の再読でファイルが未作成、読取不能、部分書込み又は必須項目欠落の場合も同様に扱い",
+        "`needs_escalation`として呼出元へ返す",
+        "成果ファイルの読取だけから受信者の終端・管理対象一時領域の回収可否を判定しない",
+        "成功時は終端と内容検収の後に管理対象一時領域を回収し",
+        "異常時は検収証拠として保持する",
+    ):
+        assert phrase in runtime
+    assert runtime.index("起動前に管理対象一時領域内の成果ファイル絶対パスを確定し") < runtime.index(
+        "成果ファイルの記載形式は当該正本が定める完了報告全体"
+    )
+    assert "独立要件ごとに被覆結果を返す" in plan_review_task
+    assert "被覆結果はレビュー表の指摘と別の完了報告として返し" in plan_review_task
+    assert "cleanup_evidence:" in plan_review_executor
+    assert runtime.index("受信者の終端を観測した後") < runtime.index("同じ絶対パスから成果ファイルを再読する")
+    assert runtime.index("終端と内容検収の後に管理対象一時領域を回収") < runtime.index("異常時は検収証拠として保持する")
+    for phrase in (
+        "通常のツール戻り値または完了通知を第一の受領経路とする。ただし、実行時固有契約が孫調査・レビューの起動前に成果ファイルを指定する場合は、当該ファイルを成果本文の受領経路とし、通知と実行状態は観測可能な受信者終端の判定に用いる。成果本文は受信者終端の観測後に受信側正本へ照合した完全な完了報告だけを受理する。",
+        "記録経路は通常配送不能を実測した場合だけ使用する。",
+        "実行時固有契約が起動前に指定する孫調査・レビューの成果ファイルはこの制限の対象外とする。",
+        "成功時は実行時に観測できる受信者の終端と終端後の内容検収後に管理対象一時領域を後始末する。",
+        "受信者終端を観測できない場合又は欠損・読取不能・不完全な成果では成功扱いせず、`needs_escalation`として領域を保持する。",
+    ):
+        assert phrase in skill
+    assert skill.index("通常のツール戻り値または完了通知を第一の受領経路とする。ただし") < skill.index(
+        "記録経路は通常配送不能を実測した場合だけ使用する。"
+    )
+    for phrase in (
+        (
+            "Claude Codeで委譲先がさらに読み取り専用調査・レビューを委譲する場合は、"
+            "起動前に管理対象一時領域内の成果ファイル絶対パスを確定する。"
+        ),
+        "完了通知の到着・祖先からの中継は成果本文の受領条件にしない。",
+        "受信者終端を観測できない場合、稼働中の途中内容及び終端後の欠損・読取不能・不完全な成果は成功扱いせず、`needs_escalation`として一時領域を保持する。",
+        "読み取り専用受信者へ実装担当限定の所有プロセス終了証拠を要求する案は観測不能な受理条件を生じさせるため採用しない。",
+        "全委譲へ成果ファイルを要求する案は通常の直接委譲へ恒常的な入出力を増やすため採用せず、配送不着を観測した孫以深の読み取り専用調査・レビューへ限定する。",
+    ):
+        assert phrase in design
+    for phrase in (
+        (
+            "2026年8月: 孫へ委譲した調査が完了しても、直接の委譲元へ成果が配送されず、"
+            "祖先が受領した完了通知の中継も成立しない事例で同じ調査を再実行した。"
+        ),
+        (
+            "直接原因: 孫調査の起動文に成果ファイルの絶対パスと記載形式がなく、既存の記録ファイル直接読取は"
+            "孫がファイルを書き込む契約を持たなかった。"
+        ),
+        "`needs_escalation`として一時領域を保持する",
+    ):
+        assert phrase in incidents
+    for forbidden in (
+        "孫委譲時の記録ファイル直接読み取りは、通常のツール配送経路が成立しない場合の例外的な受領手段として扱い",
+        "記録経路は通常配送不能を実測した場合だけ使用し、所有主体の終端と内容検収後に管理対象一時領域を後始末する。",
+    ):
+        assert forbidden not in runtime
+        assert forbidden not in skill
     for phrase in (
         "機械的な完了通知の受領を待機解除の既定手段",
         "`ListAgents`と`TaskStop`",
