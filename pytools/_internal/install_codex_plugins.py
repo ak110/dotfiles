@@ -251,7 +251,7 @@ def _cache_entries(cache_root: Path) -> tuple[Path, ...]:
         return ()
     if setup_codex_links._is_link_like(cache_root) or not cache_root.is_dir():  # pylint: disable=protected-access
         raise NotADirectoryError(f"plugin cache rootが通常ディレクトリではない: {cache_root}")
-    return tuple(cache_root.iterdir())
+    return tuple(sorted(cache_root.iterdir(), key=lambda entry: entry.name))
 
 
 def _cache_versions(cache_root: Path) -> set[str]:
@@ -523,7 +523,7 @@ def _legacy_link_snapshots(root: Path) -> tuple[_LegacyLinkSnapshot, ...]:
         raise NotADirectoryError(f"Codex skills rootが通常ディレクトリではない: {skills}")
     source_root = (root / "agent-toolkit/skills").resolve()
     snapshots: list[_LegacyLinkSnapshot] = []
-    for path in skills.iterdir():
+    for path in sorted(skills.iterdir(), key=lambda entry: entry.name):
         if not _is_link(path):
             continue
         try:

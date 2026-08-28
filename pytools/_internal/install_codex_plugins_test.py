@@ -628,7 +628,7 @@ def test_keyboard_interrupt_during_partial_cache_restore_preserves_primary_error
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """退避巻き戻しの中断後も一次例外と未復元entryを保持する。"""
+    """cacheを逆順列挙しても退避巻き戻しの中断結果を名前順で確定する。"""
     _cache_version("1.2.2", hook="previous")
     (_cache_root() / "metadata.txt").write_text("keep", encoding="utf-8")
     responses = iter(
@@ -638,7 +638,14 @@ def test_keyboard_interrupt_during_partial_cache_restore_preserves_primary_error
         ]
     )
     original_rename = Path.rename
+    original_iterdir = Path.iterdir
     backup_moves = 0
+
+    def reverse_cache_enumeration(path: Path) -> Iterator[Path]:
+        entries = original_iterdir(path)
+        if path == _cache_root():
+            return iter(sorted(entries, key=lambda entry: entry.name, reverse=True))
+        return entries
 
     def interrupt_cache_restore(source: Path, target: str | Path) -> Path:
         nonlocal backup_moves
@@ -652,6 +659,7 @@ def test_keyboard_interrupt_during_partial_cache_restore_preserves_primary_error
         return original_rename(source, target)
 
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(Path, "iterdir", reverse_cache_enumeration)
     monkeypatch.setattr(Path, "rename", interrupt_cache_restore)
 
     with pytest.raises(BaseException) as exc_info:
@@ -984,7 +992,7 @@ def test_legacy_link_restore_failure_does_not_skip_other_links(
     monkeypatch: pytest.MonkeyPatch,
     restore_error_type: type[BaseException],
 ) -> None:
-    """1件のlegacy link復元失敗後も他のlinkを復元する。"""
+    """legacy linkを逆順列挙しても名前順の1件目だけを復元失敗にする。"""
     first = _legacy_link(plugin_env, "coding")
     second = _legacy_link(plugin_env, "writing")
     state = _installed_state()
@@ -996,8 +1004,15 @@ def test_legacy_link_restore_failure_does_not_skip_other_links(
         ]
     )
     original_remove = install_codex_plugins._remove_legacy_links  # pylint: disable=protected-access
+    original_iterdir = Path.iterdir
     original_symlink_to = Path.symlink_to
     restore_failed = False
+
+    def reverse_legacy_link_enumeration(path: Path) -> Iterator[Path]:
+        entries = original_iterdir(path)
+        if path == first.parent:
+            return iter(sorted(entries, key=lambda entry: entry.name, reverse=True))
+        return entries
 
     def remove_then_fail(root: Path) -> bool:
         original_remove(root)
@@ -1015,6 +1030,7 @@ def test_legacy_link_restore_failure_does_not_skip_other_links(
         original_symlink_to(destination, target, target_is_directory=target_is_directory)
 
     monkeypatch.setattr(install_codex_plugins, "_codex_json", lambda _: next(responses))
+    monkeypatch.setattr(Path, "iterdir", reverse_legacy_link_enumeration)
     monkeypatch.setattr(install_codex_plugins, "_remove_legacy_links", remove_then_fail)
     monkeypatch.setattr(Path, "symlink_to", fail_first_restore)
 
