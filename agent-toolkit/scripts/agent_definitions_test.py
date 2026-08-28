@@ -69,6 +69,7 @@ _REPOSITORY_ROOT = _AGENTS_DIR.parents[1]
 _CONCEPTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "concepts.md"
 _DESIGN_DOC = _REPOSITORY_ROOT / "docs" / "development" / "design.md"
 _INCIDENTS_DOC = _REPOSITORY_ROOT / "docs" / "development" / "incidents.md"
+_SYNC_CROSS_PROJECT_SKILL = _REPOSITORY_ROOT / ".chezmoi-source" / "dot_claude" / "skills" / "sync-cross-project" / "SKILL.md"
 _CLAUDE_CODE_GUIDE = _REPOSITORY_ROOT / "docs" / "guide" / "claude-code-guide.md"
 _MERGE_PR = _REPOSITORY_ROOT / ".claude" / "skills" / "merge-pr" / "SKILL.md"
 _DISTRIBUTION_ROOT = _AGENTS_DIR.parent
@@ -171,6 +172,28 @@ def _h4_section(text: str, heading: str) -> str:
     _, separator, remainder = text.partition(marker)
     assert separator, f"H4節が存在しない: {heading}"
     return re.split(r"\n#{1,4} ", remainder)[0]
+
+
+def test_sync_cross_project_release_only_boundary() -> None:
+    """リリース専用依頼の起動を維持し、波及調査の開始条件を制限する。"""
+    skill = _SYNC_CROSS_PROJECT_SKILL.read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(skill)
+    assert parsed is not None
+    metadata, body = parsed
+
+    assert "リリース作業時" in metadata["description"]
+    decision = _h2_section(body, "判定手順")
+    boundary = (
+        "リリース専用依頼でも本スキルの起動は維持する。現在の会話コンテキストと自身が実行した操作から、\n"
+        "次の条件を両方確認できる場合は、\n"
+        "姉妹プロジェクトへの波及調査を開始しない。\n\n"
+        "- 既存commitのPR作成・マージ・CI検収だけを行う\n"
+        "- 現行セッションで同期対象を変更・計画・レビューしていない\n\n"
+        "いずれかを確認できない場合は、以下を実施する。\n"
+    )
+
+    assert boundary in decision
+    assert "- 変更内容の分類を特定する（例: prek設定、mise設定、CI workflow、README構成など）" in decision
 
 
 def test_agent_tools_are_comma_separated_scalars() -> None:
