@@ -38,10 +38,14 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 
 ## プラグイン更新の反映
 
-Codexプラグインはバージョン付きキャッシュへ導入される。
-`update-dotfiles`はローカルagent-toolkitのバージョンと有効状態が一致する場合、再導入を省略する。
-ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで
-`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
+dotfilesの`post_apply`が導入するagent-toolkitは、Codexが要求するversion付きの通常ディレクトリを維持し、その配下のplugin資源をdotfilesの`agent-toolkit/`原本へ接続する。
+LinuxとmacOSでは、通常versionディレクトリ直下のファイルとディレクトリを原本への相対シンボリックリンクにする。
+Windowsでは、直下のディレクトリをジャンクションにし、直下の通常ファイルを`update-dotfiles`のたびに原本と同じ内容へ同期する。
+単体インストーラーで導入するagent-toolkitと外部プラグインは、Codexが管理するsnapshotを引き続き使用する。
+
+`update-dotfiles`はローカルagent-toolkitが導入済みで有効な場合、versionが変化していても`codex plugin add`を省略し、現versionの通常ディレクトリを追加して原本接続を検査・修復する。
+未導入時とdisabled時だけ`codex plugin add`を実行する。どちらも既存cacheがあればCLI実行前に全エントリを退避する。
+ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
 
 ```bash
@@ -53,15 +57,15 @@ codex app-server daemon restart
 `~/.claude.json`のUser scope設定は行わない。
 進行中のセッションを保護するため、app-server daemonは自動再起動しない。
 
-更新前に存在した安全なversion名は、`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`へ
-保存される。`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
-更新後は、保存済みの旧version名を現行versionのキャッシュ実体へ直接向ける。
-LinuxとmacOSでは相対シンボリックリンク、Windowsではディレクトリジャンクションを使う。
-この互換リンクにより、起動済みまたは再開したセッションが保持する旧フックの絶対パスを引き続き利用できる。
-再起動案内は新versionを後続セッションへ反映する役割を持ち、互換リンクは既存セッションの実行先を保持する。
+更新前に存在した安全なversion名は、`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`へ保存される。`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
+更新後は、保存済みの旧versionと現versionの通常ディレクトリを同じagent-toolkit原本へ接続する。
+この配置により、起動済みまたは再開したセッションが保持する旧フックの絶対パスと、後続セッションが取得する現versionのパスを引き続き利用できる。
+再起動案内は新versionを後続セッションへ反映する役割を持ち、原本接続は各versionパスから実行するplugin資源をdotfiles側へ統一する。
 
-旧version名と同名の通常ファイルまたは通常ディレクトリがある場合、更新処理はそのエントリを置換せず失敗する。
-台帳は保持されるため、競合を解消して更新処理を再実行すると互換リンクを復元できる。
+既存のversionパスがagent-toolkitのplugin構造として確認できない通常ファイル、通常ディレクトリ、特殊ファイルの場合、更新処理はそのエントリを置換せず失敗する。
+原本接続の準備、置換、置換後のCodex状態確認に失敗した場合は、同じ処理で退避した更新前のcacheエントリ、version台帳、旧skillリンクを復元する。
+`codex plugin add`を使う未導入状態、disabled状態では、Codexが旧cache rootを除去する前に既存の全エントリを退避し、CLIの偽返却・例外、後続処理の失敗時にsnapshotと旧互換リンクを元のパスへ戻す。外部、ローカルplugin追加後の失敗では、それまでに生成した再起動案内を失敗出力へ重複なく含める。CLIが有効化まで成功した後は有効状態を維持し、次回の`update-dotfiles`は復元済みcacheから原本接続を再構成する。
+version台帳は保持されるため、競合、失敗原因を解消して`update-dotfiles`を再実行すると原本接続を再構成できる。
 Codexが更新時に旧versionを除去する挙動は、
 [Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)で確認できる。
 起動済みセッションが旧キャッシュの絶対パスを保持する事象は、
