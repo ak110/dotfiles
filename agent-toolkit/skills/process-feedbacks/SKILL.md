@@ -25,5 +25,7 @@ description: >
    - ①を開始するときだけ`references/pick-feedbacks.md`を全文読む。
 2. ②レーンの計画から後始末
    - ①の出力を確定した後、②を開始するときだけ`references/run-lanes.md`を全文読む。
+   - 明示的な連続処理では、②の全レーンの後始末後にready一覧を再取得する。新しいready項目があれば①へ戻り、
+     0件を確認した場合だけ③へ進む。
 3. ③push、CI及び終了
    - ②の全レーンが完了した後、③を開始するときだけ`references/finish-session.md`を全文読む。

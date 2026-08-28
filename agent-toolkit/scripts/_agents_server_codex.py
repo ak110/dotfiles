@@ -41,6 +41,8 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 # asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
 # readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
+APP_SERVER_STDERR_LIMIT_CHARS = 4000
+APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
 
 
 class AppServerError(RuntimeError):
@@ -113,6 +115,7 @@ class JsonRpcProcess:
         self._write_lock = asyncio.Lock()
         self._closed = False
         self._reader_failure: BaseException | None = None
+        self._stderr_text = ""
 
     async def start(self) -> None:
         """子プロセスを起動し、initialize/initializedを完了する。"""
@@ -204,7 +207,9 @@ class JsonRpcProcess:
             while True:
                 raw_line = await self.process.stdout.readline()
                 if not raw_line:
-                    raise AppServerError("Codex App Server stdout closed")
+                    error = await self._stdout_closed_error()
+                    _LOG.error("%s", error)
+                    raise error
                 try:
                     message = json.loads(raw_line.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -240,14 +245,43 @@ class JsonRpcProcess:
                 line = await self.process.stderr.readline()
                 if not line:
                     return
+                text = line.decode("utf-8", errors="replace")
+                self._stderr_text = _append_bounded(
+                    self._stderr_text,
+                    text,
+                    APP_SERVER_STDERR_LIMIT_CHARS,
+                )
                 print(
-                    line.decode("utf-8", errors="replace"),
+                    text,
                     end="",
                     file=sys.stderr,
                     flush=True,
                 )
         except OSError as exc:
             _LOG.debug("Codex App Server stderrの読取を終了しました: %s", exc)
+
+    async def _stdout_closed_error(self) -> AppServerError:
+        """子プロセス終了時の診断情報を有界に収集する。"""
+        assert self.process is not None
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                self.process.wait(),
+                timeout=APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT,
+            )
+        stderr_task = self._stderr_task
+        if stderr_task is not None and stderr_task is not asyncio.current_task():
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    asyncio.shield(stderr_task),
+                    timeout=APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT,
+                )
+
+        command = " ".join(APP_SERVER_COMMAND)
+        message = f"Codex App Server stdout closed: command={command}; returncode={self.process.returncode}"
+        stderr = self._stderr_text.strip()
+        if stderr:
+            message = f"{message}; stderr={stderr}"
+        return AppServerError(message)
 
     async def close(self) -> None:
         """自身が起動した子プロセスだけを終了し、関連taskを回収する。"""
