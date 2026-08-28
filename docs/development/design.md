@@ -339,8 +339,10 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。専用の`pre_fixup` phaseを先頭に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。
 `rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、それ以外では`not_applicable`とする。
-executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡と履歴を検収し、履歴書換え前の中間受渡しを設けない。
-初回実装担当のrouteと実効`engine`、`model`及び`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
+executorは採用指摘の修正担当を起動する前に、`review_round`の`before_fix` checkpointで修正前HEADの完全OIDを呼び出し元へ返す。呼び出し元が現行HEADとの一致を進捗ログへ保存して再開を許可した後だけ修正へ進む。修正と履歴検収後は同じラウンドの`after_fix` checkpointで修正前後OIDを返す。呼び出し元は修正前後OIDと現行HEADを照合する。
+公開済み判定、merge commit不在及び件名一意性を実測し、全検査の合格後だけ比較基準を修正後OIDへ更新する。指摘なしは`no_fix`として同一OIDを返し、呼び出し元は両OIDの一致だけを検収して比較基準を変更せず再開する。不一致時は両OIDの実測値付き`needs_escalation`へ返す。`no_fix`では履歴書換え禁止条件を検査しない。禁止条件の検査は`after_fix`と最終`merge_request`だけに適用し、不合格では再開・完了を拒否する。
+`completed`報告が`履歴書換え防止`を欠く場合だけ保存済み証拠とffマージ後のベース実体を照合する。手続的事実の限定照会が不着なら不明項目と証明不能範囲を記録して残る検収を巻き取る。「履歴書換え前の中間受渡しを設けない」という従来の前提は、実装担当が履歴書換えを開始した後の中間引継ぎを設けない境界へ限定する。追加の状態・fallback・checkpoint種別を設けない。履歴書換え中の単一担当・公開済み判定と資源回収順序は変更しない。
+初回実装担当のrouteと実効`engine`、`model`と`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 再判定不能や対象OIDのpush済み検出がある場合は`needs_escalation`で返す。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
 
@@ -621,7 +623,7 @@ shallow複製への追加防御は、対応する観測事象を得るまで導�
 autosquash成功後は実装担当が`git rev-parse HEAD`で取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
 調整担当は元の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。
-executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収する。
+executorは実装担当の完了後にphaseごとの`rewrite_guard`反復証跡を検収し、修正担当の起動前に`before_fix`、修正・履歴検収後に`after_fix`を返す。
 呼び出し元は変更前後のOID対応と最小化済み証跡を進捗ログへ記録する。
 汎用判定の失敗（Gitコマンドの非0終了を含む）は履歴を書き換えず`needs_escalation`で返す。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。

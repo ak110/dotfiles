@@ -38,6 +38,8 @@ fast担当は失敗箇所をテストID・診断識別子等で記録し、原�
 
 実装担当が終端し、レーンのworktreeがcleanであることを確認してHEADの完全OIDをレビュー対象の最終HEADとして内部確定する。採用指摘を実装単位commitへ対応付け、対応不能、複数単位へ不可分にまたがる修正又は中間commitの公開契約を維持できない修正は`needs_escalation`で返す。同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
+採用指摘がある場合、修正担当を起動する前に同ラウンドの`review_round`を`stage: before_fix`、`pre_rewrite_head: <現行HEADの完全OID>`、`post_rewrite_head: なし`として返す。呼び出し元が現行HEADとの一致を実測し、`## 進捗ログ（実行時）`へ保存して再開を指示するまで修正担当を起動しない。修正担当の起動後は履歴書換え完了まで中間引継ぎを設けず、同じ実装担当が再判定から履歴統合までを完結する。
+
 `agent-toolkit:plan-mode`の実装担当契約、フィードバックファイル名一覧、複製元と対象外worktreeを渡す。レビュー対象の最終HEAD完全OID、指摘IDと統合先commit完全OIDの対応表も渡す。レビュー表の絶対パスと修正対象として確定した採用指摘の`implementation-review`の`track`及び`reviewee-standards/SKILL.md`を渡し、起動文へ担当種別を`レビュー修正担当`として明示する。実装担当への受け渡しには保持した初回実装担当routeと実効3値、今回routeと実効3値、継続又は新規起動に用いる識別子、前担当の終端確認結果を明示する。
 
-レビュー修正の実装と履歴統合は`agent-toolkit:plan-mode`の実装担当契約、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。完了後に全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果、clean状態及び`履歴書換え防止`を検収する。
+レビュー修正の実装と履歴統合は`agent-toolkit:plan-mode`の実装担当契約、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。修正・履歴検収後に同じラウンドの`review_round`を`stage: after_fix`として返し、`pre_rewrite_head`には`before_fix`と同じOID、`post_rewrite_head`には修正後の現行HEAD完全OIDを記録する。指摘なしのラウンドは`stage: no_fix`として両OIDに同じ現行HEADを記録する。完了後に全実装単位のOID、件名、順序、件数、親子関係、差分帰属、検証結果、clean状態及び`履歴書換え防止`を検収する。

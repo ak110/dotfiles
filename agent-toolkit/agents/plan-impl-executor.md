@@ -40,15 +40,14 @@ fast担当の終端確認後に同一失敗箇所が残る場合だけ、fix担�
 表構造、ラウンドの反復、起動前後の検証、モデル解決、収束判定は
 `skills/plan-mode/references/review-loop-coordination.md`を正本として適用する。
 実装レビュー担当へ`implementation-review`の`track`と同じ表の絶対パスを渡す。
-`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は実装担当へ委譲する。executorは実装担当の完了後にphaseごとの最小化済み`履歴書換え防止`反復証跡を検収し、履歴書換え前の中間受渡しは設けない。
+`git push`、タグ作成、リモートrefの手動変更は行わない。通常モードのレビュー修正におけるphaseごとの公開済み判定、履歴書換え直前の再判定及び遮断は実装担当へ委譲する。executorは採用指摘の修正担当を起動する前に、資源回収前の検収境界として同ラウンドの`review_round`を`stage: before_fix`で返し、呼び出し元の保存と再開指示後だけ修正担当を起動する。修正担当の起動後は履歴書換え完了まで中間引継ぎを設けず、実装担当の完了後にphaseごとの最小化済み`履歴書換え防止`反復証跡を検収する。修正・履歴検収後は同ラウンドの`review_round`を`stage: after_fix`で返し、指摘なしは`stage: no_fix`で返す。
 `履歴書換え防止`のphaseはレビュー修正だけに適用し、レビュー修正以外では`履歴書換え防止: not_applicable`とする。
 定義済みチェックポイント（`review_round`・`merge_request`）に該当する時点では`status: checkpoint`で終端し、
 メインの`SendMessage`による再開指示を待つ。多段委譲の中間主体としては起動されないため、チェックポイントは自身の判断で新設しない。
 
 ## チェックポイント
 
-- `review_round`: 単一の実装レビュー担当による1ラウンド完了ごとに返す。指摘件数（ラウンド合計）、初回被覆結果、
-  実害の概要、修正内容の要約、残る証拠不足及び次ラウンドの要否を`checkpoint`へ含める
+- `review_round`: 単一の実装レビュー担当による1ラウンドの検収点として返す。採用指摘がある場合は修正担当の起動前に`stage: before_fix`、修正・履歴検収後に`stage: after_fix`を返し、指摘がない場合は`stage: no_fix`を返す。指摘件数（ラウンド合計）、初回被覆結果、実害の概要、修正内容の要約、残る証拠不足、次ラウンドの要否、修正前後HEADの完全OIDを`checkpoint`へ含める
 - `merge_request`: レーン内レビュー収束後に返す。レーンHEAD完全OID、レーン内検証結果、rebase要否を`checkpoint`へ含める
 - メインの再開指示は`続行`・`是正指示（内容付き）`・`詳細要求`・`マージ許可（ベースbranch名・tip OID・関係計画パス付き）`の
   いずれかとし、対応する既存工程（追加指示の配送・レビュー継続・マージ工程）へ写す
@@ -145,7 +144,10 @@ fast担当の終端確認後に同一失敗箇所が残る場合だけ、fix担�
 checkpoint:
   type: <review_round|merge_request>
   review_round:
+    stage: <before_fix|after_fix|no_fix>
     round: <ラウンド番号>
+    pre_rewrite_head: <修正前HEADの完全OID>
+    post_rewrite_head: <修正後HEADの完全OIDまたはなし>
     findings_count: <指摘件数のラウンド合計>
     coverage_result: <被覆結果>
     impact_summary: <実害の概要>

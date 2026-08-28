@@ -1704,15 +1704,128 @@ def test_clean_worktree_exception_and_thread_lifecycle_are_limited() -> None:
 
 
 def test_review_round_checkpoint_matches_caller_reception() -> None:
-    """review_roundの本文と出力をラウンド合計・被覆結果へ統一する。"""
+    """review_roundのstage・OIDと本文をexecutor・実装モード・呼び出し元で統一する。"""
     executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    implementation_mode = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    executor_role = _h2_section(executor, "役割")
+    implementation_review = _h2_section(implementation_mode, "レビュー修正")
+    caller_checkpoint = _h2_section(caller, "checkpointの受領")
 
     assert "指摘件数（ラウンド合計）" in executor
     assert "初回被覆結果" in executor
     assert "findings_count: <指摘件数のラウンド合計>" in executor
     assert "coverage_result: <被覆結果>" in executor
+    assert "stage: <before_fix|after_fix|no_fix>" in executor
+    assert "pre_rewrite_head: <修正前HEADの完全OID>" in executor
+    assert "post_rewrite_head: <修正後HEADの完全OIDまたはなし>" in executor
+    assert executor_role.index("`stage: before_fix`で返し") < executor_role.index("修正担当の起動後")
+    assert executor_role.index("修正担当の起動後") < executor_role.index("`stage: after_fix`で返し")
+    assert "呼び出し元の保存と再開指示後だけ修正担当を起動する" in executor_role
+
+    before_fix_at = implementation_review.index("同ラウンドの`review_round`を`stage: before_fix`")
+    launch_at = implementation_review.index("起動文へ担当種別を`レビュー修正担当`として明示する")
+    after_fix_at = implementation_review.index("同じラウンドの`review_round`を`stage: after_fix`")
+    assert before_fix_at < launch_at < after_fix_at
+    assert "`post_rewrite_head: なし`として返す" in implementation_review
+    assert "再開を指示するまで修正担当を起動しない" in implementation_review
+
+    before_fix_reception_at = caller_checkpoint.index("採用指摘の修正前に`stage: before_fix`を受領した場合")
+    after_fix_reception_at = caller_checkpoint.index("修正・履歴検収後の`stage: after_fix`では")
+    no_fix_reception_at = caller_checkpoint.index("指摘なしの`stage: no_fix`では")
+    assert before_fix_reception_at < after_fix_reception_at < no_fix_reception_at
     assert "findings_count_by_track" not in executor
     assert "系統別指摘件数" not in executor
+
+
+def test_plan_impl_caller_recovers_missing_history_rewrite_report() -> None:
+    """履歴書換え報告の欠落時に実体検収へ限定回復する契約を固定する。"""
+    executor = _PLAN_IMPL_EXECUTOR.read_text(encoding="utf-8")
+    implementation_mode = _PLAN_IMPL_EXECUTOR_IMPL_MODE.read_text(encoding="utf-8")
+    caller = _PLAN_IMPL_CALLER.read_text(encoding="utf-8")
+    design = _DESIGN_DOC.read_text(encoding="utf-8")
+    incidents = (_REPOSITORY_ROOT / "docs" / "development" / "incidents.md").read_text(encoding="utf-8")
+    implementation_task = _PLAN_IMPL_TASK.read_text(encoding="utf-8")
+    history_rewrite = _HISTORY_REWRITE.read_text(encoding="utf-8")
+    checkpoint = _h2_section(caller, "checkpointの受領")
+    completion = _h2_section(caller, "完了の検収")
+    before_fix = next(line for line in checkpoint.splitlines() if "stage: before_fix" in line)
+    after_fix = next(line for line in checkpoint.splitlines() if "stage: after_fix" in line)
+    no_fix = next(line for line in checkpoint.splitlines() if "stage: no_fix" in line)
+    final_merge_request = next(line for line in completion.splitlines() if "最終`merge_request`を再開する前に" in line)
+
+    assert "`completed`報告の`履歴書換え防止`が必須項目を欠く場合だけ" in caller
+    assert "保存済み証拠" in caller
+    assert "ffマージ後のベースbranch" in caller
+    assert "無指定reflogから旧OIDを復元しない" in caller
+    assert "phaseごとの判定順序" in caller
+    assert "履歴書換え途中の担当引継ぎ有無" in caller
+    assert "過去のGitコマンド終了コードとエラー要約は再送要求しない" in caller
+    assert "当該項目を`不明`" in caller
+    assert "証明できない時間的・手続的範囲" in caller
+    assert "残る読み取り専用の検収を巻き取る" in caller
+    assert "実装担当の終端と書込所有権の解放を確認するまで巻き取らず" in caller
+
+    assert before_fix.index("`## 進捗ログ（実行時）`へ保存する") < before_fix.index("保存後に同じexecutorへ再開を指示し")
+    assert "保存前に修正担当を起動させない" in before_fix
+
+    for contract in (
+        "git fetch --all --prune",
+        "git for-each-ref --contains=<変更前OID> refs/remotes/",
+        "git rev-list --first-parent --merges <最古対象OID>^..<pre_rewrite_head>",
+        "git log --first-parent --format='%H%x09%s' <最古対象OID>^..<pre_rewrite_head>",
+    ):
+        assert contract in after_fix
+    assert "`before_fix`で保存した`pre_rewrite_head`と返却値が完全一致" in after_fix
+    assert "`post_rewrite_head`と現行レーンHEADが完全一致" in after_fix
+    assert after_fix.index("`post_rewrite_head`と現行レーンHEADが完全一致") < after_fix.index("git fetch --all --prune")
+    assert after_fix.index("remote ref包含が0件") < after_fix.index("全検査の終了コード0と合格結果")
+    assert "保存した後だけ比較基準を`post_rewrite_head`へ更新する" in after_fix
+    assert (
+        "remote ref包含、merge commit又は件名重複を検出した場合は再開せず、"
+        "対象OID・ref・merge commit又は重複件名の実測値を付けて`needs_escalation`へ返す"
+    ) in after_fix
+
+    assert "`pre_rewrite_head`と`post_rewrite_head`が現行HEADと完全一致" in no_fix
+    assert "現行HEADと完全一致することだけを検収" in no_fix
+    assert "一致時は比較基準を変更せず再開する" in no_fix
+    assert "不一致時は両OIDの実測値を付けて`needs_escalation`へ返す" in no_fix
+    assert "公開済み判定、merge commit不在及び件名一意性の検査を起動しない" in no_fix
+
+    for contract in (
+        "remote ref包含0件",
+        "merge commit 0件",
+        "対象commit件名各1件",
+        "atk review-table validate <review.tsvの絶対パス>",
+        "対象OID・ref・merge commit又は重複件名の実測値",
+        "マージを許可せず`needs_escalation`へ返す",
+    ):
+        assert contract in final_merge_request
+    assert "最後に合格した`post_rewrite_head`と現行レーンHEADの一致" in final_merge_request
+    assert "全実装単位のOID、件名、順序、親子関係と差分帰属を保存する" in final_merge_request
+    assert final_merge_request.index("現行レーンHEADの一致") < final_merge_request.index("全実装単位のOID")
+    assert final_merge_request.index("全実装単位のOID") < final_merge_request.index("remote ref包含0件")
+    assert final_merge_request.index("対象commit件名各1件") < final_merge_request.index("`## 進捗ログ（実行時）`へ記録する")
+    assert final_merge_request.index("`## 進捗ログ（実行時）`へ記録する") < final_merge_request.index("禁止条件を検出した場合")
+
+    assert "資源回収前の検収境界" in executor
+    assert "履歴書換え完了まで中間引継ぎを設けず" in implementation_mode
+    assert "`履歴書換え防止`必須出力" in caller
+    assert "履歴書換え中の単一担当・公開済み判定" in design
+    assert "`completed`報告が`履歴書換え防止`を欠く場合だけ" in design
+    assert "レビュー修正後の報告が`履歴書換え防止`を欠き" in incidents
+
+    for required in (
+        "phase",
+        "`target_oids`",
+        "published_decision",
+        "Gitコマンドの終了コード",
+        "エラー要約",
+    ):
+        assert required in implementation_task
+    assert "未pushかつ単一の実装担当が所有する作業ツリー" in history_rewrite
+    assert "この範囲のfirst-parent全OIDについて" in history_rewrite
+    assert "autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する" in history_rewrite
 
 
 def test_review_resolution_precedes_history_rewrite_and_preserves_unadopted_history() -> None:

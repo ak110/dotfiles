@@ -38,8 +38,12 @@ agent定義とタスク文書が持つ手順、書式及び完了条件を起動
 
 `status: checkpoint`を受領した場合は、`checkpoint.type`別に次を検収する。
 
-- `review_round`: ラウンド番号、指摘件数、被覆結果、実害の概要、修正内容の要約、残る証拠不足及び次ラウンドの要否
+- `review_round`: ラウンド番号、`stage`、指摘件数、被覆結果、実害の概要、修正内容の要約、残る証拠不足及び次ラウンドの要否、修正前後HEADの完全OID
 - `merge_request`: レーンHEAD完全OID、レーン内検証結果及びrebase要否
+
+採用指摘の修正前に`stage: before_fix`を受領した場合は、`pre_rewrite_head`がレーンworktreeの現行HEADと一致することを実測し、`post_rewrite_head: なし`とともに`## 進捗ログ（実行時）`へ保存する。保存後に同じexecutorへ再開を指示し、保存前に修正担当を起動させない。
+修正・履歴検収後の`stage: after_fix`では、`before_fix`で保存した`pre_rewrite_head`と返却値が完全一致し、`post_rewrite_head`と現行レーンHEADが完全一致することを確認する。保持済みの全実装単位の変更前後OID、件名、順序、親子関係及び差分帰属へ対応付ける。`git fetch --all --prune`後に変更前OIDごとの`git for-each-ref --contains=<変更前OID> refs/remotes/`を実行してremote ref包含が0件であることを検収する。`git rev-list --first-parent --merges <最古対象OID>^..<pre_rewrite_head>`の出力が0件であることを検収する。`git log --first-parent --format='%H%x09%s' <最古対象OID>^..<pre_rewrite_head>`で対象commit件名が各1件であることを検収する。全検査の終了コード0と合格結果を`## 進捗ログ（実行時）`へ保存した後だけ比較基準を`post_rewrite_head`へ更新する。remote ref包含、merge commit又は件名重複を検出した場合は再開せず、対象OID・ref・merge commit又は重複件名の実測値を付けて`needs_escalation`へ返す。
+指摘なしの`stage: no_fix`では、`pre_rewrite_head`と`post_rewrite_head`が現行HEADと完全一致することだけを検収し、一致時は比較基準を変更せず再開する。不一致時は両OIDの実測値を付けて`needs_escalation`へ返す。`no_fix`では公開済み判定、merge commit不在及び件名一意性の検査を起動しない。
 
 第3ラウンド以降の`review_round`では、メインが方向性、再設計及び継続可否へ介入する。
 レビュー表の行数を停滞判定又は是正送付の条件にせず、一般的な待機と観測の契約を使う。
@@ -66,7 +70,10 @@ route変更、識別子消失、前提無効時のいずれかだけ、既存担
 8. 固有の延期指示がある場合のベースHEAD完全OID、未完了の終端順序及び実装資源の回収
 
 レビュー修正の履歴書換えは`implementation-task.md`と`agent-toolkit:commit`の契約へ照合する。
-phaseごとの`履歴書換え防止`、変更前後の完全OID、commit数、順序、親子関係、差分帰属、検証結果及びclean状態を確認する。
+phaseごとの`履歴書換え防止`、変更前後の完全OID、commit数、順序、親子関係、差分帰属、検証結果とclean状態を確認する。最終`merge_request`を再開する前に、最後に合格した`post_rewrite_head`と現行レーンHEADの一致、全実装単位のOID、件名、順序、親子関係と差分帰属を保存する。`after_fix`と同じremote ref包含0件、merge commit 0件と対象commit件名各1件の検査を再確認する。`atk review-table validate <review.tsvの絶対パス>`の終了コード0と警告なしも`## 進捗ログ（実行時）`へ記録する。禁止条件を検出した場合は、対象OID・ref・merge commit又は重複件名の実測値を付けてマージを許可せず`needs_escalation`へ返す。証拠不足の場合は同じexecutorへ不足範囲を返す。
+
+`completed`報告の`履歴書換え防止`が必須項目を欠く場合だけ、欠落時の代替検収を行う。完全な報告では現行の検収をそのまま行う。代替検収では、回収前の進捗ログに保存した変更前後OID対応、公開済み判定、履歴書換え範囲のmerge commit不在、対象commit件名の一意性とレビュー表の構造を保存済み証拠として扱う。ffマージ後のベースbranchにある件名、順序、親子関係と差分帰属へ照合する。回収済みレーンの無指定reflogから旧OIDを復元しない。
+Git実体から確定できないphaseごとの判定順序と、履歴書換え途中の担当引継ぎ有無だけを同じexecutorへ照会する。過去のGitコマンド終了コードとエラー要約は再送要求しない。応答を得られない場合は、当該項目を`不明`として記録する。保存済み証拠で代替した事実と、証明できない時間的・手続的範囲を`## 進捗ログ（実行時）`へ記録し、呼び出し元が残る読み取り専用の検収を巻き取る。実装担当の終端と書込所有権の解放を確認するまで巻き取らず、別主体も起動しない。この代替検収は報告欠落時だけに適用し、実装担当の`履歴書換え防止`必須出力、履歴書換え開始後の単一担当・公開済み判定と既存checkpoint種別を変更しない。
 
 呼び出し元はcommit受領、各レビューラウンド、マージ及びレーン完了を`## 進捗ログ（実行時）`へ記録する。
 報告と実体が異なる場合は実体を優先し、実作業又は証拠が不足する場合は同じexecutorへ返す。
