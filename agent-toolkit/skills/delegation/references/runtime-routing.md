@@ -28,7 +28,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
   - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す
   - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する
   - 実行中turnを明示的に中断する場合は`kill(session_id, timeout)`を使う。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端と結果を待つ。timeout超過後もsessionを保持し、`wait`または終端後の`send_message`で処理を続ける
-  - fast担当、fast担当からfix担当への昇格、別の実装単位、差分限定レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
+  - fast担当、fast担当からfix担当への昇格、別の実装単位及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
 - Codexから実際の別主体へ委譲するときは、`agents_server`を利用できる環境では同経路を使う
@@ -41,11 +41,11 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
-| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | `agents_server` MCP | Agentツール |
+| `pick_feedbacks_model` | フィードバックの選定とレーン分け | `agent-toolkit:process-feedbacks`のメイン | `agents_server` MCP | Agentツール |
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
 | `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
-| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | `agents_server` MCP | Agentツール |
+| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、レビュー修正及びCI失敗修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン | `agents_server` MCP | Agentツール |
 | `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
@@ -60,9 +60,9 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使う。いずれも`effort`部はAgentツールへ渡さず、`agents_server`では指定値をそのまま渡す。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
-5. fast担当、fast担当からfix担当への引継ぎ、別の実装単位、差分限定レビュー修正及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
+5. fast担当、fast担当からfix担当への引継ぎ、別の実装単位及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
    通常実装モードのレビュー修正は本項の明示的な例外とし、手順6の4遷移で継続又は新規起動を確定する。
-   Codexで元担当を持たない初回fast担当、別の実装単位、独立した差分限定レビュー修正またはCI修正の新規threadを起動する場合は、工程別モデル設定の通常起動契約に従う。
+   Codexで元担当を持たない初回fast担当、別の実装単位、CI修正のいずれかの新規threadを起動する場合は、工程別モデル設定の通常起動契約に従う。
    Codexで既存担当を置換する新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。
 6. 継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ使う。
    継続直前に工程別モデル設定と本節の経路規定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、

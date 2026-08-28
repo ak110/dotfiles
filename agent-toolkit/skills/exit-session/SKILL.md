@@ -18,7 +18,7 @@ process-loopから起動されたセッションでは、agent-toolkit pluginの
 
 次のいずれかを満たすときに限り呼び出す。
 
-- `agent-toolkit:process-feedbacks`「6. 振り返りと終了」節から呼ばれた場合
+- `agent-toolkit:process-feedbacks`の`references/finish-session.md`から呼ばれた場合
 - 自律終了再促フック（`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`環境変数のStopフック）から未起動判定時の再促として誘導された場合
 - ユーザーがSkill名を明示的に指定して本スキルを起動した場合
 

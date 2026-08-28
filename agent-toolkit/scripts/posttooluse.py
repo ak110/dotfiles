@@ -169,7 +169,7 @@ _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feed
 _ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedback"})
 
 # exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
-# （`agent-toolkit:process-feedbacks`「6. 振り返りと終了」節がexit-sessionで終端する）。
+# （`agent-toolkit:process-feedbacks`の`references/finish-session.md`がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 

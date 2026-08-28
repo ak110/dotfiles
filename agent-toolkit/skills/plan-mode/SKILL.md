@@ -49,7 +49,7 @@ description: >
 必要な工程へ入る時だけ対応資料を全文読む。
 
 - レーン割当時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む
-- レーン割当時は`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`を全文読む
+- フィードバック処理のレーン割当時は`agent-toolkit/skills/process-feedbacks/references/run-lanes.md`を全文読む
 - レーン割当時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読む
 - 計画起草時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を全文読む
 - 計画レビュー時は`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を全文読む
@@ -59,8 +59,7 @@ description: >
 - 実装担当へ引き継ぐ時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
 - 実装レビュー時は`agent-toolkit/skills/plan-mode/references/implementation-review-task.md`を全文読む
 - 実装担当のモード判定時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-impl-mode.md`を全文読む
-- 差分限定レビュー修正時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-diff-review-mode.md`を全文読む
-- 採否記録を計画へ反映する時は`agent-toolkit/skills/process-feedbacks/references/decision-format.md`を全文読む
+- フィードバックの採否とレーン分けを行う時は`agent-toolkit/skills/process-feedbacks/references/pick-feedbacks.md`を全文読む
 - 複数ファイルを取得する時は`agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md`を全文読む
 - 恒久化を判断する時は`agent-toolkit/skills/session-review/references/generation-criteria-detail.md`を全文読む
 - 履歴を書き換える時は`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む

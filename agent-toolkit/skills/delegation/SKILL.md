@@ -125,14 +125,6 @@ Codexの初回起動（元担当不在を実測確認した初回生成前失敗
 - 参照可能な状態の正本がない場合は、未完了事項と検収済み状態を起動文内で完結させる。
   レビュー表の保存先がない場合は、呼び出し元が管理対象領域へ表を作成してから継続する。
   表の内容を起動文へ埋め込む経路は採用しない
-- `feedbacks-planner`が`awaiting_confirmation`を返した場合は、呼び出し元が確認回答又は保存済みTBDを受領した後、
-   停止済みの識別子へ継続せず、同じ`feedbacks-planner`系列（同じバッチと計画）の新しい識別子を起動する。
-  初回起動には再開コンテキストを含めない。
-  確認待ち後の再開起動だけへ元のバッチ全項目の調査結果全文を渡す。
-  原文frontmatterの`source`原値（欠落は値なし）、`decision`を含むIDごとの累積`user_decisions`、出所と引用範囲付きの逐語回答・保存TBD、
-  初回起動と同じ計画ファイルの絶対パスも全て渡す。
-   元の調査結果を再調査せず要約もしない。
-   回答とTBDを対応する採否記録へ統合し、確定済みの`decision`を再判断せず計画担当へ渡す
 - 独立したレビュー系統、異なる観点、先行履歴に依存しない評価は新しい識別子で起動する
 - 追送する要件が未確定の場合は、委譲元がユーザーへ確認して要件を確定してから送る。
   要件が確定していれば先行応答の受領を待たずに送ってよい。
@@ -148,9 +140,7 @@ Codexの初回起動（元担当不在を実測確認した初回生成前失敗
   配送不能の判定手段は`references/claude-code-runtime.md`を正本とする。
   Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する。
   完了報告を受領して停止済みの識別子は一律に禁止せず、`references/claude-code-runtime.md`と
-  `references/runtime-routing.md`が定める、同じ担当へ同じタスクを返し、継続直前の実効`engine`・`model`・`effort`が一致する条件を満たす場合だけ再利用する。
-  `feedbacks-planner`の`awaiting_confirmation`後の再開はこの一般条件の例外であり、停止済みの識別子を再利用せず、
-  全文の再開コンテキストを含めた同じ系列の新しい識別子を起動する
+  `references/runtime-routing.md`が定める、同じ担当へ同じタスクを返し、継続直前の実効`engine`・`model`・`effort`が一致する条件を満たす場合だけ再利用する
 - 計画ファイルなどを反復編集する工程は、整合確認と修正を同じ委譲先へまとめる
 - ユーザーの介入が生じた場合は強制停止・再起動を既定とせず、介入内容を追加指示として伝えて
   委譲先自身に反映させる。停止するのは介入により対象範囲・前提が無効化され、
@@ -170,23 +160,18 @@ Codexの初回起動（元担当不在を実測確認した初回生成前失敗
 ```text
 route: <実際に使った経路>
 identifier: <threadまたはagent識別子>
-status: completed | fast_fix_handoff | merge_review_pending | scope_deviation_hold | checkpoint | awaiting_confirmation | needs_escalation
+status: completed | fast_fix_handoff | checkpoint | needs_escalation
 response: <受信者の最小完了報告>
 ```
 
 `fast_fix_handoff`は`implementation-task.md`のfast担当が同一失敗箇所の残存とdirty差分を
 構造化した`repair_handoff`として返す専用状態であり、`completed`又は`needs_escalation`へ読み替えない。
-`merge_review_pending`は`implementation-task.md`のマージ担当がrebase競合を解消した際の専用状態である。
-ff前進せず、解消箇所とrebase後HEADを返す。
-`scope_deviation_hold`は同文書の実装担当が計画の変更説明を超える差分を検出した際の専用状態である。
-追加変更とcommitへ進まず返す。いずれも`fast_fix_handoff`と同型の中間報告であり、確定状態へ読み替えない。
 `checkpoint`は作業継続中の定義済み中間報告として受理する。
 `checkpoint`を返せるのは、呼び出し元が最上位セッションであり、呼び出し元のタスク文書がチェックポイントを
 定義する委譲に限る（`agent-toolkit/agents/plan-impl-executor.md`のチェックポイント契約を参照）。
 
-`awaiting_confirmation`は、`feedbacks-planner`が不採用確認用`user_decisions`を返して確認を待つ状態を表す。
-呼び出し元はこれを失敗として処理せず、確認回答又はTBDを受領して同じ系列の新しい識別子を起動する。
-構造化された`status: awaiting_confirmation`は受領可能な状態である。
+`needs_escalation`は確認、認可又は前提の補正を呼び出し元へ返す状態である。
+回答後は同じ担当へ同じtaskを返す一般的な継続条件を適用する。
 待機表明による終端は再開可能な正常状態として受理し、呼び出し元が完了通知を中継して再開する。
 必須結果不足と成果物との不一致は完了と扱わない。
 記録経路は通常配送不能を実測した場合だけ使用し、所有主体の終端と内容検収後に管理対象一時領域を後始末する。

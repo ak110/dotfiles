@@ -209,7 +209,7 @@ def test_current_output_is_synced() -> None:
         "部分適用も別の実行経路への迂回もせず、失敗として返す。",
         "名前付きagent定義自体を`spawn_agent`又は`followup_task`へ渡さない。",
         "`completed`、`evidence_insufficient`及び`needs_escalation`は適用区間の終端結果として外側のメイン工程へ返す。",
-        "`awaiting_confirmation`は適用区間を終了する。",
+        "`needs_escalation`への回答又は補正を受領した場合は、",
         "`checkpoint`は適用区間を終了する。",
         "Codexでは自身への`SendMessage`を使わない",
         "実際の別主体が必要な場合だけ、`runtime-routing.md`の通常経路でCodexから`agents_server`へ委譲する",
