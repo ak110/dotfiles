@@ -26,7 +26,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
   - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す
-  - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する
+  - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合も、保持済みの実効条件から同じ会話を暗黙に再開する
   - 実行中turnを明示的に中断する場合は`kill(session_id, timeout)`を使う。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端と結果を待つ。timeout超過後もsessionを保持し、`wait`または終端後の`send_message`で処理を続ける
   - fast担当、fast担当からfix担当への昇格、別の実装単位及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
@@ -68,7 +68,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    継続直前に工程別モデル設定と本節の経路規定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
    現在のthreadの起動に用いた実効3値と比較する。
    3値がすべて一致する場合だけ同一threadへ継続接続する。
-   `engine=claude`ではClaude Codeからは`SendMessage`、Codexからは`agents_server`の`send_message(session_id, prompt)`で同じ担当へ追加指示を返す。`engine=codex`では`agents_server`の`send_message(session_id, prompt)`で実行中turnへのsteer又は終端後のreplyを選択する。終端後のreply開始に結果回収の前提条件は設けない。
+   `engine=claude`ではClaude Codeからは`SendMessage`、Codexからは`agents_server`の`send_message(session_id, prompt)`で同じ担当へ追加指示を返す。`engine=codex`では`agents_server`の`send_message(session_id, prompt)`で実行中turnへのsteer、終端後のreply又は保持期限後の暗黙再開を選択する。終端後のreply開始に結果回収の前提条件は設けない。
    いずれかの実効値が異なる場合、同じ担当へ同じタスクを返さない場合、又は中断済み・完了配送不能・前提無効化の場合は、
    同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。

@@ -27,7 +27,7 @@ _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
 
 
-def _build_options(cwd: str, model: str | None, effort: str | None) -> Any:
+def _build_options(cwd: str, model: str | None, effort: str | None, session_id: str | None = None) -> Any:
     """Claude Code既定のシステム指示を有効にしたSDKオプションを組む。"""
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -35,6 +35,7 @@ def _build_options(cwd: str, model: str | None, effort: str | None) -> Any:
         cwd=cwd,
         model=model,
         effort=cast(_EffortLevel, effort),
+        resume=session_id,
         permission_mode="bypassPermissions",
         setting_sources=["user", "project"],
         system_prompt={"type": "preset", "preset": "claude_code"},
@@ -89,10 +90,45 @@ class ClaudeServerManager:
         model: str | None = None,
         effort: str | None = None,
     ) -> SessionState:
-        options = _build_options(cwd, model, effort)
+        return await self._start_owned_task(prompt, cwd, model, effort, session_id=None)
+
+    async def resume(
+        self,
+        session_id: str,
+        prompt: str,
+        cwd: str,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> SessionState:
+        """保存済みClaude sessionを新しい所有タスクで再開する。"""
+        await self._stop_owned_task(session_id)
+        return await self._start_owned_task(prompt, cwd, model, effort, session_id=session_id)
+
+    async def _stop_owned_task(self, session_id: str) -> None:
+        """同じsession IDを所有する旧タスクを終了し、再開時のキュー競合を防ぐ。"""
+        task = next((item for item in self._tasks if self._task_sessions.get(item) == session_id), None)
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    async def _start_owned_task(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        *,
+        session_id: str | None,
+    ) -> SessionState:
+        """新規又は保存済みsessionを所有する長命タスクを開始する。"""
+        options = _build_options(cwd, model, effort, session_id)
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
-        task: asyncio.Task[Any] = asyncio.create_task(self._run(prompt, cwd, model, effort, options, initialized))
+        task: asyncio.Task[Any] = asyncio.create_task(
+            self._run(prompt, cwd, model, effort, options, initialized, expected_session_id=session_id)
+        )
         self._tasks.add(task)
         task.add_done_callback(self._forget_task)
         try:
@@ -168,6 +204,8 @@ class ClaudeServerManager:
         effort: str | None,
         options: Any,
         initialized: asyncio.Future[SessionState],
+        *,
+        expected_session_id: str | None,
     ) -> None:
         client: Any = None
         session: SessionState | None = None
@@ -218,6 +256,8 @@ class ClaudeServerManager:
                             session_id = data.get("session_id") if isinstance(data, dict) else None
                             if not isinstance(session_id, str) or not session_id:
                                 raise RuntimeError("Claude init message did not contain session_id")
+                            if expected_session_id is not None and session_id != expected_session_id:
+                                raise RuntimeError("Claude resume returned an unexpected session_id")
                             session = SessionState(
                                 session_id=session_id,
                                 cwd=cwd,

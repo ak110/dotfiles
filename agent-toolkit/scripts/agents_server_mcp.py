@@ -19,6 +19,7 @@ from typing import Any
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
 from _agents_server_state import (
+    SessionResumeState,
     SessionState,
     _validate_cwd,
     _validate_model_effort,
@@ -42,8 +43,9 @@ class AgentsServerManager:
 
     def __init__(self) -> None:
         self.sessions: dict[str, SessionState] = {}
-        self.expired_session_ids: set[str] = set()
+        self.expired_sessions: dict[str, SessionResumeState] = {}
         self._condition = asyncio.Condition()
+        self._resume_lock = asyncio.Lock()
         self._codex: Any = None
         self._claude: Any = None
 
@@ -68,7 +70,7 @@ class AgentsServerManager:
         try:
             session = self.sessions[session_id]
         except KeyError as exc:
-            if session_id in self.expired_session_ids:
+            if session_id in self.expired_sessions:
                 raise ValueError(f"session retention expired: {session_id}") from exc
             raise ValueError(f"unknown session: {session_id}") from exc
         if session.retention_deadline is not None and asyncio.get_running_loop().time() >= session.retention_deadline:
@@ -77,9 +79,10 @@ class AgentsServerManager:
         return session
 
     def _expire_session(self, session_id: str) -> None:
-        """期限切れsessionの結果本体を破棄し、識別子だけを保持する。"""
-        self.sessions.pop(session_id, None)
-        self.expired_session_ids.add(session_id)
+        """期限切れ結果本体を破棄し、会話再開用の最小状態だけを保持する。"""
+        session = self.sessions.pop(session_id, None)
+        if session is not None:
+            self.expired_sessions[session_id] = SessionResumeState.from_session(session)
 
     async def start(
         self,
@@ -119,6 +122,30 @@ class AgentsServerManager:
     async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
         """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
         _validate_prompt(prompt)
+        async with self._resume_lock:
+            retained = self.sessions.get(session_id)
+            if (
+                retained is not None
+                and retained.retention_deadline is not None
+                and asyncio.get_running_loop().time() >= retained.retention_deadline
+            ):
+                self._expire_session(session_id)
+            resume_state = self.expired_sessions.get(session_id)
+            if resume_state is not None:
+                backend = self._backend(resume_state.engine)
+                session = await backend.resume(
+                    resume_state.session_id,
+                    prompt,
+                    resume_state.cwd,
+                    resume_state.model,
+                    resume_state.effort,
+                )
+                self.expired_sessions.pop(session_id, None)
+                delivery = "reply_failed" if session.result_available else "reply_started"
+                return {
+                    "delivery": delivery,
+                    **session.public_status(include_result=session.result_available),
+                }
         session = self._get_session(session_id)
         backend = self._backend(session.engine)
         async with session.turn_control_lock:

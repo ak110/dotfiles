@@ -3243,6 +3243,22 @@ def test_picker_classifies_without_creating_unneeded_plans() -> None:
         assert phrase in picker
 
 
+def test_picker_receives_only_processable_ready_entries() -> None:
+    """既存の保留項目をpickerの候補や優先度へ混入させない。"""
+    picker = _PICK_FEEDBACKS.read_text(encoding="utf-8")
+    lanes = _RUN_LANES.read_text(encoding="utf-8")
+
+    for phrase in (
+        "atk mq list --status=processable",
+        "表示上の判定が`ready`である項目だけ",
+        "候補、優先度、依存判断又は固有指示の入力へ含めない",
+        "`blocked`の項目も、その処理回のpickerへ渡さない",
+    ):
+        assert phrase in picker
+    assert "active一覧" not in picker
+    assert "processableなready項目" in lanes
+
+
 def test_lane_dependency_order_is_not_filename_order() -> None:
     """ファイル名順と異なる実装依存順を全接続先が保持する。"""
     picker = _PICK_FEEDBACKS.read_text(encoding="utf-8")

@@ -398,6 +398,32 @@ class AppServerManager:
             return session
         return session
 
+    async def resume(
+        self,
+        session_id: str,
+        prompt: str,
+        cwd: str,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> SessionState:
+        """保存済みthreadを再開して新しいturnを開始する。"""
+        _validate_prompt(prompt)
+        _validate_cwd(cwd)
+        _validate_model_effort(model, effort)
+        client = await self._ensure_client()
+        session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort, engine="codex")
+        self.sessions[session_id] = session
+        _initialize_turn(session)
+        try:
+            await self._resume_thread(session, client)
+            await self._start_turn(session, prompt, client)
+        except Exception as exc:
+            if self._turn_start_response_is_ambiguous(client, exc):
+                await self._mark_turn_start_ambiguous(session, exc)
+            else:
+                await self._mark_failed(session, exc, retryable=False)
+        return session
+
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
         _validate_prompt(prompt)
@@ -482,18 +508,7 @@ class AppServerManager:
         self._begin_reply(session)
         try:
             client = await self._ensure_client()
-            resume_params: dict[str, Any] = {
-                "threadId": session.session_id,
-                "cwd": session.cwd,
-                "approvalPolicy": "never",
-                "sandbox": "danger-full-access",
-            }
-            if session.model is not None:
-                resume_params["model"] = session.model
-            resume_response = await client.request("thread/resume", resume_params)
-            resumed_thread = resume_response.get("thread")
-            if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
-                raise AppServerError("thread/resume returned an unexpected thread.id")
+            await self._resume_thread(session, client)
         except Exception as exc:
             await self._mark_failed(session, exc, retryable=True)
             return "reply_failed", session.public_status(), exc
@@ -506,6 +521,22 @@ class AppServerManager:
             await self._mark_failed(session, exc, retryable=False)
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
+
+    @staticmethod
+    async def _resume_thread(session: SessionState, client: Any) -> None:
+        """保存済みCodex threadを現在の実行条件で再開する。"""
+        resume_params: dict[str, Any] = {
+            "threadId": session.session_id,
+            "cwd": session.cwd,
+            "approvalPolicy": "never",
+            "sandbox": "danger-full-access",
+        }
+        if session.model is not None:
+            resume_params["model"] = session.model
+        resume_response = await client.request("thread/resume", resume_params)
+        resumed_thread = resume_response.get("thread")
+        if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
+            raise AppServerError("thread/resume returned an unexpected thread.id")
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:

@@ -125,6 +125,28 @@ class SessionState:
         return result
 
 
+@dataclasses.dataclass(frozen=True)
+class SessionResumeState:
+    """結果本文の回収後も同じ会話を再開するために保持する最小状態。"""
+
+    session_id: str
+    cwd: str
+    model: str | None
+    effort: str | None
+    engine: str
+
+    @classmethod
+    def from_session(cls, session: SessionState) -> SessionResumeState:
+        """終端sessionから再開に必要な入力だけを退避する。"""
+        return cls(
+            session_id=session.session_id,
+            cwd=session.cwd,
+            model=session.model,
+            effort=session.effort,
+            engine=session.engine,
+        )
+
+
 def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:
     """新しいturnの開始前に共有状態を初期化する。"""
     session.turn_id = ""
