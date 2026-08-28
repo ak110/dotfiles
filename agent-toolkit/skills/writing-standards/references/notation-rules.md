@@ -19,11 +19,13 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 
 ## 口語表現チェック
 
-恒久成果物にはpyfltr内蔵の`colloquial-check`を実行する。MCP経由では`run_for_agent`へ対象パスを渡し、`commands`と`enable`へ`colloquial-check`を明示する。MCPを利用できない場合は次を使う。
+恒久成果物にはpyfltr内蔵の`colloquial-check`を実行する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。
 
 ```sh
-uvx pyfltr run --commands=colloquial-check --enable=colloquial-check <対象ファイルの絶対パス>
+uvx pyfltr run --commands=colloquial-check --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
 ```
+
+検査済みと判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、`summary`レコードに`missing_targets`が現れず、`fully_excluded_files`も現れない場合だけとする。終了コード0又は診断0件だけを対象到達済みの根拠にしない。
 
 検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とする。Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
 

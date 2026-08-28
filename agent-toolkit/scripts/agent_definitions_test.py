@@ -52,6 +52,7 @@ _REVIEW_LOOP_COORDINATION = _PLAN_MODE_REFERENCES / "review-loop-coordination.md
 _CODING_STANDARDS = _AGENTS_DIR.parent / "skills" / "coding-standards" / "SKILL.md"
 _AGENT_STANDARDS = _AGENTS_DIR.parent / "skills" / "agent-standards" / "SKILL.md"
 _WRITING_STANDARDS = _AGENTS_DIR.parent / "skills" / "writing-standards" / "SKILL.md"
+_NOTATION_RULES = _WRITING_STANDARDS.parent / "references" / "notation-rules.md"
 _REFERENT_TABLE = _WRITING_STANDARDS.parent / "references" / "referent-table.md"
 _AGENT_RULES = _AGENTS_DIR.parent / "rules" / "01-agent.md"
 _AGENT_OPERATIONS_RULES = _AGENTS_DIR.parent / "rules" / "02-agent-operations.md"
@@ -1420,6 +1421,50 @@ def test_feedback_source_passthrough_and_storage_verification_contract() -> None
     assert "ユーザー発話を原文とする投入で`source`を受領していない場合は、値を推測せず省略" in standards
     assert "source `plan`と要求単位の由来" in plan_and_add
     assert "source `session-review`を明示" in session_review
+
+
+def test_colloquial_check_verifies_reachable_targets_from_jsonl() -> None:
+    """口語検査が除外解除後のJSONL対象情報で到達性を判定する。"""
+    notation = _NOTATION_RULES.read_text(encoding="utf-8")
+
+    assert (
+        "uvx pyfltr run --commands=colloquial-check --enable=colloquial-check --no-exclude "
+        "--output-format=jsonl <対象ファイルの絶対パス>"
+    ) in notation
+    assert "JSONLの`header`レコードの`files`が1以上" not in notation
+    for phrase in (
+        "単一ファイルを指定したJSONLの`header`レコードの`files`が1",
+        "`summary`レコードに`missing_targets`が現れず",
+        "`fully_excluded_files`も現れない",
+        "終了コード0又は診断0件だけを対象到達済みの根拠にしない",
+    ):
+        assert phrase in notation
+
+
+def test_body_registration_verification_contract_is_synchronized() -> None:
+    """本文検収の各段階とCodex生成物の同期を固定する。"""
+    operations = _AGENT_OPERATIONS_RULES.read_text(encoding="utf-8")
+    codex_agents = _CODEX_AGENTS_ADAPTER.read_text(encoding="utf-8")
+    begin = "<!-- BEGIN: agent-toolkit/rules/02-agent-operations.md -->"
+    end = "<!-- END: agent-toolkit/rules/02-agent-operations.md -->"
+    assert begin in codex_agents
+    generated_section = codex_agents.split(begin, maxsplit=1)[1].split(end, maxsplit=1)[0].strip("\n")
+    assert generated_section == operations.rstrip("\n")
+
+    for document in (operations, generated_section):
+        for phrase in (
+            "そのCLIが提供するデータ引数を使う",
+            "そのCLIが提供するオプション終端を使い",
+            "当該CLIのヘルプ又は公開仕様で確認",
+            "特定CLIの引数又はオプション終端を全CLIへ一般化しない",
+            "本文を登録・送信するコマンドの初回出力には、`head`又は`tail`等の切り詰めを追加しない",
+            "登録・送信後は登録結果から保存本文を取得し、送信元本文と保存本文の末尾改行の有無だけを同じ状態へ正規化して、それ以外を全文比較する",
+            "行単位の検索一致又は部分比較を同一性の根拠にしない",
+            "本文の全文比較後に、保存本文を消費する後段処理が要求する節、項目、値等の構造を別に検収する",
+            "構造検収を全文比較の代用にしない",
+            "警告、エラー、全文不一致又は構造不成立を検出した場合は、同じ登録・送信経路で修復して両検査を再実行する",
+        ):
+            assert phrase in document
 
 
 def test_session_review_advisor_scans_successful_warning_output_after_extraction() -> None:
