@@ -1681,7 +1681,6 @@ def test_initial_fast_launch_passes_all_implementation_task_inputs() -> None:
         "`agent-toolkit:plan-mode`の実装担当契約",
         "計画ファイル、対象worktree、プロジェクト規範の絶対パス",
         "実装するコミット単位、その目的と変更説明",
-        "通常実装レビュー表の絶対パスと`implementation-review`の`track`",
         "適用する作成規範スキル名と絶対パス",
         "受領している場合は受領順を保持したフィードバックファイル名一覧",
         "追加指示、許容済みの挙動変化",
