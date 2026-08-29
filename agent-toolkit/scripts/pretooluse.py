@@ -975,7 +975,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
 
 # --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---
 
-# `agent-toolkit/rules/01-agent.md`「日本語」節が指摘する誤読リスクのある禁止規定形式。
+# 誤読リスクのある禁止規定形式。
 # 「Xでなければ`Y`してよい」と誤読される可能性があるため、全称否定形への書き換えを推奨する。
 _STYLE_NEGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"([^、\s]{1,20})を根拠に([^、\s]{1,20})しない"),
