@@ -29,5 +29,6 @@ CI成功まで同じ原因別経路と再判定を反復し、既に`adopt`済�
 
 ## セッション終了
 
-最後に`session-review`を起動し、その完了後に`exit-session`を起動する。
-③の開始後に追加された項目は進行中の終端工程へ混ぜず、次回の処理で扱う。
+最後に`agent-toolkit:completion-report`を起動する。同スキルは`process-feedbacks`実行条件により`session-review`を必ず実施し、固有成果と振り返り結果を1回だけ報告する。報告完了後に`agent-toolkit:exit-session`を起動する。
+
+active一覧を再取得して追加分を同じセッションへ混ぜず、追加分は次回セッションで扱う。
