@@ -67,7 +67,7 @@ description: >
 - 実装担当へ引き継ぐ時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
 - 実装レビュー時は`agent-toolkit/skills/plan-mode/references/implementation-review-task.md`を全文読む
 - 実装担当のモード判定時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-impl-mode.md`を全文読む
-- フィードバックの採否とレーン分けを行う時は`agent-toolkit/skills/process-feedbacks/references/pick-feedbacks.md`を全文読む
+- フィードバックの採否とレーン分けを行う時は`agent-toolkit/share/pick-feedbacks.subagent.md`を全文読む
 - 複数ファイルを取得する時は`agent-toolkit/skills/feedback-standards/references/managed-temp-bulk-show.md`を全文読む
 - 恒久化を判断する時は`agent-toolkit/skills/session-review/references/generation-criteria-detail.md`を全文読む
 - 履歴を書き換える時は`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む

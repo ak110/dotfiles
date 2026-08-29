@@ -1,16 +1,21 @@
 """process-feedbacksの着手時機と固定ready集合に関する文書契約テスト。
 
-①の状態遷移の時機と固定集合の寿命は、`SKILL.md`、`pick-feedbacks.md`、`run-lanes.md`及び
-`finish-session.md`へ分散して記述される。片側だけを改訂すると、選定済み項目を`inbox`のまま
-②の計画・worktree作成へ渡す経路や、全レーン後にready一覧を再取得して起動時の集合を拡張する
-経路が復活する。本テストは4文書が同じ対象集合、状態の意味及び遷移時機を保持することを検査する。
+①の状態遷移の時機と固定集合の寿命は、`SKILL.md`、`share/pick-feedbacks.parent.md`、
+`share/pick-feedbacks.subagent.md`、`run-lanes.md`及び`finish-session.md`へ分散して記述される。
+片側だけを改訂すると、選定済み項目を`inbox`のまま②の計画・worktree作成へ渡す経路や、
+全レーン後にready一覧を再取得して起動時の集合を拡張する経路、メインが選定工程の最初に
+キュー一覧を取得する経路及び`blocked`項目を一律に除外する経路が復活する。
+本テストはこれらの文書が同じ対象集合、状態の意味及び遷移時機を保持することを検査する。
 """
 
 import pathlib
 
-_SKILL_DIR = pathlib.Path(__file__).resolve().parents[1] / "skills" / "process-feedbacks"
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_SKILL_DIR = _PLUGIN_ROOT / "skills" / "process-feedbacks"
+_SHARE_DIR = _PLUGIN_ROOT / "share"
 _SKILL = _SKILL_DIR / "SKILL.md"
-_PICK = _SKILL_DIR / "references" / "pick-feedbacks.md"
+_PICK = _SHARE_DIR / "pick-feedbacks.parent.md"
+_PICK_SUBAGENT = _SHARE_DIR / "pick-feedbacks.subagent.md"
 _RUN_LANES = _SKILL_DIR / "references" / "run-lanes.md"
 _FINISH = _SKILL_DIR / "references" / "finish-session.md"
 
@@ -32,7 +37,7 @@ def test_start_processing_is_ordered_after_picker_output_review() -> None:
     検収より前に置くと未確定の集合を移し、②側に置くと計画・worktree作成が占有より先に進む。
     """
     text = _read(_PICK)
-    assert text.index("\n## 出力\n") < text.index("\n## 処理開始\n")
+    assert text.index("\n## 出力の受領\n") < text.index("\n## 処理開始\n")
     assert text.count("atk mq start-processing") == 1
     assert "atk mq start-processing" in _section(text, "処理開始")
 
@@ -40,7 +45,7 @@ def test_start_processing_is_ordered_after_picker_output_review() -> None:
 def test_start_processing_targets_only_selected_inbox_entries() -> None:
     """遷移対象が選定時点のinbox項目だけであり、再開中のprocessing項目を除くことを検査する。"""
     section = _section(_read(_PICK), "処理開始")
-    assert "選定時点で`inbox`だったファイル名だけ" in section
+    assert "選定時点の状態を`inbox`と報告したファイル名だけ" in section
     assert "既に`processing`だった再開項目は、この引数へ含めない" in section
     assert "全件が`processing`へ配置されたことを確認して①を完了する" in section
 
@@ -68,3 +73,20 @@ def test_fixed_ready_set_is_not_refetched_after_lanes() -> None:
         for line in lines:
             assert "再取得せず" in line or "再取得しない" in line, f"{path.name}: {line}"
     assert "再取得" not in _section(_read(_SKILL), "実行順")
+
+
+def test_picker_owns_queue_listing() -> None:
+    """メインが選定工程の最初にキュー一覧を取得する経路の復活を検出する。"""
+    assert "atk mq list --status=processable" not in _read(_SKILL)
+    assert "atk mq list --status=processable" not in _read(_PICK)
+    assert "atk mq list --status=processable" in _read(_PICK_SUBAGENT)
+
+
+def test_picker_excludes_external_wait_only() -> None:
+    """`blocked`項目を一律に除外せず、外部待ちと修復待ちだけを除外することを検査する。"""
+    text = _read(_PICK_SUBAGENT)
+    assert "cooldown-until" in text
+    assert "dependency-unmet" in text
+    assert "未回答TBD" in text
+    assert "表示上の判定が`blocked`の項目" not in text
+    assert "processable一覧で`blocked`の項目も" not in text

@@ -473,7 +473,7 @@ TBDは回答を得られない`AskUserQuestion`の代替として用いる。本
    2. 上記に書かれた手順（エッジケースなどで手順が矛盾する場合は、方針などを優先して臨機応変な判断・行動をする）
 5. システムプロンプト
 
-自己生成起点のフィードバック（`agent-toolkit:process-feedbacks`の`references/pick-feedbacks.md`がfrontmatterの`source`値からエージェント由来と判定するもの）は優先順位4に準じ、
+自己生成起点のフィードバック（`agent-toolkit:process-feedbacks`のpicker起動契約がfrontmatterの`source`値からエージェント由来と判定するもの）は優先順位4に準じ、
 通常より懐疑的に採否を判定する。
 
 上記の優先順位は、厳守規定、手順、例外処理その他の全ての規範へ先に適用し、優先順位で有効と確定した適用対象だけを後続の規範へ適用する。
