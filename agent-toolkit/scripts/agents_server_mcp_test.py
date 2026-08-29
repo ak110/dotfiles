@@ -103,6 +103,21 @@ class FakeBackend:
         """バックエンド終了処理のダミー。"""
 
 
+class BlockingInterruptBackend(FakeBackend):
+    """中断要求の配送を解除イベントまで停止する偽バックエンド。"""
+
+    def __init__(self, sessions: dict[str, subject.SessionState], engine: str) -> None:
+        super().__init__(sessions, engine)
+        self.interrupt_started = asyncio.Event()
+        self.release_interrupt = asyncio.Event()
+
+    async def interrupt(self, session: subject.SessionState) -> None:
+        del session
+        self.interrupt_calls += 1
+        self.interrupt_started.set()
+        await self.release_interrupt.wait()
+
+
 def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[subject.AgentsServerManager, FakeBackend]:
     """指定engineだけをFakeBackendへ差し替えた共有managerを返す。"""
     manager = subject.AgentsServerManager()
@@ -157,14 +172,17 @@ def test_public_tools_are_exactly_four_async_operations() -> None:
     assert set(subject.mcp._tool_manager._tools) == {"start", "wait", "send_message", "kill"}
 
 
-def test_wait_and_kill_schema_expose_unified_timeout_defaults() -> None:
-    """公開schemaのwaitとkillが270秒の既定timeoutと省略契約を示す。"""
+def test_public_timeout_schemas_expose_unified_defaults() -> None:
+    """公開schemaの待機系操作が270秒の既定timeoutと省略契約を示す。"""
     assert subject.DEFAULT_WAIT_TIMEOUT == 270.0
     assert subject.DEFAULT_KILL_TIMEOUT == 270.0
+    assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
     assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
     wait_tool = subject.mcp._tool_manager.get_tool("wait")
+    send_tool = subject.mcp._tool_manager.get_tool("send_message")
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert wait_tool is not None
+    assert send_tool is not None
     assert kill_tool is not None
 
     wait_timeout = wait_tool.parameters["properties"]["timeout"]
@@ -175,6 +193,17 @@ def test_wait_and_kill_schema_expose_unified_timeout_defaults() -> None:
     assert "通常の既定は270秒" in wait_tool.description
     assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in wait_tool.description
     assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
+    send_timeout = send_tool.parameters["properties"]["timeout"]
+    assert send_timeout["default"] == 270.0
+    assert send_timeout["description"] == (
+        "継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。"
+        "委譲先の応答生成の完了は待たない。0以下は受理しない。"
+    )
+    assert "通常の既定は270秒" in send_tool.description
+    assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in send_tool.description
+    assert "待つのは継続要求の配送結果が確定するまで" in send_tool.description
+    assert "委譲先の応答生成の完了ではない" in send_tool.description
+    assert "上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する" in send_tool.description
     kill_timeout = kill_tool.parameters["properties"]["timeout"]
     assert kill_timeout["default"] == 270.0
     assert kill_timeout["description"] == (
@@ -348,6 +377,87 @@ async def test_kill_lock_wait_respects_positive_timeout(tmp_path: pathlib.Path) 
     async with session.turn_control_lock:
         with pytest.raises(TimeoutError, match="kill timed out: thread-1"):
             await manager.kill(session.session_id, timeout=0.01)
+
+    assert backend.interrupt_calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("timeout", [0, -0.1])
+async def test_send_message_rejects_non_positive_timeout(timeout: float, tmp_path: pathlib.Path) -> None:
+    """継続要求のtimeoutは正の値だけを受理し、backendへ配送しない。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        await manager.send_message(session.session_id, "追加指示", timeout=timeout)
+
+    assert backend.send_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_kill_timeout_zero_bounds_turn_control_lock_wait(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """killのtimeout=0でも中断要求配送前のロック待ちを有限時間で打ち切る。"""
+    monkeypatch.setattr(subject, "DEFAULT_SEND_MESSAGE_TIMEOUT", 0.01, raising=False)
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    async with session.turn_control_lock:
+        with pytest.raises(TimeoutError, match="the interrupt request was not delivered"):
+            await asyncio.wait_for(manager.kill(session.session_id, timeout=0), timeout=0.1)
+
+    assert backend.interrupt_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_kill_timeout_zero_bounds_interrupt_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """killのtimeout=0でも中断要求の配送待ちを有限時間で打ち切る。"""
+    monkeypatch.setattr(subject, "DEFAULT_SEND_MESSAGE_TIMEOUT", 0.01, raising=False)
+    manager = subject.AgentsServerManager()
+    backend = BlockingInterruptBackend(manager.sessions, "codex")
+    manager._codex = backend
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    with pytest.raises(TimeoutError, match="interrupt delivery is undetermined"):
+        await asyncio.wait_for(manager.kill(session.session_id, timeout=0), timeout=0.1)
+
+    assert session.session_id in manager.sessions
+    assert backend.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(tmp_path: pathlib.Path) -> None:
+    """中断要求配送後の終端待ち超過を未配送と区別する。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+
+    with pytest.raises(
+        TimeoutError,
+        match="the interrupt request was delivered but the turn did not terminate",
+    ):
+        await manager.kill(session.session_id, timeout=0.01)
+
+    assert backend.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_kill_timeout_before_codex_turn_id_reports_not_delivered(tmp_path: pathlib.Path) -> None:
+    """Codexのturn_id待ち超過を中断要求未配送として報告する。"""
+    manager, backend = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+
+    with pytest.raises(TimeoutError, match="the interrupt request was not delivered"):
+        await manager.kill(session.session_id, timeout=0.01)
 
     assert backend.interrupt_calls == 0
 
@@ -1070,6 +1180,51 @@ async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathl
 
     with pytest.raises(state.SessionOwnerGoneError, match="session owner task has ended"):
         await asyncio.wait_for(send_task, timeout=0.1)
+
+
+@pytest.mark.asyncio
+async def test_send_message_timeout_reports_undetermined_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """継続要求の配送結果が確定しない場合に指定上限で打ち切る。"""
+    client = BlockingContinuationClaudeClient()
+    manager = subject.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        manager._condition,
+        client_factory=lambda _options: client,
+        expire_session=manager._expire_session,
+    )
+    manager._claude = backend
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    try:
+        session = await backend.start("調査", str(tmp_path))
+        await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
+
+        with pytest.raises(TimeoutError, match="send_message timed out: claude-blocking; delivery is undetermined"):
+            await manager.send_message(session.session_id, "継続", timeout=0.01)
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib.Path) -> None:
+    """打ち切り済みで未処理の継続要求を所有タスクが後から配送しない。"""
+    client = FakeClaudeClient([])
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    session = subject.SessionState("claude-queued", str(tmp_path), engine="claude")
+    channel = claude_backend._CommandChannel()
+    manager.sessions[session.session_id] = session
+    manager._channels[session.session_id] = channel
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(manager.send_message(session, "打ち切り"), timeout=0.01)
+
+    command = await channel.get()
+    await manager._handle_command(client, session, command, None)
+
+    assert not client.queries
 
 
 @pytest.mark.asyncio

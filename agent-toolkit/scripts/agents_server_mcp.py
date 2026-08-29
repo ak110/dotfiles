@@ -36,6 +36,7 @@ except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開�
 
 DEFAULT_WAIT_TIMEOUT = 270.0
 DEFAULT_KILL_TIMEOUT = 270.0
+DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
 SUPPORTED_ENGINES = frozenset({"claude", "codex"})
 REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"})
 
@@ -151,9 +152,16 @@ class AgentsServerManager:
             response["previous_result"] = previous_result
         return response
 
-    async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
+    async def send_message(
+        self,
+        session_id: str,
+        prompt: str,
+        timeout: float = DEFAULT_SEND_MESSAGE_TIMEOUT,
+    ) -> dict[str, Any]:
         """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
         _validate_prompt(prompt)
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+            raise ValueError("timeout must be positive")
         async with self._resume_lock:
             retained = self.sessions.get(session_id)
             if (
@@ -171,13 +179,17 @@ class AgentsServerManager:
             if session.interrupt_requested and not session.terminal:
                 raise ValueError(f"session is being interrupted: {session_id}")
         try:
-            result = await backend.send_message(session, prompt)
+            result = await asyncio.wait_for(backend.send_message(session, prompt), timeout=float(timeout))
         except SessionOwnerGoneError:
             async with self._resume_lock:
                 previous_result = session.previous_result() if session.result_available else None
                 self._expire_session(session_id)
                 resume_state = self.expired_sessions[session_id]
                 return await self._resume_and_reply(resume_state, session_id, prompt, previous_result)
+        except TimeoutError as exc:
+            raise TimeoutError(
+                f"send_message timed out: {session_id}; delivery is undetermined, observe the session with wait"
+            ) from exc
         delivery = result["delivery"]
         if delivery in {"reply_started", "reply_ambiguous"}:
             session.reset_progress()
@@ -200,18 +212,16 @@ class AgentsServerManager:
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout) if timeout > 0 else None
+        delivery_deadline = deadline if deadline is not None else loop.time() + DEFAULT_SEND_MESSAGE_TIMEOUT
         requested = requested_before_call
         backend = self._backend(session.engine)
         try:
-            if deadline is None:
-                await session.turn_control_lock.acquire()
-            else:
-                await asyncio.wait_for(
-                    session.turn_control_lock.acquire(),
-                    timeout=max(0.0, deadline - loop.time()),
-                )
+            await asyncio.wait_for(
+                session.turn_control_lock.acquire(),
+                timeout=max(0.0, delivery_deadline - loop.time()),
+            )
         except TimeoutError as exc:
-            raise TimeoutError(f"kill timed out: {session_id}") from exc
+            raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
         try:
             if session.terminal:
                 requested = requested or requested_before_call or session.interrupt_requested
@@ -221,14 +231,15 @@ class AgentsServerManager:
                 if session.engine == "codex" and not session.turn_id:
                     if timeout == 0:
                         raise ValueError("the active Codex turn has no turn_id")
+                    assert deadline is not None
                     try:
                         async with self._condition:
                             await asyncio.wait_for(
                                 self._condition.wait_for(lambda: bool(session.turn_id) or session.terminal),
-                                timeout=max(0.0, deadline - loop.time()) if deadline is not None else None,
+                                timeout=max(0.0, deadline - loop.time()),
                             )
                     except TimeoutError as exc:
-                        raise TimeoutError(f"kill timed out: {session_id}") from exc
+                        raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
                     if session.terminal:
                         response = session.public_status(include_result=True)
                         response["kill_requested"] = False
@@ -236,14 +247,15 @@ class AgentsServerManager:
                 session.interrupt_requested = True
                 session.touch()
                 try:
-                    interrupt = backend.interrupt(session)
-                    if deadline is None:
-                        await interrupt
-                    else:
-                        await asyncio.wait_for(interrupt, timeout=max(0.0, deadline - loop.time()))
+                    await asyncio.wait_for(
+                        backend.interrupt(session),
+                        timeout=max(0.0, delivery_deadline - loop.time()),
+                    )
                 except TimeoutError:
                     await self._notify_waiters()
-                    raise TimeoutError(f"kill timed out: {session_id}") from None
+                    raise TimeoutError(
+                        f"kill timed out: {session_id}; interrupt delivery is undetermined, observe the session with wait"
+                    ) from None
                 except Exception:
                     session.interrupt_requested = False
                     session.touch()
@@ -258,14 +270,17 @@ class AgentsServerManager:
             response["kill_requested"] = False
             return response
         if timeout > 0:
+            assert deadline is not None
             try:
                 async with self._condition:
                     await asyncio.wait_for(
                         self._condition.wait_for(lambda: session.result_available),
-                        timeout=max(0.0, deadline - loop.time()) if deadline is not None else None,
+                        timeout=max(0.0, deadline - loop.time()),
                     )
             except TimeoutError as exc:
-                raise TimeoutError(f"kill timed out: {session_id}") from exc
+                raise TimeoutError(
+                    f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate"
+                ) from exc
         response = session.public_status(include_result=session.result_available)
         response["kill_requested"] = True
         return response
@@ -331,9 +346,23 @@ async def wait(
 
 
 @mcp.tool(name="send_message", structured_output=True)
-async def send_message(session_id: str, prompt: str) -> dict[str, Any]:
-    """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。"""
-    return await _MANAGER.send_message(session_id, prompt)
+async def send_message(
+    session_id: str,
+    prompt: str,
+    timeout: Annotated[
+        float,
+        Field(
+            description="継続要求の配送結果が確定するまでの待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。委譲先の応答生成の完了は待たない。0以下は受理しない。"
+        ),
+    ] = DEFAULT_SEND_MESSAGE_TIMEOUT,
+) -> dict[str, Any]:
+    """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
+
+    通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
+    待つのは継続要求の配送結果が確定するまでであり、委譲先の応答生成の完了ではない。
+    上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
+    """
+    return await _MANAGER.send_message(session_id, prompt, timeout)
 
 
 @mcp.tool(name="kill", structured_output=True)

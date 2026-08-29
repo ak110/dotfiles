@@ -371,6 +371,8 @@ class ClaudeServerManager:
                     future.set_result(("interrupt_accepted", None))
             await self._notify_waiters()
             return iterator
+        if future.cancelled():
+            return iterator
         kind = "reply" if session.terminal else "steer"
         previous_result = session.previous_result() if kind == "reply" else None
         try:
