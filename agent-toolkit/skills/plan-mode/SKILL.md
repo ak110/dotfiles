@@ -14,7 +14,7 @@ description: >
 
 ユーザーが`agent-toolkit:plan-mode`や`agent-toolkit:plan-and-add-feedback`スキルを直接起動した場合、
 `references/grilling.md`の手順に従いユーザーとの共通理解に到達するまでユーザー確認を繰り返す。
-委譲された起動プロンプトで計画作成を指示された場合は`references/grilling.md`をスキップして
+起動プロンプトが起動経路として`agent-toolkit:process-feedbacks`を明示している場合は`references/grilling.md`をスキップして
 必要な確認事項のみTBDへ登録する。
 
 ## 進め方
@@ -40,7 +40,7 @@ description: >
    ユーザーが対象、範囲、結果を明示していない内容を具体化した判断は、計画へ記載する前に確認経路へ送り、回答を`## 変更履歴（計画時）`と実施内容へ反映する。ユーザーが同じ内容を明示した提案は、技術的事実と実装手段を確認対象にしない。
    この提示は確認済み回答の代替ではない。調査結果、既存契約、元の主題又は技術判断を理由としても、ユーザーが明示した対象、範囲又は外部可視結果と異なる判断は手順6の確認候補へ戻し、確認済み回答を得るまで計画ファイル初版を起草しない。
    不成立の項を解消してから計画構造検査へ進む
-9. `references/plan-review-delegation.md`に従い計画構造検査と計画レビューを別系統で実施する
+9. `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`に従い計画構造検査、自己監査及び`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`に従う計画レビューを別系統で実施する
 10. 計画ファイル、成立させる結果、ユーザー指示との差分、レビュー反映状況を提示する
 11. 承認後に`references/plan-impl-caller-reception.md`を読み、`plan-impl-executor`へ引き継ぐ
 
@@ -60,8 +60,9 @@ description: >
 - フィードバック処理のレーン割当時は`agent-toolkit/skills/process-feedbacks/references/run-lanes.md`を全文読む
 - レーン割当時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読む
 - 計画起草時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を全文読む
-- 計画レビュー時は`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を全文読む
-- 計画レビュー時は`agent-toolkit/skills/plan-mode/references/plan-review-task.md`を全文読む
+- 計画構造検査・自己監査・指摘の検収と修正を実施する時は`agent-toolkit/share/plan-drafting.subagent.md`を全文読む
+- 計画レビュー担当を起動する時は`agent-toolkit/share/plan-review.parent.md`を全文読む
+- 計画レビューを実施する時は`agent-toolkit/share/plan-review.subagent.md`を全文読む
 - 計画レビュー時は`agent-toolkit/skills/review-standards/references/judgment-details.md`を全文読む
 - レビュー継続時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を全文読む
 - 実装担当へ引き継ぐ時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
