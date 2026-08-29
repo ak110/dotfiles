@@ -950,40 +950,126 @@ class FailingClaudeClient(FakeClaudeClient):
         return stream()
 
 
+class SynchronizedFailingClaudeClient(FakeClaudeClient):
+    """同じ待機バッチでmessage stream例外を発生させる偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__([])
+        self.message_waiting = asyncio.Event()
+        self.release_message = asyncio.Event()
+
+    def receive_messages(self):
+        async def stream():
+            yield SystemMessage("claude-batch-failed")
+            self.message_waiting.set()
+            await self.release_message.wait()
+            raise RuntimeError("stream failed")
+
+        return stream()
+
+
+class BlockingContinuationClaudeClient(FakeClaudeClient):
+    """継続入力のqueryを停止して所有タスクの取り消しを再現する偽クライアント。"""
+
+    def __init__(self) -> None:
+        super().__init__([[SystemMessage("claude-blocking")]])
+        self.message_waiting = asyncio.Event()
+        self.query_started = asyncio.Event()
+        self.release_query = asyncio.Event()
+
+    async def query(self, prompt: str) -> None:
+        self.queries.append(prompt)
+        if len(self.queries) > 1:
+            self.query_started.set()
+            await self.release_query.wait()
+
+    def receive_messages(self):
+        messages = self.streams.pop(0)
+
+        async def stream():
+            for message in messages:
+                yield message
+            self.message_waiting.set()
+            await self.release_query.wait()
+
+        return stream()
+
+
+@pytest.mark.asyncio
+async def test_claude_command_channel_resolves_pending_requests_when_closed() -> None:
+    """チャネル閉鎖時に滞留要求を解決し、閉鎖後の受理を拒否する。"""
+    channel = claude_backend._CommandChannel()
+    future = channel.send("prompt", "続行")
+
+    channel.close()
+
+    with pytest.raises(state.SessionOwnerGoneError, match="session owner task has ended"):
+        await asyncio.wait_for(future, timeout=0.1)
+    with pytest.raises(state.SessionOwnerGoneError, match="session owner task has ended"):
+        channel.send("prompt", "閉鎖後").cancel()
+
+
 @pytest.mark.asyncio
 async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: pathlib.Path) -> None:
     """投入後に終端した継続入力をreplyとして処理し、直前結果を退避する。"""
     client = FakeClaudeClient([[AssistantMessage("reply中"), ResultMessage("reply結果")]])
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
     session = subject.SessionState("claude-race", str(tmp_path), engine="claude")
-    queue: asyncio.Queue[Any] = asyncio.Queue()
+    channel = claude_backend._CommandChannel()
     manager.sessions[session.session_id] = session
-    manager._commands[session.session_id] = queue
-    owner = asyncio.create_task(asyncio.Event().wait())
-    manager._tasks.add(owner)
-    manager._task_sessions[owner] = session.session_id
-    try:
-        send_task = asyncio.create_task(manager.send_message(session, "続行"))
-        command = await queue.get()
-        _complete(session, message="直前結果")
-        iterator = await manager._handle_command(client, session, command, None)
-        response = await send_task
+    manager._channels[session.session_id] = channel
 
-        assert response == {
-            "delivery": "reply_started",
-            "previous_result": {
-                "session_id": "claude-race",
-                "engine": "claude",
-                "status": "completed",
-                "agent_message": "直前結果",
-            },
-        }
-        assert iterator is not None
-        assert client.queries == ["続行"]
+    send_task = asyncio.create_task(manager.send_message(session, "続行"))
+    command = await channel.get()
+    _complete(session, message="直前結果")
+    iterator = await manager._handle_command(client, session, command, None)
+    response = await send_task
+
+    assert response == {
+        "delivery": "reply_started",
+        "previous_result": {
+            "session_id": "claude-race",
+            "engine": "claude",
+            "status": "completed",
+            "agent_message": "直前結果",
+        },
+    }
+    assert iterator is not None
+    assert client.queries == ["続行"]
+
+
+@pytest.mark.asyncio
+async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path: pathlib.Path) -> None:
+    """message stream例外と同じ待機バッチの継続要求を所有タスク終了で解決する。"""
+    client = SynchronizedFailingClaudeClient()
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    try:
+        session = await manager.start("調査", str(tmp_path))
+        await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
+        channel = manager._channels[session.session_id]
+        future = channel.send("prompt", "同時要求")
+        client.release_message.set()
+
+        with pytest.raises(state.SessionOwnerGoneError, match="session owner task has ended"):
+            await asyncio.wait_for(future, timeout=0.1)
     finally:
-        owner.cancel()
-        await asyncio.gather(owner, return_exceptions=True)
-        manager._forget_task(owner)
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathlib.Path) -> None:
+    """所有タスク取り消し時に処理中の継続要求を所有タスク終了で解決する。"""
+    client = BlockingContinuationClaudeClient()
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    session = await manager.start("調査", str(tmp_path))
+    await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
+    send_task = asyncio.create_task(manager.send_message(session, "継続"))
+    await asyncio.wait_for(client.query_started.wait(), timeout=0.1)
+
+    await manager.close()
+
+    with pytest.raises(state.SessionOwnerGoneError, match="session owner task has ended"):
+        await asyncio.wait_for(send_task, timeout=0.1)
 
 
 @pytest.mark.asyncio
@@ -1239,19 +1325,51 @@ async def test_claude_server_close_disconnects_and_retains_result(
 
 
 @pytest.mark.asyncio
-async def test_claude_finished_task_send_message_points_to_retained_result(tmp_path: pathlib.Path) -> None:
-    """所有タスク終了後の継続入力は保持済み結果の取得方法を案内する。"""
+async def test_claude_finished_task_send_message_resumes_with_retained_result(tmp_path: pathlib.Path) -> None:
+    """所有タスク終了後の継続入力は保持済み結果を退避して会話を再開する。"""
     manager = subject.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition)
+    clients = [
+        FailingClaudeClient([]),
+        FakeClaudeClient([[SystemMessage("claude-failed")]]),
+    ]
+
+    def client_factory(_options: Any) -> FakeClaudeClient:
+        return clients.pop(0)
+
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        manager._condition,
+        client_factory=client_factory,
+        expire_session=manager._expire_session,
+    )
     manager._claude = backend
-    session = subject.SessionState("claude-failed", str(tmp_path), engine="claude")
-    _complete(session, error={"message": "stream failed"})
-    manager.sessions[session.session_id] = session
+    session = await backend.start("調査", str(tmp_path))
+    for _ in range(20):
+        if session.result_available and session.session_id not in backend._channels:
+            break
+        await asyncio.sleep(0.01)
 
     result = await manager.wait(session.session_id, timeout=0)
     assert result["error"] == {"message": "stream failed"}
-    with pytest.raises(ValueError, match="no longer active; use wait to retrieve its result"):
-        await manager.send_message(session.session_id, "続行")
+    response = await manager.send_message(session.session_id, "続行")
+
+    assert response == {
+        "delivery": "reply_started",
+        "session_id": "claude-failed",
+        "engine": "claude",
+        "status": "running",
+        "progress": "",
+        "previous_result": {
+            "session_id": "claude-failed",
+            "engine": "claude",
+            "status": "failed",
+            "agent_message": "",
+            "error": {"message": "stream failed"},
+        },
+    }
+    assert not manager.expired_sessions
+    assert manager.sessions[session.session_id].status == "running"
+    await backend.close()
 
 
 @pytest.mark.asyncio

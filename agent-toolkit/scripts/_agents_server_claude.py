@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from _agents_server_state import (
+    SessionOwnerGoneError,
     SessionState,
     _begin_reply,
 )
@@ -25,6 +26,41 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
+
+
+class _CommandChannel:
+    """1つのClaude sessionへの継続要求と中断要求を所有タスクへ渡す。
+
+    受理した要求の応答futureは、所有タスクによる処理か`close`のいずれかで必ず解決する。
+    所有タスクの終了経路が増えても、`close`の1箇所で受理済みの要求を解決できる。
+    """
+
+    def __init__(self) -> None:
+        self._queue: asyncio.Queue[_Command] = asyncio.Queue()
+        self._closed = False
+
+    def send(self, kind: Literal["prompt", "interrupt"], prompt: str) -> asyncio.Future[_DeliveryResult]:
+        """要求を受理して応答futureを返す。閉鎖後は受理せず例外を送出する。"""
+        if self._closed:
+            raise SessionOwnerGoneError("the Claude session owner task has ended")
+        future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
+        self._queue.put_nowait((kind, prompt, future))
+        return future
+
+    async def get(self) -> _Command:
+        """所有タスクが次の要求を取り出す。"""
+        return await self._queue.get()
+
+    def close(self) -> None:
+        """以降の受理を止め、未処理の要求を所有タスクの終了として解決する。"""
+        self._closed = True
+        while True:
+            try:
+                _kind, _prompt, future = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if not future.done():
+                future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
 
 
 def _build_options(cwd: str, model: str | None, effort: str | None, session_id: str | None = None) -> Any:
@@ -72,7 +108,7 @@ class ClaudeServerManager:
         self._expire_session = expire_session or self._expire_local_session
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
-        self._commands: dict[str, asyncio.Queue[_Command]] = {}
+        self._channels: dict[str, _CommandChannel] = {}
 
     def _expire_local_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -140,17 +176,13 @@ class ClaudeServerManager:
             raise
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
-        task = self._task_for(session.session_id)
-        if task.done():
-            raise ValueError("the Claude session is no longer active; use wait to retrieve its result")
-        queue = self._commands.get(session.session_id)
-        if queue is None:
-            raise ValueError("the Claude session is not ready for continuation")
-        future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
+        channel = self._channels.get(session.session_id)
+        if channel is None:
+            raise SessionOwnerGoneError("the Claude session owner task has ended")
         async with session.turn_control_lock:
             if not session.terminal and session.interrupt_requested:
                 raise ValueError("the active Claude turn is being interrupted")
-            await queue.put(("prompt", prompt, future))
+            future = channel.send("prompt", prompt)
             actual_delivery, previous_result = await future
         result: dict[str, Any] = {"delivery": actual_delivery}
         if actual_delivery in {"reply_started", "reply_failed", "reply_ambiguous"}:
@@ -159,19 +191,15 @@ class ClaudeServerManager:
 
     async def interrupt(self, session: SessionState) -> None:
         """公開killから所有タスクへ中断要求を送り、受理を待つ。"""
-        task = self._task_for(session.session_id)
-        if task.done():
-            raise ValueError("the Claude session is no longer active; use wait to retrieve its result")
-        queue = self._commands.get(session.session_id)
-        if queue is None:
-            raise ValueError("the Claude session is not ready for interruption")
-        future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
+        channel = self._channels.get(session.session_id)
+        if channel is None:
+            raise SessionOwnerGoneError("the Claude session owner task has ended")
         if session.terminal:
             return
         session.interrupt_requested = True
         session.touch()
-        await queue.put(("interrupt", "", future))
         try:
+            future = channel.send("interrupt", "")
             delivery, _ = await future
         except Exception:
             session.interrupt_requested = False
@@ -184,13 +212,6 @@ class ClaudeServerManager:
             await self._notify_waiters()
             raise RuntimeError(f"unexpected Claude interrupt delivery: {delivery}")
         await self._notify_waiters()
-
-    def _task_for(self, session_id: str) -> asyncio.Task[Any]:
-        for task in self._tasks:
-            state = self._task_sessions.get(task)
-            if state == session_id:
-                return task
-        raise ValueError("the Claude session is no longer active; use wait to retrieve its result")
 
     def _forget_task(self, task: asyncio.Task[Any]) -> None:
         self._tasks.discard(task)
@@ -209,10 +230,12 @@ class ClaudeServerManager:
     ) -> None:
         client: Any = None
         session: SessionState | None = None
-        queue: asyncio.Queue[_Command] | None = None
+        channel: _CommandChannel | None = None
         iterator: Any = None
         message_task: asyncio.Task[Any] | None = None
         command_task: asyncio.Task[Any] | None = None
+        retrieved: _Command | None = None
+        active_future: asyncio.Future[_DeliveryResult] | None = None
         try:
             client = self._client_factory(options)
             await client.connect()
@@ -228,8 +251,8 @@ class ClaudeServerManager:
 
                 if iterator is not None and message_task is None:
                     message_task = asyncio.create_task(anext(iterator))
-                if queue is not None and command_task is None:
-                    command_task = asyncio.create_task(queue.get())
+                if channel is not None and command_task is None:
+                    command_task = asyncio.create_task(channel.get())
                 pending = {task for task in (message_task, command_task) if task is not None}
                 if not pending:
                     raise RuntimeError("Claude session has no message stream or command queue")
@@ -238,6 +261,10 @@ class ClaudeServerManager:
                     if session is not None:
                         self._expire_session(session.session_id)
                     break
+
+                if command_task is not None and command_task in done:
+                    retrieved = command_task.result()
+                    command_task = None
 
                 if message_task in done:
                     completed_message_task = message_task
@@ -266,8 +293,8 @@ class ClaudeServerManager:
                                 engine="claude",
                             )
                             self.sessions[session_id] = session
-                            queue = asyncio.Queue()
-                            self._commands[session_id] = queue
+                            channel = _CommandChannel()
+                            self._channels[session_id] = channel
                             current_task = asyncio.current_task()
                             if current_task is not None:
                                 self._task_sessions[current_task] = session_id
@@ -283,10 +310,12 @@ class ClaudeServerManager:
                             iterator = None
                             await self._notify_waiters()
 
-                if command_task in done:
-                    completed_command_task = command_task
-                    command_task = None
-                    iterator = await self._handle_command(client, session, completed_command_task.result(), iterator)
+                if retrieved is not None:
+                    command = retrieved
+                    retrieved = None
+                    active_future = command[2]
+                    iterator = await self._handle_command(client, session, command, iterator)
+                    active_future = None
         except Exception as exc:
             if session is None:
                 if not initialized.done():
@@ -299,11 +328,19 @@ class ClaudeServerManager:
                 if task is not None and not task.done():
                     task.cancel()
             await asyncio.gather(*(task for task in (message_task, command_task) if task is not None), return_exceptions=True)
+            if command_task is not None and not command_task.cancelled() and command_task.exception() is None:
+                retrieved = command_task.result()
+            if retrieved is not None and not retrieved[2].done():
+                retrieved[2].set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+            if active_future is not None and not active_future.done():
+                active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
             if client is not None:
                 with contextlib.suppress(Exception):
                     await client.disconnect()
             if session is not None:
-                self._commands.pop(session.session_id, None)
+                self._channels.pop(session.session_id, None)
+            if channel is not None:
+                channel.close()
 
     async def _handle_command(
         self,

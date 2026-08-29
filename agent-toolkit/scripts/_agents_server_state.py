@@ -12,6 +12,13 @@ RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 
 
+class SessionOwnerGoneError(RuntimeError):
+    """session所有タスクが終了し、継続要求または中断要求を配送できないことを示す。
+
+    MCP層はこの例外を受領して、保存済みの再開状態から同じ会話を再開する。
+    """
+
+
 def _utc_now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
 

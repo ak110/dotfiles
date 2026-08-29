@@ -19,6 +19,7 @@ from typing import Annotated, Any
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
 from _agents_server_state import (
+    SessionOwnerGoneError,
     SessionResumeState,
     SessionState,
     _validate_cwd,
@@ -120,6 +121,36 @@ class AgentsServerManager:
                 pass
         return session.public_status(include_result=session.result_available)
 
+    async def _resume_and_reply(
+        self,
+        resume_state: SessionResumeState,
+        session_id: str,
+        prompt: str,
+        previous_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """保存済みの最小状態から同じ会話を再開し、公開契約の応答を返す。
+
+        再開は結果保持期限の経過と所有主体の終了の双方を契機とする。
+        結果本文を保持したまま所有主体だけが終了した場合は、直前結果を応答へ含める。
+        """
+        backend = self._backend(resume_state.engine)
+        session = await backend.resume(
+            resume_state.session_id,
+            prompt,
+            resume_state.cwd,
+            resume_state.model,
+            resume_state.effort,
+        )
+        self.expired_sessions.pop(session_id, None)
+        delivery = "reply_failed" if session.result_available else "reply_started"
+        response: dict[str, Any] = {
+            "delivery": delivery,
+            **session.public_status(include_result=session.result_available),
+        }
+        if previous_result is not None:
+            response["previous_result"] = previous_result
+        return response
+
     async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
         """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。"""
         _validate_prompt(prompt)
@@ -133,26 +164,20 @@ class AgentsServerManager:
                 self._expire_session(session_id)
             resume_state = self.expired_sessions.get(session_id)
             if resume_state is not None:
-                backend = self._backend(resume_state.engine)
-                session = await backend.resume(
-                    resume_state.session_id,
-                    prompt,
-                    resume_state.cwd,
-                    resume_state.model,
-                    resume_state.effort,
-                )
-                self.expired_sessions.pop(session_id, None)
-                delivery = "reply_failed" if session.result_available else "reply_started"
-                return {
-                    "delivery": delivery,
-                    **session.public_status(include_result=session.result_available),
-                }
+                return await self._resume_and_reply(resume_state, session_id, prompt)
         session = self._get_session(session_id)
         backend = self._backend(session.engine)
         async with session.turn_control_lock:
             if session.interrupt_requested and not session.terminal:
                 raise ValueError(f"session is being interrupted: {session_id}")
-        result = await backend.send_message(session, prompt)
+        try:
+            result = await backend.send_message(session, prompt)
+        except SessionOwnerGoneError:
+            async with self._resume_lock:
+                previous_result = session.previous_result() if session.result_available else None
+                self._expire_session(session_id)
+                resume_state = self.expired_sessions[session_id]
+                return await self._resume_and_reply(resume_state, session_id, prompt, previous_result)
         delivery = result["delivery"]
         if delivery in {"reply_started", "reply_ambiguous"}:
             session.reset_progress()
