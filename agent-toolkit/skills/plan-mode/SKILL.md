@@ -14,7 +14,7 @@ description: >
 
 ユーザーが`agent-toolkit:plan-mode`や`agent-toolkit:plan-and-add-feedback`スキルを直接起動した場合、
 `references/grilling.md`の手順に従いユーザーとの共通理解に到達するまでユーザー確認を繰り返す。
-`agent-toolkit:feedbacks-planner`のサブエージェント経由で起動された場合は`references/grilling.md`をスキップして
+委譲された起動プロンプトで計画作成を指示された場合は`references/grilling.md`をスキップして
 必要な確認事項のみTBDへ登録する。
 
 ## 進め方
