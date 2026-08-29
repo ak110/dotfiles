@@ -18,7 +18,7 @@ atk mq process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、終了時の`session-review`を1回実行して`/goal`で登録した目的を完了する。
+ready項目がなくなると、`completion-report`が必須の`session-review`と固定報告を完了し、続いて`exit-session`が`/goal`で登録した目的とセッションを終了する。
 `process-feedbacks`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗又は値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
@@ -114,11 +114,7 @@ Codexはplugin同梱フックの定義が変わると、利用者が再び信頼
 信頼後の`PreToolUse`は、`apply_patch`の変更内容に口語的な日本語表現が含まれる場合、
 検出語そのものを表示せず正式な書き言葉への書き直しを促す通知を返す。
 動作を確かめる場合は、口語的な言い回しを含む短い変更を`apply_patch`で適用し、通知の有無を確認する。
-信頼後は、作業完了時のStopが同じセッションを継続し、セッション振り返りを起動する。
-起動済み状態または読み取り可能なtranscriptから振り返りの起動済みを確認できる間は、
-追加の振り返りを起動せずターンを終了する。状態が14日を超えて更新されず回収され、
-かつtranscriptを利用できない場合は、同じセッションでも再び振り返りへ誘導されることがある。
-手動で振り返る場合は`$agent-toolkit:session-review`を実行する。
+Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
 
