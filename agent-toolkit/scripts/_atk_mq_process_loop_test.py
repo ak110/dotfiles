@@ -656,8 +656,8 @@ class TestProcessLoopPromptAndEnv:
         )
         assert "agent-toolkit:process-feedbacks" in prompt
 
-    def test_codex_prompt_declares_continuous_ready_processing(self) -> None:
-        """Codexの目的文だけが追加`ready`項目の連続処理と終了判定を明示する。"""
+    def test_codex_prompt_limits_processing_to_startup_ready_set(self) -> None:
+        """Codexの目的文だけが起動時の固定`ready`集合と終了工程への移行を明示する。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
@@ -666,8 +666,9 @@ class TestProcessLoopPromptAndEnv:
 
         assert prompt.startswith("/goal ")
         assert prompt.count("/goal ") == 1
-        assert "開始後に追加されたready項目も同じセッションで順次処理" in prompt
-        assert "ready項目がなくなった時点で既存の終了工程" in prompt
+        assert "起動時に固定したready集合だけを同じセッションで処理" in prompt
+        assert "その全てを完了した時点で既存の終了工程" in prompt
+        assert "開始後に追加されたready項目" not in prompt
         assert "exit-session" not in prompt
         assert "/exit" not in prompt
         assert "Git" not in prompt
