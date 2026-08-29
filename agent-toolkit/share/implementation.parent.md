@@ -1,4 +1,6 @@
-# plan-impl-executorの通常実装モード
+# 実装担当の起動と受領
+
+`plan-impl-executor`が計画の実装単位を実行する際、本書に従ってfast担当・fix担当を起動し、checkpointとエスカレーションを受領する。本書は実装担当自身が行う手順を定義しない。
 
 ## 入力
 
@@ -22,18 +24,8 @@
 
 各単位の最初のfast担当を新規起動する直前に`atk config get execute_fast_model`を1回実行する。複数単位でも前の単位の解決値を流用せず、実効値が一致する場合も前の担当のthreadを継続しない。検収済みの先行commitを渡し、解決した実行系で新規起動する。
 
-起動時は`agent-toolkit:plan-mode`の実装担当契約、計画ファイル、対象worktree、プロジェクト規範の絶対パスを渡す。実装するコミット単位、その目的と変更説明、通常実装レビュー表の絶対パスと`implementation-review`の`track`、適用する作成規範スキル名と絶対パス、受領している場合は受領順を保持したフィードバックファイル名一覧も渡す。追加指示、許容済みの挙動変化、git操作に用いるworktree絶対パス、複製元と対象外worktree及びgit操作の制約も渡す。起動文へ担当種別を`fast担当`として明示する。対象ファイル集合と近接検証が独立する連続単位だけは1回へまとめてもよいが、commitと単位IDの対応を維持する。
+起動時は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`の絶対パス、計画ファイル、対象worktree、プロジェクト規範の絶対パスを渡す。実装するコミット単位、その目的と変更説明、通常実装レビュー表の絶対パスと`implementation-review`の`track`、適用する作成規範スキル名と絶対パス、受領している場合は受領順を保持したフィードバックファイル名一覧も渡す。追加指示、許容済みの挙動変化、git操作に用いるworktree絶対パス、複製元と対象外worktree及びgit操作の制約も渡す。起動文へ担当種別を`fast担当`として明示する。対象ファイル集合と近接検証が独立する連続単位だけは1回へまとめてもよいが、commitと単位IDの対応を維持する。
 
 fast担当からエスカレーションを受領した場合は、fast担当の終端を確認し、`atk config get execute_fix_model`を解決する。同一threadを継続せず、新規threadとして同じworktreeへfix担当を1件だけ逐次起動する。元の実装入力、同じworktreeの現行状態、エスカレーション内容及びfast担当の終端確認を渡し、担当種別を`fix担当`として明示する。fast担当以外のエスカレーション又はfix担当の続行不能はメインへ返す。
 
-各単位の現在担当を保持し、全単位の完了後に生成同期と最終検証を最後の担当へ指示する。同worktreeのHEADをレビュー対象とし、単一の実装レビューへ進む。
-
-## レビュー修正
-
-通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。
-
-同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
-
-新規起動では`agent-toolkit:plan-mode`の実装担当契約、元の実装入力、`reviewee-standards/SKILL.md`、フィードバックファイル名一覧、複製元と対象外worktreeを渡す。起動文へ担当種別を`レビュー修正担当`として明示する。レビュー表の絶対パスと`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。調整担当はレビュー表を読まず、採否、対応付け又は成果物・Git・検証結果を再検収しない。
-
-レビュー修正の実装、レビュー表への履歴書換え証拠の保存、履歴欠落時の回復及び履歴統合は`agent-toolkit:plan-mode`の実装担当契約、履歴書換えの遮断は`agent-toolkit:commit`の履歴書換え契約を正本とする。修正担当が`対応完了`を返した場合は同じレビューthreadへ`再レビューせよ`を送り、`対応完了（再レビュー不要）`の場合はレビューを省略する。
+各単位の現在担当を保持し、全単位の完了後に生成同期と最終検証を最後の担当へ指示する。同worktreeのHEADをレビュー対象とし、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`に従う単一の実装レビューへ進む。

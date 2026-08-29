@@ -23,14 +23,14 @@ from pyfltr.colloquial import check as _colloquial_check
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
-_PLAN_MODE_REFERENCES = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references"
+_SHARE_DIR = pathlib.Path(__file__).resolve().parents[1] / "share"
 
 # `.env`系の遮断メッセージだけへ添える案内の照合断片（`TestSecretsCheck`が使う）。
 _SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
 _SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
 
 # 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
-_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review-task.md",)
+_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review.subagent.md",)
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -4312,7 +4312,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review.subagent.mdを読んでレビューする。",
                 },
                 "session_id": "execute-review-claude",
                 "isSidechain": True,
@@ -4330,7 +4330,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review.subagent.mdを読んでレビューする。",
                 },
                 "session_id": session_id,
                 "isSidechain": False,
@@ -4342,7 +4342,7 @@ class TestExecuteReviewAlternateRouteAllowed:
     def test_guarded_task_references_exist(self) -> None:
         """回帰検査が与えるタスク文書名の実在を確認し、改名による空振りを検出する。"""
         for task_name in _EXECUTE_REVIEW_TASK_NAMES:
-            assert (_PLAN_MODE_REFERENCES / task_name).is_file()
+            assert (_SHARE_DIR / task_name).is_file()
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
