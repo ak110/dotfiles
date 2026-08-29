@@ -136,13 +136,15 @@ Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点ま
 
 公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
 `model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
-`send_message`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
+`send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。上限到達時は配送の成否が確定せず、`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、
-正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`wait`または終端後の`send_message`を許可する。終端結果の30分保持を過ぎた場合は結果本文だけを破棄し、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
+正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`wait`または終端後の`send_message`を許可する。終端結果の30分保持を過ぎた場合は結果本文だけを破棄する。保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 成功応答は`status`・`progress`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終端を`interrupted`へ置き換えない。
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
+
+継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。閉鎖後の受理は待機させず直ちに拒否する。Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。この境界により、所有主体の終了経路が増えても呼び出し側が応答を待ち続ける状態は生じない。却下した代替案は、呼び出し側にtimeoutを設けて応答なしを打ち切る案である。要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
 
 backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
 承認、ユーザー入力、認証token更新、attestation及び未知methodを待機させず、対応turnをfailedへ遷移してwaiterを解放する。
