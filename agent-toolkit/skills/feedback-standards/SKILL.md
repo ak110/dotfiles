@@ -72,6 +72,8 @@ TBDを起草する場合は[references/tbd-format.md](references/tbd-format.md)�
 | 一覧集合 | `active` | `inbox`、`processing`、`editing`及び`hold` |
 | 一覧集合 | `processable` | `inbox`及び`processing`。`ready`かは別途判定する |
 
+`depends_on`は、当該項目より先に終端すべきキュー項目のファイル名を保持する。用途は、未回答TBDによる外部待ちと、先に終端すべきフィードバックへの先行成果依存の2つとする。値は保存済みのメタデータを正本とし、本文の記述から依存を再構築しない。
+
 TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してTBDを`depends_on`へ加え、`inbox`かつ`blocked`にする。回答を保存したTBDを先に終端し、依存解除後に元項目を次の処理対象へ戻す。
 
 `rejected`は全要求の不採用を確認済みの場合だけ使用する。技術的失敗、入力不足、外部条件待ち又は計画不備は不採用へ変換せず、必要なTBD依存を付けてactiveのまま保持する。

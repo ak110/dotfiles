@@ -15,7 +15,7 @@ processable一覧で`blocked`の項目も、その処理回のpickerへ渡さな
 ②の全レーンが後始末まで完了した後もready一覧を再取得せず、③へ進む。
 
 取得した一覧について、保存済みのメタデータと入力の実在を確認する。保存済みのメタデータから`depends_on`、回答済みTBD、`cooldown_until`、frontmatter、計画ファイルの有効性を確認する。
-`depends_on`は外部待ち条件だけに用い、本文から再構築しない。日付境界、別リポジトリ候補探索、cycle再計算をせず、`queue_schedule`も移行しない。
+日付境界、別リポジトリ候補探索、cycle再計算をせず、`queue_schedule`も移行しない。
 
 CLI操作は実行前に検証する。警告又は失敗があれば対象を再取得し、意図した状態なら再実行せず、部分状態又は原因不明なら`needs_escalation`へ返す。
 private notesによるGit復旧、専用の失敗分類及び別の選定キューを作成しない。
