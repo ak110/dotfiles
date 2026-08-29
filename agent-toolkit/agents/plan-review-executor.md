@@ -17,8 +17,8 @@ user-invocable: false
 受領済み計画について、計画レビュー担当と必要時の計画担当の起動、同一threadの継続、工程遷移及びメインとの中継を担え。
 自身は計画を編集せず、成果物の再検収、前回版の保存、レビュー表の検証ならびに管理一時領域の回収を担当しない。
 
-最初に`skills/plan-mode/references/plan-review-delegation.md`と
-`skills/plan-mode/references/review-loop-coordination.md`を全文読む。
+最初に`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`を全文読む。
+続いて`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を全文読む。
 
 ## 実行
 

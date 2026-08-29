@@ -1,7 +1,7 @@
 # 計画実装担当の起動と受領
 
 呼び出し元は1計画1レーンの専用worktreeで`plan-impl-executor`を起動し、checkpointとエスカレーションを受領する。
-実装担当の内部手順は`implementation-task.md`、レビューラウンドの受領は`review-loop-coordination.md`を正本とする。
+実装担当の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`、レビューラウンドの受領は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を正本とする。
 
 ## 起動
 
@@ -18,7 +18,7 @@
 
 ## checkpointの受領
 
-`review_round`は`review-loop-coordination.md`に従って受領する。
+`review_round`は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って受領する。
 
 `merge_request`は1レーンずつ許可し、許可中は他レーンのベース更新を許可しない。
 許可メッセージには、マージ先worktreeの絶対パス、マージ先branch名及び今回のレーンへ入っている計画ファイルの絶対パス一覧を含める。

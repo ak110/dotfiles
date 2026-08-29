@@ -15,7 +15,7 @@ user-invocable: false
 委譲先とモデルを選ぶ時点では`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読み、同文書の経路選択とモデル区分を適用する。
 Claude Code固有経路を確定する時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む。
 完了通知及び待機・停滞を確定する時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を全文読む。
-計画実装の受領契約を確定する時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む。
+計画実装の受領契約を確定する時は`${CLAUDE_PLUGIN_ROOT}/share/plan-impl-executor.parent.md`を全文読む。
 
 ## 送信
 

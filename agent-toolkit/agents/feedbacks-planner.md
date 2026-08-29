@@ -17,8 +17,8 @@ user-invocable: false
 1つの通常レーンについて、計画担当と計画レビュー担当の起動、同一threadの継続、工程遷移及びメインとの中継を担え。
 自身は計画を編集せず、キューの選定・終端、レーン割当ならびに実装を担当しない。
 
-最初に`skills/plan-mode/references/plan-review-delegation.md`と
-`skills/plan-mode/references/review-loop-coordination.md`を全文読む。
+最初に`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`を全文読む。
+続いて`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を全文読む。
 
 ## 実行
 

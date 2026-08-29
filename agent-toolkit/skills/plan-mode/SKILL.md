@@ -42,7 +42,7 @@ description: >
    不成立の項を解消してから計画構造検査へ進む
 9. `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`に従い計画構造検査、自己監査及び`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`に従う計画レビューを別系統で実施する
 10. 計画ファイル、成立させる結果、ユーザー指示との差分、レビュー反映状況を提示する
-11. 承認後に`references/plan-impl-caller-reception.md`を読み、`plan-impl-executor`へ引き継ぐ
+11. 承認後に`${CLAUDE_PLUGIN_ROOT}/share/plan-impl-executor.parent.md`を読み、`plan-impl-executor`へ引き継ぐ
 
 この手順は`agent-toolkit/rules/01-agent.md`の既存条文の適用順だけを明確化し、新しい分類器、判定状態、監査状態又は例外経路を追加しない。
 
@@ -56,7 +56,7 @@ description: >
 
 必要な工程へ入る時だけ対応資料を全文読む。
 
-- レーン割当時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む
+- レーン割当時は`agent-toolkit/share/plan-impl-executor.parent.md`を全文読む
 - フィードバック処理のレーン割当時は`agent-toolkit/skills/process-feedbacks/references/run-lanes.md`を全文読む
 - レーン割当時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読む
 - 計画起草時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を全文読む
@@ -64,7 +64,7 @@ description: >
 - 計画レビュー担当を起動する時は`agent-toolkit/share/plan-review.parent.md`を全文読む
 - 計画レビューを実施する時は`agent-toolkit/share/plan-review.subagent.md`を全文読む
 - 計画レビュー時は`agent-toolkit/skills/review-standards/references/judgment-details.md`を全文読む
-- レビュー継続時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を全文読む
+- レビュー継続時は`agent-toolkit/share/review-loop-coordination.md`を全文読む
 - 実装担当へ引き継ぐ時は`agent-toolkit/share/implementation.subagent.md`を全文読む
 - 実装レビュー時は`agent-toolkit/share/implementation-review.subagent.md`を全文読む
 - 実装担当を起動する時は`agent-toolkit/share/implementation.parent.md`を全文読む

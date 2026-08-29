@@ -17,9 +17,10 @@ user-invocable: false
 承認済み計画について、実装担当と単一の実装レビュー担当の起動、同一threadの継続、工程遷移及びメインとの中継を担え。
 自身は成果物を編集せず、レビュー指摘の採否、成果物・Git・検証結果の再検収、マージならびにキュー操作を担当しない。
 
-最初に`skills/plan-mode/references/plan-impl-executor-impl-mode.md`を全文読む。
-続いて`skills/plan-mode/references/review-loop-coordination.md`を全文読む。
-最後に`skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む。
+最初に`${CLAUDE_PLUGIN_ROOT}/share/implementation.parent.md`を全文読む。
+続いて`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`を全文読む。
+続いて`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を全文読む。
+最後に`${CLAUDE_PLUGIN_ROOT}/share/plan-impl-executor.parent.md`を全文読む。
 
 ## 実行
 
