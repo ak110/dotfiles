@@ -1,8 +1,10 @@
 ---
 name: session-review-advisor
 description: agent-toolkit:session-review経路だけから起動する。
+# Opus指定: セッション記録から評価対象の問題を抽出し、裏付けの成否を判定するため、観測と報告の精度を要する。
 model: opus
 effort: medium
+# ツール制限: 読み取り専用の調査に限り、入力されたファイルとセッション状態を変更しない。
 tools: Read, Bash
 user-invocable: false
 ---

@@ -147,12 +147,14 @@ Claude Codeのhookは状態ファイル`{tempdir}/claude-agent-toolkit-{session_
 ## タスク固有で読み込む補足情報
 
 - `references/agent-skills.md`: スキル編集時（公式リファレンスの参照先を含む）
+- `references/sub-agents.md`: サブエージェント定義ファイルの編集時、サブエージェントが関与する手順の作成・改訂時
 - `references/check-script-design.md`: 機械チェックスクリプト新設・改修時
 - `references/claude-hooks.md`（hook編集時）・`references/auto-mode.md`（auto mode編集時・権限拒否時）
 - `references/hook-message-labeling.md`: hookのエンドユーザー向けメッセージを新設・改訂する時
 - `references/session-records.md`: セッション記録の集計・分析時
 - `references/tool-operations.md`: 大量の文書読込・大規模ブロック置換・plugin資源のroot失効時
-- agent定義・スキル編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/agent-skills.md`を全文読む
+- スキル編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/agent-skills.md`を全文読む
+- サブエージェント定義ファイルの編集又はサブエージェントが関与する手順の作成・改訂の入口では`agent-toolkit:agent-standards`の`agent-standards/references/sub-agents.md`を全文読む
 - hook編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`を全文読む
 - hookメッセージ編集の入口では`agent-toolkit:agent-standards`の`agent-standards/references/hook-message-labeling.md`を全文読む
 - auto mode編集又は権限拒否時は`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`及び`references/auto-mode.md`を読む
