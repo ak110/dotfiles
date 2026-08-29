@@ -287,108 +287,6 @@ class TestPlanModeSkillInvocation:
         assert state.get("plan_mode_skill_invoked") is not True
 
 
-class TestSessionReviewSkillInvocation:
-    """振り返りスキル呼び出し検出 (Skill ツール) と EnterPlanMode によるリセット。"""
-
-    _REVIEW_SKILL = "agent-toolkit:session-review"
-    _OTHER_REVIEW_KEY = "extension-review-skill-example"
-
-    def test_session_review_skill_invocation_sets_key(self, tmp_path: pathlib.Path):
-        sid = "review-flag"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": self._REVIEW_SKILL},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        invoked = state.get("session_review_invoked")
-        assert isinstance(invoked, dict)
-        assert invoked.get(self._REVIEW_SKILL) is True
-
-    def test_other_skill_does_not_set_review_key(self, tmp_path: pathlib.Path):
-        sid = "review-other"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:commit"},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("session_review_invoked") is None
-
-    def test_enter_plan_mode_resets_session_review_invoked(self, tmp_path: pathlib.Path):
-        sid = "review-reset"
-        # 事前に複数キーのフラグを書き込み、リセットが辞書全体を空にすることを確認する。
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(
-                {
-                    "session_review_invoked": {
-                        self._REVIEW_SKILL: True,
-                        self._OTHER_REVIEW_KEY: True,
-                    },
-                    "marker": 1,
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "EnterPlanMode",
-                "tool_input": {},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state.get("session_review_invoked") == {}
-        # 他のキーは保持される。
-        assert state.get("marker") == 1
-
-    def test_enter_plan_mode_no_write_when_absent(self, tmp_path: pathlib.Path):
-        """`session_review_invoked`が未設定の場合、状態ファイルへ書き込みが発生しない（境界）。"""
-        sid = "review-reset-noop"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "EnterPlanMode",
-                "tool_input": {},
-            },
-            state_dir=tmp_path,
-        )
-        # 状態ファイル自体が作成されないことを期待する。
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
-
-    def test_idempotent_no_rewrite_when_already_true(self, tmp_path: pathlib.Path):
-        """既に対象キーが真の場合、状態ファイルへの再書き込みが発生しない（冪等性）。"""
-        sid = "review-flag-idem"
-        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        path.write_text(
-            json.dumps(
-                {"session_review_invoked": {self._REVIEW_SKILL: True}, "other": "keep"},
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        mtime_before = path.stat().st_mtime_ns
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": self._REVIEW_SKILL},
-            },
-            state_dir=tmp_path,
-        )
-        state = _read_state(tmp_path, sid)
-        assert state == {"session_review_invoked": {self._REVIEW_SKILL: True}, "other": "keep"}
-        assert path.stat().st_mtime_ns == mtime_before
-
-
 class TestDelegationStateRemoval:
     """delegation起動が専用の状態を更新しないこと。"""
 
@@ -992,10 +890,6 @@ class TestFeedbackSkillFlags:
         [
             ("agent-toolkit:process-feedbacks", "process_feedbacks_skill_invoked"),
             ("process-feedbacks", "process_feedbacks_skill_invoked"),
-            ("agent-toolkit:plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
-            ("plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
-            ("agent-toolkit:add-feedback", "add_feedback_skill_invoked"),
-            ("add-feedback", "add_feedback_skill_invoked"),
         ],
     )
     def test_skill_records_flag(self, tmp_path: pathlib.Path, skill: str, flag: str) -> None:
@@ -1018,13 +912,11 @@ class TestExitSessionResetsProcessFeedbacksFlag:
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
         """exit-session起動でprocess_feedbacks_skill_invokedが偽になる。"""
         sid = f"exit-{skill.replace(':', '-')}"
-        # 事前に全ての自動振り返り起点フラグを立てる。
+        # 事前に自動振り返り起点フラグを立てる。
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(
                 {
                     "process_feedbacks_skill_invoked": True,
-                    "plan_and_add_feedback_skill_invoked": True,
-                    "add_feedback_skill_invoked": True,
                 },
                 ensure_ascii=False,
             ),
@@ -1033,8 +925,6 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_feedbacks_skill_invoked") is False
-        assert state.get("plan_and_add_feedback_skill_invoked") is False
-        assert state.get("add_feedback_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
@@ -1065,8 +955,6 @@ class TestExitSessionResetsProcessFeedbacksFlag:
                 {
                     "autonomous_exit_invoked": True,
                     "process_feedbacks_skill_invoked": False,
-                    "plan_and_add_feedback_skill_invoked": False,
-                    "add_feedback_skill_invoked": False,
                     "marker": "keep",
                 },
                 ensure_ascii=False,

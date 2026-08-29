@@ -1,6 +1,6 @@
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態記録とplan file形式検査。
 
-Bash / Write / Edit / MultiEdit / apply_patch / Skill / Read / EnterPlanMode / Agent / Taskの実行後に
+Bash / Write / Edit / MultiEdit / apply_patch / Skill / Read / Agent / Taskの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
 PreToolUseやStopフックが参照して警告・提案の判定に使う。
 
@@ -15,24 +15,21 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
    変化する操作＝commit/rebase/resetでリセット)
 3. plan file（`~/.claude/plans/*.md`）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
-5. 振り返りスキル呼び出し検出 (Skill)
-   （`session_review_invoked`辞書へ記録）
-7. 新規作業区切りでの`session_review_invoked`リセット (EnterPlanMode)
-8. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
-9. agents_server MCP呼び出し後のsession状態記録
-10. exit-session起動検知による`autonomous_exit_invoked`の記録と
-    `process_feedbacks_skill_invoked`等のリセット (Skill)
-11. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
-    （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
-12. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
-    （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
-13. `git commit --amend` / `git commit --fixup` 成功時のcwd別
+5. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
+6. agents_server MCP呼び出し後のsession状態記録
+7. exit-session起動検知による`autonomous_exit_invoked`の記録と
+   `process_feedbacks_skill_invoked`のリセット (Skill)
+8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
+   （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
+9. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
+   （pretooluse.py側の一括ステージ警告で自セッション編集対象の判定に使用）
+10. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
-14. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-15. PostToolUseFailure・PermissionDenied: 原則状態を変更せず終了
-16. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
+11. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
+12. PostToolUseFailure・PermissionDenied: 原則状態を変更せず終了
+13. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-17. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
+14. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
 """
 
 import json
@@ -157,16 +154,8 @@ def _git_commit_is_amend_or_fixup(args: list[str]) -> bool:
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
-# Stop hookでの振り返り誘導抑止に使う配布物側の振り返りスキル名。観測したらsession_stateへ記録する。
-_SESSION_REVIEW_SKILL_NAMES = frozenset({"agent-toolkit:session-review"})
-
 # process-feedbacksスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
-# Stop hookの拡張照合カテゴリ有効化判定に使う。
 _PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
-
-# session-reviewを自動起動する起点となる処理スキル。
-_PLAN_AND_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:plan-and-add-feedback", "plan-and-add-feedback"})
-_ADD_FEEDBACK_SKILL_NAMES = frozenset({"agent-toolkit:add-feedback", "add-feedback"})
 
 # exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
 # （`agent-toolkit:process-feedbacks`の`references/finish-session.md`がexit-sessionで終端する）。
@@ -239,21 +228,15 @@ def _set_process_feedbacks_invoked(state: dict) -> dict | None:
 
 
 def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
-    """自動振り返りの起点フラグを偽へ戻す。全て偽ならNoneを返す（冪等）。"""
-    keys = (
-        "process_feedbacks_skill_invoked",
-        "plan_and_add_feedback_skill_invoked",
-        "add_feedback_skill_invoked",
-    )
-    if not any(state.get(key, False) for key in keys):
+    """`process_feedbacks_skill_invoked`を偽へ戻す。既に偽ならNoneを返す（冪等）。"""
+    if not state.get("process_feedbacks_skill_invoked", False):
         return None
-    for key in keys:
-        state[key] = False
+    state["process_feedbacks_skill_invoked"] = False
     return state
 
 
 def _record_exit_session_invoked(state: dict) -> dict | None:
-    """exit-session呼び出しを記録し、自動振り返りの起点フラグをまとめてリセットする。"""
+    """exit-session呼び出しを記録し、`process_feedbacks_skill_invoked`をリセットする。"""
     changed = False
     if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
         state[_AUTONOMOUS_EXIT_STATE_KEY] = True
@@ -388,18 +371,6 @@ def _record_test_executed(session_id: str) -> None:
     update_state(session_id, _set_test_executed)
 
 
-def _record_plan_mode_entered(session_id: str) -> None:
-    """新しい計画区切りで振り返り済み状態を解除する。"""
-
-    def _reset_review_invoked(state: dict) -> dict | None:
-        if not state.get("session_review_invoked"):
-            return None
-        state["session_review_invoked"] = {}
-        return state
-
-    update_state(session_id, _reset_review_invoked)
-
-
 def _record_skill_use(session_id: str, skill_name: object) -> None:
     """Skill呼び出しに対応するセッション状態を記録する。"""
     if not isinstance(skill_name, str):
@@ -413,39 +384,8 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
             return state
 
         update_state(session_id, _set_invoked)
-    if skill_name in _SESSION_REVIEW_SKILL_NAMES:
-
-        def _set_review_invoked(state: dict) -> dict | None:
-            invoked = state.get("session_review_invoked")
-            if not isinstance(invoked, dict):
-                invoked = {}
-            if invoked.get(skill_name) is True:
-                return None
-            invoked[skill_name] = True
-            state["session_review_invoked"] = invoked
-            return state
-
-        update_state(session_id, _set_review_invoked)
     if skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
         update_state(session_id, _set_process_feedbacks_invoked)
-    if skill_name in _PLAN_AND_ADD_FEEDBACK_SKILL_NAMES:
-
-        def _set_plan_and_add_feedback_invoked(state: dict) -> dict | None:
-            if state.get("plan_and_add_feedback_skill_invoked", False):
-                return None
-            state["plan_and_add_feedback_skill_invoked"] = True
-            return state
-
-        update_state(session_id, _set_plan_and_add_feedback_invoked)
-    if skill_name in _ADD_FEEDBACK_SKILL_NAMES:
-
-        def _set_add_feedback_invoked(state: dict) -> dict | None:
-            if state.get("add_feedback_skill_invoked", False):
-                return None
-            state["add_feedback_skill_invoked"] = True
-            return state
-
-        update_state(session_id, _set_add_feedback_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
         update_state(session_id, _record_exit_session_invoked)
 
@@ -640,12 +580,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_test_executed(session_id)
         return 0
 
-    # EnterPlanMode: 新規作業区切りとしてsession_review_invokedをリセット
-    if tool_name == "EnterPlanMode":
-        _record_plan_mode_entered(session_id)
-        return 0
-
-    # Skill: plan-modeスキル呼び出し検出と振り返りスキル呼び出し検出
+    # Skill: plan-modeスキル呼び出し検出とprocess-feedbacks起動検出
     if tool_name == "Skill":
         _record_skill_use(session_id, tool_input.get("skill"))
         return 0

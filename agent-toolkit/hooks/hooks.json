@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|EnterPlanMode|Agent|Task|mcp__plugin_agent-toolkit_agents_server__start|mcp__plugin_agent-toolkit_agents_server__wait|mcp__plugin_agent-toolkit_agents_server__send_message|mcp__plugin_agent-toolkit_agents_server__kill|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
+        "matcher": "Write|Edit|MultiEdit|Bash|Skill|Read|Agent|Task|mcp__plugin_agent-toolkit_agents_server__start|mcp__plugin_agent-toolkit_agents_server__wait|mcp__plugin_agent-toolkit_agents_server__send_message|mcp__plugin_agent-toolkit_agents_server__kill|mcp__plugin_agent-toolkit_pyfltr__run_for_agent",
         "hooks": [
           {
             "type": "command",
@@ -58,10 +58,6 @@
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py stop_advisor"
-          },
           {
             "type": "command",
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py autonomous_exit"

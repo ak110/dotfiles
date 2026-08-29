@@ -99,13 +99,6 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             ],
                         }
                     ],
-                    "Stop": [
-                        {
-                            "hooks": [
-                                {"type": "command", "command": subject.CODEX_STOP_COMMAND},
-                            ],
-                        }
-                    ],
                 }
             },
         ),
@@ -179,11 +172,6 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [{"type": "command", "command": subject.CODEX_USER_PROMPT_SUBMIT_COMMAND}],
                 }
             ],
-            "Stop": [
-                {
-                    "hooks": [{"type": "command", "command": subject.CODEX_STOP_COMMAND}],
-                }
-            ],
             "SubagentStop": [
                 {
                     "hooks": [{"type": "command", "command": subject.CODEX_SUBAGENT_STOP_COMMAND}],
@@ -208,7 +196,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             ],
         }
     }
-    assert len(generated_hooks["hooks"]) == 8
+    assert len(generated_hooks["hooks"]) == 7
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -425,7 +413,7 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
         subject.sync(manifest_root)
 
 
-@pytest.mark.parametrize("event", ["UserPromptSubmit", "Stop", "PreToolUse", "PostToolUse", "SubagentStop", "SessionEnd"])
+@pytest.mark.parametrize("event", ["UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SessionEnd"])
 def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: str) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     del hooks["hooks"][event]

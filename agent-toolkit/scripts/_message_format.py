@@ -15,23 +15,7 @@ LLM宛て出力には自動生成を示すプレフィックスとサフィッ�
 
 フィールドの詳細と規約の背景は
 `agent-toolkit/skills/agent-standards/references/claude-hooks.md`を参照する。
-
-`SESSION_REVIEW_PRECHECK`はStop/SubagentStopフックがセッション振り返りスキルの
-起動を誘導する際、誘導文の先頭へ埋め込む事前チェック文言の共通定数である。
-完了の言い切りでない場合は無言終了ではなく、作業状況と次の契機の提示を求める。
-提示は観測事実の記述に限り、応答待ちを理由に能動動作を停止する表明を含めない。
 """
-
-SESSION_REVIEW_PRECHECK = (
-    "Proceed only if your previous response is a definitive completion of the work."
-    " If your previous response instead ended on a question, confirmation request,"
-    " or approval-pending state addressed to the user, do not end the turn silently;"
-    " re-issue that question through the host's user-question mechanism and end the turn there."
-    " In all other non-completion cases, state the current work status and the next trigger"
-    " in one or two sentences, then end the turn. Report the state as observed fact;"
-    " do not announce that you are pausing, waiting, or standing by for a response."
-)
-
 
 _MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
 

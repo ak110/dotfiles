@@ -1,14 +1,13 @@
 """agent-toolkit/scripts/_stop_gate.py のテスト。
 
 公開関数`is_pending_async_work`の振る舞いを境界値・同値分割で網羅する。
-常時ログ関数（`append_stop_log`）およびコマンド起動検出関数（`has_command_invocation`）も対象とする。
+常時ログ関数（`append_stop_log`）も対象とする。
 `<task-id>`要素フォールバック解決の網羅テストは責務分離のため
 `_stop_gate_task_id_fallback_test.py`へ分割し、共通ヘルパーは本ファイルから再利用する。
 """
 
 import json
 import pathlib
-import re
 import threading
 import time
 from typing import Literal
@@ -17,7 +16,6 @@ import pytest
 from _stop_gate import (
     _describe_pending_background_tasks,
     append_stop_log,
-    has_command_invocation,
     is_pending_async_work,
 )
 from _test_helpers import _write_transcript
@@ -1434,13 +1432,13 @@ class TestAppendStopLog:
     def test_multiple_calls_append(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """複数回の呼び出しが1行ずつ追記される。"""
         monkeypatch.setattr("_stop_gate.tempfile.gettempdir", lambda: str(tmp_path))
-        append_stop_log("session-y", "approve_no_pyfltr", {})
-        append_stop_log("session-y", "block_session_review", {})
+        append_stop_log("session-y", "approve_no_env", {})
+        append_stop_log("session-y", "block_autonomous_exit", {})
         path = tmp_path / "claude-agent-toolkit-stop-session-y.log"
         lines = path.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 2
-        assert "decision=approve_no_pyfltr" in lines[0]
-        assert "decision=block_session_review" in lines[1]
+        assert "decision=approve_no_env" in lines[0]
+        assert "decision=block_autonomous_exit" in lines[1]
 
     def test_rotates_when_max_bytes_exceeded(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`max_bytes`を小さくすると先行ログが`.log.1`へローテートされる。"""
@@ -1453,121 +1451,3 @@ class TestAppendStopLog:
         assert rotated.exists()
         assert "decision=first" in rotated.read_text(encoding="utf-8")
         assert "decision=second" in path.read_text(encoding="utf-8")
-
-
-class TestHasCommandInvocation:
-    """`has_command_invocation`のtranscript走査を検証する。"""
-
-    def test_matches_user_command(self, tmp_path: pathlib.Path) -> None:
-        """ユーザーターンに指定パターンがあれば真を返す。"""
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "message": {"content": "<command-name>/foo</command-name>"},
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_no_match_returns_false(self, tmp_path: pathlib.Path) -> None:
-        """パターンに一致しなければ偽。"""
-        transcript = tmp_path / "t.jsonl"
-        entry = {"type": "user", "message": {"content": "no marker"}}
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_tool_result_content_ignored(self, tmp_path: pathlib.Path) -> None:
-        """ツール結果ブロック内にパターンのリテラルがあっても偽。
-
-        検出パターンのリテラルを含むソースコードを閲覧した場合、その内容がツール結果として
-        transcriptへ記録される。これを利用者のコマンド起動と判定してはならない。
-        """
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": "t1",
-                        "content": "<command-name>/foo</command-name>",
-                    }
-                ]
-            },
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_system_notification_text_block_ignored(self, tmp_path: pathlib.Path) -> None:
-        """システム生成通知のtextブロック内にパターンのリテラルがあっても偽。"""
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "message": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "<task-notification><command-name>/foo</command-name></task-notification>",
-                    }
-                ]
-            },
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_string_content_task_notification_ignored(self, tmp_path: pathlib.Path) -> None:
-        """文字列contentのシステム生成通知内にパターンのリテラルがあっても偽。
-
-        task-notificationはcontentが文字列のエントリとしても記録されるため、
-        文字列content限定だけでは通知本文への誤一致を防げない。
-        """
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "message": {
-                "content": (
-                    "<task-notification>\n<task-id>abc</task-id>\n"
-                    "<summary><command-name>/foo</command-name></summary>\n</task-notification>"
-                )
-            },
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_string_content_teammate_message_ignored(self, tmp_path: pathlib.Path) -> None:
-        """他セッションからの受信メッセージ内にパターンのリテラルがあっても偽。"""
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "message": {
-                "content": (
-                    "Another Claude session sent a message:\n"
-                    '<teammate-message teammate_id="x" summary="調査結果">\n'
-                    "検出源は`<command-name>/foo</command-name>`の走査\n</teammate-message>"
-                )
-            },
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_command_invocation_after_task_notification_detected(self, tmp_path: pathlib.Path) -> None:
-        """システム生成通知を除いた残りに起動痕跡があれば真を返す。"""
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "message": {
-                "content": ("<task-notification><task-id>abc</task-id></task-notification>\n<command-name>/foo</command-name>")
-            },
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))
-
-    def test_sidechain_ignored(self, tmp_path: pathlib.Path) -> None:
-        """sidechainのユーザーエントリは対象外。"""
-        transcript = tmp_path / "t.jsonl"
-        entry = {
-            "type": "user",
-            "isSidechain": True,
-            "message": {"content": "<command-name>/foo</command-name>"},
-        }
-        transcript.write_text(json.dumps(entry) + "\n", encoding="utf-8")
-        assert not has_command_invocation(str(transcript), re.compile(r"<command-name>/foo</command-name>"))

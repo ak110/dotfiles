@@ -1,7 +1,7 @@
 """Claude Code agent-toolkit: Git作業ツリー状態確認の共有ヘルパー。
 
 `git status --porcelain`実行と追跡ファイル変更判定を集約する。
-`pretooluse.py`・`posttooluse.py`・`stop_advisor.py`が同一の判定ロジック・共有定数を消費する形に統一している。
+`pretooluse.py`・`posttooluse.py`が同一の判定ロジック・共有定数を消費する形に統一している。
 """
 
 from __future__ import annotations

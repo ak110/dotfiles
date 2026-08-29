@@ -40,19 +40,13 @@
 
 ## 振り返り・モード系
 
-- `session_review_invoked`: 振り返りスキルの起動を記録し、Stop hookの重複を抑止する。
-  Claude CodeではPostToolUseとUserPromptSubmitが記録し、EnterPlanModeで解除する。
-  CodexではUserPromptSubmitと振り返りスキルが記録し、同一セッション内の解除経路を設けない。
-  Codexの状態が期限回収された場合は、transcript内の手動起動または起動確定標識から起動済み判定を復元する
 - `agent_toolkit_edit_skill_invoked`: dotfilesリポジトリ固有の
   `scripts/claude_hook_pretooluse.py`などがagent-toolkit-edit起動を記録し、編集警告の抑制に使う
 - `dotfiles_reference_docs_read`: dotfilesの個人PostToolUseフックが参照文書へのReadを解決済み絶対パスの一覧として記録し、
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない
-- `process_feedbacks_skill_invoked`・`plan_and_add_feedback_skill_invoked`・`add_feedback_skill_invoked`:
-  それぞれ対応するフィードバック処理スキルの起動を記録する。Stop hookの自動session-review起動条件に使う。
-  PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に3フラグをまとめて偽へ戻す。
-  手動session-review起動はこれらのフラグを必要としない。セッション終了まで保持する
+- `process_feedbacks_skill_invoked`: process-feedbacksスキルの起動を記録する。
+  PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に偽へ戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
   `agent-toolkit/scripts/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
 

@@ -46,21 +46,11 @@ _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _STATE_KEY = "autonomous_exit_invoked"
 
 # 発火判定が観測する環境変数印だけを根拠として適用範囲を断定する再促文。
-# 起動元のCLIや起動時のスキル名は判定していないため、本文では例示として扱う。
+# 起動元のCLIや起動時のスキル名は判定していないため、本文では例示として扱わない。
 _REASON_BODY = """\
-This session has the autonomous-loop environment marker \
-`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1` or its legacy compatibility marker \
-`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`.
-Before calling /agent-toolkit:exit-session, fully complete the following prerequisite steps.
-1. Complete every applicable step defined by the skill that launched this session. \
-For example, when that skill is agent-toolkit:process-feedbacks, complete its sections \
-"入力と着手可否", "調査と採否", "保留", "実装と公開", and "後始末" (including feedback disposition, commit, push, and cleanup).
-2. Complete the agent-toolkit:session-review skill, including its independent advisor assessment.
-3. Submit improvement proposals via the agent-toolkit:session-review skill.
-Call /agent-toolkit:exit-session only after all prerequisite steps are complete.
-Calling exit-session before submitting improvement proposals is strictly forbidden, \
-because it discards the reflection results.
-If any prerequisite remains incomplete, resume that step before reconsidering this message."""
+このセッションには常駐ループの終了保証が適用される。
+agent-toolkit:process-feedbacksの全工程を完了し、agent-toolkit:completion-reportで完了報告した後に、agent-toolkit:exit-sessionを起動する。
+未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。"""
 
 
 _block_notice = _block_notice_formatter(_HOOK_ID)

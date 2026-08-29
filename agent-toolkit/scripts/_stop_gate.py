@@ -68,10 +68,6 @@ _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronC
 # `re.DOTALL`で本文中の改行も拾う。
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
-# 文字列contentへ埋め込まれるシステム生成要素（background taskの完了通知・他セッションからの
-# 受信メッセージ）を非貪欲に切り出す正規表現。ユーザー自身の発話ではないため、
-# スラッシュコマンド起動痕跡の照合前に除去する。
-_SYSTEM_EMBEDDED_ELEMENT_RE = re.compile(r"<(task-notification|teammate-message)\b.*?</\1>", re.DOTALL)
 _MCP_BACKGROUND_TASK_RE = re.compile(r"moved to the background as task\s+(\S+)")
 
 # `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
@@ -215,34 +211,6 @@ def is_pending_async_work(
     return pending
 
 
-def has_command_invocation(transcript_path: str, pattern: re.Pattern[str]) -> bool:
-    """transcript内のユーザーターンに`pattern`一致のスラッシュコマンド起動痕跡があるか確認する。
-
-    スラッシュコマンド起動はUserPromptSubmit hook（`user_prompt_submit.py`）が
-    `session_review_invoked`辞書へ記録する。
-    本関数はUserPromptSubmit hookがfail-openで記録漏れした場合のsafety netとして、
-    transcript走査による代替検出手段を提供する。
-    非sidechainの`type=="user"`エントリのうち、`message.content`が文字列のものだけを走査する。
-    リスト形式のcontentはツール結果を含み、照合すると検出パターンのリテラルを含む
-    ソースコードの閲覧結果へ誤一致し、振り返り誘導が不発となる。
-    文字列contentにもシステム生成要素（background taskの完了通知・他セッションからの受信メッセージ）が
-    埋め込まれるため、当該要素を除去してから照合し、その本文のリテラルを起動痕跡と判定しない。
-    transcript読み取り失敗時は偽を返す。
-    """
-    for entry in _read_transcript_entries(transcript_path):
-        if entry.get("type") != "user" or entry.get("isSidechain"):
-            continue
-        message = entry.get("message")
-        if not isinstance(message, dict):
-            continue
-        content = message.get("content")
-        if not isinstance(content, str):
-            continue
-        if pattern.search(_SYSTEM_EMBEDDED_ELEMENT_RE.sub("", content)):
-            return True
-    return False
-
-
 def _stop_log_path(session_id: str) -> pathlib.Path:
     """常時ログの出力先パスを返す。
 
@@ -256,11 +224,10 @@ def _stop_log_path(session_id: str) -> pathlib.Path:
 def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes: int = 1_000_000) -> None:
     """Stop hookの最終判定根拠を常時ログへ1行追記する。
 
-    `decision`は呼び出し側が渡す最終判定ラベル（`approve_no_pyfltr`・
-    `approve_pending_async`・`approve_review_invoked`・`approve_stop_hook_active`・
-    `block_session_review`など）。`context`は任意のkey-valueの辞書で、
-    `last_tool`・`launched`・`pending`・`pending_ids`・`session_review_invoked`・
-    `command_detected`等を呼び出し側が任意で埋める。
+    `decision`は呼び出し側が渡す最終判定ラベル（`approve_no_env`・
+    `approve_pending_async`・`approve_exit_invoked`・`approve_stop_hook_active`・
+    `block_autonomous_exit`など）。`context`は任意のkey-valueの辞書で、
+    `last_tool`・`launched`・`pending`・`pending_ids`等を呼び出し側が任意で埋める。
 
     出力形式: `{ISO8601時刻} decision={...} k1=v1 k2=v2 ...`（1行）。
     `session_id`が空の場合はログ書き込みをスキップする。

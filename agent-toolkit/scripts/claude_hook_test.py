@@ -22,7 +22,6 @@ _SUBCOMMANDS = (
     "pretooluse",
     "posttooluse",
     "autonomous_exit",
-    "stop_advisor",
     "subagent_stop_advisor",
     "subagent_start_tracker",
     "session_end_cleanup",
@@ -43,7 +42,7 @@ class TestEntrypointExceptionStages:
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
-    @pytest.mark.parametrize("subcommand", ["stop_advisor", "autonomous_exit"])
+    @pytest.mark.parametrize("subcommand", ["autonomous_exit"])
     def test_main_import_error_emits_summary_traceback_and_empty_json(
         self,
         tmp_path: pathlib.Path,
@@ -75,13 +74,13 @@ class TestEntrypointExceptionStages:
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "stop_advisor.py").write_text(
+        (tmp_path / "autonomous_exit.py").write_text(
             "raise ImportError('module failure')\n",
             encoding="utf-8",
         )
 
         result = subprocess.run(
-            [sys.executable, str(entrypoint), "stop_advisor"],
+            [sys.executable, str(entrypoint), "autonomous_exit"],
             input="",
             capture_output=True,
             text=True,
@@ -91,7 +90,7 @@ class TestEntrypointExceptionStages:
         assert result.returncode == 0
         assert not result.stdout
         assert result.stderr.startswith("Traceback (most recent call last):")
-        assert "[stop_advisor] 想定外エラー" not in result.stderr
+        assert "[autonomous_exit] 想定外エラー" not in result.stderr
 
     def test_non_approve_fallback_subcommand_exception_returns_0_without_json(
         self,
