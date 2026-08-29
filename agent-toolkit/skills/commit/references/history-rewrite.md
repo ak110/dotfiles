@@ -16,7 +16,7 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
 対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
-又はautosquash・amendの失敗時は新規commitへフォールバックせず`needs_escalation`で返す。
+又はautosquash・amendの失敗時は新規commitで対応する。
 `rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`が定める通常`plan-impl`レビュー修正の実装担当契約だけに置く。
 通常実装のレビュー修正以外は本節の履歴書換え契約を適用せず、各呼び出し元が定めるcommit契約に従う。
 未pushかつ単一の実装担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
