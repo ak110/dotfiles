@@ -14,7 +14,7 @@ description: >
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
-- `agent-toolkit/rules/`・`agent-toolkit/agents/`配下はサブディレクトリを設けずフラット構造を保つ
+- `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保つ
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk mq`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
