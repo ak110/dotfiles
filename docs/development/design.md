@@ -224,8 +224,10 @@ Claude Codeで委譲先がさらに読み取り専用調査・レビューを委
 全委譲へ成果ファイルを要求する案は通常の直接委譲へ恒常的な入出力を増やすため採用せず、配送不着を観測した孫以深の読み取り専用調査・レビューへ限定する。
 
 フィードバック処理は、①選定とレーン分け、②レーン実行、③全レーン後の終了に分ける。
-①ではメインがprocessable一覧のうちready項目だけを固定してpickerを設定モデルへ直接委譲し、
-実装不要、既存実装で充足済み、reject、処理中に新たに必要と判定した保留、計画型及び通常型を分類する。
+①ではメインがキュー一覧を自ら取得せず、pickerを設定モデルへ直接委譲する。
+pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上あれば当該項目だけを処理対象とする。
+無ければ`inbox`かつ除外条件に当たらない項目を処理対象の候補として、実装不要、既存実装で充足済み、reject、処理中に新たに必要と判定した保留、計画型及び通常型を分類する。
+除外条件は、外部待ち（`cooldown_until`による時間経過待ちと未終端の依存先）と修復待ち（frontmatterや依存関係の不備）とする。
 既存のplanning、editing、hold項目は候補、優先度、依存判断又は固有指示の入力へ含めない。
 ①はpicker出力の検収直後に、選定時点で`inbox`だった項目へ既存の一括`start-processing`を1回実行し、全件の`processing`配置を確認して完了する。
 計画ファイル、managed-temp、worktree及び実装担当の起動をこの遷移の成功より後へ置くことで、着手済みの処理回が占有する範囲を外部観測と中断後の再開位置から識別できる。
@@ -312,7 +314,7 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 
 通常型のバッチでは、メインがprocessable一覧のうちready項目だけを固定し、pickerを設定モデルへ直接委譲する。
 pickerは項目別の原文、実測、履歴及び投入元識別子を照合し、実装不要、既存実装で充足済み、reject、処理中に新たに必要と判定した保留、計画型及び通常レーンを確定する。
-ファイル単位の終端、通常レーンとキュー操作の責務境界は`agent-toolkit/skills/process-feedbacks/references/pick-feedbacks.md`を正本とする。
+ファイル単位の終端、通常レーンとキュー操作の責務境界は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
 計画担当は実施内容へ担当フィードバックを原則1ファイル1行で記録し、採否、採用範囲、実施しない範囲、理由を同じ行へ統合する。
 採用系（`採用`・`部分採用`）の行だけを実装対象とする。
 frontmatterの`source`からエージェント由来を判定し、それ以外の不採用候補は通常の確認経路へ送る。
@@ -376,7 +378,7 @@ agent-toolkitプラグイン内のタスク文書と作成規範の絶対パス�
 各レコードは種別、出所及び引用範囲をこの順で保持し、逐語本文・回答全文をレコードの末尾へ続ける。
 キューにない素材の逐語本文・回答全文は、計画外の明示入力として調査、起草、初回レビュー、再レビューへ渡し、計画本文へ転記しない。
 初回起動後の追送利用者発言は、起草担当が逐語本文、入力種別、出所、引用範囲を保持して真正性を保証し、レビュー担当は本文との整合だけを検収する。
-ファイル単位の分類、reject・hold判定は`agent-toolkit/skills/process-feedbacks/references/pick-feedbacks.md`を正本とする。
+ファイル単位の分類、reject・hold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
 調査担当は同じキューCLI出力のfrontmatterから投入元識別子を取得し、文字列を改変せず`feedbacks-planner`へ渡す。
 `source`欄がない場合は値なしとして渡す。
 `feedbacks-planner`は全ての投入元で、原文が方針改訂を要求するか、明示した検証手段が現行方針に適合するかを先に検査する。
@@ -602,7 +604,7 @@ advisorが`evidence_insufficient`を返した場合は既存の証拠不足報�
 実装レビュー担当は二段階の候補をレビュー指摘管理表へ統合し、成果物を変更しない。
 修正担当は同表の指摘を採否判断し、採用した指摘へ対応して、詳細な採否と対応結果を表へ記録する。
 レビュー指摘の永続表の構造と操作は`agent-toolkit/scripts/_review_table.py`を正本とする。
-共通のラウンド受領、モデル解決と収束判定は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`へ集約する。
+共通のラウンド受領、モデル解決と収束判定は`agent-toolkit/share/review-loop-coordination.md`へ集約する。
 計画レビューは計画ごとの表へ`plan-review`を付け、実装レビューはレーンごとの`review.tsv`へ`implementation-review`を付ける。
 実装レビュー担当は同じ`track`の表をラウンドごとに引き継ぎ、過去ラウンドの行を変更せず今回の候補だけを追加する。
 レビューイーは修正対象として渡された`track`集合の行だけを扱う。
@@ -677,17 +679,17 @@ Claude Codeでは`plan-review-executor`へ委譲する。Codexではメインが
 `plan-review-executor`は`plan-impl-executor`が実装レビューの調整主体を担う
 構成と対称であり、計画ファイル初稿の絶対パスを入力として計画レビューの調整主体を担う。
 `plan-review-executor`と`feedbacks-planner`は、成果物を直接編集せず委譲と検収を担う点を共有する。
-pickerによる分類、reject及びhold判定は`agent-toolkit/skills/process-feedbacks/references/pick-feedbacks.md`を正本とする。
+pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
 `plan-review-executor`は`plan_model`と`plan_review_model`を解決する。
 対象工程では分担が分かれ、`plan-review-executor`は`feedbacks-planner`が所有するフィードバックの調査と項目別採否を担わず、
 計画ファイル初稿を受け取った後のレビュー修正ループだけを対象とする。
 
 レビューの役割固有契約を各SSOTへ残したまま、表のライフサイクル、`track`による帰属、モデル解決及び収束判定だけを
-`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`へ集約する。
+`agent-toolkit/share/review-loop-coordination.md`へ集約する。
 調整主体ごとに同じ手順を複製する案は、ラウンドの境界とモデル解決の改訂が不一致になるため採用しない。
 レビュー担当・レビューイーの契約を調整文書へ移す案は、知識境界と採否責務を混同するため採用しない。
 
-書込所有権の受け渡しは、`plan-review-delegation.md`が定める「各パスの書込主体は常に1名」契約をそのまま使う。
+書込所有権の受け渡しは、`agent-toolkit/share/plan-drafting.subagent.md`が定める「各パスの書込主体は常に1名」契約をそのまま使う。
 新しい受け渡し機構（専用の状態ファイル、追加の設定キーなど）は設けない。
 利用者確認を要する指摘は、既存の`needs_escalation`契約で呼び出し元（`plan-and-add-feedback`の実行主体）へ返す。
 
@@ -711,12 +713,12 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/skills/process-f
 知識境界は次のとおり分ける。
 作成基準は計画ファイルが満たす成果物要件だけを持つ。
 `plan-mode`のSKILL.mdは調査から実装引き継ぎまでの手順だけを持ち、成果物契約は作成基準を参照する。
-`plan-review-task.md`は検出手技（走査の実施方法、素材・要求の照合手順、指摘の除外規律、初回・再レビューの規定、
+`agent-toolkit/share/plan-review.subagent.md`は検出手技（走査の実施方法、素材・要求の照合手順、指摘の除外規律、初回・再レビューの規定、
 出力形式）だけを持ち、成果物要件を再掲しない。
 レビュー表の操作書式は`atk review-table --help`及び使用するサブコマンドの`--help`を公開正本とし、
 計画構造検査の実行主体が解決した`check_plan_file.py`の絶対パスを計画レビュー担当の入力へ渡す。
 保存TSVの構造は既存の実装・テスト正本を維持するが、レビュー担当が私有実装の探索で操作書式や実行対象を補わない境界を設ける。
-計画固有の指摘範囲は`plan-review-task.md`を正本とする。
+計画固有の指摘範囲は`agent-toolkit/share/plan-review.subagent.md`を正本とする。
 同書は、計画へ含めた既存不良、レビュー時の能動探索、記述形式と証拠不足時の未完了を定める。
 作成基準とレビュー収束手順へ同じ判定を複製する案は、計画成果物の要件・ループ制御と役割固有の判定を混同するため採用しない。
 
@@ -1028,3 +1030,6 @@ detail側は、検索範囲、一致・不一致結果、対象判断、変更�
 判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全又は公開契約を保護する場合を除き、各エージェント文書へ常設しない。
 
 呼び出し元は割当と認可を知り、受信側は自身の実行手順と出力を知る。この知識境界を維持するため、同じ契約を呼び出し元文書とagent定義へ複製しない。正本宣言と本文複製を併存させる案は同期漏れを残すため採用しない。共通文書を契約ごとに新設する案も参照段数を増やすため、既存の責務所有者へ集約できる場合は採用しない。
+
+サブエージェントを起動する手順は、呼び元用文書（`<役割名>.parent.md`）と呼び先用文書（`<役割名>.subagent.md`）のペアへ分け、呼び先の所在にかかわらずプラグインの`share/`配下へ置く。`agents/`配下の定義とスキル本体の双方から同じ役割を起動する場合も、両者が`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`という同じ形式で参照先を解決できる。呼び元用文書は起動経路、渡す入力、受領するcheckpointと検収条件だけを持ち、呼び先固有の作業手順を複製しない。呼び先用文書は責務、入力、実行手順及び出力形式だけを持ち、呼び出し元の割当・認可判断を複製しない。定義済みサブエージェント自体が呼び先の場合は、定義本文が呼び先用文書を兼ねるため呼び元用文書だけを置く。
+却下した代替案は、呼び先用文書を各スキルの`references/`配下に残し、`agents/`配下の定義から読むものだけを`share/`へ移す案である。計画レビュー担当の呼び先用文書（`agent-toolkit/share/plan-review.subagent.md`）のようにスキル本体と`agents/`配下の定義の双方から参照される文書の所在が一意に定まらず、同じ役割の起動手順が2箇所へ分かれるため採らない。
