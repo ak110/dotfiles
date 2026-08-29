@@ -152,7 +152,7 @@ def test_claude_ignores_non_string_answer_maps(tmp_path: pathlib.Path, answers: 
         ],
     )
 
-    assert evidence.load_and_extract(str(transcript)) == []
+    assert not evidence.load_and_extract(str(transcript))
 
 
 @pytest.mark.parametrize(
@@ -182,7 +182,7 @@ def test_claude_ignores_unmatched_normal_tool_results(
         ],
     )
 
-    assert evidence.load_and_extract(str(transcript)) == []
+    assert not evidence.load_and_extract(str(transcript))
 
 
 def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_path: pathlib.Path) -> None:
@@ -492,7 +492,7 @@ def test_codex_ignores_malformed_or_unmatched_question_payloads(
     """不正なJSON、未対応call、未知の質問IDから証拠を捏造しない。"""
     transcript = _write_transcript(tmp_path, entries)
 
-    assert evidence.load_and_extract(str(transcript)) == []
+    assert not evidence.load_and_extract(str(transcript))
 
 
 def test_codex_agent_message_block_array_extracts_only_final_answer(tmp_path: pathlib.Path) -> None:
@@ -628,48 +628,6 @@ def test_codex_failed_command_clips_only_long_structured_command(tmp_path: pathl
     assert len(event["command"]) == 2000 + len("…[省略]")
 
 
-def test_claude_started_marker_excludes_automatic_review_events(tmp_path: pathlib.Path) -> None:
-    """Claude形式ではStop注入だけを除き、起動後の人間介入を保持する。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Stop hook feedback:\n" + evidence.STOP_ADVISOR_PREFIX + " 誘導",
-                        },
-                        {"type": "text", "text": "同じ注入エントリの残余本文"},
-                    ],
-                },
-            },
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
-                "message": {"role": "user", "content": []},
-            },
-            {
-                "type": "attachment",
-                "attachment": {
-                    "type": "queued_command",
-                    "origin": {"kind": "human"},
-                    "prompt": "開始後の介入",
-                },
-            },
-        ],
-    )
-
-    assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1},
-        {"kind": "user", "text": "開始後の介入", "line": 4, "sequence": 2},
-    ]
-    assert evidence.has_session_review_started(str(transcript)) is True
-
-
 def test_claude_skill_injection_keeps_only_invocation_line(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
@@ -759,397 +717,6 @@ def test_claude_queued_commands_keep_only_human_prompts(tmp_path: pathlib.Path) 
     assert [event["text"] for event in events] == ["依頼", "人間の割り込み"]
 
 
-def test_queued_manual_review_command_sets_claude_boundary(tmp_path: pathlib.Path) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {
-                "type": "attachment",
-                "attachment": {
-                    "type": "queued_command",
-                    "origin": {"kind": "human"},
-                    "prompt": "/agent-toolkit:session-review",
-                },
-            },
-            {"type": "assistant", "message": {"role": "assistant", "content": "振り返り中"}},
-        ],
-    )
-
-    assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1}
-    ]
-    assert evidence.has_session_review_started(str(transcript)) is True
-
-
-@pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
-def test_claude_syntax_is_not_codex_manual_review_boundary(tmp_path: pathlib.Path, command: str) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "本来の最終結果"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": command}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "slash後の本来の作業結果"}],
-                },
-            },
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-
-    assert [event["text"] for event in events] == [
-        "本来の最終結果",
-        command,
-        "slash後の本来の作業結果",
-    ]
-    assert events[-1]["kind"] == "final-result"
-    assert evidence.has_session_review_started(str(transcript)) is False
-
-
-@pytest.mark.parametrize("command", ["$session-review", "$agent-toolkit:session-review"])
-def test_dollar_manual_review_invocation_excludes_following_codex_events(tmp_path: pathlib.Path, command: str) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "本来の最終結果"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": command}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "振り返り中"}],
-                },
-            },
-        ],
-    )
-
-    assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1}
-    ]
-    assert evidence.has_session_review_started(str(transcript)) is True
-
-
-def test_automatic_review_boundary_uses_last_stop_notice_before_started_marker(tmp_path: pathlib.Path) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "未完了結果"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 最初の誘導"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "追加作業"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "本来の最終結果"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 完了後の誘導"}],
-                },
-            },
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "CommandExecution",
-                        "status": "completed",
-                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
-                    },
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "振り返り中"}],
-                },
-            },
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-
-    assert events[-1] == {"kind": "final-result", "text": "本来の最終結果", "line": 4, "sequence": 4}
-    assert any(event["text"] == "追加作業" for event in events)
-    assert all(event["kind"] != "session-review-started" for event in events)
-    assert evidence.has_session_review_started(str(transcript)) is True
-
-
-def test_review_boundary_uses_latest_applicable_manual_or_automatic_event() -> None:
-    """手動・自動の複数起動では最後の適用可能な境界を選択する。"""
-    claude_events = [
-        {"kind": "user", "text": "/session-review"},
-        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
-        {"kind": "user", "text": "再開後の作業"},
-        {"kind": "user", "text": "/session-review"},
-        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
-    ]
-    codex_events = [
-        {"kind": "assistant", "text": "結果"},
-        {"kind": "user", "text": evidence.STOP_ADVISOR_PREFIX + " 1回目"},
-        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
-        {"kind": "assistant", "text": "再開後の作業"},
-        {"kind": "user", "text": evidence.STOP_ADVISOR_PREFIX + " 2回目"},
-        {"kind": "session-review-started", "text": evidence.SESSION_REVIEW_STARTED_MARKER},
-    ]
-
-    assert evidence._review_boundary_index(claude_events, "claude") == 4  # pylint: disable=protected-access  # noqa: SLF001
-    assert evidence._review_boundary_index(codex_events, "codex") == 4  # pylint: disable=protected-access  # noqa: SLF001
-
-
-@pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
-def test_multiple_manual_review_invocations_use_latest_claude_boundary(
-    tmp_path: pathlib.Path,
-    command: str,
-) -> None:
-    """Claude形式の複数手動起動では、最初のレビュー後の作業を保持する。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {"type": "user", "message": {"role": "user", "content": command}},
-            {"type": "assistant", "message": {"role": "assistant", "content": "再開後の作業結果"}},
-            {"type": "user", "message": {"role": "user", "content": command}},
-            {"type": "assistant", "message": {"role": "assistant", "content": "最新の振り返り中"}},
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-
-    assert [event["text"] for event in events] == ["本来の最終結果", command, "再開後の作業結果"]
-    assert events[-1]["kind"] == "final-result"
-
-
-def test_latest_claude_automatic_marker_is_shared_by_finalize_stats_and_warning(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Claude形式の複数自動起動で、各照会が最新markerを使い後続警告だけを除外する。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "assistant", "message": {"role": "assistant", "content": "開始前の結果"}},
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
-                "message": {"role": "user", "content": []},
-            },
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": "warning: 最初のmarker後"},
-                "message": {"role": "user", "content": []},
-            },
-            {"type": "assistant", "message": {"role": "assistant", "content": "再開後の作業結果"}},
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
-                "message": {"role": "user", "content": []},
-            },
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": "warning: 最新marker後"},
-                "message": {"role": "user", "content": []},
-            },
-            {"type": "assistant", "message": {"role": "assistant", "content": "最新marker後の作業結果"}},
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-    assert [event["text"] for event in events] == [
-        "開始前の結果",
-        "再開後の作業結果",
-        "最新marker後の作業結果",
-    ]
-    assert evidence.main([str(transcript), "--warn"]) == 0
-    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 3, "text": "warning: 最初のmarker後"}]
-
-
-def test_latest_codex_automatic_boundary_is_shared_by_finalize_stats_and_warning(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Codex形式の複数自動起動で、stopとmarkerの対応を最新へそろえる。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            _codex_token_count_entry("2026-08-19T00:00:00Z", {"input_tokens": 2, "output_tokens": 0, "total_tokens": 2}),
-            {
-                "type": "response_item",
-                "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "開始前"}]},
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 1回目"}],
-                },
-            },
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "CommandExecution",
-                        "status": "completed",
-                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
-                    },
-                },
-            },
-            _codex_token_count_entry("2026-08-19T00:00:04Z", {"input_tokens": 5, "output_tokens": 0, "total_tokens": 5}),
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "最初のreview後"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "function_call_output",
-                    "call_id": "warning-before-latest",
-                    "output": "warning: 最新境界前",
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 2回目"}],
-                },
-            },
-            {
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "CommandExecution",
-                        "status": "completed",
-                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
-                    },
-                },
-            },
-            _codex_token_count_entry("2026-08-19T00:00:10Z", {"input_tokens": 100, "output_tokens": 0, "total_tokens": 100}),
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "最新review後"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {"type": "function_call_output", "call_id": "warning-after-latest", "output": "warning: 最新境界後"},
-            },
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-    assert any(event["text"] == "最初のreview後" for event in events)
-    assert all(event["text"] != "最新review後" for event in events)
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    stats = _read_jsonl(capsys)
-    assert _events_by_kind(stats, "stats-summary")[0]["tokens"]["total_tokens"] == 7
-    assert evidence.main([str(transcript), "--warn"]) == 0
-    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 7, "text": "warning: 最新境界前"}]
-
-
-def test_stop_notice_without_started_marker_does_not_mark_review_started(tmp_path: pathlib.Path) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "追加作業後の結果"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 誘導"}],
-                },
-            },
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-
-    assert events[-1]["text"].startswith(evidence.STOP_ADVISOR_PREFIX)
-    assert evidence.has_session_review_started(str(transcript)) is False
-
-
 def test_unrelated_successful_codex_command_is_not_evidence(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
@@ -1168,46 +735,7 @@ def test_unrelated_successful_codex_command_is_not_evidence(tmp_path: pathlib.Pa
         ],
     )
 
-    assert evidence.has_session_review_started(str(transcript)) is False
-    assert evidence.load_and_extract(str(transcript)) == []
-
-
-@pytest.mark.parametrize("command", ["/session-review", "/agent-toolkit:session-review"])
-def test_manual_review_invocation_excludes_following_claude_events(tmp_path: pathlib.Path, command: str) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {"type": "user", "message": {"role": "user", "content": command}},
-            {"type": "assistant", "message": {"role": "assistant", "content": "振り返り中"}},
-        ],
-    )
-
-    assert evidence.load_and_extract(str(transcript)) == [
-        {"kind": "final-result", "text": "本来の最終結果", "line": 1, "sequence": 1}
-    ]
-
-
-@pytest.mark.parametrize("command", ["$session-review", "$agent-toolkit:session-review"])
-def test_codex_syntax_is_not_claude_manual_review_boundary(tmp_path: pathlib.Path, command: str) -> None:
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "assistant", "message": {"role": "assistant", "content": "本来の最終結果"}},
-            {"type": "user", "message": {"role": "user", "content": command}},
-            {"type": "assistant", "message": {"role": "assistant", "content": "dollar後の本来の作業結果"}},
-        ],
-    )
-
-    events = evidence.load_and_extract(str(transcript))
-
-    assert [event["text"] for event in events] == [
-        "本来の最終結果",
-        command,
-        "dollar後の本来の作業結果",
-    ]
-    assert events[-1]["kind"] == "final-result"
-    assert evidence.has_session_review_started(str(transcript)) is False
+    assert not evidence.load_and_extract(str(transcript))
 
 
 def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> None:
@@ -1242,151 +770,6 @@ def _read_jsonl(capsys: pytest.CaptureFixture[str]) -> list[dict]:
     captured = capsys.readouterr()
     assert captured.err == ""
     return [json.loads(line) for line in captured.out.splitlines()]
-
-
-def test_index_mode_projects_claude_events_without_text(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Claude形式の索引が既定順序を保ち、本文を返さないことを検証する。"""
-    long_text = "索引へ含めない長い本文" * 1000
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "user", "message": {"role": "user", "content": long_text}},
-            {
-                "type": "assistant",
-                "message": {"role": "assistant", "content": [{"type": "text", "text": "途中結果"}]},
-            },
-            {"type": "user", "message": {"role": "user", "content": "次の入力"}},
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--index"]) == 0
-
-    events = _read_jsonl(capsys)
-    assert events == [
-        {"kind": "user", "sequence": 1, "line": 1},
-        {"kind": "final-result", "sequence": 2, "line": 2},
-        {"kind": "user", "sequence": 3, "line": 3},
-    ]
-    assert long_text not in json.dumps(events, ensure_ascii=False)
-    assert all(set(event) <= {"kind", "sequence", "line"} for event in events)
-
-
-def test_index_mode_projects_codex_events_without_text(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Codex形式の索引が既定順序を保ち、本文を返さないことを検証する。"""
-    long_text = "Codex索引へ含めない長い本文" * 1000
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": long_text}]},
-            },
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "途中結果"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "payload": {"type": "agent_message", "message": "Message Type: FINAL_ANSWER\n完了報告"},
-            },
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--index"]) == 0
-
-    events = _read_jsonl(capsys)
-    assert events == [
-        {"kind": "user", "sequence": 1, "line": 1},
-        {"kind": "final-result", "sequence": 2, "line": 2},
-        {"kind": "agent-completion", "sequence": 3, "line": 3},
-    ]
-    assert long_text not in json.dumps(events, ensure_ascii=False)
-    assert all(set(event) <= {"kind", "sequence", "line"} for event in events)
-
-
-def test_index_mode_projects_fallback_to_location_fields(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """取得不能又は実行系不明の索引がfallback本文を返さないことを検証する。"""
-    invalid = tmp_path / "invalid.jsonl"
-    invalid.write_text("{invalid\n", encoding="utf-8")
-    unknown_dir = tmp_path / "unknown"
-    unknown_dir.mkdir()
-    unknown = _write_transcript(unknown_dir, [{"type": "unknown"}])
-
-    raw_paths: list[str | None] = [
-        None,
-        "relative-transcript.jsonl",
-        str(tmp_path / "missing.jsonl"),
-        str(invalid),
-        str(unknown),
-    ]
-    for raw_path in raw_paths:
-        arguments = ["--index"] if raw_path is None else [raw_path, "--index"]
-        assert evidence.main(arguments) == 0
-        assert _read_jsonl(capsys) == [{"kind": "fallback", "sequence": 1}]
-
-
-def test_index_mode_returns_no_events_for_empty_valid_transcript(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """空の有効transcriptでは空の索引を返す。"""
-    transcript = tmp_path / "empty.jsonl"
-    transcript.write_text("\n", encoding="utf-8")
-
-    assert evidence.main([str(transcript), "--index"]) == 0
-    assert _read_jsonl(capsys) == []
-
-
-@pytest.mark.parametrize(
-    "query_args",
-    [
-        ["--warn"],
-        ["--grep", "依頼"],
-        ["--detail", "1"],
-        ["--stats"],
-        ["--hook-notices"],
-    ],
-)
-def test_index_mode_is_exclusive_with_existing_query_modes(
-    query_args: list[str],
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """索引と既存5照会の併用を既存と同じ引数誤用として拒否する。"""
-    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
-
-    assert evidence.main([str(transcript), "--index", *query_args]) == 2
-
-    events = _read_jsonl(capsys)
-    assert events == [{"kind": "error", "text": "--index・--warn・--grep・--detail・--stats・--hook-noticesは併用できない"}]
-
-
-def test_index_mode_does_not_change_default_output(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """索引追加後もフラグなしの既定出力が本文を含む既存形式であることを検証する。"""
-    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "本文"}}])
-
-    assert evidence.main([str(transcript)]) == 0
-    default_events = _read_jsonl(capsys)
-    assert default_events == [{"kind": "user", "text": "本文", "line": 1, "sequence": 1}]
-
-    assert evidence.main([str(transcript), "--index"]) == 0
-    assert _read_jsonl(capsys) == [{"kind": "user", "sequence": 1, "line": 1}]
 
 
 def test_warn_mode_reports_matching_entries_with_line_and_tool(
@@ -1721,64 +1104,6 @@ def test_warn_mode_ignores_warning_markers_and_structured_json_in_inputs_but_gre
         {"kind": "match", "line": 1, "text": expected_text},
         {"kind": "summary", "count": 1},
     ]
-
-
-def test_warn_mode_excludes_records_after_review_boundary(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """振り返り起動後に記録された警告を照会対象へ含めない。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": "warning: 作業中の警告"},
-                "message": {"role": "user", "content": []},
-            },
-            {"type": "user", "message": {"role": "user", "content": "/session-review"}},
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": "warning: 振り返り中の警告"},
-                "message": {"role": "user", "content": []},
-            },
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--warn"]) == 0
-
-    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: 作業中の警告"}]
-
-
-def test_warn_mode_excludes_records_after_claude_automatic_review_marker(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Claude自動session-review開始マーカー後の同形式警告を照会対象へ含めない。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": "warning: マーカー前の警告"},
-                "message": {"role": "user", "content": []},
-            },
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
-                "message": {"role": "user", "content": []},
-            },
-            {
-                "type": "user",
-                "toolUseResult": {"stdout": "warning: マーカー後の警告"},
-                "message": {"role": "user", "content": []},
-            },
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--warn"]) == 0
-
-    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: マーカー前の警告"}]
 
 
 def test_query_modes_search_hook_notice_stored_under_attachment(
@@ -2876,8 +2201,8 @@ def test_stats_token_peak_normalizes_codex_cache_components(tmp_path: pathlib.Pa
     assert peak["output_tokens"] == 40
 
 
-def test_stats_collects_subagents_and_excludes_review_descendants(tmp_path: pathlib.Path, capsys) -> None:
-    """通常のサブエージェントだけを主体別集計へ含め、振り返り系と子孫を除外する。"""
+def test_stats_collects_all_subagents_without_exclusion(tmp_path: pathlib.Path, capsys) -> None:
+    """全てのサブエージェント記録を主体別集計へ含め、種別による除外を行わない。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
@@ -2896,37 +2221,26 @@ def test_stats_collects_subagents_and_excludes_review_descendants(tmp_path: path
         + "\n"
     )
     (subagents / "agent-normal.meta.json").write_text(json.dumps({"agentType": "Explore"}))
-    review = subagents / "agent-review.jsonl"
-    review.write_text(
+    other = subagents / "agent-other.jsonl"
+    other.write_text(
         json.dumps(
             {
                 "type": "assistant",
                 "timestamp": "2026-08-19T00:00:01Z",
-                "message": {"role": "assistant", "id": "r", "usage": {"input_tokens": 100, "output_tokens": 100}},
+                "message": {"role": "assistant", "id": "o", "usage": {"input_tokens": 100, "output_tokens": 100}},
             }
         )
         + "\n"
     )
-    (subagents / "agent-review.meta.json").write_text(json.dumps({"agentType": "session-review-advisor"}))
-    child = subagents / "agent-child.jsonl"
-    child.write_text(
-        json.dumps(
-            {
-                "type": "assistant",
-                "timestamp": "2026-08-19T00:00:01Z",
-                "message": {"role": "assistant", "id": "c", "usage": {"input_tokens": 200, "output_tokens": 200}},
-            }
-        )
-        + "\n"
-    )
-    (subagents / "agent-child.meta.json").write_text(json.dumps({"parentAgentId": "review", "agentType": "Explore"}))
+    (subagents / "agent-other.meta.json").write_text(json.dumps({"agentType": "general-purpose"}))
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    assert [event["agent"] for event in _events_by_kind(events, "stats-subagent")] == ["agent-normal"]
+    assert sorted(event["agent"] for event in _events_by_kind(events, "stats-subagent")) == ["agent-normal", "agent-other"]
     total = _events_by_kind(events, "stats-subagent-total")[0]
-    assert total["count"] == 1 and total["excluded_review_agents"] == 2
-    assert total["tokens"]["input_tokens"] == 2
+    assert total["count"] == 2
+    assert "excluded_review_agents" not in total
+    assert total["tokens"]["input_tokens"] == 102
 
 
 def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathlib.Path, capsys) -> None:
@@ -2940,33 +2254,6 @@ def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathl
     events = _read_jsonl(capsys)
     assert _events_by_kind(events, "stats-subagent") == []
     assert _events_by_kind(events, "stats-subagent-total") == []
-    assert _events_by_kind(events, "stats-total")[0]["subagent_count"] == 0
-
-
-def test_stats_reports_zero_subagent_total_when_all_records_excluded(tmp_path: pathlib.Path, capsys) -> None:
-    """記録が振り返り系だけの場合も合算イベントを出力し、除外件数を観測可能にする。
-
-    サブエージェントを使わなかったセッションと、活動が振り返り自身だけだったセッションを
-    出力から区別できる状態を保証する。
-    """
-    transcript = _write_transcript(
-        tmp_path,
-        [_assistant_usage_entry("2026-08-19T00:00:00Z", "main", _usage(2, 3))],
-    )
-    _write_subagent(
-        transcript.with_suffix("") / "subagents",
-        "agent-review",
-        [_assistant_usage_entry("2026-08-19T00:00:01Z", "review", _usage(100, 200))],
-        meta={"agentType": "agent-toolkit:session-review-advisor"},
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    assert _events_by_kind(events, "stats-subagent") == []
-    total = _events_by_kind(events, "stats-subagent-total")[0]
-    assert total["count"] == 0
-    assert total["tokens"] == _usage(0)
-    assert total["excluded_review_agents"] == 1
     assert _events_by_kind(events, "stats-total")[0]["subagent_count"] == 0
 
 
@@ -3224,160 +2511,6 @@ def test_stats_recursively_discovers_native_subagent_activity_without_cycles(
     }
 
 
-def test_stats_drops_native_subagent_activity_started_after_review_boundary(
-    tmp_path: pathlib.Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    """振り返り境界後に起動したnative子孫threadを全体集計から除外する。"""
-    root_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    after_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-    codex_home = tmp_path / "codex"
-    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
-    rollout_dir.mkdir(parents=True)
-    (rollout_dir / f"rollout-test-{root_id}.jsonl").write_text(
-        "\n".join(
-            json.dumps(entry)
-            for entry in [
-                _codex_token_count_entry("2026-08-19T00:00:01Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
-                {
-                    "timestamp": "2026-08-19T00:00:02Z",
-                    "payload": {"activity": {"type": "SubAgentActivity", "agent_thread_id": after_id}},
-                },
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    _write_rollout(
-        codex_home,
-        after_id,
-        [("2026-08-19T00:00:03Z", {"input_tokens": 90, "output_tokens": 90, "total_tokens": 180})],
-    )
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:00Z",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "activity": {"type": "SubAgentActivity", "agent_thread_id": root_id},
-                },
-            },
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:02Z",
-                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "$session-review"}]},
-            },
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    assert [event["thread"] for event in _events_by_kind(events, "stats-agent-thread")] == [root_id]
-
-
-def test_stats_excluded_thread_does_not_return_when_rediscovered_from_sibling(
-    tmp_path: pathlib.Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    """境界超過で除外したthreadが、後から処理される兄弟rolloutから再発見されても集計へ戻らない。
-
-    `root_id`のrolloutが`shared_id`と`sibling_id`をこの順で子として発見し、`shared_id`は
-    境界後に起動したため除外される。`sibling_id`は境界前に起動し、自身のrollout内で
-    `shared_id`を再び子として発見するが、既に除外済みのため復帰してはならない。
-    """
-    root_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
-    shared_id = "11111111-2222-4111-8222-111111111111"
-    sibling_id = "33333333-4444-4333-8444-333333333333"
-    codex_home = tmp_path / "codex"
-    rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
-    rollout_dir.mkdir(parents=True)
-
-    def activity(thread_id: str) -> dict:
-        return {"type": "SubAgentActivity", "agent_thread_id": thread_id}
-
-    (rollout_dir / f"rollout-test-{root_id}.jsonl").write_text(
-        "\n".join(
-            json.dumps(entry)
-            for entry in [
-                _codex_token_count_entry("2026-08-19T00:00:01Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
-                {"timestamp": "2026-08-19T00:00:02Z", "payload": {"activity": activity(shared_id)}},
-                {"timestamp": "2026-08-19T00:00:03Z", "payload": {"activity": activity(sibling_id)}},
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (rollout_dir / f"rollout-test-{sibling_id}.jsonl").write_text(
-        "\n".join(
-            json.dumps(entry)
-            for entry in [
-                _codex_token_count_entry("2026-08-19T00:00:04Z", {"input_tokens": 3, "output_tokens": 3, "total_tokens": 6}),
-                {"timestamp": "2026-08-19T00:00:04Z", "payload": {"activity": activity(shared_id)}},
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    _write_rollout(
-        codex_home,
-        shared_id,
-        [("2026-08-19T00:00:10Z", {"input_tokens": 90, "output_tokens": 90, "total_tokens": 180})],
-    )
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:00Z",
-                "payload": {"type": "message", "role": "assistant", "activity": activity(root_id)},
-            },
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:05Z",
-                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "$session-review"}]},
-            },
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    threads = {event["thread"] for event in _events_by_kind(events, "stats-agent-thread")}
-    assert threads == {root_id, sibling_id}
-
-
-def test_stats_boundary_excludes_manual_review_and_rejects_combination(tmp_path: pathlib.Path, capsys) -> None:
-    """手動起動境界以降を集計せず、statsと既存照会モードの併用を拒否する。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "作業"}},
-            {
-                "type": "assistant",
-                "timestamp": "2026-08-19T00:00:01Z",
-                "message": {"role": "assistant", "id": "before", "usage": {"input_tokens": 2, "output_tokens": 3}},
-            },
-            {"type": "user", "timestamp": "2026-08-19T00:00:02Z", "message": {"role": "user", "content": "/session-review"}},
-            {
-                "type": "assistant",
-                "timestamp": "2026-08-19T00:00:03Z",
-                "message": {"role": "assistant", "id": "after", "usage": {"input_tokens": 100, "output_tokens": 100}},
-            },
-        ],
-    )
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["input_tokens"] == 2
-    assert evidence.main([str(transcript), "--stats", "--warn"]) == 2
-    assert _read_jsonl(capsys)[0]["kind"] == "error"
-
-
 def _usage(input_tokens: int, output_tokens: int = 0) -> dict[str, int]:
     """Claude形式の4成分usageを作成する。"""
     return {
@@ -3508,94 +2641,10 @@ def test_stats_outputs_every_codex_thread_without_limit(tmp_path: pathlib.Path, 
     assert [event["tokens"]["total_tokens"] for event in threads] == list(range(22, 1, -1))
 
 
-def test_stats_excludes_auxiliary_records_started_after_boundary(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """手動起動境界以降に起動した補助記録を主体別集計と全体合算から除く。"""
-    thread_id = "33333333-3333-4333-8333-333333333333"
-    codex_home = tmp_path / "codex"
-    _write_rollout(
-        codex_home,
-        thread_id,
-        [("2026-08-19T00:10:00Z", {"input_tokens": 500, "output_tokens": 500, "total_tokens": 1000})],
-    )
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "作業"}},
-            _assistant_usage_entry("2026-08-19T00:00:01Z", "before", _usage(2, 3)),
-            {"type": "user", "timestamp": "2026-08-19T00:05:00Z", "message": {"role": "user", "content": "/session-review"}},
-        ],
-    )
-    subagents = transcript.with_suffix("") / "subagents"
-    _write_subagent(
-        subagents,
-        "agent-before",
-        [_assistant_usage_entry("2026-08-19T00:00:02Z", "sub-before", _usage(7))],
-    )
-    _write_subagent(
-        subagents,
-        "agent-after",
-        [
-            _assistant_usage_entry("2026-08-19T00:06:00Z", "sub-after", _usage(900)),
-            _codex_tool_use_entry("2026-08-19T00:06:01Z", "call-after", thread_id),
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    assert [row["agent"] for row in _events_by_kind(events, "stats-subagent")] == ["agent-before"]
-    assert _events_by_kind(events, "stats-agent-thread") == []
-    total = _events_by_kind(events, "stats-total")[0]
-    assert total["tokens"] == _usage(9, 3)
-    assert total["subagent_count"] == 1
-    assert total["agent_thread_count"] == 0
-
-
-def test_stats_attributes_whole_record_started_before_boundary(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """境界前に起動した補助記録は、境界後のtimestamp・トークンも含めて全体を集計する。"""
-    thread_id = "44444444-4444-4444-8444-444444444444"
-    codex_home = tmp_path / "codex"
-    _write_rollout(
-        codex_home,
-        thread_id,
-        [
-            ("2026-08-19T00:00:03Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
-            ("2026-08-19T00:07:00Z", {"input_tokens": 20, "output_tokens": 10, "total_tokens": 30}),
-        ],
-    )
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "作業"}},
-            _assistant_usage_entry("2026-08-19T00:00:01Z", "before", _usage(2)),
-            {"type": "user", "timestamp": "2026-08-19T00:05:00Z", "message": {"role": "user", "content": "/session-review"}},
-        ],
-    )
-    _write_subagent(
-        transcript.with_suffix("") / "subagents",
-        "agent-span",
-        [
-            _codex_tool_use_entry("2026-08-19T00:00:02Z", "call-span", thread_id),
-            _assistant_usage_entry("2026-08-19T00:00:03Z", "span-1", _usage(5)),
-            _assistant_usage_entry("2026-08-19T00:06:00Z", "span-2", _usage(11)),
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    subagent = _events_by_kind(events, "stats-subagent")[0]
-    assert subagent["agent"] == "agent-span"
-    assert subagent["tokens"] == _usage(16)
-    thread = _events_by_kind(events, "stats-agent-thread")[0]
-    assert thread["thread"] == thread_id
-    assert thread["tokens"]["total_tokens"] == 32
-
-
-def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """通常サブエージェント発の委譲は`agent`キー付きで出力し、振り返り系発の委譲は出力しない。"""
+def test_stats_collects_thread_ids_from_every_subagent(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
+    """全てのサブエージェント発の委譲を`agent`キー付きで出力し、種別による除外を行わない。"""
     normal_thread = "55555555-5555-4555-8555-555555555555"
-    review_thread = "66666666-6666-4666-8666-666666666666"
+    other_thread = "66666666-6666-4666-8666-666666666666"
     codex_home = tmp_path / "codex"
     _write_rollout(
         codex_home,
@@ -3604,7 +2653,7 @@ def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathli
     )
     _write_rollout(
         codex_home,
-        review_thread,
+        other_thread,
         [("2026-08-19T00:00:02Z", {"input_tokens": 300, "output_tokens": 400, "total_tokens": 700})],
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -3621,16 +2670,19 @@ def test_stats_collects_thread_ids_only_from_included_subagents(tmp_path: pathli
     )
     _write_subagent(
         subagents,
-        "agent-review",
-        [_codex_tool_use_entry("2026-08-19T00:00:01Z", "call-review", review_thread)],
-        {"agentType": "session-review-advisor"},
+        "agent-other",
+        [_codex_tool_use_entry("2026-08-19T00:00:01Z", "call-other", other_thread)],
+        {"agentType": "general-purpose"},
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     threads = _events_by_kind(events, "stats-agent-thread")
-    assert [event["thread"] for event in threads] == [normal_thread]
-    assert threads[0]["agent"] == "agent-normal"
+    assert sorted(event["thread"] for event in threads) == sorted([normal_thread, other_thread])
+    assert {event["thread"]: event["agent"] for event in threads} == {
+        normal_thread: "agent-normal",
+        other_thread: "agent-other",
+    }
 
 
 def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
@@ -3789,88 +2841,6 @@ def test_stats_total_normalizes_codex_main_record(tmp_path: pathlib.Path, capsys
         "cache_read_input_tokens": 900,
     }
     assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 1060
-
-
-def test_stats_claude_automatic_start_keeps_records_after_marker(tmp_path: pathlib.Path, capsys) -> None:
-    """Claude形式の自動起動では境界を設けず、開始マーカー後の記録も集計する。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            _assistant_usage_entry("2026-08-19T00:00:00Z", "before", _usage(2)),
-            {
-                "type": "user",
-                "timestamp": "2026-08-19T00:00:01Z",
-                "toolUseResult": {"stdout": evidence.SESSION_REVIEW_STARTED_MARKER},
-                "message": {"role": "user", "content": []},
-            },
-            _assistant_usage_entry("2026-08-19T00:00:02Z", "after", _usage(100)),
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    assert _events_by_kind(events, "stats-summary")[0]["tokens"] == _usage(102)
-
-
-def test_stats_codex_automatic_boundary_excludes_review_records(tmp_path: pathlib.Path, capsys) -> None:
-    """Codex形式の自動起動ではstop通知起点の境界を適用し、境界後の記録を集計しない。"""
-    transcript = _write_transcript(
-        tmp_path,
-        [
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:00Z",
-                "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "結果"}]},
-            },
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:01Z",
-                "payload": {
-                    "type": "token_count",
-                    "info": {
-                        "total_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
-                        "last_token_usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
-                    },
-                },
-            },
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:02Z",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": evidence.STOP_ADVISOR_PREFIX + " 誘導"}],
-                },
-            },
-            {
-                "type": "response_item",
-                "timestamp": "2026-08-19T00:00:03Z",
-                "payload": {
-                    "type": "token_count",
-                    "info": {
-                        "total_token_usage": {"input_tokens": 502, "output_tokens": 503, "total_tokens": 1005},
-                        "last_token_usage": {"input_tokens": 500, "output_tokens": 500, "total_tokens": 1000},
-                    },
-                },
-            },
-            {
-                "type": "event_msg",
-                "timestamp": "2026-08-19T00:00:04Z",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "CommandExecution",
-                        "status": "completed",
-                        "aggregated_output": evidence.SESSION_REVIEW_STARTED_MARKER + "\n",
-                    },
-                },
-            },
-        ],
-    )
-
-    assert evidence.main([str(transcript), "--stats"]) == 0
-    events = _read_jsonl(capsys)
-    assert _events_by_kind(events, "stats-summary")[0]["tokens"]["total_tokens"] == 5
 
 
 def test_stats_reports_no_target_without_timestamp_and_tokens(tmp_path: pathlib.Path, capsys) -> None:
