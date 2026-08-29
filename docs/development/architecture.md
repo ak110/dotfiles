@@ -116,7 +116,7 @@ Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`の`eng
 
 公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
 `model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
-`send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。
+`send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 timeout超過時もsessionとbackend processを強制終了せず、同じsessionへ`wait`または終端後の`send_message`を続けられる。終端結果は30分保持し、期限切れ後は結果本文を破棄して再開用の最小状態だけを残す。保持期限の経過とsessionを所有する実行主体の終了はいずれも暗黙再開の契機とし、同じ`send_message`がCodexの`thread/resume`又はClaude Agent SDKの`resume`を内部で使って会話を再開する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。

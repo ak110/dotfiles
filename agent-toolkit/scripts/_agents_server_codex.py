@@ -24,6 +24,7 @@ from typing import Any
 
 from _agents_server_state import (
     TERMINAL_STATUSES,
+    ResumePrompt,
     SessionState,
     _append_bounded,
     _begin_reply,
@@ -401,13 +402,12 @@ class AppServerManager:
     async def resume(
         self,
         session_id: str,
-        prompt: str,
+        prompt: ResumePrompt,
         cwd: str,
         model: str | None = None,
         effort: str | None = None,
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
-        _validate_prompt(prompt)
         _validate_cwd(cwd)
         _validate_model_effort(model, effort)
         client = await self._ensure_client()
@@ -416,7 +416,7 @@ class AppServerManager:
         _initialize_turn(session)
         try:
             await self._resume_thread(session, client)
-            await self._start_turn(session, prompt, client)
+            await prompt.deliver(lambda value: self._start_turn(session, value, client))
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)

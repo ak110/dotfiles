@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from _agents_server_state import (
+    ResumePrompt,
     SessionOwnerGoneError,
     SessionState,
     _begin_reply,
@@ -131,7 +132,7 @@ class ClaudeServerManager:
     async def resume(
         self,
         session_id: str,
-        prompt: str,
+        prompt: ResumePrompt,
         cwd: str,
         model: str | None = None,
         effort: str | None = None,
@@ -151,7 +152,7 @@ class ClaudeServerManager:
 
     async def _start_owned_task(
         self,
-        prompt: str,
+        prompt: str | ResumePrompt,
         cwd: str,
         model: str | None,
         effort: str | None,
@@ -219,7 +220,7 @@ class ClaudeServerManager:
 
     async def _run(
         self,
-        prompt: str,
+        prompt: str | ResumePrompt,
         cwd: str,
         model: str | None,
         effort: str | None,
@@ -239,7 +240,10 @@ class ClaudeServerManager:
         try:
             client = self._client_factory(options)
             await client.connect()
-            await client.query(prompt)
+            if isinstance(prompt, ResumePrompt):
+                await prompt.deliver(client.query)
+            else:
+                await client.query(prompt)
             iterator = aiter(client.receive_messages())
             while True:
                 timeout: float | None = None

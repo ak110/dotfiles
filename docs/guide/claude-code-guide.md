@@ -129,7 +129,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 委譲は`start`・`wait`・`send_message`・`kill`の4ツールで行う。`start`は`engine`（`codex`または`claude`）、
 `prompt`、既存ディレクトリの絶対`cwd`、必要に応じて`model`と`effort`を受け取り、完了を待たず`session_id`を返す。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返し、
-終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提に
+終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
 成功応答の`kill_requested`は中断要求の受理事実を示し、自然終端を中断成功へ置き換えない。MCP内部で承認・一覧操作は公開しない。
