@@ -27,6 +27,14 @@ _BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
 # 付属計画ファイルの接尾辞。計画一覧からは除外されるため、表示応答内のリンクが到達経路になる。
 _DETAIL_SUFFIX = ".detail.md"
 _BUGS_SUFFIX = ".bugs.md"
+_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
+_PLAN_SUFFIX_LABELS = (
+    (_DETAIL_SUFFIX, "詳細"),
+    (_BUGS_SUFFIX, "バグ"),
+    (_TARGET_TSV_SUFFIXES[0], "計画レビュー指摘管理表"),
+    (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
+)
+_REVIEW_TABLE_HEADERS = ("ラウンド", "系統", "箇所", "指摘内容", "対応要否", "対応内容", "対応不要理由")
 
 
 def safe_base_path(raw: str) -> str:
@@ -393,7 +401,9 @@ def _register_listing_routes(app: quart.Quart, context: _AppContext) -> None:
                 *(asyncio.to_thread(_local.search_files, spec.path, query) for spec in context.roots)
             )
             local_matches = {
-                (spec.source_id, path) for spec, paths in zip(context.roots, local_results, strict=True) for path in paths
+                (spec.source_id, _listed_plan_path(path))
+                for spec, paths in zip(context.roots, local_results, strict=True)
+                for path in paths
             }
 
             # 1ホストの打ち切りで他ホストの結果が未回収の例外にならないよう、全件を回収してから判定する。
@@ -409,7 +419,7 @@ def _register_listing_routes(app: quart.Quart, context: _AppContext) -> None:
                     # `search_remote`は`Exception`のみを捕捉するため、この分岐はキャンセル等に限られる。
                     raise result
                 matched_host, matched_paths = result
-                remote_matches[matched_host] = matched_paths
+                remote_matches[matched_host] = {(source_id, _listed_plan_path(path)) for source_id, path in matched_paths}
             matched = [
                 entry
                 for entry in entries
@@ -486,7 +496,7 @@ async def _search_remote(context: _AppContext, host: str, query: str) -> tuple[s
 
 
 def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
-    """MarkdownのHTML表示と原文取得ルートを登録する。"""
+    """計画ファイルのHTML表示と原文取得ルートを登録する。"""
 
     @app.get("/api/file")
     async def api_file() -> quart.Response:
@@ -507,7 +517,11 @@ def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
         if cache_key is not None:
             rendered = context.markdown_cache.get(cache_key)
         if rendered is None:
-            rendered = _local.markdown_to_html(text, context.renderer)
+            rendered = (
+                _review_table_html(text)
+                if rel.endswith(_TARGET_TSV_SUFFIXES)
+                else _local.markdown_to_html(text, context.renderer)
+            )
             if cache_key is not None:
                 context.markdown_cache.put(cache_key, rendered)
         # 付属計画リンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
@@ -517,7 +531,7 @@ def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
 
     @app.get("/api/raw")
     async def api_raw() -> quart.Response:
-        # クライアントのコピーボタン用に生Markdownを返す。`/api/file`はHTMLレンダリング結果を返すため
+        # クライアントのコピーボタン用に原文を返す。`/api/file`はHTMLレンダリング結果を返すため
         # 経路を分離し、`Cache-Control`扱いやテストを単純に保つ。
         resolved = _resolve_request_target(context)
         if isinstance(resolved, quart.Response):
@@ -527,12 +541,33 @@ def _register_file_routes(app: quart.Quart, context: _AppContext) -> None:
         if isinstance(result, quart.Response):
             return result
         text, _ = result
-        return quart.Response(text, content_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
+        content_type = "text/plain; charset=utf-8" if rel.endswith(_TARGET_TSV_SUFFIXES) else "text/markdown; charset=utf-8"
+        return quart.Response(text, content_type=content_type, headers={"Cache-Control": "no-store"})
+
+
+def _review_table_html(text: str) -> str:
+    """JSON文字列7列のレビュー指摘管理表をHTML表へ変換し、不正入力は原文表示へ戻す。"""
+    rows: list[list[str]] = []
+    try:
+        for line in text.splitlines():
+            encoded_cells = line.split("\t")
+            if len(encoded_cells) != len(_REVIEW_TABLE_HEADERS):
+                raise ValueError("レビュー指摘管理表の列数が不正です")
+            cells = [json.loads(cell) for cell in encoded_cells]
+            if not all(isinstance(cell, str) for cell in cells):
+                raise ValueError("レビュー指摘管理表のセルがJSON文字列ではありません")
+            rows.append(cells)
+    except (json.JSONDecodeError, ValueError):
+        return f"<pre>{html.escape(text)}</pre>\n"
+
+    head = "".join(f"<th>{html.escape(header)}</th>" for header in _REVIEW_TABLE_HEADERS)
+    body = "".join("<tr>" + "".join(f"<td>{html.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows)
+    return f"<table>\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n"
 
 
 def _plan_paths(rel: str) -> tuple[tuple[str, str], ...]:
-    """同じstemに属する計画本体・detail・bugsの相対パスと表示名を返す。"""
-    suffix = next((suffix for suffix in (_DETAIL_SUFFIX, _BUGS_SUFFIX) if rel.endswith(suffix)), None)
+    """同じstemに属する計画ファイルの相対パスと表示名を返す。"""
+    suffix = next((suffix for suffix, _ in _PLAN_SUFFIX_LABELS if rel.endswith(suffix)), None)
     if suffix is None:
         if not rel.endswith(".md"):
             return ()
@@ -540,10 +575,15 @@ def _plan_paths(rel: str) -> tuple[tuple[str, str], ...]:
     else:
         stem = rel[: -len(suffix)]
     return (
-        (f"{stem}.md", "計画本体"),
-        (f"{stem}{_DETAIL_SUFFIX}", "実装詳細"),
-        (f"{stem}{_BUGS_SUFFIX}", "バグ調査"),
+        (f"{stem}.md", "メイン"),
+        *((f"{stem}{attached_suffix}", label) for attached_suffix, label in _PLAN_SUFFIX_LABELS),
     )
+
+
+def _listed_plan_path(rel: str) -> str:
+    """付属ファイルの検索一致を一覧で選択できる計画ファイル（メイン）へ接続する。"""
+    suffix = next((suffix for suffix, _ in _PLAN_SUFFIX_LABELS if rel.endswith(suffix)), None)
+    return rel if suffix is None else f"{rel[: -len(suffix)]}.md"
 
 
 async def _plan_links_html(context: _AppContext, host: str, source_id: str, rel: str) -> str:
@@ -563,7 +603,7 @@ async def _plan_links_html(context: _AppContext, host: str, source_id: str, rel:
             parts.append(html.escape(label))
             continue
         escaped = html.escape(plan_rel, quote=True)
-        parts.append(f'<a href="#" data-plan-path="{escaped}">{html.escape(label)}を開く</a>')
+        parts.append(f'<a href="#" data-plan-path="{escaped}">{html.escape(label)}</a>')
     return f'<nav class="detail-link">{" | ".join(parts)}</nav>\n'
 
 

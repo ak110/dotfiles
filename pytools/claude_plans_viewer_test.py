@@ -189,8 +189,8 @@ class TestSearchFiles:
 class TestTargetPathConsistency:
     """一覧・検索・監視の3経路の対象集合を検証する。
 
-    読取・検索・変更監視は`is_target_path`を共有し、付属計画`.detail.md`・`.bugs.md`も対象へ含める。
-    一覧だけは`is_listed_path`を使い、付属計画を除外する。
+    読取・検索・変更監視は`is_target_path`を共有し、付属ファイルも対象へ含める。
+    一覧だけは`is_listed_path`を使い、付属ファイルを除外する。
     """
 
     def test_list_search_and_watch_agree_on_target_set(self, tmp_path: Path):
@@ -231,25 +231,24 @@ class TestTargetPathConsistency:
         assert _local.is_target_path(root / "top.md", root)
         assert not _local.is_target_path(root / ".cache" / "hidden.md", root)
 
-    def test_detail_file_excluded_from_list_but_included_in_search_and_watch(self, tmp_path: Path) -> None:
-        """付属計画は一覧から除外し、検索・変更監視の対象には含める。"""
-        main = tmp_path / "plan.md"
-        detail = tmp_path / "plan.detail.md"
-        bugs = tmp_path / "plan.bugs.md"
-        main.write_text("本文", encoding="utf-8")
-        detail.write_text("本文", encoding="utf-8")
-        bugs.write_text("本文", encoding="utf-8")
+    def test_attached_files_excluded_from_list_but_included_in_search_and_watch(self, tmp_path: Path) -> None:
+        """付属ファイルは一覧から除外し、検索・変更監視の対象には含める。"""
+        target_names = ("plan.md", "plan.detail.md", "plan.bugs.md", "plan.plan-review.tsv", "plan.exec-review.tsv")
+        rejected_names = ("plan.plan-review.tsv.lock", "plan.plan-review.entries.tsv", "plan.tsv", "plan.txt")
+        for name in (*target_names, *rejected_names):
+            (tmp_path / name).write_text("本文", encoding="utf-8")
 
         listed = {entry.path for entry in _local.list_files(tmp_path, "local-host")}
         searched = _local.search_files(tmp_path, "本文")
 
         assert listed == {"plan.md"}
-        assert searched == {"plan.md", "plan.detail.md", "plan.bugs.md"}
-        assert _local.is_target_path(detail, tmp_path)
-        assert not _local.is_listed_path(detail, tmp_path)
-        assert _local.is_target_path(bugs, tmp_path)
-        assert not _local.is_listed_path(bugs, tmp_path)
-        assert _local.is_listed_path(main, tmp_path)
+        assert searched == set(target_names)
+        for name in target_names:
+            path = tmp_path / name
+            assert _local.is_target_path(path, tmp_path)
+            assert _local.is_listed_path(path, tmp_path) == (name == "plan.md")
+        for name in rejected_names:
+            assert not _local.is_target_path(tmp_path / name, tmp_path)
 
 
 class TestCreationTimeIndex:
@@ -488,11 +487,20 @@ class TestResolveUnderRoot:
         finally:
             outside.unlink()
 
-    def test_rejects_non_md(self, tmp_path: Path):
-        """拡張子が.md以外のファイルはNoneを返す。"""
-        (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    @pytest.mark.parametrize("rel", ["a.txt", "a.tsv", "a.plan-review.entries.tsv", "a.plan-review.tsv.lock"])
+    def test_rejects_non_target_suffix(self, tmp_path: Path, rel: str):
+        """対象外の接尾辞を持つファイルはNoneを返す。"""
+        (tmp_path / rel).write_text("x", encoding="utf-8")
 
-        assert _local.resolve_under_root(tmp_path, "a.txt") is None
+        assert _local.resolve_under_root(tmp_path, rel) is None
+
+    @pytest.mark.parametrize("rel", ["a.plan-review.tsv", "a.exec-review.tsv"])
+    def test_valid_review_table_path(self, tmp_path: Path, rel: str):
+        """root配下のレビュー指摘管理表を正常に解決する。"""
+        target_path = tmp_path / rel
+        target_path.write_text("x", encoding="utf-8")
+
+        assert _local.resolve_under_root(tmp_path, rel) == target_path.resolve()
 
     def test_rejects_missing(self, tmp_path: Path):
         """存在しないファイルはNoneを返す。"""

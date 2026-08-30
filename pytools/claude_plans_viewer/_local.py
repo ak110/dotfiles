@@ -97,20 +97,22 @@ _CREATION_TIME_INDEX_PATH = (
 _LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
 # 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
 _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
+_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
+_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
 
 
 def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。
+    """`path`が対象接尾辞・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
-    計画本体`<stem>.md`と付属計画`<stem>.detail.md`・`<stem>.bugs.md`の全てを真とする
-    （付属計画は一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
+    メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
+    （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
     リモート側`_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
     """
-    if path.suffix != ".md":
+    if path.suffix != ".md" and not path.name.endswith(_TARGET_TSV_SUFFIXES):
         return False
     try:
         rel = path.resolve().relative_to(root.resolve())
@@ -124,7 +126,7 @@ def is_listed_path(path: pathlib.Path, root: pathlib.Path) -> bool:
 
     一覧経路だけに使う。読取・検索・変更監視は`is_target_path`を使い、付属計画も対象へ含める。
     """
-    return is_target_path(path, root) and not path.name.endswith((".detail.md", ".bugs.md"))
+    return is_target_path(path, root) and not path.name.endswith(_LISTED_EXCLUDED_SUFFIXES)
 
 
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -474,7 +476,7 @@ def scan_files(
     observed: dict[str, float] = {}
     warning = None
     try:
-        paths = root.rglob("*.md")
+        paths = root.rglob("*")
         for path in paths:
             try:
                 if not path.is_file() or not is_listed_path(path, root):
@@ -508,9 +510,9 @@ def scan_files(
 
 
 def list_files(root: pathlib.Path, host: str, source_id: str = "") -> list[_state.FileEntry]:
-    """`root`から`.md`ファイルを再帰的に探し、作成日時の降順で返す。
+    """`root`から一覧対象の計画ファイルを再帰的に探し、作成日時の降順で返す。
 
-    実装詳細側`<stem>.detail.md`は一覧から除外する（`is_listed_path`）。
+    付属ファイルは一覧から除外する（`is_listed_path`）。
     `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
     """
     entries, _ = scan_files(root, host, source_id)
@@ -518,22 +520,20 @@ def list_files(root: pathlib.Path, host: str, source_id: str = "") -> list[_stat
 
 
 def search_files(root: pathlib.Path, query: str) -> set[str]:
-    """本文へ検索語が部分一致するMarkdownファイルの相対パス集合を返す。"""
+    """本文へ検索語が部分一致する計画ファイルの相対パス集合を返す。"""
     needle = query.casefold()
     if not root.is_dir():
         return set()
     if not needle:
         try:
             return {
-                path.relative_to(root).as_posix()
-                for path in root.rglob("*.md")
-                if path.is_file() and is_target_path(path, root)
+                path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file() and is_target_path(path, root)
             }
         except OSError:
             return set()
     matched: set[str] = set()
     try:
-        paths = root.rglob("*.md")
+        paths = root.rglob("*")
         for path in paths:
             if not path.is_file() or not is_target_path(path, root):
                 continue
@@ -556,7 +556,7 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
         target.relative_to(root.resolve())
     except ValueError:
         return None
-    if target.suffix != ".md" or not target.is_file():
+    if not target.is_file() or not is_target_path(target, root):
         return None
     return target
 

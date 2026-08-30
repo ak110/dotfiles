@@ -323,15 +323,21 @@ async def test_diagrams_render_and_refresh_safely(browser_harness: _BrowserHarne
 
 @pytest.mark.asyncio
 async def test_attached_plan_navigation_is_symmetric(browser_harness: _BrowserHarness) -> None:
-    """左一覧に付属計画を表示せず、右ペインからbase・detail・bugsを相互に開ける。"""
+    """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
     harness = browser_harness
     (harness.root / "plan.detail.md").write_text("# 詳細ページ\n", encoding="utf-8")
     (harness.root / "plan.bugs.md").write_text("# バグページ\n", encoding="utf-8")
+    review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
+    (harness.root / "plan.plan-review.tsv").write_text(review_row, encoding="utf-8")
+    (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")
     await harness.page.goto(harness.base_url + "/")
 
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
     assert await harness.page.get_by_text("plan.detail.md", exact=True).count() == 0
     assert await harness.page.get_by_text("plan.bugs.md", exact=True).count() == 0
+    assert await harness.page.get_by_text("plan.plan-review.tsv", exact=True).count() == 0
+    assert await harness.page.get_by_text("plan.exec-review.tsv", exact=True).count() == 0
+    assert await harness.page.locator('a[data-plan-path="plan.detail.md"]').inner_text() == "詳細"
     await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
     await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")
     assert await harness.page.title() == "browser-test: plan.detail.md"
@@ -339,6 +345,15 @@ async def test_attached_plan_navigation_is_symmetric(browser_harness: _BrowserHa
     await harness.page.locator('a[data-plan-path="plan.bugs.md"]').click()
     await harness.page.get_by_role("heading", name="バグページ").wait_for(state="visible")
     assert await harness.page.title() == "browser-test: plan.bugs.md"
+
+    await harness.page.locator('a[data-plan-path="plan.plan-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
+    await harness.page.get_by_role("cell", name="implementation-review").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.plan-review.tsv"
+
+    await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="対応不要理由").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.exec-review.tsv"
 
     await harness.page.locator('a[data-plan-path="plan.md"]').click()
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")

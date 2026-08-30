@@ -65,8 +65,9 @@ SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
 # `asyncio.subprocess.Process.stdout`に依存しないインターフェースを使う。
 LineSource = typing.AsyncIterator[str]
 
-# 一覧に表示しない付属計画の接尾辞。snapshot/upsertで同じ判定を再利用する。
-_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md")
+# 一覧に表示しない付属ファイルの接尾辞。snapshot/upsertで同じ判定を再利用する。
+_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
+_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
 
 
 def _is_listed_path(path: str) -> bool:
@@ -741,4 +742,4 @@ def is_safe_remote_relpath(rel: str) -> bool:
     parts = pathlib.PurePosixPath(rel).parts
     if any(p in ("", "..") for p in parts):
         return False
-    return rel.endswith(".md")
+    return rel.endswith(".md") or rel.endswith(_TARGET_TSV_SUFFIXES)

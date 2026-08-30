@@ -196,19 +196,21 @@ _CREATION_TIME_INDEX_PATH = (
 _LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
 # 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
 _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
+_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
+_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
 
 
 def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None) -> bool:
-    """`path`が指定root配下の対象`.md`か判定する。
+    """`path`が指定root配下の対象計画ファイルか判定する。
 
     `_local.py`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
-    計画本体`<stem>.md`と付属計画`<stem>.detail.md`・`<stem>.bugs.md`の全てを真とする
-    （付属計画は一覧だけから除外し、読取・検索・監視の対象には含める。`_is_listed_path`が一覧専用の判定を持つ）。
+    メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
+    （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める。`_is_listed_path`が一覧専用の判定を持つ）。
     `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`ROOT`外を指すリンクは対象外となる
     （`_resolve_target`が単一ファイル取得へ課す範囲と一致させる）。
     """
-    if path.suffix != ".md":
+    if path.suffix != ".md" and not path.name.endswith(_TARGET_TSV_SUFFIXES):
         return False
     roots = [_canonical(root)] if root is not None else [spec.path for spec in _root_specs()]
     for candidate in roots:
@@ -226,7 +228,7 @@ def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None) -> boo
 
     一覧経路（`_scan_entries`）だけに使う。読取・検索・変更監視は`_is_target_path`を使い、付属計画も対象へ含める。
     """
-    return _is_target_path(path, root) and not path.name.endswith((".detail.md", ".bugs.md"))
+    return _is_target_path(path, root) and not path.name.endswith(_LISTED_EXCLUDED_SUFFIXES)
 
 
 @contextlib.contextmanager
@@ -475,7 +477,7 @@ def _scan_snapshot() -> tuple[list[dict[str, typing.Any]], dict[str, dict[str, t
         elif warning is None:
             observed: dict[str, float] = {}
             try:
-                paths = spec.path.rglob("*.md")
+                paths = spec.path.rglob("*")
                 for path in paths:
                     try:
                         if not path.is_file() or not _is_listed_path(path, spec.path):
@@ -511,7 +513,7 @@ def _scan_snapshot() -> tuple[list[dict[str, typing.Any]], dict[str, dict[str, t
 
 
 def _scan_entries() -> list[dict[str, typing.Any]]:
-    """一覧用のエントリを走査する。実装詳細側`.detail.md`は`_is_listed_path`で除外する。"""
+    """一覧用のエントリを走査する。付属ファイルは`_is_listed_path`で除外する。"""
     entries, _, _ = _scan_snapshot()
     return entries
 
@@ -536,7 +538,7 @@ def _resolve_target(source_or_rel_b64: str, rel_b64: str | None = None) -> pathl
             target.relative_to(spec.path.resolve())
         except ValueError:
             continue
-        if target.suffix == ".md" and target.is_file():
+        if _is_target_path(target, spec.path) and target.is_file():
             matches.append(target)
     if len(matches) != 1:
         if len(matches) > 1:
@@ -562,7 +564,7 @@ def _read_payload(source_or_rel_b64: str, rel_b64: str | None = None) -> dict[st
 
 
 def _search_payload(query_b64: str, source_id: str | None = None) -> dict[str, typing.Any]:
-    """本文へ検索語が部分一致するMarkdownファイルの相対パスを返す。"""
+    """本文へ検索語が部分一致する計画ファイルの相対パスを返す。"""
     query = base64.b64decode(query_b64).decode("utf-8").casefold()
     matched: list[str] = []
     matches: list[dict[str, str]] = []
@@ -571,7 +573,7 @@ def _search_payload(query_b64: str, source_id: str | None = None) -> dict[str, t
         if not spec.path.is_dir():
             continue
         try:
-            paths = spec.path.rglob("*.md")
+            paths = spec.path.rglob("*")
             for path in paths:
                 if not path.is_file() or not _is_target_path(path, spec.path):
                     continue

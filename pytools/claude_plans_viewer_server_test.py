@@ -2,6 +2,7 @@
 
 import asyncio
 import dataclasses
+import html
 import json
 import os
 import re
@@ -303,8 +304,10 @@ class TestApiEndpoints:
 
     @pytest.mark.asyncio
     async def test_api_files_returns_list(self, tmp_path: Path):
-        """/api/filesが.mdの一覧をJSONで返す（`ctime_epoch`を含む）。"""
+        """/api/filesがメインだけをJSONで返す（`ctime_epoch`を含む）。"""
         (tmp_path / "a.md").write_text("x", encoding="utf-8")
+        (tmp_path / "a.plan-review.tsv").write_text("x", encoding="utf-8")
+        (tmp_path / "a.exec-review.tsv").write_text("x", encoding="utf-8")
         app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
         response = await client.get("/api/files")
@@ -367,6 +370,20 @@ class TestApiEndpoints:
             "portable_root": "$(atk config get private_notes)/plans",
         }
         assert "root" not in root_info["test-host"]["new-source"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("suffix", [".plan-review.tsv", ".exec-review.tsv"])
+    async def test_api_search_connects_review_table_match_to_main_plan(self, tmp_path: Path, suffix: str) -> None:
+        """レビュー指摘管理表だけの本文一致から、選択可能な計画ファイル（メイン）を返す。"""
+        (tmp_path / "sample.md").write_text("計画本文", encoding="utf-8")
+        (tmp_path / f"sample{suffix}").write_text("固有検索語", encoding="utf-8")
+        client = _app.create_app(tmp_path, hostname="test").test_client()
+
+        response = await client.get("/api/search", query_string={"q": "固有検索語"})
+
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert [entry["path"] for entry in data] == ["sample.md"]
 
     @pytest.mark.asyncio
     async def test_api_host_info_returns_snapshot(self, tmp_path: Path):
@@ -458,7 +475,8 @@ class TestApiEndpoints:
 
         assert response.status_code == 200
         body = await response.get_data(as_text=True)
-        assert '<a href="#" data-plan-path="a.detail.md">実装詳細を開く</a>' in body
+        assert '<a href="#" data-plan-path="a.detail.md">詳細</a>' in body
+        assert "を開く" not in body
 
     @pytest.mark.asyncio
     async def test_api_file_omits_detail_link_when_local_detail_absent(self, tmp_path: Path):
@@ -486,18 +504,29 @@ class TestApiEndpoints:
 
     @pytest.mark.asyncio
     async def test_api_file_navigates_symmetrically_between_attached_plans(self, tmp_path: Path):
-        """base・detail・bugsが実在する場合、各ページを現在ページのテキストと他ページのリンクへ分ける。"""
+        """同じstemの5ファイルが実在する場合、現在ページのテキストと他ページのリンクへ分ける。"""
+        review_row = "\t".join(
+            json.dumps(value, ensure_ascii=False) for value in ("1", "track", "場所", "指摘", "要", "対応", "")
+        )
         contents = {
             "a.md": "# base\n",
             "a.detail.md": "# detail\n",
             "a.bugs.md": "# bugs\n",
+            "a.plan-review.tsv": review_row,
+            "a.exec-review.tsv": review_row,
         }
         for path, content in contents.items():
             (tmp_path / path).write_text(content, encoding="utf-8")
         app = _app.create_app(tmp_path, hostname="test")
         client = app.test_client()
 
-        labels = {"a.md": "計画本体", "a.detail.md": "実装詳細", "a.bugs.md": "バグ調査"}
+        labels = {
+            "a.md": "メイン",
+            "a.detail.md": "詳細",
+            "a.bugs.md": "バグ",
+            "a.plan-review.tsv": "計画レビュー指摘管理表",
+            "a.exec-review.tsv": "実行レビュー指摘管理表",
+        }
         for current, current_label in labels.items():
             response = await client.get(f"/api/file?path={current}")
 
@@ -508,10 +537,14 @@ class TestApiEndpoints:
                 if target == current:
                     assert f'data-plan-path="{target}"' not in body
                 else:
-                    assert f'<a href="#" data-plan-path="{target}">{target_label}を開く</a>' in body
+                    assert f'<a href="#" data-plan-path="{target}">{target_label}</a>' in body
+            assert "を開く" not in body
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("current", ["a.md", "a.detail.md", "a.bugs.md"])
+    @pytest.mark.parametrize(
+        "current",
+        ["a.md", "a.detail.md", "a.bugs.md", "a.plan-review.tsv", "a.exec-review.tsv"],
+    )
     async def test_api_file_omits_attached_links_when_other_pages_are_absent(self, tmp_path: Path, current: str):
         """同じstemの他ページが無い場合、base・detail・bugsのいずれからもリンクを生成しない。"""
         (tmp_path / current).write_text("# only\n", encoding="utf-8")
@@ -522,6 +555,38 @@ class TestApiEndpoints:
 
         assert response.status_code == 200
         assert "data-plan-path" not in await response.get_data(as_text=True)
+
+    @pytest.mark.asyncio
+    async def test_api_file_renders_review_table(self, tmp_path: Path):
+        """レビュー指摘管理表のJSON文字列7列をHTML表として安全に表示する。"""
+        values = ("1", "implementation-review", "a.py:1", "<指摘>", "要", "対応済み", "")
+        (tmp_path / "a.exec-review.tsv").write_text(
+            "\t".join(json.dumps(value, ensure_ascii=False) for value in values) + "\n",
+            encoding="utf-8",
+        )
+        client = _app.create_app(tmp_path, hostname="test").test_client()
+
+        response = await client.get("/api/file?path=a.exec-review.tsv")
+
+        body = await response.get_data(as_text=True)
+        assert response.status_code == 200
+        assert "<th>ラウンド</th>" in body
+        assert "<th>対応不要理由</th>" in body
+        assert "<td>implementation-review</td>" in body
+        assert "<td>&lt;指摘&gt;</td>" in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("body", ['"1"\t"2"\n', '"1"\tbroken\t"3"\t"4"\t"5"\t"6"\t"7"\n'])
+    async def test_api_file_falls_back_to_escaped_pre_for_malformed_review_table(self, tmp_path: Path, body: str):
+        """列数又はJSONが不正なレビュー指摘管理表は、エスケープした原文として表示する。"""
+        (tmp_path / "a.plan-review.tsv").write_text(body, encoding="utf-8")
+        client = _app.create_app(tmp_path, hostname="test").test_client()
+
+        response = await client.get("/api/file?path=a.plan-review.tsv")
+
+        rendered = await response.get_data(as_text=True)
+        assert response.status_code == 200
+        assert rendered.endswith(f"<pre>{html.escape(body)}</pre>\n")
 
     @pytest.mark.asyncio
     async def test_api_file_escapes_attached_plan_path(self, tmp_path: Path):
@@ -589,6 +654,18 @@ class TestApiEndpoints:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("rel", ["a.entries.tsv", "a.tsv", "a.plan-review.tsv.lock"])
+    async def test_api_file_rejects_non_review_tsv(self, tmp_path: Path, rel: str):
+        """レビュー指摘管理表ではないTSVは、実体が存在しても本文を返さない。"""
+        (tmp_path / rel).write_text("非公開本文", encoding="utf-8")
+        client = _app.create_app(tmp_path, hostname="test").test_client()
+
+        response = await client.get("/api/file", query_string={"path": rel})
+
+        assert response.status_code == 404
+        assert "非公開本文" not in await response.get_data(as_text=True)
+
+    @pytest.mark.asyncio
     async def test_api_raw_returns_markdown(self, tmp_path: Path):
         """/api/rawはMarkdown原文をtext/markdownで返す。"""
         body = "# title\n\n本文\n"
@@ -599,6 +676,19 @@ class TestApiEndpoints:
 
         assert response.status_code == 200
         assert response.content_type == "text/markdown; charset=utf-8"
+        assert await response.get_data(as_text=True) == body
+
+    @pytest.mark.asyncio
+    async def test_api_raw_returns_review_table_as_plain_text(self, tmp_path: Path):
+        """レビュー指摘管理表の原文はtext/plainで返す。"""
+        body = '"1"\t"track"\t"場所"\t"指摘"\t"要"\t"対応"\t""\n'
+        (tmp_path / "a.plan-review.tsv").write_text(body, encoding="utf-8")
+        client = _app.create_app(tmp_path, hostname="test").test_client()
+
+        response = await client.get("/api/raw?path=a.plan-review.tsv")
+
+        assert response.status_code == 200
+        assert response.content_type == "text/plain; charset=utf-8"
         assert await response.get_data(as_text=True) == body
 
     @pytest.mark.asyncio
