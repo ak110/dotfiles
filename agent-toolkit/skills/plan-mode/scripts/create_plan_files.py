@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
+# dependencies = ["markdown-it-py[linkify]>=4.0.0", "platformdirs>=4.0"]
 # ///
 """plan-modeが使う新規計画二ファイルの内部作成処理。
 

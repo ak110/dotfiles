@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
+# dependencies = ["markdown-it-py[linkify]>=4.0.0", "platformdirs>=4.0"]
 # ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
