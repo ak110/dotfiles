@@ -3,7 +3,6 @@ name: add-feedback
 description: >
   ユーザーが手動でフィードバック又はTBDの投入を依頼したときに、
   要件の裏付けと対話確定を経て登録する。
-disable-model-invocation: true
 ---
 
 # フィードバック投入
