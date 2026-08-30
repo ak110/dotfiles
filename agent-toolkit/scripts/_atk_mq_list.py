@@ -6,7 +6,6 @@
 
 import argparse
 import json
-import os
 import pathlib
 import shutil
 import sys
@@ -23,6 +22,7 @@ from _atk_mq_common import (
     _pull_with_recent_reuse,
     _repo_lock,
     calculate_readiness,
+    is_agent_environment,
 )
 from _atk_mq_formatters import (
     _body_summary,
@@ -85,8 +85,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
     """
-    agent_environment = any(name in os.environ for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"))
-    emits_json = getattr(args, "json", False) or (agent_environment and not getattr(args, "no_json", False))
+    emits_json = getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False))
     return (
         not args.count
         and not emits_json
@@ -227,8 +226,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         print(len(selected))
         return
 
-    agent_environment = any(name in os.environ for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"))
-    if getattr(args, "json", False) or (agent_environment and not getattr(args, "no_json", False)):
+    if getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False)):
         _print_json_entries(selected, readiness)
         return
 

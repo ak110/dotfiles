@@ -18,6 +18,7 @@ import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
 import _atk_mq_tbd as _tbd
+import _atk_mq_user_comment as _user_comment
 import _plan_file
 import _plan_format
 from _atk_mq_common import (
@@ -43,6 +44,7 @@ from _atk_mq_common import (
     _subdir,
     _validate_filename,
     _validate_filenames_only,
+    is_agent_environment,
 )
 from _atk_mq_repo import (
     _normalize_remote_url,
@@ -61,6 +63,23 @@ _RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
     "repair_kind",
     "plan_file",
 )
+_AGENT_USER_COMMENT_ERROR = (
+    "ユーザーコメントはユーザーだけが書き込みます。エージェント環境から起動したatkではユーザーコメントを変更できません。"
+)
+
+
+def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
+    """エージェント環境からのユーザーコメント変更を拒否した場合に真を返す。"""
+    if not is_agent_environment():
+        return False
+    try:
+        changed = _user_comment.extract_user_comment(original) != _user_comment.extract_user_comment(updated)
+    except _user_comment.UserCommentError:
+        changed = True
+    if not changed:
+        return False
+    print(_AGENT_USER_COMMENT_ERROR, file=sys.stderr)
+    return True
 
 
 def _entry_target_repo(path: pathlib.Path, text: str) -> str:
@@ -1824,6 +1843,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 sys.exit(2)
             snapshot = snapshot_path.read_text(encoding="utf-8")
             _verify_target_repo_content(snapshot_path, snapshot, target_repo)
+        if _reject_agent_user_comment_change(snapshot, message):
+            sys.exit(1)
         try:
             details = edit_entry_to_plan(
                 private_notes,
@@ -1909,6 +1930,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             tmp_path.unlink(missing_ok=True)
         print("差分なし。")
         return
+    if _reject_agent_user_comment_change(original, edited):
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        sys.exit(1)
     try:
         edit_entry_content(
             private_notes,
@@ -1961,6 +1986,8 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _verify_target_repo_content(path, snapshot.decode("utf-8"), normalized_target_repo)
 
     content = snapshot + b"\n\n" + args.message.encode("utf-8")
+    if _reject_agent_user_comment_change(snapshot.decode("utf-8"), content.decode("utf-8")):
+        sys.exit(1)
     try:
         append_entry_content(
             private_notes,

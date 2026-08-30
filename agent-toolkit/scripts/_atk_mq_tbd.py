@@ -25,6 +25,7 @@ from _atk_mq_common import (
     _repo_lock,
     _require_type,
     _validate_filename,
+    is_agent_environment,
 )
 from _atk_mq_repo import _resolve_repo_id
 
@@ -271,6 +272,12 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     エディターが非ゼロ終了コードで終了した場合、以降の対象を中断してexit 1を返す
     （エディター起動失敗・ユーザーによる強制終了などを成功として扱わないため）。
     """
+    if is_agent_environment():
+        print(
+            "TBDの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     filename = getattr(args, "filename", None)
     answer_body = getattr(args, "answer_body", None)
     if filename is not None and answer_body is not None:

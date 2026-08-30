@@ -31,6 +31,18 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+_USER_COMMENT_ERROR = (
+    "ユーザーコメントはユーザーだけが書き込みます。エージェント環境から起動したatkではユーザーコメントを変更できません。\n"
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """編集テストをホスト側のエージェント環境変数から隔離する。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
 
 def _write_tbd_entry(
     notes: pathlib.Path,
@@ -2398,6 +2410,171 @@ class TestRmMultiple:
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: remove 2 entries" in commit_cmds[0]
+
+
+@pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
+@pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
+def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
+    route: str,
+    environment_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各エージェント環境と編集経路でユーザーコメント変更を書き込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "fb-001.md"
+    path = _write_feedback_file(notes, filename, body="本文\n\n## ユーザーコメント\n\n保持する")
+    original = path.read_bytes()
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(environment_name, "1")
+
+    argv = ["mq", "edit", filename, "変更後\n\n## ユーザーコメント\n\n変更する"]
+    if route == "editor":
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[0] == "fake-editor":
+                editor_path = pathlib.Path(cmd[1])
+                editor_path.write_text(
+                    editor_path.read_text(encoding="utf-8").replace("保持する", "変更する"),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0)
+            return _make_subprocess_fake([])(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        argv = ["mq", "edit", filename]
+    else:
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    if route == "append":
+        argv = ["mq", "edit", "--append", filename, "変更する"]
+    elif route == "plan":
+        planning_path = notes / "planning" / filename
+        path.replace(planning_path)
+        path = planning_path
+        plan = tmp_path / "plan.md"
+        plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.setattr(
+            mutations._add,  # pylint: disable=protected-access
+            "resolve_add_target",
+            lambda _value: ("github.com/example/foo", worktree),
+        )
+        monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
+        monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda *_args: "a" * 40)
+        argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path)
+
+    assert exc_info.value.code == 1
+    assert path.read_bytes() == original
+    assert capsys.readouterr().err == _USER_COMMENT_ERROR
+
+
+def test_agent_environment_allows_comment_neutral_edit_and_append(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ユーザーコメントを持たない通常本文の編集と追記はエージェント環境でも成功する。"""
+    notes = _setup_notes(tmp_path)
+    edit_path = _write_feedback_file(notes, "edit.md", body="編集前")
+    append_path = _write_feedback_file(notes, "append.md", body="追記前")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as edit_exit:
+        atk.main(["mq", "edit", "edit.md", "編集後"], home=tmp_path)
+    with pytest.raises(SystemExit) as append_exit:
+        atk.main(["mq", "edit", "--append", "append.md", "追記後"], home=tmp_path)
+
+    assert edit_exit.value.code == 0
+    assert append_exit.value.code == 0
+    assert edit_path.read_text(encoding="utf-8").endswith("編集後\n")
+    assert append_path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
+
+
+def test_agent_environment_allows_edit_that_preserves_user_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """既存ユーザーコメントを同値で保持する本文編集は成功する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_feedback_file(notes, "fb.md", body="編集前\n\n## ユーザーコメント\n\n保持する")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "edit", "fb.md", "編集後\n\n## ユーザーコメント\n\n保持する"],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 0
+    assert "編集後" in path.read_text(encoding="utf-8")
+
+
+def test_agent_environment_allows_add_with_user_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別リポジトリ移管に使うaddはユーザーコメントを含む本文も受理する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "mq",
+                "add",
+                "--target-repo",
+                "github.com/example/foo",
+                "本文\n\n## ユーザーコメント\n\n移管するコメント",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    saved = next((notes / "inbox").glob("*.md")).read_text(encoding="utf-8")
+    assert saved.endswith("## ユーザーコメント\n\n移管するコメント\n")
+
+
+def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ブラウザー経路が使う共有中核はエージェント環境でもコメント変更を保存する。"""
+    notes = _setup_notes(tmp_path)
+    edit_path = _write_feedback_file(notes, "edit.md", body="本文\n\n## ユーザーコメント\n\n変更前")
+    append_path = _write_feedback_file(notes, "append.md", body="本文")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    edited = edit_path.read_text(encoding="utf-8").replace("変更前", "変更後")
+    appended = append_path.read_bytes() + "\n\n## ユーザーコメント\n\n追加".encode()
+
+    assert mutations.edit_entry_content(notes, state="inbox", filename=edit_path.name, content=edited)
+    assert mutations.append_entry_content(notes, state="inbox", filename=append_path.name, content=appended)
+    assert edit_path.read_text(encoding="utf-8").endswith("変更後\n")
+    assert append_path.read_bytes() == appended
+
+
+def test_agent_environment_rejects_malformed_user_comment_structure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """予約節を一意に抽出できない編集結果も変更として拒否する。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    assert mutations._reject_agent_user_comment_change(  # pylint: disable=protected-access
+        "本文\n",
+        "本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n",
+    )
+    assert capsys.readouterr().err == _USER_COMMENT_ERROR
 
 
 class TestEditNoEditor:

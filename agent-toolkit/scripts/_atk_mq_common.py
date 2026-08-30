@@ -81,11 +81,23 @@ MQ_FEEDBACK_ACTIVE_STATES = (
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+"""コーディングエージェントの実行環境を示す環境変数。
+
+いずれか1つでも設定されていればエージェント環境とみなす。
+`atk mq list`の既定出力形式と、TBD回答・ユーザーコメントの書き込み拒否が同じ判定を使う。
+"""
+
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "mq": frozenset(("adopt", "reject", "rm")),
 }
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
+
+
+def is_agent_environment() -> bool:
+    """コーディングエージェントの実行環境から起動されたかを返す。"""
+    return any(name in os.environ for name in _AGENT_ENVIRONMENT_VARIABLES)
 
 
 def is_existing_dir(path: pathlib.Path) -> bool:

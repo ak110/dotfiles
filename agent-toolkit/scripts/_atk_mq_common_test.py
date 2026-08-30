@@ -18,6 +18,31 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_readiness as _readiness  # noqa: E402  # pylint: disable=wrong-import-position
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+
+
+@pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
+def test_is_agent_environment_accepts_each_supported_variable(
+    environment_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """対応する各環境変数が単独で設定された場合にエージェント環境と判定する。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(environment_name, "")
+
+    assert _common.is_agent_environment()
+
+
+def test_is_agent_environment_rejects_environment_without_supported_variables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """対応する環境変数が全て未設定の場合はエージェント環境と判定しない。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+    assert not _common.is_agent_environment()
+
 
 def _write_tbd(
     private_notes: pathlib.Path,
