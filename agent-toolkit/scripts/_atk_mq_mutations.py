@@ -947,6 +947,39 @@ def _resolve_processable_targets(
     return resolved
 
 
+def _resolve_conversion_targets(
+    filenames: tuple[str, ...],
+    inbox_dir: pathlib.Path,
+    processing_dir: pathlib.Path,
+    planning_dir: pathlib.Path,
+) -> tuple[str, list[pathlib.Path]]:
+    """convert-to-planの入力を状態ごとに解決し、混在を拒否する。"""
+    resolved: list[pathlib.Path] = []
+    missing: list[str] = []
+    for name in filenames:
+        inbox_path = _validate_filename(name, inbox_dir)
+        processing_path = _validate_filename(inbox_path.name, processing_dir)
+        planning_path = _validate_filename(inbox_path.name, planning_dir)
+        if planning_path.exists():
+            if inbox_path.exists() or processing_path.exists():
+                raise WebInputError(f"異なる状態の同名項目が存在するため変換できません: {planning_path.name}")
+            resolved.append(planning_path)
+        elif processing_path.exists():
+            resolved.append(processing_path)
+        elif inbox_path.exists():
+            resolved.append(inbox_path)
+        else:
+            missing.append(inbox_path.name)
+    if missing:
+        for name in missing:
+            print(f"inbox・processing・planningのいずれにも存在しません: {name}", file=sys.stderr)
+        sys.exit(2)
+    states = {path.parent.name for path in resolved}
+    if len(states) != 1:
+        raise WebInputError("異なる状態の入力を混在させて変換できません")
+    return next(iter(states)), resolved
+
+
 def _resolve_removable_targets(
     filenames: list[str],
     inbox_dir: pathlib.Path,
@@ -999,8 +1032,10 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
             temporary_path.unlink(missing_ok=True)
 
 
-def _legacy_entry_dependencies_for_conversion(data: dict[str, object], filename: str) -> tuple[str, ...]:
-    """変換時に意味を保てる旧形式の依存先を返す。"""
+def _entry_dependencies_for_conversion(path: pathlib.Path, data: dict[str, object]) -> tuple[str, ...]:
+    """変換時にトップレベル又は意味を保てる旧形式の依存先を返す。"""
+    if "depends_on" in data:
+        return _entry_dependencies(path, data)
     schedule = data.get("queue_schedule")
     if not isinstance(schedule, dict):
         return ()
@@ -1008,10 +1043,10 @@ def _legacy_entry_dependencies_for_conversion(data: dict[str, object], filename:
     if not isinstance(dependency, dict) or dependency.get("kind") in (None, "none"):
         return ()
     if dependency.get("kind") != "entries":
-        raise WebInputError(f"旧形式の依存を計画実装型へ移行できません: {filename}")
+        raise WebInputError(f"旧形式の依存を計画実装型へ移行できません: {path.name}")
     filenames = dependency.get("filenames")
     if not isinstance(filenames, list) or not filenames or any(not isinstance(value, str) or not value for value in filenames):
-        raise WebInputError(f"旧形式の依存が不正なため変換できません: {filename}")
+        raise WebInputError(f"旧形式の依存が不正なため変換できません: {path.name}")
     return tuple(dict.fromkeys(filenames))
 
 
@@ -1064,6 +1099,7 @@ def _restore_conversion_paths(
     private_notes: pathlib.Path,
     start_head: str,
     relative_paths: tuple[str, ...],
+    remove_relative_paths: tuple[str, ...] = (),
 ) -> None:
     """commit前失敗時に変換対象だけを開始時のHEADへ戻す。"""
     try:
@@ -1083,7 +1119,9 @@ def _restore_conversion_paths(
                 cwd=private_notes,
                 check=True,
             )
-        for relative_path in relative_paths:
+        for relative_path in remove_relative_paths:
+            (private_notes / relative_path).unlink(missing_ok=True)
+        for relative_path in (*relative_paths, *remove_relative_paths):
             status = subprocess.run(
                 ["git", "status", "--porcelain", "--", relative_path],
                 cwd=private_notes,
@@ -1097,17 +1135,170 @@ def _restore_conversion_paths(
         print(f"計画変換対象の復元に失敗しました。手動確認が必要です: {error}", file=sys.stderr)
 
 
+def _convert_planning_entries(
+    private_notes: pathlib.Path,
+    *,
+    paths: list[pathlib.Path],
+    plan_path: pathlib.Path,
+    message: str,
+    normalized_dependencies: tuple[str, ...],
+    normalized_target_repo: str | None,
+    local_worktree: pathlib.Path | None,
+    inbox_dir: pathlib.Path,
+    processing_dir: pathlib.Path,
+    planning_dir: pathlib.Path,
+    skip_push: bool,
+) -> dict[str, object]:
+    """planningの全入力を最古の1件へ統合し、inboxへ原子的に保存する。"""
+    material_names = _read_plan_input_filenames(plan_path)
+    normalized_material_names = tuple(_validate_filename(name, inbox_dir).name for name in material_names)
+    if len(set(normalized_material_names)) != len(normalized_material_names):
+        raise WebInputError("計画の提示素材に重複したファイル名があります")
+    material_paths = _plan_feedback_paths(private_notes, normalized_material_names)
+    input_names = tuple(path.name for path in paths)
+    feedback_names = tuple(path.name for path in material_paths)
+    if tuple(sorted(input_names)) != tuple(sorted(feedback_names)):
+        raise WebInputError("convert-to-planの入力と計画の提示素材が一致しません")
+    if local_worktree is None:
+        raise WebInputError("planningの変換には対象リポジトリのローカルworktreeが必要です")
+    _assert_conversion_targets_tracked(private_notes, paths)
+    snapshots = [(path, path.read_text(encoding="utf-8")) for path in sorted(paths, key=lambda item: item.name)]
+
+    repositories: set[str] = set()
+    dependencies: list[str] = []
+    parsed_entries: dict[pathlib.Path, tuple[dict[str, object], str]] = {}
+    for path, text in snapshots:
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
+        data, body = parsed
+        if _require_type(path, text) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
+        raw_entry_repo = data.get("target_repo")
+        if not isinstance(raw_entry_repo, str):
+            raise WebInputError(f"target_repoが不正です: {path.name}")
+        entry_repo = _resolve_repo_id(raw_entry_repo)
+        repositories.add(entry_repo)
+        if normalized_target_repo is not None and entry_repo != normalized_target_repo:
+            raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
+        if "plan_file" in data:
+            raise WebInputError(f"既に計画型のため再変換できません: {path.name}")
+        entry_dependencies = _entry_dependencies_for_conversion(path, data)
+        dependencies.extend(_validate_filename(value, inbox_dir).name for value in entry_dependencies)
+        parsed_entries[path] = (data, body)
+    if len(repositories) != 1:
+        raise WebInputError("変換対象は同一target_repoで指定してください")
+    material_repo = next(iter(repositories))
+    if normalized_target_repo is not None and material_repo != normalized_target_repo:
+        raise WebInputError(f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}")
+    if _local_worktree_repo_id(local_worktree) != material_repo:
+        raise WebInputError("planningの変換対象repoとローカルworktreeが一致しません")
+    target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
+
+    message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=MQ_TYPE_FEEDBACK)
+    requested_type = message_frontmatter.get("type")
+    if requested_type is not None and requested_type != MQ_TYPE_FEEDBACK:
+        raise WebInputError("planningの統合本文のtypeはfeedbackで指定してください")
+    for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
+        if key in message_frontmatter:
+            raise WebInputError(f"{key}はplanningの統合処理が管理する予約キーです")
+    updates = dict(message_frontmatter)
+    if "target_repo" in updates:
+        raw_target_repo = updates["target_repo"]
+        if not isinstance(raw_target_repo, str):
+            raise WebInputError("target_repoは文字列で指定してください")
+        updates["target_repo"] = _resolve_repo_id(raw_target_repo)
+        if updates["target_repo"] != material_repo:
+            raise WebInputError(f"target_repoが一致しません: 期待={material_repo} 実際={updates['target_repo']}")
+
+    oldest_path = min(snapshots, key=lambda item: item[0].name)[0]
+    oldest_data, _oldest_body = parsed_entries[oldest_path]
+    updated_data = {**oldest_data, **updates}
+    updated_data["source"] = "plan"
+    updated_data["plan_file"] = str(plan_path)
+    updated_data["target_commit"] = target_commit
+    updated_data.pop("queue_schedule", None)
+    updated_data.pop("cooldown_until", None)
+    all_dependencies = dependencies + list(normalized_dependencies)
+    excluded_inputs = set(input_names)
+    canonical_dependencies = tuple(
+        value for value in dict.fromkeys(all_dependencies) if value not in excluded_inputs and value != oldest_path.name
+    )
+    dependency_graph = _active_dependency_graph(inbox_dir, processing_dir, planning_dir)
+    dependency_graph[oldest_path.name] = set(canonical_dependencies)
+    if any(_dependency_reaches(dependency_graph, dependency, oldest_path.name) for dependency in canonical_dependencies):
+        raise WebInputError(f"循環する依存を指定できません: {oldest_path.name}")
+    if canonical_dependencies:
+        updated_data["depends_on"] = list(canonical_dependencies)
+    else:
+        updated_data.pop("depends_on", None)
+    updated_text = _frontmatter.serialize_frontmatter(
+        updated_data,
+        "\n" + message_body.strip("\n").rstrip() + "\n",
+    )
+
+    inbox_path = inbox_dir / oldest_path.name
+    if inbox_path.exists():
+        raise WebInputError(f"inboxに同名エントリが既に存在します: {oldest_path.name}")
+    source_paths = tuple(path for path, _text in snapshots)
+    source_relative_paths = tuple(str(path.relative_to(private_notes)) for path in source_paths)
+    destination_relative_path = str(inbox_path.relative_to(private_notes))
+    commit_paths = (*source_relative_paths, destination_relative_path)
+    start_head = _git_head(private_notes)
+    try:
+        _atomic_write_text(inbox_path, updated_text)
+        for path in source_paths:
+            path.unlink()
+        try:
+            _commit_and_push(
+                private_notes,
+                "chore: convert feedback items to plans",
+                commit_paths,
+                skip_push=skip_push,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            if _git_head(private_notes) == start_head:
+                _restore_conversion_paths(
+                    private_notes,
+                    start_head,
+                    source_relative_paths,
+                    (destination_relative_path,),
+                )
+            raise error
+        if not inbox_path.is_file() or any(path.exists() for path in source_paths):
+            raise RuntimeError("計画型変換後の保存集合を検証できません")
+        return {
+            "entries": [_add._read_saved_entry_details(inbox_path)],  # pylint: disable=protected-access
+            "plan_file": str(plan_path),
+            "commit": _git_head(private_notes),
+            "planning": True,
+        }
+    except Exception as error:
+        command = getattr(error, "cmd", ())
+        push_failure = any(part == "push" for part in command)
+        if _git_head(private_notes) == start_head and not push_failure:
+            _restore_conversion_paths(
+                private_notes,
+                start_head,
+                source_relative_paths,
+                (destination_relative_path,),
+            )
+        raise
+
+
 def convert_entries_to_plan(
     private_notes: pathlib.Path,
     *,
     filenames: tuple[str, ...],
     plan_file: str,
+    message: str | None = None,
     depends_on: tuple[str, ...] | None = None,
     target_repo: str | None = None,
     lock_timeout: float = -1,
     skip_push: bool = False,
+    local_worktree: pathlib.Path | None = None,
 ) -> dict[str, object]:
-    """複数の処理可能feedbackを1回のcommitへまとめて計画実装型へ変換する。"""
+    """状態別のfeedbackを計画実装型へ変換し、planningは1件へ統合する。"""
     if not filenames:
         raise WebInputError("変換するFILENAMEを1件以上指定してください")
     plan_path = pathlib.Path(plan_file)
@@ -1130,7 +1321,31 @@ def convert_entries_to_plan(
                 raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
         except OSError as error:
             raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
-        paths = _resolve_processable_targets(list(normalized_filenames), inbox_dir, processing_dir)
+        planning_dir = _subdir(private_notes, MQ_STATE_PLANNING)
+        state, paths = _resolve_conversion_targets(
+            normalized_filenames,
+            inbox_dir,
+            processing_dir,
+            planning_dir,
+        )
+        if state == MQ_STATE_PLANNING:
+            if message is None:
+                raise WebInputError("planningの入力には--messageを指定してください")
+            return _convert_planning_entries(
+                private_notes,
+                paths=paths,
+                plan_path=plan_path,
+                message=message,
+                normalized_dependencies=normalized_dependencies,
+                normalized_target_repo=normalized_target_repo,
+                local_worktree=local_worktree,
+                inbox_dir=inbox_dir,
+                processing_dir=processing_dir,
+                planning_dir=planning_dir,
+                skip_push=skip_push,
+            )
+        if message is not None:
+            raise WebInputError("inbox・processingの入力には--messageを指定できません")
         if len(paths) != len(normalized_filenames):
             raise WebInputError("変換対象を一意に特定できません")
         _assert_conversion_targets_tracked(private_notes, paths)
@@ -1166,10 +1381,10 @@ def convert_entries_to_plan(
                 raise WebInputError(f"target_repoが一致しません: {path.name}は{entry_repo}、指定値は{normalized_target_repo}")
             if "plan_file" in data:
                 raise WebInputError(f"既に計画型のため再変換できません: {path.name}")
-            if depends_on is None and "depends_on" not in data:
-                legacy_dependencies = _legacy_entry_dependencies_for_conversion(data, path.name)
-                if legacy_dependencies:
-                    data["depends_on"] = list(legacy_dependencies)
+            if depends_on is None:
+                stored_dependencies = _entry_dependencies_for_conversion(path, data)
+                if stored_dependencies:
+                    data["depends_on"] = list(stored_dependencies)
             if depends_on is not None:
                 if path.name in normalized_dependencies:
                     raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
@@ -1199,6 +1414,7 @@ def convert_entries_to_plan(
                     ],
                     "plan_file": str(plan_path),
                     "commit": None,
+                    "planning": False,
                 }
             try:
                 _commit_and_push(
@@ -1219,6 +1435,7 @@ def convert_entries_to_plan(
                 ],
                 "plan_file": str(plan_path),
                 "commit": commit_oid,
+                "planning": False,
             }
         except Exception as error:
             command = getattr(error, "cmd", ())
@@ -1257,7 +1474,10 @@ def convert_entry_to_plan(
 
 def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """convert-to-planサブコマンドを実行する。"""
-    target_repo, _local_worktree = _add.resolve_add_target(args.target_repo)
+    message = getattr(args, "message", None)
+    target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
+    if message is not None and local_worktree is None:
+        local_worktree = _candidate_local_worktree(args.target_repo)
     skip_push = getattr(args, "skip_push", False)
     raw_filenames = args.filename
     filenames = (raw_filenames,) if isinstance(raw_filenames, str) else tuple(raw_filenames)
@@ -1268,9 +1488,11 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
             private_notes,
             filenames=filenames,
             plan_file=args.plan_file,
+            message=message,
             depends_on=dependencies,
             target_repo=target_repo,
             skip_push=skip_push,
+            local_worktree=local_worktree,
         )
         entries = result["entries"]
         if not isinstance(entries, list):
@@ -1280,7 +1502,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
         sys.exit(1)
     for filename in filenames:
         print(f"計画実装型へ変換: {filename}")
-    if not single_compat:
+    if not single_compat or result.get("planning") is True:
         commit_oid = result.get("commit")
         if commit_oid:
             print(f"変換commit: {commit_oid}")

@@ -370,6 +370,8 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
             "feedback.md",
             "--plan-file",
             "/tmp/plan.md",
+            "--message",
+            "統合本文",
             "--depends-on",
             "first.md",
             "--depends-on",
@@ -378,6 +380,7 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
     )
     assert args.filename == ["feedback.md"]
     assert args.plan_file == "/tmp/plan.md"
+    assert args.message == "統合本文"
     assert args.depends_on == ["first.md", "second.md"]
 
 

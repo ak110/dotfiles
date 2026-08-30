@@ -339,7 +339,7 @@ source欠落と`human`は本文の既定を人間由来とし、それ以外は�
 - `editing`は一覧と既存データの状態判定で認識する。今回の状態追加を理由に、永続的な編集セッション、専用の復旧状態又はpush再試行APIを新設しない
 - `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
 - `atk mq list`のテキスト表示はstdoutがTTYの場合だけ端末幅に応じて短縮し、非TTYでは`target_repo`と要約を全文で保持する。人間TTYの幅適応は維持する
-- `atk mq convert-to-plan FILENAME...`は全入力を事前検証して1回のロック・commit・任意pushで処理し、`--skip-push`ではcommitを保持してpushだけを省略する。commit前の失敗で部分変換を残さない
+- `atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文と状態を保持して計画実装型へ変換し、`planning`入力では`--message`を伴う全入力を最古の1件へ統合する。異なる状態を混在させず、全入力を事前検証して1回のロック・commit・任意pushで処理する。commit前の失敗では部分変換を残さず、push失敗では変換済みのcleanなローカルcommitを保持する
 - 同一バッチの複数項目はpickerが1つ以上の通常レーンへ明示的に分け、1件ずつの直列処理をしない。
   計画ファイルの分割は対象ファイル集合の重なりと検証境界の独立性を主判定とする。
   通常レーンは1計画ファイルと1専用worktreeを持つ。変更対象ファイルの重なりと変更規模はレーン割当の入力にせず、異なるレーン間の競合はrebase時に解消する
@@ -352,8 +352,8 @@ source欠落と`human`は本文の既定を人間由来とし、それ以外は�
 - 一括処理開始は移動前に集合全体を検証し、移動開始後の失敗ではprocessing配置、未コミット差分、遷移commit及び
   remote設定時のupstream包含を照合する。全条件が成立しない場合は項目別再実行をせず未完了で停止する
 - 通常型フィードバックのファイル名を1件以上指定する計画化では、調査前に同一対象リポジトリの全対象を`start-planning`でplanningへ一括移動する
-- レビュー収束後はファイル名昇順の最古の項目を計画型へ変換してinboxへ移し、残りの統合元を`rm --force`で除去する。入力が単一の場合は余分なrmを呼ばない
-- 計画型編集前に中断するときはplanningからinboxへ戻し、変換開始後は最古の計画型inbox項目を移動せず、滞留したcommit又はrmだけを再開して前方回復する
+- 通常型フィードバックのファイル名を指定する計画化では、レビュー収束後に全入力を1回の`convert-to-plan`へ渡す。最古項目を計画型`inbox`へ移し、残る統合元を同じcommitで除去する。単一入力も同じ経路で処理し、別`rm`を呼ばない
+- 計画型変換前に中断するときは`planning`から`inbox`へ戻す。入力検証、書込み又はcommitの失敗では元の`planning`集合を復元し、pushだけが失敗した場合は変換済みcommitのpushと保存結果の確認から再開する
 - 計画型inbox項目をprocessingへ移すのは、明示的な`start-processing`又は`process-loop`の処理開始だけとする
 - `process-feedbacks`は①のpicker出力を検収した直後に、選定時点で`inbox`だった全項目を一括で`processing`へ移し、
   計画ファイル・worktree・実装担当の起動をその後へ置く（2026年8月、利用者指示。着手中の占有範囲を外部観測と中断後の再開位置から識別するため）

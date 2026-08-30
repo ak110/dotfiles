@@ -69,6 +69,9 @@ import _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES)
+_convert_to_plan_filename_completer = _common.make_filename_completer(
+    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
+)
 _removable_filename_completer = _common.make_filename_completer(
     (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
 )
@@ -575,14 +578,20 @@ def _add_mq_edit_parsers(sub: Any) -> None:
 
     convert_to_plan = sub.add_parser(
         "convert-to-plan",
-        help="既存フィードバックへ計画ファイルと依存先を設定し、計画実装型へ変換してコミット・push",
+        help="既存フィードバックを計画実装型へ変換し、planning項目は1件へ統合してコミット・pushする",
     )
     convert_to_plan.add_argument(
         "filename",
         metavar="FILENAME",
         nargs="+",
-        help="変換する`inbox`または`processing`のフィードバックファイル名（1個以上）。",
-    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
+        help="変換する同一状態のフィードバックファイル名（1個以上）。planningでは--messageを指定する。",
+    ).completer = _convert_to_plan_filename_completer  # type: ignore[attr-defined]
+    convert_to_plan.add_argument(
+        "--message",
+        metavar="MESSAGE",
+        default=None,
+        help="planning項目を統合する計画型フィードバック本文。inbox・processingでは指定しない。",
+    )
     convert_to_plan.add_argument(
         "--plan-file",
         metavar="ABS_PATH",

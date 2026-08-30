@@ -397,6 +397,21 @@ def _write_convert_plan(tmp_path: pathlib.Path, target_commit: str) -> pathlib.P
     return plan
 
 
+def _write_planning_plan(
+    tmp_path: pathlib.Path,
+    target_commit: str,
+    filenames: tuple[str, ...],
+) -> pathlib.Path:
+    """計画型変換テスト用にメタ情報と提示素材を持つ計画を作成する。"""
+    plan = tmp_path / "plan.md"
+    materials = "".join(f"- {filename}\n" for filename in filenames)
+    plan.write_text(
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{target_commit}`\n\n## 提示素材\n\n{materials}",
+        encoding="utf-8",
+    )
+    return plan
+
+
 def _write_convert_feedback(
     notes: pathlib.Path,
     filename: str,
@@ -416,6 +431,12 @@ def _write_convert_feedback(
         encoding="utf-8",
     )
     return path
+
+
+def _patch_planning_target_resolution(monkeypatch: pytest.MonkeyPatch, target_commit: str = "b" * 40) -> None:
+    """planning変換テストの対象worktreeと計画ベースcommit解決を固定する。"""
+    monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
+    monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda _plan, _worktree: target_commit)
 
 
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -959,6 +980,456 @@ def test_convert_multiple_entries_rejects_duplicate_before_writing(
         )
 
     assert path.read_text(encoding="utf-8") == original
+
+
+def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_item(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """planningの全feedbackを最古項目へ統合し、TBDと外部依存を保持する。"""
+    notes = _setup_notes(tmp_path)
+    feedback_names = ("20260827-000000-001.md", "20260827-000000-002.md")
+    paths = [_write_convert_feedback(notes, name, state="planning") for name in feedback_names]
+    tbd_name = "20260826-235959-001.md"
+    _write_tbd_entry(notes, tbd_name)
+    paths[0].write_text(
+        paths[0]
+        .read_text(encoding="utf-8")
+        .replace(
+            "type: feedback\n",
+            f"type: feedback\ndepends_on: [{tbd_name}, external-a.md]\n",
+        ),
+        encoding="utf-8",
+    )
+    paths[1].write_text(
+        paths[1]
+        .read_text(encoding="utf-8")
+        .replace(
+            "type: feedback\n",
+            "type: feedback\nqueue_schedule:\n  dependency:\n    kind: entries\n    filenames: [external-b.md]\n",
+        ),
+        encoding="utf-8",
+    )
+    plan = _write_planning_plan(tmp_path, "a" * 40, (*feedback_names, tbd_name))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+    commit_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
+
+    result = mutations.convert_entries_to_plan(
+        notes,
+        filenames=(feedback_names[1], feedback_names[0]),
+        plan_file=str(plan),
+        message="統合した計画本文",
+        target_repo="github.com/example/foo",
+        local_worktree=tmp_path / "target-worktree",
+        skip_push=True,
+    )
+
+    output_path = notes / "inbox" / feedback_names[0]
+    assert not (notes / "planning" / feedback_names[0]).exists()
+    assert not (notes / "planning" / feedback_names[1]).exists()
+    assert output_path.is_file()
+    assert (notes / "inbox" / tbd_name).is_file()
+    parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    data, body = parsed
+    assert data["source"] == "plan"
+    assert data["plan_file"] == str(plan)
+    assert data["target_commit"] == "b" * 40
+    assert data["depends_on"] == [tbd_name, "external-a.md", "external-b.md"]
+    assert "統合した計画本文" in body
+    entries = result["entries"]
+    assert isinstance(entries, list) and len(entries) == 1
+    assert result["planning"] is True
+    assert len(commit_calls) == 1
+    assert commit_calls[0][2] == (
+        "planning/20260827-000000-001.md",
+        "planning/20260827-000000-002.md",
+        "inbox/20260827-000000-001.md",
+    )
+
+
+def test_convert_planning_entries_rejects_unrepresentable_legacy_dependency_before_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """planningの旧形式依存を移行できない場合は書込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    path = _write_convert_feedback(notes, filename, state="planning")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            "type: feedback\nqueue_schedule:\n  dependency:\n    kind: external-user\n",
+        ),
+        encoding="utf-8",
+    )
+    original = path.read_text(encoding="utf-8")
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="旧形式の依存を計画実装型へ移行できません"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+
+
+@pytest.mark.parametrize(
+    ("state", "message", "expected"),
+    [
+        ("planning", None, "--message"),
+        ("inbox", "統合本文", "指定できません"),
+    ],
+)
+def test_convert_to_plan_rejects_message_for_wrong_input_state_without_changes(
+    state: str,
+    message: str | None,
+    expected: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """状態と本文入力の組合せを検証し、入力ファイルを変更しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    path = _write_convert_feedback(notes, filename, state=state)
+    original = path.read_text(encoding="utf-8")
+    material_names = (filename,) if state == "planning" else ()
+    plan = (
+        _write_planning_plan(tmp_path, "a" * 40, material_names) if material_names else _write_convert_plan(tmp_path, "a" * 40)
+    )
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match=expected):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message=message,
+        )
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists() if state == "planning" else True
+
+
+def test_convert_to_plan_rejects_mixed_states_before_writing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """inboxとplanningの入力混在を全体拒否する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "20260827-000000-001.md")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
+    first_original = first.read_text(encoding="utf-8")
+    second_original = second.read_text(encoding="utf-8")
+    plan = _write_planning_plan(tmp_path, "a" * 40, (first.name, second.name))
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="異なる状態"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(first.name, second.name),
+            plan_file=str(plan),
+            message="統合本文",
+        )
+
+    assert first.read_text(encoding="utf-8") == first_original
+    assert second.read_text(encoding="utf-8") == second_original
+    assert not (notes / "inbox" / second.name).exists()
+
+
+def test_convert_planning_entries_rejects_material_mismatch_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLI入力と計画素材の集合が異なる場合は書込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="planning")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
+    originals = {path.name: path.read_text(encoding="utf-8") for path in (first, second)}
+    plan = _write_planning_plan(tmp_path, "a" * 40, (first.name,))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="一致しません"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(first.name, second.name),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert first.read_text(encoding="utf-8") == originals[first.name]
+    assert second.read_text(encoding="utf-8") == originals[second.name]
+    assert not (notes / "inbox" / first.name).exists()
+
+
+def test_convert_planning_entries_rejects_destination_conflict_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """統合先inboxの同名競合時はplanningを変更しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    conflict = notes / "inbox" / filename
+    conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
+    conflict_original = conflict.read_text(encoding="utf-8")
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="同名"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert conflict.read_text(encoding="utf-8") == conflict_original
+
+
+def _initialize_private_notes_git(notes: pathlib.Path) -> str:
+    """変換失敗時の作業ツリーとindex復元を検証するGit管理repoを作成する。"""
+    for state in common.MQ_STATES:
+        (notes / state).mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "-C", str(notes), "init", "--initial-branch=main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True, text=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(notes),
+            "-c",
+            "user.email=agent-toolkit@test.invalid",
+            "-c",
+            "user.name=agent-toolkit-test",
+            "commit",
+            "-m",
+            "test: initialize private notes",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _disable_real_convert_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実Git変換テストでremote同期だけを無効化する。"""
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+
+
+def test_convert_planning_entries_restores_all_paths_after_write_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """書込み失敗時にplanningの全入力とindexを開始時へ戻す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    start_head = _initialize_private_notes_git(notes)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def fail_after_write(path: pathlib.Path, content: str) -> None:
+        path.write_text(content, encoding="utf-8")
+        raise OSError("テスト用書込み失敗")
+
+    monkeypatch.setattr(mutations, "_atomic_write_text", fail_after_write)
+    with pytest.raises(OSError, match="書込み失敗"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+    assert (
+        subprocess.run(
+            ["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        == start_head
+    )
+    assert (
+        subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        == ""
+    )
+
+
+def test_convert_planning_entries_restores_all_paths_after_commit_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """commit失敗時にplanningの全入力とindexを開始時へ戻す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    start_head = _initialize_private_notes_git(notes)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def fail_commit(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, ["git", "commit"])
+
+    monkeypatch.setattr(mutations, "_commit_and_push", fail_commit)
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+    assert (
+        subprocess.run(
+            ["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        == start_head
+    )
+    assert (
+        subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        == ""
+    )
+
+
+def test_convert_planning_entries_keeps_clean_local_commit_after_push_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """push失敗時は変換済みのcleanなローカルcommitを保持する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    _write_convert_feedback(notes, filename, state="planning")
+    start_head = _initialize_private_notes_git(notes)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def commit_then_fail_push(
+        private_notes: pathlib.Path,
+        commit_message: str,
+        relative_paths: tuple[str, ...],
+        **_kwargs: object,
+    ) -> None:
+        subprocess.run(
+            ["git", "-C", str(private_notes), "add", "--", *relative_paths],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(private_notes),
+                "-c",
+                "user.email=agent-toolkit@test.invalid",
+                "-c",
+                "user.name=agent-toolkit-test",
+                "commit",
+                "-m",
+                commit_message,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        raise subprocess.CalledProcessError(1, ["git", "push"])
+
+    monkeypatch.setattr(mutations, "_commit_and_push", commit_then_fail_push)
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    assert head != start_head
+    assert (notes / "inbox" / filename).is_file()
+    assert not (notes / "planning" / filename).exists()
+    assert (
+        subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        == ""
+    )
+
+
+def test_cmd_convert_to_plan_displays_commit_for_single_planning_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """単一planning入力でも保存結果、commit及びpush結果を表示する。"""
+    details: dict[str, object | None] = {
+        "target_repo": "github.com/example/foo",
+        "target_commit": "b" * 40,
+        "plan_file": "/tmp/plan.md",
+        "depends_on": [],
+    }
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        lambda _value: ("github.com/example/foo", tmp_path / "target-worktree"),
+    )
+    monkeypatch.setattr(
+        mutations,
+        "convert_entries_to_plan",
+        lambda *_args, **_kwargs: {"entries": [details], "commit": "c" * 40, "planning": True},
+    )
+    args = argparse.Namespace(
+        filename=["20260827-000000-001.md"],
+        message="統合本文",
+        plan_file="/tmp/plan.md",
+        depends_on=None,
+        target_repo="github.com/example/foo",
+        skip_push=False,
+    )
+
+    mutations._cmd_convert_to_plan(args, tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+    output = capsys.readouterr().out
+    assert "変換commit: " + "c" * 40 in output
+    assert "push: 完了" in output
 
 
 def test_cmd_convert_to_plan_displays_saved_metadata(

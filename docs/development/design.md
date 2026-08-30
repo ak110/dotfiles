@@ -47,7 +47,11 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 通常型フィードバックをファイル名で計画化するため、`inbox`と`processing`の間に`planning`状態を置く。
 `processing`はprocess-loopが計画作成から実装までを所有する状態であり、`process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
 `process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、`planning`を別に置く。
-`planning`は計画作業中の明示状態として一覧・詳細で確認できる。feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集、ユーザーコメント及び既存の計画変換の対象から除外する。必要な場合は`--status=planning`を明示して参照する。
+`planning`は計画作業中の明示状態として一覧・詳細で確認できる。
+feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集及びユーザーコメントの対象から除外する。
+計画型へ変換する公開操作は、`atk mq edit`の`--plan-file`互換経路と`atk mq convert-to-plan`に限定する。
+`atk mq convert-to-plan`による`planning`統合は正規の計画変換として受理する。
+必要な場合は`--status=planning`を明示して参照する。
 
 通常型フィードバックのファイル名を1件以上指定した場合はファイル名モードとし、全対象が同一対象リポジトリのinbox通常型feedbackであることを計画調査前に一括検証する。
 検証後に`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象をplanningへ移す。
@@ -55,13 +59,17 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 同一セッションで、既に扱った同じ計画又は計画型feedbackを後続の方針に基づいて改訂し、別の処理経路が明示されていない場合は、本スキルの再開として扱う。自然言語modeとファイル名modeのいずれでも対象リポジトリを実装せず、計画の更新を検収し、計画型feedbackの投入までを完了する。更新後に実装承認を求めず、投入したfeedbackファイル名、計画ファイル及び実装へ着手していないことを固定完了報告として返して終了する。
 
-計画レビューが収束した後は、ファイル名昇順の最古の項目を`edit --plan-file`で計画型へ変換し、同じ保存境界でplanningからinboxへ移す。
-変換結果を再取得してからplanningに残る統合元を判定し、残りが1件以上の場合だけ`rm --force`で統合先を`note`へ記録して除去する。
-入力が単一の場合は`rm`を呼ばず、計画型inbox項目だけを残して成功とする。
+計画レビューが収束した後は、全入力をファイル名昇順で次のコマンドへ1回だけ渡す。
 
-計画型編集前の中断では`return-to-inbox --state=planning`で全対象を戻す。
-変換開始後は最古の計画型inbox項目を移動せず、private-notesのHEAD、作業ツリー、upstream包含と対象内容を再取得して、滞留commitのpushと残りの`rm`だけを再開する。
-最古の変換済みinbox項目と残りのplanning又は統合済み項目が一致する場合だけ部分完了を前方回復し、それ以外の混在状態は無変更で停止する。
+```sh
+atk mq convert-to-plan <filename>... --plan-file=<main-plan-absolute-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
+```
+
+CLIは全入力が同一対象リポジトリの`planning`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
+activeなTBD素材は状態を変更せず、統合依存へ保持できる。
+検証後は最古のfeedbackへ計画型本文、`source: plan`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
+
+入力検証、管理リポジトリのclean検査、対象の書込み、commit及びpushを分離する。入力検証、書込み又はcommitの失敗では、全統合元の作業ツリーとindexを開始時の`planning`内容へ戻し、部分変換を残さない。push失敗では変換済みのcleanなローカルcommitと保存結果を保持し、滞留commitのpushから再開する。`--skip-push`ではcommitを保持したままpushだけを省略する。単一入力と複数入力は同じ経路で処理し、変換後の別`rm`及びそのための前方回復状態を設けない。
 
 `atk mq reject`は、process-loop内で要求の全てを不採用と確定した項目だけに用いる。
 採用済み内容を統合した元項目と、別リポジトリへ移管して投入先を検収した元項目は、統合先又は移管先をnoteへ記録して`rm`で除去する。
@@ -81,7 +89,7 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
-`atk mq convert-to-plan FILENAME...`は入力全体を事前検証してから1つのロック区間で計画本文を更新し、1回のcommitとpushへまとめる。`--skip-push`ではcommitを保持したままpushだけを省略する。入力検証、作業ツリーまたはindexのclean検査、対象の書込み、commit及びpushを分離し、commit前の失敗では対象パスの作業ツリーとindexを開始時へ戻して部分変換を残さない。
+`atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`planning`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
 
 ### session-reviewコメントの由来と編集境界
 

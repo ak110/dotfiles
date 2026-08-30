@@ -226,12 +226,10 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 指定した項目は、計画調査の前に同一対象リポジトリの`planning`状態へ一括移動する。
 `planning`状態の項目は一覧と詳細で確認できるが、計画が完成するまで`process-loop`の実装対象にならない。
 すべての入力はファイル名昇順で1つの計画へ統合される。
-レビュー収束後は最古の項目が計画型へ変換されて`inbox`へ移り、残りの統合元が`rm --force`で除去される。
-入力が1件だけの場合はrmを呼ばず、計画型のinbox項目だけを残す。
-計画型inbox項目を実装する場合は、明示的な`atk mq start-processing`又は`process-loop`が処理を開始する。
 
-計画型編集前に中断した場合は、同じ入力で再開するか、`atk mq return-to-inbox <filename>... --state=planning`でinboxへ戻す。
-計画型への変換開始後は最古の計画型inbox項目を移動せず、保存済みの状態から滞留commitのpush又は残りの統合元の除去を再開する。
+レビュー収束後は、すべての入力を1回の`atk mq convert-to-plan`へ渡す。ファイル名昇順の最古項目が計画型へ変換されて`inbox`へ移り、残りの統合元は同じcommitで除去される。入力が1件の場合も同じ処理を使う。計画型`inbox`項目を実装する場合は、明示的な`atk mq start-processing`又は`process-loop`が処理を開始する。
+
+計画型変換前に中断した場合は、同じ入力で再開するか、`atk mq return-to-inbox <filename>... --state=planning`で`inbox`へ戻す。入力検証、書込み又はcommitの失敗では元の`planning`集合を復元する。pushだけが失敗した場合は変換済みのローカルcommitを保持し、滞留commitのpushと保存結果の確認から再開する。
 ファイル名を指定しない自然言語の依頼は、従来どおり新しい計画型フィードバックとして登録される。
 
 `atk mq reject`は、process-loopが要求の全てを不採用と確定した場合だけに使用する。
