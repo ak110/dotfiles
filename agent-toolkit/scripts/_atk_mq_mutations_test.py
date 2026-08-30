@@ -1886,8 +1886,8 @@ class TestSkipPush:
             atk.main(["mq", "reject", "fb-002.md"], home=tmp_path)
         assert second_exc_info.value.code == 0
         commands = [call["cmd"] for call in git_calls]
-        assert commands.count(["git", "commit", "-m", "chore: process 1 entry (adopted)"]) == 1
-        assert commands.count(["git", "commit", "-m", "chore: process 1 entry (rejected)"]) == 1
+        assert sum(command[:4] == ["git", "commit", "-m", "chore: process 1 entry (adopted)"] for command in commands) == 1
+        assert sum(command[:4] == ["git", "commit", "-m", "chore: process 1 entry (rejected)"] for command in commands) == 1
         assert commands.count(["git", "push"]) == 2
         assert "--skip-push" not in capsys.readouterr().err
 
@@ -3318,7 +3318,22 @@ class TestStartPlanning:
         ]
         assert not list((notes / "inbox").iterdir())
         commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
-        assert commit_cmds == [["git", "commit", "-m", "chore: start planning 2 entries"]]
+        assert commit_cmds == [
+            [
+                "git",
+                "commit",
+                "-m",
+                "chore: start planning 2 entries",
+                "--",
+                "inbox",
+                "processing",
+                "planning",
+                "editing",
+                "hold",
+                "adopted",
+                "rejected",
+            ]
+        ]
         assert "20260827-000000-001.md, 20260827-000000-002.md" in capsys.readouterr().out
 
 

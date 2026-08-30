@@ -8,6 +8,7 @@ from collections.abc import Iterable, Iterator
 from typing import Literal
 
 import _git_remote
+import _plan_file
 from _atk_mq_formatters import _parse_target_repo
 from _atk_mq_frontmatter import parse_frontmatter
 from _tbd_scan import _ACTIVE_STATES as MQ_ACTIVE_STATES
@@ -20,6 +21,14 @@ MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
 type RepairKind = Literal["frontmatter", "missing-plan-file"]
+
+
+def _plan_file_exists(value: str) -> bool:
+    """保存済みplan_fileを解決して実在通常ファイルか判定する。"""
+    try:
+        return _plan_file.resolve_plan_file(value).is_file()
+    except (OSError, ValueError):
+        return False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -435,9 +444,7 @@ def calculate_readiness(
         sorted(
             entry.filename
             for entry in active
-            if entry.filename not in cooldown_pending
-            and entry.plan_file is not None
-            and not pathlib.Path(entry.plan_file).is_file()
+            if entry.filename not in cooldown_pending and entry.plan_file is not None and not _plan_file_exists(entry.plan_file)
         )
     )
     missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)

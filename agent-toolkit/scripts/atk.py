@@ -14,7 +14,7 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`・`atk wait-schedule`・
+サブコマンド構成は`atk mq <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
@@ -29,6 +29,7 @@
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
+- plans commit/migrate: 計画bundleの対象限定commit・pushと旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
@@ -43,6 +44,7 @@ import datetime
 import os
 import pathlib
 import re
+import subprocess
 import sys
 from typing import Any
 
@@ -52,6 +54,7 @@ from typing import Any
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 import _atk_config as _config_cmd  # noqa: E402
+import _atk_git_sync  # noqa: E402
 import _atk_mq_add as _add  # noqa: E402
 import _atk_mq_batch as _batch  # noqa: E402
 import _atk_mq_common as _common  # noqa: E402
@@ -61,6 +64,7 @@ import _atk_mq_mutations as _mutations  # noqa: E402
 import _atk_mq_process_loop as _process_loop  # noqa: E402
 import _atk_mq_show as _show  # noqa: E402
 import _atk_mq_tbd as _tbd  # noqa: E402
+import _atk_plans as _plans  # noqa: E402
 import _atk_watch as _watch  # noqa: E402
 import _atk_worktree_stash as _worktree_stash  # noqa: E402
 import _managed_temp  # noqa: E402
@@ -763,6 +767,8 @@ def _build_parser() -> argparse.ArgumentParser:
     top = parser.add_subparsers(dest="command", required=True)
     mq = top.add_parser("mq", help="メッセージキュー操作（フィードバック・TBD）")
     _build_mq_parser(mq)
+    plans = top.add_parser("plans", help="計画ファイルのcommit・移行")
+    _plans.build_parser(plans)
     serve = top.add_parser("serve", help="フィードバック管理Web UIを起動する")
     serve.add_argument(
         "--host",
@@ -908,6 +914,16 @@ def main(
         sys.exit(_watch.dispatch(args, now=now))
     if args.command == "config":
         _config_cmd.dispatch(args, home)
+    if args.command == "plans":
+        private_notes = _common._ensure_environment(home)
+        try:
+            sys.exit(_plans.dispatch(args, private_notes, home))
+        except (_common.WebInputError, _atk_git_sync.RebaseInProgressError) as error:
+            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
+        except subprocess.CalledProcessError as error:
+            print(f"Git操作に失敗しました: {error}", file=sys.stderr)
+            sys.exit(1)
     if args.command == "review-table":
         try:
             sys.exit(_review_table.dispatch(args))
@@ -946,6 +962,9 @@ def main(
         exit_code = dispatch[sub]() or 0
     except _common.WebInputError as error:
         print(f"操作を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
+    except subprocess.CalledProcessError as error:
+        print(f"Git操作に失敗しました: {error}", file=sys.stderr)
         sys.exit(1)
     suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
         sub == "show" and _show._covers_unanswered_tbds(args)

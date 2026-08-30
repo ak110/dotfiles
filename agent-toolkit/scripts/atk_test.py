@@ -916,8 +916,8 @@ class TestAddSingleMessage:
         assert remote_url_cmd in git_cmds
         fetch_idx = git_cmds.index(["git", "fetch"])
         assert git_cmds[fetch_idx + 1] == ["git", "merge", "--ff-only", "@{u}"]
-        assert git_cmds[fetch_idx + 2] == ["git", "add", "inbox"]
-        assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 feedback item"]
+        assert git_cmds[fetch_idx + 2] == ["git", "add", "--all", "--", "inbox"]
+        assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 feedback item", "--", "inbox"]
         assert git_cmds[fetch_idx + 4] == ["git", "push"]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:

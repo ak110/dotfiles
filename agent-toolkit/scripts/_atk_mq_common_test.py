@@ -893,7 +893,7 @@ class TestCommitAndPushRetry:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """push失敗時はfetch後に明示したupstreamへrebaseし、pushを1回だけ再試行する。"""
+        """履歴分岐のpush失敗時はfetch後に明示したupstreamへrebaseし、pushを1回だけ再試行する。"""
         calls: list[list[str]] = []
         push_attempts = 0
 
@@ -905,17 +905,22 @@ class TestCommitAndPushRetry:
                 push_attempts += 1
                 if push_attempts == 1:
                     raise subprocess.CalledProcessError(1, ["git", *args])
+            if args[:2] == ["merge-base", "--is-ancestor"]:
+                raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
+        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # noqa: SLF001
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [
-            ["add", "feedback"],
-            ["commit", "-m", "chore: test"],
+            ["add", "--all", "--", "feedback"],
+            ["commit", "-m", "chore: test", "--", "feedback"],
             ["push"],
             ["fetch"],
+            ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
+            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
             ["rebase", "@{u}"],
             ["push"],
         ]
@@ -940,57 +945,49 @@ class TestCommitAndPushRetry:
         ):
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
 
-    def test_aborts_rebase_and_reports_success_when_explicit_rebase_fails(
+    def test_keeps_rebase_state_and_reports_manual_steps_when_rebase_fails(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """明示したupstreamへのrebaseが失敗した場合は`git rebase --abort`を呼び、
-        復元成功をstderrへ出力してから例外を送出する。"""
+        """rebaseが失敗した場合はabortせず、状態と手動手順をstderrへ出力する。"""
 
         def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
             del cwd
             if args[0] == "push" or args == ["rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
-
-        abort_calls: list[list[str]] = []
-
-        def fake_subprocess_run(args: list[str], cwd: pathlib.Path, check: bool) -> subprocess.CompletedProcess[bytes]:
-            del cwd
-            assert check is False
-            abort_calls.append(args)
-            return subprocess.CompletedProcess(args, returncode=0)
+            if args[:2] == ["merge-base", "--is-ancestor"]:
+                raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
-        monkeypatch.setattr(_common.subprocess, "run", fake_subprocess_run)
+        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # noqa: SLF001
 
         with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert abort_calls == [["git", "rebase", "--abort"]]
-        assert "復元しました" in capsys.readouterr().err
+        error = capsys.readouterr().err
+        assert "rebase状態を保持" in error
+        assert "git add <競合解消済みパス>" in error
+        assert "git rebase --abort" not in error
 
-    def test_warns_manual_recovery_when_rebase_abort_fails(
+    def test_reports_conflict_path_when_rebase_fails(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`git rebase --abort`自体が失敗した場合は手動復旧が必要な旨をstderrへ出力してから例外を送出する。"""
+        """rebase失敗時に競合解消手順をstderrへ出力してから例外を送出する。"""
 
         def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
             del cwd
             if args[0] == "push" or args == ["rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
-
-        def fake_subprocess_run(args: list[str], cwd: pathlib.Path, check: bool) -> subprocess.CompletedProcess[bytes]:
-            del cwd
-            assert check is False
-            return subprocess.CompletedProcess(args, returncode=1)
+            if args[:2] == ["merge-base", "--is-ancestor"]:
+                raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
-        monkeypatch.setattr(_common.subprocess, "run", fake_subprocess_run)
+        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # noqa: SLF001
 
         with (
             pytest.raises(subprocess.CalledProcessError),
@@ -998,7 +995,7 @@ class TestCommitAndPushRetry:
         ):
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert "手動復旧が必要です" in capsys.readouterr().err
+        assert "rebase状態を保持" in capsys.readouterr().err
 
 
 class TestExplicitUpstreamIntegration:
@@ -1383,7 +1380,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert calls == [["add", "feedback"], ["commit", "-m", "chore: test"]]
+        assert calls == [["add", "--all", "--", "feedback"], ["commit", "-m", "chore: test", "--", "feedback"]]
 
 
 class TestPullIfStale:

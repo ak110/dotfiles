@@ -18,6 +18,7 @@ import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
 import _atk_mq_tbd as _tbd
+import _plan_file
 import _plan_format
 from _atk_mq_common import (
     MQ_PROCESSABLE_STATES,
@@ -744,9 +745,11 @@ def edit_entry_to_plan(
     expected_content: str | None = None,
 ) -> dict[str, object | None]:
     """planningの最古項目を計画型feedbackへ編集し、inboxへ原子的に移動する。"""
-    plan_path = pathlib.Path(plan_file)
-    if not plan_path.is_absolute():
-        raise WebInputError("plan_fileは絶対パスで指定してください")
+    try:
+        plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
+        stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
+    except ValueError as error:
+        raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
     try:
         if not plan_path.is_file():
             raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
@@ -827,7 +830,7 @@ def edit_entry_to_plan(
 
         updated_data = {**stored_data, **updates}
         updated_data["source"] = "plan"
-        updated_data["plan_file"] = str(plan_path)
+        updated_data["plan_file"] = stored_plan_file
         updated_data["target_commit"] = target_commit
         updated_data.pop("queue_schedule", None)
         updated_data.pop("cooldown_until", None)
@@ -1301,9 +1304,11 @@ def convert_entries_to_plan(
     """状態別のfeedbackを計画実装型へ変換し、planningは1件へ統合する。"""
     if not filenames:
         raise WebInputError("変換するFILENAMEを1件以上指定してください")
-    plan_path = pathlib.Path(plan_file)
-    if not plan_path.is_absolute():
-        raise WebInputError("plan_fileは絶対パスで指定してください")
+    try:
+        plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
+        stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
+    except ValueError as error:
+        raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = private_notes / MQ_STATE_PROCESSING
     normalized_filenames = tuple(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in filenames))
@@ -1392,7 +1397,7 @@ def convert_entries_to_plan(
                     data["depends_on"] = list(normalized_dependencies)
                 else:
                     data.pop("depends_on", None)
-            data["plan_file"] = str(plan_path)
+            data["plan_file"] = stored_plan_file
             data.pop("queue_schedule", None)
             updated_text = _frontmatter.serialize_frontmatter(data, body)
             updated.append((path, text, updated_text))
@@ -1412,7 +1417,7 @@ def convert_entries_to_plan(
                         _add._read_saved_entry_details(path)  # pylint: disable=protected-access
                         for path, _old, _new in updated
                     ],
-                    "plan_file": str(plan_path),
+                    "plan_file": stored_plan_file,
                     "commit": None,
                     "planning": False,
                 }
@@ -1433,7 +1438,7 @@ def convert_entries_to_plan(
                     _add._read_saved_entry_details(path)  # pylint: disable=protected-access
                     for path, _old, _new in updated
                 ],
-                "plan_file": str(plan_path),
+                "plan_file": stored_plan_file,
                 "commit": commit_oid,
                 "planning": False,
             }
@@ -1803,7 +1808,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 raise WebInputError("計画型編集には対象リポジトリのローカルworktreeが必要です")
             if _local_worktree_repo_id(local_worktree) != target_repo:
                 raise WebInputError("計画型編集の対象repoとローカルworktreeが一致しません")
-            target_commit = _resolve_plan_base_commit(pathlib.Path(args.plan_file), local_worktree)
+            plan_path = _plan_file.resolve_plan_file(args.plan_file, private_notes=private_notes)
+            target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
         except WebInputError as error:
             print(f"計画型編集を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)

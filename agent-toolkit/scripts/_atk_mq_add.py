@@ -13,6 +13,7 @@ import sys
 
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_tbd as _tbd
+import _plan_file
 from _atk_mq_common import (
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
@@ -319,14 +320,18 @@ def add_entries(
     if plan_file is not None:
         if entry_type != MQ_TYPE_FEEDBACK:
             raise WebInputError("plan_fileはfeedback種別でのみ指定できます")
-        plan_path = pathlib.Path(plan_file)
-        if not plan_path.is_absolute():
-            raise WebInputError("plan_fileは絶対パスで指定してください")
+        try:
+            plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
+            stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
+        except ValueError as error:
+            raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
         try:
             if not plan_path.is_file():
                 raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
         except OSError as error:
             raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
+    else:
+        stored_plan_file = None
     if entry_type != MQ_TYPE_FEEDBACK and question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
@@ -351,7 +356,7 @@ def add_entries(
             question_type=question_type,
             choices=choices,
             target_commit=target_commit,
-            plan_file=plan_file,
+            plan_file=stored_plan_file,
             depends_on=depends_on,
         )
         count = len(generated)
