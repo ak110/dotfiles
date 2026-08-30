@@ -871,6 +871,13 @@ def main(
     _common.warn_space_separated_option(raw_argv)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     args = parser.parse_args(raw_argv)
+    if now is None:
+        now = datetime.datetime.now()
+    automatically_cleaned: list[pathlib.Path] = []
+    try:
+        automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
+    except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
+        print(f"warning: 管理対象一時領域の自動削除に失敗しました: {error}", file=sys.stderr)
     _validate_rm_args(args)
     args.repo_path_override = repo_path_override
     if args.command == "mq" and args.mq_subcommand == "add":
@@ -902,14 +909,18 @@ def main(
         sys.exit(0)
     if home is None:
         home = pathlib.Path.home()
-    if now is None:
-        now = datetime.datetime.now()
     if args.command == "serve":
         import _atk_serve as _serve  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
     if args.command == "managed-temp":
+        if (
+            args.managed_temp_subcommand == "cleanup"
+            and args.path.is_absolute()
+            and pathlib.Path(os.path.abspath(args.path)) in automatically_cleaned
+        ):
+            sys.exit(0)
         sys.exit(_managed_temp.dispatch(args, command_dest="managed_temp_subcommand"))
     if args.command == "worktree-stash":
         sys.exit(_worktree_stash.dispatch(args, command_dest="worktree_stash_subcommand"))

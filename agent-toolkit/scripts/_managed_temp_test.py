@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import ctypes
+import datetime
 import json
 import os
 import pathlib
@@ -51,8 +52,53 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
             "path": str(target),
             "prefix": "publish-group",
             "created_at": created_at,
+            "feedbacks": [],
         }
     ]
+
+
+def test_create_parser_passes_repeated_feedback_names(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create --feedback`の複数指定を順序どおり作成処理へ渡す。"""
+    calls: list[tuple[str, pathlib.Path | str | None, tuple[str, ...]]] = []
+    created = tmp_path / "created"
+
+    def fake_create(
+        prefix: str,
+        root: pathlib.Path | str | None = None,
+        feedbacks: tuple[str, ...] = (),
+    ) -> pathlib.Path:
+        calls.append((prefix, root, feedbacks))
+        return created
+
+    monkeypatch.setattr(subject, "create_managed_temp", fake_create)
+    parser = argparse.ArgumentParser()
+    subject.build_parser(parser)
+
+    assert (
+        subject.dispatch(
+            parser.parse_args(
+                [
+                    "create",
+                    "--prefix=implementation",
+                    "--feedback=20260830-061344-001.md",
+                    "--feedback=20260830-143611-001.md",
+                ]
+            )
+        )
+        == 0
+    )
+    assert calls == [
+        (
+            "implementation",
+            None,
+            ("20260830-061344-001.md", "20260830-143611-001.md"),
+        )
+    ]
+    assert capsys.readouterr().out == f"{created}\n"
 
 
 class _WindowsSecurityCalls(typing.NamedTuple):
@@ -282,6 +328,13 @@ def _replace_records(target: pathlib.Path, transform: typing.Callable[[dict[str,
             path.chmod(0o600)
 
 
+def _set_tree_mtime(path: pathlib.Path, timestamp_ns: int) -> None:
+    """対象ツリー全体の最終更新日時を同じ値へ固定する。"""
+    for entry in path.rglob("*"):
+        os.utime(entry, ns=(timestamp_ns, timestamp_ns), follow_symlinks=False)
+    os.utime(path, ns=(timestamp_ns, timestamp_ns), follow_symlinks=False)
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX固有の権限・dirfd検証")
 class TestManagedTempPosix:
     """POSIXの作成・検証・後始末を実ファイルで確認する。"""
@@ -289,11 +342,18 @@ class TestManagedTempPosix:
     def test_create_validate_and_cleanup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
 
-        target = subject.create_managed_temp("plan-review-snapshot")
+        target = subject.create_managed_temp(
+            "plan-review-snapshot",
+            feedbacks=("20260830-061344-001.md", "20260830-143611-001.md"),
+        )
 
         assert target.parent == tmp_path
         assert stat.S_IMODE(target.stat().st_mode) == 0o700
         assert subject.validate_managed_temp(target) == target
+        assert subject._load_private_json(subject._registry_path(target))["feedbacks"] == [
+            "20260830-061344-001.md",
+            "20260830-143611-001.md",
+        ]
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
@@ -434,10 +494,43 @@ class TestManagedTempPosix:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
+            del record["feedbacks"]
 
         _replace_records(target, convert_to_v1)
 
         assert subject.validate_managed_temp(target) == target
+
+    def test_validate_accepts_matching_v2_records(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """版数2のフィールド集合が一致する記録を読み取り互換として検証する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("v2-record")
+
+        def convert_to_v2(record: dict[str, object]) -> None:
+            record["schema_version"] = 2
+            del record["feedbacks"]
+
+        _replace_records(target, convert_to_v2)
+
+        assert subject.validate_managed_temp(target) == target
+
+    @pytest.mark.parametrize("feedbacks", [("",), ("nested/name.md",), ("nested\\name.md",), ("line\nbreak.md",)])
+    def test_create_rejects_invalid_feedback_names(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        feedbacks: tuple[str, ...],
+    ) -> None:
+        """対応フィードバック名の空値、パス区切り文字及び制御文字を拒否する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+
+        with pytest.raises(subject.ManagedTempError, match="feedback"):
+            subject.create_managed_temp("invalid-feedback", feedbacks=feedbacks)
+
+        assert not list(tmp_path.glob("invalid-feedback-*"))
 
     @pytest.mark.parametrize(
         ("field", "value"),
@@ -465,6 +558,8 @@ class TestManagedTempPosix:
         target = subject.create_managed_temp("invalid-v2")
 
         def set_invalid(record: dict[str, object]) -> None:
+            record["schema_version"] = 2
+            del record["feedbacks"]
             if value is None:
                 del record[field]
             else:
@@ -475,14 +570,36 @@ class TestManagedTempPosix:
         with pytest.raises(subject.ManagedTempError, match="内容"):
             subject.validate_managed_temp(target)
 
+    @pytest.mark.parametrize(
+        "feedbacks",
+        [None, "20260830-061344-001.md", [""], ["nested/name.md"], ["nested\\name.md"], ["line\nbreak.md"], [1]],
+    )
+    def test_validate_rejects_invalid_v3_feedbacks(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        feedbacks: object,
+    ) -> None:
+        """v3のfeedbacksは安全な空でないファイル名だけを含むリストに限定する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("invalid-v3")
+
+        def set_invalid(record: dict[str, object]) -> None:
+            record["feedbacks"] = feedbacks
+
+        _replace_records(target, set_invalid)
+
+        with pytest.raises(subject.ManagedTempError, match="内容"):
+            subject.validate_managed_temp(target)
+
     @pytest.mark.parametrize("marker_only", [True, False])
-    def test_validate_rejects_version_mismatch_and_partial_v2_update(
+    def test_validate_rejects_version_mismatch_and_partial_v3_update(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         marker_only: bool,
     ) -> None:
-        """version混在と片側だけのv2更新を真正性エラーとして拒否する。"""
+        """version混在と片側だけのv3更新を真正性エラーとして拒否する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("record-mismatch")
         marker = target / _MARKER_NAME
@@ -493,6 +610,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
+            del record["feedbacks"]
         else:
             del record["created_at"]
         changed.write_text(json.dumps(record), encoding="utf-8")
@@ -501,23 +619,30 @@ class TestManagedTempPosix:
         with pytest.raises(subject.ManagedTempError, match="内容"):
             subject.validate_managed_temp(target)
 
-    def test_list_mixes_v1_and_v2_as_sorted_jsonl_and_skips_invalid_registry(
+    def test_list_mixes_v1_v2_and_v3_as_sorted_jsonl_and_skips_invalid_registry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`list`は`v1`を最古としてJSONL出力し、不正な登録簿を診断して正常項目を継続する。"""
+        """`list`は旧版を含めてJSONL出力し、不正な登録簿を診断して正常項目を継続する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         v1_target = subject.create_managed_temp("legacy")
         v2_target = subject.create_managed_temp("publish-group")
+        v3_target = subject.create_managed_temp("implementation", feedbacks=("20260830-061344-001.md",))
 
         def convert_to_v1(record: dict[str, object]) -> None:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
+            del record["feedbacks"]
+
+        def convert_to_v2(record: dict[str, object]) -> None:
+            record["schema_version"] = 2
+            del record["feedbacks"]
 
         _replace_records(v1_target, convert_to_v1)
+        _replace_records(v2_target, convert_to_v2)
         invalid_registry = subject._state_root() / "invalid.json"
         invalid_registry.write_text("{}", encoding="utf-8")
         invalid_registry.chmod(0o600)
@@ -527,11 +652,18 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 0
         lines = capsys.readouterr()
         assert [json.loads(line) for line in lines.out.splitlines()] == [
-            {"created_at": None, "path": str(v1_target), "prefix": None},
+            {"created_at": None, "feedbacks": [], "path": str(v1_target), "prefix": None},
             {
                 "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
+                "feedbacks": [],
                 "path": str(v2_target),
                 "prefix": "publish-group",
+            },
+            {
+                "created_at": subject._load_private_json(subject._registry_path(v3_target))["created_at"],
+                "feedbacks": ["20260830-061344-001.md"],
+                "path": str(v3_target),
+                "prefix": "implementation",
             },
         ]
         assert "warning: 管理対象を列挙できない" in lines.err
@@ -555,6 +687,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
+            del record["feedbacks"]
 
         _replace_records(first, set_created_at)
         _replace_records(second, set_created_at)
@@ -575,6 +708,129 @@ class TestManagedTempPosix:
 
         assert subject.dispatch(parser.parse_args(["list"])) == 1
         assert capsys.readouterr().out == ""
+
+    def test_sweep_deletes_an_expired_managed_temp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """領域内の全更新が期限を超えた真正な領域だけを既存経路で削除する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("expired")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, old_ns)
+
+        assert subject.sweep_expired_managed_temp(now=now) == [target]
+        assert not target.exists()
+        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除しました: {target}" in capsys.readouterr().err
+
+    def test_sweep_continues_after_one_cleanup_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """複数領域の一部で後始末に失敗しても、残りの期限超過領域を削除する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        failed = subject.create_managed_temp("failed")
+        deleted = subject.create_managed_temp("deleted")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(failed, old_ns)
+        _set_tree_mtime(deleted, old_ns)
+        original_cleanup = subject.cleanup_managed_temp
+
+        def cleanup_with_one_failure(path: pathlib.Path) -> None:
+            if path == failed:
+                raise subject.ManagedTempError("想定した後始末失敗")
+            original_cleanup(path)
+
+        monkeypatch.setattr(subject, "cleanup_managed_temp", cleanup_with_one_failure)
+
+        assert subject.sweep_expired_managed_temp(now=now) == [deleted]
+        assert failed.exists()
+        assert not deleted.exists()
+        captured = capsys.readouterr()
+        assert f"warning: 管理対象一時領域を自動削除できませんでした: {failed}" in captured.err
+        assert f"note: 最終更新から7日を超えた管理対象一時領域を削除しました: {deleted}" in captured.err
+
+    def test_sweep_keeps_an_expired_root_with_recent_nested_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """rootが古くても入れ子に期限内の更新があれば領域を保持する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("nested-recent")
+        nested = target / "nested"
+        nested.mkdir()
+        recent = nested / "result.md"
+        recent.write_text("result", encoding="utf-8")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, old_ns)
+        recent_ns = int((now - datetime.timedelta(days=1)).timestamp() * 1_000_000_000)
+        os.utime(recent, ns=(recent_ns, recent_ns))
+
+        assert not subject.sweep_expired_managed_temp(now=now)
+        assert target.exists()
+
+    def test_sweep_keeps_an_expired_managed_temp_containing_git(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """入れ子に`.git`という名前のエントリーがある領域を自動削除しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("git-worktree")
+        (target / "nested" / ".git").mkdir(parents=True)
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, old_ns)
+
+        assert not subject.sweep_expired_managed_temp(now=now)
+        assert target.exists()
+
+    def test_sweep_keeps_an_untrusted_expired_directory(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """真正性検証を通らない古いディレクトリは自動削除の候補にしない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("untrusted-expired")
+        (target / _MARKER_NAME).write_text("{}", encoding="utf-8")
+        (target / _MARKER_NAME).chmod(0o600)
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, old_ns)
+
+        assert not subject.sweep_expired_managed_temp(now=now)
+        assert target.exists()
+        assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+
+    def test_sweep_keeps_a_managed_temp_at_the_deadline_without_scanning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """root自身が期限境界なら内容を走査せず領域を保持する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("recent")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        deadline_ns = int((now - datetime.timedelta(days=7)).timestamp() * 1_000_000_000)
+        _set_tree_mtime(target, deadline_ns)
+
+        def fail_scandir(path: pathlib.Path) -> typing.NoReturn:
+            raise AssertionError(f"期限境界のrootを走査した: {path}")
+
+        monkeypatch.setattr(subject.os, "scandir", fail_scandir)
+
+        assert not subject.sweep_expired_managed_temp(now=now)
+        assert target.exists()
 
     @pytest.mark.parametrize("tamper", ["marker", "registry-name", "symlink", "registry-mode"])
     def test_list_excludes_untrusted_records_and_keeps_valid_records(
@@ -610,6 +866,7 @@ class TestManagedTempPosix:
                 "path": str(valid),
                 "prefix": "valid",
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
+                "feedbacks": [],
             }
         ]
         assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
@@ -634,6 +891,7 @@ class TestManagedTempPosix:
                 "path": str(valid),
                 "prefix": "valid",
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
+                "feedbacks": [],
             }
         ]
         assert capsys.readouterr().err == ""

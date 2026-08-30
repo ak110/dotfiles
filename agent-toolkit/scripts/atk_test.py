@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -42,10 +43,21 @@ _FIXED_ISO = _FIXED_DT.isoformat()
 
 
 @pytest.fixture(autouse=True)
-def _clear_list_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """listの既定出力に関する既存テストをホスト環境変数から隔離する。"""
+def _isolate_agent_and_managed_temp_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """listとmanaged-tempの既定動作をホスト環境から隔離する。"""
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    worktree_root = pathlib.Path(atk.__file__).resolve().parents[2]
+    trusted_config_paths = [worktree_root]
+    git_entry = worktree_root / ".git"
+    if git_entry.is_file():
+        git_dir = pathlib.Path(git_entry.read_text(encoding="utf-8").removeprefix("gitdir: ").strip())
+        trusted_config_paths.append(git_dir.parents[2])
+    monkeypatch.setenv("MISE_TRUSTED_CONFIG_PATHS", os.pathsep.join(str(path) for path in trusted_config_paths))
 
 
 @pytest.mark.parametrize(
@@ -166,6 +178,104 @@ class TestWaitScheduleParser:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == "*/30 * * * *\n"
+
+    def test_sweeps_managed_temp_before_dispatch(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """任意のサブコマンドを実行する共通経路で管理対象一時領域を整理する。"""
+        calls: list[datetime.datetime] = []
+
+        def fake_sweep(*, now: datetime.datetime) -> list[pathlib.Path]:
+            calls.append(now)
+            return []
+
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", fake_sweep)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        assert calls == [_FIXED_DT]
+
+    def test_cleanup_failure_does_not_change_subcommand_exit_code(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """期限超過領域の後始末失敗は警告し、本来のサブコマンドを継続する。"""
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = _managed_temp.create_managed_temp("cleanup-failure")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        for path in (target, *target.rglob("*")):
+            os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
+
+        def fail_cleanup(path: pathlib.Path) -> None:
+            raise _managed_temp.ManagedTempError(f"後始末失敗: {path}")
+
+        monkeypatch.setattr(_managed_temp, "cleanup_managed_temp", fail_cleanup)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=now)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "*/30 * * * *\n"
+        assert "warning: 管理対象一時領域を自動削除できませんでした" in captured.err
+        assert target.exists()
+
+    @pytest.mark.parametrize("path_form", ["canonical", "parent-reference"])
+    def test_explicit_cleanup_succeeds_after_automatic_cleanup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        path_form: str,
+    ) -> None:
+        """期限超過した明示対象を絶対パス表記にかかわらず重複処理せず、ほかの対象も削除する。"""
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = _managed_temp.create_managed_temp("explicit-cleanup")
+        other = _managed_temp.create_managed_temp("other-expired")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        for managed_temp in (target, other):
+            for path in (managed_temp, *managed_temp.rglob("*")):
+                os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
+
+        cleanup_path = target
+        if path_form == "parent-reference":
+            anchor = tmp_path / "anchor"
+            anchor.mkdir()
+            cleanup_path = anchor / ".." / target.name
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["managed-temp", "cleanup", "--path", str(cleanup_path)], home=tmp_path, now=now)
+
+        assert exc_info.value.code == 0
+        assert not target.exists()
+        assert not other.exists()
+
+    def test_explicit_cleanup_rejects_relative_path_after_automatic_cleanup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """自動削除済みの対象でも、明示cleanupの相対パスは受理しない。"""
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = _managed_temp.create_managed_temp("relative-cleanup")
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+        old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
+        for path in (target, *target.rglob("*")):
+            os.utime(path, ns=(old_ns, old_ns), follow_symlinks=False)
+        monkeypatch.chdir(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["managed-temp", "cleanup", "--path", target.name], home=tmp_path, now=now)
+
+        assert exc_info.value.code == 2
+        assert not target.exists()
 
     def test_does_not_expose_environment_values(
         self,

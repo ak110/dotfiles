@@ -22,12 +22,15 @@ import stat
 import sys
 import tempfile
 import typing
+import unicodedata
 from ctypes import wintypes
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _UTC_ISO8601_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00\Z")
+MAX_AGE_DAYS = 7
+"""管理対象一時領域を自動削除するまでの日数。最終更新日時からの経過で判定する。"""
 _WINDOWS_ACCESS_ALLOWED_ACE_TYPE = 0
 _WINDOWS_ACCESS_DENIED_ACE_TYPE = 1
 _WINDOWS_ACL_REVISION = 2
@@ -56,6 +59,15 @@ _WINDOWS_WRITE_OWNER = 0x00080000
 
 class ManagedTempError(Exception):
     """ユーザーが入力または実行環境を修正できる検証エラー。"""
+
+
+class _ManagedTempEntry(typing.TypedDict):
+    """真正性検証済みの管理対象一時領域を列挙する公開項目。"""
+
+    path: str
+    prefix: str | None
+    created_at: str | None
+    feedbacks: list[str]
 
 
 class _WindowsApiError(ManagedTempError):
@@ -778,26 +790,40 @@ def _path_identity(path: pathlib.Path) -> tuple[int, int]:
     return metadata.st_dev, metadata.st_ino
 
 
-def _record(
+def _record_base(
     path: pathlib.Path,
     nonce: str,
     *,
-    prefix: str | None = None,
-    created_at: str | None = None,
     identity: tuple[int, int] | None = None,
 ) -> dict[str, typing.Any]:
     device, inode = identity if identity is not None else _path_identity(path)
-    record = {
-        "schema_version": _SCHEMA_VERSION,
+    return {
         "path": str(path),
         "platform": os.name,
         "owner": _owner_record(),
         "identity": [device, inode],
         "nonce": nonce,
     }
-    if prefix is not None and created_at is not None:
-        record["prefix"] = prefix
-        record["created_at"] = created_at
+
+
+def _record(
+    path: pathlib.Path,
+    nonce: str,
+    *,
+    prefix: str,
+    created_at: str,
+    feedbacks: tuple[str, ...],
+    identity: tuple[int, int] | None = None,
+) -> dict[str, typing.Any]:
+    record = _record_base(path, nonce, identity=identity)
+    record.update(
+        {
+            "schema_version": _SCHEMA_VERSION,
+            "prefix": prefix,
+            "created_at": created_at,
+            "feedbacks": list(feedbacks),
+        }
+    )
     return record
 
 
@@ -810,6 +836,18 @@ def _is_utc_iso8601(value: object) -> bool:
     except ValueError:
         return False
     return parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0)
+
+
+def _feedbacks_are_valid(value: object) -> bool:
+    """対応フィードバック名の記録形式が安全なファイル名のリストか返す。"""
+    return isinstance(value, list) and all(
+        isinstance(feedback, str)
+        and bool(feedback)
+        and "/" not in feedback
+        and "\\" not in feedback
+        and all(unicodedata.category(character) != "Cc" for character in feedback)
+        for feedback in value
+    )
 
 
 def _records_match(
@@ -830,18 +868,38 @@ def _records_match(
     if not isinstance(schema_version, int) or isinstance(schema_version, bool):
         return False
     if schema_version == 1:
-        expected = _record(path, typing.cast(str, nonce), identity=identity)
-        expected["schema_version"] = 1
+        expected = _record_base(path, typing.cast(str, nonce), identity=identity)
+        expected["schema_version"] = schema_version
     elif schema_version == 2:
         prefix = registry.get("prefix")
         created_at = registry.get("created_at")
         if not isinstance(prefix, str) or not is_valid_prefix(prefix) or not _is_utc_iso8601(created_at):
+            return False
+        expected = _record_base(path, typing.cast(str, nonce), identity=identity)
+        expected.update(
+            {
+                "schema_version": schema_version,
+                "prefix": prefix,
+                "created_at": typing.cast(str, created_at),
+            }
+        )
+    elif schema_version == 3:
+        prefix = registry.get("prefix")
+        created_at = registry.get("created_at")
+        feedbacks = registry.get("feedbacks")
+        if (
+            not isinstance(prefix, str)
+            or not is_valid_prefix(prefix)
+            or not _is_utc_iso8601(created_at)
+            or not _feedbacks_are_valid(feedbacks)
+        ):
             return False
         expected = _record(
             path,
             typing.cast(str, nonce),
             prefix=prefix,
             created_at=typing.cast(str, created_at),
+            feedbacks=tuple(typing.cast(list[str], feedbacks)),
             identity=identity,
         )
     else:
@@ -939,10 +997,16 @@ def _remove_created_target(
         path.rmdir()
 
 
-def create_managed_temp(prefix: str, root: pathlib.Path | str | None = None) -> pathlib.Path:
+def create_managed_temp(
+    prefix: str,
+    root: pathlib.Path | str | None = None,
+    feedbacks: tuple[str, ...] = (),
+) -> pathlib.Path:
     """管理対象一時ディレクトリを指定root直下へ作成し、絶対パスを返す。"""
     if not is_valid_prefix(prefix):
         raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
+    if not _feedbacks_are_valid(list(feedbacks)):
+        raise ManagedTempError("feedbackはパス区切り文字と制御文字を含まない空でないファイル名で指定する")
     explicit_root = root is not None
     if root is None:
         root_path = _temp_root()
@@ -997,6 +1061,7 @@ def create_managed_temp(prefix: str, root: pathlib.Path | str | None = None) -> 
             nonce,
             prefix=prefix,
             created_at=datetime.datetime.now(datetime.UTC).isoformat(),
+            feedbacks=feedbacks,
             identity=created_identity,
         )
         _validate_root(root_path, explicit=explicit_root, expected=validated_root)
@@ -1217,7 +1282,7 @@ def _cleanup_missing_registered_temp(path: pathlib.Path) -> None:
     registry_path.unlink(missing_ok=True)
 
 
-def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
+def list_managed_temp(prefix: str | None = None) -> list[_ManagedTempEntry]:
     """真正性検証を通過した管理対象を作成時刻順で返す。
 
     実体に依存しない検証（`path`欄の型と登録ファイル名との対応）を通過した登録のうち、
@@ -1228,7 +1293,7 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
     """
     if prefix is not None and not is_valid_prefix(prefix):
         raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
-    entries: list[dict[str, str | None]] = []
+    entries: list[_ManagedTempEntry] = []
     for registry_path in _state_root().glob("*.json"):
         try:
             record = _load_private_json(registry_path)
@@ -1244,18 +1309,73 @@ def list_managed_temp(prefix: str | None = None) -> list[dict[str, str | None]]:
                 registry_path.unlink(missing_ok=True)
                 continue
             validate_managed_temp(path)
-            item_prefix = record.get("prefix") if record.get("schema_version") == 2 else None
-            created_at = record.get("created_at") if record.get("schema_version") == 2 else None
-            if not (item_prefix is None or isinstance(item_prefix, str)) or not (
-                created_at is None or isinstance(created_at, str)
+            schema_version = record.get("schema_version")
+            item_prefix = record.get("prefix") if schema_version in (2, 3) else None
+            created_at = record.get("created_at") if schema_version in (2, 3) else None
+            feedbacks = record.get("feedbacks") if schema_version == 3 else []
+            if (
+                not (item_prefix is None or isinstance(item_prefix, str))
+                or not (created_at is None or isinstance(created_at, str))
+                or not _feedbacks_are_valid(feedbacks)
             ):
-                raise ManagedTempError("管理情報のprefix又はcreated_atが不正")
+                raise ManagedTempError("管理情報のprefix、created_at又はfeedbacksが不正")
             if prefix is not None and item_prefix != prefix:
                 continue
-            entries.append({"path": str(path), "prefix": item_prefix, "created_at": created_at})
+            entries.append(
+                {
+                    "path": str(path),
+                    "prefix": item_prefix,
+                    "created_at": created_at,
+                    "feedbacks": typing.cast(list[str], feedbacks),
+                }
+            )
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
             print(f"warning: 管理対象を列挙できない: {registry_path}: {error}", file=sys.stderr)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
+
+
+def sweep_expired_managed_temp(
+    *,
+    now: datetime.datetime,
+    max_age_days: int = MAX_AGE_DAYS,
+) -> list[pathlib.Path]:
+    """最終更新から`max_age_days`を超えた管理対象一時領域を削除し、削除したパスを返す。"""
+    reference = now if now.tzinfo is not None else now.astimezone()
+    cutoff = (reference - datetime.timedelta(days=max_age_days)).astimezone(datetime.UTC)
+    epoch = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
+    elapsed = cutoff - epoch
+    cutoff_ns = (elapsed.days * 86_400 + elapsed.seconds) * 1_000_000_000 + elapsed.microseconds * 1_000
+    deleted: list[pathlib.Path] = []
+    for entry in list_managed_temp():
+        path = pathlib.Path(entry["path"])
+        try:
+            latest_mtime_ns = path.stat().st_mtime_ns
+            if latest_mtime_ns >= cutoff_ns:
+                continue
+            contains_git = False
+            pending = [path]
+            while pending:
+                directory = pending.pop()
+                with os.scandir(directory) as children:
+                    for child in children:
+                        metadata = child.stat(follow_symlinks=False)
+                        latest_mtime_ns = max(latest_mtime_ns, metadata.st_mtime_ns)
+                        if child.name == ".git":
+                            contains_git = True
+                        if stat.S_ISDIR(metadata.st_mode):
+                            pending.append(pathlib.Path(child.path))
+            if latest_mtime_ns >= cutoff_ns or contains_git:
+                continue
+            cleanup_managed_temp(path)
+        except (ManagedTempError, OSError) as error:
+            print(f"warning: 管理対象一時領域を自動削除できませんでした: {path}: {error}", file=sys.stderr)
+            continue
+        deleted.append(path)
+        print(
+            f"note: 最終更新から{max_age_days}日を超えた管理対象一時領域を削除しました: {path}",
+            file=sys.stderr,
+        )
+    return deleted
 
 
 def _clear_directory(descriptor: int) -> None:
@@ -1547,6 +1667,11 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     create_parser = subparsers.add_parser("create", help="管理対象一時ディレクトリを作成する")
     create_parser.add_argument("--prefix", required=True)
     create_parser.add_argument("--root", type=pathlib.Path)
+    create_parser.add_argument(
+        "--feedback",
+        action="append",
+        help="この領域が対応するフィードバックのファイル名。複数回指定できる",
+    )
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
     list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
@@ -1557,7 +1682,13 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
     """解析済み引数に対応する操作を実行し、終了状態を返す。"""
     try:
         if getattr(args, command_dest) == "create":
-            print(create_managed_temp(args.prefix, getattr(args, "root", None)))
+            print(
+                create_managed_temp(
+                    args.prefix,
+                    getattr(args, "root", None),
+                    tuple(getattr(args, "feedback", None) or ()),
+                )
+            )
         elif getattr(args, command_dest) == "cleanup":
             cleanup_managed_temp(args.path)
         else:
