@@ -623,7 +623,7 @@ def _register_event_routes(app: quart.Quart, context: _AppContext) -> None:
     @app.get("/api/events")
     async def api_events() -> quart.Response:
         @pytilpack.sse.generator()
-        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE, None]:
+        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
             q = await _state.subscribe(context.state)
             try:
                 while True:

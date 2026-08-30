@@ -22,8 +22,8 @@ backend = "aqua:twpayne/chezmoi"
 
 [tools.chezmoi."platforms.linux-x64"]
 checksum = "sha256:0d6665b96c527d57fdc562bf19e808f80f48c2d977062c03e3e65c6b09eafbce"
-url = "https://github.com/twpayne/chezmoi/releases/download/v2.72.0/chezmoi_2.72.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/499173854"
+url = "https://github.com/twpayne/chezmoi/releases/download/v2.72.0/chezmoi_2.72.0_linux-glibc_amd64.tar.gz"
+url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/499174004"
 provenance = "cosign"
 
 [tools.chezmoi."platforms.windows-x64"]
@@ -33,51 +33,51 @@ url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/49917393
 provenance = "cosign"
 
 [[tools.dotnet]]
-version = "10.0.302"
+version = "10.0.400"
 backend = "core:dotnet"
 
 [[tools.editorconfig-checker]]
-version = "3.8.0"
+version = "3.11.1"
 backend = "aqua:editorconfig-checker/editorconfig-checker"
 
 [tools.editorconfig-checker."platforms.linux-x64"]
-checksum = "sha256:613bd88f34165a334adcb6b7e92a123c9de0eada65846d31af63613b779ff3be"
-url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.8.0/ec-linux-amd64.tar.gz"
-url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/460248510"
+checksum = "sha256:5a37922963248451e88149251e49f6ae08f69717a3918202a51fe9945e19691e"
+url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.1/ec-linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/506306099"
 
 [tools.editorconfig-checker."platforms.windows-x64"]
-checksum = "sha256:7ec31e1a6a9983aa2a4942cb66dfd35e8b61e76263460413988438ae1426906a"
-url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.8.0/ec-windows-amd64.zip"
-url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/460248513"
+checksum = "sha256:6f81f034bbaf77d7ea73274aa7d33995baf9e0d91bc4d4caa8eccff4645f870e"
+url = "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v3.11.1/ec-windows-amd64.zip"
+url_api = "https://api.github.com/repos/editorconfig-checker/editorconfig-checker/releases/assets/506306105"
 
 [[tools.fzf]]
-version = "0.74.2"
+version = "0.74.3"
 backend = "aqua:junegunn/fzf"
 
 [tools.fzf."platforms.linux-x64"]
-checksum = "sha256:b3648f48675612b69ee35371cf6dc99ca96d767e89b912d079080916ac8ba8bd"
-url = "https://github.com/junegunn/fzf/releases/download/v0.74.2/fzf-0.74.2-linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/junegunn/fzf/releases/assets/497342478"
+checksum = "sha256:3501a595e4b5c40a6b047340a0e8f805c46fd4e61ef95ef8a136ba8c61cf6f22"
+url = "https://github.com/junegunn/fzf/releases/download/v0.74.3/fzf-0.74.3-linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/junegunn/fzf/releases/assets/517537066"
 
 [tools.fzf."platforms.windows-x64"]
-checksum = "sha256:a5a3b27dd203469139d10669721952335b9b46f19346e3d1abc102a67ea60804"
-url = "https://github.com/junegunn/fzf/releases/download/v0.74.2/fzf-0.74.2-windows_amd64.zip"
-url_api = "https://api.github.com/repos/junegunn/fzf/releases/assets/497342617"
+checksum = "sha256:cf5c137d9b391c3988c54af8f5fc490ffbef6f70444651e7d57fdb45ad04c8bd"
+url = "https://github.com/junegunn/fzf/releases/download/v0.74.3/fzf-0.74.3-windows_amd64.zip"
+url_api = "https://api.github.com/repos/junegunn/fzf/releases/assets/517537078"
 
 [[tools.gh]]
-version = "2.97.0"
+version = "2.98.0"
 backend = "aqua:cli/cli"
 
 [tools.gh."platforms.linux-x64"]
-checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"
-url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108269"
+checksum = "sha256:3b8ac6b30336802fc1a858d7c084e11cdf24ac1a761ca90b68022d7d729208de"
+url = "https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/522857901"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64"]
-checksum = "sha256:35d7fe05c4dd1411ffda1e73dfc7c6f44b75c936ca51fa6595c657fdc0350cec"
-url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108319"
+checksum = "sha256:c28c7b3b584967a05b74d9eaf7481bff24ddc34930bf2d6e442c148236561eb1"
+url = "https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/522857996"
 provenance = "github-attestations"
 
 [[tools.git-cliff]]
@@ -85,9 +85,9 @@ version = "2.13.1"
 backend = "aqua:orhun/git-cliff"
 
 [tools.git-cliff."platforms.linux-x64"]
-checksum = "sha256:200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249"
-url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850671"
+checksum = "sha256:9a1263f24e59a2f508c7b3d3283c9dea94a8bf697f96dbc18cc783cac6284546"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405850439"
 
 [tools.git-cliff."platforms.windows-x64"]
 checksum = "sha256:3ae3a5549e85c7ad5b20192ebcfee4371269deca51255f6f2f2e051c6541f5ca"
@@ -95,33 +95,33 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405851866"
 
 [[tools.glab]]
-version = "1.112.0"
+version = "1.114.0"
 backend = "gitlab:gitlab-org/cli"
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:f1c52907558b665f2032b615787d353cd06e54240b501a81f9489bfc8f6a8ebf"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.112.0/downloads/glab_1.112.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E112%2E0/glab_1%2E112%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:00e892a80d586a1e8b8fdc035321923db99dce0caa3b0c4fd72c5337ffdb1c48"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.114.0/downloads/glab_1.114.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E114%2E0/glab_1%2E114%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:783564e2ec5653421cd9fe7ffdce6bf2140d3feed85464009ac21fae720ba5da"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.112.0/downloads/glab_1.112.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E112%2E0/glab_1%2E112%2E0_windows_amd64%2Ezip"
+checksum = "sha256:9308deb8a05fda2f624bec6e6456a81f3f00b227289c923efef1b28b6c86c0b4"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.114.0/downloads/glab_1.114.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E114%2E0/glab_1%2E114%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
-version = "2.1.2"
+version = "3.0.0"
 backend = "aqua:charmbracelet/glow"
 
 [tools.glow."platforms.linux-x64"]
-checksum = "sha256:6063d4f2af8a82a5f4bba0831e165de9381660aa8b41df4816d0106a265b07d5"
-url = "https://github.com/charmbracelet/glow/releases/download/v2.1.2/glow_2.1.2_Linux_x86_64.tar.gz"
-url_api = "https://api.github.com/repos/charmbracelet/glow/releases/assets/392672271"
+checksum = "sha256:13e05e4b2acc18d2aee44291aefe6325b077ec321b631a0cfa780e8e3bc33f78"
+url = "https://github.com/charmbracelet/glow/releases/download/v3.0.0/glow_3.0.0_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/charmbracelet/glow/releases/assets/510466923"
 provenance = "cosign"
 
 [tools.glow."platforms.windows-x64"]
-checksum = "sha256:9bc12fce6061b0dd45325401b0d11ec2e45981b76eef2b7fa3c0f941ba5c0b39"
-url = "https://github.com/charmbracelet/glow/releases/download/v2.1.2/glow_2.1.2_Windows_x86_64.zip"
-url_api = "https://api.github.com/repos/charmbracelet/glow/releases/assets/392672345"
+checksum = "sha256:d8907e07436ecbb6738bc0e3bbf8aa6159e351f95082e9db3c3fc4200086f809"
+url = "https://github.com/charmbracelet/glow/releases/download/v3.0.0/glow_3.0.0_Windows_x86_64.zip"
+url_api = "https://api.github.com/repos/charmbracelet/glow/releases/assets/510466927"
 provenance = "cosign"
 
 [[tools.jq]]
@@ -153,27 +153,27 @@ checksum = "sha256:57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4
 url = "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.54.4"
+version = "0.56.0"
 backend = "npm:@google/gemini-cli"
 
 [[tools."npm:aws-cdk"]]
-version = "3.0.0"
+version = "2.1138.0"
 backend = "npm:aws-cdk"
 
 [[tools.pinact]]
-version = "4.1.0"
+version = "4.1.1"
 backend = "aqua:suzuki-shunsuke/pinact"
 
 [tools.pinact."platforms.linux-x64"]
-checksum = "sha256:8fcbf1b3e95551c82fd995535e3c1defa70e23299ce36eb3afd6c98778de6ca0"
-url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/442249966"
+checksum = "sha256:d1cffebe5704b74e2e5f8a864efb9f7e54768972dc686188c008033fb1797841"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.1/pinact_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/494702259"
 provenance = "github-attestations"
 
 [tools.pinact."platforms.windows-x64"]
-checksum = "sha256:de04e9612a50cb7b0263d162400305ea02fc85410c38887d1be7446a7c5d5dc6"
-url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.0/pinact_windows_amd64.zip"
-url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/442249974"
+checksum = "sha256:88db480a3f8833d7233b482a72c97308df558ebceb0d3214775889239901f6a9"
+url = "https://github.com/suzuki-shunsuke/pinact/releases/download/v4.1.1/pinact_windows_amd64.zip"
+url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/494702288"
 provenance = "github-attestations"
 
 [[tools.ripgrep]]
