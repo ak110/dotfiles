@@ -159,6 +159,8 @@ async def fetch_remote_file(
     rel: str,
     ssh_runner: SshRunner,
     watcher: "RemoteWatcher | None" = None,
+    *,
+    source_id: str = "",
 ) -> tuple[str, float | None]:
     """リモートホストの指定ファイル本文と取得時点の`mtime_epoch`を返す。
 
@@ -168,9 +170,12 @@ async def fetch_remote_file(
     `mtime_epoch`が応答に欠落している場合は`None`を返し、呼び出し側はキャッシュをバイパスする。
     """
     rel_b64 = base64.b64encode(rel.encode("utf-8")).decode("ascii")
+    request_args: dict[str, str] = {"path": rel_b64}
+    if source_id:
+        request_args["source_id"] = source_id
     if watcher is not None and watcher.is_connected():
         try:
-            response = await watcher.request("read", {"path": rel_b64})
+            response = await watcher.request("read", request_args)
         except Exception as e:  # noqa: BLE001
             # RPC失敗（タイムアウト・接続切断・応答エラー等）は警告のうえfallbackする。
             logger.warning("リモートRPC失敗 host=%s path=%s: %s（fallbackへ）", host, rel, e)
@@ -180,7 +185,11 @@ async def fetch_remote_file(
             error_msg = response.get("error", "(no error message)")
             # `ok=False`は権限不足・パス不正など恒久的な失敗を含むため、fallbackで救済する。
             logger.warning("リモートRPCエラー host=%s path=%s: %s（fallbackへ）", host, rel, error_msg)
-    raw = await ssh_runner(host, "read", [rel_b64])
+    args = [rel_b64]
+    if source_id:
+        source_b64 = base64.b64encode(source_id.encode("utf-8")).decode("ascii")
+        args = [source_b64, rel_b64]
+    raw = await ssh_runner(host, "read", args)
     return _decode_read_payload(json.loads(raw))
 
 
@@ -193,7 +202,8 @@ class RemoteSearchSuperseded(Exception):
 
 
 # コーディネーター経由で実行する検索本体。結果は一致した相対パス集合とする。
-RemoteSearchRunner = typing.Callable[[], typing.Awaitable[set[str]]]
+RemoteSearchResult = set[str] | set[tuple[str, str]]
+RemoteSearchRunner = typing.Callable[[], typing.Awaitable[RemoteSearchResult]]
 
 
 @dataclasses.dataclass
@@ -201,7 +211,7 @@ class _PendingSearch:
     """待機中の検索要求（実行本体と、結果を受け取るFuture）。"""
 
     run: RemoteSearchRunner
-    future: asyncio.Future[set[str]]
+    future: asyncio.Future[RemoteSearchResult]
 
 
 class RemoteSearchCoordinator:
@@ -225,7 +235,7 @@ class RemoteSearchCoordinator:
         # `asyncio`はタスクを弱参照でしか保持しないため、完了までの強参照もここで保つ。
         self._workers: dict[str, asyncio.Task[None]] = {}
 
-    async def submit(self, host: str, run: RemoteSearchRunner) -> set[str]:
+    async def submit(self, host: str, run: RemoteSearchRunner) -> RemoteSearchResult:
         """検索本体をホストの実行枠へ載せ、自身の要求に対応する結果を返す。
 
         当該ホストが空いていれば直ちに実行枠へ載せる。実行中であれば待機列へ入り、
@@ -276,32 +286,84 @@ async def search_remote_files(
     ssh_runner: SshRunner,
     watcher: "RemoteWatcher | None" = None,
     coordinator: RemoteSearchCoordinator | None = None,
-) -> set[str]:
+    *,
+    source_id: str | None = None,
+) -> RemoteSearchResult:
     """リモートホストで本文検索を実行し、一致した相対パス集合を返す。
 
     `coordinator`を渡した場合、SSHフォールバック経路だけが直列化と全体上限の対象になる。
     常駐SSH接続経由のRPCはプロセスを起動しないため対象外とする。
     """
     query_b64 = base64.b64encode(query.encode("utf-8")).decode("ascii")
+    rpc_args: dict[str, str] = {"query": query_b64}
+    if source_id:
+        rpc_args["source_id"] = source_id
     if watcher is not None and watcher.is_connected():
         try:
-            response = await watcher.request("search", {"query": query_b64})
+            response = await watcher.request("search", rpc_args)
         except Exception as error:  # noqa: BLE001
             logger.warning("リモート検索RPC失敗 host=%s: %s（fallbackへ）", host, error)
         else:
-            if response.get("ok") and isinstance(response.get("paths"), list):
-                return {str(path) for path in response["paths"]}
+            if response.get("ok"):
+                matches = response.get("matches")
+                if isinstance(matches, list):
+                    return {
+                        (str(item["source_id"]), str(item["path"]))
+                        for item in matches
+                        if isinstance(item, dict) and "source_id" in item and "path" in item
+                    }
+                if isinstance(response.get("paths"), list):
+                    paths = {str(path) for path in response["paths"]}
+                    if source_id:
+                        return {(source_id, path) for path in paths}
+                    return paths
             logger.warning("リモート検索RPCエラー host=%s: %s（fallbackへ）", host, response.get("error"))
 
-    async def _run_ssh_search() -> set[str]:
-        raw = await ssh_runner(host, "search", [query_b64])
+    async def _run_ssh_search() -> RemoteSearchResult:
+        args = [query_b64]
+        if source_id:
+            source_b64 = base64.b64encode(source_id.encode("utf-8")).decode("ascii")
+            args = [source_b64, query_b64]
+        raw = await ssh_runner(host, "search", args)
         payload = json.loads(raw)
+        matches = payload.get("matches")
+        if isinstance(matches, list):
+            return {
+                (str(item["source_id"]), str(item["path"]))
+                for item in matches
+                if isinstance(item, dict) and "source_id" in item and "path" in item
+            }
         paths = payload.get("paths", [])
-        return {str(path) for path in paths} if isinstance(paths, list) else set()
+        if not isinstance(paths, list):
+            return set()
+        result = {str(path) for path in paths}
+        if source_id:
+            return {(source_id, path) for path in result}
+        return result
 
     if coordinator is None:
         return await _run_ssh_search()
     return await coordinator.submit(host, _run_ssh_search)
+
+
+def _decode_root_info(raw: typing.Any) -> dict[str, dict[str, typing.Any]]:
+    """snapshotの新旧root情報をsource ID keyed形式へ正規化する。"""
+    if isinstance(raw, dict):
+        if "root" in raw or "portable_root" in raw or "source_id" in raw:
+            return {str(raw.get("source_id", "")): dict(raw)}
+        return {str(source_id): dict(info) for source_id, info in raw.items() if isinstance(info, dict)}
+    if isinstance(raw, list):
+        return {str(info.get("source_id", "")): dict(info) for info in raw if isinstance(info, dict) and "source_id" in info}
+    return {}
+
+
+def _decode_root_status(raw: typing.Any) -> dict[str, dict[str, str]]:
+    """snapshotのroot状態をsource ID keyed形式へ正規化する。"""
+    if not isinstance(raw, dict):
+        return {}
+    if "status" in raw:
+        return {str(raw.get("source_id", "")): dict(raw)}
+    return {str(source_id): dict(status) for source_id, status in raw.items() if isinstance(status, dict)}
 
 
 class RemoteWatcher:
@@ -485,10 +547,22 @@ class RemoteWatcher:
                 if _is_listed_path(str(item["path"]))
             ]
             host_info = event.get("host_info")
+            has_root_info = "root_info" in event
+            root_info = _decode_root_info(event.get("root_info"))
+            has_root_status = "root_status" in event
+            root_status = _decode_root_status(event.get("root_status"))
             async with self.state.lock:
                 self.state.remote_files[self.host] = entries
                 if isinstance(host_info, dict):
                     self.state.host_info[self.host] = dict(host_info)
+                if has_root_info:
+                    self.state.root_info[self.host] = root_info
+                else:
+                    self.state.root_info.pop(self.host, None)
+                if has_root_status:
+                    self.state.root_status[self.host] = root_status
+                else:
+                    self.state.root_status.pop(self.host, None)
             await self._set_status("connected")
             self._connected = True
             # 接続成功時にバックオフをリセットし、次回切断後の再接続を初期値から始める。
@@ -496,12 +570,16 @@ class RemoteWatcher:
             await _state.deliver_refresh(self.state)
             if isinstance(host_info, dict):
                 await _state.deliver_host_info(self.state, self.host, dict(host_info))
+            if has_root_info:
+                await _state.deliver_root_info(self.state, self.host, root_info)
+            if has_root_status:
+                await _state.deliver_root_status(self.state, self.host, root_status)
             return
         if kind == "upsert":
             entry = _state.make_file_entry(self.host, event)
             async with self.state.lock:
                 cached = self.state.remote_files.get(self.host, [])
-                cached = [e for e in cached if e.path != entry.path]
+                cached = [e for e in cached if (e.source_id, e.path) != (entry.source_id, entry.path)]
                 if _is_listed_path(entry.path):
                     cached.append(entry)
                 self.state.remote_files[self.host] = cached
@@ -509,9 +587,10 @@ class RemoteWatcher:
             return
         if kind == "deleted":
             path = str(event.get("path", ""))
+            source_id = str(event.get("source_id", event.get("source", "")))
             async with self.state.lock:
                 cached = self.state.remote_files.get(self.host, [])
-                self.state.remote_files[self.host] = [e for e in cached if e.path != path]
+                self.state.remote_files[self.host] = [e for e in cached if (e.source_id, e.path) != (source_id, path)]
             await _state.deliver_refresh(self.state)
             return
         if kind == "ping":
@@ -553,10 +632,14 @@ class RemoteWatcher:
                 # 接続喪失（heartbeat応答途絶・SSE切断検知等）時は`host_info`のキー自体を削除する
                 # （`None`値保持ではない）。再接続成功時は`_handle_event`のsnapshot分岐で再登録される。
                 self.state.host_info.pop(self.host, None)
+                self.state.root_info.pop(self.host, None)
+                self.state.root_status.pop(self.host, None)
         if previous != status:
             await _state.deliver_host_status(self.state, self.host, status)
             if status == "disconnected":
                 await _state.deliver_host_info(self.state, self.host, None)
+                await _state.deliver_root_info(self.state, self.host, None)
+                await _state.deliver_root_status(self.state, self.host, {})
 
 
 async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:

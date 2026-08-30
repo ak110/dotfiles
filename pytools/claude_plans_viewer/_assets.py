@@ -119,6 +119,13 @@ _INDEX_CSS = """\
   }
   .meta .host { word-break: break-all; }
   .meta .ctime { white-space: nowrap; }
+  #root-warnings {
+    padding: 8px 12px;
+    color: #b91c1c;
+    background: #fef2f2;
+    border-bottom: 1px solid #fecaca;
+    font-size: 11px;
+  }
   /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
   .host-badge {
     display: none;
@@ -235,21 +242,23 @@ _INDEX_JS = """\
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
 const BASE_PATH = __BASE_PATH_JS__;
 const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__;
-// ホスト名 -> {root, home, os_type, os_name}。ページロード時はローカル分のみ注入され、
-// リモート分はSSE経由の`host_info_update`イベント受信、または`/api/host-info`への
-// 再取得で反映される。
+// ホスト名 -> 保存元ID -> {portable_root, home, os_type, os_name}。旧単一root形式の
+// {root, home, os_type, os_name}も受理し、保存元IDは画面へ表示しない。
 const ROOT_DIRS = __ROOT_DIRS_JS__;
 // `host_info_update`受信のたびに加算するカウンタ。`refreshHostInfo`がfetch中に発生した
 // SSE更新を検出し、古いスナップショットで新しい状態を上書きしないようにするために使う。
 let hostInfoEventCounter = 0;
 
 let files = [];
-// ホスト名とパスの組で一意に識別する。
+// ホスト名・保存元ID・root相対パスの組で一意に識別する。
 let selectedHost = null;
+let selectedSource = "";
 let selectedPath = null;
 let selectedMtime = null;
 // ホスト別の接続状態。connected / connecting / disconnected。
 let hostStatus = {};
+// ホスト・保存元別のroot警告。source IDは表示せず、利用者が復旧判断できる本文だけを表示する。
+let rootStatus = {};
 // renderFilesが最後に描画したエントリ列（フィルタ適用後の全件）。
 // ↑↓ナビゲーションは選択中項目の前後インデックスをこの列から算出する。
 // DOM化対象は先頭から`visibleLimit`件のみで、超過分は番兵IntersectionObserverで段階拡張する。
@@ -280,14 +289,42 @@ const HOST_BADGE_LABELS = {
   disconnected: "切断中",
 };
 
-function fileKey(file) { return file.host + "\\u0000" + file.path; }
+function fileSource(file) { return file.source_id || file.source || ""; }
 
-function fileQuery(host, path) {
-  return "host=" + encodeURIComponent(host) + "&path=" + encodeURIComponent(path);
+function fileKey(file) {
+  const source = fileSource(file);
+  return source ? file.host + "\\u0000" + source + "\\u0000" + file.path : file.host + "\\u0000" + file.path;
+}
+
+function fileQuery(host, path, source) {
+  const sourceQuery = source ? "&source=" + encodeURIComponent(source) : "";
+  return "host=" + encodeURIComponent(host) + "&path=" + encodeURIComponent(path) + sourceQuery;
+}
+
+function rootEntries(host) {
+  const value = ROOT_DIRS[host];
+  if (!value) return {};
+  if (value.root || value.portable_root || value.source_id) {
+    return {[value.source_id || ""]: value};
+  }
+  return value;
+}
+
+function rootInfo(host, source) {
+  return rootEntries(host)[source || ""] || null;
+}
+
+function updateCopyPathButton(host, source) {
+  if (!source) {
+    // 旧単一root形式との互換。source IDが無い要求では従来のホスト判定を使う。
+    document.getElementById("copy-path-btn").disabled = !(host in ROOT_DIRS);
+    return;
+  }
+  document.getElementById("copy-path-btn").disabled = !rootInfo(host, source);
 }
 
 function isSelected(file) {
-  return selectedHost === file.host && selectedPath === file.path;
+  return selectedHost === file.host && selectedSource === fileSource(file) && selectedPath === file.path;
 }
 
 function isMobileViewport() {
@@ -310,7 +347,7 @@ function updateMetaMobile() {
     block.textContent = "";
     return;
   }
-  const selected = files.find(f => f.host === selectedHost && f.path === selectedPath);
+  const selected = files.find(f => f.host === selectedHost && fileSource(f) === selectedSource && f.path === selectedPath);
   block.classList.remove("empty");
   block.innerHTML = "";
   const hostSpan = document.createElement("span");
@@ -343,7 +380,7 @@ function updateNavButtons() {
     nextBtn.disabled = true;
     return;
   }
-  const idx = visibleFiles.findIndex(f => f.host === selectedHost && f.path === selectedPath);
+  const idx = visibleFiles.findIndex(f => isSelected(f));
   // 選択中項目がフィルタ範囲外に出ているときは前後とも非活性にする。
   if (idx < 0) {
     prevBtn.disabled = true;
@@ -356,7 +393,7 @@ function updateNavButtons() {
 
 function navigateRelative(delta) {
   if (!selectedHost || !selectedPath || visibleFiles.length === 0) return;
-  const idx = visibleFiles.findIndex(f => f.host === selectedHost && f.path === selectedPath);
+  const idx = visibleFiles.findIndex(f => isSelected(f));
   if (idx < 0) return;
   const next = idx + delta;
   if (next < 0 || next >= visibleFiles.length) return;
@@ -368,7 +405,7 @@ function navigateRelative(delta) {
     renderFiles();
   }
   const target = visibleFiles[next];
-  openFile(target.host, target.path);
+  openFile(target.host, target.path, fileSource(target));
 }
 
 function createFileItem(file) {
@@ -387,7 +424,7 @@ function createFileItem(file) {
   meta.appendChild(ctimeSpan);
   item.appendChild(name);
   item.appendChild(meta);
-  item.addEventListener("click", () => openFile(file.host, file.path));
+  item.addEventListener("click", () => openFile(file.host, file.path, fileSource(file)));
   return item;
 }
 
@@ -463,6 +500,28 @@ function renderFiles() {
   }
   updateNavButtons();
   updateMetaMobile();
+  renderRootWarnings();
+}
+
+function renderRootWarnings() {
+  const block = document.getElementById("root-warnings");
+  if (!block) return;
+  block.innerHTML = "";
+  const messages = [];
+  for (const host of Object.keys(rootStatus)) {
+    for (const source of Object.keys(rootStatus[host] || {})) {
+      const status = rootStatus[host][source];
+      if (status && status.status === "warning" && status.message) {
+        messages.push("計画rootを利用できません: " + status.message);
+      }
+    }
+  }
+  for (const message of messages) {
+    const item = document.createElement("div");
+    item.textContent = message;
+    block.appendChild(item);
+  }
+  block.hidden = messages.length === 0;
 }
 
 function setupSentinelObserver() {
@@ -551,7 +610,8 @@ async function refreshHostInfo() {
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    const res = await fetch(BASE_PATH + "/api/host-info");
+    let res = await fetch(BASE_PATH + "/api/root-info");
+    if (!res.ok) res = await fetch(BASE_PATH + "/api/host-info");
     if (!res.ok) return;
     const info = await res.json();
     if (hostInfoEventCounter !== counterBefore) continue;
@@ -559,10 +619,16 @@ async function refreshHostInfo() {
       if (!(host in info)) delete ROOT_DIRS[host];
     }
     Object.assign(ROOT_DIRS, info);
-    if (selectedHost) {
-      document.getElementById("copy-path-btn").disabled = !(selectedHost in ROOT_DIRS);
-    }
+    if (selectedHost) updateCopyPathButton(selectedHost, selectedSource);
     return;
+  }
+}
+
+async function refreshRootStatus() {
+  const res = await fetch(BASE_PATH + "/api/root-status");
+  if (res.ok) {
+    rootStatus = await res.json();
+    renderRootWarnings();
   }
 }
 
@@ -670,7 +736,7 @@ async function updatePreview() {
   const main = document.querySelector("main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(selectedHost, selectedPath));
+  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
   if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
@@ -682,23 +748,27 @@ async function updatePreview() {
   if (generation !== previewGeneration) return;
 }
 
-async function openFile(host, path) {
+async function openFile(host, path, source) {
   // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
+  selectedSource = source || "";
   selectedPath = path;
   document.title = host + ": " + path;
-  const selected = files.find(f => f.host === host && f.path === path);
+  const selected = source
+    ? files.find(f => f.host === host && fileSource(f) === selectedSource && f.path === path)
+    : files.find(f => f.host === host && f.path === path);
+  if (selected) selectedSource = fileSource(selected);
   selectedMtime = selected ? selected.mtime_epoch : null;
   document.getElementById("copy-btn").disabled = false;
-  // 選択ホストの`host_info`未取得（リモート接続確立前）はdisabled維持する。
-  document.getElementById("copy-path-btn").disabled = !(host in ROOT_DIRS);
+  // 選択rootの情報未取得（リモート接続確立前）はdisabled維持する。
+  updateCopyPathButton(host, selectedSource);
   renderFiles();
   // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
   if (isMobileViewport()) setDrawerOpen(false);
   const main = document.querySelector("main");
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(host, path));
+  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(host, path, selectedSource));
   if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
@@ -713,7 +783,7 @@ async function openFile(host, path) {
 async function resyncFromServer() {
   await refreshFiles();
   if (!selectedPath || !selectedHost) return;
-  const current = files.find(f => f.host === selectedHost && f.path === selectedPath);
+  const current = files.find(f => isSelected(f));
   if (current && current.mtime_epoch !== selectedMtime) {
     selectedMtime = current.mtime_epoch;
     await updatePreview();
@@ -726,7 +796,7 @@ async function copySelectedRaw() {
   const originalLabel = btn.dataset.label || btn.textContent;
   btn.dataset.label = originalLabel;
   try {
-    const res = await fetch(BASE_PATH + "/api/raw?" + fileQuery(selectedHost, selectedPath));
+    const res = await fetch(BASE_PATH + "/api/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (!res.ok) throw new Error("status " + res.status);
     const text = await res.text();
     await navigator.clipboard.writeText(text);
@@ -739,7 +809,7 @@ async function copySelectedRaw() {
 
 async function copySelectedPath() {
   if (!selectedPath || !selectedHost) return;
-  const info = ROOT_DIRS[selectedHost];
+  const info = rootInfo(selectedHost, selectedSource);
   if (!info) return;
   const btn = document.getElementById("copy-path-btn");
   const originalLabel = btn.dataset.label || btn.textContent;
@@ -748,7 +818,9 @@ async function copySelectedPath() {
   // 置換基準はinfo.homeとする（info.rootはplansディレクトリ等のroot直下パスであり
   // ホームディレクトリと一致しない場合があるため）。
   let absolutePath;
-  if (info.os_type === "nt") {
+  if (info.portable_root) {
+    absolutePath = info.portable_root + "/" + selectedPath;
+  } else if (info.os_type === "nt") {
     const winRoot = info.root.split("/").join("\\\\");
     const winHome = info.home.split("/").join("\\\\");
     const winRelative = selectedPath.split("/").join("\\\\");
@@ -794,8 +866,23 @@ async function handleSseMessage(event) {
       ROOT_DIRS[payload.host] = payload.info;
     }
     if (selectedHost === payload.host) {
-      document.getElementById("copy-path-btn").disabled = !(selectedHost in ROOT_DIRS);
+      updateCopyPathButton(selectedHost, selectedSource);
     }
+    return;
+  }
+  if (payload && payload.type === "root_info_update") {
+    hostInfoEventCounter++;
+    if (payload.info === null) {
+      delete ROOT_DIRS[payload.host];
+    } else {
+      ROOT_DIRS[payload.host] = payload.info;
+    }
+    if (selectedHost === payload.host) updateCopyPathButton(selectedHost, selectedSource);
+    return;
+  }
+  if (payload && payload.type === "root-status") {
+    rootStatus[payload.host] = payload.status || {};
+    renderRootWarnings();
     return;
   }
   await resyncFromServer();
@@ -808,6 +895,7 @@ function connectEvents() {
   es.onopen = async () => {
     await refreshHostStatus();
     await refreshHostInfo();
+    await refreshRootStatus();
     await resyncFromServer();
   };
   es.onmessage = handleSseMessage;
@@ -817,8 +905,9 @@ function connectEvents() {
 async function main() {
   await refreshHostStatus();
   await refreshHostInfo();
+  await refreshRootStatus();
   await refreshFiles();
-  if (files.length > 0) await openFile(files[0].host, files[0].path);
+  if (files.length > 0) await openFile(files[0].host, files[0].path, fileSource(files[0]));
   setupSentinelObserver();
 
   eventSource = connectEvents();
@@ -841,6 +930,7 @@ window.addEventListener("pageshow", (event) => {
 async function forceResync() {
   await refreshHostStatus();
   await refreshHostInfo();
+  await refreshRootStatus();
   await resyncFromServer();
 }
 
@@ -878,7 +968,7 @@ document.getElementById("preview").addEventListener("click", (event) => {
   const link = event.target.closest("a[data-plan-path]");
   if (!link) return;
   event.preventDefault();
-  openFile(selectedHost, link.dataset.planPath);
+  openFile(selectedHost, link.dataset.planPath, selectedSource);
 });
 main();
 
@@ -917,6 +1007,7 @@ INDEX_HTML = (
       <input id="filter" placeholder="検索...">
       <span id="search-status" role="status"></span>
     </div>
+    <div id="root-warnings" role="status" hidden></div>
     <div id="files"></div>
     <!-- 段階展開トリガー。`hidden`属性は描画件数が未描画分を残すときだけ外れる。 -->
     <div id="files-sentinel" hidden></div>

@@ -14,8 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from pytools import claude_plans_viewer
 from pytools._internal import claude_common
-from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _console_title, _local
+from pytools.claude_plans_viewer import _app, _assets, _cli, _config, _console_title, _local, _state
 
 # _state._BROADCAST_DEBOUNCE_SEC と同値（0.3秒）。debounce窓の秒数。
 _BROADCAST_DEBOUNCE_SEC = 0.3
@@ -306,6 +307,63 @@ class TestCreationTimeIndex:
         entry = _local.list_files(root, "local-host")[0]
 
         assert entry.ctime_epoch == 500.0
+        assert not legacy.exists()
+
+    def test_only_legacy_root_migrates_matching_legacy_entry(self, tmp_path: Path, index_path: Path):
+        """既定二rootの同名パスでは旧rootだけがroot無し旧形式を取り込む。"""
+        new_root = tmp_path / "new"
+        legacy_root = tmp_path / "legacy"
+        new_root.mkdir()
+        legacy_root.mkdir()
+        for root in (new_root, legacy_root):
+            path = root / "same.md"
+            path.write_text("x", encoding="utf-8")
+            os.utime(path, (2_000.0, 2_000.0))
+        legacy = self._legacy_path(index_path, "local-host", "same.md")
+        self._write_legacy(legacy, "local-host", "same.md", 500.0)
+
+        new_entry = _local.list_files(new_root, "local-host", _config.NEW_SOURCE_ID)[0]
+
+        assert new_entry.ctime_epoch == 2_000.0
+        assert legacy.exists()
+
+        legacy_entry = _local.list_files(legacy_root, "local-host", _config.LEGACY_SOURCE_ID)[0]
+
+        assert legacy_entry.ctime_epoch == 500.0
+        assert not legacy.exists()
+
+    def test_deduped_new_root_retains_legacy_ctime_migration(self, tmp_path: Path, index_path: Path):
+        """新旧既定rootが同一実体でも単一表示のまま旧形式ctimeを取り込む。"""
+        root = tmp_path / "shared"
+        root.mkdir()
+        path = root / "same.md"
+        path.write_text("x", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        legacy = self._legacy_path(index_path, "local-host", "same.md")
+        self._write_legacy(legacy, "local-host", "same.md", 500.0)
+        specs = _state.normalize_root_specs(
+            (
+                _state.RootSpec(_config.NEW_SOURCE_ID, root, _config.NEW_PORTABLE_ROOT, migrate_legacy_ctime=False),
+                _state.RootSpec(
+                    _config.LEGACY_SOURCE_ID,
+                    root,
+                    _config.LEGACY_PORTABLE_ROOT,
+                    migrate_legacy_ctime=True,
+                ),
+            )
+        )
+
+        assert len(specs) == 1
+        assert specs[0].source_id == _config.NEW_SOURCE_ID
+        entries, warning = _local.scan_files(
+            specs[0].path,
+            "local-host",
+            specs[0].source_id,
+            migrate_legacy_ctime=specs[0].migrate_legacy_ctime,
+        )
+
+        assert warning is None
+        assert entries[0].ctime_epoch == 500.0
         assert not legacy.exists()
 
     def test_keeps_legacy_entry_not_matching_current_scan(self, tmp_path: Path, index_path: Path):
@@ -714,6 +772,22 @@ class TestParseArgs:
         assert args.port == _cli.DEFAULT_PORT
         assert args.remote_host == []
 
+    def test_help_and_package_doc_describe_default_roots_and_explicit_override(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """利用者向け説明は既定二rootと明示rootによるローカル側上書きを示す。"""
+        with pytest.raises(SystemExit) as raised:
+            _cli.parse_args(["--help"])
+
+        assert raised.value.code == 0
+        help_text = capsys.readouterr().out
+        assert "$(atk config get private_notes)/plans" in help_text
+        assert "~/.claude/plans" in help_text
+        assert "ローカル側のMarkdownルートを1つに上書き" in help_text
+        assert claude_plans_viewer.__doc__ is not None
+        assert "既定二rootだけを指定した単一rootへ置き換える" in claude_plans_viewer.__doc__
+
     def test_env_overrides_default(self, monkeypatch: pytest.MonkeyPatch):
         """環境変数が設定されていればそれを既定値として使う。"""
         monkeypatch.setenv(_cli.ENV_ROOT, "/tmp/plans-env")
@@ -938,8 +1012,8 @@ class TestMainLoggingConfig:
 class TestMainRootDirectory:
     """`main()`が扱うローカル計画ディレクトリの契約を検証する。"""
 
-    def test_missing_root_is_created_and_served(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """ディレクトリ不在から起動してもディレクトリが作成され配信へ進む。"""
+    def test_missing_root_is_not_created_and_served(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """ディレクトリ不在でも自動作成せず配信へ進む。"""
         root = tmp_path / "missing" / "plans"
         served: list[tuple[str, int]] = []
 
@@ -952,7 +1026,7 @@ class TestMainRootDirectory:
         result = _cli.main(["--root", str(root), "--host", "127.0.0.1", "--port", "28999"])
 
         assert result == 0
-        assert root.is_dir()
+        assert not root.exists()
         assert served == [("127.0.0.1", 28999)]
 
 

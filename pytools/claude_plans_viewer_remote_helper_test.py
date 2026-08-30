@@ -11,6 +11,9 @@
 本ファイルでも同じ方針を踏襲し対象外とする。
 """
 
+import base64
+import hashlib
+import json
 import os
 import pathlib
 
@@ -84,3 +87,148 @@ class TestListedPath:
         entries = _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
 
         assert {entry["path"] for entry in entries} == {"plan.md"}
+
+    def test_multiple_roots_include_source_ids_in_snapshot_and_search(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """リモートhelperも同一相対パスをrootごとのsource IDで区別する。"""
+        new_root = tmp_path / "new"
+        legacy_root = tmp_path / "legacy"
+        new_root.mkdir()
+        legacy_root.mkdir()
+        (new_root / "same.md").write_text("新rootのneedle", encoding="utf-8")
+        (legacy_root / "same.md").write_text("旧rootのneedle", encoding="utf-8")
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _remote_helper,
+            "ROOT",
+            _remote_helper._DEFAULT_ROOT,  # pylint: disable=protected-access
+        )
+        monkeypatch.setattr(
+            _remote_helper,
+            "ROOTS",
+            [
+                _remote_helper._RootSpec(  # pylint: disable=protected-access
+                    "new-source", new_root, "$(atk config get private_notes)/plans"
+                ),
+                _remote_helper._RootSpec(  # pylint: disable=protected-access
+                    "legacy-source", legacy_root, "~/.claude/plans"
+                ),
+            ],
+        )
+        monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", tmp_path / "creation-times" / "index.json")
+
+        entries = _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001
+        assert {(entry["source_id"], entry["path"]) for entry in entries} == {
+            ("new-source", "same.md"),
+            ("legacy-source", "same.md"),
+        }
+
+        query = base64.b64encode(b"needle").decode("ascii")
+        payload = _remote_helper._search_payload(query)  # pylint: disable=protected-access  # noqa: SLF001
+        assert {(item["source_id"], item["path"]) for item in payload["matches"]} == {
+            ("new-source", "same.md"),
+            ("legacy-source", "same.md"),
+        }
+
+        source = base64.b64encode(b"new-source").decode("ascii")
+        rel = base64.b64encode(b"same.md").decode("ascii")
+        read_payload = _remote_helper._read_payload(source, rel)  # pylint: disable=protected-access  # noqa: SLF001
+        assert base64.b64decode(read_payload["data"]).decode() == "新rootのneedle"
+
+    def test_only_legacy_root_migrates_matching_legacy_ctime(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """既定二rootの同名パスでは旧rootだけがroot無し旧形式を取り込む。"""
+        new_root = tmp_path / "new"
+        legacy_root = tmp_path / "legacy"
+        new_root.mkdir()
+        legacy_root.mkdir()
+        for root in (new_root, legacy_root):
+            path = root / "same.md"
+            path.write_text("x", encoding="utf-8")
+            os.utime(path, (2_000.0, 2_000.0))
+        monkeypatch.setattr(_remote_helper, "ROOT", _remote_helper._DEFAULT_ROOT)  # pylint: disable=protected-access
+        monkeypatch.setattr(
+            _remote_helper,
+            "ROOTS",
+            [
+                _remote_helper._RootSpec(  # pylint: disable=protected-access
+                    _remote_helper.NEW_SOURCE_ID, new_root, _remote_helper.NEW_PORTABLE_ROOT
+                ),
+                _remote_helper._RootSpec(  # pylint: disable=protected-access
+                    _remote_helper.LEGACY_SOURCE_ID, legacy_root, _remote_helper.LEGACY_PORTABLE_ROOT
+                ),
+            ],
+        )
+        index_path = tmp_path / "creation-times" / "index.json"
+        monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", index_path)
+        monkeypatch.setattr(_remote_helper, "_ctime_epoch", lambda st: float(st.st_mtime))
+        host = _remote_helper.socket.gethostname()
+        digest = hashlib.sha256(f"{host}\0same.md".encode()).hexdigest()
+        legacy_cache = index_path.parent / f"{digest}.json"
+        legacy_cache.parent.mkdir(parents=True)
+        legacy_cache.write_text(
+            json.dumps({"host": host, "path": "same.md", "ctime_epoch": 500.0}),
+            encoding="utf-8",
+        )
+
+        entries = _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001
+
+        ctimes = {entry["source_id"]: entry["ctime_epoch"] for entry in entries}
+        assert ctimes == {
+            _remote_helper.NEW_SOURCE_ID: 2_000.0,
+            _remote_helper.LEGACY_SOURCE_ID: 500.0,
+        }
+        assert not legacy_cache.exists()
+
+    def test_deduped_new_root_retains_legacy_ctime_migration(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """新旧既定rootが同一実体でも単一表示のまま旧形式ctimeを取り込む。"""
+        root = tmp_path / "shared"
+        root.mkdir()
+        path = root / "same.md"
+        path.write_text("x", encoding="utf-8")
+        os.utime(path, (2_000.0, 2_000.0))
+        specs = _remote_helper._dedupe_roots(  # pylint: disable=protected-access  # noqa: SLF001
+            (
+                _remote_helper._RootSpec(  # pylint: disable=protected-access
+                    _remote_helper.NEW_SOURCE_ID,
+                    root,
+                    _remote_helper.NEW_PORTABLE_ROOT,
+                    migrate_legacy_ctime=False,
+                ),
+                _remote_helper._RootSpec(  # pylint: disable=protected-access
+                    _remote_helper.LEGACY_SOURCE_ID,
+                    root,
+                    _remote_helper.LEGACY_PORTABLE_ROOT,
+                    migrate_legacy_ctime=True,
+                ),
+            )
+        )
+        monkeypatch.setattr(_remote_helper, "ROOT", _remote_helper._DEFAULT_ROOT)  # pylint: disable=protected-access
+        monkeypatch.setattr(_remote_helper, "ROOTS", specs)
+        index_path = tmp_path / "creation-times" / "index.json"
+        monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", index_path)
+        monkeypatch.setattr(_remote_helper, "_ctime_epoch", lambda st: float(st.st_mtime))
+        host = _remote_helper.socket.gethostname()
+        digest = hashlib.sha256(f"{host}\0same.md".encode()).hexdigest()
+        legacy_cache = index_path.parent / f"{digest}.json"
+        legacy_cache.parent.mkdir(parents=True)
+        legacy_cache.write_text(
+            json.dumps({"host": host, "path": "same.md", "ctime_epoch": 500.0}),
+            encoding="utf-8",
+        )
+
+        entries = _remote_helper._scan_entries()  # pylint: disable=protected-access  # noqa: SLF001
+
+        assert len(specs) == 1
+        assert specs[0].source_id == _remote_helper.NEW_SOURCE_ID
+        assert [(entry["source_id"], entry["ctime_epoch"]) for entry in entries] == [(_remote_helper.NEW_SOURCE_ID, 500.0)]
+        assert not legacy_cache.exists()

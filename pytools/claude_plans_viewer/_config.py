@@ -3,10 +3,13 @@
 import logging
 import os
 import pathlib
+import subprocess
 import tomllib
 from typing import Any
 
 import platformdirs
+
+from pytools.claude_plans_viewer import _state
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,87 @@ _KEY_MAP: dict[str, str] = {
     "port": "port",
     "remote-hosts": "remote_hosts",
 }
+
+NEW_SOURCE_ID = "private-notes-plans"
+LEGACY_SOURCE_ID = "claude-plans"
+NEW_PORTABLE_ROOT = "$(atk config get private_notes)/plans"
+LEGACY_PORTABLE_ROOT = "~/.claude/plans"
+_UNRESOLVED_PRIVATE_NOTES_ROOT = pathlib.Path.home() / ".claude" / ".plans-viewer-private-notes-unresolved"
+
+
+def _canonical(path: pathlib.Path) -> pathlib.Path:
+    """rootの比較・ファイル参照に使う正規化済みパスを返す。"""
+    return path.expanduser().resolve()
+
+
+def explicit_root_spec(root: str | pathlib.Path) -> "_state.RootSpec":
+    """既存の明示rootを単一root定義へ変換する。"""
+    path = _canonical(pathlib.Path(root))
+    legacy = _canonical(pathlib.Path.home() / ".claude" / "plans")
+    portable = LEGACY_PORTABLE_ROOT if path == legacy else str(path).replace("\\", "/")
+    return _state.RootSpec(source_id="", path=path, portable_path=portable)
+
+
+def _private_notes_result() -> tuple[pathlib.Path | None, str | None]:
+    """`atk config get private_notes`の結果と、失敗時のroot警告を返す。"""
+    try:
+        completed = subprocess.run(
+            ["atk", "config", "get", "private_notes"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        warning = f"private_notesの取得に失敗しました: {error}"
+        logger.warning("%s。旧rootを継続します", warning)
+        return None, warning
+    value = completed.stdout.strip()
+    if not value or "\n" in value:
+        warning = "private_notesの取得結果が不正です"
+        logger.warning("%s。旧rootを継続します", warning)
+        return None, warning
+    return _canonical(pathlib.Path(value)), None
+
+
+def _private_notes_path() -> pathlib.Path | None:
+    """`atk config get private_notes`の結果をroot解決用に取得する。"""
+    path, _ = _private_notes_result()
+    return path
+
+
+def default_root_specs() -> tuple["_state.RootSpec", ...]:
+    """無指定時に使う新旧rootを解決し、重複rootを除いた定義を返す。"""
+    specs: list[_state.RootSpec] = []
+    private_notes, warning = _private_notes_result()
+    if private_notes is not None:
+        specs.append(
+            _state.RootSpec(
+                source_id=NEW_SOURCE_ID,
+                path=private_notes / "plans",
+                portable_path=NEW_PORTABLE_ROOT,
+                migrate_legacy_ctime=False,
+            )
+        )
+    else:
+        specs.append(
+            _state.RootSpec(
+                source_id=NEW_SOURCE_ID,
+                path=_UNRESOLVED_PRIVATE_NOTES_ROOT,
+                portable_path=NEW_PORTABLE_ROOT,
+                warning=warning or "private_notesを解決できません",
+                migrate_legacy_ctime=False,
+            )
+        )
+    specs.append(
+        _state.RootSpec(
+            source_id=LEGACY_SOURCE_ID,
+            path=pathlib.Path.home() / ".claude" / "plans",
+            portable_path=LEGACY_PORTABLE_ROOT,
+            migrate_legacy_ctime=True,
+        )
+    )
+    return _state.normalize_root_specs(specs)
 
 
 def default_config_path() -> pathlib.Path:

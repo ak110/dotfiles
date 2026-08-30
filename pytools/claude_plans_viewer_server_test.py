@@ -316,6 +316,59 @@ class TestApiEndpoints:
         assert "ctime_epoch" in data[0]
 
     @pytest.mark.asyncio
+    async def test_multiple_roots_keep_same_relative_path_separate(self, tmp_path: Path):
+        """同一hostの同名ファイルをsource IDで分離し、一覧・検索・読取へ伝搬する。"""
+        new_root = tmp_path / "new"
+        legacy_root = tmp_path / "legacy"
+        new_root.mkdir()
+        legacy_root.mkdir()
+        (new_root / "same.md").write_text("新rootのneedle", encoding="utf-8")
+        (legacy_root / "same.md").write_text("旧rootのneedle", encoding="utf-8")
+        os.utime(new_root / "same.md", (1_000.0, 1_000.0))
+        os.utime(legacy_root / "same.md", (2_000.0, 2_000.0))
+        roots = (
+            _state.RootSpec("new-source", new_root, "$(atk config get private_notes)/plans"),
+            _state.RootSpec("legacy-source", legacy_root, "~/.claude/plans"),
+        )
+        app = _app.create_app(hostname="test-host", roots=roots)
+        client = app.test_client()
+
+        response = await client.get("/api/files")
+        assert response.status_code == 200
+        entries = json.loads(await response.get_data())
+        assert [(entry["source_id"], entry["path"]) for entry in entries] == [
+            ("legacy-source", "same.md"),
+            ("new-source", "same.md"),
+        ]
+
+        ambiguous = await client.get("/api/file?path=same.md")
+        assert ambiguous.status_code == 400
+        assert await ambiguous.get_data(as_text=True) == "source is required"
+
+        new_response = await client.get("/api/file?path=same.md&source=new-source")
+        legacy_response = await client.get("/api/file?path=same.md&source=legacy-source")
+        assert new_response.status_code == 200
+        assert legacy_response.status_code == 200
+        assert "新rootのneedle" in await new_response.get_data(as_text=True)
+        assert "旧rootのneedle" in await legacy_response.get_data(as_text=True)
+
+        search_response = await client.get("/api/search?q=needle")
+        assert search_response.status_code == 200
+        search_entries = json.loads(await search_response.get_data())
+        assert {(entry["source_id"], entry["path"]) for entry in search_entries} == {
+            ("new-source", "same.md"),
+            ("legacy-source", "same.md"),
+        }
+
+        root_info_response = await client.get("/api/root-info")
+        root_info = json.loads(await root_info_response.get_data())
+        assert root_info["test-host"]["new-source"] == {
+            "source_id": "new-source",
+            "portable_root": "$(atk config get private_notes)/plans",
+        }
+        assert "root" not in root_info["test-host"]["new-source"]
+
+    @pytest.mark.asyncio
     async def test_api_host_info_returns_snapshot(self, tmp_path: Path):
         """/api/host-infoが現在の`host_info`スナップショットをJSONで返す。
 
@@ -778,7 +831,7 @@ class TestBroadcastStateDataclass:
     """`BroadcastState`のフィールド既定値の契約を固定する。"""
 
     def test_defaults(self):
-        """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態・host_infoは空。"""
+        """新規状態の購読者は空、ループは未設定、debounceタスクは未起動、ホスト状態・root情報は空。"""
         state = _state.BroadcastState()
         assert not state.subscribers
         assert state.debounce_task is None
@@ -788,6 +841,8 @@ class TestBroadcastStateDataclass:
         assert not state.host_status
         assert not state.remote_watchers
         assert not state.host_info
+        assert not state.root_info
+        assert not state.root_status
         # `dataclasses.fields`経由で契約を固定し、意図しないフィールド追加を検出する。
         fields = {f.name for f in dataclasses.fields(state)}
         assert fields == {
@@ -801,5 +856,7 @@ class TestBroadcastStateDataclass:
             "host_status",
             "remote_watchers",
             "host_info",
+            "root_info",
+            "root_status",
         }
         assert state.debounce_sec == _state._BROADCAST_DEBOUNCE_SEC  # pylint: disable=protected-access
