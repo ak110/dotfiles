@@ -296,22 +296,19 @@ Codex基礎指示の上書きは、確認・待機・並列化・ツール利用
 公開動作を追加又は変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数正本とし、`agent_toolkit_bump.py minor`などの正式経路で版数を更新する。
 `.claude-plugin/marketplace.json`のplugin記述は正本の版数と一致させ、`agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
 生成後は`sync_codex_plugin_manifests.py --check`でClaude Code向け正本、marketplace記述及びCodex向け派生manifestの一致を確認する。
-dotfilesの`post_apply`によるローカルagent-toolkit導入では、Codexのversion付きcache root直下へ通常versionディレクトリを置き、その配下のplugin資源をdotfiles側のagent-toolkit原本へ接続する。
-Codex CLI 0.150.1のLinux実測では、versionディレクトリ自体をシンボリックリンクにすると導入済みpluginとして列挙されず、通常versionディレクトリ配下を原本へ接続すると導入済みversionと有効状態が維持された。
-原本manifestを`2.76.1`へ更新した隔離環境では、`2.76.0`を導入した設定のまま`2.76.1`の通常versionディレクトリを原本接続として追加すると、`plugin add`を再実行せずに`2.76.1`、導入済み状態と有効状態が返った。
+dotfilesの`post_apply`によるローカルagent-toolkit導入は、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
+`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
+CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
+公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)は、ローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、マーケットプレイス登録元ではなく導入先の実体をCodexが読み込むと定める。
+そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
+CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。
+`plugin add`後に失敗してもCodexの管理状態を自前で書き戻さない。
+外部pluginの導入、post-apply案内、Windowsのjunction除去経路は維持する。
+cache version台帳、全過去versionの保持、POSIXの原本接続、Windowsの原本接続とファイル同期、cache退避・置換・復元は、Codex CLIが実体導入を担当するため削除する。
 
-`install_codex_plugins.py`は更新前のversion名と既存の互換台帳をメモリー上で統合し、導入済みで有効な場合は`codex plugin add`を実行せずに現versionと保存済み旧versionの通常ディレクトリを同じ原本へ接続する。台帳は最終検証後にだけ確定する。
-未導入時とdisabled時だけ`plugin add`を使い、どちらも既存cacheがあればCodexが旧cache rootを除去する前に全エントリをcache root外へ退避する。
-POSIXでは通常versionディレクトリ直下のファイルとディレクトリを相対シンボリックリンクにする。
-Windowsでは非特権で作成できるディレクトリジャンクションをディレクトリへ使い、直下の通常ファイルを更新ごとに同期する。
-全version分の配置をcache root外の同一`CODEX_HOME`内で準備・退避し、台帳の存在とbytes、legacy skillリンクの種別と接続先を変更前状態として記録する。
-cache置換後にCodexの導入状態を検証し、成功後だけ台帳をatomic commitしてlegacy skillリンクを除去する。
-失敗時はこの処理が配置した内容だけを除去して、退避したsnapshot、通常versionディレクトリ又は旧互換リンク、台帳及びlegacy skillリンクを元の状態へ戻す。`plugin add`を使う経路の退避はCLI実行より前に完了させ、CLIの偽返却・例外から全installer管理状態のcommitまでを同じ復元境界に含める。
-`plugin add`が有効化まで成功した後の失敗ではCodex設定を直接書き戻さず、この呼び出しで外部・ローカルplugin処理が蓄積した案内を例外ログへ重複なく含め、復元済みcacheから次回実行を再開する。
-
-現行snapshotを維持する案は、plugin資源をdotfiles原本へ統一する目的を満たさないため採用しない。
-versionディレクトリ自体を原本へ接続する案はCodexの導入済み判定を失い、skillごとの直接リンクを復活させる案はhooks、MCP及びscriptsを被覆しないため採用しない。
-単体インストーラーと外部pluginはdotfiles原本の寿命を前提にできないため、Codexが管理するsnapshotを維持する。
+シンボリックリンク方式は代替案として却下する。
+version directoryを原本へ接続し、`plugin list`の導入済み判定だけを満たす構成では、Codexの実測で`codex debug prompt-input`のskill一覧へ`agent-toolkit:*`が1件も公開されなかった。
+公式CLIで実体導入した構成では同一覧へskillが現れたため、スキル公開を成立させる導入責務をCodex公式CLIへ戻す。
 共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
 共有文書をCodex用に複製する案は、正本・生成器・検査の同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
@@ -986,7 +983,7 @@ plan-modeの内部作成経路が同じディレクトリで二ファイルを�
 
 バグ調査ファイルは、原因分析表と調査表の2表でバグ単位を表す。
 原因分析表は`要因系統`、`L1 現象`、`L2 判断`、`L3 構造`、`L4 システム`の5列に、
-`作り込み要因`と`見逃し要因`の2行を持つ。調査表は`項目`・`内容`の2列に12行を持つ。
+`実装に起因する要因`と`検出に至らなかった要因`の2行を持つ。調査表は`項目`・`内容`の2列に12行を持つ。
 
 段階を列として持つのは、各セルがどの問いへの答えかを表構造から確定するためである。
 行名の列挙だけで記録対象を示す方式では、各記述がどの深さに到達したかを起草側もレビュー側も判定できず、
