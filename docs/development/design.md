@@ -573,10 +573,11 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 修正担当は同表の指摘を採否判断し、採用した指摘へ対応して、詳細な採否と対応結果を表へ記録する。
 レビュー指摘の永続表の構造と操作は`agent-toolkit/scripts/_review_table.py`を正本とする。
 共通のラウンド受領、モデル解決と収束判定は`agent-toolkit/share/review-loop-coordination.md`へ集約する。
-計画レビューは計画ごとの表へ`plan-review`を付け、実装レビューはレーンごとの`review.tsv`へ`implementation-review`を付ける。
+計画レビューは計画ディレクトリの`<計画stem>.plan-review.tsv`へ`plan-review`を付け、
+実装レビューは同じディレクトリの`<計画stem>.exec-review.tsv`へ`implementation-review`を付ける。
 実装レビュー担当は同じ`track`の表をラウンドごとに引き継ぎ、過去ラウンドの行を変更せず今回の候補だけを追加する。
 レビューイーは修正対象として渡された`track`集合の行だけを扱う。
-指定された管理対象領域の検収ではレビュー表と`atk review-table`が付随して作成するファイルだけを許容し、表の構造・`track`・行数を実測する。
+計画ディレクトリのレビュー表では正規のファイル名と、`atk review-table`が扱う表の構造・`track`・行数を実測する。
 各実装担当以降のHEADや`review_contract`へ混入した未承認契約は認可根拠に含めず、
 修正後の累積差分照合は重複確認として維持する。`implementation-review`以外の新規trackは生成しない。
 
@@ -865,7 +866,7 @@ CLIは内容が不要になったかを推測せず、呼び出し元もパス�
 登録済み領域の検証・列挙・回収は登録簿の`path`の親をroot境界として使い、現在の`tempfile.gettempdir()`へ再束縛しない。
 各操作はrootの非リンク・所有者・権限又はACLとidentityを、rootを開く直前及び子を操作する直前に再検証し、置換中の対象・rootを処理しない。
 実装worktreeを別namespaceへ渡す呼び出し元は、全消費主体から同一絶対パスへ到達できることを読み取り専用で確認する。
-実装レビュー用managed-temp、MQ、レビュー表、CI及びpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
+実装レビュー用managed-temp、MQ、CI及びpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
 汎用の一時ディレクトリを直接作成して再帰削除する案は、所有対象を証明できないため採用しない。
 マーカーファイルだけを信頼する案は、既存ディレクトリへ後からマーカーファイルを置く誤操作を区別できないため採用しない。
 列挙した既存領域を自動的に現在の作業へ割り当てる案も、用途と所有主体を確認できないため採用しない。

@@ -48,11 +48,15 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
     relative = pathlib.Path("2026/08/30-計画保存先移行-d4f9.md")
     main = notes / _plan_file.NEW_PLANS_DIRECTORY / relative
     detail = main.with_name(main.stem + ".detail.md")
+    plan_review = main.with_name(main.stem + ".plan-review.tsv")
+    implementation_review = main.with_name(main.stem + ".exec-review.tsv")
     unrelated = main.with_name("30-別計画-a1b2.md")
     excluded = main.with_name(main.name + ".tmp")
     main.parent.mkdir(parents=True)
     main.write_text("# main\n", encoding="utf-8")
     detail.write_text("# detail\n", encoding="utf-8")
+    plan_review.write_text('1\t"plan-review"\n', encoding="utf-8")
+    implementation_review.write_text('1\t"implementation-review"\n', encoding="utf-8")
     unrelated.write_text("# unrelated\n", encoding="utf-8")
     excluded.write_text("temporary\n", encoding="utf-8")
     _git(notes, "add", "plans/2026/08/30-別計画-a1b2.md")
@@ -62,7 +66,12 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
     assert result["plan_file"] == relative.as_posix()
     committed = _git(notes, "show", "--format=", "--name-only", "HEAD").stdout.splitlines()
     staged = _git(notes, "diff", "--cached", "--name-only").stdout.splitlines()
-    assert committed == ["plans/2026/08/30-計画保存先移行-d4f9.detail.md", "plans/2026/08/30-計画保存先移行-d4f9.md"]
+    assert committed == [
+        "plans/2026/08/30-計画保存先移行-d4f9.detail.md",
+        "plans/2026/08/30-計画保存先移行-d4f9.exec-review.tsv",
+        "plans/2026/08/30-計画保存先移行-d4f9.md",
+        "plans/2026/08/30-計画保存先移行-d4f9.plan-review.tsv",
+    ]
     assert staged == ["plans/2026/08/30-別計画-a1b2.md"]
     assert excluded.is_file()
 

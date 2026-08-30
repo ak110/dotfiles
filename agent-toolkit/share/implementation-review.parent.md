@@ -13,7 +13,8 @@
 新規起動では`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`と`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を渡す。
 あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、フィードバックファイル名一覧、複製元と対象外worktreeも渡す。
 起動文へ担当種別を`レビュー修正担当`として明示する。
-レビュー表の絶対パスと`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
+計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`を用いる実装レビュー指摘管理表の絶対パスと
+`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
 修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。
 調整担当はレビュー表を読まず、採否、対応付け又は成果物・Git・検証結果を再検収しない。
 
