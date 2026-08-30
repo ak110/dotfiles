@@ -383,7 +383,7 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 `rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、それ以外では`not_applicable`とする。
 実装担当は履歴書換え前の完全OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容と現行Git実体を照合して回復する。準備中の証拠しかない場合又は実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。調整担当への中間受渡しと成果物・Git・検証結果の再検収は設けない。
 初回実装担当のrouteと実効`engine`・`model`・`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業・指摘への対応・再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、元の実装入力と正本の絶対パスを開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
-再判定不能や対象OIDのpush済み検出がある場合は`needs_escalation`で返す。
+再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
 
 利用者の認証情報ファイルは既定の認証解決経路に留め、委譲の作業領域へ移さない。
@@ -592,16 +592,15 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 同判定は`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を使う。
 未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は同判定へ一本化し、remote広告refの直積証跡・replace ref・graft・
 shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
-範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了し、各fixup対象コミットの件名が範囲内で一意であることを確認する。
-対象コミット件名が範囲内で一意でない場合、範囲にmergeが含まれる場合は、fixupを作成せず`needs_escalation`で返す。
+範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了する。
+fixupの作成条件は、対象コミット件名が範囲内で一意であり、範囲にmergeを含まないこととする。
 この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する。
 各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）の完全一致を`git log -1 --format=%s`で確認する。
-期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返す。
 初回実装担当と今回routeの実効`engine`、`model`及び`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 autosquash成功後は実装担当が`git rev-parse HEAD`で取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。
 実装担当は履歴書換え前後の完全OID対応とphaseごとの`rewrite_guard`反復証跡をレビュー表へ保存し、統合前に現行Git実体へ照合する。
-汎用判定の失敗（Gitコマンドの非0終了を含む）は履歴を書き換えず`needs_escalation`で返す。
+汎用判定と制御件名検査を含む各phaseの失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
 
 実行環境が委譲元の起動文を`user` roleで配送しても、そのtransport上のroleは人間の発話者を証明しない。
