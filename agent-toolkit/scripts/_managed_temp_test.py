@@ -33,12 +33,14 @@ _MARKER_NAME = ".agent-toolkit-managed-temp.json"
         ("under_score", False),
         ("leading-", False),
         ("-leading", False),
+        ("double--hyphen", False),
         ("dot.name", False),
     ],
 )
 def test_is_valid_prefix(prefix: str, expected: bool) -> None:
     """createとPermissionRequestが共有するprefix規則を確認する。"""
     assert subject.is_valid_prefix(prefix) is expected
+    assert (subject._PREFIX_RE.fullmatch(prefix) is not None) is expected
 
 
 def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -966,16 +968,33 @@ class TestManagedTempPosix:
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(unregistered)
 
-    @pytest.mark.parametrize("prefix", ["", "UPPER", "under_score", "leading-", "-leading", "dot.name"])
+    @pytest.mark.parametrize(
+        ("prefix", "violation"),
+        [
+            ("", "空にできない"),
+            ("UPPER", "英小文字・数字・ハイフンだけを\u4f7fえる"),
+            ("leading-", "先頭と末尾をハイフンにできない"),
+            ("-leading", "先頭と末尾をハイフンにできない"),
+            ("double--hyphen", "ハイフンを連続させられない"),
+        ],
+    )
     def test_create_rejects_invalid_prefix(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         prefix: str,
+        violation: str,
     ) -> None:
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
-        with pytest.raises(subject.ManagedTempError, match="prefix"):
+        with pytest.raises(subject.ManagedTempError) as captured:
             subject.create_managed_temp(prefix)
+        assert str(captured.value) == f"prefixが条件を満たしていません（{violation}）: {prefix}"
+
+    def test_list_rejects_invalid_prefix_with_condition_and_value(self) -> None:
+        """listもcreateと同じ正本から違反条件と拒否値を案内する。"""
+        with pytest.raises(subject.ManagedTempError) as captured:
+            subject.list_managed_temp("under_score")
+        assert str(captured.value) == "prefixが条件を満たしていません（英小文字・数字・ハイフンだけを\u4f7fえる）: under_score"
 
     def test_validate_rejects_relative_and_non_direct_child(
         self,

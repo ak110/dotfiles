@@ -28,6 +28,16 @@ from ctypes import wintypes
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 3
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+_PREFIX_RULES = (
+    ("空にできない", lambda value: value != ""),
+    (
+        "英小文字・数字・ハイフンだけを\u4f7fえる",
+        lambda value: re.fullmatch(r"[a-z0-9-]+", value) is not None,
+    ),
+    ("先頭と末尾をハイフンにできない", lambda value: not value.startswith("-") and not value.endswith("-")),
+    ("ハイフンを連続させられない", lambda value: "--" not in value),
+)
+"""prefixの受理条件と、条件ごとの説明文。`_PREFIX_RE`と同じ規則を条件単位で表す。"""
 _UTC_ISO8601_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00\Z")
 MAX_AGE_DAYS = 7
 """管理対象一時領域を自動削除するまでの日数。最終更新日時からの経過で判定する。"""
@@ -948,9 +958,24 @@ def _write_marker(
     _write_private_json(marker_path, record)
 
 
+def prefix_violation(prefix: str) -> str | None:
+    """prefixが違反した最初の条件の説明を返す。違反が無ければNoneを返す。"""
+    for description, satisfied in _PREFIX_RULES:
+        if not satisfied(prefix):
+            return description
+    return None
+
+
 def is_valid_prefix(prefix: str) -> bool:
     """prefixが管理対象一時領域の命名規則に一致するか返す。"""
-    return _PREFIX_RE.fullmatch(prefix) is not None
+    return prefix_violation(prefix) is None
+
+
+def _invalid_prefix_error(prefix: str) -> ManagedTempError:
+    """違反した条件と拒否値を示すprefix検証エラーを返す。"""
+    violation = prefix_violation(prefix)
+    assert violation is not None
+    return ManagedTempError(f"prefixが条件を満たしていません（{violation}）: {prefix}")
 
 
 def _remove_created_target(
@@ -1004,7 +1029,7 @@ def create_managed_temp(
 ) -> pathlib.Path:
     """管理対象一時ディレクトリを指定root直下へ作成し、絶対パスを返す。"""
     if not is_valid_prefix(prefix):
-        raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
+        raise _invalid_prefix_error(prefix)
     if not _feedbacks_are_valid(list(feedbacks)):
         raise ManagedTempError("feedbackはパス区切り文字と制御文字を含まない空でないファイル名で指定する")
     explicit_root = root is not None
@@ -1292,7 +1317,7 @@ def list_managed_temp(prefix: str | None = None) -> list[_ManagedTempEntry]:
     異なる登録も回収対象へ含めるため、現在の一時領域直下であることは条件としない。
     """
     if prefix is not None and not is_valid_prefix(prefix):
-        raise ManagedTempError("prefixは英小文字・数字・ハイフンだけで指定する")
+        raise _invalid_prefix_error(prefix)
     entries: list[_ManagedTempEntry] = []
     for registry_path in _state_root().glob("*.json"):
         try:
