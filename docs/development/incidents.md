@@ -386,7 +386,7 @@
   対策: 共有状態moduleで循環importを解消し、Codex・Claude backend classをMCP初期化時に読み込む回帰検査を追加する
 - 2026年8月: `agents_server`のPEP 723環境ウォームアップが成功しても、Claude Agent SDKのimport不足をClaude turn開始まで検出できなかった。
   直接原因: `--help`だけを実行し、lazyなSDK importとClaudeAgentOptions構築へ到達していなかった。
-  対策: `--check-dependencies`でoptions構築まで検査し、リポジトリ・Claude Code・Codexの全agents_serverウォームアップへ適用する
+  対策: `--check-dependencies`でoptions構築まで検査し、Claude CodeとCodexのagents_serverウォームアップへ適用する
 - 2026年8月28日: Codexホスト経由の`agents_server`起動が`Codex App Server stdout closed`だけを返し、
   子プロセスの終了コードと標準エラーを呼出元から確認できなかった。
   直接原因: 標準エラーをMCPプロセスの標準エラーへ転送するだけで保持せず、標準出力終了時の例外を固定文にしていた。
