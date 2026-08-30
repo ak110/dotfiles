@@ -27,7 +27,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 - Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。3定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
-  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す
+  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
   - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt, timeout)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
   - 実行中turnを明示的に中断する場合は`kill(session_id, timeout=270)`を使う。`timeout=0`は要求配送後の現状態を返す。正のtimeoutは中断後の終端と結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない
   - 計画の最初のfast担当とCI修正は新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。fast担当からfix担当への引継ぎと通常実装モードのレビュー修正は、後段の継続条件で継続又は新規起動を確定する
@@ -84,6 +84,10 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    初回レビューの指摘対応では、最後に完了した実装単位の現在担当がfast担当なら本項の実効3値の比較に従って継続か新規fix担当の起動を確定する。現在担当がfix担当なら同じthreadを継続する。
    2回目以降の指摘対応は同じfix担当threadを継続する。継続直前に解決した実効3値が現在のthreadと異なる場合は、`needs_escalation`でメインへ返す。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用し、旧担当の終端と書込所有権の解放を確認してから行う。
+   継続不能かどうかは、実際に継続手段を呼び出した結果で判定する。
+   `agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけ継続不能とし、`wait`が返す`session retention expired: <session_id>`を継続不能の根拠にしない。
+   Claude Codeの`SendMessage`では`references/claude-code-runtime.md`が定める配送不能の判定手段による。
+   同じ計画の実装単位で継続不能と判定した場合は、検収済みの先行commitの完全OID、完了した実装単位名及び残りの実装単位名を新規threadへ渡す。
    計画、進捗ログ、保存済みのレビュー表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
    参照可能な正本がない場合は、呼び出し元が管理対象領域へレビュー表を作成してから継続し、表の内容を起動文へ埋め込まない。

@@ -154,6 +154,12 @@ Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点ま
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
+継続不能の判定は`send_message`の結果だけで行う。`wait`は終端結果の保持期限を過ぎたsessionへ`session retention expired`を返すが、
+同じsessionの会話再開用の最小状態は保持され、`send_message`は当該状態から暗黙再開する。
+両操作が`unknown session`を返す場合だけ再開できる状態が無く、継続不能となる。
+呼び出し側が`wait`の保持期限超過を継続不能と扱う運用は、再開できるthreadを破棄して規範・計画・対象コードの再読込を発生させるため採用しない。
+保持期限内に継続させる別の運用を規範へ追加する案も、暗黙再開が同じ結果を与えるため採用しない。
+
 継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。閉鎖後の受理は待機させず直ちに拒否する。Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。この終了処理と呼び出し側のtimeoutを併用し、既知の終了経路では配送結果を即座に確定し、未知の停止では有限時間で制御を戻す。却下した代替案は、所有主体終了時の解決を設けず、呼び出し側のtimeoutだけで応答なしを打ち切る案である。要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
 
 backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
