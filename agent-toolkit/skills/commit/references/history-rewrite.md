@@ -15,8 +15,8 @@ fixupは、修正が統合先コミットの時点で独立して成立し、対
 過去単位だけが対象の場合は対象commitへのfixupとautosquashだけを実行する。
 両方が対象の場合は過去単位だけを先に実装してautosquashする。
 autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近接検証を実行してstageした後、amend直前の2回目のpush済み判定成功後にamendだけを実行する。
-対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、中間commitの公開契約を維持できない修正、
-又はautosquash・amendの失敗時は新規commitで対応する。
+対応付け不能、OIDの不一致、push済みcommit、複数単位へ不可分にまたがる修正、又は中間commitの公開契約を維持できない修正は、履歴書換えを開始せず新規commitで対応する。
+履歴書換えを開始した後の失敗時は`## 失敗時の扱い`を正本とする。
 `rewrite_guard`の受渡しは、`agent-toolkit:plan-mode`が定める通常`plan-impl`レビュー修正の実装担当契約だけに置く。
 通常実装のレビュー修正以外は本節の履歴書換え契約を適用せず、各呼び出し元が定めるcommit契約に従う。
 未pushかつ単一の実装担当が所有する作業ツリーの履歴書換え保護は本書のプッシュ済み判定で足り、remote広告refの照合、replace ref、graft、浅い複製への防御は観測事象を記録してから追加する。
@@ -52,19 +52,24 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
   この範囲のfirst-parent全OIDについて、fixup作成前に下記の「プッシュ済み判定」で公開済み判定を完了する。
   `git log --first-parent --format='%H%x00%s' <最古fixup対象>^..<元HEAD>`で範囲内のOIDと件名を列挙する。
   各fixup対象コミットの件名が範囲内で一意であることをfixup作成前に確認する。
-  対象コミット件名が範囲内で一意でない場合は、fixupを作成せず履歴と作業ツリーを変更せず`needs_escalation`で返す。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。
-  範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙又は件名の一意性確認のいずれかに失敗した場合は、fixupを作成せずautosquashを中止する。
+  対象コミット件名が範囲内で一意でない場合は、fixupを作成せず`## 失敗時の扱い`に従う。範囲内の既存commitに、件名先頭が`fixup!`・`squash!`・`amend!`へ完全一致するものが1件でもある場合も同じ扱いとする。各制御語の直後には半角空白1文字を置く。部分一致や件名途中の一致は遮断条件にしない。
+  範囲列挙、merge確認、元HEADの確定、公開済み判定、OIDと件名の列挙又は件名の一意性確認のいずれかに失敗した場合は、fixupを作成せずautosquashを中止し、`## 失敗時の扱い`に従う。
   範囲にmergeが含まれる場合も同じ扱いとする。
   この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する
 - fixup作成直後は、対象OIDから得た統合先件名と生成commitの制御件名を`git log -1 --format=%s`で比較する。
   通常の`--fixup=<sha>`では`fixup! <統合先の件名>`を確認する。
   `amend:`・`reword:`では`amend! <統合先の件名>`を確認する。
   いずれも対象OIDから得た統合先件名との完全一致を確認する。
-  期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返す
+  期待件名と一致しない場合はautosquashを実行せず、`## 失敗時の扱い`に従う
 - 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
   （`<base>`は対象コミットの親以前を指す）
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す
+
+## 失敗時の扱い
+
+`pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、自ら復旧操作を実行せず、同じ指摘の履歴統合を再試行しない。
+失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`及び`git log --oneline -5`の観測結果を添えて`needs_escalation`で返す。
 
 ## merge進行中の退避
 
