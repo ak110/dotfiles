@@ -400,10 +400,28 @@ if [ -x "$HOME/.local/bin/claude" ]; then
     }
     # 計画ファイルの確認用コマンド
     plans() {
+        local private_notes_root
+        local -a plan_roots
+        if ! command -v atk >/dev/null 2>&1; then
+            return 1
+        fi
+        if ! private_notes_root="$(atk config get private_notes 2>/dev/null)"; then
+            return 1
+        fi
+        plan_roots=()
+        if [ -d "$private_notes_root/plans" ]; then
+            plan_roots+=("$private_notes_root/plans")
+        fi
+        if [ -d "$HOME/.claude/plans" ]; then
+            plan_roots+=("$HOME/.claude/plans")
+        fi
+        if [ "${#plan_roots[@]}" -eq 0 ]; then
+            return 0
+        fi
         mise use --global fzf glow
         # fzfの--bindはexecute()内で${EDITOR:-nvim}を実行時展開させるためシングルクォートを使う
         # shellcheck disable=SC2016
-        find ~/.claude/plans -type f -name '*.md' ! -name '*.detail.md' -printf '%T@\t%TY-%Tm-%Td %TH:%TM\t%f\t%p\n' |
+        find "${plan_roots[@]}" -type f -name '*.md' ! -name '*.detail.md' -printf '%T@\t%TY-%Tm-%Td %TH:%TM\t%P\t%p\n' |
             sort \
                 --numeric-sort \
                 --reverse \

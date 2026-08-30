@@ -62,9 +62,11 @@ feedback用の`active`表示には含めるが、`processable`の自動処理集
 計画レビューが収束した後は、全入力をファイル名昇順で次のコマンドへ1回だけ渡す。
 
 ```sh
-atk mq convert-to-plan <filename>... --plan-file=<main-plan-absolute-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
+atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
 ```
 
+新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値を指定する。
+既存データが参照する絶対パスは読み取り互換として受理する。
 CLIは全入力が同一対象リポジトリの`planning`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
 activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 検証後は最古のfeedbackへ計画型本文、`source: plan`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
@@ -966,6 +968,19 @@ detail側は、検索範囲、一致・不一致結果、対象判断、変更�
 ただし、実装契約へ必要な検索結果と、人間の採否判断へ必要な要約は利用シナリオが異なるため、同じ情報の複製ではない。
 ファイル間の参照はメイン側からdetail側への片方向だけとし、対応はstem一致で確定する。
 既存の単一ファイル形式と素材・要求IDを持つ二ファイル形式は読み取り互換として受理する。
+
+新規計画は`$(atk config get private_notes)/plans/yyyy/MM/dd-{名称}-{小文字16進数4桁}.md`と同じstemの`.detail.md`を同じディレクトリへ保存する。
+plan-modeの内部作成経路が同じディレクトリで二ファイルを準備し、stemを確定してから構造検査へ渡す。
+永続する本文・detail・付属ファイル・レビュー表・キューの`plan_file`は、固定接頭辞を含む可搬表記で保存する。
+実行時のファイル操作、session state及び診断は解決済み絶対パスを使う。
+計画レビューと実装後レビューが収束した時点で、所有主体は計画stemのバンドルだけを`atk plans commit`へ渡し、別stemの差分を含めない。
+旧`~/.claude/plans/`直下の既存計画と過去に保存された絶対パスは読み書き互換として扱うが、新規作成先には使わない。
+
+この保存契約の目的は、計画の物理的な保存先をprivate-notesへ集約し、複数環境で同じ参照値を利用しながら、計画のレビュー時点をGit履歴へ残すことである。
+知識境界は、保存rootと可搬表記の解決を`_plan_file.py`、二ファイル作成と構造検査の接続をplan-mode、操作許可と早期警告を各フック、利用者向けの操作説明を本リポジトリのガイドへ分ける。
+新規作成を旧rootへ継続する案は、環境固有のhomeに依存して可搬参照とprivate-notesのGit同期を分断するため採用しない。
+任意の保存先をshell展開する公開作成CLIを設ける案は、コマンド置換と作成責務の境界を増やすため採用しない。
+メインとdetailを別々の直接Writeで確定する案は、片側だけが残る計画を生むため採用しない。
 
 ## バグ調査の原因分析機構
 

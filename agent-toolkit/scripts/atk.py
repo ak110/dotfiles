@@ -598,9 +598,12 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     convert_to_plan.add_argument(
         "--plan-file",
-        metavar="ABS_PATH",
+        metavar="PLAN_FILE",
         required=True,
-        help="関連付ける実在計画ファイルの絶対パス。",
+        help=(
+            "新規計画は$(atk config get private_notes)/plans/から始まるportable値を指定する。"
+            "既存の絶対パスも読み取り互換として受理する。"
+        ),
     )
     convert_to_plan.add_argument(
         "--depends-on",

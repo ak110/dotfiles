@@ -35,9 +35,10 @@ description: >
 4. 計画レビューまで完了した後、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
    ```sh
-   atk mq convert-to-plan <filename>... --plan-file=<main-plan-absolute-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
+   atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
    ```
 
+   新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。
    計画型本文、`source: plan`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
    最古の項目だけを計画型`inbox`へ移し、残る統合元を同じcommitで除去する。
 5. 変換結果を再取得し、統合先の`source`、本文、`plan_file`、`target_commit`、依存及び`inbox`配置、統合元の不在、変換commit並びにremote設定時のupstream包含を照合する。単一入力でも標準出力から変換commitとpush結果を取得する。単一入力と複数入力は同じ経路で処理し、後続の`rm`を呼ばない。

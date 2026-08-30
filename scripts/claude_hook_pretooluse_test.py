@@ -525,7 +525,7 @@ class TestPersonalFileMentionWarning:
         assert _LOCAL_MD in msg
         assert self._TRIPLE_STEM in msg
 
-    # --- ~/.claude/plans/ 配下への書き込みは版管理外のため警告を抑止 ---
+    # --- 新旧計画rootへの書き込みは計画保存領域のため警告を抑止 ---
 
     def test_claude_plans_path_suppresses_local_md_warning(self):
         """`~/.claude/plans/` 配下への書き込みでは `CLAUDE.local.md` 言及を警告しない。"""
@@ -551,6 +551,38 @@ class TestPersonalFileMentionWarning:
                     "new_string": f"reference to {self._TRIPLE_TOKEN}",
                 },
             }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_private_notes_plans_path_suppresses_local_md_warning(self, tmp_path: pathlib.Path):
+        """新しいprivate-notes計画rootへの書き込みではローカルファイル言及を警告しない。"""
+        private_notes = tmp_path / "private-notes"
+        plans_path = str(private_notes / "plans" / "2026" / "08" / "30-plan-a1b2.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": plans_path, "content": f"See {_LOCAL_MD} for context."},
+            },
+            env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(private_notes)},
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_private_notes_plans_path_suppresses_triple_underscore_warning(self, tmp_path: pathlib.Path):
+        """新しいprivate-notes計画rootへの書き込みでは個人用stem言及を警告しない。"""
+        private_notes = tmp_path / "private-notes"
+        plans_path = str(private_notes / "plans" / "2026" / "08" / "30-plan-a1b2.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": plans_path,
+                    "old_string": "before",
+                    "new_string": f"reference to {self._TRIPLE_TOKEN}",
+                },
+            },
+            env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(private_notes)},
         )
         assert result.returncode == 0
         assert result.stdout == ""

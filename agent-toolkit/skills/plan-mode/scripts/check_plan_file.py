@@ -20,6 +20,7 @@ import sys
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
+import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
@@ -177,7 +178,12 @@ def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
     return detail_path.with_suffix(".md")
 
 
-def _check_bug_file_reference(plan_path: pathlib.Path, text: str, work_type: str | None) -> list[str]:
+def _check_bug_file_reference(
+    plan_path: pathlib.Path,
+    text: str,
+    work_type: str | None,
+    private_notes: pathlib.Path | str | None = None,
+) -> list[str]:
     """バグ対応計画の分離先参照について実在、stem、構造を検査する。"""
     if work_type != "バグ対応":
         return []
@@ -185,9 +191,19 @@ def _check_bug_file_reference(plan_path: pathlib.Path, text: str, work_type: str
     if reference is None:
         return []
 
-    reference_path = pathlib.Path(reference)
-    if not reference_path.is_absolute():
-        return [f"バグ調査ファイルの参照パスは絶対パスにする: {reference}"]
+    if reference.startswith(_plan_file.PORTABLE_PLAN_PREFIX):
+        try:
+            reference_path = _plan_file.resolve_plan_file(reference, private_notes=private_notes)
+        except (OSError, ValueError) as error:
+            return [f"バグ調査ファイルの可搬参照パスが不正です: {reference}: {error}"]
+    else:
+        reference_path = pathlib.Path(reference)
+        if not reference_path.is_absolute():
+            return [f"バグ調査ファイルの参照パスは可搬表記または絶対パスにする: {reference}"]
+        try:
+            reference_path = _plan_file.resolve_plan_file(reference_path)
+        except (OSError, ValueError) as error:
+            return [f"バグ調査ファイルの参照パスが不正です: {reference}: {error}"]
 
     expected_path = plan_path.with_name(f"{plan_path.stem}.bugs.md")
     if reference_path.resolve() != expected_path.resolve():
@@ -227,7 +243,12 @@ def _legacy_h2_warnings(text: str) -> list[str]:
     return warnings
 
 
-def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+def _check_new_format(
+    detail_path: pathlib.Path,
+    text: str,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None = None,
+) -> tuple[list[str], list[str]]:
     """二ファイル形式の計画を検査してエラーと警告を返す。
 
     呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
@@ -249,7 +270,7 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     _outside_detail, detail_fence_errors = _outside_fences(detail_structure_lines)
     errors.extend(detail_fence_errors)
     errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
-    errors.extend(_check_bug_file_reference(_main_path_for_detail(detail_path), detail_text, work_type))
+    errors.extend(_check_bug_file_reference(_main_path_for_detail(detail_path), detail_text, work_type, private_notes))
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
     warnings.extend(_legacy_bug_warnings(detail_text))
@@ -272,7 +293,12 @@ def _check_new_format(detail_path: pathlib.Path, text: str, work_dir: pathlib.Pa
     return errors, warnings
 
 
-def _check_legacy_format(plan_path: pathlib.Path, text: str, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+def _check_legacy_format(
+    plan_path: pathlib.Path,
+    text: str,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None = None,
+) -> tuple[list[str], list[str]]:
     """旧形式（単一ファイル9節）を検査してエラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
     lines = text.splitlines()
     errors = _plan_format.check_plan_structure(text)
@@ -285,13 +311,18 @@ def _check_legacy_format(plan_path: pathlib.Path, text: str, work_dir: pathlib.P
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
-    errors.extend(_check_bug_file_reference(plan_path, text, metadata.get("作業種別")))
+    errors.extend(_check_bug_file_reference(plan_path, text, metadata.get("作業種別"), private_notes))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(lines))
     return errors, warnings
 
 
-def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], list[str]]:
+def check(
+    plan_path: pathlib.Path,
+    work_dir: pathlib.Path,
+    *,
+    private_notes: pathlib.Path | str | None = None,
+) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
     対応する`<stem>.detail.md`の実在により二ファイル形式と旧単一ファイル形式を分ける。
@@ -305,9 +336,9 @@ def check(plan_path: pathlib.Path, work_dir: pathlib.Path) -> tuple[list[str], l
 
     detail_path = _detail_path_for(plan_path)
     if detail_path.is_file():
-        format_errors, warnings = _check_new_format(detail_path, text, work_dir)
+        format_errors, warnings = _check_new_format(detail_path, text, work_dir, private_notes)
     else:
-        format_errors, warnings = _check_legacy_format(plan_path, text, work_dir)
+        format_errors, warnings = _check_legacy_format(plan_path, text, work_dir, private_notes)
     errors.extend(format_errors)
     return errors, warnings
 

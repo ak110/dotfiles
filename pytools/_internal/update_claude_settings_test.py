@@ -381,11 +381,12 @@ class TestProductionManagedSettings:
         assert all(
             term in rules["Plan File Write"]
             for term in (
+                "`$(atk config get private_notes)/plans/`",
                 "`~/.claude/plans/`配下",
                 "作成・追記・編集",
                 "Write・Edit・Bash",
                 "承認ゲートの緩和・規範改訂",
-                "同ディレクトリ外",
+                "両root外",
                 "hard_deny",
             )
         )

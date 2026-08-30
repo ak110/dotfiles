@@ -332,6 +332,10 @@ source欠落と`human`は本文の既定を人間由来とし、それ以外は�
   実装担当には両方を渡し、detail側を実装契約、メイン側を利用者が承認した採否と範囲の上限として扱う。
   既存の単一ファイル形式は読み取り互換として維持し、新規作成では生成しない
   （2026年8月、利用者指示。レーンへ終端工程や進捗ログの編集権限を渡さない知識境界のため）
+- 新規の計画二ファイルは`$(atk config get private_notes)/plans/yyyy/MM/dd-{名称}-{小文字16進数4桁}.md`と同じstemの`.detail.md`を同じディレクトリへ保存する。
+  永続する計画参照はこの可搬表記を使い、既存の`~/.claude/plans/`直下の計画と絶対パスは読み書き互換として受理する。
+  計画レビュー合格後と実装後レビュー合格後は、計画と同じstemの付属ファイルだけを`atk plans commit`で保存する
+  （2026年8月、利用者指示と確認回答。保存先の環境差とレビュー時点の履歴を揃えるため）
 - フィードバック実体を全件保持し削除しない（2026年6月の削除運用を転換）
 - 計画作成中の通常型フィードバックは専用の`planning`へ移し、TBDの`active`・`processable`、`process-loop`のready集合、一般編集及びユーザーコメントから分離する。feedback用の公開一覧の`active`表示には`planning`を含めるが、計画作成途中の項目を自動処理や実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
 - キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。feedback用の公開一覧の`active`は`inbox`・`planning`・`processing`・`editing`・`hold`、TBDの`active`には`planning`を含めず、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない

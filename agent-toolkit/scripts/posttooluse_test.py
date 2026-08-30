@@ -411,6 +411,25 @@ class TestCurrentPlanFilePathTracking:
         state = _read_state(tmp_path, sid)
         assert state.get("current_plan_file_path") == str(plan_path)
 
+    def test_private_notes_write_records_current_plan_file_path(self, tmp_path: pathlib.Path) -> None:
+        """新しいprivate-notes計画rootのWriteも現在の計画パスとして記録する。"""
+        private_notes = tmp_path / "private-notes"
+        plans_dir = private_notes / "plans" / "2026" / "08"
+        plans_dir.mkdir(parents=True)
+        plan_path = plans_dir / "30-計画保存先移行-a1b2.md"
+        sid = "private-notes-plan-path-write"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            extra_env={"AGENT_TOOLKIT_PRIVATE_NOTES": str(private_notes)},
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("current_plan_file_path") == str(plan_path)
+
     def test_non_plan_file_write_does_not_record(self, tmp_path: pathlib.Path):
         sid = "plan-path-non-plan"
         _run(

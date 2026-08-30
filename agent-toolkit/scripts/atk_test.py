@@ -384,6 +384,20 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
     assert args.depends_on == ["first.md", "second.md"]
 
 
+def test_convert_to_plan_help_describes_portable_and_legacy_paths(capsys: pytest.CaptureFixture[str]) -> None:
+    """convert-to-planの公開helpが新規portable値と既存絶対パス互換を案内する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["mq", "convert-to-plan", "--help"])
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "--plan-file PLAN_FILE" in output
+    assert "$(atk config get private_notes)/plans/から始まるportable値" in output
+    assert "既存の絶対パスも読み取り互換として受理する" in output
+
+
 def test_convert_to_plan_parser_accepts_multiple_filenames_and_skip_push() -> None:
     """convert-to-planが複数入力とpush省略を1つの操作として保持する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001

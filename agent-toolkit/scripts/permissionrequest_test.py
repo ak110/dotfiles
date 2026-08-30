@@ -57,6 +57,24 @@ class TestShouldAllow:
     def test_home_claude_plans_subdir(self, home: pathlib.Path) -> None:
         assert hook.should_allow(str(home / ".claude" / "plans" / "sub" / "x.md")) is True
 
+    def test_private_notes_plans_file(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+        target = tmp_path / "private-notes" / "plans" / "2026" / "08" / "30-plan-a1b2.md"
+        assert hook.should_allow(str(target)) is True
+
+    def test_private_notes_sibling_is_not_allowed(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+        target = tmp_path / "private-notes" / "other" / "x.md"
+        assert hook.should_allow(str(target)) is False
+
     def test_home_claude_other_subtree_not_allowed(self, home: pathlib.Path) -> None:
         assert hook.should_allow(str(home / ".claude" / "projects" / "x.md")) is False
 
@@ -425,6 +443,17 @@ class TestShouldAllowBash:
     def test_wc_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
         assert hook.should_allow_bash("wc -l /tmp/foo.txt", "/tmp") is True
+
+    def test_private_notes_plans_commands_are_allowed(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+        plans = tmp_path / "private-notes" / "plans"
+        assert hook.should_allow_bash(f"mkdir -p {plans}/2026/08", str(tmp_path)) is True
+        assert hook.should_allow_bash(f"cd {plans}", str(tmp_path)) is True
+        assert hook.should_allow_bash(f"echo text > {plans}/2026/08/plan.md", str(tmp_path)) is True
 
     @pytest.mark.parametrize(
         ("command_template", "expected"),

@@ -326,7 +326,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `Stop/autonomous_exit` | process-loop環境で`completion-report`後の`exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や`~/.claude/plans/`への書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
+| plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や新旧計画rootへの書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `SubagentStart/subagent_start_tracker` | 委譲調整役の起動を記録し、SubagentStopの完了判定へ接続する | 対応 | 非対応。Codexの`agent_type`はspawn時のrole名又は`default`であり、現行の公開入力から追跡対象を識別できない |
 | plugin `PostToolUseFailure/posttooluse` | ツール失敗時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
@@ -338,6 +338,30 @@ Codexの`SessionStart`は、`source=compact`に限り品質想起通知へ対応
 pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする`SessionStart(compact)`定義と`quality_checkpoint` commandを確認して信頼する。
 信頼前は変更済みHookがスキップされるため、圧縮後通知は発火しない。
 信頼後に`/compact`を実行し、次のモデル継続前に自動生成通知が現れることを確認する。
+
+### 計画ファイルの保存とレビュー時commit
+
+新規計画は、`plan-mode`が内部作成経路を使って次のrootへメイン側とdetail側を同時に保存する。
+
+```text
+$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
+$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
+```
+
+永続する計画参照は上記の可搬表記で記録する。既存の`~/.claude/plans/`直下の単一・二ファイル計画と、過去に保存された絶対パスは読み書き互換として受理するが、新規作成先には使わない。
+計画レビューが収束した後と実装後レビューが収束した後は、計画rootからの相対パスを指定して計画バンドルを保存する。
+
+```bash
+atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
+```
+
+`atk plans commit`は同じstemのメイン側、detail側及び付属ファイルだけを対象にする。旧rootの既存計画を新rootへ移す1回限りの操作は、内容と参照を検証したうえで次のコマンドから実行する。
+
+```bash
+atk plans migrate
+```
+
+計画作成基準、可搬参照の検査及び旧形式の互換条件は`agent-toolkit:plan-mode`の`plan-file-standards.md`を正本とする。
 
 計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
 

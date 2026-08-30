@@ -273,7 +273,7 @@ def _canonical_main_format(content: str) -> str:
     )
 
 
-def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
+def human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
     """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
     main = f"""# 計画の主題
 
@@ -694,7 +694,7 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
 ) -> None:
     """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）をwarningなしで受理する。"""
     work_dir, _base = repo
-    main_content, detail_content = _human_new_format_plan(work_dir)
+    main_content, detail_content = human_new_format_plan(work_dir)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
     assert not errors, errors
     assert not warnings, warnings
@@ -839,6 +839,32 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
         expected.append("実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")
     expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
+
+
+def test_new_format_accepts_portable_bug_file_reference(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新rootのバグ調査ファイルを固定portable参照で検査できる。"""
+    work_dir, base = repo
+    private_notes = work_dir / "private-notes"
+    stem = "30-計画保存先移行-d4f9"
+    detail_name = f"{stem}.detail.md"
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True, detail_name=detail_name)
+    absolute_bug_path = (work_dir / f"{stem}.bugs.md").resolve()
+    portable_bug_path = f"$(atk config get private_notes)/plans/2026/08/{stem}.bugs.md"
+    detail_content = detail_content.replace(str(absolute_bug_path), portable_bug_path)
+
+    plan_directory = private_notes / "plans/2026/08"
+    plan_directory.mkdir(parents=True)
+    main_path = plan_directory / f"{stem}.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (plan_directory / detail_name).write_text(detail_content, encoding="utf-8")
+    (plan_directory / f"{stem}.bugs.md").write_text(_bug_file_content(), encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+
+    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
+
+    assert not errors, errors
 
 
 def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:

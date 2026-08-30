@@ -877,6 +877,15 @@ def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Pa
     return plan
 
 
+def _make_private_notes_plan_file(private_notes: pathlib.Path, name: str = "test.md") -> pathlib.Path:
+    """新しいprivate-notes計画root配下の計画ファイルを作成する。"""
+    plans = private_notes / "plans" / "2026" / "08"
+    plans.mkdir(parents=True, exist_ok=True)
+    plan = plans / name
+    plan.write_text("# t\n", encoding="utf-8")
+    return plan
+
+
 def _write_tmp_file(tmp_path: pathlib.Path, relative_path: str, content: str) -> pathlib.Path:
     path = tmp_path / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -899,7 +908,7 @@ class TestPlanModeSkillFirstCheck:
     """plan fileの起草編集でplan-modeスキル未起動を警告する検査（block降格済み）。
 
     plan-modeスキル未起動でもplan file以外の操作（Read・Bash・他Skill・通常ファイル編集等）は
-    一切ブロックも警告もしない。`~/.claude/plans/`直下の`*.md`に対する
+    一切ブロックも警告もしない。新旧計画root配下の`*.md`に対する
     Writeと進捗ログ節外を変更するEdit/MultiEditが警告対象となる。`permission_mode`の値には依存しない。
     既存計画の一意かつ最後の`## 進捗ログ`節だけを変更するEdit/MultiEditは警告しない。
     完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
@@ -934,6 +943,24 @@ class TestPlanModeSkillFirstCheck:
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in messages
         assert "editing a plan file without invoking" in _additional_context(result)
         assert "editing a plan file without invoking" not in result.stderr
+
+    def test_warns_private_notes_plan_file_write_without_skill(self, tmp_path: pathlib.Path) -> None:
+        """新しいprivate-notes計画rootのWriteもplan-mode未起動として警告する。"""
+        private_notes = tmp_path / "private-notes"
+        plan = _make_private_notes_plan_file(private_notes, "30-計画保存先移行-a1b2.md")
+        env = self._state_env(tmp_path)
+        env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(private_notes)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": "private-notes-plan-write",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "editing a plan file without invoking" in _additional_context(result)
 
     @pytest.mark.parametrize("name", ["edit.md", "edit.bugs.md"])
     def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path, name: str):
@@ -1174,7 +1201,7 @@ class TestPlanModeSkillCallSites:
 class TestPlanFileDoesNotRequireTextlintRead:
     """計画編集前の文章lint資料読了条件が撤去済みであることを検証する。
 
-    `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
+    `permission_mode`の値に依らず、新旧計画root配下の`*.md`に対する
     Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
     一切ブロック・警告しない。完成条件を満たさない状態での次工程移行の抑止は
     `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する。

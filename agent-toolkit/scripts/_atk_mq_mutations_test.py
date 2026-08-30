@@ -494,6 +494,33 @@ def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
     assert details["depends_on"] == ["dependency.md"]
 
 
+def test_convert_to_plan_accepts_and_stores_portable_plan_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新規計画のportable値を受理し、同じ可搬表記をfrontmatterへ保存する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    relative = pathlib.Path("plans/2026/08/30-portable-plan-a1b2.md")
+    plan = notes / relative
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+    portable = f"$(atk config get private_notes)/{relative.as_posix()}"
+    _disable_convert_git(monkeypatch)
+
+    details = mutations.convert_entries_to_plan(
+        notes,
+        filenames=("feedback.md",),
+        plan_file=portable,
+        target_repo="github.com/example/foo",
+    )
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["plan_file"] == portable
+    assert details["plan_file"] == portable
+
+
 @pytest.mark.parametrize(
     ("dependency_args", "expected_dependencies"),
     [
