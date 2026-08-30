@@ -50,6 +50,6 @@ def test_validate_claude_plugins_processes_each_file(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert log.read_text(encoding="utf-8").splitlines() == [
-        "plugin validate first.json",
-        "plugin validate second.json",
+        "plugin validate --strict first.json",
+        "plugin validate --strict second.json",
     ]

@@ -296,6 +296,14 @@ Codex基礎指示の上書きは、確認・待機・並列化・ツール利用
 公開動作を追加又は変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数正本とし、`agent_toolkit_bump.py minor`などの正式経路で版数を更新する。
 `.claude-plugin/marketplace.json`のplugin記述は正本の版数と一致させ、`agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
 生成後は`sync_codex_plugin_manifests.py --check`でClaude Code向け正本、marketplace記述及びCodex向け派生manifestの一致を確認する。
+プラグインマニフェストの検証は、Claude Code向けとCodex向けで到達できる保証の水準が異なるため経路を分ける。
+Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムlinter`claude-plugin-validate`から実行し、未知フィールドとメタデータ欠落を失敗として扱う。
+Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`scripts/sync_codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを検査する。
+Codexの検証器を無条件の合格条件にしないのは、同梱資料が`hooks`をマニフェストの正規フィールドとして定義しながら、検証の節では未対応フィールドとして拒否すると述べ、同一資料内で矛盾しているためである。
+資料はローカル導入での受理を保証も否定もせず、現行manifestのままの導入状態は`installed: true`かつ`enabled: true`である。
+そこで検証器の指摘を削除するのではなく既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。
+知識境界として、期待する逸脱の集合と許容根拠はテスト側が持ち、マニフェストの生成規則は`scripts/sync_codex_plugin_manifests.py`が持つ。
+却下した代替案は、`hooks`を除去し`mcpServers`を`.mcp.json`へ解決させて検証器を無条件に合格させる案である。Codexのプラグインフック機能を失い、`agent-toolkit/.mcp.json`との名前衝突を解消する追加設計を要する一方、得られるのは資料上の保証が無い体裁上の適合だけであるため採用しない。
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
 `install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。

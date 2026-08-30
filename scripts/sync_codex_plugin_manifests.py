@@ -231,9 +231,18 @@ def _outputs(root: Path) -> dict[Path, str]:
     codex_plugin["interface"] = {
         "displayName": "agent-toolkit",
         "shortDescription": "コード、文書、計画、レビューの作業指針",
+        "longDescription": (
+            "コード、文書、計画、レビューの各工程に共通の作業指針を提供する。"
+            "計画の起草から実装、レビュー、フィードバック処理までを一貫した手順として扱う。"
+        ),
         "developerName": "aki",
         "category": "Developer Tools",
         "capabilities": ["Skills"],
+        "defaultPrompt": [
+            "このリポジトリの変更を計画にまとめて",
+            "直前の変更をレビューして",
+            "溜まっているフィードバックを処理して",
+        ],
     }
     codex_marketplace = {
         "name": marketplace["name"],

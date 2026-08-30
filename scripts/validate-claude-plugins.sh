@@ -2,5 +2,5 @@
 set -eu
 
 for file in "$@"; do
-    claude plugin validate "$file"
+    claude plugin validate --strict "$file"
 done

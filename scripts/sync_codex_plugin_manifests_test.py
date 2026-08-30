@@ -1,6 +1,10 @@
 """sync_codex_plugin_manifestsのテスト。"""
 
 import json
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +12,10 @@ import pytest
 import sync_codex_plugin_manifests as subject
 
 from pytools._internal import claude_common
+
+_CODEX_HOME = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
+_CODEX_PLUGIN_VALIDATOR = _CODEX_HOME / "skills/.system/plugin-creator/scripts/validate_plugin.py"
+_CODEX_PLUGIN_VALIDATOR_AVAILABLE = shutil.which("codex") is not None and _CODEX_PLUGIN_VALIDATOR.is_file()
 
 
 def _plugin_data() -> dict[str, Any]:
@@ -198,6 +206,49 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     }
     assert len(generated_hooks["hooks"]) == 7
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
+
+
+def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:
+    """Codex向けinterfaceが紹介文と起動プロンプトの契約を満たす。"""
+    subject.sync(manifest_root)
+    generated = json.loads((manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8"))
+    interface = generated["interface"]
+
+    assert isinstance(interface["longDescription"], str)
+    assert interface["longDescription"]
+    assert isinstance(interface["defaultPrompt"], list)
+    assert interface["defaultPrompt"]
+    assert all(isinstance(prompt, str) and prompt and len(prompt) <= 128 for prompt in interface["defaultPrompt"])
+
+
+@pytest.mark.skipif(
+    not _CODEX_PLUGIN_VALIDATOR_AVAILABLE,
+    reason="Codex CLI又は同梱plugin検証器が存在しない",
+)
+def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
+    """Codex検証器の既知の指摘集合だけを許容する。
+
+    Codex 0.151.0同梱の`plugin-creator/references/plugin-json-spec.md`は、`hooks`を正規fieldとして
+    定義しながら、検証の節では未対応fieldとして拒否すると述べており、同一資料内で矛盾する。
+    `hooks`と`./.mcp.codex.json`を持つ現行manifestは`installed: true`かつ`enabled: true`である。
+    資料上の保証がないまま動作中の構成を変えないため、この前提が変わるまで期待値を空にしない。
+    """
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(_CODEX_PLUGIN_VALIDATOR), str(subject.REPO_ROOT / "agent-toolkit")],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    findings = {line.removeprefix("- ") for line in result.stdout.splitlines() if line.startswith("- ")}
+    expected = {
+        "plugin.json field `hooks` is not accepted by plugin validation",
+        "plugin.json field `mcpServers` must resolve to `.mcp.json`",
+    }
+    details = f"終了コード: {result.returncode}\n標準出力:\n{result.stdout}\n標準エラー:\n{result.stderr}"
+    if result.returncode == 0:
+        details = "意図的な逸脱が解消されたため、期待値の更新が必要である。\n" + details
+
+    assert result.returncode == 1 and findings == expected, details
 
 
 def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> None:
