@@ -98,30 +98,56 @@ _IMPLEMENTER_SECTION = """
 | --- | --- | --- |
 """
 
-_BUG_SECTION = """
-## バグ調査結果
+_BUG_CAUSE_TABLE = (
+    "| 要因系統 | L1 現象 | L2 判断 | L3 構造 | L4 システム |\n"
+    "| --- | --- | --- | --- | --- |\n"
+    "| 作り込み要因 | 古い値を返した。 | 旧値でよいと判断した。 | "
+    "更新時に破棄しない構造だった。 | 更新と破棄を別管理する設計だった。 |\n"
+    "| 見逃し要因 | 更新後も検出されなかった。 | 問題ないと判断した。 | "
+    "再実行の検査が働かなかった。 | 再実行検査を必須にする規範がなかった。 |"
+)
 
-### バグ調査結果: 対象の陳腐化
-
-| 項目 | 内容 |
+_BUG_INVESTIGATION_TABLE = """| 項目 | 内容 |
 | --- | --- |
 | 観測事象 | 発生条件は更新後の再実行であり、実際値は旧値のままである。 |
 | 期待する契約 | 更新後の値を返す。 |
 | 直接的原因 | キャッシュを破棄していない。 |
-| 混入要因 | 破棄経路を設計に含めなかった。 |
-| 動機的要因 | 更新頻度が低いと仮定した。 |
-| 見逃し原因 | 再実行の回帰テストが無かった。 |
 | 根本原因 | 更新と破棄の対応付けが契約化されていない。 |
 | 原因分析の根拠 | 再現ログと導入コミットを確認した。 |
+| 原因分析の品質確認 | 人物、対象、危険箇所を変えても成立することを確認した。 |
 | 類似見直しの観点 | 同じキャッシュ利用箇所が残るか。 |
 | 類似見直し結果 | 対象ファイル。 |
 | 是正処置 | 破棄処理を追加する。 |
 | 横展開処置 | 同型の利用箇所を修正する。 |
 | 再発防止処置 | 回帰テストを追加する。 |
-| 設計意図の記録 | 破棄契約をコメントへ残す。 |
+| 設計意図の記録 | 破棄契約をコメントへ残す。 |"""
+
+_BUG_SECTION = f"""
+## バグ調査結果
+
+### バグ調査結果: 対象の陳腐化
+
+{_BUG_CAUSE_TABLE}
+
+{_BUG_INVESTIGATION_TABLE}
 """
 
 _BUG_FILE_CONTENT = "# 計画の主題\n\n" + _BUG_SECTION.split("## バグ調査結果\n\n", 1)[1]
+
+_LEGACY_BUG_FILE_CONTENT = (
+    _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "")
+    .replace(
+        "| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n",
+        "| 混入要因 | 破棄経路を設計に含めなかった。 |\n"
+        "| 動機的要因 | 更新頻度が低いと仮定した。 |\n"
+        "| 見逃し原因 | 再実行の回帰テストが無かった。 |\n"
+        "| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n",
+    )
+    .replace(
+        "| 原因分析の品質確認 | 人物、対象、危険箇所を変えても成立することを確認した。 |\n",
+        "",
+    )
+)
 
 
 def _plan(*, base: str = _BASE, bug: bool = False) -> str:
@@ -471,15 +497,15 @@ def test_human_readable_units_reject_ambiguous_exact_id() -> None:
 
 
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
-    """H1直下のバグ単位と固定14行表を持つ付属ファイルを受理する。"""
+    """H1直下のバグ単位と原因分析表・固定12行表を持つ付属ファイルを受理する。"""
     assert not _plan_format.check_bug_file_structure(_BUG_FILE_CONTENT)
 
 
 def test_bug_file_structure_rejects_missing_fixed_row() -> None:
-    """付属ファイルの固定14行表から行が欠けた場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace("| 直接的原因 | キャッシュを破棄していない。 |\n", "")
+    """付属ファイルの固定12行表から行が欠けた場合を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace("| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n", "")
     errors = _plan_format.check_bug_file_structure(content)
-    assert any("固定14行" in error for error in errors), errors
+    assert any("固定12行" in error for error in errors), errors
 
 
 def test_bug_file_structure_rejects_empty_content_cell() -> None:
@@ -490,6 +516,53 @@ def test_bug_file_structure_rejects_empty_content_cell() -> None:
     )
     errors = _plan_format.check_bug_file_structure(content)
     assert any("空の`内容`" in error for error in errors), errors
+
+
+def test_bug_file_structure_rejects_missing_cause_table() -> None:
+    """原因分析表のない新形式のバグ単位を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "")
+    errors = _plan_format.check_bug_file_structure(content)
+    assert any("原因分析表を調査表より前に置く" in error for error in errors), errors
+
+
+def test_bug_file_structure_rejects_cause_table_after_investigation_table() -> None:
+    """原因分析表が調査表の後にある新形式のバグ単位を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "") + f"\n{_BUG_CAUSE_TABLE}\n"
+    errors = _plan_format.check_bug_file_structure(content)
+    assert any("原因分析表を調査表より前に置く" in error for error in errors), errors
+
+
+def test_bug_file_structure_rejects_duplicate_cause_table() -> None:
+    """同じバグ単位の原因分析表が重複した場合を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(_BUG_CAUSE_TABLE, f"{_BUG_CAUSE_TABLE}\n\n{_BUG_CAUSE_TABLE}", 1)
+    assert _plan_format.check_bug_file_structure(content)
+
+
+def test_bug_file_structure_rejects_duplicate_investigation_table() -> None:
+    """同じバグ単位の調査表が重複した場合を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(
+        _BUG_INVESTIGATION_TABLE,
+        f"{_BUG_INVESTIGATION_TABLE}\n\n{_BUG_INVESTIGATION_TABLE}",
+        1,
+    )
+    assert _plan_format.check_bug_file_structure(content)
+
+
+def test_bug_file_structure_rejects_mixed_new_and_legacy_tables() -> None:
+    """同じバグ単位に新形式と旧14行表が混在した場合を拒否する。"""
+    legacy_table = _LEGACY_BUG_FILE_CONTENT.split("\n\n", 2)[2]
+    assert _plan_format.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{legacy_table}")
+
+
+def test_bug_file_structure_rejects_additional_table() -> None:
+    """正規の2表に追加表が置かれた場合を拒否する。"""
+    extra_table = "| 補足 | 内容 |\n| --- | --- |\n| 任意 | 値 |"
+    assert _plan_format.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{extra_table}")
+
+
+def test_bug_file_structure_accepts_legacy_fourteen_row_table() -> None:
+    """原因分析表を持たない固定14行の旧調査表を読み取り互換で受理する。"""
+    assert not _plan_format.check_bug_file_structure(_LEGACY_BUG_FILE_CONTENT)
 
 
 def test_optional_exclusion_section_may_be_absent() -> None:
@@ -581,10 +654,10 @@ def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
 
 
 def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
-    """旧形式のバグ調査表は固定14行表を満たす場合だけ検出する。"""
+    """バグ調査表は固定12行表を満たす場合だけ検出する。"""
     content = _plan(bug=True)
     assert _plan_format.has_legacy_bug_table(content)
-    invalid = content.replace("| 動機的要因 | 更新頻度が低いと仮定した。 |\n", "")
+    invalid = content.replace("| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n", "")
     assert not _plan_format.has_legacy_bug_table(invalid)
 
 
@@ -1187,11 +1260,11 @@ def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> N
     assert not any("素材ID行に注記" in error for error in errors)
 
 
-def test_bug_section_requires_fixed_fourteen_rows() -> None:
-    """バグ調査表の14行から1行を削除した計画を拒否する。"""
-    content = _plan(bug=True).replace("| 動機的要因 | 更新頻度が低いと仮定した。 |\n", "")
+def test_bug_section_requires_fixed_twelve_rows() -> None:
+    """バグ調査表の12行から1行を削除した計画を拒否する。"""
+    content = _plan(bug=True).replace("| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n", "")
     errors = _plan_format.check_plan_structure(content)
-    assert any("固定14行の調査表" in error for error in errors)
+    assert any("固定12行の調査表" in error for error in errors)
 
 
 def test_bug_section_is_required_only_for_bug_work_type() -> None:

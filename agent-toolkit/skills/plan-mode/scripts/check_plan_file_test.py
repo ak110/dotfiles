@@ -37,10 +37,25 @@ def _rows_table(rows: tuple[str, ...], filler: str) -> str:
     return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *(f"| {row} | {filler} |" for row in rows)])
 
 
+def _cause_rows_table() -> str:
+    """原因分析表の固定列と行を組み立てる。"""
+    header = _plan_format.PLAN_BUG_CAUSE_TABLE_HEADER
+    contents = " | ".join("原因分析を記録する。" for _column in header[1:])
+    return "\n".join(
+        [
+            f"| {' | '.join(header)} |",
+            f"| {' | '.join('---' for _column in header)} |",
+            *(f"| {row} | {contents} |" for row in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS),
+        ]
+    )
+
+
 def _bug_file_content() -> str:
     """バグ調査付属ファイルの正規内容を組み立てる。"""
     return (
         "# 計画の主題\n\n### 対象の不整合\n\n"
+        + _cause_rows_table()
+        + "\n\n"
         + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
         + "\n"
     )
@@ -75,6 +90,8 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
     if bug:
         bug_section = (
             "## バグ調査結果\n\n### 対象の不整合\n\n"
+            + _cause_rows_table()
+            + "\n\n"
             + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
             + "\n\n"
         )
@@ -754,12 +771,12 @@ def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ調査付属ファイルの固定14行表欠落を拒否する。"""
+    """バグ調査付属ファイルの固定12行表欠落を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    invalid_bug_file = _bug_file_content().replace("| 直接的原因 | 発生条件と実際値を記載する。 |\n", "")
+    invalid_bug_file = _bug_file_content().replace("| 根本原因 | 発生条件と実際値を記載する。 |\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
-    assert any("固定14行" in error for error in errors), errors
+    assert any("固定12行" in error for error in errors), errors
 
 
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
@@ -808,7 +825,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     if reference is not None:
         inline_section = (
             "## バグ調査結果\n\n### 対象の不整合\n\n"
-            + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
+            + _rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
             + "\n\n"
         )
         detail_content = detail_content.replace(

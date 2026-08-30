@@ -16,17 +16,17 @@ description: >
 1. 後述の「初動と深掘り判定」を読む
 2. 深掘り条件に該当する場合だけ、`references/root-cause-analysis.md`を全文読む
 3. CI失敗を扱う時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
-4. 計画、実装、レビューのいずれでも同じ判定と原因区分を用いる
+4. 計画、実装、レビューのいずれでも同じ判定と原因分析の段階を用いる
 
 CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
 履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`を全文読む。
 実装担当の経路を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
 分岐検証へ入る前は`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`を全文読む。
 
-原因区分を確定する時は、`agent-toolkit:bugfix`の`bugfix/references/root-cause-analysis.md`を全文読む。
+原因分析の段階を確定する時は、`agent-toolkit:bugfix`の`bugfix/references/root-cause-analysis.md`を全文読む。
 
 深掘り条件に該当しない局所不良は、直接的原因の是正と近接検証で完了する。
-深掘り条件に該当する不良は、4原因区分、原因起点の類似見直し、
+深掘り条件に該当する不良は、2系統4段階の原因分析、原因分析の品質確認、原因起点の類似見直し、
 是正・横展開・再発防止を確定する。
 
 ## 初動と深掘り判定
@@ -60,4 +60,4 @@ CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.m
 - 深掘り条件に該当する場合は、「深掘り資料と因果の確定」以降の工程へ進む
 - 深掘り条件に該当しない局所不良は、是正と近接検証に限定する
   - 局所経路の調査範囲は直接的原因までとする
-  - 履歴、フィードバック、計画、セッションログの探索、4原因区分の分析、汎用的な恒久対策は深掘り経路だけに適用する
+  - 履歴、フィードバック、計画、セッションログの探索、2系統4段階の原因分析、汎用的な恒久対策は深掘り経路だけに適用する
