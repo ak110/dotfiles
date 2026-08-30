@@ -19,7 +19,7 @@ pickerへ次の入力だけを渡す。
 
 ## 中断再開項目の残作業調査
 
-`processing`状態のフィードバックは、過去の`process-feedbacks`が中断して残した項目である。
+`processing`状態のフィードバックは、過去の`agent-toolkit:process-feedbacks`が中断して残した項目である。
 メインは、ユーザーが処理対象を明示した経路とpickerが選定した経路のいずれでも、`processing`状態の項目を②へ渡す前に次を調査して残作業を確定し、中断地点から再開して完遂させる。
 
 - frontmatterの`plan_file`が指す計画ファイルの進捗ログと未完了の工程

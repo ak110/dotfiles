@@ -17,7 +17,7 @@ description: >
 
 - `normal`はレビュー済み計画が関連していないフィードバック、`plan`はレビュー済み計画が関連するフィードバックである。
 - 変更量にかかわらず、全ての実装要求は実装前に計画と計画レビューを完了する。`normal`を計画なしで実装しない。
-- `plan-and-add-feedback`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を一時的な`planning(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
+- `agent-toolkit:plan-and-add-feedback`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を一時的な`planning(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
 
 ## 通常フィードバックの本文
 
@@ -82,7 +82,7 @@ TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持�
 
 エージェントが新しい通常フィードバックを生成する場合だけ、投入前に同じ対象リポジトリのactive項目を取得し、対象、期待結果、観測事象、根本原因及び必要な処置を照合する。既存項目が全てを覆う場合は新規投入せず既存ファイル名を再利用し、部分的に覆う場合は未被覆部分だけを投入する。表現の類似又は最終結果の一致だけを重複の根拠にしない。
 
-ユーザーが手動起動した`add-feedback`、`plan-and-add-feedback`、TBD及び移行・復元では、この重複判定を実行しない。
+ユーザーが手動起動した`agent-toolkit:add-feedback`、`agent-toolkit:plan-and-add-feedback`、TBD及び移行・復元では、この重複判定を実行しない。
 
 ## 投入と取得
 

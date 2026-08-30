@@ -3,7 +3,7 @@ name: review-standards
 description: >
   コードレビュー・ドキュメントレビュー実施時に最初に必ず起動する。
   レビュー担当サブエージェント、およびメインエージェント自身がレビューする場面で起動する。
-  著者向けスキル（`coding-standards`・`writing-standards`・`agent-standards`）と併用する。
+  著者向けスキル（`agent-toolkit:coding-standards`・`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`）と併用する。
 # 編集時の注意点:
 # レビュー担当側の判断指針のみを扱う。
 # レビューイー側は`../reviewee-standards/SKILL.md`を正本とする。

@@ -60,7 +60,7 @@ description: >
 
 計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
-本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`feedback-standards`へ渡した後は問い直さない。
+本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:feedback-standards`へ渡した後は問い直さない。
 
 ## 完了報告の形式
 

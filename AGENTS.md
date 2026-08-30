@@ -44,7 +44,7 @@
 - `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時、及び同パス群を変更対象に含む計画の起草前はSkillツールで`agent-toolkit-edit`を呼び出す。
   呼び出し漏れは編集時にPreToolUseフックが警告を返す。
   権限設定の配置・marketplace管理・フック実装の配置先判断・version bump手順・worktree編集時の注意も同スキルへ集約する
-  - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-standards`・`writing-standards`を併用する
+  - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`を併用する
 - `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集時は`pytools-edit`を呼び出す
   （配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを集約する）
 - プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`を呼び出して両側を同期する
@@ -59,6 +59,10 @@
 - コーディングエージェント向け文書を編集する前に、`docs/development/concepts.md`と
   `docs/development/incidents.md`を読み、確定済みの方針・事故対策との整合を確認する。
   編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
+- 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
+  修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
+  `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
+  サブエージェント名は起動指示・地の文とも完全名称（`feedbacks-planner`等）で書く
 
 ## 変更後の規範の自セッション適用
 

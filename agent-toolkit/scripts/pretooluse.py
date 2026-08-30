@@ -1166,7 +1166,7 @@ def _check_plan_mode_skill_first(
     サブエージェント経由の呼び出しでも同一の判定が働く
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
     計画ファイル編集に至るまでは警告を表示しない
-    （`process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
+    （`agent-toolkit:process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
     既存計画へのEdit・MultiEditで、一意かつ最後の`## 進捗ログ`見出し行までの接頭部が
     編集後も不変である場合は、受領側の正規操作として警告しない。
     ファイル又は入力を解釈できない場合は警告を維持する。

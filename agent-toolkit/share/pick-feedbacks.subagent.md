@@ -27,7 +27,7 @@
 既存の`planning`、`editing`及び`hold`項目は、候補、優先度、依存判断又は固有指示の入力へ含めない。
 処理回の進行中に追加されたフィードバックを、確定済みの出力へ混ぜない。
 
-`processing`状態のフィードバックは、過去の`process-feedbacks`が中断して残した項目である。
+`processing`状態のフィードバックは、過去の`agent-toolkit:process-feedbacks`が中断して残した項目である。
 選定時点の保存状態を`state`へ返すに留め、残作業と中断地点の調査は担当しない。
 
 保存済みのメタデータと入力の実在を確認する。保存済みのメタデータから`depends_on`、回答済みTBD、`cooldown_until`、frontmatter、計画ファイルの有効性を確認する。

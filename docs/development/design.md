@@ -45,8 +45,8 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 ### 計画作成状態と計画型変換
 
 通常型フィードバックをファイル名で計画化するため、`inbox`と`processing`の間に`planning`状態を置く。
-`processing`はprocess-loopが計画作成から実装までを所有する状態であり、`process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
-`process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、`planning`を別に置く。
+`processing`はprocess-loopが計画作成から実装までを所有する状態であり、`agent-toolkit:process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
+`agent-toolkit:process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、`planning`を別に置く。
 `planning`は計画作業中の明示状態として一覧・詳細で確認できる。
 feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集及びユーザーコメントの対象から除外する。
 計画型へ変換する公開操作は、`atk mq edit`の`--plan-file`互換経路と`atk mq convert-to-plan`に限定する。
@@ -112,7 +112,7 @@ planning、processing、TBD、終端項目及び別sourceの項目はAPIと画�
 sourceの原値と予約節は由来と確認境界を示す情報であり、利用者によるpush、公開、破壊的操作又は外部サービス変更の認可を証明しない。
 session-review自身は予約見出しを提案本文へ生成せず、一般全文編集が見出しを作成できる現行信頼境界を維持する。
 
-`add-feedback`・`plan-and-add-feedback`・`process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+`agent-toolkit:add-feedback`・`agent-toolkit:plan-and-add-feedback`・`agent-toolkit:process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
 主題の継続又はフィードバック投入と直接実装の境界が不明な場合は、変更又は投入の前に確認する。
 
 会話内の作業一覧だけで進捗を管理する案は、中断後に依存関係と利用者回答を再現できないため採用しない。
@@ -288,8 +288,8 @@ Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意�
 agent定義の欠落、frontmatterの写像不能、起動失敗をメイン主体の別経路へ迂回しない。
 本体プロセスの終了範囲は、agent定義の適用能力から独立したセッション運用とする。
 通常処理及び明示的な連続処理は、起動時に固定した項目だけを処理し、後始末後にready項目を再取得しない。
-`process-feedbacks`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
-`exit-session`は起動時の判定を再利用せず停止直前にprobeを新規実行し、表示済みPIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
+`agent-toolkit:process-feedbacks`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
+`agent-toolkit:exit-session`は起動時の判定を再利用せず停止直前にprobeを新規実行し、表示済みPIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
 本体停止は、現在のClaude Code又はCodex本体として安全に一意識別した自身か、自身が起動して停止識別子を保持した対象だけに行う。
 共用プロセス、識別不能な環境及び前記のどちらにも該当しない対象では終了案内で完了する。
 
@@ -478,11 +478,11 @@ Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/
 
 ### session-reviewと完了報告
 
-`session-review`の初期分析は、起動時の`orchestrate_model`で選んだ通常の読み取り専用サブエージェントだけが担う。サブエージェントはセッション全体から問題候補と再取得可能な証拠位置を列挙し、原因、対策、反映先及び採否を決めない。メインは列挙証拠だけを再取得し、問題があれば`bugfix`で原因と恒久対策を確定する。全量分析をメインでも繰り返す案と専用advisor定義は、同じ母集団の二重処理になるため採用しない。
+`agent-toolkit:session-review`の初期分析は、起動時の`orchestrate_model`で選んだ通常の読み取り専用サブエージェントだけが担う。サブエージェントはセッション全体から問題候補と再取得可能な証拠位置を列挙し、原因、対策、反映先及び採否を決めない。メインは列挙証拠だけを再取得し、問題があれば`agent-toolkit:bugfix`で原因と恒久対策を確定する。全量分析をメインでも繰り返す案と専用advisor定義は、同じ母集団の二重処理になるため採用しない。
 
 Claude Codeは現在のtranscript絶対パスを通常サブエージェントへ渡す。Codexはメインの`CODEX_THREAD_ID`を渡し、通常サブエージェントが`$CODEX_HOME/sessions/`の正本rolloutを完全suffix一致で1件だけ選ぶ。UserPromptSubmitの追加コンテキスト、振り返り境界、開始マーカー及び起動済み状態は用いない。
 
-メインの作業完了報告は`completion-report`だけが所有する。`process-feedbacks`を実行した場合、ユーザーがエージェントの誤り等を指摘した場合、又は同じ成果物・責任範囲のレビューが第3ラウンドへ到達した場合に`session-review`を起動し、その結果を固定報告へ含める。個別スキルは共通形式を持たない。
+メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。`agent-toolkit:process-feedbacks`を実行した場合、ユーザーがエージェントの誤り等を指摘した場合、又は同じ成果物・責任範囲のレビューが第3ラウンドへ到達した場合に`agent-toolkit:session-review`を起動し、その結果を固定報告へ含める。個別スキルは共通形式を持たない。
 
 工程別モデル設定は特定のagent名ではなく、委譲する工程に適用する。
 委譲主体は各起動の直前に設定を解決し、実行系に対応する起動ツールまで同じ判断として確定する。
@@ -660,11 +660,11 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 書込所有権の受け渡しは、`agent-toolkit/share/plan-drafting.subagent.md`が定める「各パスの書込主体は常に1名」契約をそのまま使う。
 新しい受け渡し機構（専用の状態ファイル、追加の設定キーなど）は設けない。
-利用者確認を要する指摘は、既存の`needs_escalation`契約で呼び出し元（`plan-and-add-feedback`の実行主体）へ返す。
+利用者確認を要する指摘は、既存の`needs_escalation`契約で呼び出し元（`agent-toolkit:plan-and-add-feedback`の実行主体）へ返す。
 
 却下した代替案は次の2つである。
 
-- メイン兼任の維持（Claude Code）: `plan-and-add-feedback`経路でClaude Codeメインが計画担当と調整主体を兼ねる案は、
+- メイン兼任の維持（Claude Code）: `agent-toolkit:plan-and-add-feedback`経路でClaude Codeメインが計画担当と調整主体を兼ねる案は、
   レビューのラウンドごとに計画全文とレビュー表がメインのコンテキストへ蓄積する構造を変えないため採らない。Codexでは名前付き定義の直接適用としてメインが調整主体を担うため、この却下理由の対象外とする
 - 新しい工程別モデル設定キーの新設: `plan-review-executor`が解決する工程は既存の`plan_model`
   （起草とレビュー指摘反映）と`plan_review_model`（計画レビュー）のいずれかであり、新しい工程を持たないため採らない
@@ -681,7 +681,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 知識境界は次のとおり分ける。
 作成基準は計画ファイルが満たす成果物要件だけを持つ。
-`plan-mode`のSKILL.mdは調査から実装引き継ぎまでの手順だけを持ち、成果物契約は作成基準を参照する。
+`agent-toolkit:plan-mode`のSKILL.mdは調査から実装引き継ぎまでの手順だけを持ち、成果物契約は作成基準を参照する。
 `agent-toolkit/share/plan-review.subagent.md`は検出手技（走査の実施方法、素材・要求の照合手順、指摘の除外規律、初回・再レビューの規定、
 出力形式）だけを持ち、成果物要件を再掲しない。
 レビュー表の操作書式は`atk review-table --help`及び使用するサブコマンドの`--help`を公開正本とし、
@@ -697,7 +697,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 計画変更履歴、実行時進捗ログ及びレビュー指摘管理表は、人間の変更確認、中断再開及び個別指摘管理という異なる利用シナリオを持つ。件数又はラウンド数で相互照合しない。
 
-作成基準を独立スキルとして新設する案は、計画ファイルが`plan-mode`経由でのみ作成されて自動発火の利益が無く、
+作成基準を独立スキルとして新設する案は、計画ファイルが`agent-toolkit:plan-mode`経由でのみ作成されて自動発火の利益が無く、
 スキル一覧のdescriptionが恒常的にコンテキストを消費するため採用しない。
 検出側だけにある要件をレビュー用タスク文書へ最小追記する案は、完成条件と点検リストの二重管理が残り、
 将来の要件追加で同じ非対称が再発するため採用しない。
@@ -705,18 +705,18 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 ## レビュー担当とレビューイーの知識境界
 
 レビュー実施側と指摘受領側は、実行主体の文脈混同を防ぐため、役割別のスキルへ分離する。
-`review-standards`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害及び解消方向を定める。
+`agent-toolkit:review-standards`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害及び解消方向を定める。
 レビュー表の公開操作は`atk review-table --help`、7列TSVの構造は`_review_table.py`と`_review_table_test.py`を正本とする。
-`reviewee-standards`はレビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領した主体による修正要否の立証、安全な修正、自己点検と公開可能性の検証を定める。
+`agent-toolkit:reviewee-standards`はレビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領した主体による修正要否の立証、安全な修正、自己点検と公開可能性の検証を定める。
 
 レビュー担当はレビューイー側スキルを読まず、レビューイーはレビュー担当側スキル本文を読まない。
 計画・設計の採用案や指摘・発見の妥当性を評価する場合だけ、両者は役割中立の共通判断手順である
 `review-standards/references/judgment-details.md`を参照する。
 
-指摘受領側の4文書は`reviewee-standards`の読込指示と経路固有の返却規定だけを持つ。
+指摘受領側の4文書は`agent-toolkit:reviewee-standards`の読込指示と経路固有の返却規定だけを持つ。
 `plan-impl-executor`は指摘の採否を常に確定するため、frontmatterから同スキルを読み込む。
 単純案の比較は、一般判断向けの局所運用案を`rules/01-agent.md`と`judgment-details.md`で扱い、
-指摘修正向けの局所修正案を`reviewee-standards`で扱う。
+指摘修正向けの局所修正案を`agent-toolkit:reviewee-standards`で扱う。
 
 レビューイーは是正要求等を受領しても修正を既定とせず、通常運用での再現経路と影響を独立に実測して必要性を立証する。
 採否は何も変更しない案を含め、残置した場合の実害と認知・保守費用、修正・検証・再レビュー費用及び変更が増やす複雑性を同じライフサイクルで比較する。
@@ -736,7 +736,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 レビューイー側だけへ規定する案は、覆した修正が検出されず差し戻しも生じないため採用しない。計画レビュー工程まで同じ禁止を広げる案は、計画自身の方針を更新する正規の工程を止めるため採用しない。矛盾を機械検査する案は、判定が本文の意味解釈を要し、判定対象を公開APIや実行結果から取得できないため採用しない。
 
-共通手順を`review-standards`配下の参照文書へ集約する案は、レビューイーがレビュー担当側の規範へ依存するため採用しない。
+共通手順を`agent-toolkit:review-standards`配下の参照文書へ集約する案は、レビューイーがレビュー担当側の規範へ依存するため採用しない。
 重複を残して文言だけを統一する案は、各経路の改訂で再び文言差が生じるため採用しない。
 `judgment-details.md`をレビューイー側へ移す案は、レビュー担当から役割中立の判断手順へ到達できなくなるため採用しない。
 指摘修正向けの判定文を一般判断向けの原則だけで代替する案は、修正文脈固有の適用条件を保持できないため採用しない。
@@ -747,7 +747,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 成果物の直接検査、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
-Stopは`agent-toolkit/scripts/_stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`exit-session`呼び忘れだけを扱う。利用者の意図、作業完了、振り返り要否、Git変更件数及びmanaged-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
+Stopは`agent-toolkit/scripts/_stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れだけを扱う。利用者の意図、作業完了、振り返り要否、Git変更件数及びmanaged-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
 
 `SubagentStop`、`StopFailure`及び`SessionEnd`は別イベントの既存契約として維持する。
 
@@ -954,7 +954,7 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインが版数・生成物同期、push、CI及び終端工程を1回だけ実行する。
 
-`process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`completion-report`を起動する。`completion-report`は必須の`session-review`と固定報告を完了し、その後に`exit-session`を起動する。各工程は同じ完了本文を再生成しない。
+`agent-toolkit:process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。
 
 本文の明示記載を不可逆操作の認可とし、明記のない操作はTBDへ送る。
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、
@@ -1045,7 +1045,7 @@ TBD終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 
 ## 規範の正本集約と参照方向
 
-複数の実行主体が使う契約は、契約本文を1つの正本へ置き、各主体の文書には読む時点と経路固有の差分だけを残す。一括取得は`add-feedback`、採否レコードは`process-feedbacks`、履歴書換えは`commit`、レビュー観点は`review-standards`を正本とする。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
+複数の実行主体が使う契約は、契約本文を1つの正本へ置き、各主体の文書には読む時点と経路固有の差分だけを残す。一括取得は`agent-toolkit:add-feedback`、採否レコードは`agent-toolkit:process-feedbacks`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`を正本とする。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
 
 判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全又は公開契約を保護する場合を除き、各エージェント文書へ常設しない。
 

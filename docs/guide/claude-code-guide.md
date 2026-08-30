@@ -323,7 +323,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/autonomous_exit` | process-loop環境で`completion-report`後の`exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
+| plugin `Stop/autonomous_exit` | process-loop環境で`agent-toolkit:completion-report`後の`agent-toolkit:exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や新旧計画rootへの書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
@@ -341,7 +341,7 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 
 ### 計画ファイルの保存とレビュー時commit
 
-新規計画は、`plan-mode`が内部作成経路を使って次のrootへメイン側とdetail側を同時に保存する。
+新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次のrootへメイン側とdetail側を同時に保存する。
 
 ```text
 $(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
@@ -427,7 +427,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
-- `agent-toolkit:session-review`: 通常の読み取り専用サブエージェントがセッション全体の問題候補を列挙し、メインが列挙証拠から原因と恒久対策を確定する。手動起動又は`completion-report`から起動する
+- `agent-toolkit:session-review`: 通常の読み取り専用サブエージェントがセッション全体の問題候補を列挙し、メインが列挙証拠から原因と恒久対策を確定する。手動起動又は`agent-toolkit:completion-report`から起動する
 
 ## 更新方法
 

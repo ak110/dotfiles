@@ -10,7 +10,7 @@
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
-`agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+`agent-toolkit:agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と照会不能（モード併用・不正な正規表現・範囲外の行番号）を終了コード2とする区分だけを踏襲する。
 """
 

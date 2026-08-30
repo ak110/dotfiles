@@ -361,9 +361,9 @@ source欠落と`human`は本文の既定を人間由来とし、それ以外は�
 - 通常型フィードバックのファイル名を指定する計画化では、レビュー収束後に全入力を1回の`convert-to-plan`へ渡す。最古項目を計画型`inbox`へ移し、残る統合元を同じcommitで除去する。単一入力も同じ経路で処理し、別`rm`を呼ばない
 - 計画型変換前に中断するときは`planning`から`inbox`へ戻す。入力検証、書込み又はcommitの失敗では元の`planning`集合を復元し、pushだけが失敗した場合は変換済みcommitのpushと保存結果の確認から再開する
 - 計画型inbox項目をprocessingへ移すのは、明示的な`start-processing`又は`process-loop`の処理開始だけとする
-- `process-feedbacks`は①のpicker出力を検収した直後に、選定時点で`inbox`だった全項目を一括で`processing`へ移し、
+- `agent-toolkit:process-feedbacks`は①のpicker出力を検収した直後に、選定時点で`inbox`だった全項目を一括で`processing`へ移す。
   計画ファイル・worktree・実装担当の起動をその後へ置く（2026年8月、利用者指示。着手中の占有範囲を外部観測と中断後の再開位置から識別するため）
-- 1回の`process-feedbacks`は起動時に固定したready集合だけを処理し、全レーンの後始末後はready一覧を再取得せず終了工程へ進む
+- 1回の`agent-toolkit:process-feedbacks`は起動時に固定したready集合だけを処理し、全レーンの後始末後はready一覧を再取得せず終了工程へ進む
   （2026年8月、利用者指示）
 - 計画の`## 提示素材`は、フィードバックとTBDの正本ファイル名だけを保持する
   フィードバック本文とTBD本文は計画へ複製せず、本セッションで受領した利用者発言は`## 変更履歴`へ逐語`text`コードブロックで記録する
@@ -415,9 +415,9 @@ sourceがある場合は同じ値を渡す。
 sourceを指定した場合は移管先のsource、本文、`target_repo`、非予約frontmatter全体を`atk mq show`で照合する。
 sourceを指定しない場合は本文、`target_repo`と非予約frontmatter全体を照合する。
 照合後に移管先ファイル名を記録して元項目を終端する。
-`add-feedback`・`plan-and-add-feedback`・`process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+`agent-toolkit:add-feedback`・`agent-toolkit:plan-and-add-feedback`・`agent-toolkit:process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
 主題が継続するか、フィードバック投入と直接実装の境界が不明な場合は、変更・投入の前に確認する。
-各投入経路は指定されたsourceだけを保持し、`add-feedback`はsource受領時だけ`atk mq add --source`へ渡して、保存後に既存の`atk mq show`で照合する。
+各投入経路は指定されたsourceだけを保持し、`agent-toolkit:add-feedback`はsource受領時だけ`atk mq add --source`へ渡して、保存後に既存の`atk mq show`で照合する。
 
 ## セキュリティと環境
 
