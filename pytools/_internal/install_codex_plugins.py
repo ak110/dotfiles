@@ -8,7 +8,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from pytools._internal import claude_common, log_format, post_apply_outcome, setup_codex_links
 
@@ -18,15 +17,14 @@ _TIMEOUT = 60.0
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
-        "Codex pluginを更新しました。実行中のCodexセッションを終了してから、"
+        "Codex pluginを変更しました。実行中のCodexセッションを終了してから、"
         "次のコマンドでapp-server daemonを再起動してください。"
     ),
     command="codex app-server daemon restart",
 )
 
-# dotfiles自身以外のマーケットプレイスから導入するプラグイン。
-# (マーケットプレイス名, 登録ソース, プラグイン識別子) の組で保持する。
-_EXTERNAL_PLUGINS: tuple[tuple[str, str, str], ...] = (("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus"),)
+# Codexでは使用しないため、導入済みなら除去するプラグイン。
+_UNUSED_PLUGINS: tuple[str, ...] = ("compact-plus@compact-plus",)
 
 
 @dataclass(frozen=True)
@@ -130,53 +128,6 @@ def _installed(data: dict[str, Any], plugin_id: str) -> tuple[bool, dict[str, An
         if plugin is None:
             plugin = item
     return True, plugin
-
-
-def _marketplace_entry(data: dict[str, Any], marketplace_name: str) -> dict[str, Any] | None:
-    return next((item for item in data.get("marketplaces", []) if item.get("name") == marketplace_name), None)
-
-
-def _marketplace_source_matches(entry: dict[str, Any], expected_source: str) -> bool:
-    source_data = entry.get("marketplaceSource")
-    if not isinstance(source_data, dict) or source_data.get("sourceType") != "git":
-        return False
-    source = source_data.get("source")
-    expected = _canonical_github_https_source(expected_source, allow_shorthand=True)
-    actual = _canonical_github_https_source(source, allow_shorthand=False) if isinstance(source, str) else None
-    return expected is not None and actual == expected
-
-
-def _canonical_github_https_source(source: str, *, allow_shorthand: bool) -> str | None:
-    """安全なGitHub HTTPS取得元を正規URLへ変換する。"""
-    value = source.strip().rstrip("/")
-    if "://" in value:
-        parsed = urlparse(value)
-        try:
-            port = parsed.port
-        except ValueError:
-            return None
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname != "github.com"
-            or parsed.username is not None
-            or parsed.password is not None
-            or port is not None
-            or parsed.params
-            or parsed.query
-            or parsed.fragment
-            or not parsed.path.endswith(".git")
-        ):
-            return None
-        repo = parsed.path.removeprefix("/").removesuffix(".git")
-    elif allow_shorthand:
-        repo = value.removesuffix(".git")
-    else:
-        return None
-    parts = repo.split("/")
-    if len(parts) != 2 or not all(parts):
-        return None
-    owner, name = (part.lower() for part in parts)
-    return f"https://github.com/{owner}/{name}.git"
 
 
 def _outcome(
@@ -311,27 +262,11 @@ def _sync_local_plugin(
     return True
 
 
-def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
-    """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
+def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
+    """Codexで使用しない導入済みpluginを除去する。"""
     changed = False
     notices: list[post_apply_outcome.PostApplyNotice] = []
-    for marketplace_name, source, plugin_id in _EXTERNAL_PLUGINS:
-        marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
-        if marketplace_data is None:
-            logger.warning(log_format.format_status(plugin_id, "marketplace一覧の取得に失敗したためスキップ"))
-            continue
-        marketplace = _marketplace_entry(marketplace_data, marketplace_name)
-        if marketplace is None:
-            if not _command(["plugin", "marketplace", "add", source]):
-                logger.warning(log_format.format_status(plugin_id, "marketplace登録に失敗したためスキップ"))
-                continue
-            changed = True
-            marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
-            marketplace = _marketplace_entry(marketplace_data, marketplace_name) if marketplace_data is not None else None
-        if marketplace is None or not _marketplace_source_matches(marketplace, source):
-            logger.error(log_format.format_status(plugin_id, f"marketplace取得元が一致しないためスキップ: 期待値 {source}"))
-            continue
-
+    for plugin_id in _UNUSED_PLUGINS:
         installed_data = _codex_json(["plugin", "list", "--json"])
         if installed_data is None:
             logger.warning(log_format.format_status(plugin_id, "plugin一覧の取得に失敗したためスキップ"))
@@ -340,10 +275,10 @@ def _install_external_plugins() -> post_apply_outcome.PostApplyOutcome:
         if not state_known:
             logger.warning(log_format.format_status(plugin_id, "plugin一覧の構造が不正なためスキップ"))
             continue
-        if installed is not None:
+        if installed is None:
             continue
-        if not _command(["plugin", "add", plugin_id]):
-            logger.warning(log_format.format_status(plugin_id, "plugin導入に失敗したため続行"))
+        if not _command(["plugin", "remove", plugin_id]):
+            logger.warning(log_format.format_status(plugin_id, "plugin除去に失敗したため続行"))
             continue
         changed = True
         _append_restart_notice_if_daemon_running(notices)
@@ -389,9 +324,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     notices: list[post_apply_outcome.PostApplyNotice] = []
     try:
-        external_outcome = _install_external_plugins()
-        changed = external_outcome.changed
-        notices.extend(external_outcome.notices)
+        unused_outcome = _remove_unused_plugins()
+        changed = unused_outcome.changed
+        notices.extend(unused_outcome.notices)
         root = claude_common.find_dotfiles_root()
         if root is None:
             return _outcome(changed, notices)

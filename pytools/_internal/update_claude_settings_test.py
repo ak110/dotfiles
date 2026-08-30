@@ -316,7 +316,6 @@ class TestProductionManagedSettings:
             term in rules["External Marketplace Registration"]
             for term in (
                 "`claude plugin marketplace add u-ichi/compact-plus`",
-                "`codex plugin marketplace add u-ichi/compact-plus`",
                 "`compact-plus@compact-plus`",
                 "インストール",
             )

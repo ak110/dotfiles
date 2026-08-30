@@ -303,7 +303,11 @@ CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数
 そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
 CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。
 `plugin add`後に失敗してもCodexの管理状態を自前で書き戻さない。
-外部pluginの導入、post-apply案内、Windowsのjunction除去経路は維持する。
+Codex側では外部pluginを導入せず、不要な`compact-plus@compact-plus`が導入済みの場合だけ`codex plugin remove`で除去する。
+除去成功時にdaemonが稼働していれば再起動案内を追加し、一覧取得または除去に失敗した場合はローカルplugin処理を継続する。
+Codex側の外部marketplace登録、外部plugin導入、取得元検証は対応先がないため撤去する。
+Claude Code側の外部plugin管理は`install_claude_plugins.py`で維持する。
+post-apply案内とWindowsのjunction除去経路は維持する。
 cache version台帳、全過去versionの保持、POSIXの原本接続、Windowsの原本接続とファイル同期、cache退避・置換・復元は、Codex CLIが実体導入を担当するため削除する。
 
 シンボリックリンク方式は代替案として却下する。

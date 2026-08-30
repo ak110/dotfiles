@@ -11,9 +11,9 @@ from pytools._internal import claude_common, install_codex_plugins
 
 
 @pytest.fixture(autouse=True)
-def _empty_external_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
-    """専用テストで明示した対象以外の外部導入を無効にする。"""
-    monkeypatch.setattr(install_codex_plugins, "_EXTERNAL_PLUGINS", ())
+def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ローカルpluginのテストでは不要pluginの除去を無効にする。"""
+    monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
 
 
 @pytest.fixture(name="plugin_env")
@@ -307,6 +307,84 @@ def test_rejects_mismatched_marketplace_root(plugin_env: Path, monkeypatch: pyte
     assert not outcome.notices
 
 
+def test_removes_installed_unused_plugin_and_returns_notice(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """導入済みの不要pluginを公式CLIで除去し、daemon再起動を案内する。"""
+    unused_state = {
+        "installed": [
+            {"pluginId": "compact-plus@compact-plus", "version": "1.3.2", "enabled": True},
+            *cast("list[dict[str, object]]", _installed_state()["installed"]),
+        ]
+    }
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    _set_json_responses(monkeypatch, [unused_state, _local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert ["plugin", "remove", "compact-plus@compact-plus"] in calls
+    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
+
+
+def test_skips_uninstalled_unused_plugin(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """未導入の不要pluginは除去せず、ローカルpluginも変更しない。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    _set_json_responses(monkeypatch, [{"installed": []}, _local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is False
+    assert not outcome.notices
+    assert ["plugin", "remove", "compact-plus@compact-plus"] not in calls
+
+
+def test_skips_unused_plugin_when_list_fails(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """不要pluginの一覧取得失敗時は除去せず、ローカルplugin処理を継続する。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    _set_json_responses(monkeypatch, [None, _local_marketplace(plugin_env), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is False
+    assert not outcome.notices
+    assert ["plugin", "remove", "compact-plus@compact-plus"] not in calls
+
+
+def test_continues_when_unused_plugin_remove_fails(
+    plugin_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """不要pluginの除去失敗時もローカルplugin処理を継続する。"""
+    unused_state = {
+        "installed": [
+            {"pluginId": "compact-plus@compact-plus", "version": "1.3.2", "enabled": True},
+            *cast("list[dict[str, object]]", _installed_state()["installed"]),
+        ]
+    }
+    calls: list[list[str]] = []
+    monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
+    _set_json_responses(monkeypatch, [unused_state, _local_marketplace(plugin_env), unused_state])
+
+    def command(args: list[str]) -> bool:
+        calls.append(args)
+        return args != ["plugin", "remove", "compact-plus@compact-plus"]
+
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is False
+    assert not outcome.notices
+    assert ["plugin", "remove", "compact-plus@compact-plus"] in calls
+    assert "plugin除去に失敗したため続行" in caplog.text
+
+
 def test_windows_junction_detection_and_removal_use_rmdir() -> None:
     """Windows junction相当ではis_junction判定後にrmdirを使う。"""
 
@@ -329,169 +407,3 @@ def test_windows_junction_detection_and_removal_use_rmdir() -> None:
     assert install_codex_plugins._is_link(path) is True  # pylint: disable=protected-access
     install_codex_plugins._unlink(path)  # pylint: disable=protected-access
     assert junction.removed is True
-
-
-class TestExternalPlugins:
-    """Codex向け外部プラグインの登録と導入を検証する。"""
-
-    _TARGET = ("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus")
-
-    def _setup_run(
-        self,
-        plugin_env: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        *,
-        registered: bool,
-        installed: bool,
-        add_succeeds: bool = True,
-        registered_source: str | None = None,
-        registered_source_type: str = "git",
-    ) -> list[list[str]]:
-        monkeypatch.setattr(install_codex_plugins, "_EXTERNAL_PLUGINS", (self._TARGET,))
-        calls: list[list[str]] = []
-        marketplace_added = False
-
-        def codex_json(args: list[str]) -> dict[str, Any]:
-            calls.append(["json", *args])
-            if args[:3] == ["plugin", "marketplace", "list"]:
-                marketplaces: list[dict[str, Any]] = [{"name": "ak110-dotfiles", "root": str(plugin_env)}]
-                if registered or marketplace_added:
-                    marketplaces.append(
-                        {
-                            "name": self._TARGET[0],
-                            "root": "/tmp/compact-plus",
-                            "marketplaceSource": {
-                                "sourceType": registered_source_type,
-                                "source": registered_source or "https://github.com/u-ichi/compact-plus.git",
-                            },
-                        }
-                    )
-                return {"marketplaces": marketplaces}
-            plugins = cast("list[dict[str, object]]", _installed_state()["installed"])
-            if installed:
-                plugins = [*plugins, {"pluginId": self._TARGET[2], "version": "1.0.0", "enabled": True}]
-            return {"installed": plugins}
-
-        def command(args: list[str]) -> bool:
-            nonlocal marketplace_added
-            calls.append(args)
-            if args == ["plugin", "marketplace", "add", self._TARGET[1]]:
-                marketplace_added = add_succeeds
-                return add_succeeds
-            return True
-
-        monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
-        monkeypatch.setattr(install_codex_plugins, "_command", command)
-        return calls
-
-    def test_registers_and_adds_when_absent(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        destination = _broken_legacy_link(plugin_env)
-        calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False)
-
-        outcome = install_codex_plugins.run()
-
-        assert outcome.changed is True
-        assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
-        assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
-        assert ["plugin", "add", self._TARGET[2]] in calls
-        assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
-        assert not destination.is_symlink()
-
-    def test_skips_when_already_added(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._setup_run(plugin_env, monkeypatch, registered=True, installed=True)
-
-        outcome = install_codex_plugins.run()
-
-        assert outcome.changed is False
-        assert not outcome.notices
-        assert ["plugin", "marketplace", "add", self._TARGET[1]] not in calls
-        assert ["plugin", "add", self._TARGET[2]] not in calls
-
-    @pytest.mark.parametrize(
-        ("registered_source", "registered_source_type"),
-        [
-            ("https://github.com/attacker/compact-plus.git", "git"),
-            ("http://github.com/u-ichi/compact-plus.git", "git"),
-            (None, "github"),
-        ],
-    )
-    def test_rejects_untrusted_marketplace(
-        self,
-        plugin_env: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
-        registered_source: str | None,
-        registered_source_type: str,
-    ) -> None:
-        calls = self._setup_run(
-            plugin_env,
-            monkeypatch,
-            registered=True,
-            installed=False,
-            registered_source=registered_source,
-            registered_source_type=registered_source_type,
-        )
-
-        outcome = install_codex_plugins.run()
-
-        assert outcome.changed is False
-        assert not outcome.notices
-        assert ["plugin", "add", self._TARGET[2]] not in calls
-        assert "marketplace取得元が一致しないためスキップ" in caplog.text
-
-    def test_base_and_external_updates_deduplicate_restart_notice(
-        self,
-        plugin_env: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(install_codex_plugins, "_EXTERNAL_PLUGINS", (self._TARGET,))
-        local_installed = False
-        external_installed = False
-
-        def codex_json(args: list[str]) -> dict[str, Any]:
-            if args[:3] == ["plugin", "marketplace", "list"]:
-                return {
-                    "marketplaces": [
-                        {"name": "ak110-dotfiles", "root": str(plugin_env)},
-                        {
-                            "name": self._TARGET[0],
-                            "root": "/tmp/compact-plus",
-                            "marketplaceSource": {
-                                "sourceType": "git",
-                                "source": "https://github.com/u-ichi/compact-plus.git",
-                            },
-                        },
-                    ]
-                }
-            installed: list[dict[str, object]] = []
-            if external_installed:
-                installed.append({"pluginId": self._TARGET[2], "version": "1.0.0", "enabled": True})
-            if local_installed:
-                installed.extend(cast("list[dict[str, object]]", _installed_state()["installed"]))
-            return {"installed": installed}
-
-        def command(args: list[str]) -> bool:
-            nonlocal external_installed, local_installed
-            if args == ["plugin", "add", self._TARGET[2]]:
-                external_installed = True
-            if args == ["plugin", "add", "agent-toolkit@ak110-dotfiles"]:
-                local_installed = True
-            return True
-
-        monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
-        monkeypatch.setattr(install_codex_plugins, "_command", command)
-
-        outcome = install_codex_plugins.run()
-
-        assert outcome.changed is True
-        assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
-
-    def test_continues_when_marketplace_add_fails(self, plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._setup_run(plugin_env, monkeypatch, registered=False, installed=False, add_succeeds=False)
-
-        outcome = install_codex_plugins.run()
-
-        assert outcome.changed is False
-        assert not outcome.notices
-        assert ["plugin", "marketplace", "add", self._TARGET[1]] in calls
-        assert ["plugin", "add", self._TARGET[2]] not in calls
