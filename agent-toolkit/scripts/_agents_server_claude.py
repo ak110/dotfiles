@@ -289,21 +289,28 @@ class ClaudeServerManager:
                                 raise RuntimeError("Claude init message did not contain session_id")
                             if expected_session_id is not None and session_id != expected_session_id:
                                 raise RuntimeError("Claude resume returned an unexpected session_id")
-                            session = SessionState(
-                                session_id=session_id,
-                                cwd=cwd,
-                                model=model,
-                                effort=effort,
-                                engine="claude",
-                            )
-                            self.sessions[session_id] = session
-                            channel = _CommandChannel()
-                            self._channels[session_id] = channel
-                            current_task = asyncio.current_task()
-                            if current_task is not None:
-                                self._task_sessions[current_task] = session_id
-                            if not initialized.done():
-                                initialized.set_result(session)
+                            # Claude CLIは同一セッションでもturnごとにinitを再送するため、
+                            # 状態とコマンドキューの生成は初回のinitに限定する。再生成した場合、
+                            # 所有タスクが待機するキューと`send_message`が投入するキューが分離し、
+                            # 以降の継続指示が受信されない。
+                            if session is None:
+                                session = SessionState(
+                                    session_id=session_id,
+                                    cwd=cwd,
+                                    model=model,
+                                    effort=effort,
+                                    engine="claude",
+                                )
+                                self.sessions[session_id] = session
+                                channel = _CommandChannel()
+                                self._channels[session_id] = channel
+                                current_task = asyncio.current_task()
+                                if current_task is not None:
+                                    self._task_sessions[current_task] = session_id
+                                if not initialized.done():
+                                    initialized.set_result(session)
+                            elif session_id != session.session_id:
+                                raise RuntimeError("Claude init message reported a different session_id")
                         elif name == "AssistantMessage" and session is not None:
                             text = _assistant_text(message)
                             session.agent_message = text
