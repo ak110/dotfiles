@@ -1960,6 +1960,9 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if tmp_path is not None:
         tmp_path.unlink(missing_ok=True)
     print(f"編集反映: {path.name}")
+    _add._print_entry_details(  # pylint: disable=protected-access
+        _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+    )
 
 
 def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -2005,6 +2008,9 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         )
         sys.exit(1)
     print(f"追記反映: {path.name}")
+    _add._print_entry_details(  # pylint: disable=protected-access
+        _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+    )
 
 
 def _cmd_commit(private_notes: pathlib.Path) -> None:

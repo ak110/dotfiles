@@ -38,7 +38,8 @@ from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_comm
 
 def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
     """保存済みエントリを再読込し、ユーザーが照合するメタデータを返す。"""
-    parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    saved_body = path.read_text(encoding="utf-8")
+    parsed = _frontmatter.parse_frontmatter(saved_body)
     if parsed is None:
         raise WebInputError(f"保存済みエントリのfrontmatterを読み込めません: {path.name}")
     data, _body = parsed
@@ -49,6 +50,7 @@ def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
         "depends_on": depends_on,
+        "saved_body": saved_body,
     }
 
 
@@ -62,6 +64,8 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
         "、".join(str(value) for value in depends_on) if isinstance(depends_on, (list, tuple)) and depends_on else "なし"
     )
     print(f"    depends_on: {rendered_dependencies}")
+    print("    saved_body:")
+    print(details["saved_body"])
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:

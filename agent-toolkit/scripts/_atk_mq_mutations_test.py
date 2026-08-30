@@ -1444,6 +1444,7 @@ def test_cmd_convert_to_plan_displays_commit_for_single_planning_input(
         "target_commit": "b" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": [],
+        "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
         mutations._add,  # pylint: disable=protected-access
@@ -1482,6 +1483,7 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "target_commit": "a" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": ["dependency.md"],
+        "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
         mutations,
@@ -2575,6 +2577,60 @@ def test_agent_environment_rejects_malformed_user_comment_structure(
         "本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n",
     )
     assert capsys.readouterr().err == _USER_COMMENT_ERROR
+
+
+@pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
+def test_cli_edit_outputs_saved_body_for_each_write_route(
+    route: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各編集経路が保存結果から読み直した全文を字下げせず出力する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "fb-001.md"
+    path = _write_feedback_file(notes, filename, body="編集前")
+    message = '編集後。"引用"を含む。\n\n## 見出し\n\n複数行。'
+    argv = ["mq", "edit", filename, message]
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+        if cmd[0] == "fake-editor":
+            editor_path = pathlib.Path(cmd[1])
+            original = editor_path.read_text(encoding="utf-8")
+            editor_path.write_text(original.replace("編集前", message), encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, returncode=0)
+        return _make_subprocess_fake([])(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    if route == "editor":
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        argv = ["mq", "edit", filename]
+    elif route == "append":
+        argv = ["mq", "edit", "--append", filename, message]
+    elif route == "plan":
+        planning_path = notes / "planning" / filename
+        path.replace(planning_path)
+        plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.setattr(
+            mutations._add,  # pylint: disable=protected-access
+            "resolve_add_target",
+            lambda _value: ("github.com/example/foo", worktree),
+        )
+        _patch_planning_target_resolution(monkeypatch, "a" * 40)
+        argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
+        path = notes / "inbox" / filename
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path)
+
+    assert exc_info.value.code == 0
+    saved = path.read_text(encoding="utf-8")
+    output = capsys.readouterr().out
+    marker = "    saved_body:\n"
+    assert output.count(marker) == 1
+    assert output.split(marker, maxsplit=1)[1].rstrip("\n") == saved.rstrip("\n")
 
 
 class TestEditNoEditor:
