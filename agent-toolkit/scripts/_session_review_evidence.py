@@ -315,12 +315,19 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
+    """記録全体が1件のサブエージェントの会話かを返す。"""
+    conversation = [entry for entry in entries if entry.get("type") in {"user", "assistant"}]
+    return bool(conversation) and all(entry.get("isSidechain") is True for entry in conversation)
+
+
 def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
     pending_question_lines: dict[str, int] = {}
+    subagent_record = _is_subagent_record(entries)
     for line, entry in zip(lines, entries, strict=True):
-        for event in _claude_entry_events(entry, line, pending_question_lines):
+        for event in _claude_entry_events(entry, line, pending_question_lines, subagent_record):
             event.setdefault("line", line)
             events.append(event)
     return events
@@ -330,10 +337,15 @@ def _claude_entry_events(
     entry: dict[str, Any],
     line: int,
     pending_question_lines: dict[str, int],
+    subagent_record: bool = False,
 ) -> list[dict[str, Any]]:
-    """Claude Codeの1エントリから共通イベントを取得する。"""
+    """Claude Codeの1エントリから共通イベントを取得する。
+
+    メイン記録に混在するサブエージェントのエントリは完了報告だけを残す。
+    記録全体が1件のサブエージェントの会話である場合は、走査対象そのものであるため通常のエントリとして扱う。
+    """
     events: list[dict[str, Any]] = []
-    if entry.get("isSidechain") is True:
+    if entry.get("isSidechain") is True and not subagent_record:
         completion = _completion_event(entry)
         if completion:
             events.append(completion)

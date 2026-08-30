@@ -3418,3 +3418,40 @@ def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
         ("plan file <var> was written.", 3),
     ]
     assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "委譲された依頼"}},
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "実装を完了した"}]},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["委譲された依頼", "実装を完了した"]
+
+
+def test_claude_main_record_keeps_only_completion_from_subagent_entries(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "委譲された依頼"}},
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "実装を完了した"}]},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["依頼"]
