@@ -909,7 +909,7 @@ class TestCommitAndPushRetry:
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
-        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # noqa: SLF001
+        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
@@ -961,7 +961,7 @@ class TestCommitAndPushRetry:
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
-        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # noqa: SLF001
+        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
 
         with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
@@ -987,7 +987,7 @@ class TestCommitAndPushRetry:
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_common, "_run_git", fake_run_git)
-        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # noqa: SLF001
+        monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
 
         with (
             pytest.raises(subprocess.CalledProcessError),
