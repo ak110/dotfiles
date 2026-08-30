@@ -624,7 +624,6 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
-            "claude",
         )
         assert prompt == (
             "/goal `agent-toolkit:process-feedbacks`を起動し、"
@@ -652,28 +651,8 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
-            "claude",
         )
         assert "agent-toolkit:process-feedbacks" in prompt
-
-    def test_codex_prompt_limits_processing_to_startup_ready_set(self) -> None:
-        """Codexの目的文だけが起動時の固定`ready`集合と終了工程への移行を明示する。"""
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            "github.com/example/repo",
-            "codex",
-        )
-
-        assert prompt.startswith("/goal ")
-        assert prompt.count("/goal ") == 1
-        assert "起動時に固定したready集合だけを同じセッションで処理" in prompt
-        assert "その全てを完了した時点で既存の終了工程" in prompt
-        assert "開始後に追加されたready項目" not in prompt
-        assert "exit-session" not in prompt
-        assert "/exit" not in prompt
-        assert "Git" not in prompt
-        assert "計画状態" not in prompt
-        assert "session-review" not in prompt
 
     def test_prompt_includes_target_repo(self) -> None:
         """プロンプトが`--target-repo`限定指示と正規化リモートURLを本文へ含める。
@@ -685,7 +664,6 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             target_repo_id,
-            "claude",
         )
         assert target_repo_id in prompt
         assert "/repo" in prompt
@@ -695,7 +673,6 @@ class TestProcessLoopPromptAndEnv:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo/.claude/worktrees/process-loop"),
             "github.com/ak110/dotfiles",
-            "claude",
         )
 
         assert "origin/master" not in prompt
@@ -2591,7 +2568,6 @@ class TestProcessLoopUrlInput:
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/ak110/dotfiles",
-            "claude",
         )
         assert "git worktree内で起動" not in prompt
         assert "現在のHEADを`origin/master`へ反映" not in prompt
