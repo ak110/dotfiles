@@ -81,8 +81,24 @@ async def _wait_for_server(port: int) -> None:
         return
 
 
+@pytest_asyncio.fixture(scope="session", name="browser")
+async def _browser_fixture() -> AsyncGenerator[playwright.async_api.Browser]:
+    playwright_instance = await playwright.async_api.async_playwright().start()
+    browser = None
+    try:
+        browser = await playwright_instance.chromium.launch()
+        yield browser
+    finally:
+        if browser is not None:
+            await browser.close()
+        await playwright_instance.stop()
+
+
 @pytest_asyncio.fixture(name="browser_harness")
-async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHarness]:
+async def _browser_harness_fixture(
+    tmp_path: Path,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_BrowserHarness]:
     plan_path = tmp_path / "plan.md"
     plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     app = _app.create_app(tmp_path, hostname="browser-test")
@@ -96,13 +112,9 @@ async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHar
     server_task = asyncio.create_task(
         app.run_task("127.0.0.1", port, shutdown_trigger=_shutdown_trigger),
     )
-    playwright_instance = None
-    browser = None
     context = None
     try:
         await _wait_for_server(port)
-        playwright_instance = await playwright.async_api.async_playwright().start()
-        browser = await playwright_instance.chromium.launch()
         context = await browser.new_context()
         page = await context.new_page()
         requests: list[str] = []
@@ -122,17 +134,16 @@ async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHar
     finally:
         if context is not None:
             await context.close()
-        if browser is not None:
-            await browser.close()
-        if playwright_instance is not None:
-            await playwright_instance.stop()
         shutdown.set()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task
 
 
 @pytest_asyncio.fixture(name="multi_root_browser_harness")
-async def _multi_root_browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_MultiRootBrowserHarness]:
+async def _multi_root_browser_harness_fixture(
+    tmp_path: Path,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_MultiRootBrowserHarness]:
     new_root = tmp_path / "new"
     legacy_root = tmp_path / "legacy"
     new_root.mkdir()
@@ -158,13 +169,9 @@ async def _multi_root_browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[
     server_task = asyncio.create_task(
         app.run_task("127.0.0.1", port, shutdown_trigger=_shutdown_trigger),
     )
-    playwright_instance = None
-    browser = None
     context = None
     try:
         await _wait_for_server(port)
-        playwright_instance = await playwright.async_api.async_playwright().start()
-        browser = await playwright_instance.chromium.launch()
         context = await browser.new_context()
         await context.grant_permissions(["clipboard-read", "clipboard-write"], origin=f"http://127.0.0.1:{port}")
         page = await context.new_page()
@@ -179,10 +186,6 @@ async def _multi_root_browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[
     finally:
         if context is not None:
             await context.close()
-        if browser is not None:
-            await browser.close()
-        if playwright_instance is not None:
-            await playwright_instance.stop()
         shutdown.set()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task

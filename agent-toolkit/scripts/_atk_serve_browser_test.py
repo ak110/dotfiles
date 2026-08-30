@@ -297,10 +297,24 @@ def _write_entries(root: Path) -> None:
         )
 
 
+@pytest_asyncio.fixture(scope="session", name="browser")
+async def _browser_fixture() -> AsyncGenerator[playwright.async_api.Browser]:
+    playwright_instance = await playwright.async_api.async_playwright().start()
+    browser = None
+    try:
+        browser = await playwright_instance.chromium.launch()
+        yield browser
+    finally:
+        if browser is not None:
+            await browser.close()
+        await playwright_instance.stop()
+
+
 @pytest_asyncio.fixture(name="browser_harness")
 async def _browser_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_BrowserHarness]:
     _write_entries(tmp_path)
     original_parse = serve_app.frontmatter.parse_frontmatter
@@ -334,13 +348,9 @@ async def _browser_harness_fixture(
         await shutdown.wait()
 
     server_task = asyncio.create_task(app.run_task("127.0.0.1", port, shutdown_trigger=shutdown_trigger))
-    playwright_instance = None
-    browser = None
     context = None
     try:
         await _wait_for_server(port)
-        playwright_instance = await playwright.async_api.async_playwright().start()
-        browser = await playwright_instance.chromium.launch()
         context = await browser.new_context()
         page = await context.new_page()
         yield _BrowserHarness(
@@ -354,10 +364,6 @@ async def _browser_harness_fixture(
     finally:
         if context is not None:
             await context.close()
-        if browser is not None:
-            await browser.close()
-        if playwright_instance is not None:
-            await playwright_instance.stop()
         shutdown.set()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task
@@ -1459,9 +1465,10 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     detail = page.get_by_role("dialog", name="詳細")
 
     await page.locator('.entry-select[data-key="inbox/empty.md"]').click()
+    await playwright.async_api.expect(detail).to_be_visible()
     await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_hidden()
     await page.keyboard.press("Escape")
-    await detail.wait_for(state="hidden")
+    await playwright.async_api.expect(detail).to_be_hidden()
 
     await page.locator('.entry-select[data-key="inbox/feedback.md"]').click()
     comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)
