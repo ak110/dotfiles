@@ -16,6 +16,10 @@
 - フィードバック固有の処理順、公開、確認又は検証指示
 - 複製元、対象外worktree、commit可、ffマージ可、所有資源の回収可、push不可という権限
 
+計画レビューの指摘管理表は渡さない。同表は計画の確定までに用いる記録であり、実装担当の入力ではない。
+実装担当が扱うのは実装レビューの指摘管理表だけとし、その受領条件は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`が定める。
+計画レビューの経緯が必要になる事象が生じた場合だけ、当該事象を示して同表の絶対パスを追送する。
+
 ## checkpointの受領
 
 `review_round`は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って受領する。
