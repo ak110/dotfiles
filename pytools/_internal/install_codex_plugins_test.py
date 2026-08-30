@@ -41,7 +41,7 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         encoding="utf-8",
     )
     (root / "agent-toolkit/scripts").mkdir()
-    (root / "agent-toolkit/scripts/claude_hook.py").write_text("source", encoding="utf-8")
+    (root / "agent-toolkit/scripts/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)

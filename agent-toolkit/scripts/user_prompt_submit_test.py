@@ -17,7 +17,7 @@ import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
-_SCRIPT = _SCRIPTS_DIR / "claude_hook.py"
+_SCRIPT = _SCRIPTS_DIR / "hook.py"
 
 
 def _run(

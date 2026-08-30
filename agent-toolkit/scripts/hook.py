@@ -22,6 +22,11 @@ venvをキャッシュするため、集約により従来7個に分散してい
 要約1行は`main()`実行中の例外のみを対象とし、モジュール読込時点の失敗
 （`ModuleNotFoundError`等）は対象外とする。読込失敗時は素のPythonトレースバックのみを
 標準エラー出力へ書き、フック処理を通過させる。
+
+未知のサブコマンドは、hook定義の登録名と実装の`_SUBCOMMANDS`が一致していない状態を示す。稼働中の
+セッションが起動時に読んだ旧定義を保持する場合のほか、hook定義の登録名の誤りや、実装より新しい
+hook定義でも同じ経路へ入る。配布先の定義を追随させる機構は設けず、終了コード0を保ったまま
+標準エラー出力で不整合を観測できるようにする。
 """
 
 import contextlib
@@ -53,6 +58,11 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 # 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象。Stop系モジュールの実装と一致させる。
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit"})
 
+# 複数hookが共存する環境で自身の出力を判別するための標識。書式は`agent-toolkit:agent-standards`の
+# メッセージ標識契約に従う。終了コード0の標準エラー出力はコーディングエージェントへ直接渡らないため、
+# 同契約のサフィックスは付けない。
+_MESSAGE_PREFIX = "[auto-generated: agent-toolkit/hook]"
+
 
 def _configure_standard_output() -> None:
     """標準出力と標準エラーをUTF-8へ統一する。"""
@@ -75,20 +85,28 @@ def _dump_payload(subcommand: str, payload_bytes: bytes) -> None:
 
 def main(argv: list[str]) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
-    if not argv or argv[0] not in _SUBCOMMANDS:
+    _configure_standard_output()
+    known_subcommands = "|".join(sorted(_SUBCOMMANDS))
+    if not argv:
+        print(f"{_MESSAGE_PREFIX} usage: hook.py <{known_subcommands}>", file=sys.stderr)
+        return 0
+    if argv[0] not in _SUBCOMMANDS:
         print(
-            f"[claude_hook] usage: claude_hook.py <{'|'.join(sorted(_SUBCOMMANDS))}>",
+            f"{_MESSAGE_PREFIX} hook定義と実装が不整合: 未知のサブコマンド'{argv[0]}'を受領した。"
+            f"現行のサブコマンド: {known_subcommands}。"
+            "呼び出し元のhook定義の登録名と現行のサブコマンドを照合する。"
+            "稼働中のセッションが起動時に読んだ旧定義を保持している場合は、"
+            "プラグインを更新してセッションを再起動すると解消する。",
             file=sys.stderr,
         )
         return 0
-    _configure_standard_output()
     payload_bytes = sys.stdin.buffer.read()
     _dump_payload(argv[0], payload_bytes)
     try:
         payload_text = payload_bytes.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         print(
-            f"[claude_hook] stdinのUTF-8復号に失敗したためフック処理を通過させる: {exc}",
+            f"{_MESSAGE_PREFIX} stdinのUTF-8復号に失敗したためフック処理を通過させる: {exc}",
             file=sys.stderr,
         )
         return 0

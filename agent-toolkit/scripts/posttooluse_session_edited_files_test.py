@@ -17,7 +17,7 @@ import _fork_runner
 import pytest
 from _test_helpers import _read_state
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:

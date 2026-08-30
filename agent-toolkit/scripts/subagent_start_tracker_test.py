@@ -11,7 +11,7 @@ import _fork_runner
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
-_SCRIPT = pathlib.Path(__file__).parent / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).parent / "hook.py"
 
 
 def _run(subcommand: str, payload: object, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:

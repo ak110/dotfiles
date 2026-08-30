@@ -19,7 +19,7 @@ import _fork_runner
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "hooks.json"
 _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
@@ -31,7 +31,7 @@ def _load_posttooluse_module() -> types.ModuleType:
 
     PostToolUseの内部dispatchと補助機構を直接呼ぶテストで使う。
     引数注入では到達不能なモジュール内部関数の単体検査のため、importlibによる直接参照を例外的に許容する。
-    `_SCRIPT`（`claude_hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
+    `_SCRIPT`（`hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
     """
     spec = importlib.util.spec_from_file_location("posttooluse", _POSTTOOLUSE_MODULE_PATH)
     assert spec is not None and spec.loader is not None

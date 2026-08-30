@@ -12,7 +12,7 @@ import _fork_runner
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
-_SCRIPT = pathlib.Path(__file__).parent / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).parent / "hook.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60
 
 

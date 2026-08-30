@@ -9,7 +9,7 @@ import _managed_temp
 import permissionrequest as hook
 import pytest
 
-_SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 
 

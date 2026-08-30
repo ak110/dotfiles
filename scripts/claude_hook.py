@@ -14,7 +14,7 @@
 第1引数でサブコマンド（イベント種別相当のモジュール名）を指定する。
 
 集約方針・例外要約1行の書式・モジュール読込失敗を対象外とする理由は
-`agent-toolkit/scripts/claude_hook.py`と共通のため重複記載しない。
+`agent-toolkit/scripts/hook.py`と共通のため重複記載しない。
 本ファイルは配布物境界（`agent-toolkit/`配下）を跨がず、dotfiles個人環境側のみで完結する。
 """
 

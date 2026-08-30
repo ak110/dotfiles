@@ -14,13 +14,13 @@ import textwrap
 import time
 
 import _fork_runner
-import claude_hook
+import hook
 import pretooluse
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 from pyfltr.colloquial import check as _colloquial_check
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
 _SHARE_DIR = pathlib.Path(__file__).resolve().parents[1] / "share"
@@ -133,7 +133,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
     return sorted(set(offenders))
 
 
-@pytest.mark.parametrize("module_name", sorted(claude_hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
+@pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
     source = (pathlib.Path(pretooluse.__file__).parent / f"{module_name}.py").read_text(encoding="utf-8")

@@ -16,7 +16,7 @@ import _managed_temp
 import permissionrequest_codex as subject
 import pytest
 
-_ENTRYPOINT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
+_ENTRYPOINT = pathlib.Path(__file__).resolve().parent / "hook.py"
 _HELPER = pathlib.Path(_managed_temp.__file__).resolve()
 
 

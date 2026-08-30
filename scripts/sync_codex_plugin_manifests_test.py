@@ -83,7 +83,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                                 {
                                     "type": "command",
                                     "command": "uv run --no-project --script "
-                                    "${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest",
+                                    "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py permissionrequest",
                                 }
                             ],
                         },

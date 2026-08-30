@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/claude_hook.py のテスト。
+"""agent-toolkit/scripts/hook.py のテスト。
 
 フック共通エントリポイントが、モジュール読込段階の失敗と`main()`実行中の例外を
 区別して扱うことを検証する。読込失敗では素のtracebackだけを標準エラー出力へ書き、
@@ -16,7 +16,7 @@ import sys
 
 import pytest
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
 _SUBCOMMANDS = (
     "pretooluse",
@@ -38,7 +38,7 @@ class TestEntrypointExceptionStages:
 
     @staticmethod
     def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
-        entrypoint = tmp_path / "claude_hook.py"
+        entrypoint = tmp_path / "hook.py"
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
@@ -142,7 +142,7 @@ class TestStandardInputAndPayloadDump:
 
     @staticmethod
     def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
-        entrypoint = tmp_path / "claude_hook.py"
+        entrypoint = tmp_path / "hook.py"
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
@@ -197,6 +197,33 @@ class TestStandardInputAndPayloadDump:
         assert not result.stdout
         assert "UTF-8" in result.stderr.decode("utf-8")
         assert not marker.exists()
+
+    def test_unknown_subcommand_reports_definition_mismatch(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT), "stop_advisor"],
+            input=b"{}",
+            capture_output=True,
+            check=False,
+        )
+
+        stderr = result.stderr.decode("utf-8")
+        assert result.returncode == 0
+        assert not result.stdout
+        assert stderr.startswith("[auto-generated: agent-toolkit/hook] hook定義と実装が不整合:")
+        assert "stop_advisor" in stderr
+        assert "|".join(sorted(_SUBCOMMANDS)) in stderr
+
+    def test_no_subcommand_reports_usage(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT)],
+            input=b"{}",
+            capture_output=True,
+            check=False,
+        )
+
+        assert result.returncode == 0
+        assert not result.stdout
+        assert result.stderr.decode("utf-8").startswith("[auto-generated: agent-toolkit/hook] usage: hook.py <")
 
     def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
         """各サブコマンドへ渡す前に共通入口が前身状態を継承する。"""

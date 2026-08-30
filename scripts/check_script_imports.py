@@ -24,7 +24,7 @@ r"""`scripts/`配下スクリプトと`[project.scripts]`が参照するモジ�
 対象一覧は`scripts/`配下の走査と`pyproject.toml`から機械的に取得し、本スクリプト側に
 重複した一覧を持たない。
 
-注記: `agent-toolkit/hooks/hooks.json`の登録コマンドは`claude_hook.py`単一エントリポイント
+注記: `agent-toolkit/hooks/hooks.json`の登録コマンドは`hook.py`単一エントリポイント
 経由のため、hookスクリプト個別名を登録定義から機械取得できない。「自動処理の登録定義から
 一覧を機械取得する」設計は現構造では成立しないため、`scripts/`配下の走査で代替する。
 

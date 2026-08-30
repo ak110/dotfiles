@@ -11,7 +11,7 @@ import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 
 
 def _run(
