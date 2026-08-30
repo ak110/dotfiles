@@ -74,7 +74,7 @@ TBDを起草する場合は[references/tbd-format.md](references/tbd-format.md)�
 
 `depends_on`は、当該項目より先に終端すべきキュー項目のファイル名を保持する。用途は、未回答TBDによる外部待ちと、先に終端すべきフィードバックへの先行成果依存の2つとする。値は保存済みのメタデータを正本とし、本文の記述から依存を再構築しない。
 
-TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してTBDを`depends_on`へ加え、`inbox`かつ`blocked`にする。回答を保存したTBDを先に終端し、依存解除後に元項目を次の処理対象へ戻す。
+TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してTBDを`depends_on`へ加え、`inbox`かつ`blocked`にする。`inbox`へ戻した後に着手可否が`blocked`であることを確認する。回答を保存したTBDを先に終端し、依存解除を確認した後に元項目を次の処理対象へ戻す。
 
 `rejected`は全要求の不採用を確認済みの場合だけ使用する。技術的失敗、入力不足、外部条件待ち又は計画不備は不採用へ変換せず、必要なTBD依存を付けてactiveのまま保持する。
 
@@ -90,5 +90,7 @@ TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持�
 2. 複数リポジトリへ投入する場合は[references/cross-repository-submission.md](references/cross-repository-submission.md)を全文読む。
 3. 同じ対象リポジトリの複数項目を一括取得する場合は[references/managed-temp-bulk-show.md](references/managed-temp-bulk-show.md)を全文読む。
 4. 本文へ引用符又は改行を含む場合はファイルへ保存し、`atk mq add --body-file <path>`で渡す。位置引数とは併用しない。
-5. 呼出元が指定した本文、対象リポジトリ、種別、`source`、plan file及び依存を変更せず登録する。エージェント自身の投入では前節で確定した`source`を省略しない。`source`が未指定の人間由来入力へ値を推測して追加しない。
-6. 完了表示と`atk mq show <filename> --target-repo=<repo> --skip-pull`の再取得結果を照合する。ファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`、指定・確定済みの`source`及び非予約frontmatterに欠落があれば、完了扱いにせず同じ経路で修復する。警告又はエラーが出た場合は終了コード0でも保存本文を再取得する。
+5. 登録は本文の内容が確定した時点で行い、複数件をセッション終了時までためて一括登録しない。内容が未確定の事項は登録の対象外とする。
+6. 登録するフィードバックの対象ファイルが現在のセッションの変更対象と重なる場合は、当該セッションが対象ファイルの変更を完了してから登録する（努力目標）。常駐処理が動作する環境では登録が遅れると次の反復まで着手が遅れる一方、変更対象が重なる項目を即時に登録すると別の作業ツリーで同じファイルへ並行着手し得るため、両者を比較して時機を選ぶ。
+7. 呼出元が指定した本文、対象リポジトリ、種別、`source`、plan file及び依存を変更せず登録する。エージェント自身の投入では前節で確定した`source`を省略しない。`source`が未指定の人間由来入力へ値を推測して追加しない。
+8. 完了表示と`atk mq show <filename> --target-repo=<repo> --skip-pull`の再取得結果を照合する。ファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`、指定・確定済みの`source`及び非予約frontmatterに欠落があれば、完了扱いにせず同じ経路で修復する。警告又はエラーが出た場合は終了コード0でも保存本文を再取得する。
