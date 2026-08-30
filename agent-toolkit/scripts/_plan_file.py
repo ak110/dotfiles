@@ -296,7 +296,7 @@ def _is_component_name(name: str) -> bool:
 
 
 def is_plan_component_file(file_path: str) -> bool:
-    """計画本体または実装詳細ファイルか判定する。"""
+    """計画ファイル（メイン）または計画ファイル（詳細）か判定する。"""
     name = _plan_file_name(file_path)
     if name is not None:
         return _is_component_name(name)
@@ -308,7 +308,7 @@ def is_plan_component_file(file_path: str) -> bool:
 
 
 def is_plan_main_file(file_path: str) -> bool:
-    """計画本体ファイルか判定する。"""
+    """計画ファイル（メイン）か判定する。"""
     name = _plan_file_name(file_path)
     if name is not None:
         return _is_component_name(name) and not name.endswith(".detail.md")

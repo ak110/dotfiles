@@ -1,4 +1,4 @@
-"""_plan_file.pyの計画本体・構成要素・付属ファイル判定を検証する。"""
+"""_plan_file.pyの計画ファイル（メイン）・構成要素・付属ファイル判定を検証する。"""
 
 import pathlib
 
@@ -17,21 +17,21 @@ def _plans_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> path
 
 
 def test_is_plan_main_file_normal_md_returns_true(_plans_home: pathlib.Path) -> None:
-    """`~/.claude/plans/`直下の`.md`は計画本体として真になる。"""
+    """`~/.claude/plans/`直下の`.md`は計画ファイル（メイン）として真になる。"""
     plan = _plans_home / "sample.md"
     plan.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_main_file(str(plan)) is True
 
 
 def test_is_plan_main_file_detail_md_returns_false(_plans_home: pathlib.Path) -> None:
-    """`.detail.md`（実装詳細側）は計画本体述語では偽になる。"""
+    """計画ファイル（詳細）は計画ファイル（メイン）述語では偽になる。"""
     plan = _plans_home / "sample.detail.md"
     plan.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_main_file(str(plan)) is False
 
 
 def test_is_plan_main_file_bugs_md_returns_false(_plans_home: pathlib.Path) -> None:
-    """`.bugs.md`（バグ調査付属側）は計画本体述語では偽になる。"""
+    """計画ファイル（バグ）は計画ファイル（メイン）述語では偽になる。"""
     path = _plans_home / "sample.bugs.md"
     path.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_main_file(str(path)) is False
@@ -72,21 +72,21 @@ def test_is_plan_main_file_empty_path_returns_false() -> None:
 
 
 def test_is_plan_component_file_normal_md_returns_true(_plans_home: pathlib.Path) -> None:
-    """計画本体は計画構成要素述語でも真になる。"""
+    """計画ファイル（メイン）は計画構成要素述語でも真になる。"""
     plan = _plans_home / "sample.md"
     plan.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_component_file(str(plan)) is True
 
 
 def test_is_plan_component_file_detail_md_returns_true(_plans_home: pathlib.Path) -> None:
-    """`.detail.md`（実装詳細側）は計画構成要素述語では真になる。"""
+    """計画ファイル（詳細）は計画構成要素述語では真になる。"""
     plan = _plans_home / "sample.detail.md"
     plan.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_component_file(str(plan)) is True
 
 
 def test_is_plan_component_file_bugs_md_returns_false(_plans_home: pathlib.Path) -> None:
-    """`.bugs.md`（バグ調査付属側）は計画構成要素述語でも偽になる。"""
+    """計画ファイル（バグ）は計画構成要素述語でも偽になる。"""
     path = _plans_home / "sample.bugs.md"
     path.write_text("# t\n", encoding="utf-8")
     assert _plan_file.is_plan_component_file(str(path)) is False
@@ -135,7 +135,7 @@ def test_is_plan_adjunct_file_bugs_md_returns_true(_plans_home: pathlib.Path) ->
 
 @pytest.mark.parametrize("name", ["sample.md", "sample.detail.md", "sample.review.md", "sample.bugs.txt"])
 def test_is_plan_adjunct_file_non_bugs_files_return_false(_plans_home: pathlib.Path, name: str) -> None:
-    """計画本体、detail及び副次ファイルは付属ファイル述語で偽になる。"""
+    """計画ファイル（メイン）、詳細及び副次ファイルは付属ファイル述語で偽になる。"""
     path = _plans_home / name
     path.write_text("x\n", encoding="utf-8")
     assert _plan_file.is_plan_adjunct_file(str(path)) is False

@@ -444,7 +444,7 @@ class TestCurrentPlanFilePathTracking:
         assert "current_plan_file_path" not in state
 
     def test_detail_file_write_does_not_record_current_plan_file_path(self, tmp_path: pathlib.Path):
-        """実装詳細側`.detail.md`は計画本体述語で偽のため`current_plan_file_path`を記録しない。"""
+        """計画ファイル（詳細）は計画ファイル（メイン）述語で偽のため現在値を記録しない。"""
         home = tmp_path / "home"
         plans_dir = home / ".claude" / "plans"
         plans_dir.mkdir(parents=True)

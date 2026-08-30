@@ -642,7 +642,7 @@ class TestHomePathCheck:
 
     @pytest.mark.parametrize("name", ["home-path.md", "home-path.bugs.md"])
     def test_home_path_in_plan_file_skipped(self, tmp_path: pathlib.Path, name: str):
-        """計画本体とバグ調査付属ファイルでは正確なホーム絶対パスを許容する。"""
+        """計画ファイル（メイン）と計画ファイル（バグ）では正確なホーム絶対パスを許容する。"""
         home = tmp_path / "home"
         plan = _make_plan_file(home, name)
         result = _run(
@@ -847,7 +847,7 @@ class TestColloquialCheck:
 
     @pytest.mark.parametrize("name", ["colloquial.detail.md", "colloquial.bugs.md"])
     def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str, name: str) -> None:
-        """計画ファイル（詳細）とバグ調査付属側は口語警告を出力しない。"""
+        """計画ファイル（詳細）と計画ファイル（バグ）は口語警告を出力しない。"""
         detail = _make_plan_file(tmp_path / "home", name)
         content = f"概要は{deny_substring}該当する。\n"
         result = _run(

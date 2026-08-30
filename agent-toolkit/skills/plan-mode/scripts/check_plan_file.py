@@ -158,7 +158,7 @@ def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
 
 
 def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Path) -> list[str]:
-    """計画ファイル（メイン）の計画メタ情報`実装詳細`がstem導出値と一致するかを検査する。"""
+    """計画ファイル（メイン）の計画ファイル（詳細）参照がstem導出値と一致するかを検査する。"""
     if declared_value is None:
         return [f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`が無い: 期待={detail_path.name}"]
     declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
@@ -243,6 +243,22 @@ def _legacy_h2_warnings(text: str) -> list[str]:
     return warnings
 
 
+def _legacy_fixed_notation_warnings(text: str) -> list[str]:
+    """読み取り互換で受理した旧形式の固定記法に移行警告を返す。"""
+    warnings: list[str] = []
+    metadata, _errors = _plan_format.parse_plan_metadata(text)
+    if metadata is not None and any(
+        field == _plan_format.PLAN_METADATA_LEGACY_DETAIL_FIELD for field, _value in metadata.entries
+    ):
+        warnings.append("計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する")
+    if any(
+        line.strip().startswith(_plan_format.PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
+        for _lineno, line in _plan_format.iter_markdown_body_lines(text)
+    ):
+        warnings.append("バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する")
+    return warnings
+
+
 def _check_new_format(
     detail_path: pathlib.Path,
     text: str,
@@ -274,10 +290,12 @@ def _check_new_format(
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
     warnings.extend(_legacy_bug_warnings(detail_text))
+    warnings.extend(_legacy_fixed_notation_warnings(detail_text))
 
     materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))
+    warnings.extend(_legacy_fixed_notation_warnings(text))
     is_canonical = _plan_format.is_canonical_main_format(text)
     if is_canonical and not _plan_format.has_human_action_table(text):
         errors.append("canonical形式の`## 実施内容`には人間向け4列表が必要である")
@@ -306,6 +324,7 @@ def _check_legacy_format(
     warnings: list[str] = []
     warnings.extend(_legacy_action_warnings(text))
     warnings.extend(_legacy_bug_warnings(text))
+    warnings.extend(_legacy_fixed_notation_warnings(text))
     if materials is not None and materials.is_legacy:
         warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)

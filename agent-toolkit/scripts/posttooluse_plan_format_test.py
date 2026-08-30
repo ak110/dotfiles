@@ -94,7 +94,7 @@ def _plan_content(detail_name: str) -> str:
 - 対象リポジトリ: `/repo`
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 実装詳細: `{detail_name}`
+- 計画ファイル（詳細）: `{detail_name}`
 
 ## 実施内容
 
