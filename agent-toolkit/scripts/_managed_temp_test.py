@@ -825,11 +825,14 @@ class TestManagedTempPosix:
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         deadline_ns = int((now - datetime.timedelta(days=7)).timestamp() * 1_000_000_000)
         _set_tree_mtime(target, deadline_ns)
+        original_scandir = subject.os.scandir
 
-        def fail_scandir(path: pathlib.Path) -> typing.NoReturn:
-            raise AssertionError(f"期限境界のrootを走査した: {path}")
+        def fail_target_scandir(path: pathlib.Path | str, **kwargs: typing.Any) -> typing.Any:
+            if pathlib.Path(path) == target:
+                raise AssertionError(f"期限境界のrootを走査した: {path}")
+            return original_scandir(path, **kwargs)
 
-        monkeypatch.setattr(subject.os, "scandir", fail_scandir)
+        monkeypatch.setattr(subject.os, "scandir", fail_target_scandir)
 
         assert not subject.sweep_expired_managed_temp(now=now)
         assert target.exists()

@@ -207,6 +207,7 @@ class TestWaitScheduleParser:
     ) -> None:
         """期限超過領域の後始末失敗は警告し、本来のサブコマンドを継続する。"""
         monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
         target = _managed_temp.create_managed_temp("cleanup-failure")
         now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
         old_ns = int((now - datetime.timedelta(days=8)).timestamp() * 1_000_000_000)
