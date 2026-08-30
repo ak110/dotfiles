@@ -258,6 +258,8 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
 代替の組合せの目安と、effortを指定できない経路でGPT系または上位モデルを選ぶ方針は
 `agent-toolkit/skills/delegation/references/runtime-routing.md`へ集約する。
 
+- Codexのサブエージェント既定モデルと既定の推論量は上書きせず、Codexの既定値を使う
+  （2026年8月、利用者指示。上書きより既定値の方が動作が安定するとの実運用判断による）
 - 影響範囲の広い作業は自律的にサブエージェント活用を検討し、
   起動プロンプトは正本参照で最小化する
 - `name`付きの背景起動は、当初完了通知の不達を実測して禁止したが、Claude Code 2.1.241での
