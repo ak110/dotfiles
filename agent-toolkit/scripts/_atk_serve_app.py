@@ -480,7 +480,7 @@ class Operations:
                 comment_editable = False
             else:
                 comment_editable = (
-                    state == common.MQ_STATE_INBOX
+                    state in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}
                     and kind == common.MQ_TYPE_FEEDBACK
                     and metadata.get("source") == "session-review"
                 )
@@ -564,9 +564,9 @@ class Operations:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """session-review由来のinbox項目へユーザーコメントを追記又は置換する。"""
-        if state != common.MQ_STATE_INBOX:
-            raise common.WebInputError("ユーザーコメントを編集できる状態はinboxだけです")
+        """session-review由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
+        if state not in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}:
+            raise common.WebInputError("ユーザーコメントを編集できる状態はinbox又はholdだけです")
         if not isinstance(comment, str) or not comment.strip():
             raise common.WebInputError("commentは空でない文字列で指定してください")
         if not isinstance(expected_content, str) or not expected_content.strip():
@@ -981,15 +981,12 @@ async def _transition_request(runtime: _ServeRuntime, action: str, allowed: set[
         force = data["force"]
     state_name = _optional_string(data, "state") if "state" in allowed else None
     if state_name is not None:
-        valid_states = (
-            (common.MQ_STATE_INBOX, common.MQ_STATE_PROCESSING, common.MQ_STATE_PLANNING)
-            if action == "remove"
-            else common.MQ_PROCESSABLE_STATES
-        )
+        valid_states = common.TRANSITION_EXPLICIT_STATES.get(action, ())
         if state_name not in valid_states:
-            if action == "remove":
-                raise common.WebInputError("stateはinbox、planning又はprocessingで指定してください")
-            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+            rendered_states = "、".join(valid_states) if valid_states else "なし"
+            raise common.WebInputError(
+                f"操作{action}はstate={state_name}を受理しません。明示stateとして受理する状態: {rendered_states}"
+            )
     expected_content = _specified_text(data, "expected_content") if "expected_content" in allowed else None
     if state_name is None and expected_content is None:
         result = await runtime.workers.run(
@@ -1106,8 +1103,8 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
-        if state_name is not None and state_name not in common.MQ_PROCESSABLE_STATES:
-            raise common.WebInputError("stateはinbox又はprocessingで指定してください")
+        if state_name is not None and state_name not in (*common.MQ_PROCESSABLE_STATES, common.MQ_STATE_HOLD):
+            raise common.WebInputError("stateはinbox、processing又はholdで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)
         else:
@@ -1121,11 +1118,12 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         return quart.jsonify(changed=changed)
 
     transition_specs = {
-        "start-processing": {"filenames", "target_repo"},
+        "start-processing": {"filenames", "target_repo", "state"},
+        "return-to-inbox": {"filenames", "target_repo", "state"},
         "hold": {"filenames", "target_repo"},
         "unhold": {"filenames", "target_repo"},
-        "adopt": {"filenames", "note", "commit", "target_repo"},
-        "reject": {"filenames", "note", "commit", "target_repo"},
+        "adopt": {"filenames", "note", "commit", "target_repo", "state"},
+        "reject": {"filenames", "note", "commit", "target_repo", "state"},
         "remove": {"filenames", "note", "target_repo", "force", "state", "expected_content"},
     }
 

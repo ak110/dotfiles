@@ -70,6 +70,18 @@ MQ_STATES = (
     MQ_STATE_REJECTED,
 )
 MQ_PROCESSABLE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
+TRANSITION_EXPLICIT_STATES = {
+    "start-processing": (MQ_STATE_HOLD,),
+    "return-to-inbox": (MQ_STATE_PLANNING, MQ_STATE_REJECTED),
+    "adopt": (MQ_STATE_HOLD,),
+    "reject": (MQ_STATE_INBOX, MQ_STATE_HOLD),
+    "remove": (MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING, MQ_STATE_HOLD),
+}
+"""操作ごとに明示`state`として受理する遷移元の状態。
+
+暗黙解決（`inbox`・`processing`）は各操作の既定として別に扱い、本表は明示指定だけを統治する。
+`hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
+"""
 MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
 MQ_FEEDBACK_ACTIVE_STATES = (
     MQ_STATE_INBOX,

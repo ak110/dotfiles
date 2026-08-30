@@ -1400,17 +1400,19 @@ def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
     assert processing.read_text(encoding="utf-8").endswith("従来経路の回答\n")
 
 
-def test_answer_tbd_rejects_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """hold上のTBDは一覧に表示しても回答操作の対象にしない。"""
+def test_answer_tbd_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hold上のTBDへ明示状態指定で回答する。"""
     notes = _setup_notes(tmp_path)
     held = _write_tbd_file(notes, "held.md")
+    held.write_text(held.read_text(encoding="utf-8") + f"{tbd_module.ANSWER_MARKER}\n", encoding="utf-8")
     (notes / "hold").mkdir()
     held.rename(notes / "hold/held.md")
     monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    with pytest.raises(tbd_module.WebInputError, match="stateはinbox又はprocessing"):
-        tbd_module.answer_tbd(notes, filename="held.md", state="hold", answer="回答")
+    assert tbd_module.answer_tbd(notes, filename="held.md", state="hold", answer="回答") is True
+    assert (notes / "hold/held.md").read_text(encoding="utf-8").endswith("回答\n")
 
 
 def test_reject_reserved_tbd_markup_allows_plain_body() -> None:

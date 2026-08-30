@@ -81,7 +81,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 
 キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。feedback用の公開一覧の`active`は`inbox`、`planning`、`processing`、`editing`、`hold`を表示する。TBDの`active`には`planning`を含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
 
-`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`、`hold`以外の`unhold`及び保留中の編集・採否・削除は拒否する。強制削除は`hold`と`editing`を候補へ含めない。
+`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`と、`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、TBD回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。強制削除は`editing`を候補へ含めない。
 
 `editing`は一覧と既存データの状態判定で認識する。今回の状態追加は編集操作の排他方式を変更せず、永続的な編集セッション、専用の復旧状態又はpush再試行APIを追加しない。
 
@@ -102,7 +102,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 保存前にはコメント本文も同じ規則で解析し、コードフェンス外のH2を含む入力を無変更で拒否する。
 空コメントによる節削除は提供しない。
 
-コメント編集の正本条件は、`inbox`にあるfeedbackかつ厳密な`source: session-review`である。
+コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつ厳密な`source: session-review`である。
 planning、processing、TBD、終端項目及び別sourceの項目はAPIと画面の両方で対象外とする。
 保存時はロック内で取得した最新本文と`expected_content`を照合し、競合時は無変更で失敗を返す。
 詳細APIが返す抽出済みコメントと操作可否を画面が利用し、JavaScript側へMarkdown解析を複製しない。

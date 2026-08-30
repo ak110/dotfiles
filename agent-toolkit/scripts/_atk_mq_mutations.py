@@ -32,6 +32,7 @@ from _atk_mq_common import (
     MQ_STATES,
     MQ_TYPE_FEEDBACK,
     MQ_TYPE_TBD,
+    TRANSITION_EXPLICIT_STATES,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
@@ -263,13 +264,11 @@ def _validate_transition_options(
         raise WebInputError(f"未知のエントリ操作です: {action}")
     if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
         raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
-    state_is_valid = (
-        (action == "remove" and state in {MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING})
-        or (action == "return-to-inbox" and state == MQ_STATE_PLANNING)
-        or (action == "reject" and state == MQ_STATE_INBOX)
-    )
+    accepted_states = TRANSITION_EXPLICIT_STATES.get(action, ())
+    state_is_valid = state in accepted_states
     if state is not None and not state_is_valid:
-        raise WebInputError("stateはplanningからのreturn-to-inbox、remove、又はinbox限定のrejectでのみ使用できます")
+        rendered_states = "、".join(accepted_states) if accepted_states else "なし"
+        raise WebInputError(f"操作{action}はstate={state}を受理しません。明示stateとして受理する状態: {rendered_states}")
     if expected_content is not None and (action != "remove" or len(filenames) != 1):
         raise WebInputError("expected_contentはremoveで1件を指定する場合に限り使用できます")
 
@@ -397,6 +396,16 @@ def _update_transition_metadata(
             _atomic_write_text(path, updated)
 
 
+def _strip_result_section(path: pathlib.Path) -> None:
+    """末尾にある最後の`## 処理結果`節を取り除く。"""
+    text = path.read_text(encoding="utf-8")
+    matches = tuple(re.finditer(r"(?m)^## 処理結果[ \t]*\r?\n", text))
+    if not matches:
+        return
+    updated = text[: matches[-1].start()].rstrip() + "\n"
+    _atomic_write_text(path, updated)
+
+
 def _apply_transition(
     private_notes: pathlib.Path,
     paths: list[pathlib.Path],
@@ -431,6 +440,8 @@ def _apply_transition(
         sys.exit(2)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
+        if action == "return-to-inbox":
+            _strip_result_section(path)
         if action in {"adopt", "reject"}:
             _stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
         shutil.move(path, destination / path.name)
@@ -543,8 +554,8 @@ def edit_entry_content(
 
     保存前に新旧frontmatterを比較し、内部管理用予約キーの追加・変更・削除を禁止する。
     """
-    if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}:
-        raise WebInputError("編集可能状態はinbox又はprocessingです")
+    if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD}:
+        raise WebInputError("編集可能状態はinbox、processing又はholdです")
 
     directory = private_notes / state
     return _edit_entry(
@@ -572,8 +583,8 @@ def append_entry_content(
     expected_content: bytes | None = None,
 ) -> bool:
     """フィードバック本文をraw bytesのまま追記する。TBDは拒否する。"""
-    if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING}:
-        raise WebInputError("追記可能状態はinbox又はprocessingです")
+    if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD}:
+        raise WebInputError("追記可能状態はinbox、processing又はholdです")
 
     directory = private_notes / state
     path = directory / filename

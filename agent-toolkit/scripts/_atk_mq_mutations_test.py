@@ -120,6 +120,130 @@ def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monke
     assert (notes / "inbox/entry.md").is_file()
 
 
+def test_transition_explicit_state_contract_matches_web_operations() -> None:
+    """Web操作が明示できる状態集合を操作別契約として固定する。"""
+    assert common.TRANSITION_EXPLICIT_STATES == {
+        "start-processing": ("hold",),
+        "return-to-inbox": ("planning", "rejected"),
+        "adopt": ("hold",),
+        "reject": ("inbox", "hold"),
+        "remove": ("inbox", "planning", "processing", "hold"),
+    }
+    for action, states in common.TRANSITION_EXPLICIT_STATES.items():
+        for state_name in states:
+            mutations._validate_transition_options(  # pylint: disable=protected-access  # noqa: SLF001
+                action,
+                ["entry.md"],
+                state=state_name,
+                expected_content=None,
+                cooldown_days=None,
+            )
+    with pytest.raises(mutations.WebInputError, match="操作adoptはstate=inboxを受理しません"):
+        mutations._validate_transition_options(  # pylint: disable=protected-access  # noqa: SLF001
+            "adopt",
+            ["entry.md"],
+            state="inbox",
+            expected_content=None,
+            cooldown_days=None,
+        )
+
+
+def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保留中項目を再開・採否・削除・本文変更の対象にする。"""
+    notes = _setup_notes(tmp_path)
+    filenames = ["process.md", "adopt.md", "reject.md", "remove.md", "edit.md", "append.md"]
+    for filename in filenames:
+        _write_feedback_file(notes, filename)
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="hold", filenames=filenames, now=_FIXED_DT)
+
+    mutations.transition_entries(notes, action="start-processing", filenames=["process.md"], state="hold", now=_FIXED_DT)
+    mutations.transition_entries(notes, action="adopt", filenames=["adopt.md"], state="hold", now=_FIXED_DT)
+    mutations.transition_entries(notes, action="reject", filenames=["reject.md"], state="hold", now=_FIXED_DT)
+    mutations.transition_entries(notes, action="remove", filenames=["remove.md"], state="hold", now=_FIXED_DT)
+
+    calls: list[tuple[str, pathlib.Path]] = []
+
+    def record_edit(_notes: pathlib.Path, *, directory: pathlib.Path, **_kwargs: object) -> bool:
+        calls.append(("edit", directory))
+        return True
+
+    def record_append(_notes: pathlib.Path, *, directory: pathlib.Path, **_kwargs: object) -> bool:
+        calls.append(("append", directory))
+        return True
+
+    monkeypatch.setattr(mutations, "_edit_entry", record_edit)
+    monkeypatch.setattr(mutations, "_append_entry", record_append)
+    assert mutations.edit_entry_content(notes, state="hold", filename="edit.md", content="編集後")
+    assert mutations.append_entry_content(
+        notes,
+        state="hold",
+        filename="append.md",
+        content="\n追記\n".encode(),
+    )
+
+    assert (notes / "processing/process.md").is_file()
+    assert (notes / "adopted/adopt.md").is_file()
+    assert (notes / "rejected/reject.md").is_file()
+    assert not (notes / "hold/remove.md").exists()
+    assert calls == [("edit", notes / "hold"), ("append", notes / "hold")]
+
+
+def test_return_rejected_entry_to_inbox_strips_terminal_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不採用項目をinboxへ戻す際に終端結果節だけを除去する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
+    rejected = notes / "rejected/entry.md"
+    assert "## 処理結果" in rejected.read_text(encoding="utf-8")
+
+    mutations.transition_entries(
+        notes,
+        action="return-to-inbox",
+        filenames=["entry.md"],
+        state="rejected",
+        now=_FIXED_DT,
+    )
+
+    returned = notes / "inbox/entry.md"
+    assert returned.is_file()
+    assert "## 処理結果" not in returned.read_text(encoding="utf-8")
+
+
+def test_return_rejected_entry_conflict_preserves_terminal_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """復帰先が競合する場合は不採用項目を変更せず保持する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
+    rejected = notes / "rejected/entry.md"
+    before = rejected.read_bytes()
+    _write_feedback_file(notes, "entry.md")
+
+    with pytest.raises(SystemExit) as exc_info:
+        mutations.transition_entries(
+            notes,
+            action="return-to-inbox",
+            filenames=["entry.md"],
+            state="rejected",
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 2
+    assert rejected.read_bytes() == before
+    assert "## 処理結果" in rejected.read_text(encoding="utf-8")
+
+
 def test_transition_restores_missing_state_directories_before_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

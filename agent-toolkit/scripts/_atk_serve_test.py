@@ -373,6 +373,7 @@ const ids = [
   'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
   'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
   'decision-panel', 'decision-note', 'adopt-button', 'reject-button', 'hold-button', 'unhold-button',
+  'return-to-inbox-button',
   'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
   'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
   'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
@@ -400,7 +401,7 @@ globalThis.controlGroups = {{
   'detail-shell': [
     elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
     elements['user-comment-button'], elements['delete-button'], elements['adopt-button'], elements['reject-button'],
-    elements['hold-button'], elements['unhold-button'], elements['decision-note'],
+    elements['hold-button'], elements['unhold-button'], elements['return-to-inbox-button'], elements['decision-note'],
     elements['edit-content'], elements['save-entry-button'],
     elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
     elements['save-user-comment-button']
@@ -850,6 +851,76 @@ process.stdout.write(JSON.stringify({
         "editHidden": True,
         "answerHidden": True,
         "deleteHidden": True,
+    }
+
+
+def test_assets_offer_hold_and_rejected_actions_and_preserve_implicit_resolution() -> None:
+    """保留・不採用の操作表示と、採否APIの明示状態送信境界を検証する。"""
+    result = _run_node_ui(
+        """
+const base = {
+  kind: 'feedback', filename: 'entry.md', answered: null, summary: '対象', target_repo: 'example/repo',
+  content: '本文', body_html: '<p>本文</p>', frontmatter_entries: []
+};
+const visibility = {};
+for (const state of ['hold', 'rejected']) {
+  displayEntry({...base, state});
+  visibility[state] = {
+    readonly: !elements['readonly-notice'].hidden,
+    edit: !elements['edit-button'].hidden,
+    adopt: !elements['adopt-button'].hidden,
+    reject: !elements['reject-button'].hidden,
+    remove: !elements['delete-button'].hidden,
+    unhold: !elements['unhold-button'].hidden,
+    returnToInbox: !elements['return-to-inbox-button'].hidden
+  };
+}
+const sent = {};
+fetchHandler = async () => ({
+  ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})
+});
+for (const [action, state] of [
+  ['adopt', 'inbox'], ['adopt', 'processing'], ['adopt', 'hold'],
+  ['reject', 'inbox'], ['reject', 'processing'], ['reject', 'hold']
+]) {
+  displayEntry({...base, state});
+  fetchCalls.length = 0;
+  await transitionDetail(action);
+  const call = fetchCalls.find(item => item.url.endsWith(`/api/entries/${action}`));
+  sent[`${action}-${state}`] = JSON.parse(call.options.body);
+}
+process.stdout.write(JSON.stringify({visibility, sent}));
+"""
+    )
+    assert result == {
+        "visibility": {
+            "hold": {
+                "readonly": False,
+                "edit": True,
+                "adopt": True,
+                "reject": True,
+                "remove": True,
+                "unhold": True,
+                "returnToInbox": False,
+            },
+            "rejected": {
+                "readonly": False,
+                "edit": False,
+                "adopt": False,
+                "reject": False,
+                "remove": False,
+                "unhold": False,
+                "returnToInbox": True,
+            },
+        },
+        "sent": {
+            "adopt-inbox": {"filenames": ["entry.md"]},
+            "adopt-processing": {"filenames": ["entry.md"]},
+            "adopt-hold": {"filenames": ["entry.md"], "state": "hold"},
+            "reject-inbox": {"filenames": ["entry.md"]},
+            "reject-processing": {"filenames": ["entry.md"]},
+            "reject-hold": {"filenames": ["entry.md"], "state": "hold"},
+        },
     }
 
 
@@ -2131,6 +2202,7 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
         "/api/entries/batch",
         "/api/entries/<state_name>/<filename>",
         "/api/entries/start-processing",
+        "/api/entries/return-to-inbox",
         "/api/entries/hold",
         "/api/entries/unhold",
         "/api/entries/adopt",
@@ -2144,6 +2216,67 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     removed = {"/api/status", "/api/enable", "/api/disable"}
     assert expected <= rules
     assert not removed & rules
+
+
+@pytest.mark.asyncio
+async def test_transition_routes_forward_only_supported_explicit_states(tmp_path: pathlib.Path) -> None:
+    """各遷移ルートが共通契約の明示状態だけを処理層へ渡す。"""
+
+    class CaptureOperations(serve_app.Operations):
+        def __init__(self, private_notes: pathlib.Path) -> None:
+            super().__init__(private_notes)
+            self.calls: list[tuple[str, list[str], dict[str, object]]] = []
+
+        def transition(self, action: str, filenames: list[str], **kwargs: object) -> list[str]:
+            self.calls.append((action, filenames, kwargs))
+            return filenames
+
+    operations = CaptureOperations(tmp_path)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        operations=operations,
+    )
+    client = app.test_client()
+    for action, state_name in (
+        ("start-processing", "hold"),
+        ("return-to-inbox", "rejected"),
+        ("adopt", "hold"),
+        ("reject", "hold"),
+        ("remove", "hold"),
+    ):
+        response = await client.post(
+            f"/api/entries/{action}",
+            json={"filenames": ["entry.md"], "state": state_name},
+        )
+        assert response.status_code == 200
+        assert operations.calls[-1] == (
+            action,
+            ["entry.md"],
+            {
+                "note": None,
+                "commit": None,
+                "target_repo": None,
+                "force": False,
+                "state": state_name,
+                "expected_content": None,
+            },
+        )
+
+    implicit = await client.post("/api/entries/adopt", json={"filenames": ["entry.md"]})
+    assert implicit.status_code == 200
+    assert operations.calls[-1] == (
+        "adopt",
+        ["entry.md"],
+        {"note": None, "commit": None, "target_repo": None, "force": False},
+    )
+
+    invalid = await client.post(
+        "/api/entries/adopt",
+        json={"filenames": ["entry.md"], "state": "inbox"},
+    )
+    assert invalid.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -5467,11 +5600,11 @@ def test_user_comment_pure_update_rejects_invalid_structure_without_mutation(
 
 
 @pytest.mark.asyncio
-async def test_user_comment_api_appends_and_replaces_only_inbox_session_review_feedback(
+async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_review_feedback(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """専用APIが対象条件を満たす本文へ追記し、同じ節だけを置換する。"""
+    """専用APIがinboxとholdの対象本文へ追記し、同じ節だけを置換する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
@@ -5521,6 +5654,24 @@ async def test_user_comment_api_appends_and_replaces_only_inbox_session_review_f
 
     final_detail = await (await client.get("/api/entries/inbox/feedback.md")).get_json()
     assert final_detail["entry"]["user_comment"] == "置換後のコメント"
+
+    hold = tmp_path / "hold"
+    hold.mkdir()
+    held_path = hold / "held.md"
+    held_path.write_text(original, encoding="utf-8")
+    held_detail = await (await client.get("/api/entries/hold/held.md")).get_json()
+    assert held_detail["entry"]["user_comment_editable"] is True
+    held = await client.post(
+        "/api/entries/user-comment",
+        json={
+            "state": "hold",
+            "filename": "held.md",
+            "comment": "保留中のコメント",
+            "expected_content": original,
+        },
+    )
+    assert held.status_code == 200
+    assert user_comment.extract_user_comment(held_path.read_text(encoding="utf-8")) == "保留中のコメント"
 
 
 @pytest.mark.asyncio

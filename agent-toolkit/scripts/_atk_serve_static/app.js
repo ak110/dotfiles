@@ -6,6 +6,7 @@ const STATE_LABELS = {
   adopted: '採用済み', rejected: '不採用'
 };
 const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
+const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
@@ -629,21 +630,24 @@ function setDetailMode(mode) {
   const mutating = editing || answering || commenting;
   const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
   const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
+  const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
   const held = currentEntry?.state === 'hold';
+  const rejected = currentEntry?.state === 'rejected';
   byId('edit-panel').hidden = !editing;
   byId('answer-panel').hidden = !answering;
   byId('user-comment-panel').hidden = !commenting;
-  byId('decision-panel').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
-  byId('edit-button').hidden = mutating || !processable;
+  byId('decision-panel').hidden = mutating || !mutable;
+  byId('edit-button').hidden = mutating || !mutable;
   byId('answer-button').hidden = mutating || !currentEntry ||
-    currentEntry.kind !== 'tbd' || !processable;
+    currentEntry.kind !== 'tbd' || !mutable;
   byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
-  byId('adopt-button').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
-  byId('reject-button').hidden = mutating || !processable || currentEntry.kind !== 'feedback';
+  byId('adopt-button').hidden = mutating || !mutable;
+  byId('reject-button').hidden = mutating || !mutable || currentEntry.kind !== 'feedback';
   byId('hold-button').hidden = mutating || !processable;
   byId('unhold-button').hidden = mutating || !held;
-  byId('delete-button').hidden = mutating || !processable;
+  byId('return-to-inbox-button').hidden = mutating || !rejected;
+  byId('delete-button').hidden = mutating || !mutable;
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;
@@ -658,7 +662,7 @@ function syncDetailMutationAvailability() {
   for (const id of [
     'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
     'save-entry-button', 'save-answer-button', 'save-user-comment-button',
-    'adopt-button', 'reject-button', 'hold-button', 'unhold-button'
+    'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button'
   ]) {
     const button = byId(id);
     const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
@@ -696,7 +700,7 @@ function displayEntry(entry) {
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
   renderMetadata(entry);
   renderAnswerChoices(entry);
-  byId('readonly-notice').hidden = PROCESSABLE_STATES.has(entry.state);
+  byId('readonly-notice').hidden = MUTABLE_STATES.has(entry.state) || entry.state === 'rejected';
   setDetailMode('view');
   updateCurrentRowSelection();
 }
@@ -1010,10 +1014,13 @@ async function saveUserComment() {
 
 async function transitionDetail(action) {
   if (!currentEntry || detailRefreshRequired) return;
-  const allowed = action === 'unhold' ? currentEntry.state === 'hold' : PROCESSABLE_STATES.has(currentEntry.state);
-  if (!allowed || ((action === 'adopt' || action === 'reject') && currentEntry.kind !== 'feedback')) return;
+  const allowed = action === 'unhold' ? currentEntry.state === 'hold' :
+    action === 'return-to-inbox' ? currentEntry.state === 'rejected' : MUTABLE_STATES.has(currentEntry.state);
+  if (!allowed || (action === 'reject' && currentEntry.kind !== 'feedback')) return;
   const key = entryKey(currentEntry);
   const payload = {filenames: [currentEntry.filename]};
+  if (action === 'return-to-inbox') payload.state = 'rejected';
+  if ((action === 'adopt' || action === 'reject') && currentEntry.state === 'hold') payload.state = 'hold';
   const note = byId('decision-note').value.trim();
   if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
   try {
@@ -1022,7 +1029,9 @@ async function transitionDetail(action) {
     }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}));
     await loadEntries();
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog();
-    const label = {adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除'}[action];
+    const label = {
+      adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
+    }[action];
     deliverOperationMessage(`${key}を${label}しました。`);
   } catch (error) {
     deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
@@ -1263,6 +1272,7 @@ function bindEvents() {
   byId('reject-button').addEventListener('click', () => { void transitionDetail('reject'); });
   byId('hold-button').addEventListener('click', () => { void transitionDetail('hold'); });
   byId('unhold-button').addEventListener('click', () => { void transitionDetail('unhold'); });
+  byId('return-to-inbox-button').addEventListener('click', () => { void transitionDetail('return-to-inbox'); });
   byId('delete-button').addEventListener('click', openDeleteDialog);
   byId('create-kind').addEventListener('change', updateCreateFields);
   byId('create-question-type').addEventListener('change', updateCreateFields);

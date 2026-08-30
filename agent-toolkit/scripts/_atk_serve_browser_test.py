@@ -798,6 +798,44 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
 
 
 @pytest.mark.asyncio
+async def test_hold_and_rejected_details_offer_recovery_operations(browser_harness: _BrowserHarness) -> None:
+    """保留中の全操作と、不採用項目のinbox復帰操作を実ブラウザーで表示する。"""
+    harness = browser_harness
+    page = harness.page
+    hold = harness.root / "hold"
+    hold.mkdir()
+    (hold / "held-feedback.md").write_text(
+        "---\ntype: feedback\ntarget_repo: held/repo\nsource: session-review\n---\n\n保留中の本文\n",
+        encoding="utf-8",
+    )
+    (hold / "held-question.md").write_text(
+        "---\ntype: tbd\ntarget_repo: held/repo\nquestion_type: free-form\n---\n\n"
+        "## 質問\n\n保留中の質問\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#state-filter").select_option("all")
+    detail = page.get_by_role("dialog", name="詳細")
+
+    await page.locator('.entry-select[data-key="hold/held-feedback.md"]').click()
+    for button_name in ("編集", "採用", "却下", "保留を解除", "削除"):
+        await playwright.async_api.expect(detail.get_by_role("button", name=button_name, exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_visible()
+    await page.keyboard.press("Escape")
+
+    await page.locator('.entry-select[data-key="hold/held-question.md"]').click()
+    await playwright.async_api.expect(detail.get_by_role("button", name="回答", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.get_by_role("button", name="採用", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#reject-button")).to_be_hidden()
+    await page.keyboard.press("Escape")
+
+    await page.locator('.entry-select[data-key="rejected/rejected.md"]').click()
+    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_hidden()
+    await playwright.async_api.expect(detail.get_by_role("button", name="inboxへ戻す", exact=True)).to_be_visible()
+
+
+@pytest.mark.asyncio
 async def test_browser_notification_uses_filename_registration_identity(browser_harness: _BrowserHarness) -> None:
     """初回と既知TBDの属性変化を通知せず、新規未回答TBDだけを通知する。"""
     harness = browser_harness
