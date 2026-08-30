@@ -465,7 +465,8 @@ def transition_entries(
     inbox_dir = private_notes / MQ_STATE_INBOX
     _validate_filenames_only(filenames, inbox_dir)
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _push_pending_commits(private_notes)
+        if not skip_push:
+            _push_pending_commits(private_notes)
         _pull(private_notes)
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = _resolve_transition_paths(
@@ -742,7 +743,7 @@ def edit_entry_to_plan(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> dict[str, object | None]:
-    """planningの最古項目を計画型feedbackへ編集し、processingへ原子的に移動する。"""
+    """planningの最古項目を計画型feedbackへ編集し、inboxへ原子的に移動する。"""
     plan_path = pathlib.Path(plan_file)
     if not plan_path.is_absolute():
         raise WebInputError("plan_fileは絶対パスで指定してください")
@@ -853,17 +854,17 @@ def edit_entry_to_plan(
             "\n" + message_body.strip("\n").rstrip() + "\n",
         )
 
-        processing_path = private_notes / MQ_STATE_PROCESSING / planning_path.name
-        if processing_path.exists():
-            raise WebInputError(f"processingに同名エントリが既に存在します: {planning_path.name}")
-        _atomic_write_text(processing_path, updated_text)
+        inbox_path = inbox_dir / planning_path.name
+        if inbox_path.exists():
+            raise WebInputError(f"inboxに同名エントリが既に存在します: {planning_path.name}")
+        _atomic_write_text(inbox_path, updated_text)
         planning_path.unlink()
         _commit_and_push(
             private_notes,
             "chore: convert feedback item to plan",
-            [str(planning_path.relative_to(private_notes)), str(processing_path.relative_to(private_notes))],
+            [str(planning_path.relative_to(private_notes)), str(inbox_path.relative_to(private_notes))],
         )
-        return _add._read_saved_entry_details(processing_path)  # pylint: disable=protected-access
+        return _add._read_saved_entry_details(inbox_path)  # pylint: disable=protected-access
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:
@@ -1509,7 +1510,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
-    （`agent-toolkit:process-feedbacks`「3. 保留」節参照）。
+    （`agent-toolkit:process-feedbacks`のpicker起動契約「同一セッション中にTBDの回答を受領した場合」参照）。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")

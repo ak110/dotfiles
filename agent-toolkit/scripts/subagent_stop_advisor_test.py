@@ -52,7 +52,7 @@ def test_english_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]
 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
-    assert "01-agent.md「日本語」節に従い日本語で書き直すこと" in decision["reason"]
+    assert "日本語で書き直すこと" in decision["reason"]
     assert "遮断された報告本文は呼び出し元へ保持されないため、報告全文を再掲すること" in decision["reason"]
 
 

@@ -112,7 +112,6 @@ jobs:
         run: >-
           uv run --python 3.12 pytest -q
           agent-toolkit/scripts/_managed_temp_test.py
-          agent-toolkit/scripts/agent_definitions_test.py
           agent-toolkit/scripts/permissionrequest_codex_test.py
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
@@ -175,7 +174,7 @@ jobs:
       # 1つの版が失敗しても他の版の結果を取得し、失敗が版固有かを切り分けられるようにする
       fail-fast: false
       matrix:
-        python-version: [ "3.12", "3.13", "3.14" ]
+        python-version: ["3.12", "3.13", "3.14"]
     env:
       # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
       PYTHONDEVMODE: "1"

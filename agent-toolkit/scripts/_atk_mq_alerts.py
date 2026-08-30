@@ -285,9 +285,16 @@ def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[st
 
 def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
     """`add_entries`へ渡すfrontmatter付きメッセージ文字列を組み立てる。"""
-    return (
-        f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{alert.body}\n"
+    body = (
+        f"# {alert.title}\n\n"
+        f"- 反映内容: 検知した事象を調査し、必要な是正と検証を行う\n"
+        f"- 反映先: `{target_repo_id}`\n"
+        "- 理由: 自動監視が未解決の事象を検知したため\n"
+        "- メリット: 障害又は脆弱性を解消し、継続的な検査を正常化できる\n"
+        "- デメリット: 調査と変更の検証に作業が必要になる\n\n"
+        f"## 詳細\n\n{alert.body}"
     )
+    return f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{body}\n"
 
 
 def collect_new_alerts(

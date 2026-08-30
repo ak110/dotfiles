@@ -568,11 +568,11 @@ def _watch_run(
     sleep: collections.abc.Callable[[float], None] = time.sleep,
     random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
 ) -> None:
-    """`gh run watch --exit-status` でrunの完了を待機する。"""
+    """`gh run watch --compact --exit-status` でrunの完了を待機する。"""
     logger.info("release run %s の完了を待機する。", run_id)
     for attempt in range(attempts):
         result = subprocess.run(
-            ["gh", "run", "watch", str(run_id), "--exit-status"],
+            ["gh", "run", "watch", str(run_id), "--compact", "--exit-status"],
             check=False,
         )
         if result.returncode == 0:

@@ -18,7 +18,7 @@ atk mq process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、終了時の`session-review`を1回実行して`/goal`で登録した目的を完了する。
+ready項目がなくなると、`completion-report`が必須の`session-review`と固定報告を完了し、続いて`exit-session`が`/goal`で登録した目的とセッションを終了する。
 `process-feedbacks`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗又は値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
@@ -38,10 +38,14 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 
 ## プラグイン更新の反映
 
-Codexプラグインはバージョン付きキャッシュへ導入される。
-`update-dotfiles`はローカルagent-toolkitのバージョンと有効状態が一致する場合、再導入を省略する。
-ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで
-`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
+dotfilesの`post_apply`が導入するagent-toolkitは、Codexが要求するversion付きの通常ディレクトリを維持し、その配下のplugin資源をdotfilesの`agent-toolkit/`原本へ接続する。
+LinuxとmacOSでは、通常versionディレクトリ直下のファイルとディレクトリを原本への相対シンボリックリンクにする。
+Windowsでは、直下のディレクトリをジャンクションにし、直下の通常ファイルを`update-dotfiles`のたびに原本と同じ内容へ同期する。
+単体インストーラーで導入するagent-toolkitと外部プラグインは、Codexが管理するsnapshotを引き続き使用する。
+
+`update-dotfiles`はローカルagent-toolkitが導入済みで有効な場合、versionが変化していても`codex plugin add`を省略し、現versionの通常ディレクトリを追加して原本接続を検査・修復する。
+未導入時とdisabled時だけ`codex plugin add`を実行する。どちらも既存cacheがあればCLI実行前に全エントリを退避する。
+ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
 
 ```bash
@@ -53,15 +57,15 @@ codex app-server daemon restart
 `~/.claude.json`のUser scope設定は行わない。
 進行中のセッションを保護するため、app-server daemonは自動再起動しない。
 
-更新前に存在した安全なversion名は、`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`へ
-保存される。`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
-更新後は、保存済みの旧version名を現行versionのキャッシュ実体へ直接向ける。
-LinuxとmacOSでは相対シンボリックリンク、Windowsではディレクトリジャンクションを使う。
-この互換リンクにより、起動済みまたは再開したセッションが保持する旧フックの絶対パスを引き続き利用できる。
-再起動案内は新versionを後続セッションへ反映する役割を持ち、互換リンクは既存セッションの実行先を保持する。
+更新前に存在した安全なversion名は、`$CODEX_HOME/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions`へ保存される。`CODEX_HOME`が未設定の場合は`~/.codex`を使用する。
+更新後は、保存済みの旧versionと現versionの通常ディレクトリを同じagent-toolkit原本へ接続する。
+この配置により、起動済みまたは再開したセッションが保持する旧フックの絶対パスと、後続セッションが取得する現versionのパスを引き続き利用できる。
+再起動案内は新versionを後続セッションへ反映する役割を持ち、原本接続は各versionパスから実行するplugin資源をdotfiles側へ統一する。
 
-旧version名と同名の通常ファイルまたは通常ディレクトリがある場合、更新処理はそのエントリを置換せず失敗する。
-台帳は保持されるため、競合を解消して更新処理を再実行すると互換リンクを復元できる。
+既存のversionパスがagent-toolkitのplugin構造として確認できない通常ファイル、通常ディレクトリ、特殊ファイルの場合、更新処理はそのエントリを置換せず失敗する。
+原本接続の準備、置換、置換後のCodex状態確認に失敗した場合は、同じ処理で退避した更新前のcacheエントリ、version台帳、旧skillリンクを復元する。
+`codex plugin add`を使う未導入状態、disabled状態では、Codexが旧cache rootを除去する前に既存の全エントリを退避し、CLIの偽返却・例外、後続処理の失敗時にsnapshotと旧互換リンクを元のパスへ戻す。外部、ローカルplugin追加後の失敗では、それまでに生成した再起動案内を失敗出力へ重複なく含める。CLIが有効化まで成功した後は有効状態を維持し、次回の`update-dotfiles`は復元済みcacheから原本接続を再構成する。
+version台帳は保持されるため、競合、失敗原因を解消して`update-dotfiles`を再実行すると原本接続を再構成できる。
 Codexが更新時に旧versionを除去する挙動は、
 [Codexのstore実装](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs)で確認できる。
 起動済みセッションが旧キャッシュの絶対パスを保持する事象は、
@@ -80,10 +84,10 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 `start(engine="claude", ...)`を使う。MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`wait`、`send_message`、`kill`の4つである。`start`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す。
-`send_message(session_id, prompt)`は実行中turnへsteerし、終端済みturnでは結果回収を前提に同じsessionでreplyを開始する。
-`kill(session_id, timeout=300)`は実行中turnだけへ中断を要求する。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。
-timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。`kill`の`kill_requested`、
+完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す。
+`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
+`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。`kill`の`kill_requested`、
 `send_message`の`delivery`及び`wait`の終端応答で要求・配送・結果を確認する。
 
 backendから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
@@ -110,11 +114,7 @@ Codexはplugin同梱フックの定義が変わると、利用者が再び信頼
 信頼後の`PreToolUse`は、`apply_patch`の変更内容に口語的な日本語表現が含まれる場合、
 検出語そのものを表示せず正式な書き言葉への書き直しを促す通知を返す。
 動作を確かめる場合は、口語的な言い回しを含む短い変更を`apply_patch`で適用し、通知の有無を確認する。
-信頼後は、作業完了時のStopが同じセッションを継続し、セッション振り返りを起動する。
-起動済み状態または読み取り可能なtranscriptから振り返りの起動済みを確認できる間は、
-追加の振り返りを起動せずターンを終了する。状態が14日を超えて更新されず回収され、
-かつtranscriptを利用できない場合は、同じセッションでも再び振り返りへ誘導されることがある。
-手動で振り返る場合は`$agent-toolkit:session-review`を実行する。
+Stopは自動振り返りを起動しない。手動で振り返る場合は`$agent-toolkit:session-review`を実行する。通常の作業完了時は`agent-toolkit:completion-report`が条件を判定し、必要な場合だけ振り返りを起動する。
 
 ## Codex CLI本体
 

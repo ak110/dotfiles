@@ -50,7 +50,7 @@ commit直前に次を実施する。
 - amend、fixup、autosquashを行う直前に`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
 - 実際にpushする直前に`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
 - CI失敗を扱う直前に`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
-- 計画実装の履歴契約を扱う時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
+- 計画実装の履歴契約を扱う時は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`を全文読む
 - push済みcommitのamend、fixup、rebaseは禁止する。push済み判定は
   `agent-toolkit/skills/commit/references/history-rewrite.md`のremote-tracking ref到達判定を用いる
 - push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルのCI失敗契約で原因を分析する

@@ -37,6 +37,8 @@ _ENTRY_STATES = set(common.MQ_STATES)
 _STATUS_FILTERS = {"all", "active", "processable", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
+_SOURCE_KIND_FILTERS = {"human", "agent"}
+_AGENT_SOURCES = {"session-review", "alert-monitor", "agent"}
 _ENTRY_PAGE_SIZE = 100
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 _WEB_LOCK_TIMEOUT = 2.0
@@ -156,6 +158,11 @@ def _summary(text: str, kind: str) -> str:
     if kind == "tbd":
         lines = [line for line in lines if not line.startswith("<!--")]
     return lines[0][:160] if lines else ""
+
+
+def _source_kind(source: typing.Any) -> str:
+    """保存された投入元を一覧フィルターの分類へ変換する。"""
+    return "agent" if isinstance(source, str) and source in _AGENT_SOURCES else "human"
 
 
 def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:
@@ -429,6 +436,8 @@ class Operations:
                 elif _git_remote.canonical_repo(item_target_repo, resolver_cache) != canonical_target_repo:
                     continue
             if filters.get("source") and item["source"] != filters["source"]:
+                continue
+            if filters.get("source_kind") and _source_kind(item["source"]) != filters["source_kind"]:
                 continue
             searchable = (text, path.name, item["target_repo"], item["source"])
             if query and not any(query in str(value or "").casefold() for value in searchable):
@@ -881,6 +890,10 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
         raise common.WebInputError("source_emptyはtrueで指定してください")
     if "source" in filters and "source_empty" in filters:
         raise common.WebInputError("sourceとsource_emptyは同時に指定できません")
+    if "source_kind" in filters and filters["source_kind"] not in _SOURCE_KIND_FILTERS:
+        raise common.WebInputError("source_kindが不正です")
+    if "source_kind" in filters and ("source" in filters or "source_empty" in filters):
+        raise common.WebInputError("source_kindとsource/source_emptyは同時に指定できません")
     for name in ("target_repo", "source", "q"):
         if name in filters and not filters[name].strip():
             raise common.WebInputError(f"{name}は空でない文字列で指定してください")
@@ -906,7 +919,18 @@ def _register_query_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
-        allowed = {"type", "status", "answered", "plan", "page", "target_repo", "source", "source_empty", "q"}
+        allowed = {
+            "type",
+            "status",
+            "answered",
+            "plan",
+            "page",
+            "target_repo",
+            "source",
+            "source_empty",
+            "source_kind",
+            "q",
+        }
         unknown = set(quart.request.args) - allowed
         if unknown:
             raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")

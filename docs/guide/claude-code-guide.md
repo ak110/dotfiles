@@ -128,10 +128,10 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 委譲は`start`・`wait`・`send_message`・`kill`の4ツールで行う。`start`は`engine`（`codex`または`claude`）、
 `prompt`、既存ディレクトリの絶対`cwd`、必要に応じて`model`と`effort`を受け取り、完了を待たず`session_id`を返す。
-`wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返し、
-終端結果の再取得も同じ本文を返す。`send_message`は実行中turnへsteerし、終端済みturnでは結果回収を前提に
-同じsessionでreplyを開始する。`kill(session_id, timeout=300)`は実行中turnだけを中断する。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返す。
-正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。
+`wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返し、
+終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
+同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
 成功応答の`kill_requested`は中断要求の受理事実を示し、自然終端を中断成功へ置き換えない。MCP内部で承認・一覧操作は公開しない。
 
 ## Claude Codeの推奨設定
@@ -206,6 +206,7 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 
 登録経路は、要求の難易度と、計画を事前にレビューしたいかどうかで選ぶ。
 一括での移行・復元は`atk serve`の新規追加ダイアログでも種別「一括登録（show形式）」から実行できる。
+フィードバックは人間向けの作業要求であり、実装を伴う場合は変更量にかかわらず計画とレビューを経る。
 
 | 登録経路 | 選ぶ場面 |
 | --- | --- |
@@ -225,11 +226,12 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 指定した項目は、計画調査の前に同一対象リポジトリの`planning`状態へ一括移動する。
 `planning`状態の項目は一覧と詳細で確認できるが、計画が完成するまで`process-loop`の実装対象にならない。
 すべての入力はファイル名昇順で1つの計画へ統合される。
-レビュー収束後は最古の項目が計画型へ変換されて`processing`へ移り、残りの統合元が`rm --force`で除去される。
-入力が1件だけの場合はrmを呼ばず、計画型のprocessing項目だけを残す。
+レビュー収束後は最古の項目が計画型へ変換されて`inbox`へ移り、残りの統合元が`rm --force`で除去される。
+入力が1件だけの場合はrmを呼ばず、計画型のinbox項目だけを残す。
+計画型inbox項目を実装する場合は、明示的な`atk mq start-processing`又は`process-loop`が処理を開始する。
 
 計画型編集前に中断した場合は、同じ入力で再開するか、`atk mq return-to-inbox <filename>... --state=planning`でinboxへ戻す。
-計画型への変換開始後は状態を巻き戻さず、処理済みの状態から再開する。
+計画型への変換開始後は最古の計画型inbox項目を移動せず、保存済みの状態から滞留commitのpush又は残りの統合元の除去を再開する。
 ファイル名を指定しない自然言語の依頼は、従来どおり新しい計画型フィードバックとして登録される。
 
 `atk mq reject`は、process-loopが要求の全てを不採用と確定した場合だけに使用する。
@@ -244,9 +246,20 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 コメント本文にコードフェンス外のH2を含める入力、同名節が複数ある入力又は末尾でない入力は保存できない。
 planning、processing、TBD、終端項目及び別sourceの項目では操作を使用できない。
 
-`source: session-review`の通常本文から得た要求はエージェント由来として扱い、末尾の`## ユーザーコメント`節から得た要求だけを人間由来として扱う。
-両方にまたがる要求は分けて採否を記録し、ファイル全体を人間由来へ変更しない。
-sourceや節の由来情報は、利用者によるpush、公開、破壊的操作又は外部サービス変更の認可を証明しない。
+ユーザーコメントに操作、対象及び範囲を明記すると、その範囲の外部操作に対する承認として処理される。
+一般的な「進めて」だけでは外部操作の範囲が確定しないため、実行してよい操作を具体的に記載する。
+
+### TBDへの回答と状態確認
+
+未回答TBDは`atk mq answer`で順に確認して回答できる。ファイル名と回答を指定する場合は次の形式を使う。
+
+```bash
+atk mq answer <TBDファイル名> '<回答本文>' --target-repo=<対象リポジトリ>
+```
+
+回答後はTBDが先に終端し、そのTBDを待っていたフィードバックが次回の処理対象へ戻る。
+現在の項目は`atk mq list --status=active --target-repo=<対象リポジトリ>`で確認できる。
+自動処理へ渡せる状態だけを確認する場合は`--status=processable`、未回答TBDだけを確認する場合は`--type=tbd --answered=no`を指定する。
 
 ## 運用と保守
 
@@ -312,9 +325,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/stop_advisor` | 作業完了時に同一セッションの振り返りを一度だけ継続し、未コミット変更があれば`git status`の件数を表示する。検証済みの管理対象一時領域が残る場合は、回収候補の件数、`atk managed-temp list`による詳細確認及び検収後の`atk managed-temp cleanup --path <path>`による個別回収手順を併記する | 対応 | 対応 |
-| plugin `Stop/autonomous_exit` | process-loop環境で`exit-session`呼び出し漏れをblockする | 対応 | 非対応。Codex派生hookは`stop_advisor`だけを射影する |
-| plugin `UserPromptSubmit/user_prompt_submit` | 手動スキル起動の状態と振り返り対象を記録する | 対応 | 対応 |
+| plugin `Stop/autonomous_exit` | process-loop環境で`completion-report`後の`exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
+| plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や`~/.claude/plans/`への書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `SubagentStart/subagent_start_tracker` | 委譲調整役の起動を記録し、SubagentStopの完了判定へ接続する | 対応 | 非対応。Codexの`agent_type`はspawn時のrole名又は`default`であり、現行の公開入力から追跡対象を識別できない |
@@ -338,17 +350,15 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 - detail側は、説明的な名前を持つ実装単位、先行依存、統合順、実装資料、完了条件を検査する
 - 新規書式では素材ID、要求ID、履歴ID、独立した除外・保持表、実装単位IDを生成しない
   既存の単一ファイル形式と素材・要求IDを持つ二ファイル形式はwarning付きの読み取り互換として受理する
-- バグ対応では分離先のバグ調査ファイルと固定14行表を検査する
+- バグ対応では分離先のバグ調査ファイルの原因分析表と固定12行の調査表を検査する
   変更対象と変更内容はdetail側へ集約し、計画時の検索結果と文面成果物の修正後全文は計画レビューで具体性を照合する
 - 変更対象と変更内容は`実装資料`の変更説明へ集約し、独立した対象ファイル一覧や関連検査を持たない
-- 新形式の計画stemと同名のレビュー表が存在する場合は、最大`round`と`## 進捗ログ（実行時）`のデータ行数を構造検査で照合し、不足ラウンドをerrorとして報告する。旧二ファイル形式及び旧単一形式は読み取り互換としてこの照合を適用しない。レビュー表が無い計画は照合しない
+- 計画変更履歴、実行時進捗ログ及びレビュー指摘管理表は用途別に保持し、行数又はラウンド数を相互照合しない
 - 計画レビューは欠落した事実と阻害される判断・検証・成果が対応する指摘だけを受理し、体裁や記述量を指摘理由にしない
 - 計画レビューでは、メインセッションが機械チェック・修正系と計画レビュー系へ直接委譲する
-- 計画実装では、`plan-impl-executor`がコミット単位ごとの実装担当と2つの読み取り専用のレビュー担当を管理し、
-  実装担当がcommitと、担当種別`マージ担当`によるレーンworktree内のrebase・競合解消・統合ブランチへのff前進を担当する。
-  メインは統括オーケストレーターとして、レーン起動前の検証区分の指定と、実装担当が返す定義済みチェックポイント
-  （レビューラウンド完了・マージ準備完了・スコープ逸脱）の検収及び再開指示を担当する。
-  マージ許可の直列発行、全レーンのマージ後1回だけ実行する統合後検証、版数bump、push、CI確認、終端工程も担当する
+- 計画実装では、`plan-impl-executor`がコミット単位ごとの実装担当と単一の読み取り専用実装レビュー担当を管理する。
+  各レビューラウンドはラウンド番号と指摘件数だけを返し、第3ラウンド以降はメインがレビュー指摘管理表を確認して介入する。
+  `merge_request`の許可後は最後の作業担当が最新ベースへのrebase、必要な競合記録と再レビュー、ffマージ、`adopt`及び後始末までを担当する
 
 このほか、メインエージェント応答の記述言語の警告と、`AskUserQuestion`への縮退誘発フレーズ混入のブロックを
 Claude Codeで有効化する。
@@ -366,23 +376,26 @@ Claude Codeで有効化する。
 - `agent-toolkit:writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
 - `agent-toolkit:agent-standards`: コーディングエージェント向け文書固有の品質基準
 - `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
-- `agent-toolkit:bugfix`: バグ対応時の原因区分、類似見直し、是正・横展開・再発防止の判断基準
+- `agent-toolkit:bugfix`: バグ対応時の2系統4段階の原因分析、類似見直し、是正・横展開・再発防止の判断基準
 - `agent-toolkit:delegation`: 経路選択、継続、停滞検知又は複数主体調整が必要な高度な委譲の手順。
   自動的に適用せず、対象工程が高度な経路条件を持つ場合にだけ読み込む
 - `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の実装レビューを含む実行引き継ぎ
   - 計画確定時は計画構造検査で固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
   - 計画時の変更履歴は`## 変更履歴（計画時）`、実装時の進捗は`## 進捗ログ（実行時）`へ分離し、旧見出しは読み取り互換とする
-  - 計画レビューでは計画stemと同じレビュー表、実装レビューと統合差分レビューでは専用managed temp領域の`review.tsv`の存在を開始ゲートで確認し、未作成の場合だけ`atk review-table init <レビュー表>`を調整主体が実行する。既存の表は初期化せず保持し、初期化後又は保持後に`atk review-table validate --allow-unanswered <レビュー表>`で構造を検証し、全ラウンドで同じ絶対パスを渡す。応答後は`atk review-table validate <レビュー表>`でstrict検証する
+  - 計画レビューでは計画stemと同じレビュー表、実装レビューでは専用managed temp領域の`review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
   - 初回起動後の追送利用者発言は起草担当が逐語の真正性を保証し、レビュー担当は本文との対応だけを照合する
-  - バグ対応計画は計画メタ情報の固定記法から判定し、バグ調査ファイルの固定14行表で4原因区分、原因起点の類似見直し、是正・横展開・再発防止を記録する
+  - バグ対応計画は計画メタ情報の固定記法から判定し、バグ調査ファイルの原因分析表と固定12行の調査表で作り込み要因と見逃し要因の深掘り、原因起点の類似見直し、是正・横展開・再発防止を記録する
   - 変更履歴は5列表でレビュー指摘を系統・ラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表を正本とする
   - 進捗ログは日時・完了した工程・結果の3列表で実装工程の作業状況を追跡し、異常終了からの再開に使う
   - 実装単位は成果、commit、対象ファイル集合及び近接検証が独立する場合だけ分割し、判断から一意に導出できる詳細手順は安全性・データ保全・公開契約に必要な場合だけ常設する
 - `agent-toolkit:review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュー担当側心得）
 - `agent-toolkit:reviewee-standards`: レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見について、修正要否の立証、安全な修正、自己点検と公開可能性を検証する判断基準
-- `agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、計画ファイルを作成せず通常型フィードバックを投入する
-- `agent-toolkit:process-feedbacks`: 未分類または本文変更済みの項目だけを分類し、
-  保存済みメタデータから依存、上限、競合を機械計算して処理順を決める
+- `agent-toolkit:feedback-standards`: フィードバックとTBDの本文、由来、状態、承認及び投入の共通規範
+- `agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、通常型フィードバック又はTBDを手動投入する
+- `agent-toolkit:process-feedbacks`: ①選定とレーン分け、②並列レーン実行、③全レーン後のpush・CI・終了の3段階でフィードバックを処理する。
+  計画型は既存計画を、通常型は1レーン1計画を使い、全ての実装要求に計画・計画レビュー・実装・実装レビューを要求する。
+  実装不要、既存実装で充足済み、reject又はholdの項目は計画やworktreeを作成せず終端する。
+  各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
 - `agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
 - `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
@@ -391,11 +404,8 @@ Claude Codeで有効化する。
   メインへ終了状態と要約だけを返す
 - `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
-
-### 明示呼び出し専用のスキル
-
-- `agent-toolkit:session-review`: セッションの振り返り。ユーザー手動起動またはStopフックからの明示的な呼び出し指示でのみ起動し、
-  独立した読み取り専用の`session-review-advisor`が問題を列挙して、メインが改善提案を確定する
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
+- `agent-toolkit:session-review`: 通常の読み取り専用サブエージェントがセッション全体の問題候補を列挙し、メインが列挙証拠から原因と恒久対策を確定する。手動起動又は`completion-report`から起動する
 
 ## 更新方法
 

@@ -1344,8 +1344,7 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert any(command[:2] == ["git", "add"] for command in commands)
         assert any(command[:2] == ["git", "commit"] for command in commands)
-        assert commands[0] == ["git", "push"]
-        assert commands.count(["git", "push"]) == 1
+        assert ["git", "push"] not in commands
         captured = capsys.readouterr()
         assert "未pushのcommit" in captured.err
         assert "atk mq commit" in captured.err
@@ -1369,8 +1368,7 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert any(command[:2] == ["git", "add"] for command in commands)
         assert any(command[:2] == ["git", "commit"] for command in commands)
-        assert commands[0] == ["git", "push"]
-        assert commands.count(["git", "push"]) == 1
+        assert ["git", "push"] not in commands
         captured = capsys.readouterr()
         assert "未pushのcommit" in captured.err
         assert "atk mq commit" in captured.err
@@ -1419,7 +1417,7 @@ class TestSkipPush:
         commands = [call["cmd"] for call in git_calls]
         assert commands.count(["git", "commit", "-m", "chore: process 1 entry (adopted)"]) == 1
         assert commands.count(["git", "commit", "-m", "chore: process 1 entry (rejected)"]) == 1
-        assert commands.count(["git", "push"]) == 3
+        assert commands.count(["git", "push"]) == 2
         assert "--skip-push" not in capsys.readouterr().err
 
     def test_commit_pushes_clean_ahead_repository(
@@ -1572,10 +1570,30 @@ class TestSkipPush:
         assert local_head() == remote_head()
 
         subprocess.run(["git", "pull", "--ff-only"], cwd=second_notes, capture_output=True, text=True, check=True)
+        (notes / "adopted" / "pending.md").write_text("pending\n", encoding="utf-8")
+        subprocess.run(["git", "add", "adopted/pending.md"], cwd=notes, capture_output=True, text=True, check=True)
+        subprocess.run(["git", "commit", "-m", "pending"], cwd=notes, capture_output=True, text=True, check=True)
+        pending_head = local_head()
+        remote_before_skip = remote_head()
+
         with pytest.raises(SystemExit) as skip_exit:
             atk.main(["mq", "adopt", "skip.md", "--skip-push"], home=first_home, now=_FIXED_DT)
         assert skip_exit.value.code == 0
+        assert remote_head() == remote_before_skip
         assert local_head() != remote_head()
+        assert (
+            subprocess.run(
+                ["git", "merge-base", "--is-ancestor", pending_head, "HEAD"],
+                cwd=notes,
+                capture_output=True,
+                text=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+        assert subprocess.run(
+            ["git", "log", "-2", "--format=%s"], cwd=notes, capture_output=True, text=True, check=True
+        ).stdout.splitlines() == ["chore: process 1 entry (adopted)", "pending"]
 
         (second_notes / "remote-update.txt").write_text("remote update\n", encoding="utf-8")
         subprocess.run(["git", "add", "remote-update.txt"], cwd=second_notes, capture_output=True, text=True, check=True)
@@ -2880,9 +2898,10 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
         target_repo="github.com/example/foo",
     )
 
-    output_path = notes / "processing" / first.name
+    output_path = notes / "inbox" / first.name
     assert not first.exists()
     assert not (notes / "planning" / first.name).exists()
+    assert not (notes / "processing" / first.name).exists()
     assert second.exists()
     assert output_path.is_file()
     parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
@@ -2897,8 +2916,186 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
     assert len(commit_calls) == 1
     assert commit_calls[0][2] == [
         "planning/20260827-000000-001.md",
-        "processing/20260827-000000-001.md",
+        "inbox/20260827-000000-001.md",
     ]
+
+
+def test_edit_entry_to_plan_commit_failure_leaves_inbox_without_processing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変換commitの失敗後も計画型項目をprocessingへ公開しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_feedback_file(notes, filename)
+    planning = notes / "planning" / filename
+    source.replace(planning)
+    plan = tmp_path / "main-plan.md"
+    plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+    _disable_transition_git(monkeypatch)
+
+    def fail_commit(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, ["git", "commit"])
+
+    monkeypatch.setattr(mutations, "_commit_and_push", fail_commit)
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.edit_entry_to_plan(
+            notes,
+            filename=filename,
+            content="統合本文",
+            plan_file=str(plan),
+            target_commit="a" * 40,
+            target_repo="github.com/example/foo",
+        )
+
+    assert not planning.exists()
+    assert (notes / "inbox" / filename).is_file()
+    assert not (notes / "processing" / filename).exists()
+
+
+def test_edit_entry_to_plan_push_failure_leaves_local_inbox_commit_without_processing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変換commit後のpush失敗ではローカルinbox配置を保持し、processingへ移さない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_feedback_file(notes, filename)
+    planning = notes / "planning" / filename
+    source.replace(planning)
+    plan = tmp_path / "main-plan.md"
+    plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+    (notes / "processing").mkdir()
+    (notes / "adopted").mkdir()
+    (notes / "rejected").mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main"], cwd=notes, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "add", "."], cwd=notes, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", "test: initialize private notes"],
+        cwd=notes,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=notes, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "push", "--set-upstream", "origin", "main"],
+        cwd=notes,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    monkeypatch.setattr(common.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+
+    def fail_push(_path: pathlib.Path) -> None:
+        raise subprocess.CalledProcessError(1, ["git", "push"])
+
+    monkeypatch.setattr(common, "_push_pending_commits", fail_push)
+    before_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=notes, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.edit_entry_to_plan(
+            notes,
+            filename=filename,
+            content="統合本文",
+            plan_file=str(plan),
+            target_commit="a" * 40,
+            target_repo="github.com/example/foo",
+        )
+
+    after_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=notes, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=notes, check=True, capture_output=True, text=True)
+    upstream = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", after_head, "@{u}"],
+        cwd=notes,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert after_head != before_head
+    assert status.stdout == ""
+    assert upstream.returncode != 0
+    assert not planning.exists()
+    assert (notes / "inbox" / filename).is_file()
+    assert not (notes / "processing" / filename).exists()
+
+
+def test_edit_entry_to_plan_rejects_inbox_name_conflict_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変換先inboxの同名競合時はplanningと競合先を変更しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_feedback_file(notes, filename)
+    planning = notes / "planning" / filename
+    source.replace(planning)
+    original = planning.read_text(encoding="utf-8")
+    conflict = notes / "inbox" / filename
+    conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
+    conflict_original = conflict.read_text(encoding="utf-8")
+    plan = tmp_path / "main-plan.md"
+    plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+    _disable_transition_git(monkeypatch)
+    commit_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
+
+    with pytest.raises(mutations.WebInputError):
+        mutations.edit_entry_to_plan(
+            notes,
+            filename=filename,
+            content="統合本文",
+            plan_file=str(plan),
+            target_commit="a" * 40,
+            target_repo="github.com/example/foo",
+        )
+
+    assert planning.read_text(encoding="utf-8") == original
+    assert conflict.read_text(encoding="utf-8") == conflict_original
+    assert not (notes / "processing" / filename).exists()
+    assert not commit_calls
+
+
+def test_edit_entry_to_plan_rejects_content_conflict_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """planning本文の内容競合時は変換先を作成しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_feedback_file(notes, filename)
+    planning = notes / "planning" / filename
+    source.replace(planning)
+    original = planning.read_text(encoding="utf-8")
+    plan = tmp_path / "main-plan.md"
+    plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+    _disable_transition_git(monkeypatch)
+    commit_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
+
+    with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
+        mutations.edit_entry_to_plan(
+            notes,
+            filename=filename,
+            content="統合本文",
+            plan_file=str(plan),
+            target_commit="a" * 40,
+            target_repo="github.com/example/foo",
+            expected_content=original + "外部変更",
+        )
+
+    assert planning.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+    assert not (notes / "processing" / filename).exists()
+    assert not commit_calls
 
 
 @pytest.mark.parametrize(
@@ -2948,11 +3145,12 @@ def test_edit_entry_to_plan_allows_active_tbd_materials_outside_feedback_set(
         target_repo="github.com/example/foo",
     )
 
-    output = notes / "processing" / feedback_names[0]
+    output = notes / "inbox" / feedback_names[0]
     parsed = frontmatter_parser.parse_frontmatter(output.read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["depends_on"] == [tbd_name, "external-0.md", "external-1.md"]
     assert (notes / tbd_state / tbd_name).is_file()
+    assert not (notes / "processing" / feedback_names[0]).exists()
 
 
 @pytest.mark.parametrize("case", ["invalid_type", "missing_requirement_table", "duplicate_queue_id"])
@@ -3059,12 +3257,13 @@ def test_edit_plan_cli_uses_plan_base_commit_instead_of_current_head(
         )
 
     assert captured.value.code == 0
-    output = notes / "processing" / filename
+    output = notes / "inbox" / filename
     parsed = frontmatter_parser.parse_frontmatter(output.read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["target_commit"] == plan_base
     assert parsed[0]["target_commit"] != current_head
     assert resolved == [(worktree, plan_base)]
+    assert not (notes / "processing" / filename).exists()
 
 
 @pytest.mark.parametrize(

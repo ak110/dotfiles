@@ -157,12 +157,12 @@ def _make_step(name: str, calls: list[str], changed: bool = False):
     return fn
 
 
-def _make_broken_step(name: str, calls: list[str]):
+def _make_broken_step(name: str, calls: list[str], message: str = "boom"):
     """例外を送出するステップ関数を返すヘルパー。"""
 
     def fn() -> bool:
         calls.append(name)
-        raise RuntimeError("boom")
+        raise RuntimeError(message)
 
     return fn
 
@@ -387,6 +387,29 @@ class TestRun:
         captured = capsys.readouterr()
         assert "失敗したステップ: broken" in captured.err
         assert captured.err.splitlines()[-1].endswith("Codex pluginを更新しました。")
+
+    def test_main_keeps_notice_from_failed_codex_step(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Codex plugin処理が案内後に失敗しても案内と後続実行を保持する。"""
+        calls: list[str] = []
+        notice = post_apply_outcome.PostApplyNotice(
+            "外部pluginを更新しました。",
+            "codex app-server daemon restart",
+        )
+        assert notice.command is not None
+        failure = f"local pluginの確定に失敗\n{notice.message}\n{notice.command}"
+        steps: list[tuple[str, post_apply.Callable[[], post_apply.StepReturn]]] = [
+            ("Codex plugin", _make_broken_step("codex", calls, failure)),
+            ("later", _make_step("later", calls)),
+        ]
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: post_apply.run(steps=steps))
+
+        assert exc_info.value.code == 1
+        assert calls == ["codex", "later"]
+        captured = capsys.readouterr()
+        assert captured.err.count(notice.message) == 1
+        assert captured.err.count(notice.command) == 1
 
 
 class TestDefaultSteps:

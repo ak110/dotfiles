@@ -117,6 +117,34 @@ class TestApproveConditions:
         decision = _parse_decision(result)
         assert "decision" not in decision
 
+    def test_background_tasks_payload_approves(self, tmp_path: pathlib.Path):
+        """transcriptに起動痕跡が無くてもStop payloadのtaskが未完了ならapproveする。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {
+                "session_id": "payload-pending",
+                "transcript_path": str(transcript),
+                "background_tasks": [{"type": "subagent", "id": "agent-restarted"}],
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert "decision" not in decision
+
+    def test_empty_background_tasks_preserve_block_path(self, tmp_path: pathlib.Path):
+        """空のStop payloadでは現行の終了工程再促へ戻る。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {
+                "session_id": "payload-empty",
+                "transcript_path": str(transcript),
+                "background_tasks": [],
+            },
+            state_dir=tmp_path,
+        )
+        decision = _parse_decision(result)
+        assert decision.get("decision") == "block"
+
     def test_autonomous_exit_invoked_approves(self, tmp_path: pathlib.Path):
         """`autonomous_exit_invoked`フラグが真ならapproveする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
@@ -142,37 +170,21 @@ class TestBlockCondition:
         assert decision.get("decision") == "block"
         reason = decision.get("reason")
         assert isinstance(reason, str)
-        assert "exit-session" in reason
-        assert "agent-toolkit:session-review" in reason
-        assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1" in reason
-        assert "DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1" in reason
+        assert "agent-toolkit:process-feedbacks" in reason
+        assert "agent-toolkit:completion-report" in reason
+        assert "agent-toolkit:exit-session" in reason
         assert "Fix: " in reason
-        assert "atk mq process-loop CLI" not in reason
-        assert "session-review-dotfiles" not in reason
-        assert "steps 1-3" not in reason
-        assert "step 4" not in reason
         assert "agent-toolkit/autonomous_exit" in reason
 
-    def test_reason_body_matches_trigger_scope(self, tmp_path: pathlib.Path):
-        """発火条件外の起動経路を断定せず、節名を例示へ限定する。"""
+    def test_reason_body_orders_completion_report_before_exit_session(self, tmp_path: pathlib.Path) -> None:
+        """完了報告を終える前にexit-sessionへ進まないよう順序を明示する。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {"session_id": "scope", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         reason = _parse_decision(result)["reason"]
-        lines = reason.splitlines()
-        process_feedbacks_lines = [line for line in lines if "agent-toolkit:process-feedbacks" in line]
-        assert len(process_feedbacks_lines) == 1
-        process_feedbacks_line = process_feedbacks_lines[0]
-        for heading in ("入力と着手可否", "調査と採否", "保留", "実装と公開", "後始末"):
-            assert heading in process_feedbacks_line
-            assert sum(heading in line for line in lines) == 1
-        prerequisite_lines = [line for line in lines if line.startswith(("1.", "2.", "3."))]
-        assert len(prerequisite_lines) == 3
-        assert all("exit-session" not in line for line in prerequisite_lines)
-        assert any(line.startswith("Call /agent-toolkit:exit-session") for line in lines)
-        assert "振り返りと終了" not in reason
+        assert reason.index("agent-toolkit:completion-report") < reason.index("agent-toolkit:exit-session")
 
     def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合もblockする。"""

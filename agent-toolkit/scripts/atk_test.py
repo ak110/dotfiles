@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -120,6 +121,104 @@ def test_cli_local_path_filter_notifies_legacy_and_current_tbds(tmp_path: pathli
     assert "legacy.md" in result.stderr
     assert "current.md" in result.stderr
     assert "other.md" not in result.stderr
+
+
+class TestWaitScheduleParser:
+    """`wait-schedule`の公開parserとdispatchを検証する。"""
+
+    @pytest.mark.parametrize("bucket", ["main", "subagent"])
+    def test_accepts_request_bucket(self, bucket: str) -> None:
+        """mainとsubagentをrequest bucketとして受理する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["wait-schedule", "--request-bucket", bucket])
+        assert args.command == "wait-schedule"
+        assert args.request_bucket == bucket
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["wait-schedule"],
+            ["wait-schedule", "--request-bucket=worker"],
+            ["wait-schedule", "--request-bucket=main", "extra"],
+        ],
+    )
+    def test_rejects_missing_unknown_or_extra_arguments(self, argv: list[str]) -> None:
+        """request bucketの欠落・未知値・余分な引数を拒否する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(argv)
+        assert exc_info.value.code == 2
+
+    def test_dispatches_selected_schedule(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """公開CLIが判定モジュールのcron式を1行で出力する。"""
+
+        def fake_get_schedule(request_bucket: str) -> str:
+            assert request_bucket == "main"
+            return "*/30 * * * *"
+
+        monkeypatch.setattr(_wait_schedule, "get_schedule", fake_get_schedule)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "*/30 * * * *\n"
+
+    def test_does_not_expose_environment_values(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """環境変数値を公開出力へ混在させない。"""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "environment-secret")
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "*/3 * * * *\n"
+        assert not captured.err
+        assert "environment-secret" not in captured.out + captured.err
+
+    def test_does_not_expose_auth_output(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """認証応答を公開出力へ混在させない。"""
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+            del args
+            del kwargs
+            return subprocess.CompletedProcess(
+                cmd,
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "loggedIn": True,
+                        "authMethod": "claude.ai",
+                        "subscriptionType": "max",
+                        "token": "auth-secret",
+                    }
+                ),
+                stderr="auth-error-secret",
+            )
+
+        monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "*/30 * * * *\n"
+        assert not captured.err
+        assert "auth-secret" not in captured.out + captured.err
+        assert "auth-error-secret" not in captured.out + captured.err
 
 
 # 端末幅の固定化は`conftest.py`の`_fixed_terminal_size`autouseフィクスチャへ集約する

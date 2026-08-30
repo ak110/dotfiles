@@ -14,7 +14,7 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`・
+サブコマンド構成は`atk mq <sub>`・`atk serve`・`atk config <sub>`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
 フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
@@ -31,6 +31,7 @@
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
+- wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 
 ハンドラ実装は`_atk_mq_add`・`_atk_mq_batch`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
 `_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
@@ -64,6 +65,7 @@ import _atk_watch as _watch  # noqa: E402
 import _atk_worktree_stash as _worktree_stash  # noqa: E402
 import _managed_temp  # noqa: E402
 import _review_table  # noqa: E402
+import _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES)
@@ -300,7 +302,8 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
-            "`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を指す。"
+            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
+            "`processable`は`inbox`・`processing`を指す。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
     )
@@ -349,7 +352,8 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
-            "`active`は`inbox`・`processing`・`editing`・`hold`、`processable`は`inbox`・`processing`を指す。"
+            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
+            "`processable`は`inbox`・`processing`を指す。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
@@ -557,7 +561,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "--plan-file",
         metavar="ABS_PATH",
         default=None,
-        help="planning項目を計画型feedbackへ編集しprocessingへ移す実在する計画ファイルの絶対パス。",
+        help="planning項目を計画型feedbackへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
     )
     edit.add_argument(
         "--depends-on",
@@ -764,6 +768,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     config = top.add_parser("config", help="XDG関連パス・工程別モデル設定を確認・変更する")
     _config_cmd.build_parser(config)
+    wait_schedule = top.add_parser("wait-schedule", help="委譲待機に使うcron式を公開情報から判定する")
+    wait_schedule.add_argument(
+        "--request-bucket",
+        choices=("main", "subagent"),
+        required=True,
+        help="判定対象のrequest bucket（mainまたはsubagent）。",
+    )
     managed_temp = top.add_parser("managed-temp", help="管理対象一時領域を作成・列挙・後始末する")
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     worktree_stash = top.add_parser("worktree-stash", help="worktree固有refへ変更を退避する")
@@ -868,6 +879,9 @@ def main(
         and not args.choices
     ):
         args.subparser.error("--question-type=choice のときは --choices を指定してください。")
+    if args.command == "wait-schedule":
+        print(_wait_schedule.get_schedule(args.request_bucket))
+        sys.exit(0)
     if home is None:
         home = pathlib.Path.home()
     if now is None:

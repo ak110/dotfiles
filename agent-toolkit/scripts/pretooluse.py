@@ -975,7 +975,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
 
 # --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---
 
-# `agent-toolkit/rules/01-agent.md`「日本語」節が指摘する誤読リスクのある禁止規定形式。
+# 誤読リスクのある禁止規定形式。
 # 「Xでなければ`Y`してよい」と誤読される可能性があるため、全称否定形への書き換えを推奨する。
 _STYLE_NEGATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"([^、\s]{1,20})を根拠に([^、\s]{1,20})しない"),
@@ -1644,14 +1644,26 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
         return False
     unresolved = next(((event, op) for event, op in targets if not event.cwd_resolved), None)
     if unresolved is not None:
-        _, op = unresolved
+        event, op = unresolved
+        if event.unresolved_expression is not None:
+            reason = (
+                f"blocked: {op}. The working directory expression"
+                f" {event.unresolved_expression!r} cannot be resolved statically."
+            )
+            fix = (
+                "Run `git -C <absolute path> log --oneline --decorate` first, then retry the history rewrite"
+                " with `git -C <absolute path>`."
+            )
+        else:
+            reason = f"blocked: {op}. The command changes its working directory through an unresolved shell expression."
+            fix = (
+                "Run `git log --oneline --decorate` from the target repository first,"
+                " then retry with a statically resolvable working directory."
+            )
         print(
             _block_notice(
-                f"blocked: {op}. The command changes its working directory through an unresolved shell expression.",
-                fix=(
-                    "Run `git log --oneline --decorate` from the target repository first,"
-                    " then retry with a statically resolvable working directory."
-                ),
+                reason,
+                fix=fix,
             ),
             file=sys.stderr,
         )
@@ -1712,10 +1724,19 @@ def _check_bash_git_push_after_amend_with_dirty_status(command: str, session_id:
     for event in push_events:
         if not event.cwd_resolved:
             if any(value is True for value in flags.values()):
+                if event.unresolved_expression is not None:
+                    reason = (
+                        "blocked: git push after an amend/fixup could not resolve the working directory expression"
+                        f" {event.unresolved_expression!r}."
+                    )
+                    fix = "Retry the push as `git -C <absolute path> push ...` after confirming the target repository."
+                else:
+                    reason = "blocked: git push after an amend/fixup could not resolve its working directory."
+                    fix = "Review the amend state and retry with a statically resolvable working directory."
                 print(
                     _block_notice(
-                        "blocked: git push after an amend/fixup could not resolve its working directory.",
-                        fix="Review the amend state and retry with a statically resolvable working directory.",
+                        reason,
+                        fix=fix,
                     ),
                     file=sys.stderr,
                 )

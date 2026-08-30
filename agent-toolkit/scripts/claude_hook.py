@@ -39,7 +39,6 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "pretooluse",
         "posttooluse",
         "autonomous_exit",
-        "stop_advisor",
         "subagent_stop_advisor",
         "subagent_start_tracker",
         "session_end_cleanup",
@@ -52,7 +51,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 )
 
 # 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象。Stop系モジュールの実装と一致させる。
-_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit", "stop_advisor"})
+_APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"autonomous_exit"})
 
 
 def _configure_standard_output() -> None:

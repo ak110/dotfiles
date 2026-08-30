@@ -5,7 +5,7 @@
 
 ## Codex後続操作の共通先行条件
 
-元担当が存在しないCodexの初回起動（各実装単位の最初のfast担当を含む）は、工程別モデル設定の通常起動契約に従い許可する。
+元担当が存在しないCodexの初回起動（計画の最初のfast担当を含む）は、工程別モデル設定の通常起動契約に従い許可する。
 既存担当の回復・置換・再起動・代替起動又はfast担当からfix担当への役割引継ぎを行う場合は、次の共通条件を満たす場合だけ許可する。
 
 Codexのclient確立中または`thread/start`前に可用性失敗を観測し、利用可能な状態照会でsession未生成かつ元担当不在を実測確認できる場合を、初回生成前失敗とする。
@@ -17,7 +17,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 - 既存担当の回復・置換・再起動・代替起動又はfast担当からfix担当への役割引継ぎを行えるのは、ユーザーの明示要求、終端・失敗status、タスク契約上のキャンセルのいずれかを確認し、元担当の終端と書込所有権の解放を確認した場合だけである
 
 この共通条件は、元担当が存在するCodexの回復・置換・再起動・代替起動と、fast担当からfix担当への役割引継ぎへ適用する。
-初回fast担当、別の実装単位、元担当を持たない独立したレビューまたはCI修正の起動には、工程別モデル設定の通常起動契約を適用する。
+初回fast担当、元担当を持たない独立したレビューまたはCI修正の起動には、工程別モデル設定の通常起動契約を適用する。
 
 ## 経路
 
@@ -25,10 +25,10 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 - 名前付きagent定義の適用と、その役割が要求する実際の別主体への委譲を区別する。特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
-  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は240秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す
-  - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する
-  - 実行中turnを明示的に中断する場合は`kill(session_id, timeout)`を使う。killの通常の既定は300秒である。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端と結果を待つ。timeout超過後もsessionを保持し、`wait`または終端後の`send_message`で処理を続ける
-  - fast担当、fast担当からfix担当への昇格、別の実装単位、差分限定レビュー修正及びCI修正は毎回新規threadで起動する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
+  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す
+  - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt, timeout)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
+  - 実行中turnを明示的に中断する場合は`kill(session_id, timeout=270)`を使う。`timeout=0`は要求配送後の現状態を返す。正のtimeoutは中断後の終端と結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない
+  - fast担当、fast担当からfix担当への昇格及びCI修正は毎回新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。通常実装モードのレビュー修正は、後段の4遷移を明示的な例外とする
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
 - Codexから実際の別主体へ委譲するときは、`agents_server`を利用できる環境では同経路を使う
@@ -41,11 +41,11 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
-| `pick_feedbacks_model` | フィードバック調査 | 調査を委譲する`feedbacks-planner` | `agents_server` MCP | Agentツール |
+| `pick_feedbacks_model` | フィードバックの選定とレーン分け | `agent-toolkit:process-feedbacks`のメイン | `agents_server` MCP | Agentツール |
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
-| `execute_fast_model` | 各実装単位の最初のfast担当による初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
-| `execute_fix_model` | 修正対象とした同一失敗箇所が直後の再検証にも残った場合の引継ぎ修正、差分限定レビュー修正、CI失敗修正、マージ担当のrebase・競合解消・ff前進 | 同一失敗箇所の引継ぎと差分限定レビュー修正では`plan-impl-executor`。CI失敗修正では`plan-impl-caller-reception`の実行主体（呼び出し元）。マージ担当はレーンでは`plan-impl-executor`、統合後の上流進行rebaseではメイン | `agents_server` MCP | Agentツール |
+| `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
+| `execute_fix_model` | fast担当のエスカレーション引継ぎ、レビュー修正及びCI失敗修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン | `agents_server` MCP | Agentツール |
 | `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
@@ -60,21 +60,21 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使う。いずれも`effort`部はAgentツールへ渡さず、`agents_server`では指定値をそのまま渡す。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
-5. fast担当、fast担当からfix担当への引継ぎ、別の実装単位、差分限定レビュー修正及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
+5. fast担当、fast担当からfix担当への引継ぎ及びCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
+   同じ計画の実装単位は本項の対象外とし、手順6の直後の規定に従って1つのfast担当が順に実装する。
    通常実装モードのレビュー修正は本項の明示的な例外とし、手順6の4遷移で継続又は新規起動を確定する。
-   Codexで元担当を持たない初回fast担当、別の実装単位、独立した差分限定レビュー修正またはCI修正の新規threadを起動する場合は、工程別モデル設定の通常起動契約に従う。
+   Codexで元担当を持たない初回fast担当、CI修正のいずれかの新規threadを起動する場合は、工程別モデル設定の通常起動契約に従う。
    Codexで既存担当を置換する新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。
 6. 継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ使う。
    継続直前に工程別モデル設定と本節の経路規定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
    現在のthreadの起動に用いた実効3値と比較する。
    3値がすべて一致する場合だけ同一threadへ継続接続する。
-   `engine=claude`ではClaude Codeからは`SendMessage`、Codexからは`agents_server`の`send_message(session_id, prompt)`で同じ担当へ追加指示を返す。`engine=codex`では`agents_server`の`send_message(session_id, prompt)`で実行中turnへのsteer又は終端後のreplyを選択する。終端後のreply開始に結果回収の前提条件は設けない。
+   `engine=claude`ではClaude Codeからは`SendMessage`、Codexからは`agents_server`の`send_message(session_id, prompt, timeout)`で同じ担当へ追加指示を返す。`engine=codex`では`agents_server`の`send_message(session_id, prompt, timeout)`で実行中turnへのsteer、終端後のreply又は保持期限後の暗黙再開を選択する。終端後のreply開始に結果回収の前提条件は設けない。所有する実行主体が終了している場合も同じ呼び出しが暗黙に再開する。
    いずれかの実効値が異なる場合、同じ担当へ同じタスクを返さない場合、又は中断済み・完了配送不能・前提無効化の場合は、
    同一threadを継続せず、検収済み状態を渡して解決後のengineで新規起動する。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。
-   レビュー修正の実装担当は、保持した初回実装担当の実効`engine`・`model`・`effort`と、
-   起動直前に解決した今回の実効3値がすべて一致し、同じ担当へ同じタスクを返す場合だけ同一threadへ継続接続する。
-   それ以外の組合せでは、旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。
+   初回レビューの指摘対応では、最後に完了した実装単位の現在担当がfast担当なら新規fix担当を起動し、fix担当なら同じthreadを継続する。
+   2回目以降の指摘対応は同じfix担当threadを継続する。継続直前に解決した実効3値が現在のthreadと異なる場合は、`needs_escalation`でメインへ返す。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用し、旧担当の終端と書込所有権の解放を確認してから行う。
    計画、進捗ログ、保存済みのレビュー表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
@@ -99,16 +99,15 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
 工程別モデル設定のキーを持たない名前付きagentの呼び出しは、「工程別モデル設定」及び「modelとreasoning effort」の対象外とし、Codexではメインエージェントが定義を同一セッションへ直接適用し、Claude Codeでは既存の名前付きAgent起動へ従う。
-同じ計画に複数の実装単位がある場合も、`plan-impl-executor`は各単位の最初のfast担当を新規起動する直前に
-`execute_fast_model`を単位ごとに1回解決し、前単位の解決値を再利用しない。
-前の単位と実効3値が一致する場合も、前の担当のthreadを継続せず新規threadを起動する。
-Codexで各実装単位の最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う。
+同じ計画に複数の実装単位がある場合、`plan-impl-executor`は最初の単位へ着手する直前に`execute_fast_model`を1回だけ解決し、
+先行依存と統合順に従って残りの単位を同じfast担当へ順に渡す。単位ごとに実効値を解決し直さず、単位ごとの新規threadも起動しない。
+同じ計画の実装単位は同一worktreeへ書込主体を1つだけ置くため逐次実行され、分割しても並列化の利益が無い一方、
+規範、計画並びに対象コードの読み込みが単位数だけ重複するためである。実装単位ごとのcommit境界は計画の実装単位表のとおり維持する。
+継続接続が成立しない場合だけ新規threadを起動し、そのとき残りの単位を1つの担当へまとめて渡す。
+Codexで最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う。
 
-`execute_fast_model`から`execute_fix_model`への昇格は、検証コマンドの終了コードだけで判定しない。
-fast担当が修正対象として記録したテストID・診断識別子等が、同じコマンドの直後の再検証にも残った場合だけ、
-fast担当を終端して修正引継ぎ記録を作成し、fix担当へdirtyな同一worktreeを渡す。
+fast担当がエスカレーションを返した場合だけ、fast担当を終端し、元の実装入力、同じworktreeの作業状態及びエスカレーション内容を新規fix担当へ渡す。
 Codexでfast担当からfix担当へ役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う。
-修正対象が解消して別の失敗箇所だけが現れた場合は昇格せず、fast担当が新しい失敗箇所を次の初回修正として扱う。
 
 ## modelとreasoning effort
 

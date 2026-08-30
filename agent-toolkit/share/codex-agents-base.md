@@ -135,8 +135,8 @@ Codexから実際の別主体へ委譲するときは`agents_server`を使う。
 外側のメイン工程は同じセッション内でstatusと出力を受領し、通常の呼び出し元契約に従って次の工程を続ける。
 
 - `completed`、`evidence_insufficient`及び`needs_escalation`は適用区間の終端結果として外側のメイン工程へ返す。外側のメインが成果物の検収、ユーザー確認又は後続工程を所有する
-- `awaiting_confirmation`は適用区間を終了する。外側のメインが確認又はTBD処理を完了した後、既存定義が要求する累積入力を渡して同じ名前付きagent定義を新しい適用区間として呼び出す
 - `checkpoint`は適用区間を終了する。外側のメインがcheckpointを検収して既定の再開指示を確定した後、保持した検収済み状態、checkpoint及び再開指示を入力として同じ名前付きagent定義を新しい適用区間で呼び出す。Codexでは自身への`SendMessage`を使わない
+- `needs_escalation`への回答又は補正を受領した場合は、外側のメインが一般継続契約に従って同じ名前付きagent定義を新しい適用区間として呼び出す
 - 計画レビューの指摘反映など、名前付き役割が書込禁止で外側のメインが書込主体である工程は、名前付き役割の適用区間を終了してから外側のメインが実施する。反映後の調整は同じ定義を新しい適用区間で再び呼び出す
 
 名前付き役割が起動した実際の別主体は、当該役割の出力契約と委譲規範に従って終端又は継続可能な識別子として検収してから適用区間を終了する。
@@ -160,7 +160,7 @@ Codexメインが名前付き定義を直接適用して役割を遂行すると
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
 | `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
-| `ScheduleWakeup`・`CronCreate` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
+| `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
 
 Claude Code側の`agents_server`は、`start`・`wait`・`send_message`・`kill`の4ツールでCodexまたはClaudeへ委譲する。
 Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。

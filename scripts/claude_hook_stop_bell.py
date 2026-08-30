@@ -82,7 +82,11 @@ def main(payload_text: str) -> int:
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
-    if transcript_path and is_pending_async_work(transcript_path, session_id):
+    if transcript_path and is_pending_async_work(
+        transcript_path,
+        session_id,
+        background_tasks=payload.get("background_tasks"),
+    ):
         append_stop_log(session_id, "silent_pending_async", {})
         _approve()
         return 0

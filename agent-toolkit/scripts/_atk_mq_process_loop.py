@@ -457,23 +457,19 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     return None
 
 
-def _build_process_loop_prompt(
-    local_path: pathlib.Path,
-    target_repo_id: str,
-    orchestrator: str,
-) -> str:
-    """対象リポジトリのフィードバック処理を依頼する短い目的文を構築する。"""
-    prompt = (
+def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
+    """対象リポジトリのフィードバック処理を依頼する短い目的文を構築する。
+
+    目的文はスキルの完遂だけを求める。処理範囲、実行基盤の障害対応、再開条件は
+    `agent-toolkit:process-feedbacks`とその参照先が定める。目的文へ重ねて書くと、
+    スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として
+    扱われてスキル側の規範より優先される。
+    """
+    return (
         "/goal `agent-toolkit:process-feedbacks`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
         "フィードバック処理を完遂してください。"
     )
-    if orchestrator == "codex":
-        prompt += (
-            "Codexオーケストレーターの連続処理として、開始後に追加されたready項目も同じセッションで順次処理し、"
-            "ready項目がなくなった時点で既存の終了工程へ進んでください。"
-        )
-    return prompt
 
 
 def _resolve_orchestrator_spec() -> tuple[str, str, str]:
@@ -829,7 +825,6 @@ def _update_before_session(
 def _prepare_session_target(
     local_path: pathlib.Path,
     target_repo_id: str,
-    orchestrator: str,
     prompt: str,
     *,
     worktree_name: str | None,
@@ -846,7 +841,7 @@ def _prepare_session_target(
     prepared = _sync_worktree_with_upstream(local_path, effective_name)
     if prepared is None:
         return None
-    return prepared, _build_process_loop_prompt(prepared, target_repo_id, orchestrator)
+    return prepared, _build_process_loop_prompt(prepared, target_repo_id)
 
 
 def _run_process_session(
@@ -984,7 +979,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     orchestrator, model, effort = _resolve_orchestrator_spec()
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
-    prompt = _build_process_loop_prompt(local_path, target_repo_id, orchestrator)
+    prompt = _build_process_loop_prompt(local_path, target_repo_id)
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     mise_refresh_root = dotfiles_root if target_repo_id == _DOTFILES_REPO_ID and not args.no_update else None
@@ -1044,7 +1039,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         prepared_target = _prepare_session_target(
                             local_path,
                             target_repo_id,
-                            orchestrator,
                             prompt,
                             worktree_name=args.worktree,
                             resume_pending=current_resume_pending,

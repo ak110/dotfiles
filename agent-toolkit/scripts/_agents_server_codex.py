@@ -24,6 +24,7 @@ from typing import Any
 
 from _agents_server_state import (
     TERMINAL_STATUSES,
+    ResumePrompt,
     SessionState,
     _append_bounded,
     _begin_reply,
@@ -41,6 +42,8 @@ DEFAULT_WAIT_TIMEOUT = 300.0
 # asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
 # readline()がValueErrorを送出してreaderが停止するため、8MiBまで読み取れるようにする。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
+APP_SERVER_STDERR_LIMIT_CHARS = 4000
+APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
 
 
 class AppServerError(RuntimeError):
@@ -113,6 +116,7 @@ class JsonRpcProcess:
         self._write_lock = asyncio.Lock()
         self._closed = False
         self._reader_failure: BaseException | None = None
+        self._stderr_text = ""
 
     async def start(self) -> None:
         """子プロセスを起動し、initialize/initializedを完了する。"""
@@ -204,7 +208,9 @@ class JsonRpcProcess:
             while True:
                 raw_line = await self.process.stdout.readline()
                 if not raw_line:
-                    raise AppServerError("Codex App Server stdout closed")
+                    error = await self._stdout_closed_error()
+                    _LOG.error("%s", error)
+                    raise error
                 try:
                     message = json.loads(raw_line.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -240,14 +246,43 @@ class JsonRpcProcess:
                 line = await self.process.stderr.readline()
                 if not line:
                     return
+                text = line.decode("utf-8", errors="replace")
+                self._stderr_text = _append_bounded(
+                    self._stderr_text,
+                    text,
+                    APP_SERVER_STDERR_LIMIT_CHARS,
+                )
                 print(
-                    line.decode("utf-8", errors="replace"),
+                    text,
                     end="",
                     file=sys.stderr,
                     flush=True,
                 )
         except OSError as exc:
             _LOG.debug("Codex App Server stderrの読取を終了しました: %s", exc)
+
+    async def _stdout_closed_error(self) -> AppServerError:
+        """子プロセス終了時の診断情報を有界に収集する。"""
+        assert self.process is not None
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                self.process.wait(),
+                timeout=APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT,
+            )
+        stderr_task = self._stderr_task
+        if stderr_task is not None and stderr_task is not asyncio.current_task():
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    asyncio.shield(stderr_task),
+                    timeout=APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT,
+                )
+
+        command = " ".join(APP_SERVER_COMMAND)
+        message = f"Codex App Server stdout closed: command={command}; returncode={self.process.returncode}"
+        stderr = self._stderr_text.strip()
+        if stderr:
+            message = f"{message}; stderr={stderr}"
+        return AppServerError(message)
 
     async def close(self) -> None:
         """自身が起動した子プロセスだけを終了し、関連taskを回収する。"""
@@ -364,6 +399,31 @@ class AppServerManager:
             return session
         return session
 
+    async def resume(
+        self,
+        session_id: str,
+        prompt: ResumePrompt,
+        cwd: str,
+        model: str | None = None,
+        effort: str | None = None,
+    ) -> SessionState:
+        """保存済みthreadを再開して新しいturnを開始する。"""
+        _validate_cwd(cwd)
+        _validate_model_effort(model, effort)
+        client = await self._ensure_client()
+        session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort, engine="codex")
+        self.sessions[session_id] = session
+        _initialize_turn(session)
+        try:
+            await self._resume_thread(session, client)
+            await prompt.deliver(lambda value: self._start_turn(session, value, client))
+        except Exception as exc:
+            if self._turn_start_response_is_ambiguous(client, exc):
+                await self._mark_turn_start_ambiguous(session, exc)
+            else:
+                await self._mark_failed(session, exc, retryable=False)
+        return session
+
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
         _validate_prompt(prompt)
@@ -448,18 +508,7 @@ class AppServerManager:
         self._begin_reply(session)
         try:
             client = await self._ensure_client()
-            resume_params: dict[str, Any] = {
-                "threadId": session.session_id,
-                "cwd": session.cwd,
-                "approvalPolicy": "never",
-                "sandbox": "danger-full-access",
-            }
-            if session.model is not None:
-                resume_params["model"] = session.model
-            resume_response = await client.request("thread/resume", resume_params)
-            resumed_thread = resume_response.get("thread")
-            if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
-                raise AppServerError("thread/resume returned an unexpected thread.id")
+            await self._resume_thread(session, client)
         except Exception as exc:
             await self._mark_failed(session, exc, retryable=True)
             return "reply_failed", session.public_status(), exc
@@ -472,6 +521,22 @@ class AppServerManager:
             await self._mark_failed(session, exc, retryable=False)
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
+
+    @staticmethod
+    async def _resume_thread(session: SessionState, client: Any) -> None:
+        """保存済みCodex threadを現在の実行条件で再開する。"""
+        resume_params: dict[str, Any] = {
+            "threadId": session.session_id,
+            "cwd": session.cwd,
+            "approvalPolicy": "never",
+            "sandbox": "danger-full-access",
+        }
+        if session.model is not None:
+            resume_params["model"] = session.model
+        resume_response = await client.request("thread/resume", resume_params)
+        resumed_thread = resume_response.get("thread")
+        if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
+            raise AppServerError("thread/resume returned an unexpected thread.id")
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:

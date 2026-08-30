@@ -36,7 +36,6 @@ def _hook_command(name: str) -> str:
 
 CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
 CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
-CODEX_STOP_COMMAND = _hook_command("stop_advisor")
 CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
 CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
 CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
@@ -80,7 +79,6 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     ),
     "PermissionRequest": CodexHookProjection((CODEX_PERMISSION_REQUEST_COMMAND,)),
     "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
-    "Stop": CodexHookProjection((CODEX_STOP_COMMAND,)),
     "SubagentStop": CodexHookProjection((CODEX_SUBAGENT_STOP_COMMAND,)),
     "SessionEnd": CodexHookProjection((CODEX_SESSION_END_COMMAND,), timeout=CODEX_SESSION_END_TIMEOUT_SECONDS),
 }

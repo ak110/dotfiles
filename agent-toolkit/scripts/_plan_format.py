@@ -200,7 +200,27 @@ PLAN_REQUIREMENT_ID_PATTERN = re.compile(r"^R-(?P<material>P-[0-9A-Za-z][0-9A-Za
 PLAN_QUEUE_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9]{3,}\.md$")
 
 PLAN_BUG_TABLE_HEADER: tuple[str, ...] = ("項目", "内容")
+PLAN_BUG_CAUSE_TABLE_HEADER: tuple[str, ...] = ("要因系統", "L1 現象", "L2 判断", "L3 構造", "L4 システム")
+PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し要因")
+"""バグ単位の原因分析表の固定5列2行。`agent-toolkit:bugfix`の原因分析の段階と対応させる。"""
+
 PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+    "観測事象",
+    "期待する契約",
+    "直接的原因",
+    "根本原因",
+    "原因分析の根拠",
+    "原因分析の品質確認",
+    "類似見直しの観点",
+    "類似見直し結果",
+    "是正処置",
+    "横展開処置",
+    "再発防止処置",
+    "設計意図の記録",
+)
+"""バグ調査表の固定12行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。"""
+
+PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
     "観測事象",
     "期待する契約",
     "直接的原因",
@@ -216,10 +236,10 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
     "再発防止処置",
     "設計意図の記録",
 )
-"""バグ調査表の固定14行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。"""
+"""原因分析表を持たない旧バグ調査表の固定14行。既存計画の読み取り互換にだけ用いる。"""
 
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
-"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表の14行を正本とする。"""
+"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表の12行を正本とする。"""
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
 PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当箇所")
@@ -1298,16 +1318,49 @@ def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
 def _check_bug_unit_sections(
     body: list[tuple[int, str]], headings: list[PlanHeading], children: list[tuple[int, PlanHeading]]
 ) -> list[str]:
-    """バグ単位H3ごとに固定14行の2列表を検査する。"""
+    """バグ単位H3ごとに原因分析表と固定12行の2列表を検査する。"""
     errors: list[str] = []
     for position, heading in children:
         start, end = heading_subtree_range(headings, position)
-        table = _find_table_with_rows(extract_tables(lines_within(body, start, end)), PLAN_BUG_TABLE_ROWS)
-        if table is None or table.header != PLAN_BUG_TABLE_HEADER:
-            errors.append(f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定14行の調査表にする")
+        tables = extract_tables(lines_within(body, start, end))
+        legacy_tables = [
+            table
+            for table in tables
+            if table.row_labels() == PLAN_LEGACY_BUG_TABLE_ROWS and table.header == PLAN_BUG_TABLE_HEADER
+        ]
+        if legacy_tables:
+            if len(legacy_tables) != 1 or len(tables) != 1:
+                errors.append(f"`### {heading.text}`の旧形式は固定14行の調査表1件だけにする")
+                continue
+            legacy_table = legacy_tables[0]
+            for row in legacy_table.rows:
+                if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
+                    errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
             continue
+
+        investigation_tables = [table for table in tables if table.row_labels() == PLAN_BUG_TABLE_ROWS]
+        if len(investigation_tables) != 1 or investigation_tables[0].header != PLAN_BUG_TABLE_HEADER:
+            errors.append(f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定12行の調査表にする")
+            continue
+        table = investigation_tables[0]
+        cause_tables = [table for table in tables if table.row_labels() == PLAN_BUG_CAUSE_TABLE_ROWS]
+        if (
+            len(cause_tables) != 1
+            or cause_tables[0].header != PLAN_BUG_CAUSE_TABLE_HEADER
+            or len(tables) != 2
+            or cause_tables[0].lineno > table.lineno
+        ):
+            errors.append(
+                f"`### {heading.text}`は{list(PLAN_BUG_CAUSE_TABLE_HEADER)}の5列2行の原因分析表1件と"
+                "固定12行の調査表1件だけを置き、原因分析表を調査表より前に置く"
+            )
+            continue
+        cause_table = cause_tables[0]
+        for row in cause_table.rows:
+            if len(row) != len(PLAN_BUG_CAUSE_TABLE_HEADER) or any(not cell for cell in row[1:]):
+                errors.append(f"`### {heading.text}`の原因分析表に空のセルがある: {row[0] if row else ''}")
         for row in table.rows:
-            if len(row) != 2 or not row[1]:
+            if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
                 errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
     return errors
 
@@ -1351,7 +1404,7 @@ def extract_bug_file_reference(content: str) -> str | None:
 
 
 def has_legacy_bug_table(content: str) -> bool:
-    """本文の`## バグ調査結果`が旧形式の固定14行表である場合に真を返す。"""
+    """本文の`## バグ調査結果`が旧形式のバグ単位調査表である場合に真を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
@@ -1362,7 +1415,7 @@ def has_legacy_bug_table(content: str) -> bool:
 
 
 def check_bug_file_structure(content: str) -> list[str]:
-    """バグ調査付属ファイルのH1、バグ単位H3、固定14行表を検査する。"""
+    """バグ調査付属ファイルのH1、バグ単位H3、原因分析表と固定12行の調査表を検査する。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)

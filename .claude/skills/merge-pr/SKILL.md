@@ -88,7 +88,7 @@ runの完全なdatabase IDを取得した後、公式CLIで待機する。
 
 ```sh
 gh run list --repo ak110/dotfiles --workflow CI --commit <MERGE_OID> --json databaseId,event,headBranch,headSha,status,conclusion,url
-gh run watch <run ID> --repo ak110/dotfiles --exit-status
+gh run watch <run ID> --repo ak110/dotfiles --compact --exit-status
 ```
 
 run登録前は読み取り専用の一覧取得を継続する。
@@ -108,7 +108,7 @@ GitHub Releaseの存在と、次の既存asset名を確認する。
 
 ```sh
 gh run list --repo ak110/dotfiles --workflow 'Release statusLine' --commit <MERGE_OID> --json databaseId,event,headBranch,headSha,status,conclusion,url
-gh run watch <Release run ID> --repo ak110/dotfiles --exit-status
+gh run watch <Release run ID> --repo ak110/dotfiles --compact --exit-status
 gh release view statusline-v<version> --repo ak110/dotfiles --json assets,tagName,targetCommitish
 gh api repos/ak110/dotfiles/git/ref/tags/statusline-v<version> --jq .object.sha
 ```
@@ -125,6 +125,14 @@ git status --short
 ```
 
 ローカル`develop`、`origin/develop`及び`origin/master`が`MERGE_OID`と一致し、作業ツリーがcleanである場合だけ完了とする。
+
+マージ後のCI又はReleaseが失敗した場合は、待機終了後の診断で次の読み取りコマンドを使って詳細ログを取得する。
+
+```sh
+gh run view <失敗したrun ID> --repo ak110/dotfiles --log-failed
+```
+
+詳細ログを取得できない場合も、元のCI又はReleaseの失敗を失敗工程として保持し、ログ取得の失敗を併記する。
 
 マージ後のCI又はReleaseが失敗しても、自動rollback、auto-merge及び自動再試行をせず、成立済みの外部状態を保持する。
 成立済みの外部状態、失敗した工程、run URL及び再開点を報告して停止する。

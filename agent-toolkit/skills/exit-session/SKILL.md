@@ -18,7 +18,7 @@ process-loopから起動されたセッションでは、agent-toolkit pluginの
 
 次のいずれかを満たすときに限り呼び出す。
 
-- `agent-toolkit:process-feedbacks`「6. 振り返りと終了」節から呼ばれた場合
+- `agent-toolkit:process-feedbacks`の`references/finish-session.md`から呼ばれた場合
 - 自律終了再促フック（`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`環境変数のStopフック）から未起動判定時の再促として誘導された場合
 - ユーザーがSkill名を明示的に指定して本スキルを起動した場合
 
@@ -29,7 +29,7 @@ process-loopから起動されたセッションでは、agent-toolkit pluginの
 
 ## 実行手順
 
-1. 終了理由を1文で発話する（呼び出し元スキルの完遂サマリーと重複する場合は要点のみ記述する）
+1. 呼び出し元が`agent-toolkit:completion-report`で完了報告済みであることを確認する。新しい成果要約を生成せず、終了理由だけを1文で発話する
 2. `references/host-and-os-termination.md`を全文読み、実行ホストと実行環境を判定する
 3. 判定した経路に従って本体プロセスの停止を要求するか、ユーザーへの案内でターンを完了させる。
    LinuxのCodex直接CLIでは起動時の終了能力判定を再利用せず、停止要求直前に参照文書のprobeを新規実行する

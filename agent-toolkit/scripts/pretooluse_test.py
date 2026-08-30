@@ -23,14 +23,14 @@ from pyfltr.colloquial import check as _colloquial_check
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
-_PLAN_MODE_REFERENCES = pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references"
+_SHARE_DIR = pathlib.Path(__file__).resolve().parents[1] / "share"
 
 # `.env`系の遮断メッセージだけへ添える案内の照合断片（`TestSecretsCheck`が使う）。
 _SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
 _SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
 
 # 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
-_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review-task.md",)
+_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review.subagent.md",)
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -2258,9 +2258,22 @@ class TestBashAmendRebaseBlock:
         """shell展開を含むcwdは、payloadのcwdに記録された確認結果へフォールバックしない。"""
         sid = "unresolved-amend-cwd"
         self._write_state(tmp_path, sid, {"git_log_checked": {"/repo/a": True}})
-        result = self._invoke('cd "$TARGET" && git commit --amend --no-edit', sid, state_dir, cwd="/repo/a")
+        result = self._invoke('cd "$HOME/repo" && git commit --amend --no-edit', sid, state_dir, cwd="/repo/a")
         assert result.returncode == 2
-        assert "unresolved" in result.stderr
+        assert "'$HOME/repo'" in result.stderr
+        assert "git -C <absolute path> log --oneline --decorate" in result.stderr
+        assert "history rewrite" in result.stderr
+
+    def test_unresolved_cwd_without_expression_keeps_general_guidance(
+        self, state_dir: dict[str, str], tmp_path: pathlib.Path
+    ) -> None:
+        """式を保持できないスタック操作では既存の一般案内を維持する。"""
+        sid = "unresolved-amend-stack"
+        self._write_state(tmp_path, sid, {"git_log_checked": {"/repo/a": True}})
+        result = self._invoke("popd && git commit --amend --no-edit", sid, state_dir, cwd="/repo/a")
+        assert result.returncode == 2
+        assert "unresolved shell expression" in result.stderr
+        assert "<absolute path>" not in result.stderr
 
     @pytest.mark.parametrize(
         ("label", "repo_relative", "remote_url", "command_template", "expected_returncode"),
@@ -2745,9 +2758,10 @@ class TestBashGitPushAfterAmendDirty:
         """解決不能なpushは、いずれかのworktreeにamend後確認待ちがあれば遮断する。"""
         sid = "push-unresolved"
         self._write_state(tmp_path, sid, {"amend_pending_status_check": {"/repo/a": True}})
-        result = self._invoke('cd "$TARGET" && git push origin master', sid, state_dir, cwd=str(tmp_path))
+        result = self._invoke("cd ~/repo && git push origin master", sid, state_dir, cwd=str(tmp_path))
         assert result.returncode == 2
-        assert "amend" in result.stderr
+        assert "'~/repo'" in result.stderr
+        assert "git -C <absolute path> push ..." in result.stderr
 
     def test_dry_run_dirty_block_range_matches_real_push(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """判定範囲の統一: `--dry-run`でもdirty判定は実施される（再確認）。"""
@@ -4298,7 +4312,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review.subagent.mdを読んでレビューする。",
                 },
                 "session_id": "execute-review-claude",
                 "isSidechain": True,
@@ -4316,7 +4330,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-review-task.mdを読んでレビューする。",
+                    "prompt": "implementation-review.subagent.mdを読んでレビューする。",
                 },
                 "session_id": session_id,
                 "isSidechain": False,
@@ -4328,7 +4342,7 @@ class TestExecuteReviewAlternateRouteAllowed:
     def test_guarded_task_references_exist(self) -> None:
         """回帰検査が与えるタスク文書名の実在を確認し、改名による空振りを検出する。"""
         for task_name in _EXECUTE_REVIEW_TASK_NAMES:
-            assert (_PLAN_MODE_REFERENCES / task_name).is_file()
+            assert (_SHARE_DIR / task_name).is_file()
 
 
 def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:

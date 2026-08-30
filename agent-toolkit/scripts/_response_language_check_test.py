@@ -303,20 +303,3 @@ class TestDiscourseMarker:
         outcome, body, _ = detailed_check(path)
         assert outcome is CheckOutcome.PASS
         assert body is None
-
-
-class TestRuleHeadingReference:
-    """hookメッセージが引用する規範文書の見出しが実在することの検証。"""
-
-    def test_quoted_headings_exist_in_rules(self):
-        """scripts配下の引用名がすべて01-agent.mdの見出しに実在する。"""
-        headings = {
-            line.lstrip("#").strip() for line in _RULES_FILE.read_text(encoding="utf-8").splitlines() if line.startswith("#")
-        }
-        quoted: dict[str, list[str]] = {}
-        for script in sorted(_SCRIPTS_DIR.glob("*.py")):
-            for name in _RULE_HEADING_REFERENCE_PATTERN.findall(script.read_text(encoding="utf-8")):
-                quoted.setdefault(name, []).append(script.name)
-        assert quoted, "走査対象に規範文書の見出し引用が1件も無い"
-        missing = {name: files for name, files in quoted.items() if name not in headings}
-        assert not missing, f"01-agent.mdに実在しない見出しを引用している: {missing}"

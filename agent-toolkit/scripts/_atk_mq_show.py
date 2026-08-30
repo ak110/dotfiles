@@ -76,7 +76,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     状態・回答有無フィルタを迂回する既定挙動であり、既定の`--status=active`によって
     adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
     `--all`指定時のフィードバック・`tbd`双方の走査対象は`--status`と連動する
-    （既定`active`はフィードバックがinbox・planning・processing、TBDがinbox・processing、
+    （既定`active`はフィードバックがinbox・planning・processing・editing・hold、TBDがinbox・processing、
     `all`は5状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。

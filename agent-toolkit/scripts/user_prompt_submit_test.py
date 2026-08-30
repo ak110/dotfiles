@@ -76,126 +76,6 @@ class TestSlashCommandDetection:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
 
-    @pytest.mark.parametrize(
-        ("prompt", "flag"),
-        [
-            ("/agent-toolkit:plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
-            ("/plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
-            ("$agent-toolkit:plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
-            ("$plan-and-add-feedback", "plan_and_add_feedback_skill_invoked"),
-            ("/agent-toolkit:add-feedback", "add_feedback_skill_invoked"),
-            ("/add-feedback", "add_feedback_skill_invoked"),
-            ("$agent-toolkit:add-feedback", "add_feedback_skill_invoked"),
-            ("$add-feedback", "add_feedback_skill_invoked"),
-        ],
-    )
-    def test_detects_feedback_submission_skill_commands(
-        self,
-        tmp_path: pathlib.Path,
-        prompt: str,
-        flag: str,
-    ) -> None:
-        sid = f"feedback-command-{prompt[0]}-{flag}"
-        payload = {"session_id": sid, "prompt": prompt}
-        if prompt.startswith("$"):
-            payload["model"] = "gpt-5"
-        result = _run(payload, state_dir=tmp_path)
-
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get(flag) is True
-
-    def test_detects_short_skill_command_session_review(self, tmp_path: pathlib.Path):
-        """短縮名`/session-review`もフルスキル名キーで正規化して保存する。"""
-        sid = "short-session-review"
-        result = _run(
-            {"session_id": sid, "prompt": "/session-review", "transcript_path": "/tmp/review.jsonl"},
-            state_dir=tmp_path,
-        )
-        assert result.returncode == 0
-        invoked = _read_state(tmp_path, sid).get("session_review_invoked")
-        assert isinstance(invoked, dict)
-        assert invoked.get("agent-toolkit:session-review") is True
-        output = json.loads(result.stdout)
-        assert output["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
-        context = output["hookSpecificOutput"]["additionalContext"]
-        assert context.startswith("[auto-generated: agent-toolkit/user-prompt-submit] Use these exact values")
-        assert "session_id=short-session-review" in context
-        assert "/tmp/review.jsonl" in context
-        assert context.endswith(
-            "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
-        )
-
-    def test_full_session_review_command_preserves_transcript_path(self, tmp_path: pathlib.Path):
-        transcript_path = "/tmp/会話 transcript.jsonl"
-        result = _run(
-            {
-                "session_id": "full-session-review",
-                "prompt": "/agent-toolkit:session-review",
-                "transcript_path": transcript_path,
-            },
-            state_dir=tmp_path,
-        )
-
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert transcript_path in context
-
-    def test_codex_full_session_review_command_records_state_and_context(self, tmp_path: pathlib.Path):
-        sid = "codex-full-session-review"
-        transcript_path = "/tmp/codex rollout.jsonl"
-        result = _run(
-            {
-                "session_id": sid,
-                "prompt": "$agent-toolkit:session-review",
-                "transcript_path": transcript_path,
-                "model": "gpt-5",
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid)["session_review_invoked"] == {"agent-toolkit:session-review": True}
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert f"session_id={sid}" in context
-        assert f"transcript_path={transcript_path}" in context
-
-    def test_codex_short_session_review_command_records_state(self, tmp_path: pathlib.Path):
-        sid = "codex-short-session-review"
-        result = _run(
-            {
-                "session_id": sid,
-                "prompt": "$session-review",
-                "transcript_path": "/tmp/review.jsonl",
-                "model": "gpt-5",
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert _read_state(tmp_path, sid)["session_review_invoked"] == {"agent-toolkit:session-review": True}
-
-    def test_session_review_with_arguments_does_not_emit_context(self, tmp_path: pathlib.Path):
-        result = _run(
-            {
-                "session_id": "session-review-arguments",
-                "prompt": "/session-review extra",
-                "transcript_path": "/tmp/review.jsonl",
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.stdout == ""
-
-    def test_session_review_without_transcript_fails_open(self, tmp_path: pathlib.Path):
-        result = _run(
-            {"session_id": "session-review-no-path", "prompt": "/session-review"},
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "session_id=session-review-no-path" in context
-        assert "transcript_path=" in context
-
 
 class TestNonMatchingPrompts:
     """非スキル起動プロンプトで状態と追加出力が変わらないことの検証。"""
@@ -222,7 +102,7 @@ class TestNonMatchingPrompts:
     def test_claude_ignores_codex_skill_command(self, tmp_path: pathlib.Path):
         sid = "claude-dollar-command"
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:session-review", "transcript_path": "/tmp/review.jsonl"},
+            {"session_id": sid, "prompt": "$agent-toolkit:process-feedbacks"},
             state_dir=tmp_path,
         )
 
@@ -235,8 +115,7 @@ class TestNonMatchingPrompts:
         result = _run(
             {
                 "session_id": sid,
-                "prompt": "/agent-toolkit:session-review",
-                "transcript_path": "/tmp/review.jsonl",
+                "prompt": "/agent-toolkit:process-feedbacks",
                 "model": "gpt-5",
             },
             state_dir=tmp_path,
@@ -268,11 +147,11 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is None
 
-    def test_codex_normal_prompt_keeps_session_review_state(self, tmp_path: pathlib.Path):
-        sid = "codex-normal-keeps-review"
+    def test_codex_normal_prompt_keeps_unrelated_state(self, tmp_path: pathlib.Path):
+        sid = "codex-normal-keeps-unrelated"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
-            json.dumps({"session_review_invoked": {"agent-toolkit:session-review": True}}),
+            json.dumps({"plan_mode_skill_invoked": True}),
             encoding="utf-8",
         )
 
@@ -282,25 +161,25 @@ class TestNonMatchingPrompts:
         )
 
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid)["session_review_invoked"]["agent-toolkit:session-review"] is True
+        assert _read_state(tmp_path, sid)["plan_mode_skill_invoked"] is True
 
-    def test_codex_plan_mode_command_keeps_session_review_state(self, tmp_path: pathlib.Path):
-        sid = "codex-plan-keeps-review"
+    def test_codex_process_feedbacks_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
+        sid = "codex-process-feedbacks-keeps-unrelated"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
-            json.dumps({"session_review_invoked": {"agent-toolkit:session-review": True}}),
+            json.dumps({"plan_mode_skill_invoked": True}),
             encoding="utf-8",
         )
 
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:plan-mode", "model": "gpt-5"},
+            {"session_id": sid, "prompt": "$agent-toolkit:process-feedbacks", "model": "gpt-5"},
             state_dir=tmp_path,
         )
 
         state = _read_state(tmp_path, sid)
         assert result.returncode == 0
+        assert state["process_feedbacks_skill_invoked"] is True
         assert state["plan_mode_skill_invoked"] is True
-        assert state["session_review_invoked"]["agent-toolkit:session-review"] is True
 
 
 class TestClaudePlanSessionTitle:
@@ -532,25 +411,3 @@ class TestClaudePlanSessionTitle:
         assert result.returncode == 0
         assert result.stdout == ""
         assert not self._title_state_path(tmp_path, sid).exists()
-
-    def test_session_review_context_and_plan_title_share_one_json_response(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        sid = "plan-title-and-review"
-        self._prepare_plan(tmp_path, monkeypatch, sid, "review-plan.md")
-
-        result = _run(
-            {
-                "session_id": sid,
-                "prompt": "/session-review",
-                "transcript_path": "/tmp/review.jsonl",
-            },
-            state_dir=tmp_path,
-        )
-
-        output = json.loads(result.stdout)
-        hook_output = output["hookSpecificOutput"]
-        assert hook_output["sessionTitle"] == "review-plan"
-        assert "session_id=plan-title-and-review" in hook_output["additionalContext"]

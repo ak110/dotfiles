@@ -234,6 +234,34 @@ class TestGrepFilters:
         assert "fb-001.md" not in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
 
+    def test_active_includes_planning_feedback_but_excludes_planning_tbd(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """既定activeのgrepはplanning feedbackを含め、planning TBDを除外する。"""
+        notes = _setup_notes(tmp_path)
+        planning_dir = notes / "planning"
+        planning_dir.mkdir(parents=True, exist_ok=True)
+        (planning_dir / "planning-feedback.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
+            encoding="utf-8",
+        )
+        (planning_dir / "planning-tbd.md").write_text(
+            "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "grep", "searchword", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "planning-feedback.md" in captured.out
+        assert "planning-tbd.md" not in captured.out
+
     def test_answered_filter_limits_to_unanswered(
         self,
         monkeypatch: pytest.MonkeyPatch,

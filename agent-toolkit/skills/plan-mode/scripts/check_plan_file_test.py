@@ -1,6 +1,5 @@
 """意味契約中心の計画検査を検証する。"""
 
-import json
 import pathlib
 import subprocess
 import sys
@@ -13,11 +12,6 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
-_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN = pathlib.Path("/home/aki/.claude/plans/review-scope-consolidation-2609f04f.md")
-_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL = _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.with_name(
-    f"{_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.stem}.detail.md"
-)
-_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW = _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN.with_suffix(".tsv")
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -43,10 +37,25 @@ def _rows_table(rows: tuple[str, ...], filler: str) -> str:
     return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *(f"| {row} | {filler} |" for row in rows)])
 
 
+def _cause_rows_table() -> str:
+    """原因分析表の固定列と行を組み立てる。"""
+    header = _plan_format.PLAN_BUG_CAUSE_TABLE_HEADER
+    contents = " | ".join("原因分析を記録する。" for _column in header[1:])
+    return "\n".join(
+        [
+            f"| {' | '.join(header)} |",
+            f"| {' | '.join('---' for _column in header)} |",
+            *(f"| {row} | {contents} |" for row in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS),
+        ]
+    )
+
+
 def _bug_file_content() -> str:
     """バグ調査付属ファイルの正規内容を組み立てる。"""
     return (
         "# 計画の主題\n\n### 対象の不整合\n\n"
+        + _cause_rows_table()
+        + "\n\n"
         + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
         + "\n"
     )
@@ -81,6 +90,8 @@ def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool 
     if bug:
         bug_section = (
             "## バグ調査結果\n\n### 対象の不整合\n\n"
+            + _cause_rows_table()
+            + "\n\n"
             + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
             + "\n\n"
         )
@@ -394,12 +405,6 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
     path = repo / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, repo)
-
-
-def _review_table_row(round_value: str = "1") -> str:
-    """レビュー表の7列JSON文字列行を組み立てる。"""
-    values = [round_value, "plan-review", "計画本文", "確認が必要な欠落", "", "", ""]
-    return "\t".join(json.dumps(value, ensure_ascii=False) for value in values) + "\n"
 
 
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
@@ -766,12 +771,12 @@ def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ調査付属ファイルの固定14行表欠落を拒否する。"""
+    """バグ調査付属ファイルの固定12行表欠落を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    invalid_bug_file = _bug_file_content().replace("| 直接的原因 | 発生条件と実際値を記載する。 |\n", "")
+    invalid_bug_file = _bug_file_content().replace("| 根本原因 | 発生条件と実際値を記載する。 |\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
-    assert any("固定14行" in error for error in errors), errors
+    assert any("固定12行" in error for error in errors), errors
 
 
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
@@ -820,7 +825,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     if reference is not None:
         inline_section = (
             "## バグ調査結果\n\n### 対象の不整合\n\n"
-            + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
+            + _rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
             + "\n\n"
         )
         detail_content = detail_content.replace(
@@ -873,94 +878,6 @@ def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
     )
     assert not any("レビュー指摘行の`ID`" in line for line in result.stderr.splitlines()), result.stderr
     assert "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in result.stderr
-
-
-@pytest.mark.skipif(
-    not all(
-        path.is_file()
-        for path in (
-            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN,
-            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL,
-            _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW,
-        )
-    ),
-    reason="進捗表を持つ実在する旧二ファイル計画がこの環境に無い",
-)
-def test_cli_accepts_real_legacy_two_file_plan_without_progress_round_check() -> None:
-    """実在する旧二ファイル計画へ新形式の進捗照合を適用せず、本文と表を保持する。"""
-    paths = (
-        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN,
-        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_DETAIL,
-        _REAL_LEGACY_TWO_FILE_WITH_PROGRESS_REVIEW,
-    )
-    before = {path: path.read_bytes() for path in paths}
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(pathlib.Path(check_plan_file.__file__)),
-            "--work-dir",
-            "/home/aki/dotfiles",
-            str(_REAL_LEGACY_TWO_FILE_WITH_PROGRESS_PLAN),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "レビュー表の最大round" not in result.stderr
-    assert {path: path.read_bytes() for path in paths} == before
-
-
-def test_review_table_absence_does_not_add_round_error(repo: tuple[pathlib.Path, str]) -> None:
-    """同stemのレビュー表が無い計画はround照合を省略する。"""
-    work_dir, base = repo
-    errors, _warnings = _check(work_dir, _plan(work_dir, base))
-    assert not errors, errors
-
-
-def test_legacy_single_file_plan_does_not_use_progress_round_check(repo: tuple[pathlib.Path, str]) -> None:
-    """旧単一形式も新形式の進捗照合を適用せず、旧本文を受理する。"""
-    work_dir, base = repo
-    (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
-    errors, _warnings = _check(work_dir, _plan(work_dir, base))
-    assert not any("同stemのレビュー表" in error for error in errors), errors
-
-
-def test_review_table_max_round_matches_progress_rows(repo: tuple[pathlib.Path, str]) -> None:
-    """レビュー表の最大roundと進捗行数が一致する場合を受理する。"""
-    work_dir, _base = repo
-    main_content, detail_content = _human_new_format_plan(work_dir, detail_name="plan.detail.md")
-    content = main_content.replace(
-        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
-        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 完了。 |\n",
-        1,
-    )
-    (work_dir / "plan.tsv").write_text(_review_table_row(), encoding="utf-8")
-    errors, _warnings = _check_new(work_dir, content, detail_content)
-    assert not errors, errors
-
-
-def test_review_table_missing_rounds_are_reported(repo: tuple[pathlib.Path, str]) -> None:
-    """最大roundが進捗行数を超える場合は不足番号を診断する。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    content = _canonical_main_format(main_content).replace(
-        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n",
-        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-08-27 | レビュー | 進行中。 |\n",
-        1,
-    )
-    (work_dir / "plan.tsv").write_text(_review_table_row("1") + _review_table_row("3"), encoding="utf-8")
-    errors, _warnings = _check_new(work_dir, content, detail_content)
-    assert any("不足round: 2, 3" in error for error in errors), errors
-
-
-def test_review_table_malformed_input_is_a_plan_error(repo: tuple[pathlib.Path, str]) -> None:
-    """同stemのレビュー表が破損する場合は計画入力エラーとして返す。"""
-    work_dir, base = repo
-    main_content, detail_content = _new_format_plan(work_dir, base)
-    (work_dir / "plan.tsv").write_text("not-a-json-row\n", encoding="utf-8")
-    errors, _warnings = _check_new(work_dir, _canonical_main_format(main_content), detail_content)
-    assert any("同stemのレビュー表を検証できない" in error for error in errors), errors
 
 
 def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path, str]) -> None:

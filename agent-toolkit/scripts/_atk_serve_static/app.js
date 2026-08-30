@@ -280,8 +280,7 @@ function hasNonStateFilters() {
     byId('kind-filter').value !== 'all' ||
     byId('answer-filter').value !== 'all' ||
     byId('target-filter').value !== '' ||
-    byId('source-filter').value !== '' ||
-    byId('source-empty-filter').checked;
+    byId('source-filter').value !== '';
 }
 
 function renderEmptyState() {
@@ -339,19 +338,17 @@ function buildQuery(page = currentPage) {
   parameters.set('answered', byId('answer-filter').value);
   const values = {
     target_repo: byId('target-filter').value,
-    source: byId('source-filter').value.trim(),
+    source_kind: byId('source-filter').value,
     q: byId('search-input').value.trim()
   };
   Object.entries(values).forEach(([name, value]) => { if (value) parameters.set(name, value); });
-  if (byId('source-empty-filter').checked) parameters.set('source_empty', 'true');
   parameters.set('page', String(page));
   return parameters;
 }
 
 function hasSearchFallbackFilters(query) {
   return query.get('type') !== 'all' || query.get('status') !== 'all' ||
-    query.get('answered') !== 'all' || query.has('target_repo') || query.has('source') ||
-    query.get('source_empty') === 'true';
+    query.get('answered') !== 'all' || query.has('target_repo') || query.has('source_kind');
 }
 
 function setListLoading(value) {
@@ -530,9 +527,6 @@ function syncFilterDependencies() {
   const feedbackOnly = byId('kind-filter').value === 'feedback';
   if (feedbackOnly) byId('answer-filter').value = 'all';
   byId('answer-filter').disabled = feedbackOnly;
-  const sourceEmpty = byId('source-empty-filter').checked;
-  if (sourceEmpty) byId('source-filter').value = '';
-  byId('source-filter').disabled = sourceEmpty;
 }
 
 async function clearFilters({load = true} = {}) {
@@ -542,7 +536,6 @@ async function clearFilters({load = true} = {}) {
   byId('answer-filter').value = 'all';
   byId('target-filter').value = '';
   byId('source-filter').value = '';
-  byId('source-empty-filter').checked = false;
   currentPage = 1;
   pagination.page = 1;
   syncFilterDependencies();
@@ -935,18 +928,11 @@ async function saveEntry() {
       method: 'PUT', body: JSON.stringify(payload)
     }));
     await loadEntries();
-    let closeDetail = false;
+    // 本文編集の保存確定後は詳細を閉じて一覧へ戻す。保存中に別項目へ切り替えた場合は閉じない。
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
-      const refreshed = await api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`);
-      if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
-          sessionGeneration === detailSessionGeneration) {
-        displayEntry(refreshed.entry);
-        closeDetail = true;
-      }
+      closeDetailDialog();
     }
-    // 本文編集の保存確定後は詳細を閉じて一覧へ戻す。保存中に別項目へ切り替えた場合は閉じない。
-    if (closeDetail) closeDetailDialog();
     deliverOperationMessage(`${key}を保存しました。`);
   } catch (error) {
     const failure = `${key}を保存できませんでした。 ${error.message}`;
@@ -1012,14 +998,7 @@ async function saveUserComment() {
     await loadEntries();
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
-      const refreshed = await api(
-        `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`
-      );
-      if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
-          sessionGeneration === detailSessionGeneration) {
-        displayEntry(refreshed.entry);
-        byId('user-comment-button').focus();
-      }
+      closeDetailDialog();
     }
     deliverOperationMessage(`${key}のユーザーコメントを保存しました。`);
   } catch (error) {
@@ -1130,10 +1109,6 @@ async function createEntry(event) {
     await clearFilters({load: false});
     await loadTargetRepos();
     await loadEntries({announce: true});
-    if (!isBatch) {
-      const created = entries.find(entry => entry.filename === result.filenames?.[0]);
-      if (created) await selectEntry(created, byId('create-button'));
-    }
     deliverOperationMessage(createResultMessage(isBatch, result));
   } catch (error) {
     deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
@@ -1272,7 +1247,6 @@ function bindEvents() {
   byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
-  byId('source-empty-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('search-input').addEventListener('input', () => {
     if (searchTimer !== null) clearTimeout(searchTimer);
     currentPage = 1;

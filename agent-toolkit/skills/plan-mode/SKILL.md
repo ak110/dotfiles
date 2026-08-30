@@ -11,30 +11,38 @@ description: >
 
 本スキルは、計画ファイルの作成から実装引き継ぎまでの手順を提供する。
 計画ファイルを作成し、承認後の実装を`plan-impl-executor`へ引き継ぐ。
-計画の前半は毎回同じ書式でユーザーが結果と判断を確認できる状態にし、
-後半は新規セッションの実装者が必要な材料を取得できる状態にする。
+
+ユーザーが`agent-toolkit:plan-mode`や`agent-toolkit:plan-and-add-feedback`スキルを直接起動した場合、
+`references/grilling.md`の手順に従いユーザーとの共通理解に到達するまでユーザー確認を繰り返す。
+起動プロンプトが起動経路として`agent-toolkit:process-feedbacks`を明示している場合は`references/grilling.md`をスキップして
+必要な確認事項のみTBDへ登録する。
 
 ## 進め方
 
 1. 適用規範、変更対象全文、定義・参照・呼び出し元、既存テスト、生成・配布経路、類似実装を調査する
 2. 調査工程で、計画の変更対象又は採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙する。広い要求の具体化や解釈によって対象、成果、完了条件のいずれかが変わる事項も列挙する
-3. 列挙した各判断へ`agent-toolkit/rules/01-agent.md`「協調と自律」節の第1段階を適用する。明示要件、適用規範、対象版の仕様、リポジトリの確立済み方針又は実測から技術選択を確定できる判断は、利用者へ質問せず自律確定する。自律確定では、必要十分な最小実装、問題と手段の比例性、何もしない案・既存操作案を含む最有力対案との比較を既存規範どおり適用する。利用者の選好に依存する判断は確認候補へ送る
+3. 列挙した各判断へ`agent-toolkit/rules/01-agent.md`「協調と自律」節の第1段階を適用する。明示要件、適用規範、対象版の仕様、リポジトリの確立済み方針又は実測から技術選択を確定できる判断は、ユーザーへ質問せず自律確定する。自律確定では、必要十分な最小実装、問題と手段の比例性、何もしない案・既存操作案を含む最有力対案との比較を既存規範どおり適用する。ユーザーの選好に依存する判断は確認候補へ送る
 4. 第1段階で確定した操作へ同節の第2段階を必ず適用する。公開インターフェース変更、破壊的操作、第三者への影響、外部サービス設定変更又はユーザーが実行時に直接観測する出力の表示粒度・情報量変更に該当する操作は、技術的に一意でも確認候補へ送る。ただし、ユーザーが提案として指定した操作は、当該提案の範囲では合意済みとして扱い、再度の確認へ送らない。破壊的操作では、実行内容・影響範囲・復元方法の事前説明を維持する
 5. 第1段階と第2段階の判定を完了してから、採用候補の設計案へ`../review-standards/references/judgment-details.md`を全文読み、「問題と手段の比例性」及び「解決案の比較」の判定を質問候補の作成前に適用する。案自身に記載された欠点が目的の達成を不能にする案は採用しない。設計比較で採用案が変わった場合（回答後を含む）は、変更した判断へ第1段階と第2段階を再適用して確認候補の依存関係を更新し、更新後の設計比較を完了してから質問候補を作成する
-6. 利用者確認へ送る判断は、相互依存する判断（循環を含む）を同じ確認単位へまとめた後、確認単位の外側に未回答判断への依存がない単位だけを現在の質問候補とする。確認判断が0件なら質問ラウンドを設けず、1件なら単独の確認単位とし、独立した複数件は別単位として同じラウンドにまとめ、相互依存する複数件は1つの単位として扱う。自律確定事項と確認事項が混在する場合は確認単位だけを候補にする。実行ホストの質問ツールが一度に受理する上限内で質問をまとめ、各質問へ推奨案、根拠、不利益を示す。質問前には現在の質問候補数、既知の残質問数、回答によって追加され得る分岐の有無を示す。各回答の組合せについて技術的成立性を実機又は実装で検査し、成立しない組合せは理由とともに選択肢から除外する。質問候補を確認へ送るとき、協調モード（Default mode）では利用者へ直接質問して回答を待つ。ユーザー接点を持つ主体がCodexの自律モードで確認候補を扱う場合は、質問機能の有無にかかわらず質問を発行せず、確認事項をTBDへ記録して暫定判断で依存しない工程を続行する。Codex以外の自律モードで、`AskUserQuestion`を発行でき、ユーザー接点を持つ主体は利用者へ直接質問して回答を待ち、回答を得られない場合だけ確認事項をTBDへ記録して暫定判断で依存しない工程を続行する。ユーザー接点を持たない委譲先は確認を発行せず、判断を呼び出し元へ返す。回答後は依存関係を更新して第1段階と第2段階を再適用し、質問候補が無くなるまで反復する
-7. 質問しなかった計画上の判断は、自律確定した結論、根拠、最有力対案、対案を採用しない理由を添えて、利用者が異論を持つ可能性が高い順に一度提示する。提示後に追加の承認待ちを設けず、計画ファイル初版の起草へ進む
+   - ユーザーが提案した操作が技術的に成立せず代替設計へ変更した場合は、変更した判断だけでなく、その操作を前提に確定した判断を未確定へ戻す
+   - 開始時、成功時、中断時、失敗時及び再開時ごとに、状態、操作主体、次の操作主体を再導出し、各判断へ第1段階と第2段階を再適用する
+   - 独立した外部可視結果は別の確認単位として扱い、代替設計への同意を依存判断への同意に拡張しない
+6. ユーザー確認へ送る判断は、相互依存する判断（循環を含む）を同じ確認単位へまとめた後、確認単位の外側に未回答判断への依存がない単位だけを現在の質問候補とする。確認判断が0件なら質問ラウンドを設けず、1件なら単独の確認単位とし、独立した複数件は別単位として同じラウンドにまとめ、相互依存する複数件は1つの単位として扱う。自律確定事項と確認事項が混在する場合は確認単位だけを候補にする。実行ホストの質問ツールが一度に受理する上限内で質問をまとめ、各質問へ推奨案、根拠、不利益を示す。質問前には現在の質問候補数、既知の残質問数、回答によって追加され得る分岐の有無を示す。各回答の組合せについて技術的成立性を実機又は実装で検査し、成立しない組合せは理由とともに選択肢から除外する。質問候補を確認へ送るとき、協調モード（Default mode）ではユーザーへ直接質問して回答を待つ。ユーザー接点を持つ主体がCodexの自律モードで確認候補を扱う場合は、質問機能の有無にかかわらず質問を発行せず、確認事項をTBDへ記録して暫定判断で依存しない工程を続行する。Codex以外の自律モードで、`AskUserQuestion`を発行でき、ユーザー接点を持つ主体はユーザーへ直接質問して回答を待ち、回答を得られない場合だけ確認事項をTBDへ記録して暫定判断で依存しない工程を続行する。ユーザー接点を持たない委譲先は確認を発行せず、判断を呼び出し元へ返す。回答後は依存関係を更新して第1段階と第2段階を再適用し、質問候補が無くなるまで反復する
+7. 質問しなかった計画上の判断は、自律確定した結論、根拠、最有力対案、対案を採用しない理由を添えて、ユーザーが異論を持つ可能性が高い順に一度提示する。提示後に追加の承認待ちを設けず、計画ファイル初版の起草へ進む
 8. 調査工程、質問候補の解消及び自律確定事項の提示を完了してから、`references/plan-file-standards.md`を全文読み、メインが計画ファイル初版を起草する。
    フィードバックは原則1ファイル1行で採否と範囲を`## 実施内容`へ統合し、フィードバックとTBDは正本ファイル名を`## 提示素材`へ記録する。
    本セッションで受領したユーザー発言は`## 変更履歴（計画時）`へ逐語記録する。
+   `## 実施内容`では、ユーザーが明示した要求と代替設計からエージェントが導出した判断を別の行へ分け、後者をユーザー指示として扱わない。
    外側の調整主体が初版を`plan-review-executor`へ渡した後は、計画ファイルの書込所有権が同executor配下の計画担当へ移る。調整主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    新規計画メインは`## エージェント判断`を固定H2として置き、実施内容のエージェント提案行と判断根拠を一対一で対応させる。
    実装開始後のcommit受領、レビュー収束、完了判定は`## 進捗ログ（実行時）`へ記録する。
    計画時の検索結果、対象境界、確定文面は計画ファイル（詳細）へ記録し、起草直後に同書の全項と計画本文を照合する。
    ユーザーが対象、範囲、結果を明示していない内容を具体化した判断は、計画へ記載する前に確認経路へ送り、回答を`## 変更履歴（計画時）`と実施内容へ反映する。ユーザーが同じ内容を明示した提案は、技術的事実と実装手段を確認対象にしない。
+   この提示は確認済み回答の代替ではない。調査結果、既存契約、元の主題又は技術判断を理由としても、ユーザーが明示した対象、範囲又は外部可視結果と異なる判断は手順6の確認候補へ戻し、確認済み回答を得るまで計画ファイル初版を起草しない。
    不成立の項を解消してから計画構造検査へ進む
-9. `references/plan-review-delegation.md`に従い計画構造検査と計画レビューを別系統で実施する
+9. `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`に従い計画構造検査、自己監査及び`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`に従う計画レビューを別系統で実施する
 10. 計画ファイル、成立させる結果、ユーザー指示との差分、レビュー反映状況を提示する
-11. 承認後に`references/plan-impl-caller-reception.md`を読み、`plan-impl-executor`へ引き継ぐ
+11. 承認後に`${CLAUDE_PLUGIN_ROOT}/share/plan-impl-executor.parent.md`を読み、`plan-impl-executor`へ引き継ぐ
 
 この手順は`agent-toolkit/rules/01-agent.md`の既存条文の適用順だけを明確化し、新しい分類器、判定状態、監査状態又は例外経路を追加しない。
 
@@ -48,21 +56,22 @@ description: >
 
 必要な工程へ入る時だけ対応資料を全文読む。
 
-- レーン割当時は`agent-toolkit/skills/plan-mode/references/plan-impl-caller-reception.md`を全文読む
-- レーン割当時は`agent-toolkit/skills/process-feedbacks/references/plan-impl-feedback-flow.md`を全文読む
+- レーン割当時は`agent-toolkit/share/plan-impl-executor.parent.md`を全文読む
+- フィードバック処理のレーン割当時は`agent-toolkit/skills/process-feedbacks/references/run-lanes.md`を全文読む
 - レーン割当時は`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読む
 - 計画起草時は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`を全文読む
-- 計画レビュー時は`agent-toolkit/skills/plan-mode/references/plan-review-delegation.md`を全文読む
-- 計画レビュー時は`agent-toolkit/skills/plan-mode/references/plan-review-task.md`を全文読む
+- 計画構造検査・自己監査・指摘の検収と修正を実施する時は`agent-toolkit/share/plan-drafting.subagent.md`を全文読む
+- 計画レビュー担当を起動する時は`agent-toolkit/share/plan-review.parent.md`を全文読む
+- 計画レビューを実施する時は`agent-toolkit/share/plan-review.subagent.md`を全文読む
 - 計画レビュー時は`agent-toolkit/skills/review-standards/references/judgment-details.md`を全文読む
-- レビュー継続時は`agent-toolkit/skills/plan-mode/references/review-loop-coordination.md`を全文読む
-- 実装担当へ引き継ぐ時は`agent-toolkit/skills/plan-mode/references/implementation-task.md`を全文読む
-- 実装レビュー時は`agent-toolkit/skills/plan-mode/references/implementation-review-task.md`を全文読む
-- 実装担当のモード判定時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-impl-mode.md`を全文読む
-- 差分限定レビュー修正時は`agent-toolkit/skills/plan-mode/references/plan-impl-executor-diff-review-mode.md`を全文読む
-- 採否記録を計画へ反映する時は`agent-toolkit/skills/process-feedbacks/references/decision-format.md`を全文読む
-- 複数ファイルを取得する時は`agent-toolkit/skills/add-feedback/references/managed-temp-bulk-show.md`を全文読む
-- 恒久化を判断する時は`agent-toolkit/skills/session-review/references/generation-criteria-detail.md`を全文読む
+- レビュー継続時は`agent-toolkit/share/review-loop-coordination.md`を全文読む
+- 実装担当へ引き継ぐ時は`agent-toolkit/share/implementation.subagent.md`を全文読む
+- 実装レビュー時は`agent-toolkit/share/implementation-review.subagent.md`を全文読む
+- 実装担当を起動する時は`agent-toolkit/share/implementation.parent.md`を全文読む
+- 実装レビュー担当を起動しレビュー修正を管理する時は`agent-toolkit/share/implementation-review.parent.md`を全文読む
+- フィードバックの採否とレーン分けを行う時は`agent-toolkit/share/pick-feedbacks.subagent.md`を全文読む
+- 複数ファイルを取得する時は`agent-toolkit/skills/feedback-standards/references/managed-temp-bulk-show.md`を全文読む
+- 恒久化を判断する時は`agent-toolkit/skills/bugfix/SKILL.md`を全文読む
 - 履歴を書き換える時は`agent-toolkit/skills/commit/references/history-rewrite.md`を全文読む
 - pushする時は`agent-toolkit/skills/commit/references/push-and-ci.md`を全文読む
 - CI失敗を分析する時は`agent-toolkit/skills/bugfix/references/ci-failure-handling.md`を全文読む
@@ -71,7 +80,7 @@ description: >
 計画が明示的な変更対象としない既存の判定・遮断・順序制御の機構へ間接的に作用する場合は、当該機構の設計根拠を記録した箇所（docstring、コメント、先行計画、設計文書）を読み、機構の成立条件を抽出して計画が当該条件を崩さないことを確認する。
 抽出した成立条件と確認結果は`## 実装資料`へ記録する。
 
-バグ対応では`agent-toolkit:bugfix`を起動し、直接的原因、深掘り要否、必要な原因区分、
+バグ対応では`agent-toolkit:bugfix`を起動し、直接的原因、深掘り要否、必要な原因分析の段階、
 類似見直し、是正・横展開・再発防止を確定する。
 単発の読み取り専用調査委譲は常設規範の基本委譲契約で実施する。
 工程別モデル設定、継続接続又は複数主体調整を使う工程では、`agent-toolkit:delegation`を起動して経路固有条件を適用する。

@@ -6,10 +6,109 @@ import asyncio
 import dataclasses
 import datetime
 import pathlib
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+
+
+class SessionOwnerGoneError(RuntimeError):
+    """session所有タスクが終了し、継続要求または中断要求を配送できないことを示す。
+
+    MCP層はこの例外を受領して、保存済みの再開状態から同じ会話を再開する。
+    """
+
+
+class ResumePrompt:
+    """進行中のsession再開へ、無効化可能な継続入力を1件ずつ渡す。"""
+
+    def __init__(self, prompt: str) -> None:
+        _validate_prompt(prompt)
+        self._next_ticket = 1
+        self._current: tuple[int, str, asyncio.Event] | None = (
+            self._next_ticket,
+            prompt,
+            asyncio.Event(),
+        )
+        self._changed = asyncio.Event()
+        self._closed = False
+
+    @property
+    def initial_ticket(self) -> int:
+        """生成時に登録した継続入力の識別子を返す。"""
+        return 1
+
+    def submit_or_observe(self, prompt: str) -> tuple[int | None, asyncio.Event | None]:
+        """空きがあれば継続入力を登録し、使用中なら状態変化イベントを返す。"""
+        _validate_prompt(prompt)
+        if self._closed:
+            return None, None
+        if self._current is not None:
+            return None, self._changed
+        self._next_ticket += 1
+        ticket = self._next_ticket
+        self._current = (ticket, prompt, asyncio.Event())
+        self._signal_change()
+        return ticket, None
+
+    def cancel(self, ticket: int) -> None:
+        """指定した未確定の継続入力だけを無効化する。"""
+        current = self._current
+        if current is None or current[0] != ticket:
+            return
+        self._current = None
+        current[2].set()
+        self._signal_change()
+
+    def close(self) -> None:
+        """継続入力の受付と進行中の配送待ちを終了する。"""
+        self._closed = True
+        current = self._current
+        self._current = None
+        if current is not None:
+            current[2].set()
+        self._signal_change()
+
+    async def deliver(self, sender: Callable[[str], Coroutine[Any, Any, None]]) -> None:
+        """取り消されていない継続入力をsenderへ1件配送する。"""
+        while True:
+            current = self._current
+            if current is None:
+                if self._closed:
+                    raise asyncio.CancelledError
+                changed = self._changed
+                await changed.wait()
+                continue
+            ticket, prompt, cancelled = current
+            delivery_task = asyncio.create_task(sender(prompt))
+            cancellation_task = asyncio.create_task(cancelled.wait())
+            try:
+                done, _ = await asyncio.wait(
+                    {delivery_task, cancellation_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except BaseException:
+                delivery_task.cancel()
+                cancellation_task.cancel()
+                await asyncio.gather(delivery_task, cancellation_task, return_exceptions=True)
+                raise
+            if delivery_task in done:
+                cancellation_task.cancel()
+                await asyncio.gather(cancellation_task, return_exceptions=True)
+                await delivery_task
+                if self._current is not None and self._current[0] == ticket:
+                    self._current = None
+                self._closed = True
+                self._signal_change()
+                return
+            delivery_task.cancel()
+            await asyncio.gather(delivery_task, return_exceptions=True)
+
+    def _signal_change(self) -> None:
+        changed = self._changed
+        self._changed = asyncio.Event()
+        changed.set()
 
 
 def _utc_now() -> str:
@@ -123,6 +222,28 @@ class SessionState:
         if _nonempty_error(self.error):
             result["error"] = self.error
         return result
+
+
+@dataclasses.dataclass(frozen=True)
+class SessionResumeState:
+    """結果本文の回収後も同じ会話を再開するために保持する最小状態。"""
+
+    session_id: str
+    cwd: str
+    model: str | None
+    effort: str | None
+    engine: str
+
+    @classmethod
+    def from_session(cls, session: SessionState) -> SessionResumeState:
+        """終端sessionから再開に必要な入力だけを退避する。"""
+        return cls(
+            session_id=session.session_id,
+            cwd=session.cwd,
+            model=session.model,
+            effort=session.effort,
+            engine=session.engine,
+        )
 
 
 def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:

@@ -114,7 +114,7 @@ def _git_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
 def _run_wait(
     run_list_fn,
     *,
-    timeout=900.0,
+    timeout=270.0,
     poll_interval=20.0,
     registration_grace=60.0,
     follow_cancelled=False,
@@ -1235,6 +1235,23 @@ class TestMainEntrypoint:
 
         with mock.patch("subprocess.run", side_effect=fake_run):
             assert wait_ci.main(_main_args(baseline) + ["--registration-grace", "0"]) == wait_ci.EXIT_SUCCESS
+
+    def test_omitted_timeout_uses_public_default_and_explicit_timeout_is_preserved(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        baseline = tmp_path / "baseline.json"
+        _write_test_baseline(baseline)
+        captured: list[float] = []
+
+        def fake_wait_for_ci(_sha: str, timeout: float, *_args: object, **_kwargs: object) -> int:
+            captured.append(timeout)
+            return wait_ci.EXIT_SUCCESS
+
+        monkeypatch.setattr(wait_ci, "wait_for_ci", fake_wait_for_ci)
+
+        assert wait_ci.main(_main_args(baseline, sha=None)) == wait_ci.EXIT_SUCCESS
+        assert wait_ci.main(_main_args(baseline, sha=None) + ["--timeout", "900"]) == wait_ci.EXIT_SUCCESS
+        assert captured == [270.0, 900.0]
 
     def test_subprocess_timeout_surfaces_as_gh_error(self, tmp_path: pathlib.Path):
         """内部subprocess呼び出しのタイムアウトが`main`経由でGH_ERRORに現れる。"""

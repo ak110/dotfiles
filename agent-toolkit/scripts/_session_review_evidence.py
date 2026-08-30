@@ -5,7 +5,7 @@
 # ///
 """Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
 
-既定モードは時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
+既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 
@@ -60,8 +60,6 @@ _HOOK_NOTICE_KIND_LENGTH = 80
 # 固定の識別子も数値部分が置換される。
 _HOOK_NOTICE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
 _HOOK_NOTICE_VARIABLE_PLACEHOLDER = "<var>"
-STOP_ADVISOR_PREFIX = "[auto-generated: agent-toolkit/stop_advisor]"
-SESSION_REVIEW_STARTED_MARKER = "[auto-generated: agent-toolkit/session-review-started]"
 _FALLBACK_TEXT = (
     "transcript_pathを読み取れないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
@@ -137,10 +135,6 @@ _BODY_KEYS = frozenset(
     }
 )
 _Runtime = Literal["claude", "codex"]
-_MANUAL_REVIEW_COMMANDS: dict[_Runtime, tuple[str, ...]] = {
-    "claude": ("/session-review", "/agent-toolkit:session-review"),
-    "codex": ("$session-review", "$agent-toolkit:session-review"),
-}
 
 
 class _Record(NamedTuple):
@@ -350,8 +344,6 @@ def _claude_entry_events(
     user_texts: list[str] | None = None
     if isinstance(message, dict) and entry_type == "user" and message.get("role") == "user":
         user_texts = _text_blocks(message.get("content"))
-        if any(STOP_ADVISOR_PREFIX in text for text in user_texts):
-            return events
         skill_invocation = next((text for text in user_texts if text.startswith(_SKILL_INVOCATION_PREFIX)), None)
         if skill_invocation is not None:
             event = _event("skill-invocation", skill_invocation.splitlines()[0])
@@ -360,11 +352,6 @@ def _claude_entry_events(
             return events
 
     result = entry.get("toolUseResult")
-    if isinstance(result, dict) and isinstance(result.get("stdout"), str) and SESSION_REVIEW_STARTED_MARKER in result["stdout"]:
-        event = _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
-        if event:
-            events.append(event)
-
     is_interrupt = entry.get("isInterrupt") is True or entry.get("type") == "interrupt" or entry.get("subtype") == "interrupt"
     if is_interrupt:
         interrupt = _event("interrupt", json.dumps(entry, ensure_ascii=False))
@@ -558,8 +545,6 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
     status = item.get("status")
     output = _codex_command_output(item)
-    if status == "completed" and SESSION_REVIEW_STARTED_MARKER in output:
-        return _event("session-review-started", SESSION_REVIEW_STARTED_MARKER)
     if status != "failed":
         return None
     error = item.get("error")
@@ -578,21 +563,8 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
     return event
 
 
-def _is_manual_review_invocation(text: str, runtime: _Runtime) -> bool:
-    stripped = text.strip()
-    commands = _MANUAL_REVIEW_COMMANDS[runtime]
-    if any(stripped == command or stripped.startswith(f"{command} ") for command in commands):
-        return True
-    return any(f"<command-name>{command}</command-name>" in stripped for command in commands)
-
-
-def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str, Any]]:
-    """手動・自動振り返り境界を適用し、最終結果と連番を確定する。"""
-    boundary = _review_boundary_index(events, runtime)
-    if runtime == "claude" and boundary < len(events) and events[boundary]["kind"] == "session-review-started":
-        boundary = len(events)
-    events = [event for event in events[:boundary] if event["kind"] != "session-review-started"]
-
+def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """最終結果への置換と連番付けを行う。"""
     for event in reversed(events):
         if event["kind"] == "assistant":
             event["kind"] = "final-result"
@@ -602,33 +574,8 @@ def _finalize(events: list[dict[str, Any]], runtime: _Runtime) -> list[dict[str,
     return events
 
 
-def _review_boundary_index(events: list[dict[str, Any]], runtime: _Runtime) -> int:
-    """手動・自動振り返り境界から最新の適用可能なイベント位置を返す。"""
-    candidates = [
-        index
-        for index, event in enumerate(events)
-        if event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime)
-    ]
-    started_indices = [index for index, event in enumerate(events) if event["kind"] == "session-review-started"]
-    if runtime == "claude":
-        candidates.extend(started_indices)
-    else:
-        for started_index in started_indices:
-            stop_index = next(
-                (
-                    index
-                    for index in range(started_index - 1, -1, -1)
-                    if events[index]["kind"] == "user" and events[index]["text"].startswith(STOP_ADVISOR_PREFIX)
-                ),
-                None,
-            )
-            if stop_index is not None:
-                candidates.append(stop_index)
-    return max(candidates, default=len(events))
-
-
 def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> list[dict[str, Any]]:
-    """transcript形式を判定し、対象イベントを順序どおり抽出する。
+    """transcript形式を判定し、セッション全体の対象イベントを順序どおり抽出する。
 
     `lines`はエントリごとのtranscript行番号。省略時はエントリの並び順を行番号とみなす。
     """
@@ -637,7 +584,7 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
     runtime = _detect_runtime(entries)
     if runtime is None:
         return _fallback()
-    return _finalize(_extract_for_runtime(entries, runtime, lines), runtime)
+    return _finalize(_extract_for_runtime(entries, runtime, lines))
 
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
@@ -881,46 +828,26 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
     return summary
 
 
-def _stats_boundary_line(records: list[_Record], runtime: _Runtime) -> int | None:
-    events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
-    boundary = _review_boundary_index(events, runtime)
-    if runtime == "claude" and boundary < len(events) and events[boundary]["kind"] == "session-review-started":
-        return None
-    if boundary >= len(events):
-        return None
-    line = events[boundary].get("line")
-    return line if isinstance(line, int) else None
-
-
-def _stats_main_records(records: list[_Record], runtime: _Runtime) -> tuple[list[_Record], datetime.datetime | None]:
-    boundary_line = _stats_boundary_line(records, runtime)
-    if boundary_line is None:
-        return records, None
-    boundary_record = next((record for record in records if record.line == boundary_line), None)
-    return [record for record in records if record.line < boundary_line], (
-        _record_timestamp(boundary_record) if boundary_record is not None else None
-    )
-
-
 def _stats_subagent_records(
     transcript_path: str,
-    boundary_timestamp: datetime.datetime | None,
-) -> tuple[list[tuple[str, str | None, list[_Record]]], int, int]:
-    """サブエージェント記録の選択結果、除外件数、列挙した記録ファイル数を返す。
+) -> tuple[list[tuple[str, str | None, list[_Record]]], int]:
+    """サブエージェント記録の選択結果と列挙した記録ファイル数を返す。
 
-    記録ファイル数は境界判定・振り返り系除外を適用する前の母集団の大きさであり、
-    主体別集計イベントを出力するかどうかの判定に用いる。
-    選択結果が0件でも記録自体が存在する場合は、除外の実数を含む合算イベントを出力する必要がある。
+    記録ファイル数は主体別集計イベントを出力するかどうかの判定に用いる。
     """
     path = Path(transcript_path)
     subagent_dir = path.with_suffix("") / "subagents"
     try:
         paths = sorted(subagent_dir.glob("agent-*.jsonl"))
     except OSError:
-        return [], 0, 0
-    metadata: dict[str, tuple[str | None, str | None]] = {}
+        return [], 0
+
+    selected: list[tuple[str, str | None, list[_Record]]] = []
     for record_path in paths:
         agent_id = record_path.stem
+        records = _load_records(str(record_path))
+        if records is None:
+            continue
         meta_path = record_path.with_name(f"{agent_id}.meta.json")
         try:
             raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -929,39 +856,8 @@ def _stats_subagent_records(
         if not isinstance(raw_meta, dict):
             raw_meta = {}
         agent_type = raw_meta.get("agentType") if isinstance(raw_meta.get("agentType"), str) else None
-        parent_id = raw_meta.get("parentAgentId") if isinstance(raw_meta.get("parentAgentId"), str) else None
-        # 記録ファイル名は`agent-<parentAgentId>`の形式のため、親の照合キーをファイル名由来の形式へ揃える。
-        parent = f"agent-{parent_id}" if parent_id else None
-        metadata[agent_id] = (agent_type, parent)
-
-    excluded: set[str] = {
-        agent_id for agent_id, (agent_type, _) in metadata.items() if agent_type and "session-review-advisor" in agent_type
-    }
-    changed = True
-    while changed:
-        changed = False
-        for agent_id, (_, parent) in metadata.items():
-            if agent_id not in excluded and parent in excluded:
-                excluded.add(agent_id)
-                changed = True
-
-    selected: list[tuple[str, str | None, list[_Record]]] = []
-    excluded_count = 0
-    for record_path in paths:
-        agent_id = record_path.stem
-        records = _load_records(str(record_path))
-        if records is None:
-            continue
-        if boundary_timestamp is not None:
-            starts = [_record_timestamp(record) for record in records]
-            start = min((value for value in starts if value is not None), default=None)
-            if start is None or start >= boundary_timestamp:
-                continue
-        if agent_id in excluded:
-            excluded_count += 1
-            continue
-        selected.append((agent_id, metadata.get(agent_id, (None, None))[0], records))
-    return selected, excluded_count, len(paths)
+        selected.append((agent_id, agent_type, records))
+    return selected, len(paths)
 
 
 def _thread_id_from_mapping(value: Any) -> str | None:
@@ -1070,23 +966,18 @@ def _session_path(engine: _Runtime, session_id: str) -> Path | None:
 def _stats_thread_records(
     main_records: list[_Record],
     subagents: list[tuple[str, str | None, list[_Record]]],
-    boundary_timestamp: datetime.datetime | None = None,
 ) -> dict[tuple[_Runtime, str], tuple[int, str | None]]:
     """主記録・補助記録から委譲先sessionをエンジン別に再帰列挙する。
 
     直接の委譲先だけでなく、rollout内の`SubAgentActivity`から得られる子孫も探索する。
     同じrolloutを複数の親が参照しても一度だけ処理し、循環した委譲木で停止しない。
-    境界超過で除外したthreadは`excluded`へ記録し、別の親から再発見されても`threads`へ戻さない
-    （`visited`済みのthreadは再処理時に無条件で`continue`するため、`threads`への再挿入だけを
-    別途防がないと最終結果へ復帰する）。
     """
     threads: dict[tuple[_Runtime, str], tuple[int, str | None]] = {}
-    excluded: set[tuple[_Runtime, str]] = set()
     pending: list[tuple[_Runtime, str, int, str | None]] = []
 
     def add(engine: _Runtime, session_id: str, line: int, agent_id: str | None) -> None:
         key = (engine, session_id)
-        if key not in threads and key not in excluded:
+        if key not in threads:
             threads[key] = (line, agent_id)
             pending.append((engine, session_id, line, agent_id))
 
@@ -1111,13 +1002,6 @@ def _stats_thread_records(
         session_records = _load_records(str(transcript))
         if session_records is None:
             continue
-        if boundary_timestamp is not None:
-            starts = [_record_timestamp(record) for record in session_records]
-            start = min((value for value in starts if value is not None), default=None)
-            if start is None or start >= boundary_timestamp:
-                threads.pop(key, None)
-                excluded.add(key)
-                continue
         for record in session_records:
             for child_id in _native_agent_thread_ids(record.entry):
                 add("codex", child_id, line, agent_id)
@@ -1263,7 +1147,7 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
 
 
 def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: str) -> list[dict[str, Any]]:
-    """振り返り境界を適用した集計イベント列を返す。
+    """セッション全体を対象とした集計イベント列を返す。
 
     `stats-total`はメイン記録・全サブエージェント記録・全Codexスレッドの3区分の合算とする。
     3区分は記録ファイルが互いに排他であり、トークンが重複しない。
@@ -1273,14 +1157,13 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     内包されるため、レコード単位で変換してから合算した値と、合算してから変換した値は一致する。
     個別表示の`stats-summary`と`stats-codex-thread`はCodexの全成分をそのまま表示する。
     """
-    main_records, boundary_timestamp = _stats_main_records(records, runtime)
+    main_records = records
     summary = _stats_summary_data(main_records, runtime)
     subagents: list[tuple[str, str | None, list[_Record]]] = []
-    excluded_review_agents = 0
     subagent_record_count = 0
     if runtime == "claude":
-        subagents, excluded_review_agents, subagent_record_count = _stats_subagent_records(transcript_path, boundary_timestamp)
-    threads = _stats_thread_records(main_records, subagents, boundary_timestamp)
+        subagents, subagent_record_count = _stats_subagent_records(transcript_path)
+    threads = _stats_thread_records(main_records, subagents)
     thread_summaries: list[tuple[_Runtime, str, dict[str, Any], int, str | None]] = []
     for (engine, session_id), (line, agent_id) in threads.items():
         transcript = _session_path(engine, session_id)
@@ -1381,8 +1264,6 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
         events.append(event)
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
 
-    # 記録ファイルが1件でもあれば、全件が振り返り系・境界外で選択0件になっても
-    # 除外の実数を`excluded_review_agents`で観測できるよう合算イベントを出力する。
     if subagent_record_count:
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
         subagent_total: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
@@ -1403,7 +1284,6 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
                 "kind": "stats-subagent-total",
                 "count": len(subagents),
                 "tokens": subagent_total,
-                "excluded_review_agents": excluded_review_agents,
             }
         )
 
@@ -1426,23 +1306,6 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
             thread_event["line"] = line
         events.append(thread_event)
     return events
-
-
-def has_session_review_started(raw_path: str | None) -> bool:
-    """対応するtranscriptに振り返りの手動起動または起動確定標識があれば真を返す。"""
-    records = _load_records(raw_path)
-    if records is None:
-        return False
-    entries = [record.entry for record in records]
-    runtime = _detect_runtime(entries)
-    if runtime is None:
-        return False
-    events = _extract_for_runtime(entries, runtime, [record.line for record in records])
-    return any(
-        event["kind"] == "session-review-started"
-        or (event["kind"] == "user" and _is_manual_review_invocation(event["text"], runtime))
-        for event in events
-    )
 
 
 def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
@@ -1616,22 +1479,6 @@ def _warning_texts(entry: dict[str, Any]) -> list[str]:
     return result
 
 
-def _warning_boundary_line(records: list[_Record]) -> int | None:
-    """警告抽出へ適用する振り返り境界のtranscript行番号を返す。"""
-    runtime = _detect_runtime([record.entry for record in records])
-    if runtime is None:
-        return None
-    events = _extract_for_runtime([record.entry for record in records], runtime, [record.line for record in records])
-    boundary = _review_boundary_index(events, runtime)
-    if boundary >= len(events):
-        return None
-    for event in events[boundary:]:
-        line = event.get("line")
-        if isinstance(line, int):
-            return line
-    return None
-
-
 def _warning_hook_identities(entry: dict[str, Any]) -> dict[str, list[str]]:
     """hook記録の警告本文ごとにツール呼び出し識別子を出現順で返す。"""
     identities: dict[str, list[str]] = {}
@@ -1647,7 +1494,7 @@ def _warning_hook_identities(entry: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
-    """振り返り境界より前の実行時警告を行番号付きで返す。
+    """セッション全体の実行時警告を行番号付きで返す。
 
     同じhook通知は成功記録と追加コンテキストへ重複して格納されるため、
     ツール呼び出し識別子と本文の組で1件として扱う。
@@ -1656,10 +1503,7 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
     """
     events: list[dict[str, Any]] = []
     seen_hook_warnings: set[tuple[str, str]] = set()
-    boundary_line = _warning_boundary_line(records)
     scannable = _scannable_records(records)
-    if boundary_line is not None:
-        scannable = [record for record in scannable if record.line < boundary_line]
     for record in scannable:
         matched_lines = _warning_texts(record.entry)
         if not matched_lines:
@@ -2163,8 +2007,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
             "ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。"
-            "メイン記録は振り返り境界より前のレコードを対象とし、補助記録は境界より前に起動した"
-            "処理単位の全体を帰属させる。stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。"
+            "メイン記録・補助記録ともセッション全体を対象とする。"
+            "stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。"
             "サブエージェント別集計とCodexスレッド別集計はClaude Code形式のtranscriptでのみ出力する。"
         )
     )
@@ -2176,7 +2020,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warn",
         action="store_true",
-        help="振り返り境界より前のエントリから、行頭の警告マーカーまたは"
+        help="セッション全体のエントリから、行頭の警告マーカーまたは"
         "構造化された警告フィールドを持つ実行時警告だけを照会する。任意文字列の検索は`--grep`を使う。",
     )
     parser.add_argument(
