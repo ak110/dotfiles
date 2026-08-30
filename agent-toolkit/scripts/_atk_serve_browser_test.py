@@ -642,14 +642,14 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
         lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=agent&page=1")
     ):
         await page.locator("#source-filter").select_option("agent")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     await playwright.async_api.expect(feedback_row).to_be_visible()
+    await playwright.async_api.expect(empty_row).to_be_visible()
     async with page.expect_response(
         lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=human&page=1")
     ):
         await page.locator("#source-filter").select_option("human")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
-    await playwright.async_api.expect(empty_row).to_be_visible()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await page.locator("#clear-filters-button").click()
 
     await page.locator("#target-filter").select_option("example/repo")

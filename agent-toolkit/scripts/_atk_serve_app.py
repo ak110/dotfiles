@@ -38,7 +38,6 @@ _STATUS_FILTERS = {"all", "active", "processable", *common.MQ_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
 _SOURCE_KIND_FILTERS = {"human", "agent"}
-_AGENT_SOURCES = {"session-review", "alert-monitor", "agent"}
 _ENTRY_PAGE_SIZE = 100
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 _WEB_LOCK_TIMEOUT = 2.0
@@ -161,8 +160,15 @@ def _summary(text: str, kind: str) -> str:
 
 
 def _source_kind(source: typing.Any) -> str:
-    """保存された投入元を一覧フィルターの分類へ変換する。"""
-    return "agent" if isinstance(source, str) and source in _AGENT_SOURCES else "human"
+    """保存された投入元を一覧フィルターの分類へ変換する。
+
+    `agent-toolkit:feedback-standards`の由来判定に従い、`source`の欠落と`human`だけを
+    人間由来とし、それ以外の値をすべてエージェント由来とする。
+    既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
+    """
+    if source is None:
+        return "human"
+    return "human" if isinstance(source, str) and source == "human" else "agent"
 
 
 def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:

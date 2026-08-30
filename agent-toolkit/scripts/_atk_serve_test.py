@@ -2995,7 +2995,9 @@ async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(
         ("agent.md", "agent"),
         ("alert-monitor.md", "alert-monitor"),
         ("review.md", "session-review"),
-        ("human.md", "web"),
+        ("plan.md", "plan"),
+        ("unknown.md", "web"),
+        ("human.md", "human"),
         ("empty.md", None),
     ]:
         metadata = "type: feedback\ntarget_repo: example/repo"
@@ -3017,7 +3019,9 @@ async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(
     assert {item["filename"] for item in (await agent.get_json())["entries"]} == {
         "agent.md",
         "alert-monitor.md",
+        "plan.md",
         "review.md",
+        "unknown.md",
     }
     assert {item["filename"] for item in (await human.get_json())["entries"]} == {"empty.md", "human.md"}
     assert [item["filename"] for item in (await raw.get_json())["entries"]] == ["review.md"]
