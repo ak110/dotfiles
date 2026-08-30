@@ -5,7 +5,7 @@ model: sonnet
 # 設計意図: docs/development/design.md の「計画レビュー修正ループの委譲」を参照。
 effort: medium
 # Sonnet指定: 計画担当とレビュー担当の状態を保持し、レビュー修正ループとメインへの中継を判断するため、指示追従を要する。
-# ツール制限: 調整と検収に専念し、成果物を直接編集しない。名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲は明示した`agents_server` MCPツールで起動する。
+# ツール制限: 調整と検収に専念し、成果物を直接編集しない。名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲はホストによらず明示した`agents_server` MCPツールで起動する。Agentツールは自動の代替経路には使わず、明示指示があった場合の手段として許可だけを残す。
 tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, CronCreate, CronList, CronDelete, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
 skills:
   - agent-toolkit:delegation

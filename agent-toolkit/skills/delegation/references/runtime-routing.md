@@ -23,6 +23,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業は、実行ホストの互換規範に従って定義を適用する。Codexではメインエージェントが同一セッションへ直接適用し、Claude Codeでは定義を実装するAgent機能で起動する
 - 名前付きagent定義の適用と、その役割が要求する実際の別主体への委譲を区別する。特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない
+- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。3定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
   - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す
@@ -57,6 +58,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 2. `engine=codex`では`agents_server` MCPを使う。`start(engine="codex", ...)`へ`model`と`effort`を両方渡し、開始後は`wait`で状態と結果を観測する。
    agents定義の`tools`で4つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
 3. `engine=claude`ではClaude CodeからはAgentツールを使い、`model`へモデル名部分を渡す。
+   ただし`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`が本表の工程を委譲する場合は、Claude Codeでも`agents_server`の`start(engine="claude", ...)`を使う。
    CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使う。いずれも`effort`部はAgentツールへ渡さず、`agents_server`では指定値をそのまま渡す。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。

@@ -5,7 +5,7 @@ model: sonnet
 # 設計意図: docs/development/design.md の「フィードバック処理の工程別モデル委譲構造」を参照。
 effort: medium
 # Sonnet指定: 複数の実装単位、現在担当、レビュー修正及び統合許可の状態を保持し、工程遷移と中継先を判断するため、指示追従を要する。
-# ツール制限: 調整役として直接編集を行わず、設定で選択したCodex経路を明示的に利用する。
+# ツール制限: 調整役として直接編集を行わず、定義内の実委譲はホストによらず明示したagents_server MCPツールで起動する。Agentツールは自動の代替経路には使わず、明示指示があった場合の手段として許可だけを残す。
 tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, CronCreate, CronList, CronDelete, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
 skills:
   - agent-toolkit:delegation

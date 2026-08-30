@@ -161,8 +161,20 @@ backend固有のserver requestは共有公開toolを増やさず、非対話の�
 通知のdeltaは進捗表示にだけ用い、終端応答で結果本文を返す。この境界により、呼び出し側は実行中の状態を照会し、
 終端後に結果を取得できる。結果の回収漏れをStopで機械的に遮断する経路は持たない。
 
+Claude Codeからclaude系モデルの実行主体へ委譲する場合の既定はAgentツールとし、`agents_server`を使わない。
+Claude CodeのUIが実行状況と応答を直接表示するため、同じ結果をより少ない観測手段で確認できるためである。
+例外は`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各定義が起動する委譲先とし、engineの別によらず`agents_server`を使う。
+これらの定義が委譲する工程は工程別モデル設定がeffortを指定し、Agentツールにeffortに相当する引数が無いためである。
+3定義の`tools`はAgentツールの許可を保つが、MCPツールを呼び出せない場合の自動代替経路は設けない。
+Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、3定義配下を`agents_server`固定とした理由自体を損なうためである。
+MCPツールを呼び出せない場合は「工程別モデル設定」手順4に従い`needs_escalation`又は未完了として返す。
+`tools`へAgentツールを残すのは、明示指示があった場合に定義を書き換えずに手段を選べるようにするためである。
+Codexからの委譲はengineの別によらず`agents_server`を使う既存の扱いを維持する。CodexのUIには同等の表示利得が無いためである。
+
 却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
 hookの配送境界及び継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
+Claude Codeからの委譲も`agents_server`へ一本化する案は、Claude CodeのUIで直接観測できる実行状況をMCPの状態照会へ置き換え、
+観測手段を増やすだけとなるため採用しない。3定義の配下もAgentツールへ統一する案は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
 
 ## 大出力コマンドの分離実行
 
