@@ -355,7 +355,7 @@ $(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{
 atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
 ```
 
-`atk plans commit`は同じstemのメイン側、detail側及び付属ファイルだけを対象にする。旧rootの既存計画を新rootへ移す1回限りの操作は、内容と参照を検証したうえで次のコマンドから実行する。
+`atk plans commit`は同じstemのメイン側、detail側及び付属ファイルだけを対象にする。旧rootの既存計画を新rootへ移す操作は、内容と参照を検証したうえで次のコマンドから実行する。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
 
 ```bash
 atk plans migrate
