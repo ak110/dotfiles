@@ -21,7 +21,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
@@ -1132,7 +1132,9 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__plugin_agent-toolkit_agents_server__",
     "mcp__agents_server__",
 )
-_AGENTS_SERVER_START_TOOLS = frozenset(f"{namespace}start" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_START_TOOLS = frozenset(
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore")
+)
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)

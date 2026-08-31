@@ -11,6 +11,10 @@ from typing import Any
 
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+EXPLORE_SYSTEM_PROMPT = """あなたは調査専用の担当である。依頼された対象を読み取り、結論と根拠だけを日本語で返す。
+ファイルを作成、変更又は削除しない。コマンドは対象を変更しない読み取り操作に限る。
+所在、該当箇所及び観測した事実を、後続の判断に足りる粒度で列挙する。"""
+ModelCandidate = tuple[str, str, str]
 
 
 class SessionOwnerGoneError(RuntimeError):
@@ -141,6 +145,9 @@ class SessionState:
     model: str | None = None
     effort: str | None = None
     engine: str = "codex"
+    model_type: str | None = None
+    explore: bool = False
+    excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     turn_id: str = ""
     status: str = "running"
     plan: list[dict[str, Any]] = dataclasses.field(default_factory=list)
@@ -205,6 +212,8 @@ class SessionState:
             "status": self.status,
             "progress": self.progress,
         }
+        if self.model_type is not None:
+            result["model_type"] = self.model_type
         if include_result and self.result_available:
             result["agent_message"] = self.agent_message
             if _nonempty_error(self.error):
@@ -233,6 +242,9 @@ class SessionResumeState:
     model: str | None
     effort: str | None
     engine: str
+    model_type: str | None = None
+    explore: bool = False
+    excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
@@ -240,6 +252,9 @@ class SessionResumeState:
         return cls(
             session_id=session.session_id,
             cwd=session.cwd,
+            model_type=session.model_type,
+            explore=session.explore,
+            excluded_candidates=session.excluded_candidates,
             model=session.model,
             effort=session.effort,
             engine=session.engine,

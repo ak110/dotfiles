@@ -7,8 +7,8 @@
 自己監査を完了後、計画担当を起動した調整主体がある場合は調整主体が計画レビュー担当を起動する。
 調整主体が無い場合は計画担当が`agent-toolkit:delegation`に従って起動する。
 計画レビューの`track`は`plan-review`とし、計画ごとに1つの表を全ラウンドで使う。
-起動主体はレビュー担当の新規起動又は継続接続の直前に`atk config get plan_review_model`を実行し、
-`agent-toolkit:delegation`の工程別モデル設定に従って経路を解決する。
+起動主体はレビュー担当の新規起動時に`agents_server.start`へ`model_type="plan_review"`を渡し、
+継続接続では同じ`model_type`を保持する。経路は`agent-toolkit:delegation`の工程別モデル設定に従う。
 起動文は受信者への命令を先頭に置き、次の絶対パスと今回のレビュー種別を全レビュー共通の入力として渡す。
 初回・再レビュー固有の入力は、後続の規定に従って追加する。
 

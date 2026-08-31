@@ -6,6 +6,7 @@ XDG関連パス（設定・状態・データ各ディレクトリ、private-not
 """
 
 import argparse
+import importlib
 import json
 import os
 import pathlib
@@ -14,7 +15,6 @@ import sys
 from typing import cast
 
 import platformdirs
-from _atk_mq_common import _private_notes_path
 
 _CONFIG_FILENAME = "config.json"
 
@@ -24,6 +24,8 @@ _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
 # 導入日: 2026-08-31。削除可能日: 2026-09-03。旧キー名を参照する並行セッションが残らなくなった後に削除してよい。
 _LEGACY_GET_KEY_ALIASES = {"execute_fix_model": "execute_model"}
 _MUTABLE_KEY_DEFAULTS = {
+    "explore_model": _DEFAULT_STAGE_MODEL,
+    "explore_fast_model": "codex:gpt-5.6-terra/medium",
     "pick_feedbacks_model": _DEFAULT_STAGE_MODEL,
     "plan_model": _DEFAULT_STAGE_MODEL,
     "plan_review_model": _DEFAULT_STAGE_MODEL,
@@ -106,12 +108,14 @@ def resolve_mutable_setting(key: str) -> str:
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
+    private_notes_path = vars(importlib.import_module("_atk_mq_common"))["_private_notes_path"]
+
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {
         "config_dir": str(_config_dir()),
         "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
-        "private_notes": str(_private_notes_path(home)),
+        "private_notes": str(private_notes_path(home)),
         **{key: resolve_mutable_setting(key) for key in _MUTABLE_KEY_DEFAULTS},
     }
 
@@ -196,6 +200,15 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
         (engine, model, effort or "medium")
         for engine, model, effort in (_parse_stage_model(candidate) for candidate in value.split(","))
     ]
+
+
+def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
+    """model_typeに対応する工程別モデル設定を候補の3つ組として返す。"""
+    key = f"{model_type}_model"
+    if key not in _MUTABLE_KEY_DEFAULTS:
+        available = sorted(item.removesuffix("_model") for item in _MUTABLE_KEY_DEFAULTS if item.endswith("_model"))
+        raise ValueError(f"unknown model_type: {model_type} (available: {', '.join(available)})")
+    return parse_stage_model_candidates(resolve_mutable_setting(key))
 
 
 def build_parser(config: argparse.ArgumentParser) -> None:

@@ -6,7 +6,7 @@
 ## 起動
 
 メインはキュー一覧とフィードバック本文を自ら取得せず、pickerへ選定させる。
-`atk config get pick_feedbacks_model`を起動直前に実行し、`agent-toolkit:delegation`の工程別モデル設定に従って選択モデルを直接起動する。
+`atk config get pick_feedbacks_model`を起動直前に実行し、候補列の先頭候補を`agent-toolkit:delegation`の工程別モデル設定に従って直接起動する。
 `feedbacks-planner`を全体選定の中間調整主体にしない。
 
 pickerへ次の入力だけを渡す。

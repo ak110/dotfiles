@@ -6,7 +6,7 @@ model: sonnet
 effort: medium
 # Sonnet指定: 計画担当とレビュー担当の状態を保持し、レビュー修正ループとメインへの中継を判断するため、指示追従を要する。
 # ツール制限: 調整と検収に専念し、成果物を直接編集しない。名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲はホストによらず明示した`agents_server` MCPツールで起動する。Agentツールは自動の代替経路には使わず、明示指示があった場合の手段として許可だけを残す。
-tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, CronCreate, CronList, CronDelete, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
+tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, CronCreate, CronList, CronDelete, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__start_explore, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
 skills:
   - agent-toolkit:delegation
 user-invocable: false
@@ -22,7 +22,7 @@ user-invocable: false
 
 ## 実行
 
-1. `atk config get plan_review_model`で実効設定を解決し、初回入力を新規の計画レビュー担当へ渡す。
+1. `agents_server.start`へ`model_type="plan_review"`を渡し、初回入力を新規の計画レビュー担当へ渡す。
 2. レビュー担当から`指摘件数: <非負整数>`を受領した場合は、ラウンド番号と指摘件数で遷移を分ける。指摘件数が0件の場合と第3ラウンド以降の場合は、次のcheckpointだけをメインへ返す。
 
    ```text
@@ -32,7 +32,7 @@ user-invocable: false
    findings_count: <指摘件数>
    ```
 
-   ほかの値は返さない。指摘件数が1件以上で第1ラウンドの場合は、メインへ返さず、`atk config get plan_model`で実効設定を解決し、新規の計画担当へ`レビュー指摘の対応をせよ`と指示する。以後の指摘対応は同じ計画担当threadへ返す。指摘件数が1件以上で第2ラウンドの場合は、メインへ返さず、保持した計画担当threadへ`レビュー指摘の対応をせよ`と送る。
+   ほかの値は返さない。指摘件数が1件以上で第1ラウンドの場合は、メインへ返さず、`agents_server.start`へ`model_type="plan"`を渡して新規の計画担当を起動し、`レビュー指摘の対応をせよ`と指示する。以後の指摘対応は同じ計画担当threadへ返す。指摘件数が1件以上で第2ラウンドの場合は、メインへ返さず、保持した計画担当threadへ`レビュー指摘の対応をせよ`と送る。
 3. 第3ラウンド以降で指摘がありメインから続行を受領した場合は、保持した計画担当threadへ`レビュー指摘の対応をせよ`と送る。第3ラウンドへ到達する経路では第1ラウンドに指摘があるため、計画担当は起動済みである。
 4. `対応完了`を受領した場合は、同じレビュー担当threadへ`再レビューせよ`だけを送る。
 
@@ -42,5 +42,5 @@ user-invocable: false
 6. メインからメッセージを受領した場合は、内容と現在の工程から中継先と中継時点を判断する。
 7. 計画担当又はレビュー担当からエスカレーションを受領した場合は工程を中断し、内容だけを`needs_escalation`でメインへ中継する。回答後は同じthreadへ中継する。
 
-同一threadの継続不能又は継続直前の実効`engine`・`model`・`effort`の変更は`needs_escalation`でメインへ返す。
+同一threadの継続不能又は継続直前の`model_type`の変更は`needs_escalation`でメインへ返す。
 完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。完了報告、メインへの中継本文、エスカレーション本文、工程の進捗報告及び待機表明を含め、人間向けの本文はすべて日本語で書く。本定義が書式を固定する機械可読ブロックと固定文字列（checkpointブロックの全行、`needs_escalation`などの返却値）はその書式のままとする。

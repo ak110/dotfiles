@@ -3218,6 +3218,19 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "relative/path" in result.stderr
 
+    def test_start_explore_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
+        """探索起動も相対`cwd`を開始前に拒否する。"""
+        result = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_explore",
+                "tool_input": {"prompt": "調査", "cwd": "relative/path"},
+                "session_id": "explore-cwd-relative",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "relative/path" in result.stderr
+
     def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が絶対パスの場合は許可する。"""
         result = _run(

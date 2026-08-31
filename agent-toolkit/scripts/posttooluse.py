@@ -168,7 +168,9 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__plugin_agent-toolkit_agents_server__",
     "mcp__agents_server__",
 )
-_AGENTS_SERVER_START_TOOLS = frozenset(f"{namespace}start" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_START_TOOLS = frozenset(
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore")
+)
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)

@@ -135,7 +135,7 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 ## agents_server MCPの委譲経路
 
 `agents_server`は、Claude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
-`start`の`engine`引数でCodex backendまたはClaude backendを選択し、各backendの実行主体を
+`start`の`model_type`に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
 共有のsession状態機械、待機通知及び結果配送境界へ接続する。Codex backendは公式stdio App Serverを
 セッション単位で所有し、Claude backendはClaude Agent SDKのclientをセッション単位で所有する。
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
@@ -146,8 +146,7 @@ LinuxとWindowsで寿命契約を揃えられる。
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用経路へSDK依存を持ち込まない。
 `--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの検査であり、外部sessionの起動及びMCP公開statusを生成しない。
 
-公開APIは`start`、`wait`、`send_message`、`kill`の4つに固定する。`start`は`engine`、`prompt`、絶対`cwd`を受け取り、
-`model`と`effort`を指定して完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
+公開APIは`start`、`start_explore`、`wait`、`send_message`、`kill`の5つに固定する。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、工程別モデル設定の候補列から先頭候補を解決して完了を待たず`session_id`を返す。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む。候補を進めるのは、呼び出し側が可用性に起因する失敗を観測し、同じ起動条件のsessionを`exclude_session_id`へ指定した再起動に限る。両backendともsession生成前にモデル可用性を確定できず、生成後の失敗をサーバーが分類すると同一作業を重複実行し得るため、サーバーは同じ呼び出しの中で候補を自動切替しない。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。上限到達時は配送の成否が確定せず、`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、
 正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`wait`または終端後の`send_message`を許可する。終端結果の30分保持を過ぎた場合は結果本文だけを破棄する。保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
@@ -155,6 +154,10 @@ Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点ま
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
+
+`start_explore`は調査委譲の初期コンテキストと起動費用を減らすため、backend別の軽量起動条件で開始する。Codex backendは`thread/start`へ`project_doc_max_bytes=0`と探索用指示を渡し、Claude backendは利用者・プロジェクト設定とスキルの読込を省いて組込tool presetと探索用toolを維持する。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。読取専用sandboxで書込を機械的に禁じる案は、`agent-toolkit:delegation`が読取専用の担保にsandbox値を用いない既存規定と衝突するため採用しない。
+
+この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実測した。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`及び`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`及び組込tool presetを併用できる。この経路はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。
 
 継続不能の詳細な判定条件は`runtime-routing.md`「工程別モデル設定」を正本とする。
 `wait`は終端結果の保持期限を過ぎたsessionへ`session retention expired`を返すが、同じsessionの会話再開用の最小状態は保持され、

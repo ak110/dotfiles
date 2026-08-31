@@ -225,12 +225,14 @@ class TestTestExecution:
             )
             is not None
         )
+        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__start_explore") is not None
         assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__kill") is not None
 
     @pytest.mark.parametrize(
         "tool_name",
         [
             "mcp__plugin_agent-toolkit_agents_server__start",
+            "mcp__plugin_agent-toolkit_agents_server__start_explore",
             "mcp__plugin_agent-toolkit_agents_server__send_message",
             "mcp__plugin_agent-toolkit_agents_server__wait",
             "mcp__plugin_agent-toolkit_agents_server__kill",
@@ -1225,21 +1227,22 @@ class TestAmendPendingStatusCheck:
 
 
 class TestAgentsServerSessionState:
-    """agents_serverの4ツール応答とsessionごとのcwd状態記録を検証する。"""
+    """agents_serverのツール応答とsessionごとのcwd状態記録を検証する。"""
 
-    @pytest.mark.parametrize("tool_name", ("start", "send_message", "wait", "kill"))
+    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
         remote_session_id = "thread-json"
-        status = "running" if tool_name in ("start", "send_message") else "interrupted"
-        tool_input = {"cwd": str(tmp_path)} if tool_name == "start" else {"session_id": remote_session_id}
+        start_tools = ("start", "start_explore")
+        status = "running" if tool_name in (*start_tools, "send_message") else "interrupted"
+        tool_input = {"cwd": str(tmp_path)} if tool_name in start_tools else {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {"session_id": remote_session_id, "turn_id": "turn-json", "status": status}
         if tool_name == "kill":
             response["kill_requested"] = True
-        if tool_name != "start":
+        if tool_name not in start_tools:
             (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
                 json.dumps({"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}),
                 encoding="utf-8",
@@ -1261,14 +1264,15 @@ class TestAgentsServerSessionState:
         assert "cwd" not in state["agents_server_sessions"][remote_session_id]
         assert state["agents_server_cwd_by_session"][remote_session_id] == str(tmp_path)
 
-    def test_start_stores_input_cwd_under_response_session_id(self, tmp_path: pathlib.Path) -> None:
-        """startの入力cwdを応答session_idへ保存し、session記録へ複製しない。"""
-        sid = "start-cwd"
+    @pytest.mark.parametrize("tool_name", ("start", "start_explore"))
+    def test_start_stores_input_cwd_under_response_session_id(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+        """開始ツールの入力cwdを応答session_idへ保存し、session記録へ複製しない。"""
+        sid = f"{tool_name}-cwd"
         result = _run(
             {
                 "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "実装", "cwd": str(tmp_path)},
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_name}",
+                "tool_input": {"prompt": "調査", "cwd": str(tmp_path)},
                 "tool_response": {
                     "structuredContent": {
                         "session_id": "thread-start",

@@ -17,6 +17,8 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from _agents_server_state import (
+    EXPLORE_SYSTEM_PROMPT,
+    ModelCandidate,
     ResumePrompt,
     SessionOwnerGoneError,
     SessionState,
@@ -65,7 +67,13 @@ class _CommandChannel:
                 future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
 
 
-def _build_options(cwd: str, model: str | None, effort: str | None, session_id: str | None = None) -> Any:
+def _build_options(
+    cwd: str,
+    model: str | None,
+    effort: str | None,
+    session_id: str | None = None,
+    explore: bool = False,
+) -> Any:
     """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
@@ -73,16 +81,26 @@ def _build_options(cwd: str, model: str | None, effort: str | None, session_id: 
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
-    return ClaudeAgentOptions(
-        cwd=cwd,
-        model=model,
-        effort=cast(_EffortLevel, effort),
-        resume=session_id,
-        permission_mode="bypassPermissions",
-        env={_ENV_DELEGATED_SESSION: "1"},
-        setting_sources=["user", "project"],
-        system_prompt={"type": "preset", "preset": "claude_code"},
-    )
+    env = {_ENV_DELEGATED_SESSION: "1"}
+    if explore:
+        env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+    options: dict[str, Any] = {
+        "cwd": cwd,
+        "model": model,
+        "effort": cast(_EffortLevel, effort),
+        "resume": session_id,
+        "permission_mode": "bypassPermissions",
+        "env": env,
+        "setting_sources": [] if explore else ["user", "project"],
+        "system_prompt": EXPLORE_SYSTEM_PROMPT if explore else {"type": "preset", "preset": "claude_code"},
+    }
+    if explore:
+        options.update(
+            skills=[],
+            tools={"type": "preset", "preset": "claude_code"},
+            allowed_tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+        )
+    return ClaudeAgentOptions(**options)
 
 
 def check_dependencies() -> None:
@@ -132,8 +150,21 @@ class ClaudeServerManager:
         cwd: str,
         model: str | None = None,
         effort: str | None = None,
+        *,
+        model_type: str | None = None,
+        explore: bool = False,
+        excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
-        return await self._start_owned_task(prompt, cwd, model, effort, session_id=None)
+        return await self._start_owned_task(
+            prompt,
+            cwd,
+            model,
+            effort,
+            session_id=None,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded_candidates,
+        )
 
     async def resume(
         self,
@@ -142,10 +173,23 @@ class ClaudeServerManager:
         cwd: str,
         model: str | None = None,
         effort: str | None = None,
+        *,
+        model_type: str | None = None,
+        explore: bool = False,
+        excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。"""
         await self._stop_owned_task(session_id)
-        return await self._start_owned_task(prompt, cwd, model, effort, session_id=session_id)
+        return await self._start_owned_task(
+            prompt,
+            cwd,
+            model,
+            effort,
+            session_id=session_id,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded_candidates,
+        )
 
     async def _stop_owned_task(self, session_id: str) -> None:
         """同じsession IDを所有する旧タスクを終了し、再開時のキュー競合を防ぐ。"""
@@ -164,13 +208,31 @@ class ClaudeServerManager:
         effort: str | None,
         *,
         session_id: str | None,
+        model_type: str | None,
+        explore: bool,
+        excluded_candidates: frozenset[ModelCandidate],
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
-        options = _build_options(cwd, model, effort, session_id)
+        options = (
+            _build_options(cwd, model, effort, session_id, explore=True)
+            if explore
+            else _build_options(cwd, model, effort, session_id)
+        )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
         task: asyncio.Task[Any] = asyncio.create_task(
-            self._run(prompt, cwd, model, effort, options, initialized, expected_session_id=session_id)
+            self._run(
+                prompt,
+                cwd,
+                model,
+                effort,
+                options,
+                initialized,
+                expected_session_id=session_id,
+                model_type=model_type,
+                explore=explore,
+                excluded_candidates=excluded_candidates,
+            )
         )
         self._tasks.add(task)
         task.add_done_callback(self._forget_task)
@@ -234,6 +296,9 @@ class ClaudeServerManager:
         initialized: asyncio.Future[SessionState],
         *,
         expected_session_id: str | None,
+        model_type: str | None,
+        explore: bool,
+        excluded_candidates: frozenset[ModelCandidate],
     ) -> None:
         client: Any = None
         session: SessionState | None = None
@@ -303,6 +368,9 @@ class ClaudeServerManager:
                                 session = SessionState(
                                     session_id=session_id,
                                     cwd=cwd,
+                                    model_type=model_type,
+                                    explore=explore,
+                                    excluded_candidates=excluded_candidates,
                                     model=model,
                                     effort=effort,
                                     engine="claude",

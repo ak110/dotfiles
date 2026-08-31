@@ -52,15 +52,31 @@ class FakeBackend:
         self.interrupt_calls = 0
         self.send_calls = 0
         self.resume_calls: list[str] = []
+        self.start_calls: list[tuple[str | None, str | None, bool]] = []
 
-    async def start(self, prompt: str, cwd: str, model: str | None, effort: str | None) -> subject.SessionState:
+    async def start(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        *,
+        model_type: str | None = None,
+        explore: bool = False,
+        excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
+    ) -> subject.SessionState:
         del prompt
+        self.start_calls.append((model, effort, explore))
+        session_number = len(self.start_calls)
         session = subject.SessionState(
-            session_id=f"{self.engine}-session",
+            session_id=f"{self.engine}-session" if session_number == 1 else f"{self.engine}-session-{session_number}",
             cwd=cwd,
             model=model,
             effort=effort,
             engine=self.engine,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded_candidates,
         )
         self.sessions[session.session_id] = session
         state._initialize_turn(session)
@@ -73,6 +89,10 @@ class FakeBackend:
         cwd: str,
         model: str | None,
         effort: str | None,
+        *,
+        model_type: str | None = None,
+        explore: bool = False,
+        excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
     ) -> subject.SessionState:
         async def accept_prompt(value: str) -> None:
             del value
@@ -84,6 +104,9 @@ class FakeBackend:
             model=model,
             effort=effort,
             engine=self.engine,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded_candidates,
         )
         self.sessions[session_id] = session
         state._initialize_turn(session)
@@ -137,10 +160,11 @@ class BlockingResumeBackend(FakeBackend):
         cwd: str,
         model: str | None,
         effort: str | None,
+        **kwargs: Any,
     ) -> subject.SessionState:
         self.resume_started.set()
         await self.release_resume.wait()
-        return await super().resume(session_id, prompt, cwd, model, effort)
+        return await super().resume(session_id, prompt, cwd, model, effort, **kwargs)
 
 
 class ConcurrentOwnerGoneBackend(FakeBackend):
@@ -183,6 +207,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server_codex.py",
         "_agents_server_claude.py",
         "_agents_server_state.py",
+        "_atk_config.py",
         "_inherited_venv.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
@@ -212,9 +237,17 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
     assert check.returncode == 0, check.stderr
 
 
-def test_public_tools_are_exactly_four_async_operations() -> None:
-    """公開ツール集合をstart・wait・send_message・killへ固定する。"""
-    assert set(subject.mcp._tool_manager._tools) == {"start", "wait", "send_message", "kill"}
+def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
+    """公開ツール集合とstartの入力境界が工程別モデル設定へ密結合している。"""
+    assert set(subject.mcp._tool_manager._tools) == {"start", "start_explore", "wait", "send_message", "kill"}
+    start_tool = subject.mcp._tool_manager.get_tool("start")
+    assert start_tool is not None
+    properties = start_tool.parameters["properties"]
+    assert {"model_type", "prompt", "cwd", "exclude_session_id"} <= properties.keys()
+    assert {"engine", "model", "effort"}.isdisjoint(properties)
+    explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
+    assert explore_tool is not None
+    assert explore_tool.parameters["properties"]["fast"]["default"] is False
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
@@ -269,17 +302,158 @@ def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
-async def test_start_projects_shared_state_without_internal_fields(engine: str, tmp_path: pathlib.Path) -> None:
+async def test_start_projects_shared_state_without_internal_fields(
+    engine: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
     """両engineの開始応答が同じ公開射影を持つ。"""
     manager, _ = _manager_with_fake(engine)
-    response = await manager.start(engine, "調査", str(tmp_path))
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [(engine, "model", "high")])
+    response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
         "session_id": f"{engine}-session",
         "engine": engine,
         "status": "running",
         "progress": "",
+        "model_type": "plan",
+        "model": "model",
+        "effort": "high",
     }
     _assert_no_forbidden_keys(response)
+
+
+@pytest.mark.asyncio
+async def test_start_resolves_one_candidate_and_exclusion_chain_by_candidate_value(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """明示した除外sessionの候補だけを累積除外し、候補値順に次を選ぶ。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high"), ("codex", "second", "low")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+
+    first = await manager.start("plan", "調査", str(tmp_path))
+    second = await manager.start("plan", "調査", str(tmp_path), first["session_id"])
+    third = await manager.start("plan", "調査", str(tmp_path), second["session_id"])
+
+    assert backend.start_calls == [("first", "high", False), ("second", "high", False), ("second", "low", False)]
+    assert manager.sessions[third["session_id"]].excluded_candidates == frozenset(candidates[:2])
+    assert backend.interrupt_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_unknown_model_type_and_mismatched_exclusion_before_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """未知経路と起動条件の異なる除外sessionをbackend開始前に拒否する。"""
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda model_type: (
+            [("codex", model_type, "medium")]
+            if model_type in {"plan", "execute"}
+            else (_ for _ in ()).throw(ValueError("unknown model_type: unknown (available: plan)"))
+        ),
+    )
+    with pytest.raises(ValueError, match="available: plan"):
+        await manager.start("unknown", "調査", str(tmp_path))
+    plan = await manager.start("plan", "調査", str(tmp_path))
+    with pytest.raises(ValueError, match=r"source model_type=plan.*requested model_type=execute"):
+        await manager.start("execute", "調査", str(tmp_path), plan["session_id"])
+    assert len(backend.start_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_start_propagates_backend_failure_without_advancing_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """backend開始失敗を同じ呼び出し内の次候補で再試行しないことを検証する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+    calls: list[tuple[str | None, str | None]] = []
+
+    async def fail_start(
+        _prompt: str,
+        _cwd: str,
+        model: str | None,
+        effort: str | None,
+        **_kwargs: Any,
+    ) -> subject.SessionState:
+        calls.append((model, effort))
+        raise RuntimeError("backend unavailable")
+
+    monkeypatch.setattr(backend, "start", fail_start)
+    with pytest.raises(RuntimeError, match="backend unavailable"):
+        await manager.start("plan", "調査", str(tmp_path))
+    assert calls == [("first", "high")]
+
+
+@pytest.mark.asyncio
+async def test_start_explore_selects_fast_route_and_rejects_normal_exclusion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """探索起動はfast別の設定を選び、通常起動の除外集合を混入させない。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda model_type: [("codex", model_type, "medium")],
+    )
+    manager, backend = _manager_with_fake("codex")
+    normal = await manager.start("plan", "通常", str(tmp_path))
+    explored = await manager.start_explore(True, "探索", str(tmp_path))
+    assert explored["model_type"] == "explore_fast"
+    assert backend.start_calls[-1] == ("explore_fast", "medium", True)
+    with pytest.raises(ValueError, match=r"source model_type=plan.*requested model_type=explore_fast"):
+        await manager.start_explore(True, "探索", str(tmp_path), normal["session_id"])
+
+
+@pytest.mark.asyncio
+async def test_send_message_rejects_changed_first_candidate_without_discarding_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """現在の先頭候補が起動値と異なる場合はsessionを保持して継続を拒否する。"""
+    current = [("codex", "first", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    manager, backend = _manager_with_fake("codex")
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = response["session_id"]
+    current[:] = [("codex", "replacement", "high"), ("codex", "first", "high")]
+
+    with pytest.raises(ValueError, match=f"configuration changed: {session_id}"):
+        await manager.send_message(session_id, "続行")
+    assert session_id in manager.sessions
+    assert backend.send_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_expired_explore_session_resumes_with_original_route_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """結果保持期限後の再開でも探索フラグと除外集合を維持する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, _ = _manager_with_fake("codex")
+    first = await manager.start_explore(False, "探索", str(tmp_path))
+    second = await manager.start_explore(False, "探索", str(tmp_path), first["session_id"])
+    session = manager.sessions[second["session_id"]]
+    _complete(session)
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+
+    response = await manager.send_message(session.session_id, "続行")
+
+    resumed = manager.sessions[session.session_id]
+    assert response["delivery"] == "reply_started"
+    assert resumed.model_type == "explore"
+    assert resumed.explore is True
+    assert resumed.excluded_candidates == frozenset({candidates[0]})
 
 
 @pytest.mark.asyncio
@@ -813,6 +987,39 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
 
 
 @pytest.mark.asyncio
+async def test_codex_explore_changes_thread_start_only(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Codex探索起動はthreadの指示源だけを軽量化し、turn入力を変えない。"""
+    normal_manager = codex_backend.AppServerManager()
+    normal_client = FakeCodexClient()
+
+    async def ensure_normal_client() -> FakeCodexClient:
+        return normal_client
+
+    monkeypatch.setattr(normal_manager, "_ensure_client", ensure_normal_client)
+    await normal_manager.start("調査", str(tmp_path), "model", "high")
+
+    explore_manager = codex_backend.AppServerManager()
+    explore_client = FakeCodexClient()
+
+    async def ensure_explore_client() -> FakeCodexClient:
+        return explore_client
+
+    monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
+    await explore_manager.start("調査", str(tmp_path), "model", "high", explore=True)
+
+    normal_thread = normal_client.requests[0][1]
+    explore_thread = explore_client.requests[0][1]
+    assert "config" not in normal_thread
+    assert "developerInstructions" not in normal_thread
+    assert explore_thread["config"] == {"project_doc_max_bytes": 0}
+    assert explore_thread["developerInstructions"] == state.EXPLORE_SYSTEM_PROMPT
+    assert normal_client.requests[1][1] == explore_client.requests[1][1]
+
+
+@pytest.mark.asyncio
 async def test_codex_turn_start_response_loss_remains_running_until_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1012,12 +1219,16 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
     manager._codex = backend
-    response = await manager.start("codex", "調査", str(tmp_path), "gpt-test", "high")
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "gpt-test", "high")])
+    response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
         "session_id": "thread-codex",
         "engine": "codex",
         "status": "running",
         "progress": "",
+        "model_type": "plan",
+        "model": "gpt-test",
+        "effort": "high",
     }
     backend.client = cast(Any, client)
     steered = await manager.send_message("thread-codex", "追加指示")
@@ -1572,6 +1783,20 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
     assert options.resume == "claude-saved"
 
 
+def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
+    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。"""
+    options = claude_backend._build_options(str(tmp_path), "model", "high", explore=True)
+    assert options.setting_sources == []
+    assert options.skills == []
+    assert options.env == {
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    }
+    assert options.system_prompt == state.EXPLORE_SYSTEM_PROMPT
+    assert options.tools == {"type": "preset", "preset": "claude_code"}
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"}
+
+
 @pytest.mark.asyncio
 async def test_claude_resume_owns_saved_session(
     monkeypatch: pytest.MonkeyPatch,
@@ -1816,7 +2041,8 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
 
     try:
-        start_response = await manager.start("claude", "調査", str(tmp_path))
+        monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("claude", "model", "high")])
+        start_response = await manager.start("plan", "調査", str(tmp_path))
         response = await manager.kill(start_response["session_id"], timeout=1)
         assert response["status"] == "interrupted"
         assert response["kill_requested"] is True

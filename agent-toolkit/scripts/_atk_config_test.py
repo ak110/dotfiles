@@ -51,6 +51,8 @@ class TestConfigShow:
             assert f"{key}: codex:gpt-5.6-sol/medium" in out
         assert "execute_fix_model:" not in out
         assert "orchestrate_model: claude:opus[1m]/medium" in out
+        assert "explore_model: codex:gpt-5.6-sol/medium" in out
+        assert "explore_fast_model: codex:gpt-5.6-terra/medium" in out
         assert "codex_model:" not in out
         assert "merge_model:" not in out
 
@@ -404,6 +406,12 @@ class TestConfigSet:
             ("claude", "sonnet", "high"),
             ("claude", "sonnet", "low"),
         ]
+
+    def test_resolve_model_candidates_maps_model_type_and_rejects_unknown(self) -> None:
+        """model_typeを対応設定の候補へ解決し、未知値は利用可能一覧付きで拒否する。"""
+        assert config_module.resolve_model_candidates("explore_fast") == [("codex", "gpt-5.6-terra", "medium")]
+        with pytest.raises(ValueError, match=r"unknown model_type: no-such.*explore_fast.*plan"):
+            config_module.resolve_model_candidates("no-such")
 
     def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""

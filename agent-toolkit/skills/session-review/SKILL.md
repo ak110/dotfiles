@@ -21,7 +21,7 @@ description: >
 目標が定められている場合は、対象と目標値を問題候補抽出の入力へ含める。
 目標が定められていない場合は、全対象へ適用する固定値を新設又は推定しない。
 
-1. `agent-toolkit:delegation`を起動し、起動直前に`atk config get session_review_model`で実効engine・model・effortを解決する。
+1. `agent-toolkit:delegation`を起動し、`agents_server.start`へ`model_type="session_review"`を渡してengine、model及びeffortの解決をサーバーへ委ねる。
 2. メインが読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_evidence.py`の実在を確認する。実在しなければ分析失敗として扱う。
 3. メインが`atk managed-temp create --prefix session-review`を実行し、標準出力が単一の絶対パスであり、そのパスが実在するディレクトリであることを確認する。非0終了又は不実在の場合は分析失敗として扱う。この領域はメインが所有し、振り返り担当が抽出結果を保持する場所として渡す。
 4. `agents_server`で通常の読み取り専用サブエージェントを1つ起動する。専用agent定義、固定モデル及び代替モデルを使わない。
