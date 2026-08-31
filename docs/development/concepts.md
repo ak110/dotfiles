@@ -455,6 +455,10 @@ sourceを指定しない場合は本文、`target_repo`と非予約frontmatter�
   登録済み領域は最終更新から7日を超えると`atk`の実行時に自動削除する。git worktreeやリポジトリの複製を含む領域（`.git`を含む領域）は削除しない。
   実装worktreeをDockerやVMなど別namespaceへ渡す場合だけ、全消費主体から到達できる既存共有ディレクトリを読み取り専用で確認して`create --root <絶対パス>`を使う。
   同一namespaceの実装worktreeとMQ、レビュー表、CI、publishの補助領域は既定rootを維持し、Dockerの可視性を推測しない
+  登録済み領域の自動回収は、記録した実行文脈と現在の実行文脈が一致し実体の消滅を確定できた場合だけ行い、回収を警告として報告する。
+  確定できない登録は保持し、到達できる実行文脈での再実行を案内する。登録を失った領域は`atk managed-temp list`が報告する。
+  中断した後始末の消費途中状態が残る領域は通常の後始末が再開し、消費途中状態も持たない領域の回収は
+  利用者が明示指定する`atk managed-temp cleanup --path <絶対パス> --recover-registry`でだけ行う
 - 同一リポジトリのworktreeへ`.env`等のGit管理外の実行前提ファイルを複製する操作は、
   認証情報複製禁止の対象外とする（2026年8月、利用者指示。worktree運用の成立を優先する）。
   複製元に`.worktreeinclude`が存在しworktree作成前である場合に限り、worktree作成時の自動複製を活用する

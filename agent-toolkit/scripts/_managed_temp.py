@@ -11,6 +11,7 @@ import argparse
 import contextlib
 import ctypes
 import datetime
+import enum
 import hashlib
 import json
 import os
@@ -1158,7 +1159,7 @@ def _load_marker(directory_descriptor: int, path: pathlib.Path) -> dict[str, typ
     return value
 
 
-def _validate_posix(path_arg: pathlib.Path | str) -> _ValidatedTemp:
+def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
     if os.name != "posix":
         raise ManagedTempError("Windowsの所有者・ACL検証はWindows実機で確定する必要がある")
     root, path = _validate_path_shape(pathlib.Path(path_arg))
@@ -1209,7 +1210,7 @@ def _validate_posix(path_arg: pathlib.Path | str) -> _ValidatedTemp:
         if root_descriptor is not None:
             os.close(root_descriptor)
     registry_path = _registry_path(path)
-    registry = _load_private_json(registry_path)
+    registry = marker if registry_fallback and not os.path.lexists(registry_path) else _load_private_json(registry_path)
     if not _records_match(path, marker, registry, identity=(opened.st_dev, opened.st_ino)):
         raise ManagedTempError(f"管理情報の内容が一致しない: {path / _MARKER_NAME}")
     _validate_root(root, expected=root_state)
@@ -1227,7 +1228,7 @@ def _validate_posix(path_arg: pathlib.Path | str) -> _ValidatedTemp:
     )
 
 
-def _validate_windows(path_arg: pathlib.Path | str) -> _ValidatedTemp:
+def _validate_windows(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     root_state = _validate_root(root)
     try:
@@ -1240,7 +1241,7 @@ def _validate_windows(path_arg: pathlib.Path | str) -> _ValidatedTemp:
     identity = _windows_identity(path)
     marker = _load_private_json(path / _MARKER_NAME)
     registry_path = _registry_path(path)
-    registry = _load_private_json(registry_path)
+    registry = marker if registry_fallback and not os.path.lexists(registry_path) else _load_private_json(registry_path)
     if not _records_match(path, marker, registry, identity=identity):
         raise ManagedTempError(f"管理情報の内容が一致しない: {path / _MARKER_NAME}")
     _validate_root(root, expected=root_state)
@@ -1307,14 +1308,180 @@ def _cleanup_missing_registered_temp(path: pathlib.Path) -> None:
     registry_path.unlink(missing_ok=True)
 
 
-def list_managed_temp(prefix: str | None = None) -> list[_ManagedTempEntry]:
+def _entity_absence_is_confirmed(record: dict[str, typing.Any], path: pathlib.Path) -> bool:
+    """記録された実体が現在の実行文脈で確実に失われているかを返す。"""
+    if record.get("platform") != os.name or record.get("owner") != _owner_record():
+        return False
+    identity = record.get("identity")
+    if not (
+        isinstance(identity, list)
+        and len(identity) == 2
+        and all(isinstance(value, int) and not isinstance(value, bool) for value in identity)
+    ):
+        return False
+    try:
+        root = _validate_root(path.parent)
+        absent = _lstat_or_none(path) is None
+    except (OSError, ValueError, ManagedTempError):
+        return False
+    return root.device == identity[0] and absent
+
+
+def _consuming_registry_path(registry_path: pathlib.Path) -> pathlib.Path | None:
+    """同じ登録に対する消費途中状態が1件だけ残っている場合にそのパスを返す。"""
+    candidates = sorted(registry_path.parent.glob(f"{registry_path.name}.consuming-*"))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+class _QuarantineState(enum.Enum):
+    """中断した後始末の隔離途中状態に対する判定結果。"""
+
+    ABSENT = "absent"
+    MATCHED = "matched"
+    MISMATCHED = "mismatched"
+    UNVERIFIABLE = "unverifiable"
+
+
+class _QuarantineJudgement(typing.NamedTuple):
+    """判定結果と、一致した場合に後始末する隔離先を保持する。"""
+
+    state: _QuarantineState
+    quarantine: pathlib.Path | None = None
+    identity: tuple[int, int] | None = None
+    reason: str = ""
+
+
+def _lstat_or_none(path: pathlib.Path) -> os.stat_result | None:
+    """存在しない場合だけNoneを返す。検査できない場合は例外を送出する。"""
+    try:
+        return os.lstat(path)
+    except FileNotFoundError:
+        return None
+
+
+def _classify_quarantine(root: pathlib.Path, path: pathlib.Path) -> _QuarantineJudgement:
+    """中断した後始末の隔離途中状態を4値のいずれかへ判定する。"""
+    registry_path = _registry_path(path)
+    try:
+        if _lstat_or_none(registry_path) is None:
+            return _QuarantineJudgement(_QuarantineState.ABSENT)
+    except OSError as error:
+        return _QuarantineJudgement(_QuarantineState.UNVERIFIABLE, reason=f"登録の実在を確認できない: {registry_path}: {error}")
+    try:
+        registry = _load_private_json(registry_path)
+    except (OSError, ValueError, ManagedTempError) as error:
+        return _QuarantineJudgement(_QuarantineState.UNVERIFIABLE, reason=f"登録を取得できない: {error}")
+    nonce = registry.get("nonce")
+    identity = registry.get("identity")
+    if registry.get("path") != str(path):
+        return _QuarantineJudgement(_QuarantineState.ABSENT)
+    if not isinstance(nonce, str) or re.fullmatch(r"[0-9a-f]{64}", nonce) is None:
+        return _QuarantineJudgement(_QuarantineState.ABSENT)
+    if not (
+        isinstance(identity, list)
+        and len(identity) == 2
+        and all(isinstance(value, int) and not isinstance(value, bool) for value in identity)
+    ):
+        return _QuarantineJudgement(_QuarantineState.ABSENT)
+    expected = (identity[0], identity[1])
+    quarantine = root / f".agent-toolkit-cleanup-{nonce}"
+    try:
+        if _lstat_or_none(path) is not None:
+            return _QuarantineJudgement(_QuarantineState.ABSENT)
+        metadata = _lstat_or_none(quarantine)
+        if metadata is None:
+            return _QuarantineJudgement(_QuarantineState.ABSENT)
+        if os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
+            return _QuarantineJudgement(_QuarantineState.MISMATCHED, quarantine)
+        if not stat.S_ISDIR(metadata.st_mode):
+            return _QuarantineJudgement(_QuarantineState.MISMATCHED, quarantine)
+        if _path_identity(quarantine) != expected:
+            return _QuarantineJudgement(_QuarantineState.MISMATCHED, quarantine)
+    except (OSError, ManagedTempError) as error:
+        return _QuarantineJudgement(_QuarantineState.UNVERIFIABLE, reason=f"隔離途中状態を検査できない: {error}")
+    return _QuarantineJudgement(_QuarantineState.MATCHED, quarantine, expected)
+
+
+def _restore_interrupted_consume(registry_path: pathlib.Path) -> bool:
+    """消費途中状態だけが残る場合に登録を取り戻して真を返す。"""
+    try:
+        if _lstat_or_none(registry_path) is not None:
+            return False
+        consuming = _consuming_registry_path(registry_path)
+        if consuming is None:
+            return False
+        os.replace(consuming, registry_path)
+    except OSError as error:
+        raise ManagedTempError(
+            f"中断した後始末の登録を復元できない: {registry_path}: {error}。"
+            "管理情報を保持したため、原因を除去した後に同じcleanupを再試行できる"
+        ) from error
+    return True
+
+
+def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: tuple[int, int]) -> None:
+    """一致した隔離先について、中断した削除を最後まで実行する。"""
+    try:
+        _validate_root(root)
+        if os.name == "posix":
+            if not shutil.rmtree.avoids_symlink_attacks:
+                raise ManagedTempError("symlink attack耐性を持つ後始末手段を利用できない")
+            descriptor = os.open(quarantine, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                opened = os.fstat(descriptor)
+                if (opened.st_dev, opened.st_ino) != identity:
+                    raise ManagedTempError(f"隔離先が再開時に置換された: {quarantine}")
+                _clear_directory(descriptor)
+            finally:
+                os.close(descriptor)
+            os.rmdir(quarantine)
+        else:
+            shutil.rmtree(quarantine)
+    except OSError as error:
+        raise ManagedTempError(
+            f"中断した後始末の隔離先を後始末できない: {quarantine}: {error}。"
+            "管理情報と隔離先を保持したため、原因を除去した後に同じcleanupを再試行できる"
+        ) from error
+
+
+def _report_unregistered_candidates(prefix: str | None) -> None:
+    """既定の一時root直下で、マーカーだけが残る管理対象を報告する。"""
+    try:
+        children = sorted(_temp_root().iterdir())
+    except (OSError, ManagedTempError) as error:
+        print(f"warning: 登録を持たない管理対象を探索できない: {error}", file=sys.stderr)
+        return
+    for child in children:
+        if prefix is not None and not child.name.startswith(f"{prefix}-"):
+            continue
+        registry_path = _registry_path(child)
+        if not os.path.lexists(child / _MARKER_NAME) or os.path.lexists(registry_path):
+            continue
+        if _consuming_registry_path(registry_path) is not None:
+            print(
+                f"warning: 後始末が中断した可能性がある管理対象があります: {child}"
+                f"（回収する場合は atk managed-temp cleanup --path {child}）",
+                file=sys.stderr,
+            )
+            continue
+        print(
+            f"warning: 登録を持たない管理対象があります: {child}"
+            f"（回収する場合は atk managed-temp cleanup --path {child} --recover-registry）",
+            file=sys.stderr,
+        )
+
+
+def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: bool = False) -> list[_ManagedTempEntry]:
     """真正性検証を通過した管理対象を作成時刻順で返す。
 
-    実体に依存しない検証（`path`欄の型と登録ファイル名との対応）を通過した登録のうち、
-    実体を失ったものは登録ファイルごと削除する。実体を失った登録には当該領域を使用中の
-    主体が存在しないため、登録ファイルの削除が利用中の管理対象へ影響しない。
-    この回収では登録簿の`path`と実体の不在だけを確認する。記録時と列挙時で一時領域の設定が
-    異なる登録も回収対象へ含めるため、現在の一時領域直下であることは条件としない。
+    実体に依存しない検証（`path`欄の型と登録ファイル名との対応）と`prefix`による限定を通過した
+    登録のうち、実体の消滅を確定できたものは登録ファイルごと削除し、削除を警告として報告する。
+    実体を失った登録には当該領域を使用中の主体が存在しないため、登録ファイルの削除が
+    利用中の管理対象へ影響しない。消滅を確定できない登録は削除せず列挙対象から外す。
+    記録時と列挙時で一時領域の設定が異なる登録も回収対象へ含めるため、現在の一時領域直下で
+    あることは条件としない。
+    `report_recovery_candidates`が真の場合は、削除せず保持した登録と、既定の一時root直下で
+    登録を持たない管理対象を警告として報告する。
     """
     if prefix is not None and not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
@@ -1328,12 +1495,6 @@ def list_managed_temp(prefix: str | None = None) -> list[_ManagedTempEntry]:
             path = pathlib.Path(recorded_path)
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
-            if not os.path.lexists(path):
-                if path.parent.exists():
-                    _validate_root(path.parent)
-                registry_path.unlink(missing_ok=True)
-                continue
-            validate_managed_temp(path)
             schema_version = record.get("schema_version")
             item_prefix = record.get("prefix") if schema_version in (2, 3) else None
             created_at = record.get("created_at") if schema_version in (2, 3) else None
@@ -1346,6 +1507,18 @@ def list_managed_temp(prefix: str | None = None) -> list[_ManagedTempEntry]:
                 raise ManagedTempError("管理情報のprefix、created_at又はfeedbacksが不正")
             if prefix is not None and item_prefix != prefix:
                 continue
+            if not os.path.lexists(path):
+                if _entity_absence_is_confirmed(record, path):
+                    registry_path.unlink(missing_ok=True)
+                    print(f"warning: 実体が失われた管理対象の登録を回収しました: {path}", file=sys.stderr)
+                elif report_recovery_candidates:
+                    print(
+                        f"warning: 実体へ到達できないため登録を保持しました: {path}"
+                        "（同じ絶対パスへ到達できる実行文脈で atk managed-temp list を実行すると回収されます）",
+                        file=sys.stderr,
+                    )
+                continue
+            validate_managed_temp(path)
             entries.append(
                 {
                     "path": str(path),
@@ -1356,6 +1529,8 @@ def list_managed_temp(prefix: str | None = None) -> list[_ManagedTempEntry]:
             )
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
             print(f"warning: 管理対象を列挙できない: {registry_path}: {error}", file=sys.stderr)
+    if report_recovery_candidates:
+        _report_unregistered_candidates(prefix)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
 
 
@@ -1626,16 +1801,47 @@ def _cleanup_windows(
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
 
 
-def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
+def cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: bool = False) -> None:
     """検証済みの管理対象一時ディレクトリだけを後始末する。
 
-    実体を失った管理対象は、登録ファイルの削除だけで整合させる。
+    実体を失った管理対象は、登録ファイルの削除だけで整合させる。ただし元pathの不在が
+    後始末の隔離によるものである場合は、登録が記録するnonceとidentityへ一致する隔離先に
+    限って中断した削除を最後まで実行してから、登録を削除する。
+    登録が消費途中状態としてだけ残る管理対象は、実体の有無にかかわらず中断した後始末の
+    再開として消費途中状態から登録を原子的に取り戻してから、実体が残る場合は通常の後始末へ、
+    実体が不在の場合は実体を失った管理対象の整合へ合流する。消費途中状態は管理側の状態
+    ディレクトリにあり、作成処理が書いた登録と同じ信頼水準を持つため明示指定を要さない。
+    `recover_registry`が真の場合だけ、消費途中状態も持たず登録だけを失った管理対象について、
+    実体側マーカーが記録した絶対パスと実体のidentityへ一致することを確認して登録を復元する。
+    マーカーは実体側にあり、作成処理が書いたものと後から置かれたものを内容だけでは区別できない。
+    この復元は利用者の明示指定を第二の信頼根拠として要求し、既定では行わない。
     """
     root, path = _validate_path_shape(pathlib.Path(path_arg))
+    registry_path = _registry_path(path)
+    if _restore_interrupted_consume(registry_path):
+        print(f"warning: 中断した後始末の登録を復元しました: {registry_path}", file=sys.stderr)
+    judgement = _classify_quarantine(root, path)
+    if judgement.state is _QuarantineState.UNVERIFIABLE:
+        raise ManagedTempError(
+            f"中断した後始末の状態を判定できない: {path}: {judgement.reason}。"
+            "管理情報と隔離先を保持したため、原因を除去した後に同じcleanupを再試行できる"
+        )
+    if judgement.state is _QuarantineState.MATCHED:
+        if judgement.quarantine is None or judgement.identity is None:
+            raise AssertionError("一致した隔離途中状態に後始末情報がない")
+        _cleanup_quarantine(root, judgement.quarantine, judgement.identity)
+        print(f"warning: 中断した後始末の隔離先を後始末しました: {path}", file=sys.stderr)
     if is_missing_registered_temp(path):
         _cleanup_missing_registered_temp(path)
         return
-    validated = _validate_posix(path) if os.name == "posix" else _validate_windows(path)
+    validated = (
+        _validate_posix(path, registry_fallback=recover_registry)
+        if os.name == "posix"
+        else _validate_windows(path, registry_fallback=recover_registry)
+    )
+    if _lstat_or_none(validated.registry_path) is None:
+        _write_private_json(validated.registry_path, validated.record)
+        print(f"warning: 欠落した登録をマーカーから復元しました: {validated.registry_path}", file=sys.stderr)
     if os.name == "nt":
         # 利用中に追加された受理済みACEを除去し、隔離以降を現在利用者だけのDACLで実行する。
         _windows_secure_path(
@@ -1699,6 +1905,11 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     )
     cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
     cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
+    cleanup_parser.add_argument(
+        "--recover-registry",
+        action="store_true",
+        help="登録を失った管理対象を、実体側マーカーの検証を通過した場合に限り復元して後始末する",
+    )
     list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
     list_parser.add_argument("--prefix")
 
@@ -1715,9 +1926,9 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                 )
             )
         elif getattr(args, command_dest) == "cleanup":
-            cleanup_managed_temp(args.path)
+            cleanup_managed_temp(args.path, recover_registry=getattr(args, "recover_registry", False))
         else:
-            entries = list_managed_temp(args.prefix)
+            entries = list_managed_temp(args.prefix, report_recovery_candidates=True)
             for entry in entries:
                 print(json.dumps(entry, ensure_ascii=False, sort_keys=True))
             return 0 if entries else 1
