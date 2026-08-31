@@ -266,38 +266,28 @@ def test_parser_rejects_invalid_track(argv: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("subcommand", "arguments", "guidance"),
-    [
-        *[
-            (
-                subcommand,
-                [option, "review.tsv"],
-                f"{option}は受理しない。表のパスは位置引数で指定する: atk review-table {subcommand} <表の絶対パス>",
-            )
-            for subcommand in ("init", "add", "respond", "show", "validate")
-            for option in ("--file", "--path")
-        ],
+    ("subcommand", "arguments", "accepted_options"),
+    (
+        ("show", ["review.tsv", "--round", "1"], ("--track",)),
+        ("validate", ["review.tsv", "--round", "1"], ("--allow-unanswered",)),
+        ("init", ["review.tsv", "--track", "plan-review"], ()),
         (
-            "show",
-            ["--all", "review.tsv"],
-            "--allは受理しない。--trackを省略すると全行を表示する: atk review-table show <表の絶対パス>",
+            "add",
+            ["review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘", "--file", "本文.txt"],
+            ("--issue", "--issue-file", "--location", "--location-file", "--round", "--track"),
         ),
-        *[
-            (
-                subcommand,
-                ["--track", "plan-review", "review.tsv"],
-                "--trackは受理しない。レビュー表は<計画stem>.plan-review.tsvと"
-                "<計画stem>.exec-review.tsvへtrackごとに分かれるため、trackによる限定は指定しない: "
-                f"atk review-table {subcommand} <表の絶対パス>",
-            )
-            for subcommand in ("init", "validate")
-        ],
-    ],
+        ("show", ["review.tsv", "--all"], ("--track",)),
+        (
+            "add",
+            ["review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘", "余分"],
+            ("--issue", "--issue-file", "--location", "--location-file", "--round", "--track"),
+        ),
+    ),
 )
 def test_parser_rejects_unsupported_options_with_guidance(
     subcommand: str,
     arguments: list[str],
-    guidance: str,
+    accepted_options: tuple[str, ...],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
@@ -305,18 +295,193 @@ def test_parser_rejects_unsupported_options_with_guidance(
 
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
-    assert f"atk review-table {subcommand}" in error
-    assert guidance in error
+    assert error.startswith(f"usage: atk review-table {subcommand}")
+    accepted = "・".join(accepted_options) if accepted_options else "なし"
+    assert f"atk review-table {subcommand}が受理するオプションは{accepted}で、表のパスは位置引数で指定する" in error
 
 
-def test_show_help_hides_rejected_options(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize(
+    ("subcommand", "options"),
+    (
+        ("add", ("--location-file", "--issue-file")),
+        ("respond", ("--location-file", "--issue-file", "--response-file", "--no-response-reason-file")),
+    ),
+)
+def test_cell_file_options_are_shown_in_help(
+    subcommand: str,
+    options: tuple[str, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", "show", "--help"])
+        _parser().parse_args(["review-table", subcommand, "--help"])
 
     assert exc_info.value.code == 0
     help_text = capsys.readouterr().out
-    for option in ("--file", "--path", "--all"):
-        assert option not in help_text
+    for option in options:
+        assert option in help_text
+
+
+def test_cell_files_preserve_issue_and_supply_responses(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "review.tsv"
+    location = "module.py:10 `handler`\n"
+    issue = '"引用"と`backtick`を含む\n複数行の$本文\n'
+    response = '  修正で"引用"と`backtick`を保持する\n'
+    reason = "  $仕様の対象外\n"
+    location_file = tmp_path / "location.txt"
+    issue_file = tmp_path / "issue.txt"
+    response_file = tmp_path / "response.txt"
+    reason_file = tmp_path / "reason.txt"
+    location_file.write_text(location, encoding="utf-8")
+    issue_file.write_text(issue, encoding="utf-8")
+    response_file.write_text(response, encoding="utf-8")
+    reason_file.write_text(reason, encoding="utf-8")
+    table.init(path)
+
+    add_args = _parser().parse_args(
+        [
+            "review-table",
+            "add",
+            str(path),
+            "--round=1",
+            f"--track={_TRACK}",
+            "--location-file",
+            str(location_file),
+            "--issue-file",
+            str(issue_file),
+        ]
+    )
+    assert table.dispatch(add_args) == 0
+    assert table.show(path) == 0
+    stored = [[json.loads(cell) for cell in line.split("\t")] for line in capsys.readouterr().out.splitlines()[-1:]][0]
+    assert stored[:4] == ["1", _TRACK, location, issue]
+
+    respond_args = _parser().parse_args(
+        [
+            "review-table",
+            "respond",
+            str(path),
+            "--round=1",
+            "--issue-file",
+            str(issue_file),
+            "--response-needed=yes",
+            "--response-file",
+            str(response_file),
+        ]
+    )
+    assert table.dispatch(respond_args) == 0
+
+    table.add(path, "2", _TRACK, "README.md", "対象外")
+    no_response_args = _parser().parse_args(
+        [
+            "review-table",
+            "respond",
+            str(path),
+            "--round=2",
+            "--response-needed=no",
+            "--no-response-reason-file",
+            str(reason_file),
+        ]
+    )
+    assert table.dispatch(no_response_args) == 0
+    rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
+    assert rows[0] == ["1", _TRACK, location, issue, "yes", response.strip(), ""]
+    assert rows[1] == ["2", _TRACK, "README.md", "対象外", "no", "", reason.strip()]
+
+
+def test_add_rejects_empty_issue_file_instead_of_using_positional_issue(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "review.tsv"
+    issue_file = tmp_path / "issue.txt"
+    issue_file.write_text("", encoding="utf-8")
+    table.init(path)
+    before = path.read_text(encoding="utf-8")
+    args = _parser().parse_args(
+        [
+            "review-table",
+            "add",
+            str(path),
+            "位置",
+            "位置引数の指摘",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--issue-file",
+            str(issue_file),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="--issueを指定する"):
+        table.dispatch(args)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_respond_uses_empty_issue_file_instead_of_positional_issue(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "review.tsv"
+    issue_file = tmp_path / "issue.txt"
+    issue_file.write_text("", encoding="utf-8")
+    table.init(path)
+    table.add(path, "1", _TRACK, "同じ位置", "指摘A")
+    table.add(path, "1", _TRACK, "同じ位置", "指摘B")
+    before = path.read_text(encoding="utf-8")
+    args = _parser().parse_args(
+        [
+            "review-table",
+            "respond",
+            str(path),
+            "同じ位置",
+            "指摘A",
+            "--issue-file",
+            str(issue_file),
+            "--response-needed=yes",
+            "--response=対応した",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="一意に解決できない: 2件"):
+        table.dispatch(args)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_cell_text_and_file_options_are_mutually_exclusive(tmp_path: pathlib.Path) -> None:
+    issue_file = tmp_path / "issue.txt"
+    issue_file.write_text("指摘", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(
+            [
+                "review-table",
+                "add",
+                "review.tsv",
+                "--round=1",
+                f"--track={_TRACK}",
+                "位置",
+                "--issue=指摘",
+                f"--issue-file={issue_file}",
+            ]
+        )
+    assert exc_info.value.code == 2
+
+
+def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    before = path.read_text(encoding="utf-8")
+    args = _parser().parse_args(
+        [
+            "review-table",
+            "add",
+            str(path),
+            "--round=1",
+            f"--track={_TRACK}",
+            "位置",
+            "--issue-file",
+            str(tmp_path / "missing.txt"),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="--issue-fileの読み込みに失敗した"):
+        table.dispatch(args)
+    assert path.read_text(encoding="utf-8") == before
 
 
 def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
