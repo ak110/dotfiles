@@ -208,7 +208,7 @@ def pull(
     result_runner: _GitResultRunner = _run_git_result,
     redundant_divergence: _DivergenceRecovery | None = None,
 ) -> None:
-    """remoteをfetchし、明示したupstreamへfast-forward同期する。"""
+    """remoteをfetchし、fast-forwardと安全な回復で明示したupstreamへ統合する。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
@@ -233,8 +233,14 @@ def pull(
         result_runner=result_runner,
     ):
         return
-    _report_divergence(private_notes, result_runner=result_runner)
-    raise merge_error
+    if is_worktree_dirty(private_notes, result_runner=result_runner):
+        _report_divergence(private_notes, result_runner=result_runner)
+        raise merge_error
+    try:
+        run_git(["rebase", "@{u}"], private_notes)
+    except subprocess.CalledProcessError:
+        _report_rebase_failure(private_notes, result_runner=result_runner)
+        raise merge_error from None
 
 
 def _is_ancestor(

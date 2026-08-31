@@ -146,24 +146,73 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
     assert "自動同期しました" in capsys.readouterr().err
 
 
-def test_mq_pull_reports_non_equivalent_divergence_without_rewriting(
+def test_mq_pull_rebases_clean_divergence(
+    tmp_path: pathlib.Path,
+) -> None:
+    """cleanな履歴分岐はローカルcommitを保持してupstreamへ載せ替える。"""
+    local, peer = _init_diverged_mq_repos(tmp_path)
+    (local / "local.txt").write_text("local\n", encoding="utf-8")
+    _git(local, "add", "local.txt")
+    _git(local, "commit", "-m", "local change")
+    (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
+    _git(peer, "add", "remote.txt")
+    _git(peer, "commit", "-m", "remote change")
+    _git(peer, "push")
+    upstream = _git(peer, "rev-parse", "HEAD").stdout.strip()
+
+    with _atk_git_sync.repo_lock(local):
+        _atk_mq_common.pull(local)
+
+    assert _git(local, "merge-base", "--is-ancestor", upstream, "HEAD").returncode == 0
+    assert _git(local, "log", "-1", "--format=%s").stdout.strip() == "local change"
+    assert _git(local, "status", "--porcelain").stdout == ""
+
+
+def test_mq_pull_reports_dirty_divergence_without_rewriting(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """処理結果が異なる終端は保持し、原因と手動回復手順を表示する。"""
+    """dirtyな履歴分岐はrebaseせず、原因と手動回復手順を表示する。"""
+    local, peer = _init_diverged_mq_repos(tmp_path)
+    (local / "local.txt").write_text("local\n", encoding="utf-8")
+    _git(local, "add", "local.txt")
+    _git(local, "commit", "-m", "local change")
+    local_head = _git(local, "rev-parse", "HEAD").stdout.strip()
+    (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
+    _git(peer, "add", "remote.txt")
+    _git(peer, "commit", "-m", "remote change")
+    _git(peer, "push")
+    (local / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+
+    with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError):
+        _atk_mq_common.pull(local)
+
+    assert _git(local, "rev-parse", "HEAD").stdout.strip() == local_head
+    assert not _atk_git_sync.is_rebase_in_progress(local)
+    stderr = capsys.readouterr().err
+    assert "Git履歴が分岐しています（ローカルのみ1件、upstreamのみ1件）" in stderr
+    assert "git rebase @{u}" in stderr
+    assert "git rebase --skip" in stderr
+    assert "git rebase --abort" in stderr
+
+
+def test_mq_pull_reports_rebase_failure_and_preserves_state(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """rebase競合時は中間状態を保持し、競合解消手順を表示する。"""
     local, peer = _init_diverged_mq_repos(tmp_path)
     _finish_entry(local, "2026-08-31T20:42:20+00:00", note="local")
     local_head = _git(local, "rev-parse", "HEAD").stdout.strip()
     _finish_entry(peer, "2026-08-31T20:48:40+00:00", note="remote")
     _git(peer, "push")
 
-    with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError):
+    with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError) as exc_info:
         _atk_mq_common.pull(local)
 
-    assert _git(local, "rev-parse", "HEAD").stdout.strip() == local_head
-    assert _git(local, "status", "--porcelain").stdout == ""
+    assert exc_info.value.cmd[-3:] == ["merge", "--ff-only", "@{u}"]
+    assert _atk_git_sync.is_rebase_in_progress(local)
+    assert _git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
     stderr = capsys.readouterr().err
-    assert "Git履歴が分岐しています（ローカルのみ1件、upstreamのみ1件）" in stderr
-    assert "git rebase @{u}" in stderr
-    assert "git rebase --skip" in stderr
-    assert "git rebase --abort" in stderr
+    assert "rebaseに失敗したため、rebase状態を保持しています" in stderr
+    assert "Git履歴が分岐しています" not in stderr

@@ -17,6 +17,7 @@ import threading
 import time
 
 import _atk_config as _config
+import _atk_git_sync
 import _atk_mq_alerts as _alerts
 import _console_title
 import _git_command
@@ -548,7 +549,7 @@ def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -
         try:
             with _repo_lock(private_notes):
                 _pull(private_notes)
-        except subprocess.CalledProcessError as exc:
+        except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
             print(f"remote同期に失敗（待機ループ続行）: {exc}", file=sys.stderr)
         return False
     finally:
@@ -561,7 +562,7 @@ def _pull_private_notes(private_notes: pathlib.Path) -> bool:
     try:
         with _repo_lock(private_notes):
             _pull(private_notes)
-    except subprocess.CalledProcessError as exc:
+    except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
         print(f"remote同期に失敗（子セッションを起動せず待機します）: {exc}", file=sys.stderr)
         return False
     return True

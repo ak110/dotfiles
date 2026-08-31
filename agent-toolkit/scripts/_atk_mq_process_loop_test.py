@@ -23,6 +23,7 @@ import watchdog.events
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_config as _config  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_git_sync  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 import _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
@@ -317,20 +318,28 @@ class TestWaitForChanges:
 
         assert pull_calls == [private_notes]
 
+    @pytest.mark.parametrize(
+        "error",
+        [
+            subprocess.CalledProcessError(1, ["git", "merge", "--ff-only", "@{u}"]),
+            _atk_git_sync.RebaseInProgressError("rebase中"),
+        ],
+        ids=["git-command-failure", "rebase-in-progress"],
+    )
     def test_pull_failure_is_caught_and_warned(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        error: Exception,
     ) -> None:
-        """タイムアウト時に`_pull`が`subprocess.CalledProcessError`を送出しても、
-        例外を送出せずstderr警告を出力して復帰すること。"""
+        """タイムアウト時の同期失敗を送出せず、stderr警告を出力して復帰する。"""
         private_notes = self._make_private_notes(tmp_path)
         monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
 
         def fake_pull(_path: pathlib.Path) -> None:
-            raise subprocess.CalledProcessError(1, ["git", "merge", "--ff-only", "@{u}"])
+            raise error
 
         monkeypatch.setattr(_process_loop, "_pull", fake_pull)
 
@@ -1159,6 +1168,22 @@ class TestProcessLoopSessionPreparation:
 
         assert _PULL_PRIVATE_NOTES_IMPL(tmp_path)
         assert events == ["lock-enter", f"pull:{tmp_path.name}", "lock-exit"]
+
+    def test_pull_private_notes_reports_rebase_in_progress(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """rebase中間状態では例外終了せず、復旧待ちとして偽を返す。"""
+
+        def fail_pull(_path: pathlib.Path) -> NoReturn:
+            raise _atk_git_sync.RebaseInProgressError("rebase中")
+
+        monkeypatch.setattr(_process_loop, "_pull", fail_pull)
+
+        assert not _PULL_PRIVATE_NOTES_IMPL(tmp_path)
+        assert "remote同期に失敗（子セッションを起動せず待機します）: rebase中" in capsys.readouterr().err
 
     @pytest.mark.parametrize("failure", ["missing", "exit"])
     def test_update_failure_does_not_repull_or_start_session(
