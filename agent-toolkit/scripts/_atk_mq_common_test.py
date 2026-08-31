@@ -994,7 +994,8 @@ class TestCommitAndPushRetry:
         error = capsys.readouterr().err
         assert "rebase状態を保持" in error
         assert "git add <競合解消済みパス>" in error
-        assert "git rebase --abort" not in error
+        assert "自動abortは行っていません" in error
+        assert "git rebase --abort" in error
 
     def test_reports_conflict_path_when_rebase_fails(
         self,
@@ -1598,7 +1599,12 @@ class TestPullWithRecentNotice:
         ):
             _common._pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
+        assert calls == [
+            ["fetch"],
+            ["merge", "--ff-only", "@{u}"],
+            ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
+            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
+        ]
         assert not migrations
 
     def test_failed_merge_after_recent_fetch_is_retried_instead_of_reused(
@@ -1643,6 +1649,8 @@ class TestPullWithRecentNotice:
             ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
             ["fetch"],
             ["merge", "--ff-only", "@{u}"],
+            ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
+            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
         ]
         assert not migrations
 

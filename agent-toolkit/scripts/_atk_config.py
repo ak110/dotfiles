@@ -19,7 +19,7 @@ _CONFIG_FILENAME = "config.json"
 
 _DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
 _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
-# 暫定処理: 旧キー名で`atk config get`を受けたときに現行キーの解決値を返す読替表。
+# 暫定処理: 旧キー名が`atk config get`へ指定されたときに現行キーの解決値を返す読替表。
 # 導入日: 2026-08-31。削除可能日: 2026-09-03。旧キー名を参照する並行セッションが残らなくなった後に削除してよい。
 _LEGACY_GET_KEY_ALIASES = {"execute_fix_model": "execute_model"}
 _MUTABLE_KEY_DEFAULTS = {
