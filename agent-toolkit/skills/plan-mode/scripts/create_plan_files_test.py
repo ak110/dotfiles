@@ -1,4 +1,4 @@
-"""新規計画二ファイルの内部作成処理を検証する。"""
+"""新規計画ファイルの内部作成処理を検証する。"""
 
 import concurrent.futures
 import datetime
@@ -30,21 +30,36 @@ def fixture_repo(tmp_path: pathlib.Path) -> pathlib.Path:
     return repo
 
 
-def _sources(repo: pathlib.Path, directory: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """検査を通過する二ファイル本文を一時入力へ保存する。"""
-    main, detail = check_plan_file_test.human_new_format_plan(
-        repo,
-        detail_name=f"{create_plan_files.PLAN_STEM_PLACEHOLDER}.detail.md",
-    )
+def _sources(repo: pathlib.Path, directory: pathlib.Path, *, bug: bool = False) -> tuple[pathlib.Path, ...]:
+    """検査を通過する計画本文を一時入力へ保存する。"""
+    main, detail = check_plan_file_test.human_new_format_plan(repo)
     main_source = directory / "main.md"
     detail_source = directory / "detail.md"
+    if bug:
+        main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
+        bug_reference = (
+            f"{create_plan_files.PORTABLE_PLAN_PREFIX}plans/2026/08/{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
+        )
+        detail = f"## バグ調査結果\n\n- 計画ファイル（バグ）: {bug_reference}\n\n{detail}"
     main_source.write_text(main, encoding="utf-8")
     detail_source.write_text(detail, encoding="utf-8")
+    if bug:
+        bug_source = directory / "bug.md"
+        bug_content = check_plan_file_test._bug_file_content().replace(  # pylint: disable=protected-access
+            "# 計画の主題",
+            f"# 計画の主題 {create_plan_files.PLAN_STEM_PLACEHOLDER}",
+            1,
+        )
+        bug_source.write_text(
+            bug_content,
+            encoding="utf-8",
+        )
+        return main_source, detail_source, bug_source
     return main_source, detail_source
 
 
-def test_creates_two_files_and_replaces_stem_placeholder(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
-    """新rootの日付階層へ二ファイルを保存し、stem参照を確定する。"""
+def test_creates_two_files_for_normal_plan(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
+    """通常変更は新rootの日付階層へ二ファイルを保存する。"""
     private_notes = tmp_path / "private-notes"
     main_source, detail_source = _sources(repo, tmp_path)
     monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
@@ -60,8 +75,97 @@ def test_creates_two_files_and_replaces_stem_placeholder(repo: pathlib.Path, tmp
 
     assert main_path == private_notes / "plans/2026/08/30-計画保存先移行-a1b2.md"
     assert detail_path == private_notes / "plans/2026/08/30-計画保存先移行-a1b2.detail.md"
-    assert create_plan_files.PLAN_STEM_PLACEHOLDER not in main_path.read_text(encoding="utf-8")
     assert detail_path.is_file()
+
+
+def test_cli_creates_three_files_for_bug_plan(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLIへ渡した3本文を同じstemへ置換して隔離先へ確定する。"""
+    private_notes = tmp_path / "private-notes"
+    main_source, detail_source, bug_source = _sources(repo, tmp_path, bug=True)
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    result = create_plan_files.main(
+        [
+            "--main-source",
+            str(main_source),
+            "--detail-source",
+            str(detail_source),
+            "--bug-source",
+            str(bug_source),
+            "--name",
+            "バグ対応計画",
+            "--private-notes",
+            str(private_notes),
+            "--date",
+            "2026-08-30",
+            "--work-dir",
+            str(repo),
+        ]
+    )
+    output = capsys.readouterr()
+    main_path, detail_path, bug_path = (pathlib.Path(value) for value in output.out.splitlines())
+
+    assert result == 0, output.err
+    assert detail_path == main_path.with_name("30-バグ対応計画-a1b2.detail.md")
+    assert bug_path == main_path.with_name("30-バグ対応計画-a1b2.bugs.md")
+    assert create_plan_files.PLAN_STEM_PLACEHOLDER not in detail_path.read_text(encoding="utf-8")
+    bug_text = bug_path.read_text(encoding="utf-8")
+    assert create_plan_files.PLAN_STEM_PLACEHOLDER not in bug_text
+    assert main_path.stem in bug_text
+
+
+@pytest.mark.parametrize(("bug_work_type", "include_bug"), [(True, False), (False, True)])
+def test_rejects_work_type_and_bug_input_mismatch(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    bug_work_type: bool,
+    include_bug: bool,
+) -> None:
+    """作業種別とbug入力の有無が一致しない本文を確定前に拒否する。"""
+    private_notes = tmp_path / "private-notes"
+    sources = _sources(repo, tmp_path, bug=bug_work_type)
+    main_source, detail_source = sources[:2]
+    bug_source = sources[2] if include_bug and len(sources) == 3 else None
+    if include_bug and bug_source is None:
+        bug_source = tmp_path / "bug.md"
+        bug_source.write_text(
+            check_plan_file_test._bug_file_content(),  # pylint: disable=protected-access
+            encoding="utf-8",
+        )
+
+    with pytest.raises(create_plan_files.PlanCreationError, match="作業種別"):
+        create_plan_files.create_plan_files(
+            main_source,
+            detail_source,
+            "入力不一致",
+            bug_source=bug_source,
+            private_notes=private_notes,
+            date=datetime.date(2026, 8, 30),
+            work_dir=repo,
+        )
+
+    assert not private_notes.exists()
+
+
+def test_rejects_duplicate_bug_source(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """3入力のいずれか2つが同じファイルなら拒否する。"""
+    main_source, detail_source, _bug_source = _sources(repo, tmp_path, bug=True)
+
+    with pytest.raises(ValueError, match="同じ入力ファイル"):
+        create_plan_files.create_plan_files(
+            main_source,
+            detail_source,
+            "入力重複",
+            bug_source=detail_source,
+            private_notes=tmp_path / "private-notes",
+            date=datetime.date(2026, 8, 30),
+            work_dir=repo,
+        )
 
 
 def test_retries_when_candidate_stem_is_taken(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
@@ -108,6 +212,30 @@ def test_removes_partial_files_when_structure_check_fails(repo: pathlib.Path, tm
 
     directory = private_notes / "plans/2026/08"
     assert not list(directory.glob("30-計画保存先移行-a1b2.*"))
+
+
+def test_removes_three_files_when_structure_check_fails(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
+    """バグ対応の構造検査失敗時に自作した3ファイルを残さない。"""
+    private_notes = tmp_path / "private-notes"
+    main_source, detail_source, bug_source = _sources(repo, tmp_path, bug=True)
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    def fail_structure(*_args: object, **_kwargs: object) -> None:
+        raise create_plan_files.PlanCreationError("計画構造検査に失敗しました")
+
+    monkeypatch.setattr(create_plan_files, "_check_structure", fail_structure)
+    with pytest.raises(create_plan_files.PlanCreationError, match="計画構造検査"):
+        create_plan_files.create_plan_files(
+            main_source,
+            detail_source,
+            "バグ対応計画",
+            bug_source=bug_source,
+            private_notes=private_notes,
+            date=datetime.date(2026, 8, 30),
+            work_dir=repo,
+        )
+
+    assert not list((private_notes / "plans/2026/08").glob("30-バグ対応計画-a1b2.*"))
 
 
 def test_rejects_portable_reference_outside_private_notes(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
@@ -195,6 +323,41 @@ def test_removes_only_owned_main_when_detail_finalization_fails(
     assert not list((private_notes / "plans/2026/08").glob("30-計画保存先移行-a1b2.*"))
 
 
+def test_removes_main_and_detail_when_bug_finalization_fails(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """bug側の確定失敗時に先に確定したmainとdetailを回収する。"""
+    private_notes = tmp_path / "private-notes"
+    main_source, detail_source, bug_source = _sources(repo, tmp_path, bug=True)
+    original_link = create_plan_files.os.link
+    link_count = 0
+
+    def fail_on_bug(source: str | pathlib.Path, destination: str | pathlib.Path, *args: object) -> None:
+        nonlocal link_count
+        link_count += 1
+        if link_count == 3:
+            raise OSError("bug確定失敗")
+        original_link(source, destination, *args)
+
+    monkeypatch.setattr(create_plan_files.os, "link", fail_on_bug)
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    with pytest.raises(OSError, match="bug確定失敗"):
+        create_plan_files.create_plan_files(
+            main_source,
+            detail_source,
+            "バグ対応計画",
+            bug_source=bug_source,
+            private_notes=private_notes,
+            date=datetime.date(2026, 8, 30),
+            work_dir=repo,
+        )
+
+    assert not list((private_notes / "plans/2026/08").glob("30-バグ対応計画-a1b2.*"))
+
+
 def test_removes_files_when_final_readback_does_not_match(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -235,7 +398,7 @@ def test_parallel_creation_returns_complete_distinct_pairs(repo: pathlib.Path, t
     private_notes = tmp_path / "private-notes"
     main_source, detail_source = _sources(repo, tmp_path)
 
-    def create_pair(_index: int) -> tuple[pathlib.Path, pathlib.Path]:
+    def create_pair(_index: int) -> tuple[pathlib.Path, ...]:
         return create_plan_files.create_plan_files(
             main_source,
             detail_source,

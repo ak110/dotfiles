@@ -53,7 +53,7 @@ description: >
 2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/feedback-standards/references/cross-repository-submission.md`も全文読む。
 3. 計画に使うworktreeの絶対パスとbase commitを保持する。
 4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
-   起草完了後、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と提示素材の出所・引用範囲を渡して`plan-review-executor`を起動する。
+   起草完了後、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と計画メタ情報の関連フィードバックの出所・引用範囲を渡して`plan-review-executor`を起動する。
    起動後は計画ファイルの書込所有権が`plan-review-executor`配下の計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`計画レビュー完了`を受領したら次へ進む。
 5. 完成後、実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-feedback`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
