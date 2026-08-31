@@ -1544,6 +1544,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> 
     assert options.system_prompt == {"type": "preset", "preset": "claude_code"}
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
+    assert options.env == {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
 
 
 def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:

@@ -191,6 +191,11 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
   配置した場合は「バージョン更新」節の手順に従う
 - Claude Codeのhookから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
   （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
+- `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
+  `agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`が定める互換入口の残置に従う。
+  残置した互換入口はバージョン管理の対象へ含める。
+  撤去は、新しい入口を含む版をbumpして配布した後の版数更新以降であり、かつ旧定義を読み込んだセッションが全て終了したことを
+  確認できた場合だけ行う。確認できない場合は残置を維持する
 - PEP 723スクリプト（`agent-toolkit/scripts/atk.py`等）の`dependencies`へパッケージを追加・更新する場合、
   リポジトリ本体の`pyproject.toml`にも同一制約で登録する（テスト実行が間接依存で偶然解決する状態を防ぐため）
 

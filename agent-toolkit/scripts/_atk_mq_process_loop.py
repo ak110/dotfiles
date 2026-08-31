@@ -458,9 +458,9 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
-    """対象リポジトリのフィードバック処理を依頼する短い目的文を構築する。
+    """対象リポジトリのフィードバック処理の完遂と終了を依頼する短い目的文を構築する。
 
-    目的文はスキルの完遂だけを求める。処理範囲、実行基盤の障害対応、再開条件は
+    目的文はスキルの完遂と`agent-toolkit:exit-session`による終了だけを求める。処理範囲、実行基盤の障害対応、再開条件は
     `agent-toolkit:process-feedbacks`とその参照先が定める。目的文へ重ねて書くと、
     スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として
     扱われてスキル側の規範より優先される。
@@ -468,7 +468,8 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
     return (
         "/goal `agent-toolkit:process-feedbacks`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
-        "フィードバック処理を完遂してください。"
+        "フィードバック処理を完遂したうえで、"
+        "`agent-toolkit:exit-session`でセッションを終了してください。"
     )
 
 

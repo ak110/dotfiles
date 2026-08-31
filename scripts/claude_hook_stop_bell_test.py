@@ -44,6 +44,24 @@ def _assistant_entry(*, async_tool: str | None = None) -> dict:
     return {"type": "assistant", "message": message}
 
 
+def _user_async_launched_entry(tool_use_id: str) -> dict:
+    """background Agent起動を記録するuserエントリを生成する。"""
+    return {
+        "type": "user",
+        "toolUseResult": {"isAsync": True, "status": "async_launched", "agentId": "agent-x"},
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": [{"type": "text", "text": "Async agent launched successfully"}],
+                }
+            ],
+        },
+    }
+
+
 def _run(
     payload: object,
     *,
@@ -142,6 +160,22 @@ class TestSilentConditions:
         result = _run(
             {
                 "session_id": "payload-empty",
+                "transcript_path": str(transcript),
+                "background_tasks": [],
+            },
+            state_dir=tmp_path,
+        )
+        assert _output(result).get("terminalSequence") == _BELL
+
+    def test_empty_background_tasks_override_transcript_remainder(self, tmp_path: pathlib.Path) -> None:
+        """権威ある空payloadではtranscript残差を退けてベルを鳴らす。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [_user_entry(), _user_async_launched_entry("toolu_bg1"), _user_entry("続き"), _assistant_entry()],
+        )
+        result = _run(
+            {
+                "session_id": "payload-empty-with-remainder",
                 "transcript_path": str(transcript),
                 "background_tasks": [],
             },

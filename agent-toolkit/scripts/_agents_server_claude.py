@@ -24,6 +24,7 @@ from _agents_server_state import (
 )
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
+_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
@@ -65,7 +66,11 @@ class _CommandChannel:
 
 
 def _build_options(cwd: str, model: str | None, effort: str | None, session_id: str | None = None) -> Any:
-    """Claude Code既定のシステム指示を有効にしたSDKオプションを組む。"""
+    """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
+
+    `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
+    委譲先の印を追加する。
+    """
     from claude_agent_sdk import ClaudeAgentOptions
 
     return ClaudeAgentOptions(
@@ -74,6 +79,7 @@ def _build_options(cwd: str, model: str | None, effort: str | None, session_id: 
         effort=cast(_EffortLevel, effort),
         resume=session_id,
         permission_mode="bypassPermissions",
+        env={_ENV_DELEGATED_SESSION: "1"},
         setting_sources=["user", "project"],
         system_prompt={"type": "preset", "preset": "claude_code"},
     )

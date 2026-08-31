@@ -630,8 +630,10 @@ class TestProcessLoopPromptAndEnv:
         assert prompt == (
             "/goal `agent-toolkit:process-feedbacks`を起動し、"
             f"`{pathlib.Path('/repo')}`で対象リポジトリ`github.com/example/repo`の"
-            "フィードバック処理を完遂してください。"
+            "フィードバック処理を完遂したうえで、"
+            "`agent-toolkit:exit-session`でセッションを終了してください。"
         )
+        assert "agent-toolkit:exit-session" in prompt
 
         forbidden_details = (
             "atk mq list",
@@ -644,7 +646,6 @@ class TestProcessLoopPromptAndEnv:
             "CI",
             "atk mq adopt",
             "session-review",
-            "exit-session",
         )
         assert all(detail not in prompt for detail in forbidden_details)
 

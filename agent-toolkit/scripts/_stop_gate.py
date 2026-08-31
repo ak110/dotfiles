@@ -1,7 +1,7 @@
 """Claude Code agent-toolkit: Stop hook 共通ゲートモジュール。
 
-Claude CodeのStop入力に`background_tasks`が含まれる場合は、現在の非`teammate` taskを判定へ加える。
-フィールドが無い旧ホストとCodexでは、transcript JSONLから復元した判定へフォールバックする。
+Claude CodeのStop入力に完全に有効な`background_tasks`一覧が含まれる場合は、現在のtask申告を正本とする。
+フィールドが無い旧ホスト、無効な申告及びCodexでは、transcript JSONLから復元した判定へフォールバックする。
 本モジュールは構造的な継続判定（`is_pending_async_work`）を提供する。
 完了文言・質問・待機語など言語面の判定はLLM側（スキル本体の起動方針節）へ委譲する。
 
@@ -98,15 +98,15 @@ _TASK_STOP_SUCCESS_PREFIX = "Successfully stopped task"
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
 
-def _describe_background_tasks(background_tasks: object) -> tuple[int, int]:
-    """Stop入力の有効なtask件数と非`teammate`件数を返す。"""
+def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
+    """Stop入力の有効task件数、非`teammate`件数及び一覧の権威性を返す。"""
     if not isinstance(background_tasks, list):
-        return 0, 0
+        return 0, 0, False
     valid_tasks = [
         task for task in background_tasks if isinstance(task, dict) and isinstance(task.get("type"), str) and task["type"]
     ]
     non_teammate_tasks = sum(task["type"] != "teammate" for task in valid_tasks)
-    return len(valid_tasks), non_teammate_tasks
+    return len(valid_tasks), non_teammate_tasks, len(valid_tasks) == len(background_tasks)
 
 
 def is_pending_async_work(
@@ -122,10 +122,12 @@ def is_pending_async_work(
       `CronCreate`・`Monitor`、または`Bash`かつ`input.run_in_background == true`）
     - 未完了のbackground task（Agent・Bash・SendMessage背景再開・MCP）が存在する
 
-    Stop入力の`background_tasks`がlist中に有効な非`teammate` taskを含む場合も真を返す。
-    個別taskの`status`その他の任意フィールドは判定に使わない。
-    `background_tasks`のフィールド欠落・不正入力・空list・有効な`teammate`だけの場合は、
-    transcriptから復元した判定を維持する。
+    Stop入力の`background_tasks`に有効な非`teammate` taskがあれば、無効な要素の混在に
+    かかわらず真を返す。個別taskの`status`その他の任意フィールドは判定に使わない。
+    `background_tasks`がlistで全要素が有効な場合は空listと`teammate`だけの一覧も現在状態の
+    権威ある申告とし、transcript由来の未完了残差を根拠にしない。フィールド欠落、listでない入力、
+    無効な要素を含むlist及びCodexでは、transcriptから復元した判定を代替入力として用いる。
+    直前の非同期待機系tool_useと有効な非`teammate` taskは、一覧の権威性にかかわらず独立した根拠とする。
 
     transcript由来の後者はtranscript全体を走査して判定する。
     起動集合は非sidechainの`type=="user"`エントリのうち、次のいずれかを持つものから抽出する。
@@ -174,16 +176,16 @@ def is_pending_async_work(
         transcript_path=transcript_path,
     )
     remainder = launched - completed
-    payload_valid, payload_non_teammate = _describe_background_tasks(background_tasks)
+    payload_valid, payload_non_teammate, payload_authoritative = _describe_background_tasks(background_tasks)
     pending_sources: list[str] = []
     if payload_non_teammate:
         pending_sources.append("background_tasks")
     if last_async:
         pending_sources.append("last_tool")
-    if remainder:
+    if remainder and not payload_authoritative:
         pending_sources.append("transcript")
     source = "+".join(pending_sources) if pending_sources else "none"
-    pending = bool(last_async or remainder or payload_non_teammate)
+    pending = bool(last_async or payload_non_teammate or (remainder and not payload_authoritative))
     last_tool = _describe_last_tool_use(last_tool_use)
     _emit_debug(
         pending,
@@ -192,6 +194,7 @@ def is_pending_async_work(
         completed,
         payload_valid=payload_valid,
         payload_non_teammate=payload_non_teammate,
+        payload_authoritative=payload_authoritative,
         source=source,
     )
     append_stop_log(
@@ -205,6 +208,7 @@ def is_pending_async_work(
             "pending_ids": ",".join(sorted(remainder)[:3]) if remainder else "-",
             "payload_valid": payload_valid,
             "payload_non_teammate": payload_non_teammate,
+            "payload_authoritative": payload_authoritative,
             "source": source,
         },
     )
@@ -272,6 +276,7 @@ def _emit_debug(
     *,
     payload_valid: int,
     payload_non_teammate: int,
+    payload_authoritative: bool,
     source: str,
 ) -> None:
     """環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみstderrへ判定根拠を1行出力する。
@@ -288,7 +293,8 @@ def _emit_debug(
     print(
         f"_stop_gate result={result} last_tool={last_tool} "
         f"launched={len(launched)} pending={len(remainder)} pending_ids={head_ids} "
-        f"payload_valid={payload_valid} payload_non_teammate={payload_non_teammate} source={source}",
+        f"payload_valid={payload_valid} payload_non_teammate={payload_non_teammate} "
+        f"payload_authoritative={payload_authoritative} source={source}",
         file=sys.stderr,
     )
 
