@@ -684,7 +684,8 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help=(
             "対象リポジトリのフィードバック消化をオーケストレーターの常駐起動で反復実行する。"
             "オーケストレーター・model・effortはatk configのorchestrate_model設定"
-            "（既定claude:opus[1m]/medium、書式<claude|codex>:<model>[/<effort>]）で決まる。"
+            "（既定claude:opus[1m]/medium、書式<claude|codex>:<model>[/<effort>]、複数候補はASCIIカンマ区切り）"
+            "で決まる。"
         ),
     )
     loop.add_argument(

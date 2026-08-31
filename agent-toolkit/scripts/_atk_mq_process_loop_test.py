@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import pytest
 import watchdog.events
@@ -34,6 +34,7 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _PULL_PRIVATE_NOTES_IMPL = _process_loop._pull_private_notes  # pylint: disable=protected-access  # noqa: SLF001
 _DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected-access  # noqa: SLF001
 
@@ -78,6 +79,9 @@ def _fake_run_with_remote_url(
     """対話セッション呼び出しを記録し、リモートURL取得にはダミー値を返すfake_runを構築する。"""
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        if cmd[:2] == ["codex", "exec"] or (cmd[:1] == ["claude"] and "-p" in cmd):
+            probe_empty: Any = "" if kwargs.get("text") else b""
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=probe_empty, stderr=probe_empty)
         if cmd[:1] in (["claude"], ["codex"]):
             claude_calls.append(
                 {
@@ -218,7 +222,7 @@ class TestProcessLoopIncludesProcessingInCount:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             result = base_fake_run(cmd, *_args, **kwargs)
-            if cmd[:1] == ["claude"]:
+            if cmd[:1] == ["claude"] and "-p" not in cmd:
                 ready.unlink()
             return result
 
@@ -725,7 +729,15 @@ class TestProcessLoopPromptAndEnv:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
-        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        probe_calls: list[list[str]] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, claude_calls, 0)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                probe_calls.append(cmd)
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
         count_calls: list[int] = []
 
         def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
@@ -747,6 +759,8 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert len(claude_calls) == 1
+        assert len(probe_calls) == 1
+        assert probe_calls[0][2:6] == ["--model", expected_model, "--effort", expected_effort]
         command = claude_calls[0]["cmd"]
         _hook_debug_log(command)
         assert command[4:11] == [
@@ -758,6 +772,311 @@ class TestProcessLoopPromptAndEnv:
             "--effort",
             expected_effort,
         ]
+
+    def test_candidate_list_probes_in_order_and_starts_first_available_engine(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """異種engineの候補を先頭から検査し、最初に成功した候補だけで本作業を起動する。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:sonnet/high,codex:gpt-5.6-sol/low")
+        capsys.readouterr()
+        probe_prompt = "可用性だけを判定するテスト用プロンプト"
+        monkeypatch.setattr(_process_loop, "_AVAILABILITY_PROBE_PROMPT", probe_prompt)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probes: list[list[str]] = []
+        sessions: list[list[str]] = []
+        probe_envs: list[dict[str, str]] = []
+        session_envs: list[dict[str, str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                probes.append(cmd)
+                probe_envs.append(cast("dict[str, str]", kwargs["env"]))
+                return subprocess.CompletedProcess(cmd, 7, "", "unavailable")
+            if cmd[:2] == ["codex", "exec"]:
+                probes.append(cmd)
+                probe_envs.append(cast("dict[str, str]", kwargs["env"]))
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            if cmd[:1] == ["codex"]:
+                sessions.append(cmd)
+                session_envs.append(cast("dict[str, str]", kwargs["env"]))
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert probes[0][2:6] == ["--model", "sonnet", "--effort", "high"]
+        assert probes[1][2:6] == [
+            "--model",
+            "gpt-5.6-sol",
+            "-c",
+            "model_reasoning_effort=low",
+        ]
+        assert probes[1][-1] == probe_prompt
+        assert all(env[_DELEGATED_SESSION_ENV] == "1" for env in probe_envs)
+        assert len(sessions) == 1
+        assert _DELEGATED_SESSION_ENV not in session_envs[0]
+        assert sessions[0][1:5] == ["--model", "gpt-5.6-sol", "-c", "model_reasoning_effort=low"]
+        captured = capsys.readouterr()
+        assert captured.err.count("claude:sonnet/high") == 1
+        assert captured.out.count("codex:gpt-5.6-sol/low") == 2
+
+    def test_effort_only_difference_changes_probe_and_ignored_claude_effort_falls_back(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """effortだけが異なる候補を区別し、Claudeが値を無視した候補を不成立とする。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:sonnet/ultra,claude:sonnet/high")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probes: list[list[str]] = []
+        sessions: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                probes.append(cmd)
+                stderr = "Warning: --effort value ultra was ignored" if "ultra" in cmd else ""
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", stderr)
+            if cmd[:1] == ["claude"]:
+                sessions.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert [probe[probe.index("--effort") + 1] for probe in probes] == ["ultra", "high"]
+        assert len(sessions) == 1
+        assert sessions[0][sessions[0].index("--effort") + 1] == "high"
+
+    def test_codex_probe_uses_returncode_without_interpreting_stderr(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Codex候補は標準エラーの内容ではなく終了コード0だけで可用と判定する。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "codex:gpt-5.6-sol/medium,claude:sonnet/high")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probes: list[list[str]] = []
+        sessions: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["codex", "exec"]:
+                probes.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "--effort value was ignored")
+            if cmd[:1] == ["codex"]:
+                sessions.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert len(probes) == 1
+        assert len(sessions) == 1
+
+    def test_abnormal_work_session_does_not_probe_or_start_next_candidate(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """本作業が異常終了しても候補切替を行わず、同じ終了コードで終了する。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:sonnet/high,codex:gpt-5.6-sol/medium")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probes: list[list[str]] = []
+        sessions: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"] or cmd[:2] == ["codex", "exec"]:
+                probes.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            if cmd[:1] == ["claude"]:
+                sessions.append(cmd)
+                return subprocess.CompletedProcess(cmd, 42, "", "failure")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert exc_info.value.code == 42
+        assert len(probes) == 1
+        assert len(sessions) == 1
+
+    def test_all_candidate_probes_fail_without_starting_work_session(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """全候補が不成立なら本作業を起動せず、最後の非0終了コードで終了する。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:sonnet/high,codex:gpt-5.6-sol/medium")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probes: list[list[str]] = []
+        sessions: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                probes.append(cmd)
+                return subprocess.CompletedProcess(cmd, 7, "", "failure")
+            if cmd[:2] == ["codex", "exec"]:
+                probes.append(cmd)
+                return subprocess.CompletedProcess(cmd, 9, "", "failure")
+            if cmd[:1] in (["claude"], ["codex"]):
+                sessions.append(cmd)
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: 1)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert exc_info.value.code == 9
+        assert len(probes) == 2
+        assert not sessions
+
+    def test_unstartable_candidate_falls_back_to_next_engine(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """候補の実行ファイルを起動できない場合も残る候補を判定する。"""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd[:2] == ["codex", "exec"]:
+                raise FileNotFoundError("codex")
+            return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        selected = _process_loop._select_available_orchestrator(  # pylint: disable=protected-access  # noqa: SLF001
+            [("codex", "gpt-5.6-sol", "medium"), ("claude", "sonnet", "high")],
+            {},
+            tmp_path,
+        )
+
+        assert selected == ("claude", "sonnet", "high")
+        assert [call[0] for call in calls] == ["codex", "claude"]
+
+    def test_all_unstartable_candidates_use_abnormal_exit(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """全候補の実行機能を起動できない場合は既存の異常終了へ戻る。"""
+        calls: list[list[str]] = []
+
+        def fail_start(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            raise OSError("起動不能")
+
+        monkeypatch.setattr(subprocess, "run", fail_start)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _process_loop._select_available_orchestrator(  # pylint: disable=protected-access  # noqa: SLF001
+                [("codex", "gpt-5.6-sol", "medium"), ("claude", "sonnet", "high")],
+                {},
+                tmp_path,
+            )
+
+        assert exc_info.value.code == 1
+        assert [call[0] for call in calls] == ["codex", "claude"]
+
+    def test_each_iteration_restarts_candidate_selection_from_first_candidate(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """次の反復では候補選択を先頭候補の事前検査からやり直す。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:sonnet/high,codex:gpt-5.6-sol/medium")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        probe_models: list[str] = []
+        sessions: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:2] == ["claude", "-p"]:
+                probe_models.append(cmd[cmd.index("--model") + 1])
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            if cmd[:1] == ["claude"]:
+                sessions.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter((1, 1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert probe_models == ["sonnet", "sonnet"]
+        assert len(sessions) == 2
+
+    def test_environment_override_controls_process_loop_candidates(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """process-loopも保存値ではなく環境変数の候補列を共通解決関数から取得する。"""
+        _setup_notes(tmp_path)
+        _set_orchestrate_model(tmp_path, "claude:sonnet/high")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "codex:gpt-5.6-terra/low")
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:1] == ["codex"]:
+                calls.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "OK\n" if cmd[:2] == ["codex", "exec"] else "", "")
+            return _fake_run_with_remote_url(myrepo, [], 0)(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        counts = iter((1, 0))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
+
+        with pytest.raises(SystemExit):
+            atk.main(["mq", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
+
+        assert len(calls) == 2
+        assert all("gpt-5.6-terra" in call for call in calls)
 
     def test_invalid_saved_orchestrate_model_exits_before_starting_session(
         self,
@@ -820,9 +1139,15 @@ class TestProcessLoopPromptAndEnv:
         first_debug_log = _hook_debug_log(first_command)
         second_debug_log = _hook_debug_log(second_command)
         assert first_debug_log != second_debug_log
-        assert first_command[4:] == ["--settings", '{"askUserQuestionTimeout": "5m"}', "--resume"]
-        assert "--model" not in first_command
-        assert "--effort" not in first_command
+        assert first_command[4:] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--model",
+            "opus[1m]",
+            "--effort",
+            "medium",
+            "--resume",
+        ]
         assert second_command[4:11] == [
             "--settings",
             '{"askUserQuestionTimeout": "5m"}',
@@ -867,7 +1192,15 @@ class TestProcessLoopPromptAndEnv:
         first_command = claude_calls[0]["cmd"]
         second_command = claude_calls[1]["cmd"]
         assert _hook_debug_log(first_command) != _hook_debug_log(second_command)
-        assert first_command[4:] == ["--settings", '{"askUserQuestionTimeout": "5m"}', "--resume=session-id"]
+        assert first_command[4:] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--model",
+            "opus[1m]",
+            "--effort",
+            "medium",
+            "--resume=session-id",
+        ]
         assert second_command[4:11] == [
             "--settings",
             '{"askUserQuestionTimeout": "5m"}',
@@ -932,7 +1265,15 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert _hook_debug_log(claude_calls[0]["cmd"]) != _hook_debug_log(claude_calls[1]["cmd"])
-        assert claude_calls[0]["cmd"][4:] == ["--settings", '{"askUserQuestionTimeout": "5m"}', "--resume"]
+        assert claude_calls[0]["cmd"][4:] == [
+            "--settings",
+            '{"askUserQuestionTimeout": "5m"}',
+            "--model",
+            "opus[1m]",
+            "--effort",
+            "medium",
+            "--resume",
+        ]
         assert "--worktree=process-loop" not in claude_calls[1]["cmd"]
         assert claude_calls[1]["cwd"] == myrepo / ".claude" / "worktrees" / "custom"
         assert sync_calls == [(myrepo, "custom")]
@@ -1257,7 +1598,7 @@ class TestProcessLoopSessionPreparation:
         base_fake_run = _fake_run_with_remote_url(myrepo, [], 7)
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd[:1] == ["codex"]:
+            if cmd[:1] == ["codex"] and cmd[:2] != ["codex", "exec"]:
                 events.append("session")
             return base_fake_run(cmd, *_args, **kwargs)
 
@@ -2271,8 +2612,8 @@ class TestWorktreeWriterGate:
         with pytest.raises(SystemExit):
             atk.main(["mq", "process-loop", "--target-repo", str(myrepo)], home=tmp_path)
         assert entered == ["atk mq process-loop"]
-        # 処理前更新・claude起動・終了後更新の3回のsubprocess.runそれぞれに1回ずつ続く。
-        assert title_calls == ["atk mq process-loop"] * 2
+        # 処理前更新・可用性判定・claude起動の各subprocess.runの直後に1回ずつ続く。
+        assert title_calls == ["atk mq process-loop"] * 3
         # 非TTY下での制御文字抑止は`TestProcessLoopUpdateAndRestart.test_update_and_execv_called_by_default`が検証する。
 
 
@@ -2631,6 +2972,8 @@ class TestProcessLoopUrlInput:
         counts = iter([1, 0])
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if cmd[:1] == ["claude"] and "-p" in cmd:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="OK\n", stderr="")
             if cmd[:1] == ["claude"]:
                 claude_calls.append({"cmd": list(cmd), "cwd": kwargs.get("cwd")})
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")

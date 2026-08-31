@@ -69,9 +69,13 @@ _RESTART_EXIT_CODE = 75
 # process-loopセッションを識別する正本と、更新中に旧Stop hookと併存するための移行互換名。
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_DELEGATED_SESSION_ENV = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数の契約を検査できるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+# モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
+_AVAILABILITY_PROBE_PROMPT = "応答できる場合はOKだけを返してください。"
 
 
 def _ask_user_question_timeout_settings() -> str:
@@ -108,6 +112,13 @@ def _session_env(env: dict[str, str], orchestrator: str, *, platform: str = os.n
         inherited_path = session_env.get("PATH", "")
         session_env["PATH"] = os.pathsep.join((str(shim_dir), inherited_path))
     return session_env
+
+
+def _availability_probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
+    """可用性判定をprocess-loop最上位の終了強制から除外した子環境を返す。"""
+    probe_env = _session_env(env, orchestrator)
+    probe_env[_DELEGATED_SESSION_ENV] = "1"
+    return probe_env
 
 
 def _session_creation_flags(orchestrator: str, *, platform: str = os.name) -> int:
@@ -451,25 +462,87 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
     )
 
 
-def _resolve_orchestrator_spec() -> tuple[str, str, str]:
-    """orchestrate_model設定を解決し、(orchestrator, model, effort)を返す。
+def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
+    """orchestrate_model設定を候補ごとの(orchestrator, model, effort)として返す。
 
     書式不正（設定ファイルの手編集等）の場合は修正手順を案内してexit 2で終了する。
     effort未指定は`medium`を補完する。
     """
-    config = _config._load_config()  # pylint: disable=protected-access
-    value = config.get("orchestrate_model", _config._ORCHESTRATE_MODEL_DEFAULT)  # pylint: disable=protected-access
-    if _config._STAGE_MODEL_PATTERN.fullmatch(value) is None:  # pylint: disable=protected-access
+    try:
+        value = _config.resolve_mutable_setting("orchestrate_model")
+    except ValueError as error:
         default = _config._ORCHESTRATE_MODEL_DEFAULT  # pylint: disable=protected-access
+        env_name = "AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL"
+        raw_value = os.environ.get(env_name, "") or _config._load_config().get(  # pylint: disable=protected-access
+            "orchestrate_model", default
+        )
         print(
-            f"orchestrate_modelの設定値が不正です（現在の設定値: {value}）。"
+            f"orchestrate_modelの設定値が不正です（現在の設定値: {raw_value}）。{error}。"
             f"`atk config set orchestrate_model {default}`のように"
-            "`<claude|codex>:<model>[/<effort>]`形式の値で修正してください。",
+            "`<claude|codex>:<model>[/<effort>]`形式の候補列で修正してください。",
             file=sys.stderr,
         )
         sys.exit(2)
-    orchestrator, model, effort = _config._parse_stage_model(value)  # pylint: disable=protected-access
-    return orchestrator, model, effort or "medium"
+    return _config.parse_stage_model_candidates(value)
+
+
+def _availability_probe_argv(orchestrator: str, model: str, effort: str) -> list[str]:
+    """候補3値を全て渡す副作用のない可用性判定用argvを返す。"""
+    if orchestrator == "claude":
+        return ["claude", "-p", "--model", model, "--effort", effort, _AVAILABILITY_PROBE_PROMPT]
+    return [
+        "codex",
+        "exec",
+        "--model",
+        model,
+        "-c",
+        f"model_reasoning_effort={effort}",
+        _AVAILABILITY_PROBE_PROMPT,
+    ]
+
+
+def _claude_ignored_effort(stderr: str) -> bool:
+    """Claudeが`--effort`値を無視した警告を出力したか判定する。"""
+    folded = stderr.casefold()
+    return "--effort" in folded and any(word in folded for word in ("ignored", "ignoring"))
+
+
+def _select_available_orchestrator(
+    candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
+) -> tuple[str, str, str]:
+    """候補を先頭から事前検査し、最初に可用な3つ組を返す。"""
+    last_failure = (candidates[-1][0], 1)
+    for orchestrator, model, effort in candidates:
+        candidate = f"{orchestrator}:{model}/{effort}"
+        try:
+            result = subprocess.run(
+                _availability_probe_argv(orchestrator, model, effort),
+                check=False,
+                env=_availability_probe_env(env, orchestrator),
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as error:
+            _console_title.set_console_title("atk mq process-loop")
+            last_failure = (orchestrator, 1)
+            print(
+                f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
+                file=sys.stderr,
+            )
+            continue
+        _console_title.set_console_title("atk mq process-loop")
+        ignored_effort = orchestrator == "claude" and _claude_ignored_effort(result.stderr)
+        if result.returncode == 0 and not ignored_effort:
+            print(f"モデル候補の可用性判定に成功しました: {candidate}")
+            print(f"本作業へ採用するモデル候補: {candidate}")
+            return orchestrator, model, effort
+        failure_code = result.returncode or 1
+        last_failure = (orchestrator, failure_code)
+        reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
+        print(f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}", file=sys.stderr)
+    _exit_abnormal_session(*last_failure)
+    raise AssertionError("到達不能")
 
 
 def _build_session_argv(
@@ -494,6 +567,7 @@ def _build_session_argv(
             _ask_user_question_timeout_settings(),
         ]
         if resume_pending:
+            argv.extend(("--model", model, "--effort", effort))
             argv.append("--resume" if not args.resume else f"--resume={args.resume}")
         else:
             argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
@@ -518,6 +592,12 @@ def _is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str
     if platform == "nt":
         return returncode in _CODEX_NORMAL_EXIT_CODES_WINDOWS
     return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
+
+
+def _exit_abnormal_session(orchestrator: str, returncode: int) -> None:
+    """既存のセッション異常終了メッセージを出力し、同じ終了コードで終了する。"""
+    print(f"{orchestrator}がexit code {returncode}で異常終了しました。", file=sys.stderr)
+    sys.exit(returncode)
 
 
 def _wait_for_changes(private_notes: pathlib.Path, target_repo_id: str | None) -> bool:
@@ -863,8 +943,7 @@ def _run_process_session(
         returncode=result.returncode,
     )
     if not _is_normal_session_exit(orchestrator, result.returncode, platform=os.name):
-        print(f"{orchestrator}がexit code {result.returncode}で異常終了しました。", file=sys.stderr)
-        sys.exit(result.returncode)
+        _exit_abnormal_session(orchestrator, result.returncode)
     if args.no_update:
         return False
     print("process-loopを再起動します。")
@@ -927,7 +1006,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
     オーケストレーター・model・effortは`orchestrate_model`設定（既定`claude:opus[1m]/medium`）から
-    常駐起動時に1回解決する。Claude Codeの新規起動には設定値を渡し、resume時はmodel・effortを上書きしない。
+    セッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から検査し、
+    最初に可用な候補をClaude Code又はCodexの新規起動とresumeの双方へ渡す。
     全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
     Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
@@ -955,7 +1035,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     dotfilesを対象とし、更新を有効にした起動ではmiseのlatest指定ツールを起動時と24時間ごとに再評価する。
     成功した`update-dotfiles`直後は再評価時刻を更新し、正常再起動先へ一回限りの内部指定を渡して重複を避ける。
     """
-    orchestrator, model, effort = _resolve_orchestrator_spec()
+    _resolve_orchestrator_specs()
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
     prompt = _build_process_loop_prompt(local_path, target_repo_id)
@@ -1011,7 +1091,6 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                     _process_loop_log.append("loop_iter_start", count=count)
                     if count > 0:
                         refresh_before_session = False
-                        print(f"{count}件のフィードバック/回答済みTBDを検知。{orchestrator}へ委譲します。")
                         current_resume_pending = resume_pending
                         if current_resume_pending:
                             resume_pending = False
@@ -1028,6 +1107,10 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             refresh_before_session = True
                             continue
                         session_path, session_prompt = prepared_target
+                        orchestrator, model, effort = _select_available_orchestrator(
+                            _resolve_orchestrator_specs(), env, session_path
+                        )
+                        print(f"{count}件のフィードバック/回答済みTBDを検知。{orchestrator}へ委譲します。")
                         _run_process_session(
                             args,
                             session_path,
