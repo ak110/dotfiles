@@ -433,7 +433,7 @@ def _register_listing_routes(app: quart.Quart, context: _AppContext) -> None:
 
 
 async def _all_entries(context: _AppContext) -> list[_state.FileEntry]:
-    """ローカルとリモートの一覧を作成日時の降順で返す。"""
+    """ローカルとリモートの一覧を、同期で重複した分を1件へ絞ってから作成日時の降順で返す。"""
     # ローカル一覧はリモート集約と並列実行できるよう`asyncio.to_thread`経由で取得する。
     local_results = await asyncio.gather(
         *(asyncio.to_thread(_scan_local_root, spec, context.hostname) for spec in context.roots)
@@ -451,9 +451,40 @@ async def _all_entries(context: _AppContext) -> list[_state.FileEntry]:
         remote_entries: list[_state.FileEntry] = []
         for cached in context.state.remote_files.values():
             remote_entries.extend(cached)
-    merged = local_entries + remote_entries
+    merged = _oldest_host_per_file(local_entries + remote_entries)
     merged.sort(key=lambda entry: (-entry.ctime_epoch, entry.host, entry.source_id, entry.path))
     return merged
+
+
+def _oldest_host_per_file(entries: list[_state.FileEntry]) -> list[_state.FileEntry]:
+    """ホスト間で同期されるrootのエントリを、同じ相対パスごとに作成日時が最も古いホストの1件へ絞る。
+
+    集約の対象は`_config.NEW_SOURCE_ID`のroot（`$(atk config get private_notes)/plans`）に限る。
+    同rootは全環境で同期される場合があり、同一のファイルが各ホストのエントリとして重複する。
+    更新は最初に作成したホストで行われるため、作成日時が最も古いエントリだけを残す。
+    `ctime_epoch`が同値の場合は`(host, path)`の昇順で先頭を選び、選択を決定的にする。
+
+    旧root（`~/.claude/plans`）と`--root`で明示したrootはホスト間で同期されない。
+    これらは`source_id`と相対パスが同じでもホストごとに別のファイルであるため、集約せず全件を保持する。
+    同期資格の判定を同一性の判定より前の独立した分岐として置き、同一性キーの構成へ融合させない。
+
+    `ctime_epoch`は各ホストのファイルシステム上の更新日時（`st_birthtime`を持つ環境ではその値）を
+    初回観測時に確定したものであり、ファイルの作成時刻そのものではない。
+    gitによる同期では同期先のcheckoutが更新日時を書き換えるため作成ホストの値が最小になり、
+    更新日時を保持する同期手段では全ホストが同値となって上記のタイブレークで1件が決まる。
+    作成ホストの作成日時インデックスが失われ、かつその後に当該ファイルを編集した場合に限り、
+    別ホストの値が小さくなる。
+    """
+    kept: list[_state.FileEntry] = []
+    oldest: dict[str, _state.FileEntry] = {}
+    for entry in entries:
+        if entry.source_id != _config.NEW_SOURCE_ID:
+            kept.append(entry)
+            continue
+        current = oldest.get(entry.path)
+        if current is None or (entry.ctime_epoch, entry.host) < (current.ctime_epoch, current.host):
+            oldest[entry.path] = entry
+    return kept + list(oldest.values())
 
 
 def _scan_local_root(spec: _state.RootSpec, host: str) -> tuple[list[_state.FileEntry], str | None]:

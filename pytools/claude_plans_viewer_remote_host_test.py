@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools.claude_plans_viewer import _app, _local, _remote, _remote_helper, _state
+from pytools.claude_plans_viewer import _app, _config, _local, _remote, _remote_helper, _state
 from pytools.claude_plans_viewer_remote_test_helpers import BlockingSearchRunner as _BlockingSearchRunner
 from pytools.claude_plans_viewer_remote_test_helpers import _FakeSshRunner
 from pytools.claude_plans_viewer_remote_test_helpers import aiter_lines as _aiter_lines
@@ -428,6 +428,171 @@ class TestRemoteHostIntegration:
             ("host1", "host1.md"),
             ("local-host", "local.md"),
         ]
+
+    @pytest.mark.asyncio
+    async def test_api_files_and_search_keep_oldest_host_for_synchronized_files(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """同期rootの同じ相対パスは日時最小、同値ならホスト名最小の1件へ絞る。"""
+        synchronized_root = tmp_path / "synchronized"
+        synchronized_root.mkdir()
+        for name in ("oldest.md", "tied.md"):
+            path = synchronized_root / name
+            path.write_text("共通検索語", encoding="utf-8")
+            os.utime(path, (300.0, 300.0))
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: float(st.st_mtime))
+
+        async def runner(host: str, op: str, args: list[str]) -> str:
+            assert host in {"a-host", "z-host"}
+            assert op == "search"
+            assert args
+            return json.dumps(
+                {
+                    "matches": [
+                        {"source_id": _config.NEW_SOURCE_ID, "path": "oldest.md"},
+                        {"source_id": _config.NEW_SOURCE_ID, "path": "tied.md"},
+                    ]
+                }
+            )
+
+        roots = (_state.RootSpec(_config.NEW_SOURCE_ID, synchronized_root, _config.NEW_PORTABLE_ROOT),)
+        app = _app.create_app(
+            hostname="local-host",
+            remote_hosts=["z-host", "a-host"],
+            ssh_runner=runner,
+            roots=roots,
+        )
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        _seed_remote_cache(
+            state,
+            "z-host",
+            [
+                {
+                    "source_id": _config.NEW_SOURCE_ID,
+                    "path": "oldest.md",
+                    "name": "oldest.md",
+                    "mtime_epoch": 200.0,
+                    "ctime_epoch": 200.0,
+                },
+                {
+                    "source_id": _config.NEW_SOURCE_ID,
+                    "path": "tied.md",
+                    "name": "tied.md",
+                    "mtime_epoch": 100.0,
+                    "ctime_epoch": 100.0,
+                },
+            ],
+        )
+        _seed_remote_cache(
+            state,
+            "a-host",
+            [
+                {
+                    "source_id": _config.NEW_SOURCE_ID,
+                    "path": "oldest.md",
+                    "name": "oldest.md",
+                    "mtime_epoch": 100.0,
+                    "ctime_epoch": 100.0,
+                },
+                {
+                    "source_id": _config.NEW_SOURCE_ID,
+                    "path": "tied.md",
+                    "name": "tied.md",
+                    "mtime_epoch": 100.0,
+                    "ctime_epoch": 100.0,
+                },
+            ],
+        )
+        client = app.test_client()
+
+        files_response = await client.get("/api/files")
+        search_response = await client.get("/api/search", query_string={"q": "共通検索語"})
+
+        assert files_response.status_code == 200
+        assert search_response.status_code == 200
+        files = json.loads(await files_response.get_data())
+        matches = json.loads(await search_response.get_data())
+        expected = [("a-host", "oldest.md"), ("a-host", "tied.md")]
+        assert [(entry["host"], entry["path"]) for entry in files] == expected
+        assert [(entry["host"], entry["path"]) for entry in matches] == expected
+
+    @pytest.mark.asyncio
+    async def test_api_files_and_search_preserve_unsynchronized_and_distinct_paths(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """非同期rootと同期root内の異なる相対パスは同名でも全件を保持する。"""
+        synchronized_root = tmp_path / "synchronized"
+        legacy_root = tmp_path / "legacy"
+        (synchronized_root / "2026" / "08").mkdir(parents=True)
+        (synchronized_root / "2026" / "09").mkdir(parents=True)
+        legacy_root.mkdir()
+        for path in (
+            synchronized_root / "2026" / "08" / "same.md",
+            synchronized_root / "2026" / "09" / "same.md",
+            legacy_root / "same.md",
+        ):
+            path.write_text("共通検索語", encoding="utf-8")
+        monkeypatch.setattr(_local, "_ctime_epoch", lambda st: float(st.st_mtime))
+
+        async def runner(host: str, op: str, args: list[str]) -> str:
+            assert host in {"host1", "host2"}
+            assert op == "search"
+            assert args
+            return json.dumps(
+                {
+                    "matches": [
+                        {"source_id": _config.LEGACY_SOURCE_ID, "path": "same.md"},
+                    ]
+                }
+            )
+
+        roots = (
+            _state.RootSpec(_config.NEW_SOURCE_ID, synchronized_root, _config.NEW_PORTABLE_ROOT),
+            _state.RootSpec(_config.LEGACY_SOURCE_ID, legacy_root, _config.LEGACY_PORTABLE_ROOT),
+        )
+        app = _app.create_app(
+            hostname="local-host",
+            remote_hosts=["host1", "host2"],
+            ssh_runner=runner,
+            roots=roots,
+        )
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        for host, ctime in (("host1", 100.0), ("host2", 200.0)):
+            _seed_remote_cache(
+                state,
+                host,
+                [
+                    {
+                        "source_id": _config.LEGACY_SOURCE_ID,
+                        "path": "same.md",
+                        "name": "same.md",
+                        "mtime_epoch": ctime,
+                        "ctime_epoch": ctime,
+                    }
+                ],
+            )
+        client = app.test_client()
+
+        files_response = await client.get("/api/files")
+        search_response = await client.get("/api/search", query_string={"q": "共通検索語"})
+
+        assert files_response.status_code == 200
+        assert search_response.status_code == 200
+        files = json.loads(await files_response.get_data())
+        matches = json.loads(await search_response.get_data())
+        expected = {
+            ("host1", _config.LEGACY_SOURCE_ID, "same.md"),
+            ("host2", _config.LEGACY_SOURCE_ID, "same.md"),
+            ("local-host", _config.LEGACY_SOURCE_ID, "same.md"),
+            ("local-host", _config.NEW_SOURCE_ID, "2026/08/same.md"),
+            ("local-host", _config.NEW_SOURCE_ID, "2026/09/same.md"),
+        }
+        assert {(entry["host"], entry["source_id"], entry["path"]) for entry in files} == expected
+        assert {(entry["host"], entry["source_id"], entry["path"]) for entry in matches} == expected
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("suffix", [".plan-review.tsv", ".exec-review.tsv"])
