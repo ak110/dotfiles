@@ -39,7 +39,7 @@ description: >
    ```
 
    新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。
-   計画型本文、`source: plan`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
+   計画型本文、`source: plan-and-add-feedback`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
    最古の項目だけを計画型`inbox`へ移し、残る統合元を同じcommitで除去する。
 5. 変換結果を再取得し、統合先の`source`、本文、`plan_file`、`target_commit`、依存及び`inbox`配置、統合元の不在、変換commit並びにremote設定時のupstream包含を照合する。単一入力でも標準出力から変換commitとpush結果を取得する。単一入力と複数入力は同じ経路で処理し、後続の`rm`を呼ばない。
 6. 変換開始前に中断した場合は、全対象を`atk mq return-to-inbox <filename>... --state=planning`で一括して戻す。
@@ -56,9 +56,9 @@ description: >
    起草完了後、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と提示素材の出所・引用範囲を渡して`plan-review-executor`を起動する。
    起動後は計画ファイルの書込所有権が`plan-review-executor`配下の計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`計画レビュー完了`を受領したら次へ進む。
-5. 完成後、実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
+5. 完成後、実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-feedback`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
 
-計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
+計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan-and-add-feedback`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
 本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:feedback-standards`へ渡した後は問い直さない。
 

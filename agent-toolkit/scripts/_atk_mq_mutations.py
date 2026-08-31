@@ -859,7 +859,7 @@ def edit_entry_to_plan(
                 raise WebInputError(f"target_repoが一致しません: 期待={material_repo} 実際={updates['target_repo']}")
 
         updated_data = {**stored_data, **updates}
-        updated_data["source"] = "plan"
+        updated_data["source"] = "plan-and-add-feedback"
         updated_data["plan_file"] = stored_plan_file
         updated_data["target_commit"] = target_commit
         updated_data.pop("queue_schedule", None)
@@ -1247,7 +1247,7 @@ def _convert_planning_entries(
     oldest_path = min(snapshots, key=lambda item: item[0].name)[0]
     oldest_data, _oldest_body = parsed_entries[oldest_path]
     updated_data = {**oldest_data, **updates}
-    updated_data["source"] = "plan"
+    updated_data["source"] = "plan-and-add-feedback"
     updated_data["plan_file"] = str(plan_path)
     updated_data["target_commit"] = target_commit
     updated_data.pop("queue_schedule", None)

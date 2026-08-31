@@ -1197,7 +1197,7 @@ def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_ite
     parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
     assert parsed is not None
     data, body = parsed
-    assert data["source"] == "plan"
+    assert data["source"] == "plan-and-add-feedback"
     assert data["plan_file"] == str(plan)
     assert data["target_commit"] == "b" * 40
     assert data["depends_on"] == [tbd_name, "external-a.md", "external-b.md"]
@@ -2647,7 +2647,7 @@ def test_agent_environment_allows_add_with_user_comment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """別リポジトリ移管に使うaddはユーザーコメントを含む本文も受理する。"""
+    """新規投入のaddはユーザーコメント節を含む本文も受理する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -3777,7 +3777,7 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
     parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
     assert parsed is not None
     data, body = parsed
-    assert data["source"] == "plan"
+    assert data["source"] == "plan-and-add-feedback"
     assert data["plan_file"] == str(plan)
     assert data["target_commit"] == "a" * 40
     assert data["depends_on"] == ["external-a.md", "external-b.md"]

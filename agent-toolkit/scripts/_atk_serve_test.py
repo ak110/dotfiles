@@ -3019,11 +3019,12 @@ async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(
     assert {item["filename"] for item in (await agent.get_json())["entries"]} == {
         "agent.md",
         "alert-monitor.md",
+        "human.md",
         "plan.md",
         "review.md",
         "unknown.md",
     }
-    assert {item["filename"] for item in (await human.get_json())["entries"]} == {"empty.md", "human.md"}
+    assert {item["filename"] for item in (await human.get_json())["entries"]} == {"empty.md"}
     assert [item["filename"] for item in (await raw.get_json())["entries"]] == ["review.md"]
     assert {item["filename"] for item in (await empty.get_json())["entries"]} == {"empty.md"}
 
@@ -5687,7 +5688,7 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("source", "editable"),
-    [(None, False), ("human", False), ("alert-monitor", True), ("plan", True)],
+    [(None, False), ("human", True), ("alert-monitor", True), ("plan", True)],
 )
 async def test_user_comment_api_matches_agent_source_classification(
     tmp_path: pathlib.Path,

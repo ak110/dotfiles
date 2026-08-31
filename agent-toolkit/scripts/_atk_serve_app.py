@@ -162,13 +162,11 @@ def _summary(text: str, kind: str) -> str:
 def _source_kind(source: typing.Any) -> str:
     """保存された投入元を一覧フィルターの分類へ変換する。
 
-    `agent-toolkit:feedback-standards`の由来判定に従い、`source`の欠落と`human`だけを
-    人間由来とし、それ以外の値をすべてエージェント由来とする。
+    `agent-toolkit:feedback-standards`の由来判定に従い、`source`の欠落だけを人間由来とし、
+    値を持つ項目をすべてエージェント由来とする。
     既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
     """
-    if source is None:
-        return "human"
-    return "human" if isinstance(source, str) and source == "human" else "agent"
+    return "human" if source is None else "agent"
 
 
 def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:
@@ -586,7 +584,7 @@ class Operations:
             raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
         if _source_kind(metadata.get("source")) != "agent":
             raise common.WebInputError(
-                "ユーザーコメントの対象はエージェント由来のfeedbackだけです。sourceが未設定またはhumanの項目は対象になりません"
+                "ユーザーコメントの対象はエージェント由来のfeedbackだけです。sourceが未設定の項目は対象になりません"
             )
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)

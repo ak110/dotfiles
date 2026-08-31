@@ -69,7 +69,7 @@ atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --mes
 既存データが参照する絶対パスは読み取り互換として受理する。
 CLIは全入力が同一対象リポジトリの`planning`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
 activeなTBD素材は状態を変更せず、統合依存へ保持できる。
-検証後は最古のfeedbackへ計画型本文、`source: plan`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
+検証後は最古のfeedbackへ計画型本文、`source: plan-and-add-feedback`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
 
 入力検証、管理リポジトリのclean検査、対象の書込み、commit及びpushを分離する。入力検証、書込み又はcommitの失敗では、全統合元の作業ツリーとindexを開始時の`planning`内容へ戻し、部分変換を残さない。push失敗では変換済みのcleanなローカルcommitと保存結果を保持し、滞留commitのpushから再開する。`--skip-push`ではcommitを保持したままpushだけを省略する。単一入力と複数入力は同じ経路で処理し、変換後の別`rm`及びそのための前方回復状態を設けない。
 
@@ -103,7 +103,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 保存前にはコメント本文も同じ規則で解析し、コードフェンス外のH2を含む入力を無変更で拒否する。
 空コメントによる節削除は提供しない。
 
-コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつエージェント由来（frontmatterの`source`が未設定でも`human`でもない）であることとする。
+コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつエージェント由来（frontmatterの`source`が未設定でない）であることとする。
 planning、processing、TBD、終端項目及び人間由来の項目はAPIと画面の両方で対象外とする。
 由来の判定は一覧フィルターと同じ`_source_kind`を用い、`source`値の列挙をユーザーコメント側へ複製しない。
 保存時はロック内で取得した最新本文と`expected_content`を照合し、競合時は無変更で失敗を返す。
@@ -425,10 +425,10 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 同じ採否記録を別状態で保持する恒常コストが増えるため採用しない。採否確定の事実と利用者判断の経路を既存の受渡しへ統合することで、
 全項目の可視性と個別判断を保ちながら、計画の実施内容では採用系の行だけを実装対象として扱える。
 
-各投入経路は呼出元が指定したsourceを`agent-toolkit:add-feedback`へ渡し、同スキルは指定値を`atk mq add --source`へ渡す。
-エージェント自身が投入元で人間由来の指示が無い場合は、同スキルが生成経路名又は`agent`をsourceとして確定する。
-前記の場合は、保存後の`atk mq show`再取得でsourceの保存値を照合する。
-利用者発話を原文とする投入でsourceを受領していない場合だけ、オプションと追加照合を省略する。
+エージェントが新規項目を投入する場合は、`agent-toolkit:feedback-standards`に従い投入したスキル名からプラグイン名の修飾を除いた値を`atk mq add --source`へ渡す。
+`agent-toolkit:add-feedback`は、利用者発話を原文とする手動起動を含む全ての新規項目へ`source: add-feedback`を保存する。
+保存後は`atk mq show`でsourceの保存値を照合する。
+別リポジトリ項目の移管では新規起票の固定値を上書きせず、移管元に保存済みのsourceがある場合は同じ値を保持する。
 
 メインはキュー、利用者合意、公開認可及び工程全体の完了を知る。
 `feedbacks-planner`は要求と調査対象を知るが、成果物を変更しない。
