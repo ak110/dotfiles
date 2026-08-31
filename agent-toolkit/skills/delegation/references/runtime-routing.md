@@ -91,7 +91,13 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    2回目以降の指摘対応は同じfix担当threadを継続する。継続直前に解決した実効3値が現在のthreadと異なる場合は、`needs_escalation`でメインへ返す。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用し、旧担当の終端と書込所有権の解放を確認してから行う。
    継続不能かどうかは、実際に継続手段を呼び出した結果で判定する。
-   `agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけ継続不能とし、`wait`が返す`session retention expired: <session_id>`を継続不能の根拠にしない。
+   `send_message`のtimeoutは配送の成否が未確定であることだけを示し、それ自体を継続不能の根拠にしない。
+   timeout後は、当該継続要求の受理結果又は当該要求によって開始した新しいreplyの開始を確認できた場合だけ、配送済みとして同じthreadで待機を継続する。
+   `wait`が返す`status=completed`だけを配送済みの根拠にしない。
+   当該継続要求へ対応付く観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず`needs_escalation`で呼び出し元へ返す。
+   `agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけ継続不能とする。
+   `wait`が返す`session retention expired: <session_id>`を継続不能の根拠にしない。
+   送信前後の`agent_message`の文字列一致は未配送の証拠に用いない。同じ定型本文を返す正常replyと未配送を、文字列一致だけでは区別できないためである。
    Claude Codeの`SendMessage`では`references/claude-code-runtime.md`が定める配送不能の判定手段による。
    同じ計画の実装単位で継続不能と判定した場合は、検収済みの先行commitの完全OID、完了した実装単位名及び残りの実装単位名を新規threadへ渡す。
    計画、進捗ログ、保存済みのレビュー表のいずれかで検収済み状態を一意に参照できる場合は、
