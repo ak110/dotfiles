@@ -196,6 +196,10 @@ response: <受信者の最小完了報告>
 委譲先または背景ジョブの完了待機を開始する直前に
 `references/waiting-and-monitoring.md`を全文読む（努力目標）。
 
+Codexが遅延実行されるツールを介して`agents_server`の`wait`を呼ぶ二層待機では、
+内側の`wait`へタスク固有のtimeoutを指定せず、外側の実行セルの再開で応答性を制御する。
+写像の詳細は`${CLAUDE_PLUGIN_ROOT}/share/codex-agents-base.md`「agents_serverの二層待機」節を正本とする。
+
 - 委譲機能が返す状態・識別子を優先して停滞を検知し、状態を取得できない経路だけ
   `git log`と`git status`を補助的に用いる
 - Codexの`list_agents`が対象を`running`として返している間は、補助観測や催促だけを根拠とする巻取り、新規起動、役割引継ぎを行わない。

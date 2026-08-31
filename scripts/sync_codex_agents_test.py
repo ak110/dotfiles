@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import sync_codex_agents as subject
 
+_TWO_LAYER_WAIT_HEADING = "### agents_serverの二層待機"
+
 
 def _root(tmp_path: Path, *, project: str = "project\n") -> Path:
     (tmp_path / "scripts").mkdir()
@@ -15,6 +17,18 @@ def _root(tmp_path: Path, *, project: str = "project\n") -> Path:
     (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
     return tmp_path
+
+
+def _section(text: str, heading: str) -> str:
+    match = re.search(rf"^{re.escape(heading)}\n(?P<body>.*?)(?=^#{{1,3}} |\Z)", text, re.MULTILINE | re.DOTALL)
+    assert match is not None
+    return match.group("body")
+
+
+def _ordered_steps(section: str) -> list[str]:
+    matches = re.findall(r"^(?P<number>\d+)\. (?P<body>.+)$", section, re.MULTILINE)
+    assert [number for number, _ in matches] == ["1", "2", "3", "4", "5"]
+    return [body for _, body in matches]
 
 
 def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:
@@ -52,6 +66,25 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
     mtime = (root / subject.TARGET).stat().st_mtime_ns
     assert subject.sync(root) is False
     assert (root / subject.TARGET).stat().st_mtime_ns == mtime
+
+
+def test_two_layer_wait_contract_is_structurally_synced() -> None:
+    source = (subject.REPO_ROOT / "agent-toolkit/share/codex-agents-base.md").read_text(encoding="utf-8")
+    generated = (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8")
+    assert generated == subject.render()
+
+    source_section = _section(source, _TWO_LAYER_WAIT_HEADING)
+    assert _section(generated, _TWO_LAYER_WAIT_HEADING) == source_section
+    steps = _ordered_steps(source_section)
+
+    assert {"`agents_server.start`", "`session_id`"} <= set(re.findall(r"`[^`]+`", steps[0]))
+    assert {"`agents_server.wait`", "`timeout`"} <= set(re.findall(r"`[^`]+`", steps[1]))
+    assert "timeout=" not in steps[1]
+    assert {"`cell_id`", "`functions.wait`", "`agents_server.wait`"} <= set(re.findall(r"`[^`]+`", steps[2]))
+    assert "再度呼ばない" in steps[2]
+    assert "終端結果" in steps[3] and "同じ応答" in steps[3]
+    assert {"`cell_id`", "`wait`"} <= set(re.findall(r"`[^`]+`", steps[4]))
+    assert "戻り値をそのまま" in steps[4]
 
 
 def test_main_help_does_not_sync(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -85,6 +85,22 @@ Codexの委譲待機では、ホストが提供する`wait_agent`を使って終
 `wait_agent`が提供される場面では、共有規範の待機表明でターンを終えず、未完了のまま`final`を返さない。
 完了通知だけを提供するホストでは、共有規範の待機表明による再開経路を使う。
 
+### agents_serverの二層待機
+
+Codexが`functions.exec`のように遅延実行されるツールを介して`agents_server`の`wait`を呼ぶ場合、内側の`wait`と外側の実行セルは独立した待機である。
+
+- タスク固有の待機要件がない限り、内側の`agents_server.wait`へ`timeout`を指定せず既定値を使う。この扱いは`agent-toolkit:delegation`が定めるtimeout省略の原則をCodexの二層構造へ写像したものである
+- 外側の実行が`cell_id`を返した場合は、その`cell_id`を`functions.wait`へ渡して同じ実行セルを再開する。内側の待機は継続しているため、同じ`session_id`へ`wait`を新たに発行し直さない
+- 外側の進捗通知の周期と実行セルのyieldは、内側の`agents_server.wait`のタスク固有timeoutとして扱わない。応答性の制御は外側のyieldと再開で成立する
+
+順序の例を次に示す。
+
+1. `agents_server.start`でsessionを開始し、`session_id`を保持する。
+2. 遅延実行されるツールの中で`agents_server.wait`を`timeout`引数なしで呼ぶ。
+3. 外側の実行が終端前にyieldして`cell_id`を返した場合は、進捗をユーザーへ伝えたうえで`functions.wait`へ同じ`cell_id`を渡す。内側の`wait`は継続しているため、`agents_server.wait`を再度呼ばない。
+4. 外側の実行セルが再開して終わった時点で、内側の`wait`が返した終端結果を同じ応答から受け取る。
+5. `cell_id`を得られない実行環境では、外側のyieldが起きないため、内側の`wait`の戻り値をそのまま受け取る。
+
 独立した複数のツール呼び出しは、Codexホストと各ツールの契約がともに許可する場合だけ同一応答内で並列化する。
 個別ツールが逐次呼び出しを要求する場合は、その契約を優先する。
 Web調査ツールのように逐次呼び出しを要求する個別ツールでは、依存関係のない呼び出しも逐次化する。
