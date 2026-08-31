@@ -8,6 +8,13 @@
 - `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コミット前の検証方法: `make test`
+  - `make test`（`uvx pyfltr run --no-fix`）はlintで自動修正しない。
+    ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
+    `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
+    書き換えの対象は、整形結果が現在の内容と異なるファイル、`prek`が`.pre-commit-config.yaml`の
+    テキスト整形hookで扱うファイル、及び生成物の同期先である。
+    コミット範囲を確定する前に`git status`で自分の変更以外の差分の有無を確認する。
+    自動修正が必要な場合は`make format`（`uvx pyfltr fast`）を使う
   - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
     MCPを利用できない場合は`uvx pyfltr run <対象ファイルの絶対パス>`を使う。
     デバッガ・最小再現・環境切り分けでは直接実行してよい。

@@ -105,6 +105,12 @@ command-timeout = 900
 ty = true
 # scripts/、agent-toolkit/scripts/、agent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
 ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "agent-toolkit/scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# pyfltrの既定では`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
+# formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
+# lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
+# 書き換えないよう、`ruff-format`のlint自動修正を無効にする。
+# lintの自動修正は`make format`（`uvx pyfltr fast`）のfix段が引き続き担う。
+ruff-format-by-check = false
 pylint-args = ["--jobs=4"]
 # リポジトリ直下とagent-toolkit/scripts/の`conftest.py`は、いずれもトップレベルのモジュール`conftest`へ
 # 解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
