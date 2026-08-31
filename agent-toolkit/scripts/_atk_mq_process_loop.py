@@ -21,6 +21,7 @@ import _atk_mq_alerts as _alerts
 import _console_title
 import _git_command
 import _process_loop_log
+import _wait_schedule
 import watchdog.events
 import watchdog.observers
 from _atk_mq_common import _count_pending_entries, _pull, _repo_lock
@@ -79,7 +80,12 @@ _LEGACY_PROCESS_LOOP_SESSION_ENV = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # Windows APIのCREATE_NEW_PROCESS_GROUP。POSIXでも純粋関数の契約を検査できるよう値を固定する。
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
-_ASK_USER_QUESTION_TIMEOUT_SETTINGS = '{"askUserQuestionTimeout": "5m"}'
+
+def _ask_user_question_timeout_settings() -> str:
+    """メイン会話のプロンプトキャッシュTTLに対応する質問タイムアウト設定を返す。"""
+    if _wait_schedule.get_prompt_cache_ttl("main") == "5m":
+        return '{"askUserQuestionTimeout": "60s"}'
+    return '{"askUserQuestionTimeout": "5m"}'
 
 
 def _strip_inherited_venv(env: dict[str, str]) -> None:
@@ -513,7 +519,7 @@ def _build_session_argv(
             "--debug-file",
             str(hook_debug_log),
             "--settings",
-            _ASK_USER_QUESTION_TIMEOUT_SETTINGS,
+            _ask_user_question_timeout_settings(),
         ]
         if resume_pending:
             argv.append("--resume" if not args.resume else f"--resume={args.resume}")
