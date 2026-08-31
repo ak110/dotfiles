@@ -15,6 +15,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -88,15 +89,55 @@ def _canonical(path: pathlib.Path) -> pathlib.Path:
     return path.expanduser().resolve()
 
 
+def _dotfiles_roots() -> tuple[pathlib.Path, ...]:
+    """`atk`を探すdotfilesルートの候補を優先順で返す。"""
+    return (pathlib.Path(__file__).resolve().parent.parent.parent, pathlib.Path.home() / "dotfiles")
+
+
+def _atk_executable() -> str:
+    """対象ホスト上の`atk`の実行ファイルパスを返す。
+
+    本ヘルパーはSSH経由の非対話シェルで起動されるため、対象ホストのPATHにdotfilesの
+    `agent-toolkit/bin`が含まれないことがある。PATHで解決できない場合は、本ファイル位置から
+    辿るdotfilesルートと`~/dotfiles`の順に既定の配置を探す。いずれにも無い場合はPATH解決へ委ね、
+    呼び出し側が失敗として扱う。
+    """
+    found = shutil.which("atk")
+    if found is not None:
+        return found
+    name = "atk.cmd" if os.name == "nt" else "atk"
+    for root in _dotfiles_roots():
+        path = root / "agent-toolkit" / "bin" / name
+        if path.is_file():
+            return str(path)
+    return "atk"
+
+
+def _atk_env() -> dict[str, str]:
+    """`atk`実行用にPATHを補った環境変数を返す。
+
+    `atk`は`uv run`でスクリプトを起動するため、`atk`自体を絶対パスで指定しても
+    PATHに`uv`が無ければ起動に失敗する。dotfilesの標準的な配置である`~/.local/bin`と
+    `agent-toolkit/bin`をPATHの先頭へ加える。
+    """
+    env = dict(os.environ)
+    extra = [str(pathlib.Path.home() / ".local" / "bin")]
+    extra.extend(str(root / "agent-toolkit" / "bin") for root in _dotfiles_roots())
+    current = env.get("PATH")
+    env["PATH"] = os.pathsep.join([*extra, current]) if current else os.pathsep.join(extra)
+    return env
+
+
 def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
     """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。"""
     try:
         completed = subprocess.run(
-            ["atk", "config", "get", "private_notes"],
+            [_atk_executable(), "config", "get", "private_notes"],
             capture_output=True,
             text=True,
             check=True,
             timeout=5,
+            env=_atk_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:
         warning = f"private_notesの取得に失敗しました: {error}"
