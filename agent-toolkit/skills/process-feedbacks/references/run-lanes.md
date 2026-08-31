@@ -47,13 +47,16 @@ route変更、識別子消失又は前提無効時だけ一般的な継続契約
 成功後のベースHEAD完全OIDを取得し、固有の延期指示がない関連フィードバックを1件ずつ`atk mq adopt --commit=<完全OID>`で終端して保存結果を照合する。
 
 固有指示が`adopt`をPR又はMRのマージ、release又は配布後へ明示的に延期する場合だけ、ベースHEAD完全OIDと未完了の固有順序を③へ渡す。
-レーンを完了扱いにせず、実装に使ったbranch、worktree、実装レビュー用managed-temp及びレーンmanaged-tempを再利用しない。
+レーンを完了扱いにせず、実装に使ったbranch、worktree及びレーンmanaged-tempを再利用しない。
 レーンがffマージ後に自身の所有記録と対象を読み取り専用で照合して回収し、③で先行工程が成功した後、同じレーン責務として`adopt`と保存結果を照合して完了する。
 新しいworktree又はレビューを作成しない。
 
 ## 後始末と非実装項目
 
-通常は`adopt`後、レーンが自身の所有を記録したbranch、worktree、実装レビュー用managed-temp、レーンmanaged-tempだけを読み取り専用で照合して削除する。
+通常は`adopt`後、レーンが自身の所有を記録したbranch、worktree及びレーンmanaged-tempだけを読み取り専用で照合して削除する。
+branchの削除は`git branch -d <所有branch名>`で行い、統合済みかどうかの判定をGitへ委ねる。
+Gitが未統合として削除を拒否した場合は`git branch -D`へ切り替えず、当該branchを未統合として手を止め、branch名とGitの出力を`needs_escalation`へ返す。
+upstreamを設定したbranchでは、ローカルのベースbranchへfast-forward merge済みでもupstreamが未更新であれば削除が拒否される。
 対象外worktree、複製元、管理外領域は削除しない。失敗時は残存対象を`needs_escalation`へ返す。
 
 外部操作だけの項目は必要な認可と結果を確認して終端する。既存commitと既存実装で充足済みの項目は対象commitと要求充足を実測して`adopt`する。

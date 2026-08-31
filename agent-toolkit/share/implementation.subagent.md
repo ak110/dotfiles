@@ -155,4 +155,4 @@ merge進行中でなければ`atk worktree-stash save --label <退避ラベル>`
 再レビューの実施は呼び出し元が担うため、自らレビュー担当へ依頼せず、その結果も待たない。
 レビュー修正で履歴を書き換えた場合は、レビュー表の完了内容と現行Git実体から変更前後OID対応、全phaseの`rewrite_guard`、近接検証とclean状態を同じ実装担当が照合する。欠落時は前項の回復手順を適用し、呼び出し元へ詳細報告の再送又は成果物の再検収を要求しない。
 レビュー収束後にマージ先branchへfast-forward mergeし、対象フィードバックを1件ずつ`atk mq adopt --commit=<マージ後HEAD完全OID>`で終端する。
-所有するbranch、worktree、実装レビュー用managed-tempならびにレーンmanaged-tempを回収し、`統合完了`だけを返す。
+所有するbranch、worktree及びレーンmanaged-tempを回収し、`統合完了`だけを返す。
