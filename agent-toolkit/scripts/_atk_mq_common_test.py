@@ -1607,12 +1607,12 @@ class TestPullWithRecentNotice:
         ]
         assert not migrations
 
-    def test_failed_merge_after_recent_fetch_is_retried_instead_of_reused(
+    def test_failed_merge_after_recent_fetch_is_retried_and_rebased(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """fetch後のff-only統合失敗直後は、直近mtimeでも同期を再試行して失敗を観測する。"""
+        """fetch後のff-only統合失敗直後は、直近mtimeでも再試行して分岐をrebaseする。"""
         integration = TestExplicitUpstreamIntegration()
         _remote, local, _other = integration._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
         integration._git(local, "config", "user.email", "test@example.com")  # pylint: disable=protected-access
@@ -1642,7 +1642,7 @@ class TestPullWithRecentNotice:
             return 0
 
         monkeypatch.setattr(_common, "_migrate_legacy_reservations", migrate)
-        with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(local):  # pylint: disable=protected-access  # noqa: SLF001
+        with _common._repo_lock(local):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull_with_recent_reuse(local)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [
@@ -1651,8 +1651,9 @@ class TestPullWithRecentNotice:
             ["merge", "--ff-only", "@{u}"],
             ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
             ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
+            ["rebase", "@{u}"],
         ]
-        assert not migrations
+        assert migrations == [local]
 
     def test_pulls_without_notice_when_fetch_head_is_old(
         self,
