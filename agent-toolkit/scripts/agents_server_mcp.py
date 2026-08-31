@@ -143,7 +143,7 @@ class AgentsServerManager:
         return session.public_status()
 
     async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """sessionの終端を待ち、終端時だけ結果本文を返す。"""
+        """sessionの終端を待ち、登録簿の現在値から結果本文を返す。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
         loop = asyncio.get_running_loop()
@@ -170,11 +170,14 @@ class AgentsServerManager:
             try:
                 async with self._condition:
                     await asyncio.wait_for(
-                        self._condition.wait_for(lambda: session.result_available),
+                        self._condition.wait_for(
+                            lambda: (current := self.sessions.get(session_id)) is None or current.result_available
+                        ),
                         timeout=max(0.0, deadline - loop.time()),
                     )
             except TimeoutError:
                 pass
+        session = self._get_session(session_id)
         return session.public_status(include_result=session.result_available)
 
     def _pending_resume_status(self, pending: _PendingResume) -> dict[str, Any]:

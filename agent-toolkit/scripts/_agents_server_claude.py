@@ -237,7 +237,7 @@ class ClaudeServerManager:
     ) -> None:
         client: Any = None
         session: SessionState | None = None
-        channel: _CommandChannel | None = None
+        channel = _CommandChannel()
         iterator: Any = None
         message_task: asyncio.Task[Any] | None = None
         command_task: asyncio.Task[Any] | None = None
@@ -261,7 +261,7 @@ class ClaudeServerManager:
 
                 if iterator is not None and message_task is None:
                     message_task = asyncio.create_task(anext(iterator))
-                if channel is not None and command_task is None:
+                if command_task is None:
                     command_task = asyncio.create_task(channel.get())
                 pending = {task for task in (message_task, command_task) if task is not None}
                 if not pending:
@@ -295,10 +295,10 @@ class ClaudeServerManager:
                                 raise RuntimeError("Claude init message did not contain session_id")
                             if expected_session_id is not None and session_id != expected_session_id:
                                 raise RuntimeError("Claude resume returned an unexpected session_id")
-                            # Claude CLIは同一セッションでもturnごとにinitを再送するため、
-                            # 状態とコマンドキューの生成は初回のinitに限定する。再生成した場合、
-                            # 所有タスクが待機するキューと`send_message`が投入するキューが分離し、
-                            # 以降の継続指示が受信されない。
+                            # `_CommandChannel`と`SessionState`は所有タスクの生存期間で1つだけ保持する。
+                            # キューは永続session IDを要しないため所有タスクの開始時に生成する。
+                            # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
+                            # turnごとにinitが再送されても再生成しない。
                             if session is None:
                                 session = SessionState(
                                     session_id=session_id,
@@ -308,7 +308,6 @@ class ClaudeServerManager:
                                     engine="claude",
                                 )
                                 self.sessions[session_id] = session
-                                channel = _CommandChannel()
                                 self._channels[session_id] = channel
                                 current_task = asyncio.current_task()
                                 if current_task is not None:
@@ -356,8 +355,7 @@ class ClaudeServerManager:
                     await client.disconnect()
             if session is not None:
                 self._channels.pop(session.session_id, None)
-            if channel is not None:
-                channel.close()
+            channel.close()
 
     async def _handle_command(
         self,
