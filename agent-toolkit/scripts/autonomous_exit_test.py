@@ -16,6 +16,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
@@ -57,6 +58,7 @@ def _run(
     *,
     state_dir: pathlib.Path,
     required_env: str | None = _ENV_REQUIRED,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
@@ -67,8 +69,11 @@ def _run(
     env["USERPROFILE"] = str(state_dir)
     env.pop(_ENV_REQUIRED, None)
     env.pop(_LEGACY_ENV_REQUIRED, None)
+    env.pop(_ENV_DELEGATED_SESSION, None)
     if required_env is not None:
         env[required_env] = "1"
+    if extra_env is not None:
+        env.update(extra_env)
     return _fork_runner.run_script(_SCRIPT, argv=("autonomous_exit",), input=text, env=env)
 
 
@@ -103,6 +108,16 @@ class TestApproveConditions:
         )
         decision = _parse_decision(result)
         assert "decision" not in decision
+
+    def test_delegated_session_approves(self, tmp_path: pathlib.Path) -> None:
+        """process-loop環境を継承した委譲先では終了工程を再促しない。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
+        result = _run(
+            {"session_id": "delegated", "transcript_path": str(transcript)},
+            state_dir=tmp_path,
+            extra_env={_ENV_DELEGATED_SESSION: "1"},
+        )
+        assert "decision" not in _parse_decision(result)
 
     def test_pending_async_work_approves(self, tmp_path: pathlib.Path):
         """直前ターンの最後のtool_useが非同期待機系ならapproveする。"""

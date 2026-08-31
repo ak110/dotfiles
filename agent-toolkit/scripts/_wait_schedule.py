@@ -1,4 +1,7 @@
-"""公開情報から委譲待機用のcron式を選択する。"""
+"""公開情報からプロンプトキャッシュTTLを判定する。
+
+TTL判定は、委譲待機用cron式と質問自動継続タイムアウトが共有する正本である。
+"""
 
 import json
 import os
@@ -50,30 +53,37 @@ def _has_valid_subscription_status() -> bool:
     )
 
 
-def get_schedule(request_bucket: str) -> str:
-    """Request bucketと公開情報から委譲待機用のcron式を返す。"""
+def get_prompt_cache_ttl(request_bucket: str) -> str:
+    """Request bucketと公開情報からプロンプトキャッシュTTLを返す。"""
     if request_bucket not in _BUCKET_TTL_ENV:
         raise ValueError(f"未対応のrequest bucket: {request_bucket}")
 
     if os.environ.get("FORCE_PROMPT_CACHING_5M") == "1":
-        return _SCHEDULE_FOR_5M_TTL
+        return "5m"
 
     bucket_ttl = os.environ.get(_BUCKET_TTL_ENV[request_bucket])
     if bucket_ttl == "5m":
-        return _SCHEDULE_FOR_5M_TTL
+        return "5m"
     if bucket_ttl == "1h":
-        return _SCHEDULE_FOR_1H_TTL
+        return "1h"
 
     if os.environ.get("ENABLE_PROMPT_CACHING_1H") == "1":
-        return _SCHEDULE_FOR_1H_TTL
+        return "1h"
     if os.environ.get("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB") == "1":
-        return _SCHEDULE_FOR_5M_TTL
+        return "5m"
     if request_bucket == "subagent":
-        return _SCHEDULE_FOR_5M_TTL
+        return "5m"
     if request_bucket == "main" and any(os.environ.get(name) for name in _CREDENTIAL_ENV):
-        return _SCHEDULE_FOR_5M_TTL
+        return "5m"
     if request_bucket == "main" and any(os.environ.get(name) == "1" for name in _PROVIDER_ENV):
-        return _SCHEDULE_FOR_5M_TTL
+        return "5m"
     if _has_valid_subscription_status():
+        return "1h"
+    return "5m"
+
+
+def get_schedule(request_bucket: str) -> str:
+    """プロンプトキャッシュTTLを委譲待機用のcron式へ変換する。"""
+    if get_prompt_cache_ttl(request_bucket) == "1h":
         return _SCHEDULE_FOR_1H_TTL
     return _SCHEDULE_FOR_5M_TTL

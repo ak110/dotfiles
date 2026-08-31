@@ -26,6 +26,7 @@ import _atk_config as _config  # noqa: E402  # pylint: disable=wrong-import-posi
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
+import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -37,11 +38,12 @@ _DOTFILES_REPO_ID = _process_loop._DOTFILES_REPO_ID  # pylint: disable=protected
 
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部コマンドとClaude設定をユーザー環境から分離する。"""
+    """外部コマンド・Claude設定・既定TTLをユーザー環境から分離する。"""
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "1h")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
 
@@ -412,6 +414,7 @@ class TestProcessLoopPromptAndEnv:
     ) -> None:
         """新規セッションのプロンプトが単一の`/goal`条件であり、
         `AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`が付与され、`returncode=0`後は反復継続すること。
+        プロンプトキャッシュTTLが5分の場合は質問タイムアウトへ`60s`を渡すこと。
         件数0到達後は`_wait_for_changes`が呼ばれ、待機解除後に件数再チェックへ戻ること。
         2回目の`_wait_for_changes`呼び出しで`KeyboardInterrupt`を送出し常駐ループを正常終了する。
         ランチャーとの再起動要求の受け渡しファイルを指す環境変数は子セッションへ渡さないことも確認する。
@@ -426,6 +429,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setenv("CLAUDE_CODE_DEBUG_LOGS_DIR", str(tmp_path / "ignored-debug.log"))
         monkeypatch.setenv(_PROCESS_LOOP_SESSION_ENV, "new-original")
         monkeypatch.setenv(_LEGACY_PROCESS_LOOP_SESSION_ENV, "legacy-original")
+        monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "5m")
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
         closed_descriptors: list[int] = []
         real_close = os.close
@@ -472,7 +476,7 @@ class TestProcessLoopPromptAndEnv:
             assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
         assert command[4:11] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m"}',
+            '{"askUserQuestionTimeout": "60s"}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -630,8 +634,10 @@ class TestProcessLoopPromptAndEnv:
         assert prompt == (
             "/goal `agent-toolkit:process-feedbacks`を起動し、"
             f"`{pathlib.Path('/repo')}`で対象リポジトリ`github.com/example/repo`の"
-            "フィードバック処理を完遂してください。"
+            "フィードバック処理を完遂したうえで、"
+            "`agent-toolkit:exit-session`でセッションを終了してください。"
         )
+        assert "agent-toolkit:exit-session" in prompt
 
         forbidden_details = (
             "atk mq list",
@@ -644,7 +650,6 @@ class TestProcessLoopPromptAndEnv:
             "CI",
             "atk mq adopt",
             "session-review",
-            "exit-session",
         )
         assert all(detail not in prompt for detail in forbidden_details)
 

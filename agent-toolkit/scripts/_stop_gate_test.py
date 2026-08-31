@@ -20,6 +20,8 @@ from _stop_gate import (
 )
 from _test_helpers import _write_transcript
 
+_BACKGROUND_TASKS_OMITTED = object()
+
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:
     """アシスタントエントリを生成する。
@@ -550,8 +552,64 @@ class TestIsPendingAsyncWork:
         transcript = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
         assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks) is expected
 
-    def test_background_tasks_preserve_transcript_result(self, tmp_path: pathlib.Path) -> None:
-        """空一覧又は`teammate`だけの場合はtranscriptの未完了判定を維持する。"""
+    @pytest.mark.parametrize(
+        ("background_tasks", "payload_pending", "payload_authoritative"),
+        [
+            pytest.param(_BACKGROUND_TASKS_OMITTED, False, False, id="omitted"),
+            pytest.param({"type": "subagent"}, False, False, id="non-list"),
+            pytest.param([], False, True, id="empty"),
+            pytest.param([{"type": "teammate"}], False, True, id="teammate-only"),
+            pytest.param([{}, {"type": ""}, {"type": 1}, "subagent", None], False, False, id="invalid-list"),
+            pytest.param([{"type": "subagent"}], True, True, id="non-teammate"),
+            pytest.param([{}, {"type": "subagent"}], True, False, id="mixed"),
+        ],
+    )
+    @pytest.mark.parametrize("transcript_pending", [False, True], ids=["transcript-clear", "transcript-pending"])
+    @pytest.mark.parametrize("last_tool_pending", [False, True], ids=["last-tool-clear", "last-tool-pending"])
+    def test_pending_sources_decision_table(
+        self,
+        tmp_path: pathlib.Path,
+        background_tasks: object,
+        payload_pending: bool,
+        payload_authoritative: bool,
+        transcript_pending: bool,
+        last_tool_pending: bool,
+    ) -> None:
+        """payloadの権威性と3つの未完了根拠を独立した軸として判定する。"""
+        entries = [_user_entry("hello")]
+        if transcript_pending:
+            entries.extend([_user_async_launched_entry("toolu_bg1"), _user_entry("続き")])
+        final_content: list[dict[str, object]] = [{"type": "text", "text": _TEXT}]
+        if last_tool_pending:
+            final_content.append({"type": "tool_use", "id": "x", "name": "Agent", "input": {}})
+        else:
+            final_content.append(_bash_no_bg())
+        entries.append(_assistant_entry(final_content))
+        transcript = _write_transcript(tmp_path, entries)
+
+        kwargs = {} if background_tasks is _BACKGROUND_TASKS_OMITTED else {"background_tasks": background_tasks}
+        actual = is_pending_async_work(str(transcript), "", **kwargs)
+        expected = last_tool_pending or payload_pending or (transcript_pending and not payload_authoritative)
+        assert actual is expected
+
+    @pytest.mark.parametrize(
+        ("background_tasks", "expected_authoritative", "expected_source"),
+        [
+            pytest.param([{}, {"type": "subagent"}], False, "background_tasks+transcript", id="mixed"),
+            pytest.param([{"type": "subagent"}], True, "background_tasks", id="all-valid"),
+        ],
+    )
+    def test_debug_output_reports_payload_authority_and_sources(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+        background_tasks: object,
+        expected_authoritative: bool,
+        expected_source: str,
+    ) -> None:
+        """混在payloadと全要素有効payloadの権威性を判定源とともに出力する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
         transcript = _write_transcript(
             tmp_path,
             [
@@ -561,8 +619,10 @@ class TestIsPendingAsyncWork:
                 _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
             ],
         )
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is True
-        assert is_pending_async_work(str(transcript), "", background_tasks=[{"type": "teammate"}]) is True
+        assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks) is True
+        captured = capsys.readouterr()
+        assert f"payload_authoritative={expected_authoritative}" in captured.err
+        assert f"source={expected_source}" in captured.err
 
     def test_background_tasks_cover_auto_restart_after_completed_transcript(self, tmp_path: pathlib.Path) -> None:
         """完了通知後に同じIDで再開したtaskをpayloadから未完了として扱う。"""

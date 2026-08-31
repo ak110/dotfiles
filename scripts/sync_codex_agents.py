@@ -1,12 +1,13 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """Codex向けAGENTS.mdをベース記述とagent-toolkit rulesから生成する。"""
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -57,8 +58,10 @@ def sync(root: Path = REPO_ROOT) -> bool:
     return True
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Codex向けAGENTS.mdを同期する。"""
+    argparse.ArgumentParser(description="Codex向けAGENTS.mdを同期する。").parse_args(argv)
+
     sync()
     return 0
 

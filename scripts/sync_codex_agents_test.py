@@ -54,6 +54,16 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
     assert (root / subject.TARGET).stat().st_mtime_ns == mtime
 
 
+def test_main_help_does_not_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--help`は終了コード0で生成処理へ到達しない。"""
+    monkeypatch.setattr(subject, "sync", lambda: pytest.fail("syncを呼び出した"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        subject.main(["--help"])
+
+    assert exc_info.value.code == 0
+
+
 def test_size_failure_does_not_replace_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _root(tmp_path, project="project\n")
     target = root / subject.TARGET

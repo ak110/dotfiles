@@ -102,8 +102,11 @@ Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.jso
 端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
 フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
 
-`atk mq process-loop`のClaude起動だけが`--settings`で`5m`を明示する。
-CLI設定はユーザー設定より優先されるため、常駐実行では`5m`が適用される。
+`atk mq process-loop`のClaude起動だけが`--settings`で値を明示する。
+値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
+TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_wait_schedule.py`の
+プロンプトキャッシュTTL判定を用いる。
+CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
 Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`及び`CLAUDE_CODE_MAX_RETRIES`はprocess-loopの既定値として設定しない。
 該当する障害を実測した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。

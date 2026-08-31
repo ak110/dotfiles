@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """bash補完ファイル（`completions/_pytools.bash`・`agent-toolkit/completions/atk.bash`）を生成する。
 

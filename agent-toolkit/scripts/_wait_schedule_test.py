@@ -11,6 +11,12 @@ _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 
 
+def _assert_ttl_and_schedule(bucket: str, expected_ttl: str, expected_schedule: str) -> None:
+    """同じ入力条件からTTLと従来のcron式が対応して得られることを確認する。"""
+    assert _wait_schedule.get_prompt_cache_ttl(bucket) == expected_ttl
+    assert _wait_schedule.get_schedule(bucket) == expected_schedule
+
+
 def _fail_if_auth_status_is_called(*args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
     """認証状態を参照しない分岐で呼び出しが発生した場合に失敗させる。"""
     del args
@@ -27,16 +33,16 @@ def test_force_five_minute_overrides_other_inputs(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule(bucket) == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule(bucket, "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 @pytest.mark.parametrize(
-    ("bucket", "environment_name", "value", "expected"),
+    ("bucket", "environment_name", "value", "expected_ttl", "expected_schedule"),
     [
-        ("main", "CLAUDE_CODE_PROMPT_CACHE_TTL", "5m", _SCHEDULE_FOR_5M_TTL),
-        ("main", "CLAUDE_CODE_PROMPT_CACHE_TTL", "1h", _SCHEDULE_FOR_1H_TTL),
-        ("subagent", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "5m", _SCHEDULE_FOR_5M_TTL),
-        ("subagent", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "1h", _SCHEDULE_FOR_1H_TTL),
+        ("main", "CLAUDE_CODE_PROMPT_CACHE_TTL", "5m", "5m", _SCHEDULE_FOR_5M_TTL),
+        ("main", "CLAUDE_CODE_PROMPT_CACHE_TTL", "1h", "1h", _SCHEDULE_FOR_1H_TTL),
+        ("subagent", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "5m", "5m", _SCHEDULE_FOR_5M_TTL),
+        ("subagent", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "1h", "1h", _SCHEDULE_FOR_1H_TTL),
     ],
 )
 def test_bucket_ttl_override_is_selected(
@@ -44,13 +50,14 @@ def test_bucket_ttl_override_is_selected(
     bucket: str,
     environment_name: str,
     value: str,
-    expected: str,
+    expected_ttl: str,
+    expected_schedule: str,
 ) -> None:
     """bucket別の公開TTL上書きを対応するcron式へ変換する。"""
     monkeypatch.setenv(environment_name, value)
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule(bucket) == expected
+    _assert_ttl_and_schedule(bucket, expected_ttl, expected_schedule)
 
 
 def test_bucket_ttl_override_precedes_common_one_hour(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,7 +66,7 @@ def test_bucket_ttl_override_precedes_common_one_hour(monkeypatch: pytest.Monkey
     monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 @pytest.mark.parametrize(
@@ -75,7 +82,7 @@ def test_invalid_bucket_ttl_is_ignored(monkeypatch: pytest.MonkeyPatch, bucket: 
     monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule(bucket) == _SCHEDULE_FOR_1H_TTL
+    _assert_ttl_and_schedule(bucket, "1h", _SCHEDULE_FOR_1H_TTL)
 
 
 @pytest.mark.parametrize("bucket", ["main", "subagent"])
@@ -84,7 +91,7 @@ def test_common_one_hour_override_applies_to_both_buckets(monkeypatch: pytest.Mo
     monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule(bucket) == _SCHEDULE_FOR_1H_TTL
+    _assert_ttl_and_schedule(bucket, "1h", _SCHEDULE_FOR_1H_TTL)
 
 
 @pytest.mark.parametrize("bucket", ["main", "subagent"])
@@ -93,14 +100,14 @@ def test_environment_scrub_uses_five_minute_schedule(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule(bucket) == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule(bucket, "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 def test_subagent_default_uses_five_minute_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
     """subagentの既定TTLは認証状態を参照せず5分系へ分類する。"""
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule("subagent") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("subagent", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 @pytest.mark.parametrize(
@@ -125,7 +132,7 @@ def test_public_api_and_provider_inputs_use_five_minute_schedule(
     monkeypatch.setenv(environment_name, value)
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 def test_valid_subscription_status_uses_one_hour_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,8 +157,8 @@ def test_valid_subscription_status_uses_one_hour_schedule(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_1H_TTL
-    assert calls == [
+    _assert_ttl_and_schedule("main", "1h", _SCHEDULE_FOR_1H_TTL)
+    assert calls == 2 * [
         {
             "cmd": ["claude", "auth", "status"],
             "kwargs": {
@@ -207,7 +214,7 @@ def test_non_subscription_status_uses_five_minute_schedule(
 
     monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 @pytest.mark.parametrize("stdout", ["not-json", "null", "[]"])
@@ -221,7 +228,7 @@ def test_invalid_auth_json_uses_five_minute_schedule(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 def test_auth_command_failure_uses_five_minute_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -234,7 +241,7 @@ def test_auth_command_failure_uses_five_minute_schedule(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 @pytest.mark.parametrize(
@@ -259,10 +266,12 @@ def test_auth_command_unavailable_or_timed_out_uses_five_minute_schedule(
 
     monkeypatch.setattr(_wait_schedule.subprocess, "run", fake_run)
 
-    assert _wait_schedule.get_schedule("main") == _SCHEDULE_FOR_5M_TTL
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
 def test_rejects_unknown_request_bucket() -> None:
     """未対応のrequest bucketを拒否する。"""
+    with pytest.raises(ValueError, match="未対応のrequest bucket"):
+        _wait_schedule.get_prompt_cache_ttl("worker")
     with pytest.raises(ValueError, match="未対応のrequest bucket"):
         _wait_schedule.get_schedule("worker")

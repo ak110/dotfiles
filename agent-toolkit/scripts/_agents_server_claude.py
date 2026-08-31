@@ -24,6 +24,7 @@ from _agents_server_state import (
 )
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
+_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
@@ -65,7 +66,11 @@ class _CommandChannel:
 
 
 def _build_options(cwd: str, model: str | None, effort: str | None, session_id: str | None = None) -> Any:
-    """Claude Code既定のシステム指示を有効にしたSDKオプションを組む。"""
+    """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
+
+    `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
+    委譲先の印を追加する。
+    """
     from claude_agent_sdk import ClaudeAgentOptions
 
     return ClaudeAgentOptions(
@@ -74,6 +79,7 @@ def _build_options(cwd: str, model: str | None, effort: str | None, session_id: 
         effort=cast(_EffortLevel, effort),
         resume=session_id,
         permission_mode="bypassPermissions",
+        env={_ENV_DELEGATED_SESSION: "1"},
         setting_sources=["user", "project"],
         system_prompt={"type": "preset", "preset": "claude_code"},
     )
@@ -231,7 +237,7 @@ class ClaudeServerManager:
     ) -> None:
         client: Any = None
         session: SessionState | None = None
-        channel: _CommandChannel | None = None
+        channel = _CommandChannel()
         iterator: Any = None
         message_task: asyncio.Task[Any] | None = None
         command_task: asyncio.Task[Any] | None = None
@@ -255,7 +261,7 @@ class ClaudeServerManager:
 
                 if iterator is not None and message_task is None:
                     message_task = asyncio.create_task(anext(iterator))
-                if channel is not None and command_task is None:
+                if command_task is None:
                     command_task = asyncio.create_task(channel.get())
                 pending = {task for task in (message_task, command_task) if task is not None}
                 if not pending:
@@ -289,10 +295,10 @@ class ClaudeServerManager:
                                 raise RuntimeError("Claude init message did not contain session_id")
                             if expected_session_id is not None and session_id != expected_session_id:
                                 raise RuntimeError("Claude resume returned an unexpected session_id")
-                            # Claude CLIは同一セッションでもturnごとにinitを再送するため、
-                            # 状態とコマンドキューの生成は初回のinitに限定する。再生成した場合、
-                            # 所有タスクが待機するキューと`send_message`が投入するキューが分離し、
-                            # 以降の継続指示が受信されない。
+                            # `_CommandChannel`と`SessionState`は所有タスクの生存期間で1つだけ保持する。
+                            # キューは永続session IDを要しないため所有タスクの開始時に生成する。
+                            # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
+                            # turnごとにinitが再送されても再生成しない。
                             if session is None:
                                 session = SessionState(
                                     session_id=session_id,
@@ -302,7 +308,6 @@ class ClaudeServerManager:
                                     engine="claude",
                                 )
                                 self.sessions[session_id] = session
-                                channel = _CommandChannel()
                                 self._channels[session_id] = channel
                                 current_task = asyncio.current_task()
                                 if current_task is not None:
@@ -350,8 +355,7 @@ class ClaudeServerManager:
                     await client.disconnect()
             if session is not None:
                 self._channels.pop(session.session_id, None)
-            if channel is not None:
-                channel.close()
+            channel.close()
 
     async def _handle_command(
         self,

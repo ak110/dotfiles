@@ -232,3 +232,64 @@ class TestListedPath:
         assert specs[0].source_id == _remote_helper.NEW_SOURCE_ID
         assert [(entry["source_id"], entry["ctime_epoch"]) for entry in entries] == [(_remote_helper.NEW_SOURCE_ID, 500.0)]
         assert not legacy_cache.exists()
+
+
+class TestAtkExecutable:
+    """リモートホスト上の`atk`実行ファイルの解決。"""
+
+    def test_uses_path_when_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """PATHで解決できる場合はその絶対パスを使う。"""
+        monkeypatch.setattr(_remote_helper.shutil, "which", lambda _name: "/usr/local/bin/atk")
+
+        assert _remote_helper._atk_executable() == "/usr/local/bin/atk"  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+    def test_falls_back_to_dotfiles_bin(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """PATHに無い場合はdotfilesルートの`agent-toolkit/bin`にある実体を使う。
+
+        SSH経由の非対話シェルではPATHにdotfilesのbinが含まれないことがある。
+        """
+        monkeypatch.setattr(_remote_helper.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(_remote_helper.os, "name", "posix")
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _remote_helper, "_dotfiles_roots", lambda: (tmp_path / "absent", tmp_path / "dotfiles")
+        )
+        expected = tmp_path / "dotfiles" / "agent-toolkit" / "bin" / "atk"
+        expected.parent.mkdir(parents=True)
+        expected.write_text("#!/bin/sh\n", encoding="utf-8")
+
+        assert _remote_helper._atk_executable() == str(expected)  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+    def test_returns_bare_name_when_nothing_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """どこにも見つからない場合はPATH解決へ委ね、呼び出し側の失敗処理へ渡す。"""
+        monkeypatch.setattr(_remote_helper.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(_remote_helper, "_dotfiles_roots", lambda: (tmp_path / "absent",))  # pylint: disable=protected-access
+
+        assert _remote_helper._atk_executable() == "atk"  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+    def test_default_roots_include_repository_and_home(self) -> None:
+        """候補は本ファイル位置のリポジトリルートと`~/dotfiles`の順とする。"""
+        roots = _remote_helper._dotfiles_roots()  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+        assert roots[0] == pathlib.Path(_remote_helper.__file__).resolve().parent.parent.parent
+        assert roots[1] == pathlib.Path.home() / "dotfiles"
+
+
+class TestAtkEnv:
+    """リモートホスト上の`atk`実行時の環境変数。"""
+
+    def test_prepends_uv_and_agent_toolkit_bin(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """`uv`と`atk`の既定配置をPATH先頭へ加える。
+
+        `atk`は`uv run`でスクリプトを起動するため、PATHに`uv`が無いと絶対パス指定でも失敗する。
+        """
+        monkeypatch.setenv("PATH", "/usr/bin")
+        monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda _cls: tmp_path))
+        monkeypatch.setattr(  # pylint: disable=protected-access
+            _remote_helper, "_dotfiles_roots", lambda: (tmp_path / "dotfiles",)
+        )
+
+        entries = _remote_helper._atk_env()["PATH"].split(os.pathsep)  # pylint: disable=protected-access  # noqa: SLF001  # モジュール内部契約を直接固定するテストのため
+
+        assert entries[0] == str(tmp_path / ".local" / "bin")
+        assert entries[1] == str(tmp_path / "dotfiles" / "agent-toolkit" / "bin")
+        assert entries[-1] == "/usr/bin"

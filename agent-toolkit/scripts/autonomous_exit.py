@@ -12,10 +12,11 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 判定順序は以下のとおり。
 
 1. 新旧いずれのセッション識別子も`"1"`でない: 常駐ループ外のセッションのため無条件approve
-2. `stop_hook_active`が真: 連続ブロック上限回避のため無条件approve
-3. `is_pending_async_work`が真: サブエージェント継続時の誤発火防止のためapprove
-4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
-5. 上記いずれでもない: blockして順序制約の再促文を返す
+2. 委譲先セッションの印が`"1"`: 常駐ループの最上位ではないため無条件approve
+3. `stop_hook_active`が真: 連続ブロック上限回避のため無条件approve
+4. `is_pending_async_work`が真: サブエージェント継続時の誤発火防止のためapprove
+5. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
+6. 上記いずれでもない: blockして順序制約の再促文を返す
 
 LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
@@ -40,6 +41,9 @@ _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 
 # 更新中に旧process-loopと併存するため受理する移行互換名。
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+
+# agents_serverから起動された委譲先セッションであることを示す環境変数名。
+_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 # PostToolUse（`posttooluse.py`）が`agent-toolkit:exit-session`呼び出し検出時に
 # セッション状態へ記録するフラグ名。
@@ -77,6 +81,11 @@ def main(payload_text: str) -> int:
     # 常駐ループ外のセッションでは本hookの誘導対象外とする。
     if os.environ.get(_ENV_REQUIRED) != "1" and os.environ.get(_LEGACY_ENV_REQUIRED) != "1":
         append_stop_log(session_id, "approve_no_env", {})
+        _approve()
+        return 0
+
+    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+        append_stop_log(session_id, "approve_delegated_session", {})
         _approve()
         return 0
 

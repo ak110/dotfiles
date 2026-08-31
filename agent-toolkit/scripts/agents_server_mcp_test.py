@@ -1319,6 +1319,23 @@ class BlockingResumeClaudeClient(FakeClaudeClient):
         return stream()
 
 
+class BlockingResultClaudeClient(FakeClaudeClient):
+    """init後の結果を明示イベントまで保留する偽クライアント。"""
+
+    def __init__(self, session_id: str) -> None:
+        super().__init__([])
+        self.session_id = session_id
+        self.release_result = asyncio.Event()
+
+    def receive_messages(self):
+        async def stream():
+            yield SystemMessage(self.session_id)
+            await self.release_result.wait()
+            yield ResultMessage("新しい結果")
+
+        return stream()
+
+
 @pytest.mark.asyncio
 async def test_claude_command_channel_resolves_pending_requests_when_closed() -> None:
     """チャネル閉鎖時に滞留要求を解決し、閉鎖後の受理を拒否する。"""
@@ -1544,6 +1561,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> 
     assert options.system_prompt == {"type": "preset", "preset": "claude_code"}
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
+    assert options.env == {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
 
 
 def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
@@ -1622,7 +1640,7 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
     client = FakeClaudeClient(
         [
             [SystemMessage("claude-session"), AssistantMessage("途中経過"), ResultMessage("Claude結果")],
-            [AssistantMessage("reply中"), ResultMessage("reply結果")],
+            [SystemMessage("claude-session"), AssistantMessage("reply中"), ResultMessage("reply結果")],
         ]
     )
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
@@ -1647,6 +1665,88 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
         await manager.close()
     assert client.connected is True
     assert client.disconnected is True
+
+
+@pytest.mark.asyncio
+async def test_claude_resources_remain_identical_when_init_is_resent_per_turn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """initの再送時も所有タスクのキューと状態を再生成しない。"""
+    client = FakeClaudeClient(
+        [
+            [SystemMessage("claude-stable"), ResultMessage("初回結果")],
+            [SystemMessage("claude-stable"), ResultMessage("1回目のreply結果")],
+            [SystemMessage("claude-stable"), ResultMessage("2回目のreply結果")],
+        ]
+    )
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    try:
+        session = await manager.start("調査", str(tmp_path))
+        channel = manager._channels[session.session_id]
+        for prompt, expected in (("続行1", "1回目のreply結果"), ("続行2", "2回目のreply結果")):
+            for _ in range(200):
+                if session.result_available:
+                    break
+                await asyncio.sleep(0.01)
+            assert session.result_available is True
+            reply = await asyncio.wait_for(manager.send_message(session, prompt), timeout=5)
+            assert reply["delivery"] == "reply_started"
+            for _ in range(200):
+                if session.agent_message == expected:
+                    break
+                await asyncio.sleep(0.01)
+            assert session.agent_message == expected
+            assert manager._channels[session.session_id] is channel
+            assert manager.sessions[session.session_id] is session
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_current_registry_state_after_replacement(tmp_path: pathlib.Path) -> None:
+    """wait開始後に登録簿が更新された場合は新しい終端状態を返す。"""
+    manager, _ = _manager_with_fake("claude")
+    original = subject.SessionState("claude-replaced", str(tmp_path), engine="claude")
+    manager.sessions[original.session_id] = original
+
+    wait_task = asyncio.create_task(manager.wait(original.session_id, timeout=1))
+    await asyncio.sleep(0)
+    replacement = subject.SessionState(original.session_id, str(tmp_path), engine="claude")
+    _complete(replacement, message="差し替え後の結果")
+    manager.sessions[original.session_id] = replacement
+    await manager._notify_waiters()
+
+    response = await wait_task
+
+    assert response["status"] == "completed"
+    assert response["agent_message"] == "差し替え後の結果"
+
+
+@pytest.mark.asyncio
+async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """resumeは登録簿に残る前turnの終端状態を新しいturnへ引き継がない。"""
+    session_id = "claude-retained"
+    client = BlockingResultClaudeClient(session_id)
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    retained = subject.SessionState(session_id, str(tmp_path), engine="claude")
+    _complete(retained, message="前turnの結果")
+    manager.sessions[session_id] = retained
+    try:
+        prompt = state.ResumePrompt("続行")
+        resumed = await manager.resume(session_id, prompt, str(tmp_path))
+
+        assert resumed is not retained
+        assert manager.sessions[session_id] is resumed
+        assert resumed.status == "running"
+        assert resumed.agent_message == ""
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

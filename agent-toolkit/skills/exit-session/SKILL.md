@@ -20,7 +20,7 @@ pluginのStop hookが`autonomous_exit_invoked`を参照して呼び出し漏れ�
 次のいずれかを満たすときに限り呼び出す。
 
 - `agent-toolkit:process-feedbacks`の`references/finish-session.md`から呼ばれた場合
-- 自律終了再促フック（`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`環境変数のStopフック）から未起動判定時の再促として誘導された場合
+- 自律終了再促フック（常駐実行の最上位セッションで発火するStopフック）から未起動判定時の再促として誘導された場合
 - ユーザーがSkill名を明示的に指定して本スキルを起動した場合
 
 作業完了・振り返り完了・会話の区切りのみを契機に呼び出さない。

@@ -14,9 +14,16 @@ update:
 	$(MAKE) test
 
 # リポジトリ用と配布用のmise lockfileを更新
+# rustとdotnetは版を明示指定しており、明示指定した版は`mise lock --bump`が自分自身へ解決して
+# 変更しないため、設定ファイルの版を書き換える`mise upgrade --bump`を併せて実行する。
+# 配布用設定はGitLabバックエンドの`glab`を含む。miseは既定でglab CLIの設定ファイルから
+# トークンをfallback取得し、期限切れのトークンを公開APIの呼び出しへ付与して401で停止する。
+# 対象は公開リポジトリだけのため、当該fallbackを無効化して匿名で解決する。
 update-mise-locks:
+	mise upgrade --bump rust
 	mise lock --bump --platform linux-x64,windows-x64
-	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" mise lock --global --bump --platform linux-x64,windows-x64
+	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" MISE_GITLAB_GLAB_CLI_TOKENS=false mise upgrade --bump dotnet
+	MISE_CONFIG_DIR="$(CURDIR)/.chezmoi-source/dot_config/mise" MISE_GITLAB_GLAB_CLI_TOKENS=false mise lock --global --bump --platform linux-x64,windows-x64
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
@@ -52,8 +59,11 @@ format:
 	uvx pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
+# `--no-fix`はlinterの自動修正段を抑止する。コミット可否を判定するゲートが判定対象の作業ツリーを
+# 書き換えないようにし、担当範囲外のファイルへ差分が出ないようにする。
+# 自動修正が必要な場合は`make format`を使う。
 test:
-	uvx pyfltr run
+	uvx pyfltr run --no-fix
 
 # 実ブラウザーテストを日常実行
 test-browser:

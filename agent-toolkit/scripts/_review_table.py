@@ -6,8 +6,9 @@ import argparse
 import json
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from _atomic_file import atomic_write
 from _file_lock import acquire_lock, release_lock
@@ -296,14 +297,61 @@ def _required_value(args: argparse.Namespace, option: str, positional: str) -> s
     return value
 
 
+class _RejectedOption(argparse.Action):
+    """受理しないオプションを、正しい指定方法を示して拒否する。"""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ) -> None:
+        del namespace, values
+        parser.error(str(self.const).format(option=option_string))
+
+
+def _reject_option(
+    parser: argparse.ArgumentParser,
+    option: str,
+    guidance: str,
+    *,
+    nargs: int | str | None = None,
+) -> None:
+    """公開helpへ表示せず、誤指定時だけ誘導文を返すオプションを登録する。"""
+    parser.add_argument(
+        option,
+        dest=f"rejected_{option.removeprefix('--').replace('-', '_')}",
+        action=_RejectedOption,
+        const=guidance,
+        nargs=nargs,
+        help=argparse.SUPPRESS,
+    )
+
+
+def _reject_path_options(parser: argparse.ArgumentParser, subcommand: str) -> None:
+    guidance = f"{{option}}は受理しない。表のパスは位置引数で指定する: atk review-table {subcommand} <表の絶対パス>"
+    for option in ("--file", "--path"):
+        _reject_option(parser, option, guidance)
+
+
 def build_parser(parent: argparse._SubParsersAction) -> None:
     """`review-table`配下のサブコマンドを登録する。"""
     review = parent.add_parser("review-table", help="レビュー指摘管理表（7列TSV）を操作する")
     sub = review.add_subparsers(dest="review_table_subcommand", required=True)
     init_parser = sub.add_parser("init", help="空のレビュー表を作成する")
     init_parser.add_argument("path")
+    _reject_path_options(init_parser, "init")
+    _reject_option(
+        init_parser,
+        "--track",
+        "--trackは受理しない。レビュー表は<計画stem>.plan-review.tsvと<計画stem>.exec-review.tsvへ"
+        "trackごとに分かれるため、trackによる限定は指定しない: "
+        "atk review-table init <表の絶対パス>",
+    )
     add_parser = sub.add_parser("add", help="レビュー担当の指摘を追加する")
     add_parser.add_argument("path")
+    _reject_path_options(add_parser, "add")
     add_parser.add_argument("--round", required=True)
     add_parser.add_argument("--track", required=True, choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
     for name, positional in (("location", "location_arg"), ("issue", "issue_arg")):
@@ -317,6 +365,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         ),
     )
     respond_parser.add_argument("path")
+    _reject_path_options(respond_parser, "respond")
     respond_parser.add_argument("--round")
     respond_parser.add_argument("--track", choices=TRACK_VALUES)
     for name, positional in (("location", "location_arg"), ("issue", "issue_arg")):
@@ -328,6 +377,13 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     show_parser = sub.add_parser("show", help="レビュー表を表示する")
     show_parser.add_argument("path")
     show_parser.add_argument("--track", choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
+    _reject_path_options(show_parser, "show")
+    _reject_option(
+        show_parser,
+        "--all",
+        "--allは受理しない。--trackを省略すると全行を表示する: atk review-table show <表の絶対パス>",
+        nargs=0,
+    )
     validate_parser = sub.add_parser("validate", help="レビュー表を検証する")
     validate_parser.add_argument(
         "--allow-unanswered",
@@ -335,6 +391,14 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         help=f"未応答行を許容し、{_COLUMN_COUNT}列と複合キーなどの構造だけを検証する。{_RECOVERY_GUIDANCE}",
     )
     validate_parser.add_argument("path")
+    _reject_path_options(validate_parser, "validate")
+    _reject_option(
+        validate_parser,
+        "--track",
+        "--trackは受理しない。レビュー表は<計画stem>.plan-review.tsvと<計画stem>.exec-review.tsvへ"
+        "trackごとに分かれるため、trackによる限定は指定しない: "
+        "atk review-table validate <表の絶対パス>",
+    )
 
 
 def dispatch(args: argparse.Namespace) -> int:

@@ -11,7 +11,7 @@
 `plan-impl-executor`へ次を渡す。
 
 - 計画ファイル（メイン・詳細）、プロジェクト規範、作成規範スキル及びタスク文書の絶対パス
-- レーン専用worktree、レーンmanaged-temp及び実装レビュー用managed-tempの絶対パス
+- レーン専用worktree及びレーンmanaged-tempの絶対パス
 - pickerが確定した順序を保持したフィードバックファイル名一覧
 - フィードバック固有の処理順、公開、確認又は検証指示
 - 複製元、対象外worktree、commit可、ffマージ可、所有資源の回収可、push不可という権限
