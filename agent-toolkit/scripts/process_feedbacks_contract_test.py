@@ -1,7 +1,8 @@
-"""process-feedbacksの着手時機と固定ready集合に関する文書契約テスト。
+"""process-feedbacksの着手時機、固定ready集合及び即時対応の委譲に関する文書契約テスト。
 
 ①の状態遷移の時機と固定集合の寿命は、`SKILL.md`、`share/pick-feedbacks.parent.md`、
 `share/pick-feedbacks.subagent.md`、`run-lanes.md`及び`finish-session.md`へ分散して記述される。
+即時対応の委譲は`SKILL.md`と`delegation/references/runtime-routing.md`の工程別モデル設定へ分散する。
 片側だけを改訂すると、選定済み項目を`inbox`のまま②の計画・worktree作成へ渡す経路や、
 全レーン後にready一覧を再取得して起動時の集合を拡張する経路、メインが選定工程の最初に
 キュー一覧を取得する経路及び`blocked`項目を一律に除外する経路が復活する。
@@ -20,6 +21,7 @@ _PICK = _SHARE_DIR / "pick-feedbacks.parent.md"
 _PICK_SUBAGENT = _SHARE_DIR / "pick-feedbacks.subagent.md"
 _RUN_LANES = _SKILL_DIR / "references" / "run-lanes.md"
 _FINISH = _SKILL_DIR / "references" / "finish-session.md"
+_RUNTIME_ROUTING = _PLUGIN_ROOT / "skills" / "delegation" / "references" / "runtime-routing.md"
 
 
 def _read(path: pathlib.Path) -> str:
@@ -124,6 +126,25 @@ def test_main_reads_feedback_bodies_only_when_judging() -> None:
     assert "フィードバック本文、項目別の採否理由、対象実装の調査結果のいずれも受け取らない" in section
     assert "内容に基づく判断が実際に必要になった時点に限る" in section
     assert "メインによる本文の要約を入力の代替にしない" in _read(_RUN_LANES)
+
+
+def test_immediate_fix_is_delegated_with_execute_fix_model() -> None:
+    """即時対応の修正をメインが自ら実施する経路の復活を検出する。
+
+    メインが直接修正するとレーン処理に残るコンテキストが減り、規範文書の改訂許可も渡らない。
+    """
+    section = _section(_read(_SKILL), "フィードバック即時対応")
+    assert "メインが自ら実施せず" in section
+    assert "atk config get execute_fix_model" in section
+    assert "規範文書を改訂する許可" in section
+
+
+def test_execute_fix_model_row_covers_immediate_fix() -> None:
+    """工程別モデル設定の`execute_fix_model`行が即時対応と解決主体を含むことを検査する。"""
+    rows = [line for line in _read(_RUNTIME_ROUTING).splitlines() if line.startswith("| `execute_fix_model` |")]
+    assert len(rows) == 1, rows
+    assert "フィードバック即時対応" in rows[0]
+    assert "process-feedbacksのメイン" in rows[0]
 
 
 def test_picker_excludes_external_wait_only() -> None:

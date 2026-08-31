@@ -47,7 +47,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
-| `execute_fix_model` | fast担当のエスカレーション引継ぎ、レビュー修正及びCI失敗修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン | `agents_server` MCP | Agentツール |
+| `execute_fix_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及びフィードバック即時対応の修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン、フィードバック即時対応ではprocess-feedbacksのメイン | `agents_server` MCP | Agentツール |
 | `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
