@@ -18,6 +18,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -283,6 +284,107 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 定期バックグラウンド更新の省略と、ユーザー操作での同期再利用案内に共用する。
 """
 
+_TERMINAL_COMMIT_SUBJECT = re.compile(
+    r"^chore: process (?P<count>[1-9][0-9]*) (?P<noun>entry|entries) \((?P<outcome>adopted|rejected)\)$"
+)
+_PROCESSING_TIMESTAMP_PREFIX = "- 処理日時: "
+
+
+def _normalized_terminal_content(content: str) -> str | None:
+    """最後の処理結果にある処理日時だけを比較用の固定値へ置換する。"""
+    lines = content.splitlines(keepends=True)
+    logical_lines = [line.rstrip("\r\n") for line in lines]
+    headings = [index for index, line in enumerate(logical_lines) if line == "## 処理結果"]
+    timestamps = [index for index, line in enumerate(logical_lines) if line.startswith(_PROCESSING_TIMESTAMP_PREFIX)]
+    if not headings or len(timestamps) != 1 or timestamps[0] <= headings[-1]:
+        return None
+    timestamp_index = timestamps[0]
+    try:
+        datetime.datetime.fromisoformat(logical_lines[timestamp_index].removeprefix(_PROCESSING_TIMESTAMP_PREFIX))
+    except ValueError:
+        return None
+    line_ending = lines[timestamp_index][len(logical_lines[timestamp_index]) :]
+    lines[timestamp_index] = _PROCESSING_TIMESTAMP_PREFIX + line_ending
+    return "".join(lines)
+
+
+def _git_file_content(private_notes: pathlib.Path, revision_path: str) -> str:
+    """Git tree上のファイル内容を前後の空白も保持して返す。"""
+    result = _git_command.run(
+        ["show", revision_path],
+        private_notes,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert isinstance(result.stdout, str)
+    return result.stdout
+
+
+def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> bool:
+    """単一のローカルcommitがupstream上の同等なMQ終端だけを含むか判定する。"""
+    subject = _git_command.output(["show", "-s", "--format=%s", commit], private_notes)
+    match = _TERMINAL_COMMIT_SUBJECT.fullmatch(subject)
+    if match is None:
+        return False
+    count = int(match.group("count"))
+    if (count == 1) != (match.group("noun") == "entry"):
+        return False
+    outcome = match.group("outcome")
+    changes = _git_command.lines(
+        ["diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", commit],
+        private_notes,
+    )
+    if changes is None:
+        return False
+    removed: dict[str, str] = {}
+    added: dict[str, str] = {}
+    for line in changes:
+        fields = line.split("\t")
+        if len(fields) != 2:
+            return False
+        status, relative = fields
+        path = pathlib.PurePosixPath(relative)
+        if len(path.parts) != 2 or path.suffix != ".md":
+            return False
+        state, filename = path.parts
+        if status == "D" and state in MQ_FEEDBACK_ACTIVE_STATES:
+            removed[filename] = relative
+        elif status == "A" and state == outcome:
+            added[filename] = relative
+        else:
+            return False
+    if len(changes) != count * 2 or len(removed) != count or removed.keys() != added.keys():
+        return False
+
+    for filename, destination in added.items():
+        source = removed[filename]
+        source_result = _git_command.run(
+            ["cat-file", "-e", f"@{{u}}:{source}"],
+            private_notes,
+            capture_output=True,
+            text=True,
+        )
+        if source_result.returncode == 0:
+            return False
+        local_content = _git_file_content(private_notes, f"{commit}:{destination}")
+        upstream_content = _git_file_content(private_notes, f"@{{u}}:{destination}")
+        local_normalized = _normalized_terminal_content(local_content)
+        if local_normalized is None or local_normalized != _normalized_terminal_content(upstream_content):
+            return False
+    return True
+
+
+def _redundant_terminal_divergence(private_notes: pathlib.Path) -> bool:
+    """ローカル側の全commitがupstream反映済みの同等なMQ終端なら真を返す。"""
+    try:
+        commits = _git_command.lines(["rev-list", "--reverse", "@{u}..HEAD"], private_notes)
+        if not commits:
+            return False
+        return all(_terminal_commit_is_redundant(private_notes, commit) for commit in commits)
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return False
+
 
 def _pull(private_notes: pathlib.Path) -> None:
     """フィードバック保存リポジトリを明示したupstreamへfast-forward同期する。
@@ -299,9 +401,13 @@ def _pull(private_notes: pathlib.Path) -> None:
 
 
 def _pull_remote(private_notes: pathlib.Path) -> None:
-    """フィードバック保存リポジトリのremoteをfetchし、upstreamへ統合する。"""
+    """remoteをfetchし、同等終端の安全な回復を含めてupstreamへ統合する。"""
     _assert_repo_lock_held(private_notes)
-    _atk_git_sync.pull(private_notes, run_git=_run_git)
+    _atk_git_sync.pull(
+        private_notes,
+        run_git=_run_git,
+        redundant_divergence=_redundant_terminal_divergence,
+    )
 
 
 def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = False) -> None:
@@ -403,8 +509,12 @@ def _commit_and_push(
 
 
 def _push_pending_commits(private_notes: pathlib.Path) -> None:
-    """ローカルcommitをpushし、競合時は明示したupstreamへのrebase後に1回だけ再試行する。"""
-    _atk_git_sync.push_pending_commits(private_notes, run_git=_run_git)
+    """ローカルcommitをpushし、同等終端の回復又はrebase後に1回だけ再試行する。"""
+    _atk_git_sync.push_pending_commits(
+        private_notes,
+        run_git=_run_git,
+        redundant_divergence=_redundant_terminal_divergence,
+    )
 
 
 def _stamp_result(

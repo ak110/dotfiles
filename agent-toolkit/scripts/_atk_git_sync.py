@@ -23,10 +23,13 @@ LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
 """自動生成されたremoteなしリポジトリを示すマーカー。"""
 
 PUSH_DEFERRED_MESSAGE = (
-    "commitは完了した。別の未コミット差分があるためpushを保留した。\n"
-    "（次のatk mqまたはatk plans更新時に、未push commitは自動的に再送されるため特別な対処は不要）"
+    "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した。\n"
+    "`git status`で差分を確認してcommit等でcleanにした後、元の`atk`操作を再実行してください。"
 )
 """履歴分岐時に無関係な差分がある場合の確定通知。"""
+
+_DivergenceRecovery = Callable[[pathlib.Path], bool]
+"""呼び出し元の意味論でローカル側commitの冗長性を証明する判定関数。"""
 
 
 class _GitRunner(Protocol):
@@ -202,6 +205,8 @@ def pull(
     private_notes: pathlib.Path,
     *,
     run_git: _GitRunner = _run_git,
+    result_runner: _GitResultRunner = _run_git_result,
+    redundant_divergence: _DivergenceRecovery | None = None,
 ) -> None:
     """remoteをfetchし、明示したupstreamへfast-forward同期する。"""
     assert_repo_lock_held(private_notes)
@@ -209,7 +214,27 @@ def pull(
     if not has_remote(private_notes):
         return
     run_git(["fetch"], private_notes)
-    run_git(["merge", "--ff-only", "@{u}"], private_notes)
+    try:
+        run_git(["merge", "--ff-only", "@{u}"], private_notes)
+        return
+    except subprocess.CalledProcessError as error:
+        merge_error = error
+
+    try:
+        diverged = _history_has_diverged(private_notes, run_git=run_git)
+    except subprocess.CalledProcessError:
+        raise merge_error from None
+    if not diverged:
+        raise merge_error
+    if _recover_redundant_divergence(
+        private_notes,
+        redundant_divergence=redundant_divergence,
+        run_git=run_git,
+        result_runner=result_runner,
+    ):
+        return
+    _report_divergence(private_notes, result_runner=result_runner)
+    raise merge_error
 
 
 def _is_ancestor(
@@ -229,6 +254,13 @@ def _is_ancestor(
     return True
 
 
+def _history_has_diverged(private_notes: pathlib.Path, *, run_git: _GitRunner) -> bool:
+    """HEADとupstreamの双方に相手へ含まれないcommitがあるか返す。"""
+    local_is_ancestor = _is_ancestor("HEAD", "@{u}", private_notes, run_git=run_git)
+    remote_is_ancestor = _is_ancestor("@{u}", "HEAD", private_notes, run_git=run_git)
+    return not local_is_ancestor and not remote_is_ancestor
+
+
 def is_worktree_dirty(
     private_notes: pathlib.Path,
     *,
@@ -239,6 +271,59 @@ def is_worktree_dirty(
     if result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, ["git", "status", "--porcelain"], result.stdout, result.stderr)
     return bool(result.stdout.strip())
+
+
+def _recover_redundant_divergence(
+    private_notes: pathlib.Path,
+    *,
+    redundant_divergence: _DivergenceRecovery | None,
+    run_git: _GitRunner,
+    result_runner: _GitResultRunner,
+) -> bool:
+    """cleanかつ呼び出し元が冗長性を証明した分岐だけをupstreamへ揃える。"""
+    if redundant_divergence is None or is_worktree_dirty(private_notes, result_runner=result_runner):
+        return False
+    if not redundant_divergence(private_notes):
+        return False
+    run_git(["reset", "--keep", "@{u}"], private_notes)
+    print(
+        "同等の変更がupstreamへ反映済みであることを確認したため、冗長なローカルcommitを除外して自動同期しました。",
+        file=sys.stderr,
+    )
+    return True
+
+
+def _report_divergence(
+    private_notes: pathlib.Path,
+    *,
+    result_runner: _GitResultRunner,
+) -> None:
+    """自動回復できない分岐の原因と手動回復手順を表示する。"""
+    count_text = "取得できませんでした"
+    try:
+        counts = result_runner(["rev-list", "--left-right", "--count", "HEAD...@{u}"], private_notes)
+        if counts.returncode == 0:
+            fields = counts.stdout.split()
+            if len(fields) == 2:
+                count_text = f"ローカルのみ{fields[0]}件、upstreamのみ{fields[1]}件"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    print(f"Git履歴が分岐しています（{count_text}）: {private_notes}", file=sys.stderr)
+    print(
+        "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態です。",
+        file=sys.stderr,
+    )
+    print("確認: `git log --left-right --oneline HEAD...@{u}`", file=sys.stderr)
+    print(
+        "回復: `git rebase @{u}`を実行し、競合を解消して`git add <path>`、"
+        "`git rebase --continue`、`git push`の順に実行してください。",
+        file=sys.stderr,
+    )
+    print(
+        "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できます。"
+        "中止する場合は`git rebase --abort`を実行してください。",
+        file=sys.stderr,
+    )
 
 
 def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitResultRunner) -> None:
@@ -258,6 +343,11 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
     )
     print("競合を解消した後、次の順に実行してください: `git add <競合解消済みパス>`、", file=sys.stderr)
     print("`git rebase --continue`、`git push`。", file=sys.stderr)
+    print(
+        "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して`git rebase --skip`を実行できます。"
+        "中止する場合は`git rebase --abort`を実行してください。",
+        file=sys.stderr,
+    )
 
 
 def push_pending_commits(
@@ -265,6 +355,7 @@ def push_pending_commits(
     *,
     run_git: _GitRunner = _run_git,
     result_runner: _GitResultRunner = _run_git_result,
+    redundant_divergence: _DivergenceRecovery | None = None,
 ) -> None:
     """branch上の未push commitを送信し、履歴分岐だけをrebaseして再送する。"""
     assert_repo_lock_held(private_notes)
@@ -295,7 +386,16 @@ def push_pending_commits(
         raise original_error
 
     if is_worktree_dirty(private_notes, result_runner=result_runner):
+        _report_divergence(private_notes, result_runner=result_runner)
         print(PUSH_DEFERRED_MESSAGE, file=sys.stderr)
+        return
+
+    if _recover_redundant_divergence(
+        private_notes,
+        redundant_divergence=redundant_divergence,
+        run_git=run_git,
+        result_runner=result_runner,
+    ):
         return
 
     try:
