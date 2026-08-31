@@ -5,7 +5,7 @@
 # ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
-計画メタ情報、見出し構造、提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
+計画メタ情報、見出し構造、関連フィードバックと提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
 旧形式は読み取り互換で受理するが、新形式への移行をwarningで案内する。
 """
 
@@ -157,19 +157,6 @@ def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
     return plan_path.with_name(f"{plan_path.stem}{_plan_format.PLAN_DETAIL_SUFFIX}")
 
 
-def _check_detail_reference(declared_value: str | None, detail_path: pathlib.Path) -> list[str]:
-    """計画ファイル（メイン）の計画ファイル（詳細）参照がstem導出値と一致するかを検査する。"""
-    if declared_value is None:
-        return [f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`が無い: 期待={detail_path.name}"]
-    declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
-    if declared_text != detail_path.name:
-        return [
-            f"計画メタ情報の`{_plan_format.PLAN_METADATA_DETAIL_FIELD}`がstem導出値と一致しない: "
-            f"計画={declared_text}, 期待={detail_path.name}"
-        ]
-    return []
-
-
 def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
     """計画ファイル（詳細）のパスからstem対応する計画ファイル（メイン）のパスを返す。"""
     suffix = _plan_format.PLAN_DETAIL_SUFFIX
@@ -251,6 +238,11 @@ def _legacy_fixed_notation_warnings(text: str) -> list[str]:
         field == _plan_format.PLAN_METADATA_LEGACY_DETAIL_FIELD for field, _value in metadata.entries
     ):
         warnings.append("計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する")
+    if metadata is not None and _plan_format.PLAN_METADATA_DETAIL_FIELD in metadata.values:
+        warnings.append("計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける")
+    headings = _plan_format.extract_headings(text)
+    if _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_MATERIALS) is not None:
+        warnings.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する")
     if any(
         line.strip().startswith(_plan_format.PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
         for _lineno, line in _plan_format.iter_markdown_body_lines(text)
@@ -277,7 +269,6 @@ def _check_new_format(
 
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
-    errors.extend(_check_detail_reference(metadata.get(_plan_format.PLAN_METADATA_DETAIL_FIELD), detail_path))
 
     detail_text = detail_path.read_text(encoding="utf-8")
     detail_lines = detail_text.splitlines()
@@ -292,7 +283,9 @@ def _check_new_format(
     warnings.extend(_legacy_bug_warnings(detail_text))
     warnings.extend(_legacy_fixed_notation_warnings(detail_text))
 
-    materials, _material_errors = _plan_format.parse_plan_materials(text)
+    materials = None
+    if parsed is None or _plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD not in parsed.values:
+        materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))
     warnings.extend(_legacy_fixed_notation_warnings(text))

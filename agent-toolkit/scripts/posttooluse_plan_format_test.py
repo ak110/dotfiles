@@ -80,9 +80,9 @@ def _run_codex_patch(
     )
 
 
-def _plan_content(detail_name: str) -> str:
+def _plan_content() -> str:
     """人間向け計画ファイル（メイン）の正規形の計画を返す。"""
-    return f"""# 計画の主題
+    return """# 計画の主題
 
 ## 概要
 
@@ -92,9 +92,9 @@ def _plan_content(detail_name: str) -> str:
 
 - 起動経路: `agent-toolkit:plan-mode`
 - 対象リポジトリ: `/repo`
+- 関連フィードバック: なし
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 計画ファイル（詳細）: `{detail_name}`
 
 ## 実施内容
 
@@ -103,11 +103,13 @@ def _plan_content(detail_name: str) -> str:
 | 対象を更新する | ユーザー指示 | 採用 | - |
 | 対象外の類似箇所は維持する | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |
 
-## 提示素材
+## エージェント判断
 
-なし
+| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |
+| --- | --- | --- | --- | --- |
+| 対象外の類似箇所は維持する | 影響なし。 | 対象外。 | 維持する。 | 調査済み。 |
 
-## 変更履歴
+## 変更履歴（計画時）
 
 ### ユーザー発言: 本セッションの直接指示
 
@@ -130,7 +132,7 @@ def _plan_content(detail_name: str) -> str:
 
 なし
 
-## 進捗ログ
+## 進捗ログ（実行時）
 
 | 日時 | 完了した工程 | 結果・特記事項 |
 | --- | --- | --- |
@@ -198,7 +200,7 @@ class TestPlanPostWrite:
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plan = _prepare_plan_home(home) / "sample.md"
-        content = _plan_content("sample.detail.md")
+        content = _plan_content()
         plan.write_text(content, encoding="utf-8")
         plan.with_name("sample.detail.md").write_text(_detail_content(), encoding="utf-8")
         result = _run(
@@ -222,7 +224,7 @@ class TestPlanPostWrite:
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plan = _prepare_plan_home(home) / "flexible.md"
-        content = _plan_content("flexible.detail.md")
+        content = _plan_content()
         plan.write_text(content, encoding="utf-8")
         detail = plan.with_name("flexible.detail.md")
         detail_content = _detail_content().replace("### 実装単位", "### 実行方法\n\n手順。\n\n### 実装単位")

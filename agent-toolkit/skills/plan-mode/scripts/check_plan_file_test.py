@@ -273,7 +273,7 @@ def _canonical_main_format(content: str) -> str:
     )
 
 
-def human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
+def human_new_format_plan(repo: pathlib.Path) -> tuple[str, str]:
     """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
     main = f"""# 計画の主題
 
@@ -285,9 +285,9 @@ def human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.m
 
 - 起動経路: `agent-toolkit:plan-mode`
 - 対象リポジトリ: `{repo.resolve()}`
+- 関連フィードバック: なし
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 計画ファイル（詳細）: `{detail_name}`
 
 ## 実施内容
 
@@ -296,11 +296,13 @@ def human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.m
 | 公開契約の境界を更新する | ユーザー指示 | 採用 | - |
 | 影響のない類似箇所は変更しない | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |
 
-## 提示素材
+## エージェント判断
 
-なし
+| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |
+| --- | --- | --- | --- | --- |
+| 影響のない類似箇所は変更しない | 影響なし。 | 対象外。 | 維持する。 | 調査済み。 |
 
-## 変更履歴
+## 変更履歴（計画時）
 
 ### ユーザー発言: 本セッションの直接指示
 
@@ -323,7 +325,7 @@ def human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.m
 
 なし
 
-## 進捗ログ
+## 進捗ログ（実行時）
 
 | 日時 | 完了した工程 | 結果・特記事項 |
 | --- | --- | --- |
@@ -463,6 +465,7 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
     )
     if bug:
         expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")
+    expected.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する")
     assert warnings == expected
 
 
@@ -476,7 +479,7 @@ def test_warns_above_line_threshold_only(repo: tuple[pathlib.Path, str], total_l
     assert len(content.splitlines()) == total_lines
     errors, warnings = _check(work_dir, content)
     assert not errors, errors
-    assert len(warnings) == expected_warnings, warnings
+    assert len(warnings) == expected_warnings + 1, warnings
 
 
 def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Path, str]) -> None:
@@ -491,7 +494,7 @@ def test_cli_accepts_mixed_agreements_and_numeric_target(repo: tuple[pathlib.Pat
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stderr == ""
+    assert "`## 提示素材`が旧形式である" in result.stderr
 
 
 def test_cli_rejects_action_reference_to_rejected_requirement(repo: tuple[pathlib.Path, str]) -> None:
@@ -530,7 +533,7 @@ def test_cli_reports_missing_completion_once(repo: tuple[pathlib.Path, str]) -> 
         text=True,
         check=False,
     )
-    diagnostics = [line for line in result.stderr.splitlines() if line]
+    diagnostics = [line for line in result.stderr.splitlines() if line and not line.startswith("[warn]")]
     assert result.returncode == 1
     assert len(diagnostics) == 1, diagnostics
     assert "`## 完了条件`は1件必要" in diagnostics[0]
@@ -685,7 +688,11 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
-    expected = ["二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"]
+    expected = [
+        "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
+        "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+        "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
+    ]
     assert warnings == expected, warnings
 
 
@@ -753,22 +760,23 @@ def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, s
     assert not errors, errors
 
 
-def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（メイン）の詳細参照がstem導出値と一致しない場合を拒否する。"""
+def test_old_two_file_format_ignores_detail_reference_value(repo: tuple[pathlib.Path, str]) -> None:
+    """旧二ファイル形式の詳細参照値はstem導出へ移行したため対応判定に使わない。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`", "- 計画ファイル（詳細）: `other.detail.md`")
-    errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("stem導出値と一致しない" in error for error in errors), errors
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert any("stemから対応付ける" in warning for warning in warnings), warnings
 
 
-def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（メイン）の計画メタ情報に詳細参照が無い場合を拒否する。"""
+def test_new_format_requires_related_feedback_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
+    """詳細参照を除いた新書式には関連フィードバックが必要である。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("`計画ファイル（詳細）`が無い" in error for error in errors), errors
+    assert any("`関連フィードバック`" in error for error in errors), errors
 
 
 def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
@@ -883,6 +891,12 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     expected = ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
     if _plan_format.has_legacy_action_table(main_content):
         expected.append("実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")
+    expected.extend(
+        [
+            "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
+            "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+        ]
+    )
     expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
 
@@ -927,7 +941,11 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert result.stderr == "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"
+    assert result.stderr == (
+        "[warn] 計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける\n"
+        "[warn] `## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する\n"
+        "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"
+    )
 
 
 @pytest.mark.skipif(

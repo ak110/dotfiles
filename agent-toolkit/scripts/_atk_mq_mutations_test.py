@@ -11,6 +11,7 @@ import argparse
 import contextlib
 import datetime
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -538,14 +539,110 @@ def _write_planning_plan(
     target_commit: str,
     filenames: tuple[str, ...],
 ) -> pathlib.Path:
-    """計画型変換テスト用にメタ情報と提示素材を持つ計画を作成する。"""
+    """計画型変換テスト用に関連フィードバックを持つ計画を作成する。"""
     plan = tmp_path / "plan.md"
-    materials = "".join(f"- {filename}\n" for filename in filenames)
+    related_feedback = "".join(f"  - {filename}: 変換対象の要求\n" for filename in filenames)
     plan.write_text(
-        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{target_commit}`\n\n## 提示素材\n\n{materials}",
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- 関連フィードバック:\n{related_feedback}"
+        f"- ベースコミット: `{target_commit}`\n",
         encoding="utf-8",
     )
     return plan
+
+
+def _write_legacy_planning_plan(
+    tmp_path: pathlib.Path,
+    _target_commit: str,
+    filenames: tuple[str, ...],
+) -> pathlib.Path:
+    """計画型変換テスト用に提示素材を持つ旧書式の計画を作成する。"""
+    plan = tmp_path / "plan.md"
+    plan.write_text(
+        "## 提示素材\n\n" + "".join(f"- {name}\n" for name in filenames),
+        encoding="utf-8",
+    )
+    return plan
+
+
+def test_read_plan_input_filenames_uses_related_feedback_and_legacy_materials(tmp_path: pathlib.Path) -> None:
+    """新書式は関連フィードバックを読み、旧書式は提示素材へフォールバックする。"""
+    read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
+    filenames = ("20260827-000000-002.md", "20260827-000000-001.md")
+    plan = _write_planning_plan(tmp_path, "a" * 40, filenames)
+    assert read_plan_input_filenames(plan) == (tuple(sorted(filenames)), "計画メタ情報の関連フィードバック")
+
+    plan.write_text("## 提示素材\n\n" + "".join(f"- {name}\n" for name in filenames), encoding="utf-8")
+    assert read_plan_input_filenames(plan) == (tuple(sorted(filenames)), "計画の提示素材")
+
+
+@pytest.mark.parametrize(
+    ("legacy", "source_description"),
+    [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
+)
+@pytest.mark.parametrize(
+    ("condition", "message_suffix"),
+    [
+        ("missing", "を一意に特定できません"),
+        ("multiple", "を一意に特定できません"),
+        ("broken-frontmatter", "のfrontmatterが破損しています"),
+        ("feedback-outside-planning", "の変換元feedbackがplanningに存在しません"),
+        ("already-planned", "が既に計画型です"),
+        ("inactive-tbd", "のTBDがactive状態ではありません"),
+        ("invalid-type", "のtypeが不正です"),
+        ("no-feedback", "に変換元feedbackがありません"),
+    ],
+)
+def test_plan_feedback_paths_identifies_plan_input_source_in_errors(
+    tmp_path: pathlib.Path,
+    legacy: bool,
+    source_description: str,
+    condition: str,
+    message_suffix: str,
+) -> None:
+    """計画入力の通常検証エラーが新旧どちらの参照元かを示す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    if condition == "multiple":
+        _write_convert_feedback(notes, filename, state="planning")
+        _write_convert_feedback(notes, filename, state="inbox")
+    elif condition == "broken-frontmatter":
+        path = notes / "planning" / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("本文\n", encoding="utf-8")
+    elif condition == "already-planned":
+        path = _write_convert_feedback(notes, filename, state="planning")
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\nplan_file: x\n"), encoding="utf-8"
+        )
+    elif condition == "feedback-outside-planning":
+        _write_convert_feedback(notes, filename, state="inbox")
+    elif condition == "inactive-tbd":
+        _write_convert_feedback(notes, filename, entry_type="tbd", state="adopted")
+    elif condition == "invalid-type":
+        _write_convert_feedback(notes, filename, entry_type="invalid", state="planning")
+    elif condition == "no-feedback":
+        _write_convert_feedback(notes, filename, entry_type="tbd", state="inbox")
+
+    writer = _write_legacy_planning_plan if legacy else _write_planning_plan
+    plan = writer(tmp_path, "a" * 40, (filename,))
+    read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
+    plan_feedback_paths = vars(mutations)["_plan_feedback_paths"]
+    filenames, actual_source_description = read_plan_input_filenames(plan)
+
+    assert actual_source_description == source_description
+    with pytest.raises(mutations.WebInputError, match=re.escape(source_description + message_suffix)):
+        plan_feedback_paths(notes, filenames, actual_source_description)
+
+
+def test_read_plan_input_filenames_rejects_invalid_related_feedback(tmp_path: pathlib.Path) -> None:
+    """関連フィードバックの要約欠落を提示素材へフォールバックせず拒否する。"""
+    read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
+    filename = "20260827-000000-001.md"
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan.write_text(plan.read_text(encoding="utf-8").replace(": 変換対象の要求", ":"), encoding="utf-8")
+
+    with pytest.raises(mutations.WebInputError, match="計画メタ情報の関連フィードバックが不正"):
+        read_plan_input_filenames(plan)
 
 
 def _write_convert_feedback(
@@ -1309,20 +1406,28 @@ def test_convert_to_plan_rejects_mixed_states_before_writing(
     assert not (notes / "inbox" / second.name).exists()
 
 
+@pytest.mark.parametrize(
+    ("legacy", "source_description"),
+    [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
+)
 def test_convert_planning_entries_rejects_material_mismatch_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    legacy: bool,
+    source_description: str,
 ) -> None:
-    """CLI入力と計画素材の集合が異なる場合は書込み前に拒否する。"""
+    """CLI入力と新旧計画入力の集合が異なる場合は書込み前に拒否する。"""
     notes = _setup_notes(tmp_path)
     first = _write_convert_feedback(notes, "20260827-000000-001.md", state="planning")
     second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
     originals = {path.name: path.read_text(encoding="utf-8") for path in (first, second)}
-    plan = _write_planning_plan(tmp_path, "a" * 40, (first.name,))
+    writer = _write_legacy_planning_plan if legacy else _write_planning_plan
+    plan = writer(tmp_path, "a" * 40, (first.name,))
     _disable_convert_git(monkeypatch)
     _patch_planning_target_resolution(monkeypatch)
 
-    with pytest.raises(mutations.WebInputError, match="一致しません"):
+    expected = f"convert-to-planの入力と{source_description}が一致しません"
+    with pytest.raises(mutations.WebInputError, match=re.escape(expected)):
         mutations.convert_entries_to_plan(
             notes,
             filenames=(first.name, second.name),
@@ -1334,6 +1439,39 @@ def test_convert_planning_entries_rejects_material_mismatch_without_changes(
     assert first.read_text(encoding="utf-8") == originals[first.name]
     assert second.read_text(encoding="utf-8") == originals[second.name]
     assert not (notes / "inbox" / first.name).exists()
+
+
+@pytest.mark.parametrize(
+    ("legacy", "source_description"),
+    [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
+)
+def test_convert_planning_entries_identifies_source_for_feedback_outside_planning(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy: bool,
+    source_description: str,
+) -> None:
+    """planning外の変換元feedbackを新旧計画入力の参照元付きで拒否する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="planning")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="inbox")
+    originals = {path: path.read_text(encoding="utf-8") for path in (first, second)}
+    writer = _write_legacy_planning_plan if legacy else _write_planning_plan
+    plan = writer(tmp_path, "a" * 40, (first.name, second.name))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    expected = f"{source_description}の変換元feedbackがplanningに存在しません: {second.name}"
+    with pytest.raises(mutations.WebInputError, match=re.escape(expected)):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(first.name,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert all(path.read_text(encoding="utf-8") == content for path, content in originals.items())
 
 
 def test_convert_planning_entries_rejects_destination_conflict_without_changes(
@@ -2549,7 +2687,7 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
 ) -> None:
     """各エージェント環境と編集経路でユーザーコメント変更を書き込み前に拒否する。"""
     notes = _setup_notes(tmp_path)
-    filename = "fb-001.md"
+    filename = "20260827-000000-001.md"
     path = _write_feedback_file(notes, filename, body="本文\n\n## ユーザーコメント\n\n保持する")
     original = path.read_bytes()
     for name in _AGENT_ENVIRONMENT_VARIABLES:
@@ -2712,7 +2850,7 @@ def test_cli_edit_outputs_saved_body_for_each_write_route(
 ) -> None:
     """各編集経路が保存結果から読み直した全文を字下げせず出力する。"""
     notes = _setup_notes(tmp_path)
-    filename = "fb-001.md"
+    filename = "20260827-000000-001.md"
     path = _write_feedback_file(notes, filename, body="編集前")
     message = '編集後。"引用"を含む。\n\n## 見出し\n\n複数行。'
     argv = ["mq", "edit", filename, message]

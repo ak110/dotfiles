@@ -69,6 +69,10 @@ _AGENT_USER_COMMENT_ERROR = (
 )
 
 
+class _PlanFeedbackValidationError(Exception):
+    """計画入力の参照元を付ける前の検証失敗。"""
+
+
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
     """エージェント環境からのユーザーコメント変更を拒否した場合に真を返す。"""
     if not is_agent_environment():
@@ -680,8 +684,8 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
-def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[str, ...]:
-    """正規パーサーで検証した`提示素材`からキュー項目名を返す。"""
+def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[tuple[str, ...], str]:
+    """キュー項目名と、参照元を示すユーザー向け表示名を返す。"""
     try:
         text = plan_path.read_text(encoding="utf-8")
     except OSError as error:
@@ -689,47 +693,72 @@ def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[str, ...]:
     except UnicodeError as error:
         raise WebInputError(f"plan_fileをUTF-8として読み込めません: {plan_path}") from error
 
-    materials, errors = _plan_format.parse_plan_materials(text)
-    if errors:
-        raise WebInputError("計画の提示素材が不正です: " + "; ".join(errors))
-    if materials is None:
-        raise WebInputError("計画の提示素材を解析できません")
-    filenames = materials.material_paths if materials.is_human_readable else materials.feedback_queue_ids
-    return tuple(sorted(filenames))
+    metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
+    if metadata_errors:
+        raise WebInputError("計画メタ情報が不正です: " + "; ".join(metadata_errors))
+    if metadata is not None and _plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD in metadata.values:
+        source_description = "計画メタ情報の関連フィードバック"
+        related_errors = _plan_format.check_plan_related_feedback(metadata)
+        if related_errors:
+            raise WebInputError("計画メタ情報の関連フィードバックが不正です: " + "; ".join(related_errors))
+        filenames = tuple(filename for filename, _summary in metadata.related_feedback)
+        if metadata.values[_plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD] == "なし":
+            filenames = ()
+    else:
+        source_description = "計画の提示素材"
+        materials, errors = _plan_format.parse_plan_materials(text)
+        if errors:
+            raise WebInputError("旧書式の計画の提示素材が不正です: " + "; ".join(errors))
+        if materials is None:
+            raise WebInputError("旧書式の計画の提示素材を解析できません")
+        filenames = materials.material_paths if materials.is_human_readable else materials.feedback_queue_ids
+    return tuple(sorted(filenames)), source_description
 
 
-def _plan_feedback_paths(
+def _validated_plan_feedback_paths(
     private_notes: pathlib.Path,
     filenames: tuple[str, ...],
 ) -> tuple[pathlib.Path, ...]:
-    """提示素材を検証し、planningにある変換元feedbackだけを返す。"""
+    """計画入力を検証し、参照元を付ける前の失敗を送出する。"""
     feedback_paths: list[pathlib.Path] = []
     for filename in filenames:
         candidates = tuple((state, private_notes / state / filename) for state in MQ_STATES)
         existing = tuple((state, path) for state, path in candidates if path.is_file())
         if len(existing) != 1:
-            raise WebInputError(f"計画の提示素材を一意に特定できません: {filename}")
+            raise _PlanFeedbackValidationError(f"を一意に特定できません: {filename}")
         state, path = existing[0]
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
-            raise WebInputError(f"計画の提示素材のfrontmatterが破損しています: {filename}")
+            raise _PlanFeedbackValidationError(f"のfrontmatterが破損しています: {filename}")
         entry_type = parsed[0].get("type")
         if entry_type == MQ_TYPE_FEEDBACK:
             if state != MQ_STATE_PLANNING:
-                raise WebInputError(f"変換元feedbackがplanningに存在しません: {filename}")
+                raise _PlanFeedbackValidationError(f"の変換元feedbackがplanningに存在しません: {filename}")
             if "plan_file" in parsed[0]:
-                raise WebInputError(f"計画の提示素材が既に計画型です: {filename}")
+                raise _PlanFeedbackValidationError(f"が既に計画型です: {filename}")
             feedback_paths.append(path)
             continue
         if entry_type == MQ_TYPE_TBD:
             if state not in MQ_PROCESSABLE_STATES:
-                raise WebInputError(f"計画の提示素材TBDがactive状態ではありません: {filename}")
+                raise _PlanFeedbackValidationError(f"のTBDがactive状態ではありません: {filename}")
             continue
-        raise WebInputError(f"計画の提示素材のtypeが不正です: {filename}")
+        raise _PlanFeedbackValidationError(f"のtypeが不正です: {filename}")
     if not feedback_paths:
-        raise WebInputError("計画の提示素材に変換元feedbackがありません")
+        raise _PlanFeedbackValidationError("に変換元feedbackがありません")
     return tuple(feedback_paths)
+
+
+def _plan_feedback_paths(
+    private_notes: pathlib.Path,
+    filenames: tuple[str, ...],
+    source_description: str,
+) -> tuple[pathlib.Path, ...]:
+    """計画入力を検証し、planningにある変換元feedbackだけを返す。"""
+    try:
+        return _validated_plan_feedback_paths(private_notes, filenames)
+    except _PlanFeedbackValidationError as error:
+        raise WebInputError(f"{source_description}{error}") from error
 
 
 def _resolve_plan_base_commit(plan_path: pathlib.Path, local_worktree: pathlib.Path) -> str:
@@ -796,13 +825,13 @@ def edit_entry_to_plan(
     with _repo_lock(private_notes, timeout=lock_timeout):
         _push_pending_commits(private_notes)
         _pull(private_notes)
-        material_names = _read_plan_input_filenames(plan_path)
+        material_names, source_description = _read_plan_input_filenames(plan_path)
         normalized_material_names = tuple(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in material_names))
         if not normalized_material_names:
-            raise WebInputError("計画の提示素材に変換元feedbackがありません")
+            raise WebInputError(f"{source_description}に変換元feedbackがありません")
         if normalized_filename not in normalized_material_names:
-            raise WebInputError(f"指定項目が計画の提示素材に含まれません: {normalized_filename}")
-        material_paths = _plan_feedback_paths(private_notes, normalized_material_names)
+            raise WebInputError(f"指定項目が{source_description}に含まれません: {normalized_filename}")
+        material_paths = _plan_feedback_paths(private_notes, normalized_material_names, source_description)
         feedback_names = tuple(path.name for path in material_paths)
         if normalized_filename not in feedback_names:
             raise WebInputError(f"指定項目が計画の変換元feedbackに含まれません: {normalized_filename}")
@@ -837,7 +866,7 @@ def edit_entry_to_plan(
                 _validate_filename(value, inbox_dir).name for value in _entry_dependencies(material_path, material_data)
             )
         if len(material_repositories) != 1:
-            raise WebInputError("計画の提示素材は同一target_repoである必要があります")
+            raise WebInputError(f"{source_description}は同一target_repoである必要があります")
         material_repo = next(iter(material_repositories))
         if normalized_target_repo is not None and material_repo != normalized_target_repo:
             raise WebInputError(f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}")
@@ -1183,15 +1212,15 @@ def _convert_planning_entries(
     skip_push: bool,
 ) -> dict[str, object]:
     """planningの全入力を最古の1件へ統合し、inboxへ原子的に保存する。"""
-    material_names = _read_plan_input_filenames(plan_path)
+    material_names, source_description = _read_plan_input_filenames(plan_path)
     normalized_material_names = tuple(_validate_filename(name, inbox_dir).name for name in material_names)
     if len(set(normalized_material_names)) != len(normalized_material_names):
-        raise WebInputError("計画の提示素材に重複したファイル名があります")
-    material_paths = _plan_feedback_paths(private_notes, normalized_material_names)
+        raise WebInputError(f"{source_description}に重複したファイル名があります")
+    material_paths = _plan_feedback_paths(private_notes, normalized_material_names, source_description)
     input_names = tuple(path.name for path in paths)
     feedback_names = tuple(path.name for path in material_paths)
     if tuple(sorted(input_names)) != tuple(sorted(feedback_names)):
-        raise WebInputError("convert-to-planの入力と計画の提示素材が一致しません")
+        raise WebInputError(f"convert-to-planの入力と{source_description}が一致しません")
     if local_worktree is None:
         raise WebInputError("planningの変換には対象リポジトリのローカルworktreeが必要です")
     _assert_conversion_targets_tracked(private_notes, paths)
