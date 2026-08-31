@@ -22,17 +22,6 @@
         ]
       }
     ],
-    "SubagentStart": [
-      {
-        "matcher": "plan-executor|agent-toolkit:plan-executor|feedbacks-planner|agent-toolkit:feedbacks-planner|plan-review-executor|agent-toolkit:plan-review-executor",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py subagent_start_tracker"
-          }
-        ]
-      }
-    ],
     "PostToolUseFailure": [
       {
         "matcher": "Agent|Task",

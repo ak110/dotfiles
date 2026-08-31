@@ -23,7 +23,6 @@ _SUBCOMMANDS = (
     "posttooluse",
     "autonomous_exit",
     "subagent_stop_advisor",
-    "subagent_start_tracker",
     "session_end_cleanup",
     "stopfailure_notifier",
     "permissionrequest",
@@ -114,12 +113,11 @@ class TestEntrypointExceptionStages:
         assert result.stderr.startswith("[pretooluse] 想定外エラー: RuntimeError: boom")
         assert "Traceback (most recent call last):" in result.stderr
 
-    @pytest.mark.parametrize("subcommand", ["subagent_start_tracker", "session_end_cleanup"])
-    def test_new_lifecycle_hook_exception_returns_0_without_json(
+    def test_session_end_cleanup_exception_returns_0_without_json(
         self,
         tmp_path: pathlib.Path,
-        subcommand: str,
     ) -> None:
+        subcommand = "session_end_cleanup"
         entrypoint = self._copy_entrypoint(tmp_path)
         (tmp_path / f"{subcommand}.py").write_text(
             "def main(payload_text: str) -> int:\n    del payload_text\n    raise RuntimeError('boom')\n",

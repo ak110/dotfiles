@@ -98,6 +98,11 @@ class TestWaitLoopAutoRestart:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: pending_count)
+        monkeypatch.setattr(
+            _process_loop,
+            "_select_available_orchestrator",
+            lambda candidates, _env, _cwd: candidates[0],
+        )
 
         wait_calls = {"n": 0}
 

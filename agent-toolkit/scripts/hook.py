@@ -45,7 +45,6 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "posttooluse",
         "autonomous_exit",
         "subagent_stop_advisor",
-        "subagent_start_tracker",
         "session_end_cleanup",
         "stopfailure_notifier",
         "permissionrequest",

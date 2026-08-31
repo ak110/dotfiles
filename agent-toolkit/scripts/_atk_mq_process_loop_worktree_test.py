@@ -90,6 +90,11 @@ def _run_public_process_loop(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(_process_loop, "_resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/repo")
+    monkeypatch.setattr(
+        _process_loop,
+        "_select_available_orchestrator",
+        lambda candidates, _env, _cwd: candidates[0],
+    )
     counts = iter((1, 0))
     monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: next(counts))
 
