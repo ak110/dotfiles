@@ -39,7 +39,10 @@ prekフック・CI・`make test`など、シェルから起動する処理では
 ### 既存プロジェクトでの通常運用
 
 - 通常運用は`uvx pyfltr ...`を使う。prek hookの`entry:`も`uvx pyfltr fast`に揃える
-  - `uv run`系を使う場合は`--frozen`必須（prekは親環境の`UV_FROZEN`を引き継がないため）
+  - project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がないためである
+  - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける
+  - script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
+  - script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する必要が生じた場合は、`uv lock --script <スクリプトのパス>`でscript lockfileを作成してから`--frozen`を要求する
 - pyfltr自身を開発・検証するときに限り、`uv run pyfltr ...`を使う
 - 同梱ツールの範囲・ランナー解決の既定・公式Dockerイメージ経由の実行方法は版により変わるため、
   末尾「詳細情報」のllms.txtで現行版の仕様を確認する
