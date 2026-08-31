@@ -4,8 +4,9 @@ import json
 import os
 import subprocess
 
-_FIVE_MINUTE_SCHEDULE = "*/3 * * * *"
-_ONE_HOUR_SCHEDULE = "*/30 * * * *"
+# キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
+_SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
+_SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 _BUCKET_TTL_ENV = {
     "main": "CLAUDE_CODE_PROMPT_CACHE_TTL",
     "subagent": "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
@@ -55,24 +56,24 @@ def get_schedule(request_bucket: str) -> str:
         raise ValueError(f"未対応のrequest bucket: {request_bucket}")
 
     if os.environ.get("FORCE_PROMPT_CACHING_5M") == "1":
-        return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_5M_TTL
 
     bucket_ttl = os.environ.get(_BUCKET_TTL_ENV[request_bucket])
     if bucket_ttl == "5m":
-        return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_5M_TTL
     if bucket_ttl == "1h":
-        return _ONE_HOUR_SCHEDULE
+        return _SCHEDULE_FOR_1H_TTL
 
     if os.environ.get("ENABLE_PROMPT_CACHING_1H") == "1":
-        return _ONE_HOUR_SCHEDULE
+        return _SCHEDULE_FOR_1H_TTL
     if os.environ.get("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB") == "1":
-        return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_5M_TTL
     if request_bucket == "subagent":
-        return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_5M_TTL
     if request_bucket == "main" and any(os.environ.get(name) for name in _CREDENTIAL_ENV):
-        return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_5M_TTL
     if request_bucket == "main" and any(os.environ.get(name) == "1" for name in _PROVIDER_ENV):
-        return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_5M_TTL
     if _has_valid_subscription_status():
-        return _ONE_HOUR_SCHEDULE
-    return _FIVE_MINUTE_SCHEDULE
+        return _SCHEDULE_FOR_1H_TTL
+    return _SCHEDULE_FOR_5M_TTL

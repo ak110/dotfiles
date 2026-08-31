@@ -99,11 +99,14 @@ PLAN_IMPLEMENTATION_UNITS_H3: str = "実装単位"
 PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ", "作業種別", "ベースコミット")
 """計画メタ情報の正規形が持つ項目と順序（旧形式単一ファイル・新書式計画ファイル（詳細）は本4項目のみ）。"""
 
-PLAN_METADATA_DETAIL_FIELD: str = "実装詳細"
+PLAN_METADATA_DETAIL_FIELD: str = "計画ファイル（詳細）"
 """新書式計画ファイル（メイン）の計画メタ情報が末尾へ追加で持つ項目。値は計画ファイル（詳細）のファイル名を指す。"""
 
+PLAN_METADATA_LEGACY_DETAIL_FIELD: str = "実装詳細"
+"""読み取り互換で受理する旧形式の計画ファイル（詳細）参照項目。"""
+
 PLAN_METADATA_MAIN_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
-"""新書式計画ファイル（メイン）の計画メタ情報が持つ項目と順序（4項目 + `実装詳細`）。"""
+"""新書式計画ファイル（メイン）の計画メタ情報が持つ項目と順序（4項目 + `計画ファイル（詳細）`）。"""
 
 PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset(
     {"起動経路", "対象リポジトリ", "ベースコミット", PLAN_METADATA_DETAIL_FIELD}
@@ -142,7 +145,8 @@ PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)$")
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "保留", "対象外", "移管")
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
-PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- バグ調査ファイル:"
+PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- 計画ファイル（バグ）:"
+PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX: str = "- バグ調査ファイル:"
 
 PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
     "単位ID",
@@ -422,6 +426,34 @@ def extract_headings(content: str) -> list[PlanHeading]:
     return headings
 
 
+def check_duplicate_headings(content: str) -> list[str]:
+    """同じ祖先見出しの下に同じ文言の見出しが複数現れる状態を検出する。
+
+    節の置換で撤回済みの記述が重複ブロックとして残ると、実装担当が旧案を確定文面として読む。
+    判定キーへ祖先見出しの文言列を含めるのは、同じ文言の見出しが別の親の下に現れる構成が
+    計画書式では正当なためである（既存計画531件の実測で、経路による判定の一致は0件、
+    文言だけの判定の一致は2ファイル）。
+    """
+    seen: dict[tuple[str, ...], int] = {}
+    stack: list[PlanHeading] = []
+    errors: list[str] = []
+    for heading in extract_headings(content):
+        while stack and stack[-1].level >= heading.level:
+            stack.pop()
+        key = tuple(item.text for item in stack) + (heading.text,)
+        first = seen.get(key)
+        if first is None:
+            seen[key] = heading.lineno
+        else:
+            parent = "/".join(key[:-1]) or "文書直下"
+            errors.append(
+                f"同じ見出しが重複している: `{'#' * heading.level} {heading.text}`"
+                f"（{parent}配下、{first}行目と{heading.lineno}行目）"
+            )
+        stack.append(heading)
+    return errors
+
+
 def heading_subtree_range(headings: list[PlanHeading], index: int) -> tuple[int, int | None]:
     """指定見出しの本文範囲を(見出し行番号, 次の同位以上の見出し行番号)で返す。
 
@@ -649,12 +681,13 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     values: dict[str, str] = {}
     conflicts: list[str] = []
     for field, raw_value in entries:
-        if field not in PLAN_METADATA_MAIN_FIELDS:
+        canonical_field = PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
+        if canonical_field not in PLAN_METADATA_MAIN_FIELDS:
             continue
         normalized = _strip_backticks(raw_value)
-        if field in values and values[field] != normalized:
-            conflicts.append(f"計画メタ情報の`{field}`に競合する値があります")
-        values.setdefault(field, normalized)
+        if canonical_field in values and values[canonical_field] != normalized:
+            conflicts.append(f"計画メタ情報の`{canonical_field}`に競合する値があります")
+        values.setdefault(canonical_field, normalized)
     base_candidates = [
         match.group("oid") for _lineno, line in section if (match := _METADATA_BASE_COMMIT_LINE.fullmatch(line)) is not None
     ]
@@ -856,23 +889,27 @@ def _check_metadata_block(
     """計画メタ情報の配置、項目、順序、記法、値を検査して(作業種別, エラー)を返す。
 
     `expected_fields`は旧形式・新書式の計画ファイル（詳細）では4項目固定、新書式の計画ファイル（メイン）では
-    末尾へ`実装詳細`を加えた5項目を渡す。
+    末尾へ`計画ファイル（詳細）`を加えた5項目を渡す。
     """
     metadata, errors = parse_plan_metadata(content)
     if metadata is None:
         return None, errors or [f"`## {PLAN_H2_OVERVIEW}`直下の`### {PLAN_METADATA_H3}`を検査できない"]
     if not metadata.is_canonical:
         errors.append(f"計画メタ情報は`## {PLAN_H2_OVERVIEW}`直下へ置く: 実際=`## {metadata.parent}`直下")
-    fields = [field for field, _value in metadata.entries]
+    fields = [
+        PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
+        for field, _value in metadata.entries
+    ]
     if fields != list(expected_fields):
         errors.append(f"計画メタ情報は{list(expected_fields)}をこの順序で1行ずつ置く: 実際={fields}")
     for field, raw_value in metadata.entries:
-        if field not in expected_fields:
+        canonical_field = PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
+        if canonical_field not in expected_fields:
             continue
         quoted = raw_value.startswith("`") and raw_value.endswith("`") and len(raw_value) >= 2
-        if field in PLAN_METADATA_QUOTED_FIELDS and not quoted:
+        if canonical_field in PLAN_METADATA_QUOTED_FIELDS and not quoted:
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲む")
-        if field not in PLAN_METADATA_QUOTED_FIELDS and quoted:
+        if canonical_field not in PLAN_METADATA_QUOTED_FIELDS and quoted:
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲まない")
         if not _strip_backticks(raw_value):
             errors.append(f"計画メタ情報の`{field}`が空である")
@@ -1310,9 +1347,15 @@ def parse_plan_implementation_units(
 
 
 def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
-    """バグ調査節直下の分離先参照行からパス文字列を抽出する。"""
-    prefix = PLAN_BUG_FILE_REFERENCE_PREFIX
-    return [line.strip()[len(prefix) :].strip() for _lineno, line in section if line.strip().startswith(prefix)]
+    """バグ調査節直下の計画ファイル（バグ）参照行からパス文字列を抽出する。"""
+    prefixes = (PLAN_BUG_FILE_REFERENCE_PREFIX, PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
+    return [
+        stripped[len(prefix) :].strip()
+        for _lineno, line in section
+        if (stripped := line.strip())
+        for prefix in prefixes
+        if stripped.startswith(prefix)
+    ]
 
 
 def _check_bug_unit_sections(
@@ -1415,7 +1458,7 @@ def has_legacy_bug_table(content: str) -> bool:
 
 
 def check_bug_file_structure(content: str) -> list[str]:
-    """バグ調査付属ファイルのH1、バグ単位H3、原因分析表と固定12行の調査表を検査する。"""
+    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定12行の調査表を検査する。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -1950,6 +1993,7 @@ def check_plan_structure(content: str) -> list[str]:
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
+    errors.extend(check_duplicate_headings(content))
 
     work_type, metadata_errors = _check_metadata_block(content)
     errors.extend(metadata_errors)
@@ -1992,11 +2036,12 @@ def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
     """新書式の計画ファイル（メイン）`<計画名>.md`を検査して(作業種別, 違反一覧)を返す。
 
     固定H2順は`PLAN_MAIN_H2_ORDER`（概要・実施内容・エージェント判断・提示素材・変更履歴（計画時）・検証区分・終端工程・進捗ログ（実行時））。
-    計画メタ情報は末尾に`実装詳細`を加えた5項目とする。
+    計画メタ情報は末尾に`計画ファイル（詳細）`を加えた5項目とする。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
+    errors.extend(check_duplicate_headings(content))
 
     work_type, metadata_errors = _check_metadata_block(content, expected_fields=PLAN_METADATA_MAIN_FIELDS)
     errors.extend(metadata_errors)
@@ -2074,7 +2119,7 @@ def check_plan_detail_structure(content: str, work_type: str | None) -> list[str
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
-    errors: list[str] = []
+    errors = check_duplicate_headings(content)
 
     if not [heading for heading in headings if heading.level == 2]:
         errors.append("固定H2が1件も無い")

@@ -16,6 +16,7 @@ from collections.abc import Iterator
 import _atk_mq_add as add_module
 import _atk_mq_batch as batch
 import _atk_mq_show as show_module
+import _plan_file
 import pytest
 from _atk_mq_common import MQ_STATES, WebInputError
 
@@ -527,6 +528,26 @@ def test_import_keeps_unresolvable_legacy_target_repo(
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert "target_repo: /home/other/absent-repo\n" in (notes / "inbox" / "legacy.md").read_text(encoding="utf-8")
+
+
+def test_import_normalizes_new_plan_file_to_portable_value(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """batch取り込みでも新plans rootの絶対plan_fileを可搬表記で保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+    text = (
+        f"### imported.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\nplan_file: {plan}\n---\n\n本文\n\n"
+    )
+
+    batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
+
+    stored = (notes / "inbox/imported.md").read_text(encoding="utf-8")
+    assert f"plan_file: {_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/08/30-計画保存先移行-d4f9.md" in stored
 
 
 def _show_all_output(notes: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> str:

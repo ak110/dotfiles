@@ -49,6 +49,16 @@ class _BrowserHarness:
         await _state.schedule_broadcast(self.state)
 
 
+@dataclasses.dataclass
+class _MultiRootBrowserHarness:
+    page: playwright.async_api.Page
+    context: playwright.async_api.BrowserContext
+    new_plan: Path
+    legacy_plan: Path
+    state: _state.BroadcastState
+    base_url: str
+
+
 def _reserve_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
         server_socket.bind(("127.0.0.1", 0))
@@ -71,8 +81,24 @@ async def _wait_for_server(port: int) -> None:
         return
 
 
+@pytest_asyncio.fixture(scope="session", name="browser")
+async def _browser_fixture() -> AsyncGenerator[playwright.async_api.Browser]:
+    playwright_instance = await playwright.async_api.async_playwright().start()
+    browser = None
+    try:
+        browser = await playwright_instance.chromium.launch()
+        yield browser
+    finally:
+        if browser is not None:
+            await browser.close()
+        await playwright_instance.stop()
+
+
 @pytest_asyncio.fixture(name="browser_harness")
-async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHarness]:
+async def _browser_harness_fixture(
+    tmp_path: Path,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_BrowserHarness]:
     plan_path = tmp_path / "plan.md"
     plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     app = _app.create_app(tmp_path, hostname="browser-test")
@@ -86,13 +112,9 @@ async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHar
     server_task = asyncio.create_task(
         app.run_task("127.0.0.1", port, shutdown_trigger=_shutdown_trigger),
     )
-    playwright_instance = None
-    browser = None
     context = None
     try:
         await _wait_for_server(port)
-        playwright_instance = await playwright.async_api.async_playwright().start()
-        browser = await playwright_instance.chromium.launch()
         context = await browser.new_context()
         page = await context.new_page()
         requests: list[str] = []
@@ -112,10 +134,58 @@ async def _browser_harness_fixture(tmp_path: Path) -> AsyncGenerator[_BrowserHar
     finally:
         if context is not None:
             await context.close()
-        if browser is not None:
-            await browser.close()
-        if playwright_instance is not None:
-            await playwright_instance.stop()
+        shutdown.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+
+
+@pytest_asyncio.fixture(name="multi_root_browser_harness")
+async def _multi_root_browser_harness_fixture(
+    tmp_path: Path,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_MultiRootBrowserHarness]:
+    new_root = tmp_path / "new"
+    legacy_root = tmp_path / "legacy"
+    new_root.mkdir()
+    legacy_root.mkdir()
+    new_plan = new_root / "same.md"
+    legacy_plan = legacy_root / "same.md"
+    new_plan.write_text("# 新root\n\nnew needle\n", encoding="utf-8")
+    legacy_plan.write_text("# 旧root\n\nold needle\n", encoding="utf-8")
+    app = _app.create_app(
+        hostname="browser-multi",
+        roots=(
+            _state.RootSpec("new-source", new_root, "$(atk config get private_notes)/plans"),
+            _state.RootSpec("legacy-source", legacy_root, "~/.claude/plans"),
+        ),
+    )
+    state: _state.BroadcastState = app.config["PLANS_STATE"]
+    port = _reserve_port()
+    shutdown = asyncio.Event()
+
+    async def _shutdown_trigger() -> None:
+        await shutdown.wait()
+
+    server_task = asyncio.create_task(
+        app.run_task("127.0.0.1", port, shutdown_trigger=_shutdown_trigger),
+    )
+    context = None
+    try:
+        await _wait_for_server(port)
+        context = await browser.new_context()
+        await context.grant_permissions(["clipboard-read", "clipboard-write"], origin=f"http://127.0.0.1:{port}")
+        page = await context.new_page()
+        yield _MultiRootBrowserHarness(
+            page=page,
+            context=context,
+            new_plan=new_plan,
+            legacy_plan=legacy_plan,
+            state=state,
+            base_url=f"http://127.0.0.1:{port}",
+        )
+    finally:
+        if context is not None:
+            await context.close()
         shutdown.set()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task
@@ -135,6 +205,63 @@ def _valid_diagram_markdown(label: str) -> str:
         "</svg>\n"
         "```\n"
     )
+
+
+@pytest.mark.asyncio
+async def test_multiple_roots_keep_selection_search_update_and_copy_portable_path(
+    multi_root_browser_harness: _MultiRootBrowserHarness,
+) -> None:
+    """同一相対パスのroot別選択・検索・更新通知・可搬パスコピーを検証する。"""
+    harness = multi_root_browser_harness
+    await harness.page.goto(harness.base_url + "/")
+    items = harness.page.locator("#files .file")
+    await items.nth(0).wait_for(state="visible")
+    await items.nth(1).wait_for(state="visible")
+    assert await items.count() == 2
+    assert await items.locator(".name").all_inner_texts() == ["same.md", "same.md"]
+    assert "new-source" not in await harness.page.locator("#files").inner_text()
+    assert "legacy-source" not in await harness.page.locator("#files").inner_text()
+
+    expected_paths = {
+        "新root": "$(atk config get private_notes)/plans/same.md",
+        "旧root": "~/.claude/plans/same.md",
+    }
+    headings: set[str] = set()
+    headings_by_index: list[str] = []
+    for index in range(2):
+        previous_heading = await harness.page.locator("#preview h1").inner_text() if index else None
+        await items.nth(index).click()
+        heading = harness.page.locator("#preview h1")
+        if previous_heading is None:
+            await heading.wait_for(state="visible")
+        else:
+            await harness.page.wait_for_function(
+                "(previous) => document.querySelector('#preview h1')?.innerText !== previous",
+                arg=previous_heading,
+            )
+        current_heading = await heading.inner_text()
+        headings.add(current_heading)
+        headings_by_index.append(current_heading)
+        await harness.page.get_by_role("button", name="計画ファイルのパスをコピー").click()
+        assert await harness.page.evaluate("navigator.clipboard.readText()") == expected_paths[current_heading]
+    assert headings == {"新root", "旧root"}
+
+    await harness.page.locator("#filter").fill("needle")
+    await harness.page.locator("#files .file").nth(0).wait_for(state="visible")
+    await harness.page.locator("#files .file").nth(1).wait_for(state="visible")
+    assert await harness.page.locator("#files .file").count() == 2
+
+    filtered_items = harness.page.locator("#files .file")
+    legacy_index = headings_by_index.index("旧root")
+    await filtered_items.nth(legacy_index).click()
+    await harness.page.wait_for_function(
+        "(expected) => document.querySelector('#preview h1')?.innerText === expected",
+        arg="旧root",
+    )
+
+    harness.legacy_plan.write_text("# 旧root更新\n\nold needle\n", encoding="utf-8")
+    await _state.schedule_broadcast(harness.state)
+    await harness.page.locator("#preview h1", has_text="旧root更新").wait_for(state="visible")
 
 
 @pytest.mark.asyncio
@@ -196,15 +323,21 @@ async def test_diagrams_render_and_refresh_safely(browser_harness: _BrowserHarne
 
 @pytest.mark.asyncio
 async def test_attached_plan_navigation_is_symmetric(browser_harness: _BrowserHarness) -> None:
-    """左一覧に付属計画を表示せず、右ペインからbase・detail・bugsを相互に開ける。"""
+    """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
     harness = browser_harness
     (harness.root / "plan.detail.md").write_text("# 詳細ページ\n", encoding="utf-8")
     (harness.root / "plan.bugs.md").write_text("# バグページ\n", encoding="utf-8")
+    review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
+    (harness.root / "plan.plan-review.tsv").write_text(review_row, encoding="utf-8")
+    (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")
     await harness.page.goto(harness.base_url + "/")
 
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
     assert await harness.page.get_by_text("plan.detail.md", exact=True).count() == 0
     assert await harness.page.get_by_text("plan.bugs.md", exact=True).count() == 0
+    assert await harness.page.get_by_text("plan.plan-review.tsv", exact=True).count() == 0
+    assert await harness.page.get_by_text("plan.exec-review.tsv", exact=True).count() == 0
+    assert await harness.page.locator('a[data-plan-path="plan.detail.md"]').inner_text() == "詳細"
     await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
     await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")
     assert await harness.page.title() == "browser-test: plan.detail.md"
@@ -212,6 +345,15 @@ async def test_attached_plan_navigation_is_symmetric(browser_harness: _BrowserHa
     await harness.page.locator('a[data-plan-path="plan.bugs.md"]').click()
     await harness.page.get_by_role("heading", name="バグページ").wait_for(state="visible")
     assert await harness.page.title() == "browser-test: plan.bugs.md"
+
+    await harness.page.locator('a[data-plan-path="plan.plan-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
+    await harness.page.get_by_role("cell", name="implementation-review").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.plan-review.tsv"
+
+    await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="対応不要理由").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.exec-review.tsv"
 
     await harness.page.locator('a[data-plan-path="plan.md"]').click()
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")

@@ -51,7 +51,7 @@ def _cause_rows_table() -> str:
 
 
 def _bug_file_content() -> str:
-    """バグ調査付属ファイルの正規内容を組み立てる。"""
+    """計画ファイル（バグ）の正規内容を組み立てる。"""
     return (
         "# 計画の主題\n\n### 対象の不整合\n\n"
         + _cause_rows_table()
@@ -181,7 +181,7 @@ def _new_format_plan(
 - 対象リポジトリ: `{repo.resolve()}`
 - 作業種別: {work_type}
 - ベースコミット: `{base}`
-- 実装詳細: `{detail_name}`
+- 計画ファイル（詳細）: `{detail_name}`
 
 ## 実施内容
 
@@ -225,7 +225,7 @@ def _new_format_plan(
     if bug:
         bug_stem = detail_name.removesuffix(_plan_format.PLAN_DETAIL_SUFFIX)
         bug_path = (repo / f"{bug_stem}.bugs.md").resolve()
-        bug_section = f"## バグ調査結果\n\n- バグ調査ファイル: {bug_path}\n\n"
+        bug_section = f"## バグ調査結果\n\n- 計画ファイル（バグ）: {bug_path}\n\n"
     permanence = "調査表の処置を正本として参照する。" if bug else _permanence_table()
     detail = f"""{bug_section}## 恒久化・リファクタリング内容
 
@@ -273,7 +273,7 @@ def _canonical_main_format(content: str) -> str:
     )
 
 
-def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
+def human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.md") -> tuple[str, str]:
     """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
     main = f"""# 計画の主題
 
@@ -287,7 +287,7 @@ def _human_new_format_plan(repo: pathlib.Path, detail_name: str = "human.detail.
 - 対象リポジトリ: `{repo.resolve()}`
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 実装詳細: `{detail_name}`
+- 計画ファイル（詳細）: `{detail_name}`
 
 ## 実施内容
 
@@ -689,40 +689,86 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     assert warnings == expected, warnings
 
 
+def test_new_format_accepts_legacy_detail_metadata_field_with_warning(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """旧形式の詳細参照項目を読み取り互換で受理し、移行警告を返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    main_content = main_content.replace("- 計画ファイル（詳細）:", "- 実装詳細:")
+
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+
+    assert not errors, errors
+    assert "計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する" in warnings
+
+
+def test_new_format_accepts_legacy_bug_file_reference_with_warning(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """旧形式の計画ファイル（バグ）参照を読み取り互換で受理し、移行警告を返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    detail_content = detail_content.replace("- 計画ファイル（バグ）:", "- バグ調査ファイル:")
+
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+
+    assert not errors, errors
+    assert "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する" in warnings
+
+
 def test_accepts_human_readable_new_format_plan_without_migration_warning(
     repo: tuple[pathlib.Path, str],
 ) -> None:
     """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）をwarningなしで受理する。"""
     work_dir, _base = repo
-    main_content, detail_content = _human_new_format_plan(work_dir)
+    main_content, detail_content = human_new_format_plan(work_dir)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
     assert not errors, errors
     assert not warnings, warnings
 
 
+def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """一件の重複見出しに対する診断を二ファイル検査で一回だけ返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    detail_content = detail_content.replace(
+        "## 完了条件",
+        "### 重複見出し\n\n一つ目。\n\n### 重複見出し\n\n二つ目。\n\n## 完了条件",
+    )
+
+    errors, _warnings = _check_new(work_dir, main_content, detail_content)
+
+    duplicate_errors = [error for error in errors if "同じ見出しが重複している" in error]
+    assert len(duplicate_errors) == 1, errors
+    assert "`### 重複見出し`" in duplicate_errors[0]
+
+
 def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として検査される（`実装詳細`欠落を新書式エラーにしない）。"""
+    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として検査される。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base))
     assert not errors, errors
 
 
 def test_new_format_rejects_detail_reference_mismatch(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（メイン）の`実装詳細`がstem導出値と一致しない場合を拒否する。"""
+    """計画ファイル（メイン）の詳細参照がstem導出値と一致しない場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
-    main_content = main_content.replace("- 実装詳細: `plan.detail.md`", "- 実装詳細: `other.detail.md`")
+    main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`", "- 計画ファイル（詳細）: `other.detail.md`")
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
     assert any("stem導出値と一致しない" in error for error in errors), errors
 
 
 def test_new_format_rejects_missing_detail_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（メイン）の計画メタ情報に`実装詳細`が無い場合を拒否する。"""
+    """計画ファイル（メイン）の計画メタ情報に詳細参照が無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
-    main_content = main_content.replace("- 実装詳細: `plan.detail.md`\n", "")
+    main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("`実装詳細`が無い" in error for error in errors), errors
+    assert any("`計画ファイル（詳細）`が無い" in error for error in errors), errors
 
 
 def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
@@ -762,7 +808,7 @@ def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) 
 
 
 def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ調査付属ファイルのstemが計画本体と異なる場合を拒否する。"""
+    """計画ファイル（バグ）のstemが計画ファイル（メイン）と異なる場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     detail_content = detail_content.replace("plan.bugs.md", "other.bugs.md")
@@ -771,7 +817,7 @@ def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ調査付属ファイルの固定12行表欠落を拒否する。"""
+    """計画ファイル（バグ）の固定12行表欠落を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     invalid_bug_file = _bug_file_content().replace("| 根本原因 | 発生条件と実際値を記載する。 |\n", "")
@@ -780,7 +826,7 @@ def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.
 
 
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ調査付属ファイルの`内容`空欄を拒否する。"""
+    """計画ファイル（バグ）の`内容`空欄を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     invalid_bug_file = _bug_file_content().replace(
@@ -829,7 +875,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
             + "\n\n"
         )
         detail_content = detail_content.replace(
-            f"## バグ調査結果\n\n- バグ調査ファイル: {reference}\n\n",
+            f"## バグ調査結果\n\n- 計画ファイル（バグ）: {reference}\n\n",
             inline_section,
         )
     errors, warnings = _check_new(work_dir, main_content, detail_content)
@@ -839,6 +885,32 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
         expected.append("実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")
     expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
+
+
+def test_new_format_accepts_portable_bug_file_reference(
+    repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """新rootのバグ調査ファイルを固定portable参照で検査できる。"""
+    work_dir, base = repo
+    private_notes = work_dir / "private-notes"
+    stem = "30-計画保存先移行-d4f9"
+    detail_name = f"{stem}.detail.md"
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True, detail_name=detail_name)
+    absolute_bug_path = (work_dir / f"{stem}.bugs.md").resolve()
+    portable_bug_path = f"$(atk config get private_notes)/plans/2026/08/{stem}.bugs.md"
+    detail_content = detail_content.replace(str(absolute_bug_path), portable_bug_path)
+
+    plan_directory = private_notes / "plans/2026/08"
+    plan_directory.mkdir(parents=True)
+    main_path = plan_directory / f"{stem}.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (plan_directory / detail_name).write_text(detail_content, encoding="utf-8")
+    (plan_directory / f"{stem}.bugs.md").write_text(_bug_file_content(), encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+
+    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
+
+    assert not errors, errors
 
 
 def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:

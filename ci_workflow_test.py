@@ -26,7 +26,9 @@ _STATUSLINE_CONDITION = "github.event_name == 'pull_request' && github.base_ref 
 _MARKER_NAME = "共通CI非所有経路"
 _MARKER_MESSAGE = "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
 _COMMON_JOB_IDS = ("test-linux", "test-windows", "python-lint", "rust-lint")
-_PYTHON_VERSIONS = ("3.12", "3.13", "3.14")
+_PYTHON_VERSIONS = ("3.13", "3.14")
+_PYTHON_313_CONDITION = f"({_OWNER_CONDITION}) && matrix.python-version == '3.13'"
+_PYTHON_314_CONDITION = f"({_OWNER_CONDITION}) && matrix.python-version == '3.14'"
 
 
 def _mapping(value: object) -> dict[str, object]:
@@ -71,7 +73,7 @@ def test_common_jobs_start_with_explicit_non_owner_marker(workflow_data: dict[st
     expected = {
         "test-linux": (8, "bash", f'echo "{_MARKER_MESSAGE}"'),
         "test-windows": (9, "pwsh", f'Write-Output "{_MARKER_MESSAGE}"'),
-        "python-lint": (11, "bash", f'echo "{_MARKER_MESSAGE}"'),
+        "python-lint": (13, "bash", f'echo "{_MARKER_MESSAGE}"'),
         "rust-lint": (7, "bash", f'echo "{_MARKER_MESSAGE}"'),
     }
 
@@ -97,17 +99,22 @@ def test_common_jobs_start_with_explicit_non_owner_marker(workflow_data: dict[st
         for step in processing_steps:
             step_name = step.get("name")
             expected_condition = _OWNER_CONDITION
-            if job_id == "python-lint" and step_name in {
-                "利用者設定から隔離したlockfile検証",
-                "Playwright Chromiumの導入",
-            }:
-                expected_condition = f"({_OWNER_CONDITION}) && matrix.python-version == '3.12'"
+            if job_id == "python-lint":
+                if step_name == "Python 3.13 pytest":
+                    expected_condition = _PYTHON_313_CONDITION
+                elif step_name in {
+                    "利用者設定から隔離したlockfile検証",
+                    "Playwright Chromiumの導入",
+                    "Python 3.14全検査",
+                    "Python 3.14 E2E",
+                }:
+                    expected_condition = _PYTHON_314_CONDITION
             assert step.get("if") == expected_condition
             assert step_name != "statuslineの版数とタグを検査"
 
     rust_defaults = _mapping(_mapping(jobs["rust-lint"])["defaults"])
     assert _mapping(rust_defaults["run"])["working-directory"] == "rust/claude-statusline"
-    assert sum(len(_steps(_mapping(jobs[job_id]))[1:]) for job_id in _COMMON_JOB_IDS) == 31
+    assert sum(len(_steps(_mapping(jobs[job_id]))[1:]) for job_id in _COMMON_JOB_IDS) == 33
 
 
 def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: dict[str, object]) -> None:
@@ -132,6 +139,44 @@ def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: 
     strategy = _mapping(python_job["strategy"])
     matrix = _mapping(strategy["matrix"])
     assert matrix["python-version"] == list(_PYTHON_VERSIONS)
+
+
+def test_python_versions_have_distinct_pytest_full_and_e2e_routes(
+    workflow_data: dict[str, object],
+) -> None:
+    jobs = _jobs(workflow_data)
+    python_steps = {step.get("name"): step for step in _steps(_mapping(jobs["python-lint"]))}
+
+    pytest_step = python_steps["Python 3.13 pytest"]
+    full_step = python_steps["Python 3.14全検査"]
+    e2e_step = python_steps["Python 3.14 E2E"]
+    playwright_step = python_steps["Playwright Chromiumの導入"]
+    lock_step = python_steps["利用者設定から隔離したlockfile検証"]
+
+    assert pytest_step["if"] == _PYTHON_313_CONDITION
+    assert pytest_step["run"] == "pyfltr ci --commands=pytest"
+    assert "env" not in pytest_step
+
+    assert full_step["if"] == _PYTHON_314_CONDITION
+    assert full_step["run"] == "pyfltr ci --disable=claude-plugin-validate"
+    assert _mapping(full_step["env"]) == {"SKIP": "cargo-fmt,cargo-clippy"}
+
+    assert e2e_step["if"] == _PYTHON_314_CONDITION
+    assert _mapping(e2e_step["env"]) == {
+        "CLAUDE_PLANS_VIEWER_BROWSER_TESTS": "1",
+        "AGENT_TOOLKIT_SERVE_BROWSER_TESTS": "1",
+    }
+    assert e2e_step["run"] == (
+        "uv run pytest agent-toolkit/scripts/_atk_serve_browser_test.py "
+        "pytools/claude_plans_viewer_browser_test.py -o addopts='' -p no:cacheprovider"
+    )
+    assert playwright_step["if"] == e2e_step["if"]
+    assert lock_step["if"] == _PYTHON_314_CONDITION
+    assert pytest_step["if"] != full_step["if"]
+
+    windows_steps = _steps(_mapping(jobs["test-windows"]))
+    windows_test = next(step for step in windows_steps if step.get("name") == "managed-temp Windows境界テスト")
+    assert "uv run --python 3.14 pytest -q" in typing.cast(str, windows_test["run"])
 
 
 def test_statusline_version_is_an_independent_master_pull_request_check(
@@ -171,27 +216,26 @@ def test_job_and_step_cardinality(workflow_data: dict[str, object]) -> None:
     assert list(jobs) == [*(_COMMON_JOB_IDS), "statusline-version"]
     assert len(jobs) == 5
 
-    expanded_job_count = sum(3 if job_id == "python-lint" else 1 for job_id in jobs)
-    assert expanded_job_count == 7
+    expanded_job_count = sum(2 if job_id == "python-lint" else 1 for job_id in jobs)
+    assert expanded_job_count == 6
 
     definition_step_count = sum(len(_steps(_mapping(job))) for job in jobs.values())
-    assert definition_step_count == 38
+    assert definition_step_count == 40
 
     expanded_step_count = sum(
-        len(_steps(_mapping(job))) * (3 if job_id == "python-lint" else 1) for job_id, job in jobs.items()
+        len(_steps(_mapping(job))) * (2 if job_id == "python-lint" else 1) for job_id, job in jobs.items()
     )
-    assert expanded_step_count == 60
+    assert expanded_step_count == 53
 
     owner_names = {
         "test-linux",
         "test-windows",
-        "python-lint (3.12)",
         "python-lint (3.13)",
         "python-lint (3.14)",
         "rust-lint",
     }
     non_owner_names = {f"{name} (non-owner)" for name in owner_names if not name.startswith("python-lint")}
     non_owner_names.update(f"python-lint ({version}) (non-owner)" for version in _PYTHON_VERSIONS)
-    assert len(owner_names) == 6
-    assert len(non_owner_names) == 6
+    assert len(owner_names) == 5
+    assert len(non_owner_names) == 5
     assert "rust-lint" not in non_owner_names

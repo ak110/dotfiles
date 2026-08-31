@@ -12,7 +12,7 @@ import subprocess
 import _fork_runner
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"

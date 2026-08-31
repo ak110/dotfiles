@@ -122,7 +122,7 @@ Codex直接CLIの契約例では、表の各配列要素を1つのNUL要素と�
 argvはNUL区切りの要素単位で照合し、目的文に現れる語をsubcommandとして扱わない。
 読取失敗又は値の不一致も停止不能とする。
 
-`process-feedbacks`の起動時probeが停止可能でも、このスキルは停止要求直前に終了能力probeを新規実行する。
+`agent-toolkit:process-feedbacks`の起動時probeが停止可能でも、このスキルは停止要求直前に終了能力probeを新規実行する。
 起動時の判定結果を再利用せず、probe未実行、読取失敗又は値の不一致は停止不能とする。
 
 この単一PIDへの停止要求は、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」に定める、セッション本体を一意に識別した場合の契約済み経路として扱う。

@@ -14,13 +14,13 @@ import textwrap
 import time
 
 import _fork_runner
-import claude_hook
+import hook
 import pretooluse
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 from pyfltr.colloquial import check as _colloquial_check
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 _PLUGIN_MANIFEST = pathlib.Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json"
 _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-plugin" / "marketplace.json"
 _SHARE_DIR = pathlib.Path(__file__).resolve().parents[1] / "share"
@@ -133,7 +133,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
     return sorted(set(offenders))
 
 
-@pytest.mark.parametrize("module_name", sorted(claude_hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
+@pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
     source = (pathlib.Path(pretooluse.__file__).parent / f"{module_name}.py").read_text(encoding="utf-8")
@@ -642,7 +642,7 @@ class TestHomePathCheck:
 
     @pytest.mark.parametrize("name", ["home-path.md", "home-path.bugs.md"])
     def test_home_path_in_plan_file_skipped(self, tmp_path: pathlib.Path, name: str):
-        """計画本体とバグ調査付属ファイルでは正確なホーム絶対パスを許容する。"""
+        """計画ファイル（メイン）と計画ファイル（バグ）では正確なホーム絶対パスを許容する。"""
         home = tmp_path / "home"
         plan = _make_plan_file(home, name)
         result = _run(
@@ -847,7 +847,7 @@ class TestColloquialCheck:
 
     @pytest.mark.parametrize("name", ["colloquial.detail.md", "colloquial.bugs.md"])
     def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str, name: str) -> None:
-        """計画ファイル（詳細）とバグ調査付属側は口語警告を出力しない。"""
+        """計画ファイル（詳細）と計画ファイル（バグ）は口語警告を出力しない。"""
         detail = _make_plan_file(tmp_path / "home", name)
         content = f"概要は{deny_substring}該当する。\n"
         result = _run(
@@ -877,6 +877,15 @@ def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Pa
     return plan
 
 
+def _make_private_notes_plan_file(private_notes: pathlib.Path, name: str = "test.md") -> pathlib.Path:
+    """新しいprivate-notes計画root配下の計画ファイルを作成する。"""
+    plans = private_notes / "plans" / "2026" / "08"
+    plans.mkdir(parents=True, exist_ok=True)
+    plan = plans / name
+    plan.write_text("# t\n", encoding="utf-8")
+    return plan
+
+
 def _write_tmp_file(tmp_path: pathlib.Path, relative_path: str, content: str) -> pathlib.Path:
     path = tmp_path / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -899,7 +908,7 @@ class TestPlanModeSkillFirstCheck:
     """plan fileの起草編集でplan-modeスキル未起動を警告する検査（block降格済み）。
 
     plan-modeスキル未起動でもplan file以外の操作（Read・Bash・他Skill・通常ファイル編集等）は
-    一切ブロックも警告もしない。`~/.claude/plans/`直下の`*.md`に対する
+    一切ブロックも警告もしない。新旧計画root配下の`*.md`に対する
     Writeと進捗ログ節外を変更するEdit/MultiEditが警告対象となる。`permission_mode`の値には依存しない。
     既存計画の一意かつ最後の`## 進捗ログ`節だけを変更するEdit/MultiEditは警告しない。
     完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
@@ -934,6 +943,24 @@ class TestPlanModeSkillFirstCheck:
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in messages
         assert "editing a plan file without invoking" in _additional_context(result)
         assert "editing a plan file without invoking" not in result.stderr
+
+    def test_warns_private_notes_plan_file_write_without_skill(self, tmp_path: pathlib.Path) -> None:
+        """新しいprivate-notes計画rootのWriteもplan-mode未起動として警告する。"""
+        private_notes = tmp_path / "private-notes"
+        plan = _make_private_notes_plan_file(private_notes, "30-計画保存先移行-a1b2.md")
+        env = self._state_env(tmp_path)
+        env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(private_notes)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan), "content": "# t\n"},
+                "session_id": "private-notes-plan-write",
+                "permission_mode": "plan",
+            },
+            env_overrides=env,
+        )
+        assert result.returncode == 0
+        assert "editing a plan file without invoking" in _additional_context(result)
 
     @pytest.mark.parametrize("name", ["edit.md", "edit.bugs.md"])
     def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path, name: str):
@@ -1174,7 +1201,7 @@ class TestPlanModeSkillCallSites:
 class TestPlanFileDoesNotRequireTextlintRead:
     """計画編集前の文章lint資料読了条件が撤去済みであることを検証する。
 
-    `permission_mode`の値に依らず、`~/.claude/plans/`直下の`*.md`に対する
+    `permission_mode`の値に依らず、新旧計画root配下の`*.md`に対する
     Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
     一切ブロック・警告しない。完成条件を満たさない状態での次工程移行の抑止は
     `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する。

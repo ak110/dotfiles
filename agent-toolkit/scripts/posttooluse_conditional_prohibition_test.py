@@ -12,7 +12,7 @@ import subprocess
 
 import _fork_runner
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:

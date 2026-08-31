@@ -12,7 +12,7 @@ import pytest
 import stopfailure_notifier
 from stopfailure_notifier import append_log
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 _FIXED_NOW = datetime.datetime(2026, 5, 26, 12, 0, 0, tzinfo=datetime.UTC)
 
 

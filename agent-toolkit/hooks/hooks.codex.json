@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py pretooluse"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py pretooluse"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py posttooluse"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py posttooluse"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py permissionrequest_codex"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py permissionrequest_codex"
           }
         ]
       }
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py user_prompt_submit"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py user_prompt_submit"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py subagent_stop_advisor"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py subagent_stop_advisor"
           }
         ]
       }
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py session_end_cleanup",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py session_end_cleanup",
             "timeout": 3
           }
         ]
@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/claude_hook.py quality_checkpoint"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py quality_checkpoint"
           }
         ]
       }

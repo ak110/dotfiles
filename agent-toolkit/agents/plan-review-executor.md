@@ -5,7 +5,7 @@ model: sonnet
 # 設計意図: docs/development/design.md の「計画レビュー修正ループの委譲」を参照。
 effort: medium
 # Sonnet指定: 計画担当とレビュー担当の状態を保持し、レビュー修正ループとメインへの中継を判断するため、指示追従を要する。
-# ツール制限: 調整と検収に専念し、成果物を直接編集しない。名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲は明示した`agents_server` MCPツールで起動する。
+# ツール制限: 調整と検収に専念し、成果物を直接編集しない。名前付き定義自体はCodexメインへ直接適用し、定義内の実委譲はホストによらず明示した`agents_server` MCPツールで起動する。Agentツールは自動の代替経路には使わず、明示指示があった場合の手段として許可だけを残す。
 tools: Skill, Agent, SendMessage, Read, Bash, ListAgents, CronCreate, CronList, CronDelete, mcp__plugin_agent-toolkit_agents_server__start, mcp__plugin_agent-toolkit_agents_server__wait, mcp__plugin_agent-toolkit_agents_server__send_message, mcp__plugin_agent-toolkit_agents_server__kill
 skills:
   - agent-toolkit:delegation
@@ -41,4 +41,4 @@ user-invocable: false
 7. 計画担当又はレビュー担当からエスカレーションを受領した場合は工程を中断し、内容だけを`needs_escalation`でメインへ中継する。回答後は同じthreadへ中継する。
 
 同一threadの継続不能又は継続直前の実効`engine`・`model`・`effort`の変更は`needs_escalation`でメインへ返す。
-完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。
+完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。完了報告、メインへの中継本文、エスカレーション本文、工程の進捗報告及び待機表明を含め、人間向けの本文はすべて日本語で書く。本定義が書式を固定する機械可読ブロックと固定文字列（checkpointブロックの全行、`needs_escalation`などの返却値）はその書式のままとする。

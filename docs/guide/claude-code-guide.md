@@ -226,12 +226,10 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 指定した項目は、計画調査の前に同一対象リポジトリの`planning`状態へ一括移動する。
 `planning`状態の項目は一覧と詳細で確認できるが、計画が完成するまで`process-loop`の実装対象にならない。
 すべての入力はファイル名昇順で1つの計画へ統合される。
-レビュー収束後は最古の項目が計画型へ変換されて`inbox`へ移り、残りの統合元が`rm --force`で除去される。
-入力が1件だけの場合はrmを呼ばず、計画型のinbox項目だけを残す。
-計画型inbox項目を実装する場合は、明示的な`atk mq start-processing`又は`process-loop`が処理を開始する。
 
-計画型編集前に中断した場合は、同じ入力で再開するか、`atk mq return-to-inbox <filename>... --state=planning`でinboxへ戻す。
-計画型への変換開始後は最古の計画型inbox項目を移動せず、保存済みの状態から滞留commitのpush又は残りの統合元の除去を再開する。
+レビュー収束後は、すべての入力を1回の`atk mq convert-to-plan`へ渡す。ファイル名昇順の最古項目が計画型へ変換されて`inbox`へ移り、残りの統合元は同じcommitで除去される。入力が1件の場合も同じ処理を使う。計画型`inbox`項目を実装する場合は、明示的な`atk mq start-processing`又は`process-loop`が処理を開始する。
+
+計画型変換前に中断した場合は、同じ入力で再開するか、`atk mq return-to-inbox <filename>... --state=planning`で`inbox`へ戻す。入力検証、書込み又はcommitの失敗では元の`planning`集合を復元する。pushだけが失敗した場合は変換済みのローカルcommitを保持し、滞留commitのpushと保存結果の確認から再開する。
 ファイル名を指定しない自然言語の依頼は、従来どおり新しい計画型フィードバックとして登録される。
 
 `atk mq reject`は、process-loopが要求の全てを不採用と確定した場合だけに使用する。
@@ -325,10 +323,10 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/autonomous_exit` | process-loop環境で`completion-report`後の`exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
+| plugin `Stop/autonomous_exit` | process-loop環境で`agent-toolkit:completion-report`後の`agent-toolkit:exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や`~/.claude/plans/`への書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
+| plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や新旧計画rootへの書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `SubagentStart/subagent_start_tracker` | 委譲調整役の起動を記録し、SubagentStopの完了判定へ接続する | 対応 | 非対応。Codexの`agent_type`はspawn時のrole名又は`default`であり、現行の公開入力から追跡対象を識別できない |
 | plugin `PostToolUseFailure/posttooluse` | ツール失敗時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
@@ -341,6 +339,30 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 信頼前は変更済みHookがスキップされるため、圧縮後通知は発火しない。
 信頼後に`/compact`を実行し、次のモデル継続前に自動生成通知が現れることを確認する。
 
+### 計画ファイルの保存とレビュー時commit
+
+新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次のrootへメイン側とdetail側を同時に保存する。
+
+```text
+$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
+$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
+```
+
+永続する計画参照は上記の可搬表記で記録する。既存の`~/.claude/plans/`直下の単一・二ファイル計画と、過去に保存された絶対パスは読み書き互換として受理するが、新規作成先には使わない。
+計画レビューが収束した後と実装後レビューが収束した後は、計画rootからの相対パスを指定して計画バンドルを保存する。
+
+```bash
+atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
+```
+
+`atk plans commit`は同じstemのメイン側、detail側及び付属ファイルだけを対象にする。旧rootの既存計画を新rootへ移す1回限りの操作は、内容と参照を検証したうえで次のコマンドから実行する。
+
+```bash
+atk plans migrate
+```
+
+計画作成基準、可搬参照の検査及び旧形式の互換条件は`agent-toolkit:plan-mode`の`plan-file-standards.md`を正本とする。
+
 計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
 
 - 計画ファイルはメイン側とdetail側の2ファイル構成とする
@@ -348,6 +370,7 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 - 新規の固定H2は`## エージェント判断`、`## 変更履歴（計画時）`及び`## 進捗ログ（実行時）`を含む正規順とし、旧見出しは読み取り互換として受理する
   エージェント提案行には判断説明を1対1で対応させ、提案が無い場合は`なし`とする
 - detail側は、説明的な名前を持つ実装単位、先行依存、統合順、実装資料、完了条件を検査する
+- メイン側とdetail側では、祖先見出しを含む経路が重複する見出しを検出する
 - 新規書式では素材ID、要求ID、履歴ID、独立した除外・保持表、実装単位IDを生成しない
   既存の単一ファイル形式と素材・要求IDを持つ二ファイル形式はwarning付きの読み取り互換として受理する
 - バグ対応では分離先のバグ調査ファイルの原因分析表と固定12行の調査表を検査する
@@ -382,12 +405,12 @@ Claude Codeで有効化する。
 - `agent-toolkit:plan-mode`: 計画ファイル作成と、実装後の実装レビューを含む実行引き継ぎ
   - 計画確定時は計画構造検査で固定H2と表、計画メタ情報、見出し階層、参照実在を確認する
   - 計画時の変更履歴は`## 変更履歴（計画時）`、実装時の進捗は`## 進捗ログ（実行時）`へ分離し、旧見出しは読み取り互換とする
-  - 計画レビューでは計画stemと同じレビュー表、実装レビューでは専用managed temp領域の`review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
+  - 計画レビューでは計画ファイルと同じディレクトリの`<計画stem>.plan-review.tsv`、実装レビューでは同じディレクトリの`<計画stem>.exec-review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
   - 初回起動後の追送利用者発言は起草担当が逐語の真正性を保証し、レビュー担当は本文との対応だけを照合する
-  - バグ対応計画は計画メタ情報の固定記法から判定し、バグ調査ファイルの原因分析表と固定12行の調査表で作り込み要因と見逃し要因の深掘り、原因起点の類似見直し、是正・横展開・再発防止を記録する
+  - バグ対応計画は計画メタ情報の固定記法から判定し、バグ調査ファイルの原因分析表と固定12行の調査表で両要因の深掘り、原因起点の類似見直し、是正・横展開・再発防止を記録する
   - 変更履歴は5列表でレビュー指摘を系統・ラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表を正本とする
   - 進捗ログは日時・完了した工程・結果の3列表で実装工程の作業状況を追跡し、異常終了からの再開に使う
-  - 実装単位は成果、commit、対象ファイル集合及び近接検証が独立する場合だけ分割し、判断から一意に導出できる詳細手順は安全性・データ保全・公開契約に必要な場合だけ常設する
+  - 実装単位は1計画1commitを既定とし、成果、commit、対象ファイル集合及び近接検証が独立し分割の利益がある場合だけ分割する。判断から一意に導出できる詳細手順は安全性・データ保全・公開契約に必要な場合だけ常設する
 - `agent-toolkit:review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュー担当側心得）
 - `agent-toolkit:reviewee-standards`: レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見について、修正要否の立証、安全な修正、自己点検と公開可能性を検証する判断基準
 - `agent-toolkit:feedback-standards`: フィードバックとTBDの本文、由来、状態、承認及び投入の共通規範
@@ -405,7 +428,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
-- `agent-toolkit:session-review`: 通常の読み取り専用サブエージェントがセッション全体の問題候補を列挙し、メインが列挙証拠から原因と恒久対策を確定する。手動起動又は`completion-report`から起動する
+- `agent-toolkit:session-review`: 通常の読み取り専用サブエージェントがセッション全体の問題候補を列挙し、メインが列挙証拠から原因と恒久対策を確定する。手動起動又は`agent-toolkit:completion-report`から起動する
 
 ## 更新方法
 

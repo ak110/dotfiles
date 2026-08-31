@@ -137,7 +137,7 @@ _REPLACEMENT_CHAR = "\ufffd"
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
-    """計画本体・実装詳細またはバグ調査付属ファイルの場合に真を返す。"""
+    """計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）の場合に真を返す。"""
     return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
 
 
@@ -1159,13 +1159,14 @@ def _check_plan_mode_skill_first(
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が偽
     - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が`~/.claude/plans/`直下の計画本体・実装詳細・バグ調査付属ファイル
+    - 対象の`file_path`が新規計画root（`$(atk config get private_notes)/plans/`）または
+      既存計画root（`~/.claude/plans/`）の計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）
 
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
     サブエージェント経由の呼び出しでも同一の判定が働く
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
     計画ファイル編集に至るまでは警告を表示しない
-    （`process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
+    （`agent-toolkit:process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
     既存計画へのEdit・MultiEditで、一意かつ最後の`## 進捗ログ`見出し行までの接頭部が
     編集後も不変である場合は、受領側の正規操作として警告しない。
     ファイル又は入力を解釈できない場合は警告を維持する。
@@ -1315,7 +1316,8 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
 
     連続判定は`last_agent_toolkit_edit_path`と対象パスを比較し、
     直前と異なるパスのときのみ`direct_agent_toolkit_edit_count`をincrementする。
-    `~/.claude/plans/`配下の計画本体・実装詳細・バグ調査付属ファイルへのWrite/Edit時は
+    新規計画root（`$(atk config get private_notes)/plans/`）または既存計画root（`~/.claude/plans/`）の
+    計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）へのWrite/Edit時は
     `plan_file_written`を真にしてカウンタをリセットする。
     対象外パスへの編集時もカウンタをリセットする。
     カウンタ2件目でwarn（`additionalContext`へ載せる通知本文を返して進行を継続）、
@@ -1339,7 +1341,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     if not state.get("plan_mode_skill_invoked", False):
         return False, None
 
-    # 計画本体・実装詳細・バグ調査付属ファイルの編集時は`plan_file_written`を真にしカウンタをリセットする。
+    # 各計画ファイルの編集時は`plan_file_written`を真にしカウンタをリセットする。
     if _is_plan_file_or_adjunct(file_path_raw):
 
         def _mark_plan_written(current: dict) -> dict | None:
@@ -1407,7 +1409,10 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             _block_notice(
                 f"blocked: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
                 f" operations targeted files under agent-toolkit/ without first creating a plan file.",
-                fix="Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/.",
+                fix=(
+                    "Create a plan file under `$(atk config get private_notes)/plans/` "
+                    "before editing any file under agent-toolkit/."
+                ),
             ),
             file=sys.stderr,
         )
@@ -1417,7 +1422,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
             f" operations targeted files under agent-toolkit/ without first creating a plan file."
             " The next such edit will be blocked."
-            " Create a plan file under `~/.claude/plans/` first.",
+            " Create a plan file under `$(atk config get private_notes)/plans/` first.",
             tag="warn",
         )
     return False, None

@@ -156,8 +156,16 @@ class TestCommitSubcommand:
             ["git", "merge", "--ff-only", "@{u}"],
         ]
         assert git_cmds[3][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[4] == ["git", "add", "inbox", "processing"]
-        assert git_cmds[5] == ["git", "commit", "-m", "chore: edit queue items externally"]
+        assert git_cmds[4] == ["git", "add", "--all", "--", "inbox", "processing"]
+        assert git_cmds[5] == [
+            "git",
+            "commit",
+            "-m",
+            "chore: edit queue items externally",
+            "--",
+            "inbox",
+            "processing",
+        ]
         assert git_cmds[6] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()

@@ -128,7 +128,7 @@ frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Code
    frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、部分適用も別の実行経路への迂回もせず、失敗として返す。
 
 名前付き定義の役割がレビュー担当・実装担当などの実際の別主体を必要とする場合、その委譲は特殊経路に含めず、`agent-toolkit:delegation`と`runtime-routing.md`に従う。
-Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeでは既存どおりAgentツール又は`agents_server`を使う。
+Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeではclaude系モデルの実行主体への委譲にAgentツールを既定で使い、`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各定義が起動する委譲先だけを`agents_server`で起動する。
 
 名前付きagentの直接適用は、外側のメイン工程から呼び出した一時的な役割適用区間として扱う。
 メインは呼び出し前の工程、入力及び再開位置を保持し、定義が出力契約に従ってstatusを組み立てた時点で当該役割と`tools`制約の適用を終了する。
@@ -155,7 +155,7 @@ Codexメインが名前付き定義を直接適用して役割を遂行すると
 | `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・継続・中断） | 名前付き定義の適用自体には使わない。定義内で実際の別主体へ委譲する場合は、`runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeではユーザーへ直接質問する |
-| `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む |
+| `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
 | `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
@@ -167,7 +167,9 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
 
-`agent-toolkit:delegation`が定める`agents_server`経路と汎用エージェント代替経路は、名前付きagent定義の適用後に実際の別主体へ委譲するときだけ使う。
+`agent-toolkit:delegation`が定める`agents_server`経路は、名前付きagent定義の適用後に実際の別主体へ委譲するときに使う。
+`agent-toolkit:shell-exec`のfork実行が成立しない環境では、出力の隔離に`agents_server`経路を使う。
+`agent-toolkit:delegation`が定める汎用エージェント代替経路は、名前付きagent定義の適用後に実際の別主体へ委譲するときだけ使う。
 名前付きagent定義自体を`spawn_agent`又は`followup_task`へ渡さない。
 計画レビュー系・計画準拠実装レビュー系・独立実装レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
 

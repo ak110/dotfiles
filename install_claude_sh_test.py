@@ -64,7 +64,7 @@ if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json"
     rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
     if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts"
-        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/claude_hook.py"
+        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/hook.py"
         printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/agents_server_mcp.py"
     fi
     if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
@@ -210,7 +210,7 @@ def _run(
     if before_version != "__missing__":
         old_cache = effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit" / before_version / "scripts"
         old_cache.mkdir(parents=True, exist_ok=True)
-        (old_cache / "claude_hook.py").write_text("old hook\n", encoding="utf-8")
+        (old_cache / "hook.py").write_text("old hook\n", encoding="utf-8")
     env = {
         "HOME": str(home),
         "PATH": os.pathsep.join(path_parts),
@@ -419,7 +419,7 @@ def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path
         old_path = cache_root / version
         assert old_path.is_symlink()
         assert old_path.resolve() == (cache_root / "1.2.3").resolve()
-        assert (old_path / "scripts/claude_hook.py").read_text(encoding="utf-8") == "current hook\n"
+        assert (old_path / "scripts/hook.py").read_text(encoding="utf-8") == "current hook\n"
 
 
 def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, rules_url: str) -> None:
@@ -430,7 +430,7 @@ def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, ru
     cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
     dot_version = cache_root / ".1.2/scripts"
     dot_version.mkdir(parents=True)
-    (dot_version / "claude_hook.py").write_text("dot hook\n", encoding="utf-8")
+    (dot_version / "hook.py").write_text("dot hook\n", encoding="utf-8")
     stub_bin, stub_log = _make_command_stubs(tmp_path)
 
     _run(
@@ -447,7 +447,7 @@ def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, ru
     restored = cache_root / ".1.2"
     assert restored.is_symlink()
     assert restored.readlink() == pathlib.Path("-1.2")
-    assert (restored / "scripts/claude_hook.py").read_text(encoding="utf-8") == "current hook\n"
+    assert (restored / "scripts/hook.py").read_text(encoding="utf-8") == "current hook\n"
 
 
 @pytest.mark.parametrize("kind", _runners())

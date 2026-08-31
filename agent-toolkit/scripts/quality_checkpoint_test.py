@@ -9,7 +9,7 @@ import posttooluse
 import pytest
 import quality_checkpoint as subject
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 
 
 def _payload(

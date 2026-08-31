@@ -25,7 +25,7 @@ from pygments.util import ClassNotFound
 
 from pytools._internal import claude_common, file_lock
 from pytools._internal.watchdog_events import WATCHED_EVENT_TYPES
-from pytools.claude_plans_viewer import _assets, _state
+from pytools.claude_plans_viewer import _assets, _config, _state
 
 # Pygmentsはmarkdown-itの`highlight`コールバックから呼ぶ。
 # `nowrap=True`で`<span>`列のみを返し、markdown-itの既定`<pre><code>`ラッパー相当を
@@ -97,20 +97,22 @@ _CREATION_TIME_INDEX_PATH = (
 _LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
 # 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
 _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
+_TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
+_LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
 
 
 def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """`path`が`.md`拡張子・`root`配下・非dotdirの全条件を満たすか判定する。
+    """`path`が対象接尾辞・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
-    計画本体`<stem>.md`と付属計画`<stem>.detail.md`・`<stem>.bugs.md`の全てを真とする
-    （付属計画は一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
+    メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
+    （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める。`is_listed_path`が一覧専用の判定を持つ）。
     リモート側`_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
     """
-    if path.suffix != ".md":
+    if path.suffix != ".md" and not path.name.endswith(_TARGET_TSV_SUFFIXES):
         return False
     try:
         rel = path.resolve().relative_to(root.resolve())
@@ -124,7 +126,7 @@ def is_listed_path(path: pathlib.Path, root: pathlib.Path) -> bool:
 
     一覧経路だけに使う。読取・検索・変更監視は`is_target_path`を使い、付属計画も対象へ含める。
     """
-    return is_target_path(path, root) and not path.name.endswith((".detail.md", ".bugs.md"))
+    return is_target_path(path, root) and not path.name.endswith(_LISTED_EXCLUDED_SUFFIXES)
 
 
 def _is_watched_path(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -139,10 +141,16 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
     asyncioループへ`run_coroutine_threadsafe`でブリッジする。
     """
 
-    def __init__(self, root: pathlib.Path, state: _state.BroadcastState) -> None:
+    def __init__(
+        self,
+        root: pathlib.Path,
+        state: _state.BroadcastState,
+        source_id: str = "",
+    ) -> None:
         super().__init__()
         self.root = root
         self.state = state
+        self.source_id = source_id
 
     @typing.override
     def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
@@ -194,15 +202,17 @@ def markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) 
     return md.render(text)
 
 
-# キャッシュキーは(host, path, mtime_epoch)。`mtime_epoch`がキーに含まれるため、
+# 単一root互換時のキーは(host, path, mtime_epoch)、複数root時は
+# (host, source_id, path, mtime_epoch)。`mtime_epoch`がキーに含まれるため、
 # ファイル更新時は自動的に新しいエントリとなり明示的な無効化は不要。
-MarkdownCacheKey = tuple[str, str, float]
+MarkdownCacheKey = tuple[str, str, float] | tuple[str, str, str, float]
 
 
 class MarkdownCache:
     """Markdownレンダリング結果のLRUキャッシュ。
 
-    キーは`(host, path, mtime_epoch)`。リモート分は`fetch_remote_file`が本文と
+    キーは単一root互換時の`(host, path, mtime_epoch)`、複数root時の
+    `(host, source_id, path, mtime_epoch)`。リモート分は`fetch_remote_file`が本文と
     同時取得した`mtime_epoch`をそのまま使うことで、watch通知の遅延に左右されず整合する。
     `mtime_epoch`が`None`の場合、呼び出し側はキャッシュをバイパスする
     （本クラスは`None`を扱わない）。
@@ -323,13 +333,19 @@ def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
     return entries
 
 
-def update_creation_time_index(host: str, root: pathlib.Path, observed: dict[str, float]) -> dict[str, float]:
+def update_creation_time_index(
+    host: str,
+    root: pathlib.Path,
+    observed: dict[str, float],
+    *,
+    migrate_legacy: bool = True,
+) -> dict[str, float]:
     """走査結果の観測時刻をインデックスへ反映し、確定した作成日時を相対パスごとに返す。
 
     初回観測時の値を作成日時として保持することで、編集で変動する値に依らず並び順を維持する。
     同一の`(host, root)`に属し今回の走査に現れなかったキーは回収し、
     別の`root`に属するキーは維持する（`root`ごとに走査対象が異なるため）。
-    旧形式は`host`と相対パスが今回の走査と一致するものだけを取り込み、
+    `migrate_legacy=True`の場合だけ、旧形式から`host`と相対パスが今回の走査と一致するものを取り込み、
     インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
     ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
     """
@@ -339,7 +355,7 @@ def update_creation_time_index(host: str, root: pathlib.Path, observed: dict[str
         if not _enter_index_lock(stack):
             return dict(observed)
         index = _load_index()
-        legacy = _load_legacy_entries()
+        legacy = _load_legacy_entries() if migrate_legacy else {}
         migrated: list[pathlib.Path] = []
         updated: dict[str, typing.Any] = {}
         for rel, observed_epoch in observed.items():
@@ -420,45 +436,115 @@ def local_host_info(root: pathlib.Path) -> dict[str, str]:
     }
 
 
-def list_files(root: pathlib.Path, host: str) -> list[_state.FileEntry]:
-    """`root`から`.md`ファイルを再帰的に探し、作成日時の降順で返す。
+def root_info(spec: _state.RootSpec) -> dict[str, typing.Any]:
+    """複数root APIへ返す保存元情報を組み立てる。"""
+    info: dict[str, typing.Any] = {
+        "source_id": spec.source_id,
+        "portable_root": spec.portable_path,
+    }
+    if spec.warning is not None:
+        info["warning"] = spec.warning
+    return info
 
-    実装詳細側`<stem>.detail.md`は一覧から除外する（`is_listed_path`）。
-    `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
+
+def root_warning(root: pathlib.Path) -> str | None:
+    """rootを利用できない理由を返す。不在・非ディレクトリ以外は走査時に判定する。"""
+    if not root.exists():
+        return "rootが存在しません"
+    if not root.is_dir():
+        return "rootがディレクトリではありません"
+    return None
+
+
+def scan_files(
+    root: pathlib.Path,
+    host: str,
+    source_id: str = "",
+    *,
+    migrate_legacy_ctime: bool | None = None,
+) -> tuple[list[_state.FileEntry], str | None]:
+    """`root`を走査し、一覧とroot単位の警告を返す。
+
+    rootの不在・非ディレクトリ・権限不足は呼び出し元が他rootの処理を継続できるよう、
+    例外ではなく警告本文として返す。rootは自動作成しない。
     """
+    warning = root_warning(root)
+    if warning is not None:
+        return [], warning
+
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}
-    for path in root.rglob("*.md"):
-        if not path.is_file() or not is_listed_path(path, root):
-            continue
-        st = path.stat()
-        rel = path.relative_to(root).as_posix()
-        observed[rel] = _ctime_epoch(st)
-        scanned.append({"path": rel, "name": path.name, "mtime_epoch": st.st_mtime})
+    warning = None
+    try:
+        paths = root.rglob("*")
+        for path in paths:
+            try:
+                if not path.is_file() or not is_listed_path(path, root):
+                    continue
+                st = path.stat()
+            except OSError as error:
+                warning = f"rootの走査に失敗しました: {error}"
+                continue
+            rel = path.relative_to(root).as_posix()
+            observed[rel] = _ctime_epoch(st)
+            scanned.append({"path": rel, "name": path.name, "mtime_epoch": st.st_mtime})
+    except OSError as error:
+        warning = f"rootの走査に失敗しました: {error}"
+
     # 走査後に一度だけインデックスを更新し、同じ`(host, root)`の不在エントリを回収する。
-    resolved = update_creation_time_index(host, root, observed)
-    collected = [_state.make_file_entry(host, {**item, "ctime_epoch": resolved[item["path"]]}) for item in scanned]
-    collected.sort(key=lambda entry: entry.ctime_epoch, reverse=True)
-    return collected
+    resolved = update_creation_time_index(
+        host,
+        root,
+        observed,
+        migrate_legacy=(source_id in ("", _config.LEGACY_SOURCE_ID) if migrate_legacy_ctime is None else migrate_legacy_ctime),
+    )
+    collected = [
+        _state.make_file_entry(
+            host,
+            {**item, "ctime_epoch": resolved[item["path"]], "source_id": source_id},
+        )
+        for item in scanned
+    ]
+    collected.sort(key=lambda entry: (entry.ctime_epoch, entry.path), reverse=True)
+    return collected, warning
+
+
+def list_files(root: pathlib.Path, host: str, source_id: str = "") -> list[_state.FileEntry]:
+    """`root`から一覧対象の計画ファイルを再帰的に探し、作成日時の降順で返す。
+
+    付属ファイルは一覧から除外する（`is_listed_path`）。
+    `host`は各エントリの`host`フィールドへ埋め込むラベル（通常はサーバー実行ホスト名）。
+    """
+    entries, _ = scan_files(root, host, source_id)
+    return entries
 
 
 def search_files(root: pathlib.Path, query: str) -> set[str]:
-    """本文へ検索語が部分一致するMarkdownファイルの相対パス集合を返す。"""
+    """本文へ検索語が部分一致する計画ファイルの相対パス集合を返す。"""
     needle = query.casefold()
+    if not root.is_dir():
+        return set()
     if not needle:
-        return {
-            path.relative_to(root).as_posix() for path in root.rglob("*.md") if path.is_file() and is_target_path(path, root)
-        }
-    matched: set[str] = set()
-    for path in root.rglob("*.md"):
-        if not path.is_file() or not is_target_path(path, root):
-            continue
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            return {
+                path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file() and is_target_path(path, root)
+            }
         except OSError:
-            continue
-        if needle in text.casefold():
-            matched.add(path.relative_to(root).as_posix())
+            return set()
+    matched: set[str] = set()
+    try:
+        paths = root.rglob("*")
+        for path in paths:
+            if not path.is_file() or not is_target_path(path, root):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if needle in text.casefold():
+                matched.add(path.relative_to(root).as_posix())
+    except OSError:
+        return matched
     return matched
 
 
@@ -470,7 +556,7 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
         target.relative_to(root.resolve())
     except ValueError:
         return None
-    if target.suffix != ".md" or not target.is_file():
+    if not target.is_file() or not is_target_path(target, root):
         return None
     return target
 

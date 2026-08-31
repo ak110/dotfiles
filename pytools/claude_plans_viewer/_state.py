@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import datetime
 import json
+import pathlib
 import typing
 
 # debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。
@@ -14,6 +15,19 @@ _BROADCAST_DEBOUNCE_SEC = 0.3
 # 後方互換のためサーバー側はJSON文字列を1行で配信する（クライアントは`type`不在を
 # refreshとみなすフォールバックを持つ）。
 _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RootSpec:
+    """一つの計画保存rootと、画面へ返す可搬表記をまとめた定義。"""
+
+    source_id: str
+    path: pathlib.Path
+    portable_path: str
+    # root解決前に判明した障害（例: private_notes設定取得失敗）を保持する。
+    warning: str | None = None
+    # Noneはsource_idによる従来判定を使う。重複排除後は旧rootの資格を論理和で保持する。
+    migrate_legacy_ctime: bool | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -27,6 +41,8 @@ class FileEntry:
     ctime: str
     mtime_epoch: float
     ctime_epoch: float
+    # 旧単一root呼び出しでは空文字列とし、host+pathの既存識別子を維持する。
+    source_id: str = ""
 
 
 @dataclasses.dataclass(slots=True)
@@ -59,6 +75,10 @@ class BroadcastState:
     # ローカル分は`_app.py`起動時に即座にセットする。リモート分は初回snapshot受信時に追加し、
     # 接続喪失時（heartbeat応答途絶・SSE切断検知等）はキー自体を削除する（`None`値保持ではない）。
     host_info: dict[str, dict[str, str]] = dataclasses.field(default_factory=dict)
+    # ホスト名 -> 保存元ID -> root情報。新しい複数root API・UIで使用する。
+    root_info: dict[str, dict[str, dict[str, typing.Any]]] = dataclasses.field(default_factory=dict)
+    # ホスト名 -> 保存元ID -> 状態。状態値は"ok"またはroot単位の警告本文。
+    root_status: dict[str, dict[str, dict[str, str]]] = dataclasses.field(default_factory=dict)
 
 
 def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEntry:
@@ -76,7 +96,36 @@ def make_file_entry(host: str, item: typing.Mapping[str, typing.Any]) -> FileEnt
         ctime=ctime.strftime("%Y/%m/%d %H:%M"),
         mtime_epoch=mtime_epoch,
         ctime_epoch=ctime_epoch,
+        source_id=str(item.get("source_id", item.get("source", ""))),
     )
+
+
+def normalize_root_specs(specs: typing.Iterable[RootSpec]) -> tuple[RootSpec, ...]:
+    """rootを正規化し、同一canonical pathまたは同一実体の重複だけを除く。"""
+    normalized: list[RootSpec] = []
+    for spec in specs:
+        path = spec.path.expanduser().resolve()
+        migrate_legacy = (
+            spec.source_id in ("", "claude-plans") if spec.migrate_legacy_ctime is None else spec.migrate_legacy_ctime
+        )
+        candidate = dataclasses.replace(spec, path=path, migrate_legacy_ctime=migrate_legacy)
+        duplicate_index: int | None = None
+        for index, existing in enumerate(normalized):
+            if path == existing.path:
+                duplicate_index = index
+                break
+            try:
+                if path.exists() and existing.path.exists() and path.samefile(existing.path):
+                    duplicate_index = index
+                    break
+            except OSError:
+                # 実体照合に失敗しても、当該rootの障害により他rootの処理を停止しない。
+                continue
+        if duplicate_index is None:
+            normalized.append(candidate)
+        elif candidate.migrate_legacy_ctime and not normalized[duplicate_index].migrate_legacy_ctime:
+            normalized[duplicate_index] = dataclasses.replace(normalized[duplicate_index], migrate_legacy_ctime=True)
+    return tuple(normalized)
 
 
 async def subscribe(state: BroadcastState) -> asyncio.Queue[str]:
@@ -138,6 +187,26 @@ async def deliver_host_info(state: BroadcastState, host: str, info: dict[str, st
     再取得手段と対で運用する。クライアントは接続確立時・SSE再接続時の双方で両方を呼ぶ。
     """
     payload = json.dumps({"type": "host_info_update", "host": host, "info": info}, ensure_ascii=False)
+    await _broadcast(state, payload)
+
+
+async def deliver_root_info(
+    state: BroadcastState,
+    host: str,
+    info: dict[str, dict[str, typing.Any]] | None,
+) -> None:
+    """root単位の保存先情報更新をSSEで配信する。"""
+    payload = json.dumps({"type": "root_info_update", "host": host, "info": info}, ensure_ascii=False)
+    await _broadcast(state, payload)
+
+
+async def deliver_root_status(
+    state: BroadcastState,
+    host: str,
+    status: dict[str, dict[str, str]],
+) -> None:
+    """root単位の利用可能状態・警告をSSEで配信する。"""
+    payload = json.dumps({"type": "root-status", "host": host, "status": status}, ensure_ascii=False)
     await _broadcast(state, payload)
 
 

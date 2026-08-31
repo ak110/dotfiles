@@ -17,7 +17,7 @@ import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
-_SCRIPT = _SCRIPTS_DIR / "claude_hook.py"
+_SCRIPT = _SCRIPTS_DIR / "hook.py"
 
 
 def _run(
@@ -228,6 +228,32 @@ class TestClaudePlanSessionTitle:
         assert "last_hook_session_title" not in _read_state(tmp_path, sid)
         title_state = json.loads(self._title_state_path(tmp_path, sid).read_text(encoding="utf-8"))
         assert title_state == {"last_hook_session_title": "feedback-batch"}
+
+    def test_private_notes_plan_receives_current_plan_stem(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """新しいprivate-notes計画rootのメインも計画タイトルへ同期する。"""
+        sid = "private-notes-plan-title"
+        home = tmp_path / "home"
+        plan = home / "private-notes" / "plans" / "2026" / "08" / "30-計画保存先移行-a1b2.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# 計画\n", encoding="utf-8")
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(home / "private-notes"))
+        self._state_path(tmp_path, sid).write_text(
+            json.dumps({"current_plan_file_path": str(plan)}),
+            encoding="utf-8",
+        )
+
+        result = _run(
+            {"session_id": sid, "prompt": "計画を続けます", "hook_event_name": "UserPromptSubmit"},
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "30-計画保存先移行-a1b2"
 
     def test_same_session_does_not_emit_title_again(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         sid = "plan-title-repeat"

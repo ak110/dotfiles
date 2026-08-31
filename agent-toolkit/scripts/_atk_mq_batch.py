@@ -30,6 +30,7 @@ import tempfile
 import typing
 
 import _atk_mq_frontmatter as _frontmatter
+import _plan_file
 from _atk_mq_add import _body_is_effectively_empty, read_body_files
 from _atk_mq_common import (
     MQ_STATE_INBOX,
@@ -280,6 +281,28 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def _normalize_plan_file(entry: BatchEntry, private_notes: pathlib.Path) -> BatchEntry:
+    """保存前の`plan_file`だけを共通契約の可搬表記へ正規化する。"""
+    raw_plan_file = entry.frontmatter.get("plan_file")
+    if not isinstance(raw_plan_file, str):
+        return entry
+    try:
+        stored_plan_file = _plan_file.normalize_plan_file(raw_plan_file, private_notes=private_notes)
+    except ValueError as error:
+        raise WebInputError(f"plan_fileを解決できません: {raw_plan_file}（{error}）") from error
+    if stored_plan_file == raw_plan_file:
+        return entry
+    frontmatter = dict(entry.frontmatter)
+    frontmatter["plan_file"] = stored_plan_file
+    raw_text = _frontmatter.serialize_frontmatter(frontmatter, entry.body)
+    return BatchEntry(
+        original_name=entry.original_name,
+        raw_text=raw_text,
+        frontmatter=frontmatter,
+        body=entry.body,
+    )
+
+
 def _declared_dependencies(entry: BatchEntry) -> list[str]:
     """`depends_on`が宣言する依存先名を列として返す。
 
@@ -367,7 +390,8 @@ def add_batch_entries(
             case_sensitive=case_sensitive,
         )
         renames = {original: saved for original, saved in assignments.items() if original != saved}
-        contents = [(assignments[entry.original_name], _rewrite_depends_on(entry, renames)) for entry in entries]
+        normalized_entries = [_normalize_plan_file(entry, private_notes) for entry in entries]
+        contents = [(assignments[entry.original_name], _rewrite_depends_on(entry, renames)) for entry in normalized_entries]
         for filename, content in contents:
             (inbox_dir / filename).write_text(content, encoding="utf-8")
         warnings = _dependency_warnings(

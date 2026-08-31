@@ -7,13 +7,16 @@
 ## レビュー修正
 
 通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。新規に実装レビュー担当を起動する場合は`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の絶対パスを入力へ加えて渡す。
+レビュー担当へ渡す開始時点の完全OIDは、渡す直前に`git -C <対象worktreeの絶対パス> rev-parse --verify --quiet <検収したOID>^{commit}`を実行し、終了コード0で出力された文字列をそのまま渡す。
+終了コードが0でない場合はレビュー担当を起動せず、実行したコマンドと終了コードを呼び出し元へ返す。記憶、転記又は短縮形からの復元でOIDを組み立てない。
 
 同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
 新規起動では`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`と`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を渡す。
 あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、フィードバックファイル名一覧、複製元と対象外worktreeも渡す。
 起動文へ担当種別を`レビュー修正担当`として明示する。
-レビュー表の絶対パスと`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
+計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`を用いる実装レビュー指摘管理表の絶対パスと
+`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
 修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。
 調整担当はレビュー表を読まず、採否、対応付け又は成果物・Git・検証結果を再検収しない。
 

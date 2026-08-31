@@ -31,6 +31,18 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _write_feedback_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+_USER_COMMENT_ERROR = (
+    "ユーザーコメントはユーザーだけが書き込みます。エージェント環境から起動したatkではユーザーコメントを変更できません。\n"
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """編集テストをホスト側のエージェント環境変数から隔離する。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
 
 def _write_tbd_entry(
     notes: pathlib.Path,
@@ -106,6 +118,130 @@ def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monke
 
     mutations.transition_entries(notes, action="unhold", filenames=["entry.md"], now=_FIXED_DT)
     assert (notes / "inbox/entry.md").is_file()
+
+
+def test_transition_explicit_state_contract_matches_web_operations() -> None:
+    """Web操作が明示できる状態集合を操作別契約として固定する。"""
+    assert common.TRANSITION_EXPLICIT_STATES == {
+        "start-processing": ("hold",),
+        "return-to-inbox": ("planning", "rejected"),
+        "adopt": ("hold",),
+        "reject": ("inbox", "hold"),
+        "remove": ("inbox", "planning", "processing", "hold"),
+    }
+    for action, states in common.TRANSITION_EXPLICIT_STATES.items():
+        for state_name in states:
+            mutations._validate_transition_options(  # pylint: disable=protected-access  # noqa: SLF001
+                action,
+                ["entry.md"],
+                state=state_name,
+                expected_content=None,
+                cooldown_days=None,
+            )
+    with pytest.raises(mutations.WebInputError, match="操作adoptはstate=inboxを受理しません"):
+        mutations._validate_transition_options(  # pylint: disable=protected-access  # noqa: SLF001
+            "adopt",
+            ["entry.md"],
+            state="inbox",
+            expected_content=None,
+            cooldown_days=None,
+        )
+
+
+def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保留中項目を再開・採否・削除・本文変更の対象にする。"""
+    notes = _setup_notes(tmp_path)
+    filenames = ["process.md", "adopt.md", "reject.md", "remove.md", "edit.md", "append.md"]
+    for filename in filenames:
+        _write_feedback_file(notes, filename)
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="hold", filenames=filenames, now=_FIXED_DT)
+
+    mutations.transition_entries(notes, action="start-processing", filenames=["process.md"], state="hold", now=_FIXED_DT)
+    mutations.transition_entries(notes, action="adopt", filenames=["adopt.md"], state="hold", now=_FIXED_DT)
+    mutations.transition_entries(notes, action="reject", filenames=["reject.md"], state="hold", now=_FIXED_DT)
+    mutations.transition_entries(notes, action="remove", filenames=["remove.md"], state="hold", now=_FIXED_DT)
+
+    calls: list[tuple[str, pathlib.Path]] = []
+
+    def record_edit(_notes: pathlib.Path, *, directory: pathlib.Path, **_kwargs: object) -> bool:
+        calls.append(("edit", directory))
+        return True
+
+    def record_append(_notes: pathlib.Path, *, directory: pathlib.Path, **_kwargs: object) -> bool:
+        calls.append(("append", directory))
+        return True
+
+    monkeypatch.setattr(mutations, "_edit_entry", record_edit)
+    monkeypatch.setattr(mutations, "_append_entry", record_append)
+    assert mutations.edit_entry_content(notes, state="hold", filename="edit.md", content="編集後")
+    assert mutations.append_entry_content(
+        notes,
+        state="hold",
+        filename="append.md",
+        content="\n追記\n".encode(),
+    )
+
+    assert (notes / "processing/process.md").is_file()
+    assert (notes / "adopted/adopt.md").is_file()
+    assert (notes / "rejected/reject.md").is_file()
+    assert not (notes / "hold/remove.md").exists()
+    assert calls == [("edit", notes / "hold"), ("append", notes / "hold")]
+
+
+def test_return_rejected_entry_to_inbox_strips_terminal_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """不採用項目をinboxへ戻す際に終端結果節だけを除去する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
+    rejected = notes / "rejected/entry.md"
+    assert "## 処理結果" in rejected.read_text(encoding="utf-8")
+
+    mutations.transition_entries(
+        notes,
+        action="return-to-inbox",
+        filenames=["entry.md"],
+        state="rejected",
+        now=_FIXED_DT,
+    )
+
+    returned = notes / "inbox/entry.md"
+    assert returned.is_file()
+    assert "## 処理結果" not in returned.read_text(encoding="utf-8")
+
+
+def test_return_rejected_entry_conflict_preserves_terminal_result(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """復帰先が競合する場合は不採用項目を変更せず保持する。"""
+    notes = _setup_notes(tmp_path)
+    _write_feedback_file(notes, "entry.md")
+    _disable_transition_git(monkeypatch)
+    mutations.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
+    rejected = notes / "rejected/entry.md"
+    before = rejected.read_bytes()
+    _write_feedback_file(notes, "entry.md")
+
+    with pytest.raises(SystemExit) as exc_info:
+        mutations.transition_entries(
+            notes,
+            action="return-to-inbox",
+            filenames=["entry.md"],
+            state="rejected",
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 2
+    assert rejected.read_bytes() == before
+    assert "## 処理結果" in rejected.read_text(encoding="utf-8")
 
 
 def test_transition_restores_missing_state_directories_before_commit(
@@ -397,6 +533,21 @@ def _write_convert_plan(tmp_path: pathlib.Path, target_commit: str) -> pathlib.P
     return plan
 
 
+def _write_planning_plan(
+    tmp_path: pathlib.Path,
+    target_commit: str,
+    filenames: tuple[str, ...],
+) -> pathlib.Path:
+    """計画型変換テスト用にメタ情報と提示素材を持つ計画を作成する。"""
+    plan = tmp_path / "plan.md"
+    materials = "".join(f"- {filename}\n" for filename in filenames)
+    plan.write_text(
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{target_commit}`\n\n## 提示素材\n\n{materials}",
+        encoding="utf-8",
+    )
+    return plan
+
+
 def _write_convert_feedback(
     notes: pathlib.Path,
     filename: str,
@@ -416,6 +567,12 @@ def _write_convert_feedback(
         encoding="utf-8",
     )
     return path
+
+
+def _patch_planning_target_resolution(monkeypatch: pytest.MonkeyPatch, target_commit: str = "b" * 40) -> None:
+    """planning変換テストの対象worktreeと計画ベースcommit解決を固定する。"""
+    monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
+    monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda _plan, _worktree: target_commit)
 
 
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -471,6 +628,33 @@ def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
     assert "queue_schedule" not in data
     assert details["target_commit"] == "a" * 40
     assert details["depends_on"] == ["dependency.md"]
+
+
+def test_convert_to_plan_accepts_and_stores_portable_plan_file(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新規計画のportable値を受理し、同じ可搬表記をfrontmatterへ保存する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    relative = pathlib.Path("plans/2026/08/30-portable-plan-a1b2.md")
+    plan = notes / relative
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+    portable = f"$(atk config get private_notes)/{relative.as_posix()}"
+    _disable_convert_git(monkeypatch)
+
+    details = mutations.convert_entries_to_plan(
+        notes,
+        filenames=("feedback.md",),
+        plan_file=portable,
+        target_repo="github.com/example/foo",
+    )
+
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["plan_file"] == portable
+    assert details["plan_file"] == portable
 
 
 @pytest.mark.parametrize(
@@ -961,6 +1145,457 @@ def test_convert_multiple_entries_rejects_duplicate_before_writing(
     assert path.read_text(encoding="utf-8") == original
 
 
+def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_item(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """planningの全feedbackを最古項目へ統合し、TBDと外部依存を保持する。"""
+    notes = _setup_notes(tmp_path)
+    feedback_names = ("20260827-000000-001.md", "20260827-000000-002.md")
+    paths = [_write_convert_feedback(notes, name, state="planning") for name in feedback_names]
+    tbd_name = "20260826-235959-001.md"
+    _write_tbd_entry(notes, tbd_name)
+    paths[0].write_text(
+        paths[0]
+        .read_text(encoding="utf-8")
+        .replace(
+            "type: feedback\n",
+            f"type: feedback\ndepends_on: [{tbd_name}, external-a.md]\n",
+        ),
+        encoding="utf-8",
+    )
+    paths[1].write_text(
+        paths[1]
+        .read_text(encoding="utf-8")
+        .replace(
+            "type: feedback\n",
+            "type: feedback\nqueue_schedule:\n  dependency:\n    kind: entries\n    filenames: [external-b.md]\n",
+        ),
+        encoding="utf-8",
+    )
+    plan = _write_planning_plan(tmp_path, "a" * 40, (*feedback_names, tbd_name))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+    commit_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
+
+    result = mutations.convert_entries_to_plan(
+        notes,
+        filenames=(feedback_names[1], feedback_names[0]),
+        plan_file=str(plan),
+        message="統合した計画本文",
+        target_repo="github.com/example/foo",
+        local_worktree=tmp_path / "target-worktree",
+        skip_push=True,
+    )
+
+    output_path = notes / "inbox" / feedback_names[0]
+    assert not (notes / "planning" / feedback_names[0]).exists()
+    assert not (notes / "planning" / feedback_names[1]).exists()
+    assert output_path.is_file()
+    assert (notes / "inbox" / tbd_name).is_file()
+    parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    data, body = parsed
+    assert data["source"] == "plan"
+    assert data["plan_file"] == str(plan)
+    assert data["target_commit"] == "b" * 40
+    assert data["depends_on"] == [tbd_name, "external-a.md", "external-b.md"]
+    assert "統合した計画本文" in body
+    entries = result["entries"]
+    assert isinstance(entries, list) and len(entries) == 1
+    assert result["planning"] is True
+    assert len(commit_calls) == 1
+    assert commit_calls[0][2] == (
+        "planning/20260827-000000-001.md",
+        "planning/20260827-000000-002.md",
+        "inbox/20260827-000000-001.md",
+    )
+
+
+def test_convert_planning_entries_rejects_unrepresentable_legacy_dependency_before_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """planningの旧形式依存を移行できない場合は書込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    path = _write_convert_feedback(notes, filename, state="planning")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "type: feedback\n",
+            "type: feedback\nqueue_schedule:\n  dependency:\n    kind: external-user\n",
+        ),
+        encoding="utf-8",
+    )
+    original = path.read_text(encoding="utf-8")
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="旧形式の依存を計画実装型へ移行できません"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+
+
+@pytest.mark.parametrize(
+    ("state", "message", "expected"),
+    [
+        ("planning", None, "--message"),
+        ("inbox", "統合本文", "指定できません"),
+    ],
+)
+def test_convert_to_plan_rejects_message_for_wrong_input_state_without_changes(
+    state: str,
+    message: str | None,
+    expected: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """状態と本文入力の組合せを検証し、入力ファイルを変更しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    path = _write_convert_feedback(notes, filename, state=state)
+    original = path.read_text(encoding="utf-8")
+    material_names = (filename,) if state == "planning" else ()
+    plan = (
+        _write_planning_plan(tmp_path, "a" * 40, material_names) if material_names else _write_convert_plan(tmp_path, "a" * 40)
+    )
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match=expected):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message=message,
+        )
+
+    assert path.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists() if state == "planning" else True
+
+
+def test_convert_to_plan_rejects_mixed_states_before_writing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """inboxとplanningの入力混在を全体拒否する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "20260827-000000-001.md")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
+    first_original = first.read_text(encoding="utf-8")
+    second_original = second.read_text(encoding="utf-8")
+    plan = _write_planning_plan(tmp_path, "a" * 40, (first.name, second.name))
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="異なる状態"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(first.name, second.name),
+            plan_file=str(plan),
+            message="統合本文",
+        )
+
+    assert first.read_text(encoding="utf-8") == first_original
+    assert second.read_text(encoding="utf-8") == second_original
+    assert not (notes / "inbox" / second.name).exists()
+
+
+def test_convert_planning_entries_rejects_material_mismatch_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLI入力と計画素材の集合が異なる場合は書込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="planning")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
+    originals = {path.name: path.read_text(encoding="utf-8") for path in (first, second)}
+    plan = _write_planning_plan(tmp_path, "a" * 40, (first.name,))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="一致しません"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(first.name, second.name),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert first.read_text(encoding="utf-8") == originals[first.name]
+    assert second.read_text(encoding="utf-8") == originals[second.name]
+    assert not (notes / "inbox" / first.name).exists()
+
+
+def test_convert_planning_entries_rejects_destination_conflict_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """統合先inboxの同名競合時はplanningを変更しない。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    conflict = notes / "inbox" / filename
+    conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
+    conflict_original = conflict.read_text(encoding="utf-8")
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_convert_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="同名"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert conflict.read_text(encoding="utf-8") == conflict_original
+
+
+def _initialize_private_notes_git(notes: pathlib.Path) -> str:
+    """変換失敗時の作業ツリーとindex復元を検証するGit管理repoを作成する。"""
+    for state in common.MQ_STATES:
+        (notes / state).mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "-C", str(notes), "init", "--initial-branch=main"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(["git", "-C", str(notes), "add", "-A"], check=True, capture_output=True, text=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(notes),
+            "-c",
+            "user.email=agent-toolkit@test.invalid",
+            "-c",
+            "user.name=agent-toolkit-test",
+            "commit",
+            "-m",
+            "test: initialize private notes",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _disable_real_convert_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """実Git変換テストでremote同期だけを無効化する。"""
+    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
+    monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+
+
+def test_convert_planning_entries_restores_all_paths_after_write_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """書込み失敗時にplanningの全入力とindexを開始時へ戻す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    start_head = _initialize_private_notes_git(notes)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def fail_after_write(path: pathlib.Path, content: str) -> None:
+        path.write_text(content, encoding="utf-8")
+        raise OSError("テスト用書込み失敗")
+
+    monkeypatch.setattr(mutations, "_atomic_write_text", fail_after_write)
+    with pytest.raises(OSError, match="書込み失敗"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+    assert (
+        subprocess.run(
+            ["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        == start_head
+    )
+    assert (
+        subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        == ""
+    )
+
+
+def test_convert_planning_entries_restores_all_paths_after_commit_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """commit失敗時にplanningの全入力とindexを開始時へ戻す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    start_head = _initialize_private_notes_git(notes)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def fail_commit(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.CalledProcessError(1, ["git", "commit"])
+
+    monkeypatch.setattr(mutations, "_commit_and_push", fail_commit)
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+    assert (
+        subprocess.run(
+            ["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        == start_head
+    )
+    assert (
+        subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        == ""
+    )
+
+
+def test_convert_planning_entries_keeps_clean_local_commit_after_push_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """push失敗時は変換済みのcleanなローカルcommitを保持する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    _write_convert_feedback(notes, filename, state="planning")
+    start_head = _initialize_private_notes_git(notes)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def commit_then_fail_push(
+        private_notes: pathlib.Path,
+        commit_message: str,
+        relative_paths: tuple[str, ...],
+        **_kwargs: object,
+    ) -> None:
+        subprocess.run(
+            ["git", "-C", str(private_notes), "add", "--", *relative_paths],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(private_notes),
+                "-c",
+                "user.email=agent-toolkit@test.invalid",
+                "-c",
+                "user.name=agent-toolkit-test",
+                "commit",
+                "-m",
+                commit_message,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        raise subprocess.CalledProcessError(1, ["git", "push"])
+
+    monkeypatch.setattr(mutations, "_commit_and_push", commit_then_fail_push)
+    with pytest.raises(subprocess.CalledProcessError):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    assert head != start_head
+    assert (notes / "inbox" / filename).is_file()
+    assert not (notes / "planning" / filename).exists()
+    assert (
+        subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
+        == ""
+    )
+
+
+def test_cmd_convert_to_plan_displays_commit_for_single_planning_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """単一planning入力でも保存結果、commit及びpush結果を表示する。"""
+    details: dict[str, object | None] = {
+        "target_repo": "github.com/example/foo",
+        "target_commit": "b" * 40,
+        "plan_file": "/tmp/plan.md",
+        "depends_on": [],
+        "saved_body": "保存本文\n",
+    }
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        lambda _value: ("github.com/example/foo", tmp_path / "target-worktree"),
+    )
+    monkeypatch.setattr(
+        mutations,
+        "convert_entries_to_plan",
+        lambda *_args, **_kwargs: {"entries": [details], "commit": "c" * 40, "planning": True},
+    )
+    args = argparse.Namespace(
+        filename=["20260827-000000-001.md"],
+        message="統合本文",
+        plan_file="/tmp/plan.md",
+        depends_on=None,
+        target_repo="github.com/example/foo",
+        skip_push=False,
+    )
+
+    mutations._cmd_convert_to_plan(args, tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+
+    output = capsys.readouterr().out
+    assert "変換commit: " + "c" * 40 in output
+    assert "push: 完了" in output
+
+
 def test_cmd_convert_to_plan_displays_saved_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -972,6 +1607,7 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "target_commit": "a" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": ["dependency.md"],
+        "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
         mutations,
@@ -1415,8 +2051,8 @@ class TestSkipPush:
             atk.main(["mq", "reject", "fb-002.md"], home=tmp_path)
         assert second_exc_info.value.code == 0
         commands = [call["cmd"] for call in git_calls]
-        assert commands.count(["git", "commit", "-m", "chore: process 1 entry (adopted)"]) == 1
-        assert commands.count(["git", "commit", "-m", "chore: process 1 entry (rejected)"]) == 1
+        assert sum(command[:4] == ["git", "commit", "-m", "chore: process 1 entry (adopted)"] for command in commands) == 1
+        assert sum(command[:4] == ["git", "commit", "-m", "chore: process 1 entry (rejected)"] for command in commands) == 1
         assert commands.count(["git", "push"]) == 2
         assert "--skip-push" not in capsys.readouterr().err
 
@@ -1900,6 +2536,225 @@ class TestRmMultiple:
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: remove 2 entries" in commit_cmds[0]
+
+
+@pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
+@pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
+def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
+    route: str,
+    environment_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各エージェント環境と編集経路でユーザーコメント変更を書き込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "fb-001.md"
+    path = _write_feedback_file(notes, filename, body="本文\n\n## ユーザーコメント\n\n保持する")
+    original = path.read_bytes()
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(environment_name, "1")
+
+    argv = ["mq", "edit", filename, "変更後\n\n## ユーザーコメント\n\n変更する"]
+    if route == "editor":
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+            if cmd[0] == "fake-editor":
+                editor_path = pathlib.Path(cmd[1])
+                editor_path.write_text(
+                    editor_path.read_text(encoding="utf-8").replace("保持する", "変更する"),
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(cmd, returncode=0)
+            return _make_subprocess_fake([])(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        argv = ["mq", "edit", filename]
+    else:
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    if route == "append":
+        argv = ["mq", "edit", "--append", filename, "変更する"]
+    elif route == "plan":
+        planning_path = notes / "planning" / filename
+        path.replace(planning_path)
+        path = planning_path
+        plan = tmp_path / "plan.md"
+        plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.setattr(
+            mutations._add,  # pylint: disable=protected-access
+            "resolve_add_target",
+            lambda _value: ("github.com/example/foo", worktree),
+        )
+        monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
+        monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda *_args: "a" * 40)
+        argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path)
+
+    assert exc_info.value.code == 1
+    assert path.read_bytes() == original
+    assert capsys.readouterr().err == _USER_COMMENT_ERROR
+
+
+def test_agent_environment_allows_comment_neutral_edit_and_append(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ユーザーコメントを持たない通常本文の編集と追記はエージェント環境でも成功する。"""
+    notes = _setup_notes(tmp_path)
+    edit_path = _write_feedback_file(notes, "edit.md", body="編集前")
+    append_path = _write_feedback_file(notes, "append.md", body="追記前")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as edit_exit:
+        atk.main(["mq", "edit", "edit.md", "編集後"], home=tmp_path)
+    with pytest.raises(SystemExit) as append_exit:
+        atk.main(["mq", "edit", "--append", "append.md", "追記後"], home=tmp_path)
+
+    assert edit_exit.value.code == 0
+    assert append_exit.value.code == 0
+    assert edit_path.read_text(encoding="utf-8").endswith("編集後\n")
+    assert append_path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
+
+
+def test_agent_environment_allows_edit_that_preserves_user_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """既存ユーザーコメントを同値で保持する本文編集は成功する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_feedback_file(notes, "fb.md", body="編集前\n\n## ユーザーコメント\n\n保持する")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "edit", "fb.md", "編集後\n\n## ユーザーコメント\n\n保持する"],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 0
+    assert "編集後" in path.read_text(encoding="utf-8")
+
+
+def test_agent_environment_allows_add_with_user_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別リポジトリ移管に使うaddはユーザーコメントを含む本文も受理する。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "mq",
+                "add",
+                "--target-repo",
+                "github.com/example/foo",
+                "本文\n\n## ユーザーコメント\n\n移管するコメント",
+            ],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    saved = next((notes / "inbox").glob("*.md")).read_text(encoding="utf-8")
+    assert saved.endswith("## ユーザーコメント\n\n移管するコメント\n")
+
+
+def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ブラウザー経路が使う共有中核はエージェント環境でもコメント変更を保存する。"""
+    notes = _setup_notes(tmp_path)
+    edit_path = _write_feedback_file(notes, "edit.md", body="本文\n\n## ユーザーコメント\n\n変更前")
+    append_path = _write_feedback_file(notes, "append.md", body="本文")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    edited = edit_path.read_text(encoding="utf-8").replace("変更前", "変更後")
+    appended = append_path.read_bytes() + "\n\n## ユーザーコメント\n\n追加".encode()
+
+    assert mutations.edit_entry_content(notes, state="inbox", filename=edit_path.name, content=edited)
+    assert mutations.append_entry_content(notes, state="inbox", filename=append_path.name, content=appended)
+    assert edit_path.read_text(encoding="utf-8").endswith("変更後\n")
+    assert append_path.read_bytes() == appended
+
+
+def test_agent_environment_rejects_malformed_user_comment_structure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """予約節を一意に抽出できない編集結果も変更として拒否する。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    assert mutations._reject_agent_user_comment_change(  # pylint: disable=protected-access
+        "本文\n",
+        "本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n",
+    )
+    assert capsys.readouterr().err == _USER_COMMENT_ERROR
+
+
+@pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
+def test_cli_edit_outputs_saved_body_for_each_write_route(
+    route: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各編集経路が保存結果から読み直した全文を字下げせず出力する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "fb-001.md"
+    path = _write_feedback_file(notes, filename, body="編集前")
+    message = '編集後。"引用"を含む。\n\n## 見出し\n\n複数行。'
+    argv = ["mq", "edit", filename, message]
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
+        if cmd[0] == "fake-editor":
+            editor_path = pathlib.Path(cmd[1])
+            original = editor_path.read_text(encoding="utf-8")
+            editor_path.write_text(original.replace("編集前", message), encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, returncode=0)
+        return _make_subprocess_fake([])(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    if route == "editor":
+        monkeypatch.setenv("EDITOR", "fake-editor")
+        argv = ["mq", "edit", filename]
+    elif route == "append":
+        argv = ["mq", "edit", "--append", filename, message]
+    elif route == "plan":
+        planning_path = notes / "planning" / filename
+        path.replace(planning_path)
+        plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.setattr(
+            mutations._add,  # pylint: disable=protected-access
+            "resolve_add_target",
+            lambda _value: ("github.com/example/foo", worktree),
+        )
+        _patch_planning_target_resolution(monkeypatch, "a" * 40)
+        argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
+        path = notes / "inbox" / filename
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path)
+
+    assert exc_info.value.code == 0
+    saved = path.read_text(encoding="utf-8")
+    output = capsys.readouterr().out
+    marker = "    saved_body:\n"
+    assert output.count(marker) == 1
+    assert output.split(marker, maxsplit=1)[1].rstrip("\n") == saved.rstrip("\n")
 
 
 class TestEditNoEditor:
@@ -2847,7 +3702,22 @@ class TestStartPlanning:
         ]
         assert not list((notes / "inbox").iterdir())
         commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
-        assert commit_cmds == [["git", "commit", "-m", "chore: start planning 2 entries"]]
+        assert commit_cmds == [
+            [
+                "git",
+                "commit",
+                "-m",
+                "chore: start planning 2 entries",
+                "--",
+                "inbox",
+                "processing",
+                "planning",
+                "editing",
+                "hold",
+                "adopted",
+                "rejected",
+            ]
+        ]
         assert "20260827-000000-001.md, 20260827-000000-002.md" in capsys.readouterr().out
 
 

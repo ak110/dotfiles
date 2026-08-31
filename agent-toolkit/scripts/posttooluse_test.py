@@ -19,7 +19,7 @@ import _fork_runner
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "hooks.json"
 _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
@@ -31,7 +31,7 @@ def _load_posttooluse_module() -> types.ModuleType:
 
     PostToolUseの内部dispatchと補助機構を直接呼ぶテストで使う。
     引数注入では到達不能なモジュール内部関数の単体検査のため、importlibによる直接参照を例外的に許容する。
-    `_SCRIPT`（`claude_hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
+    `_SCRIPT`（`hook.py`、サブプロセス起動用）とは別に本体ファイルのパスを参照する。
     """
     spec = importlib.util.spec_from_file_location("posttooluse", _POSTTOOLUSE_MODULE_PATH)
     assert spec is not None and spec.loader is not None
@@ -411,6 +411,25 @@ class TestCurrentPlanFilePathTracking:
         state = _read_state(tmp_path, sid)
         assert state.get("current_plan_file_path") == str(plan_path)
 
+    def test_private_notes_write_records_current_plan_file_path(self, tmp_path: pathlib.Path) -> None:
+        """新しいprivate-notes計画rootのWriteも現在の計画パスとして記録する。"""
+        private_notes = tmp_path / "private-notes"
+        plans_dir = private_notes / "plans" / "2026" / "08"
+        plans_dir.mkdir(parents=True)
+        plan_path = plans_dir / "30-計画保存先移行-a1b2.md"
+        sid = "private-notes-plan-path-write"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(plan_path), "content": "# x\n"},
+            },
+            state_dir=tmp_path,
+            extra_env={"AGENT_TOOLKIT_PRIVATE_NOTES": str(private_notes)},
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("current_plan_file_path") == str(plan_path)
+
     def test_non_plan_file_write_does_not_record(self, tmp_path: pathlib.Path):
         sid = "plan-path-non-plan"
         _run(
@@ -425,7 +444,7 @@ class TestCurrentPlanFilePathTracking:
         assert "current_plan_file_path" not in state
 
     def test_detail_file_write_does_not_record_current_plan_file_path(self, tmp_path: pathlib.Path):
-        """実装詳細側`.detail.md`は計画本体述語で偽のため`current_plan_file_path`を記録しない。"""
+        """計画ファイル（詳細）は計画ファイル（メイン）述語で偽のため現在値を記録しない。"""
         home = tmp_path / "home"
         plans_dir = home / ".claude" / "plans"
         plans_dir.mkdir(parents=True)

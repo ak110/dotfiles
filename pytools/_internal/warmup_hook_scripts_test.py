@@ -18,7 +18,7 @@ _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 
 
 def _write_script(path: pathlib.Path) -> pathlib.Path:
-    """`claude_hook.py`相当のダミーを作成してパスを返す。"""
+    """hook入口スクリプトのダミーを作成してパスを返す。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
     return path
@@ -50,7 +50,7 @@ def _setup(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
-    _write_script(plugin_cache / "scripts" / "claude_hook.py")
+    _write_script(plugin_cache / "scripts" / "hook.py")
     installed_path = tmp_path / "installed_plugins.json"
     if installed_plugins is None:
         installed_plugins = {"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(plugin_cache)}]}}
@@ -76,7 +76,7 @@ def _setup(
 
 def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
     """Codexプラグインキャッシュ内のhookスクリプトパスを返す。"""
-    return codex_home / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version / "scripts" / "claude_hook.py"
+    return codex_home / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version / "scripts" / "hook.py"
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
@@ -118,7 +118,7 @@ class TestTargets:
                     / "agent-toolkit"
                     / "1.0.0"
                     / "scripts"
-                    / "claude_hook.py"
+                    / "hook.py"
                 ),
                 str(codex_script),
             ]

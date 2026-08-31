@@ -89,6 +89,42 @@ def test_add_reloads_saved_details_while_holding_lock(
     )
 
     assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
+    assert saved_details[generated[0]]["saved_body"] == (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+
+
+def test_cli_add_outputs_each_saved_body_without_indentation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数件投入でも保存本文を区切り、字下げや切り詰めなしで出力する。"""
+    notes = _setup_notes(tmp_path)
+    messages = [
+        '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
+        "2件目。\n\n```text\n字下げしない本文\n```",
+    ]
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "add", "--target-repo", "github.com/example/repo", *messages],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    filenames = [f"{_FIXED_DT:%Y%m%d-%H%M%S}-{index:03d}.md" for index in (1, 2)]
+    for index, filename in enumerate(filenames):
+        marker_start = output.index("    saved_body:\n", output.index(filename)) + len("    saved_body:\n")
+        if index + 1 < len(filenames):
+            next_filename_index = output.index(filenames[index + 1], marker_start)
+            marker_end = output.rfind("\n", marker_start, next_filename_index)
+        else:
+            marker_end = output.index("\ninbox:", marker_start)
+        rendered = output[marker_start:marker_end]
+        saved = (notes / "inbox" / filename).read_text(encoding="utf-8")
+        assert rendered.rstrip("\n") == saved.rstrip("\n")
 
 
 @pytest.mark.parametrize("target_commit", [_FIXED_HEAD_COMMIT, "a" * 64])

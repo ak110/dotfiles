@@ -41,6 +41,20 @@ gh pr checks <PR番号またはURL> --repo ak110/dotfiles --required --watch --f
 必須checkの失敗、mergeableでない状態、PR head OIDの変化又は検査対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
 自動再試行、auto-merge及びrollbackは行わない。
 
+## レビューコメントの確認
+
+必須checkの待機と並行して、対象PRのレビューコメントを取得する。
+
+```sh
+gh api repos/ak110/dotfiles/pulls/<PR番号>/reviews
+gh api repos/ak110/dotfiles/pulls/<PR番号>/comments
+```
+
+各指摘は対象の実装と規範を読んで妥当性を判定する。
+成立する指摘はフィードバックへ登録し、次セッション以降で正式に対応する。
+マージはこの登録を待たずに進める。
+成立しない指摘は登録せず、判定の根拠を報告へ残す。
+
 ## PRのマージ
 
 必須check成功後にPR headの完全OIDを再取得し、取得値を`--match-head-commit`へ渡して明示的なマージコミットを作成する。

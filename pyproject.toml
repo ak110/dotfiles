@@ -2,7 +2,7 @@
 name = "pytools"
 version = "0.1.0"
 description = "Personal command-line tools"
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.13,<4.0"
 dependencies = [
     "argcomplete>=3.6.3",
     "bashplotlib",

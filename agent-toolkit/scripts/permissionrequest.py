@@ -12,7 +12,8 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 
 自動許可の対象パス:
 
-- `~/.claude/plans/`配下
+- 新規計画root（`$(atk config get private_notes)/plans/`）配下
+- 既存計画root（`~/.claude/plans/`）配下
 - scratchpadディレクトリ配下（パス構成要素として`scratchpad`を含み、`/tmp/`または`~/`配下）
 - `/tmp/`配下（一時ファイル領域として自動許可対象に含める）
 - Gitワークツリー配下のコーディングエージェント向け文書（`~/.claude/`配下を除く）
@@ -55,6 +56,7 @@ import re
 import shlex
 
 import _managed_temp
+import _plan_file
 import _scratchpad_path
 
 # Git ワークツリー判定で親ディレクトリを遡る際の上限段数。
@@ -194,7 +196,8 @@ def should_allow(file_path: str) -> bool:
 
     対象は次のいずれか。
 
-    - `~/.claude/plans/` 配下
+    - 新規計画root（`$(atk config get private_notes)/plans/`）配下
+    - 既存計画root（`~/.claude/plans/`）配下
     - scratchpad ディレクトリ配下（パス構成要素として `scratchpad` を含み、 `/tmp/` または `~/` 配下）
     - `/tmp/` 配下（一時ファイル領域として自動許可対象に含める）
     - Git ワークツリー配下のコーディングエージェント向け文書。
@@ -379,7 +382,7 @@ def _evaluate_subcommand(tokens: list[str], cwd_base: pathlib.Path | None) -> bo
 
     for path_arg in paths:
         target = _normalize_path(path_arg, cwd_base=cwd_base)
-        if target is None or not (_is_target_path(target) or (cmd == "mkdir" and _is_home_claude_plans_root(target))):
+        if target is None or not (_is_target_path(target) or (cmd == "mkdir" and _is_plan_root(target))):
             return False
     return True
 
@@ -396,7 +399,7 @@ def _evaluate_cd_subcommand(redirect_targets: list[str], args: list[str], cwd_ba
         return bool(redirect_targets)
     for path_arg in cd_paths:
         target = _normalize_path(path_arg, cwd_base=cwd_base)
-        if target is None or not (_is_target_path(target) or _is_home_claude_plans_root(target)):
+        if target is None or not (_is_target_path(target) or _is_plan_root(target)):
             return False
     return True
 
@@ -444,6 +447,8 @@ def _is_target_path(target: pathlib.Path) -> bool:
         return False
     if _scratchpad_path.is_under(target, home_claude / "plans"):
         return True
+    if _scratchpad_path.is_under(target, _plan_file.new_plans_root()):
+        return True
     if _scratchpad_path.is_scratchpad_path(target):
         return True
     if _scratchpad_path.is_under(target, tmp_root):
@@ -455,6 +460,18 @@ def _is_home_claude_plans_root(target: pathlib.Path) -> bool:
     """`target` が `~/.claude/plans` ディレクトリそのものか判定する。"""
     try:
         return target == (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False)
+    except (ValueError, OSError):
+        return False
+
+
+def _is_plan_root(target: pathlib.Path) -> bool:
+    """`target` が新旧いずれかの計画rootディレクトリそのものか判定する。"""
+    try:
+        roots = (
+            (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False),
+            _plan_file.new_plans_root().resolve(strict=False),
+        )
+        return target in roots
     except (ValueError, OSError):
         return False
 

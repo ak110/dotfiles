@@ -11,7 +11,7 @@ import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE
 
-_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 
 
 def _run(
@@ -94,7 +94,7 @@ def _plan_content(detail_name: str) -> str:
 - 対象リポジトリ: `/repo`
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 実装詳細: `{detail_name}`
+- 計画ファイル（詳細）: `{detail_name}`
 
 ## 実施内容
 

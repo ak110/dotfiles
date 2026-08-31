@@ -68,7 +68,7 @@ def _emit_block(body: str, *, fix: str) -> None:
 
 
 def main(payload_text: str) -> int:
-    """`exit-session`呼び忘れを検知し再促するエントリポイント。"""
+    """`agent-toolkit:exit-session`呼び忘れを検知し再促するエントリポイント。"""
     resolved = _parse_stop_session(payload_text, _approve)
     if resolved is None:
         return 0

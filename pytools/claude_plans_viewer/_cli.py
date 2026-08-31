@@ -22,6 +22,7 @@ from pytools.claude_plans_viewer import _app, _config, _console_title, _local, _
 logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT = "~/.claude/plans"
+DEFAULT_ROOTS_DESCRIPTION = "$(atk config get private_notes)/plans と ~/.claude/plans"
 DEFAULT_HOST = "127.0.0.1"
 # VSCodeリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、
 # Windowsローカル実行時に既定値が衝突する。Windowsのみ別値へずらして回避する。
@@ -41,13 +42,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     TOML構文エラーは`_config.load_config()`が`ValueError`を送出する。
     """
     parser = argparse.ArgumentParser(
-        description="~/.claude/plans配下のMarkdownをローカルHTTPで配信する。",
+        description=(f"ローカルと各リモートホストの {DEFAULT_ROOTS_DESCRIPTION} 配下にあるMarkdownをHTTPで配信する。"),
         epilog=(f"設定ファイル: 既定 {_config.default_config_path()}、環境変数 {_config.ENV_CONFIG} で上書き可。"),
     )
     parser.add_argument(
         "--root",
         default=os.environ.get(ENV_ROOT),
-        help=(f"Markdownのルートディレクトリ（環境変数 {ENV_ROOT}、設定ファイルからも参照、既定: {DEFAULT_ROOT}）"),
+        help=(
+            f"ローカル側のMarkdownルートを1つに上書きする"
+            f"（環境変数 {ENV_ROOT}、設定ファイルからも参照、無指定時: {DEFAULT_ROOTS_DESCRIPTION}）"
+        ),
     )
     parser.add_argument(
         "--host",
@@ -73,6 +77,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     enable_completion(parser)
     args = parser.parse_args(argv)
     config = _config.load_config()
+    args.root_is_explicit = args.root is not None
     _resolve_defaults(args, config)
     return args
 
@@ -88,7 +93,11 @@ def _resolve_defaults(args: argparse.Namespace, config: dict[str, Any]) -> None:
     `int()`を適用する。
     """
     if args.root is None:
-        args.root = config.get("root", DEFAULT_ROOT)
+        if "root" in config:
+            args.root = config["root"]
+            args.root_is_explicit = True
+        else:
+            args.root = DEFAULT_ROOT
     if args.host is None:
         args.host = config.get("host", DEFAULT_HOST)
     if args.port is None:
@@ -218,16 +227,17 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as e:
         logger.error("設定エラー: %s", e)
         return 1
-    root = pathlib.Path(args.root).expanduser().resolve()
-    # 計画ディレクトリの不在は設定誤りではなく正常な起動条件として扱う。
-    # 初回利用時に未作成である場合と、リモートホストのみを閲覧する場合があるため、
-    # `_remote_helper.py`のリモート側経路と同じく不在時は作成する。
-    root.mkdir(parents=True, exist_ok=True)
+    roots = (_config.explicit_root_spec(args.root),) if args.root_is_explicit else _config.default_root_specs()
+    if not roots:
+        logger.error("計画rootを解決できません")
+        return 1
+    root = roots[0].path
 
     try:
         app = _app.create_app(
             root,
             remote_hosts=args.remote_host,
+            roots=roots,
         )
     except ValueError as e:
         logger.error("設定エラー: %s", e)
@@ -235,15 +245,41 @@ def main(argv: list[str] | None = None) -> int:
     state: _state.BroadcastState = app.config["PLANS_STATE"]
 
     observer = watchdog.observers.Observer()
-    observer.schedule(_local.PlansEventHandler(root, state), str(root), recursive=True)
-    observer.start()
+    watched_roots: list[pathlib.Path] = []
+    for spec in roots:
+        if not spec.path.is_dir():
+            continue
+        try:
+            observer.schedule(_local.PlansEventHandler(spec.path, state, spec.source_id), str(spec.path), recursive=True)
+        except OSError as error:
+            logger.warning("rootの監視に失敗しました root=%s: %s", spec.path, error)
+            state.root_status.setdefault(app.config["PLANS_HOSTNAME"], {})[spec.source_id] = {
+                "status": "warning",
+                "message": f"rootの監視に失敗しました: {error}",
+            }
+            continue
+        watched_roots.append(spec.path)
+    if watched_roots:
+        try:
+            observer.start()
+        except OSError as error:
+            logger.warning("rootの監視開始に失敗しました: %s", error)
+            status = state.root_status.setdefault(app.config["PLANS_HOSTNAME"], {})
+            for spec in roots:
+                if spec.path in watched_roots:
+                    status[spec.source_id] = {
+                        "status": "warning",
+                        "message": f"rootの監視開始に失敗しました: {error}",
+                    }
+            watched_roots.clear()
     try:
-        logger.info("%s を http://%s:%s/ で配信します", root, args.host, args.port)
+        logger.info("%s を http://%s:%s/ で配信します", ", ".join(str(spec.path) for spec in roots), args.host, args.port)
         if args.remote_host:
             logger.info("リモートホスト: %s（watchdog）", ", ".join(args.remote_host))
         with _console_title.console_title(build_console_title(args.port, args.remote_host)):
             asyncio.run(serve(app, args.host, args.port))
     finally:
-        observer.stop()
-        observer.join()
+        if watched_roots:
+            observer.stop()
+            observer.join()
     return 0

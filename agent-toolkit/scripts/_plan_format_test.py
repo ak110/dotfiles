@@ -173,7 +173,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 - 対象リポジトリ: `/repo`
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 実装詳細: `human.detail.md`
+- 計画ファイル（詳細）: `human.detail.md`
 
 ## 実施内容
 
@@ -1362,6 +1362,31 @@ title: x
     assert headings == ["## 実在"]
 
 
+def test_duplicate_headings_rejects_same_text_under_same_parent() -> None:
+    """同じ親の下に同じ文言の見出しが現れた場合は文言と両方の行番号を返す。"""
+    content = "# 計画\n\n## 親\n\n### 子\n\n### 子\n"
+
+    assert _plan_format.check_duplicate_headings(content) == ["同じ見出しが重複している: `### 子`（計画/親配下、5行目と7行目）"]
+
+
+def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
+    """異なる親の下にある同じ文言の見出しは受理する。"""
+    content = "# 計画\n\n## 親A\n\n### 子\n\n## 親B\n\n### 子\n"
+
+    assert not _plan_format.check_duplicate_headings(content)
+
+
+def test_duplicate_headings_checks_deep_headings_and_ignores_fences() -> None:
+    """H4以深の重複を検出し、コードフェンス内の見出し記法は除外する。"""
+    content = "# 計画\n\n## 親\n\n### 子\n\n#### 深部\n\n```md\n#### 深部\n```\n\n#### 深部\n"
+
+    errors = _plan_format.check_duplicate_headings(content)
+
+    assert len(errors) == 1
+    assert "`#### 深部`" in errors[0]
+    assert "7行目と13行目" in errors[0]
+
+
 def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")
@@ -1383,7 +1408,7 @@ _MAIN_CONTENT = """# 計画の主題
 - 対象リポジトリ: `/repo`
 - 作業種別: 通常変更
 - ベースコミット: `{base}`
-- 実装詳細: `sample.detail.md`
+- 計画ファイル（詳細）: `sample.detail.md`
 
 ## 実施内容
 
@@ -1714,8 +1739,8 @@ def test_detail_structure_accepts_legacy_implementation_unit_column() -> None:
 
 
 def test_main_structure_requires_detail_metadata_field() -> None:
-    """メイン側の計画メタ情報は`実装詳細`を末尾へ含む5項目にする。"""
-    content = _VALID_MAIN_CONTENT.replace("- 実装詳細: `sample.detail.md`\n", "")
+    """計画ファイル（メイン）の計画メタ情報は詳細参照を末尾へ含む5項目にする。"""
+    content = _VALID_MAIN_CONTENT.replace("- 計画ファイル（詳細）: `sample.detail.md`\n", "")
     _work_type, errors = _plan_format.check_plan_main_structure(content)
     assert any("この順序で1行ずつ置く" in error for error in errors), errors
 

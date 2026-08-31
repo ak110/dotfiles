@@ -16,17 +16,16 @@ TBDの回答判定`_is_tbd_answered`は`_tbd_scan`が実体を持つ。PostToolU
 
 import argparse
 import datetime
-import hashlib
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
 
+import _atk_git_sync
 import _atk_mq_legacy
 import _git_command
 import _git_remote
@@ -71,6 +70,18 @@ MQ_STATES = (
     MQ_STATE_REJECTED,
 )
 MQ_PROCESSABLE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
+TRANSITION_EXPLICIT_STATES = {
+    "start-processing": (MQ_STATE_HOLD,),
+    "return-to-inbox": (MQ_STATE_PLANNING, MQ_STATE_REJECTED),
+    "adopt": (MQ_STATE_HOLD,),
+    "reject": (MQ_STATE_INBOX, MQ_STATE_HOLD),
+    "remove": (MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING, MQ_STATE_HOLD),
+}
+"""操作ごとに明示`state`として受理する遷移元の状態。
+
+暗黙解決（`inbox`・`processing`）は各操作の既定として別に扱い、本表は明示指定だけを統治する。
+`hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
+"""
 MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
 MQ_FEEDBACK_ACTIVE_STATES = (
     MQ_STATE_INBOX,
@@ -82,11 +93,23 @@ MQ_FEEDBACK_ACTIVE_STATES = (
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+"""コーディングエージェントの実行環境を示す環境変数。
+
+いずれか1つでも設定されていればエージェント環境とみなす。
+`atk mq list`の既定出力形式と、TBD回答・ユーザーコメントの書き込み拒否が同じ判定を使う。
+"""
+
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "mq": frozenset(("adopt", "reject", "rm")),
 }
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
+
+
+def is_agent_environment() -> bool:
+    """コーディングエージェントの実行環境から起動されたかを返す。"""
+    return any(name in os.environ for name in _AGENT_ENVIRONMENT_VARIABLES)
 
 
 def is_existing_dir(path: pathlib.Path) -> bool:
@@ -154,7 +177,7 @@ def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False)) / "private-notes"
 
 
-_LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
+_LOCAL_ONLY_MARKER = _atk_git_sync.LOCAL_ONLY_MARKER
 """`_init_local_private_notes_repo`生成のローカル限定リポジトリ直下に置くマーカーファイル名。
 
 remote未設定であることを`git remote`の実行結果に頼らずファイル存在のみで判定するための目印。
@@ -171,7 +194,7 @@ def _has_remote(private_notes: pathlib.Path) -> bool:
     この判定でremote同期・push操作をスキップする。マーカー不在時は`git remote`実行結果を問わず
     Trueとして扱う（通常運用のリポジトリを対象とする既存の呼び出し経路を変えないため）。
     """
-    return not (private_notes / _LOCAL_ONLY_MARKER).exists()
+    return _atk_git_sync.has_remote(private_notes)
 
 
 def _init_local_private_notes_repo(root: pathlib.Path) -> None:
@@ -278,9 +301,7 @@ def _pull(private_notes: pathlib.Path) -> None:
 def _pull_remote(private_notes: pathlib.Path) -> None:
     """フィードバック保存リポジトリのremoteをfetchし、upstreamへ統合する。"""
     _assert_repo_lock_held(private_notes)
-    if _has_remote(private_notes):
-        _run_git(["fetch"], cwd=private_notes)
-        _run_git(["merge", "--ff-only", "@{u}"], cwd=private_notes)
+    _atk_git_sync.pull(private_notes, run_git=_run_git)
 
 
 def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = False) -> None:
@@ -294,6 +315,7 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     """
     _assert_repo_lock_held(private_notes)
+    _atk_git_sync.ensure_not_rebasing(private_notes)
     if force_pull or not _pulled_recently(private_notes):
         _pull(private_notes)
         return
@@ -307,73 +329,22 @@ def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = F
     _migrate_legacy_reservations(private_notes)
 
 
-class _ThreadLocalHeldPaths(threading.local):
-    """現在の実行スレッドが保持中の`_repo_lock`対象パスと保持回数を保持する。"""
-
-    def __init__(self) -> None:
-        self.paths: dict[pathlib.Path, int] = {}
-
-
-# スレッドごとの保持記録。他スレッドの保持を自スレッドの保持と誤認しないよう、
-# プロセス共有の`set`ではなく`threading.local`派生で分離する。
-_LOCK_HELD_PATHS = _ThreadLocalHeldPaths()
-
-
 def _assert_repo_lock_held(private_notes: pathlib.Path) -> None:
     """`private_notes`が現在の実行スレッドで`_repo_lock`保持中でなければ`RuntimeError`を送出する（不変条件表明）。"""
-    if _LOCK_HELD_PATHS.paths.get(private_notes.resolve(), 0) <= 0:
-        raise RuntimeError(
-            "不変条件違反: private_notesへのgit操作・ファイル変更は_repo_lock保持下でのみ実行できる。"
-            "呼び出し元でwith _repo_lock(private_notes):を用いること。"
-        )
+    _atk_git_sync.assert_repo_lock_held(private_notes)
 
 
 def _repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     """`repo_path`に対応するロックファイルの絶対パスを返す。
 
     配置先は`platformdirs.user_state_dir("agent-toolkit")`配下`locks/`ディレクトリとし、
-    ファイル名は`repo_path.resolve()`のSHA-1ハッシュ値とする。
-    対象パスからロックファイル名を導出するため、フィードバック保存リポジトリに限らず
-    任意のgit作業コピーへ同一の仕組みを適用できる。取得時にロック用ディレクトリを自動作成する。
+    ファイル名は、同じGitリポジトリに属するworktree間で共有されるGit common directoryの
+    SHA-1ハッシュ値とする。対象リポジトリからロックファイル名を導出するため、
+    フィードバック保存リポジトリに限らず任意のgit作業コピーへ同一の仕組みを適用できる。
+    取得時にロック用ディレクトリを自動作成する。
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
-    resolved = str(repo_path.resolve())
-    digest = hashlib.sha1(resolved.encode("utf-8"), usedforsecurity=False).hexdigest()
-    lock_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks"
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    return lock_dir / f"{digest}.lock"
-
-
-class _RepoLock(filelock.FileLock):
-    """`_repo_lock`が返すロック。保持区間を`_LOCK_HELD_PATHS`へ登録・解除する。"""
-
-    def __init__(self, repo_path: pathlib.Path, *, timeout: float = -1) -> None:
-        self._target = repo_path.resolve()
-        super().__init__(str(_repo_lock_path(repo_path)), timeout=timeout)
-
-    def acquire(
-        self,
-        timeout: float | None = None,
-        poll_interval: float | None = None,
-        *,
-        poll_intervall: float | None = None,
-        blocking: bool | None = None,
-        cancel_check: Callable[[], bool] | None = None,
-    ) -> filelock.AcquireReturnProxy:
-        result = super().acquire(
-            timeout,
-            poll_interval,
-            poll_intervall=poll_intervall,
-            blocking=blocking,
-            cancel_check=cancel_check,
-        )
-        _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
-        return result
-
-    def release(self, force: bool = False) -> None:
-        super().release(force)
-        if not self.is_locked:
-            _LOCK_HELD_PATHS.paths.pop(self._target, None)
+    return _atk_git_sync.repo_lock_path(repo_path)
 
 
 def _repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
@@ -387,7 +358,7 @@ def _repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.File
     （常駐ループはclaudeセッション実行中にロックを保持しない設計であり、
     臨界区間はgit操作前後の短時間に限るため）。
     """
-    return _RepoLock(repo_path, timeout=timeout)
+    return _atk_git_sync.repo_lock(repo_path, timeout=timeout)
 
 
 def _copy_to_tempfile(content: bytes) -> pathlib.Path:
@@ -413,51 +384,27 @@ def _commit_and_push(
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     push失敗時（他プロセス・他端末による先行pushとの非fast-forward等）は
     `git fetch`後に明示した`@{u}`へrebaseしてpushを1回だけ再試行する。rebase自体が
-    失敗した場合は`git rebase --abort`の成否を確認してからリベース開始前の状態への
-    復元結果をstderrへ出力し、元の例外を送出する。
+    失敗した場合はrebase中の状態を保持し、競合解消と`git rebase --continue`の手順を
+    stderrへ出力して元の例外を送出する。
     再試行後のpushが失敗した場合はその例外をそのまま送出する。
     remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
     commitのみ実行しpushをスキップする。
     `skip_push=True`の場合はcommitだけを実行し、remote設定時は未pushのcommitが残る旨と
     後続の通常操作又は`atk mq commit`でpushする旨を標準エラーへ出力する。
     """
-    _assert_repo_lock_held(private_notes)
-    rel_list = list(rel_paths)
-    _run_git(["add", *rel_list], cwd=private_notes)
-    _run_git(["commit", "-m", message], cwd=private_notes)
-    if skip_push:
-        if _has_remote(private_notes):
-            print(
-                "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。"
-                "最後の操作は--skip-pushなしで実行するか、atk mq commitを実行して滞留commitをpushしてください。",
-                file=sys.stderr,
-            )
-        return
-    _push_pending_commits(private_notes)
+    _atk_git_sync.commit_and_push(
+        private_notes,
+        message,
+        rel_paths,
+        skip_push=skip_push,
+        run_git=_run_git,
+        push_pending_fn=_push_pending_commits,
+    )
 
 
 def _push_pending_commits(private_notes: pathlib.Path) -> None:
     """ローカルcommitをpushし、競合時は明示したupstreamへのrebase後に1回だけ再試行する。"""
-    _assert_repo_lock_held(private_notes)
-    if not _has_remote(private_notes):
-        return
-    try:
-        _run_git(["push"], cwd=private_notes)
-    except subprocess.CalledProcessError:
-        try:
-            _run_git(["fetch"], cwd=private_notes)
-            _run_git(["rebase", "@{u}"], cwd=private_notes)
-        except subprocess.CalledProcessError:
-            abort_result = subprocess.run(["git", "rebase", "--abort"], cwd=private_notes, check=False)
-            if abort_result.returncode != 0:
-                print(
-                    "git rebase --abortが失敗しました。rebase中間状態が残存している可能性があり、手動復旧が必要です。",
-                    file=sys.stderr,
-                )
-            else:
-                print("git rebase --abortでリベース開始前の状態へ復元しました。", file=sys.stderr)
-            raise
-        _run_git(["push"], cwd=private_notes)
+    _atk_git_sync.push_pending_commits(private_notes, run_git=_run_git)
 
 
 def _stamp_result(

@@ -27,18 +27,25 @@ description: >
 
 ## ファイル名モード
 
-通常型フィードバックファイル名を1件以上明示した場合は、同一対象リポジトリの全対象を計画調査より前に`planning`へ一括移動する。同じplanning集合は再開できるが、process-loopの着手対象にはしない。全入力をファイル名昇順で1組の計画へ統合し、レビュー収束後に最古の項目を本文と`plan_file`の同時編集で計画型へ変換してinboxへ移す。変換結果を再取得し、残りが1件以上なら1回の`atk mq rm --force`で除去し、残りが0件の単一入力ではrmを呼ばず成功終端する。自然言語要件を受領した場合は、従来どおり新しい計画型フィードバックを追加する。
+通常型フィードバックファイル名を1件以上明示した場合は、同一対象リポジトリの全対象を計画調査より前に`planning`へ一括移動する。同じplanning集合は再開できるが、process-loopの着手対象にはしない。全入力をファイル名昇順で1組の計画へ統合し、自然言語要件を受領した場合は従来どおり新しい計画型フィードバックを追加する。
 
 1. 全入力をファイル名昇順に並べ、同一`target_repo`のinbox通常型feedbackで`plan_file`を持たないことを一括検証する。TBD、既存計画型、別対象リポジトリ、欠落又は混在状態があれば、追加調査と状態を変更せず入力エラーとして返す。
 2. 検証に成功した場合だけ、`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行する。planningへ移す前後の対象集合、保存本文及び単一遷移commitを照合する。
 3. 計画作成、レビュー及び確認待ちの再開では、入力として確定した対象worktreeの絶対パスを保持する。計画時の旧worktreeパスが本文に残っていても、実行時に渡された対象worktreeへ解決し、対象外のworktreeを操作しない。
-4. 計画レビューまで完了した後、最古の項目だけを対象に、
-   `atk mq edit <oldest> <message> --plan-file=<main-plan-absolute-path> --depends-on=<filename>... --target-repo=<repo>`を実行する。
-   `message`は計画型feedback本文とし、依存は全入力の外部依存を初出順で統合して対象自身を除く。絶対かつ実在するメイン計画パス、計画のベースcommit、`source: plan`及び計画へ記録した要求単位の由来を同じ原子的編集で保存する。
-5. 最古の変換結果を再取得し、`source`、本文、`plan_file`、`target_commit`、依存及びinbox配置を照合する。planningに残る項目が1件以上なら、統合先ファイル名と計画パスをnoteへ記録した1回の`atk mq rm <filename>... --force --note=<統合先ファイル名と計画パス>`で残りだけを除去する。単一入力で残りが0件ならrmを呼ばない。
-6. 計画型編集前に中断した場合は、全対象を`atk mq return-to-inbox <filename>... --state=planning`で一括して戻す。変換開始後は最古の項目を戻さず、現在の差分、upstream包含、保存本文及びplanning件数を再取得して、滞留commitのpush又は未完了のrmだけを前方回復する。対象外差分又は別項目のprocessing移動を検出した場合は追加操作を止める。
+4. 計画レビューまで完了した後、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
-ファイル名モードを再実行する場合は、全対象がplanningにある初期再開、又は昇順最古だけが期待する計画型metadataを持つinboxにあり、残りがplanning又は統合済みとしてactiveから消えている部分完了再開だけを受理する。部分完了では、保存本文と計画ファイルの`## 提示素材`にある元ファイル集合を照合してから、残っているplanning項目のrmを再開する。それ以外の状態混在、対象集合・計画パス・対象リポジトリの不一致は状態を変更せず停止する。
+   ```sh
+   atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
+   ```
+
+   新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。
+   計画型本文、`source: plan`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
+   最古の項目だけを計画型`inbox`へ移し、残る統合元を同じcommitで除去する。
+5. 変換結果を再取得し、統合先の`source`、本文、`plan_file`、`target_commit`、依存及び`inbox`配置、統合元の不在、変換commit並びにremote設定時のupstream包含を照合する。単一入力でも標準出力から変換commitとpush結果を取得する。単一入力と複数入力は同じ経路で処理し、後続の`rm`を呼ばない。
+6. 変換開始前に中断した場合は、全対象を`atk mq return-to-inbox <filename>... --state=planning`で一括して戻す。
+   入力検証、書込み又はcommitに失敗した場合は全入力が元の`planning`内容へ復元されていることを確認する。
+   pushだけが失敗した場合は変換済みのcleanなローカルcommitと保存結果を保持し、`atk mq commit`で滞留commitをpushしてから保存結果とupstream包含を再検証する。
+   変換操作を繰り返して新しいcommitを作成しない。
 
 ## 自然言語要件モード
 
@@ -53,7 +60,7 @@ description: >
 
 計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
-本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`feedback-standards`へ渡した後は問い直さない。
+本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:feedback-standards`へ渡した後は問い直さない。
 
 ## 完了報告の形式
 

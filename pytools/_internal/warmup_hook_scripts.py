@@ -1,7 +1,7 @@
 """hookが起動するuvスクリプトの実行環境を事前構築する。
 
-Claude Code・Codexのhookは`uv run --no-project --script`でPEP 723スクリプト
-（`claude_hook.py`）を起動する。スクリプト環境が未構築の初回実行では、
+Claude Code・Codexのhookは`uv run --no-project --script`でPEP 723スクリプトを起動する。
+スクリプト環境が未構築の初回実行では、
 Python本体の解決・依存パッケージの取得・venv構築がhookの制限時間内に収まらず、
 hook出力が破棄される。`chezmoi apply`後処理で当該環境を事前に構築し、
 初回hook実行時のコールドスタートを解消する。
@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 _TAG = "hook warmup"
 _PLUGIN_ID = f"agent-toolkit@{claude_common.MARKETPLACE_NAME}"
 _CODEX_PLUGIN_NAME = "agent-toolkit"
-_HOOK_SCRIPT_RELATIVE = Path("scripts") / "claude_hook.py"
+_DOTFILES_HOOK_SCRIPT_RELATIVE = Path("scripts") / "claude_hook.py"
+_PLUGIN_HOOK_SCRIPT_RELATIVE = Path("scripts") / "hook.py"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 # 低スペック環境ではPython本体の取得と依存パッケージの初回構築に分単位を要するため、余裕のある上限値とする。
 _WARMUP_TIMEOUT = 600.0
@@ -45,7 +46,7 @@ def main() -> None:
 
 
 def run() -> bool:
-    """hookが参照する`claude_hook.py`のuvスクリプト環境を事前構築する。
+    """hookが参照するuvスクリプト環境を事前構築する。
 
     Returns:
         常にFalse。uvキャッシュのみへ作用し、観測可能な設定変更を行わないため。
@@ -82,7 +83,7 @@ def _repository_script() -> Path | None:
     if root is None:
         logger.info(log_format.format_status(_TAG, "dotfiles ルートが見つからずスキップ"))
         return None
-    return root / _HOOK_SCRIPT_RELATIVE
+    return root / _DOTFILES_HOOK_SCRIPT_RELATIVE
 
 
 def _claude_plugin_scripts() -> list[Path]:
@@ -110,7 +111,7 @@ def _claude_plugin_scripts() -> list[Path]:
     for entry in entries:
         install_path = entry.get("installPath") if isinstance(entry, dict) else None
         if isinstance(install_path, str):
-            paths.append(Path(install_path) / _HOOK_SCRIPT_RELATIVE)
+            paths.append(Path(install_path) / _PLUGIN_HOOK_SCRIPT_RELATIVE)
     return paths
 
 
@@ -140,7 +141,7 @@ def _codex_plugin_script() -> Path | None:
         return None
     codex_home = Path(os.environ.get("CODEX_HOME", install_codex_plugins.CODEX_HOME))
     cache_root = codex_home / "plugins" / "cache" / claude_common.MARKETPLACE_NAME / _CODEX_PLUGIN_NAME
-    return cache_root / version / _HOOK_SCRIPT_RELATIVE
+    return cache_root / version / _PLUGIN_HOOK_SCRIPT_RELATIVE
 
 
 def _enabled_version(installed: list[object]) -> str | None:
@@ -159,7 +160,7 @@ def _enabled_version(installed: list[object]) -> str | None:
 def _warmup(path: Path) -> None:
     """1件のスクリプトへ`uv run`を実行して環境を構築する。
 
-    `claude_hook.py`は引数なし実行でusageを表示して終了コード0で終わるため副作用は無い。
+    入口スクリプトは引数なし実行でusageを表示して終了コード0で終わるため副作用は無い。
     個別の失敗は他の対象の構築を妨げないよう警告に留める。
     """
     started = time.monotonic()

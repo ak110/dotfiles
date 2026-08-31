@@ -51,8 +51,8 @@ def run() -> bool:
 
 
 def _targets() -> list[Path]:
-    """dotfiles・Claude Code・Codexの実参照先を重複なく列挙する。"""
-    candidates = [_repository_script(), *_claude_plugin_scripts(), _codex_plugin_script()]
+    """Claude CodeとCodexの実参照先を重複なく列挙する。"""
+    candidates = [*_claude_plugin_scripts(), _codex_plugin_script()]
     targets: list[Path] = []
     for candidate in candidates:
         if candidate is None or candidate in targets:
@@ -62,15 +62,6 @@ def _targets() -> list[Path]:
             continue
         targets.append(candidate)
     return targets
-
-
-def _repository_script() -> Path | None:
-    """配布元リポジトリ内のスクリプトを返す。"""
-    root = claude_common.find_dotfiles_root()
-    if root is None:
-        logger.info(log_format.format_status(_TAG, "dotfiles ルートが見つからずスキップ"))
-        return None
-    return root / _SCRIPT_RELATIVE
 
 
 def _claude_plugin_scripts() -> list[Path]:

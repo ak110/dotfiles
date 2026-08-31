@@ -1650,6 +1650,41 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
+async def test_claude_reply_repeats_when_init_is_resent_per_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """turnごとにinitが再送されても同じセッションへ継続を繰り返せる。"""
+    client = FakeClaudeClient(
+        [
+            [SystemMessage("claude-session"), ResultMessage("初回結果")],
+            [SystemMessage("claude-session"), ResultMessage("1回目のreply結果")],
+            [SystemMessage("claude-session"), ResultMessage("2回目のreply結果")],
+        ]
+    )
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    try:
+        session = await manager.start("調査", str(tmp_path), None, None)
+        for prompt, expected in (("続行1", "1回目のreply結果"), ("続行2", "2回目のreply結果")):
+            for _ in range(200):
+                if session.result_available:
+                    break
+                await asyncio.sleep(0.01)
+            assert session.result_available is True
+            reply = await asyncio.wait_for(manager.send_message(session, prompt), timeout=5)
+            assert reply["delivery"] == "reply_started"
+            for _ in range(200):
+                if session.agent_message == expected:
+                    break
+                await asyncio.sleep(0.01)
+            assert session.agent_message == expected
+        assert client.queries == ["調査", "続行1", "続行2"]
+        assert manager.sessions["claude-session"] is session
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

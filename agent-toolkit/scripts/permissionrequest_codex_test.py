@@ -16,7 +16,7 @@ import _managed_temp
 import permissionrequest_codex as subject
 import pytest
 
-_ENTRYPOINT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
+_ENTRYPOINT = pathlib.Path(__file__).resolve().parent / "hook.py"
 _HELPER = pathlib.Path(_managed_temp.__file__).resolve()
 
 
@@ -152,7 +152,13 @@ def test_rejects_handmade_marker_without_external_state(
     target.mkdir(mode=0o700)
     if os.name == "nt":
         _managed_temp._windows_secure_path(target, directory=True)
-    marker = _managed_temp._record(target, "0" * 64)
+    marker = _managed_temp._record(
+        target,
+        "0" * 64,
+        prefix="handmade",
+        created_at="2026-08-30T00:00:00+00:00",
+        feedbacks=(),
+    )
     _managed_temp._write_marker(target, marker)
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
     monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))

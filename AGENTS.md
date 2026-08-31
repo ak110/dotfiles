@@ -18,7 +18,7 @@
     `uvx pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検査を先に実行し、公開前に`make test`相当で全体を検査する。近接検査の成功だけを全体検査の代替にしない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - リリースPRの作成は手動で行い、statuslineを変更した場合はその版数更新も同じPRへ含める。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
+  - リリースPRの作成は手動で行い、statusline（`rust/claude-statusline/`配下）を変更した場合はその版数更新も同じPRへ含める。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
 - 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
   OSパッケージの導入には権限が必要となる場合がある
@@ -44,7 +44,7 @@
 - `agent-toolkit/`配下・`.claude-plugin/marketplace.json`の編集時、及び同パス群を変更対象に含む計画の起草前はSkillツールで`agent-toolkit-edit`を呼び出す。
   呼び出し漏れは編集時にPreToolUseフックが警告を返す。
   権限設定の配置・marketplace管理・フック実装の配置先判断・version bump手順・worktree編集時の注意も同スキルへ集約する
-  - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-standards`・`writing-standards`を併用する
+  - `agent-toolkit/rules/`・`agent-toolkit/skills/`配下のMarkdown編集時は`agent-toolkit:agent-standards`・`agent-toolkit:writing-standards`を併用する
 - `pytools/`・`scripts/`・`bin/`・`rust/`配下の編集時は`pytools-edit`を呼び出す
   （配置規約・テスト配置・PEP 723・wheel設定・cmdエンコーディングを集約する）
 - プラットフォーム対応ファイル（Linux/Windowsのペア）を編集するときは`sync-platform-pair`を呼び出して両側を同期する
@@ -59,6 +59,21 @@
 - コーディングエージェント向け文書を編集する前に、`docs/development/concepts.md`と
   `docs/development/incidents.md`を読み、確定済みの方針・事故対策との整合を確認する。
   編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
+- 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
+  修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
+  `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
+  サブエージェント名は起動指示・地の文とも完全名称（`feedbacks-planner`等）で書く
+
+## 変更後の規範の自セッション適用
+
+本リポジトリでコーディングエージェント自身のふるまいを定める規範を変更する作業では、変更を確定した時点から当該セッションの以降の作業へ変更後の文面を適用する。
+対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
+規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
+適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
+変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
+
+`agent-toolkit:process-feedbacks`のセッションでは、当該セッションで処理する全フィードバックが確定した規範の変更を適用対象とする。
+メインは全レーンの変更内容を把握するがサブエージェントは起動プロンプトと自ら読む文書からしか把握できないため、メインは他レーンで確定した変更のうち委譲先のふるまいへ影響するものを起動プロンプトへ含める。
 
 ## 固有差分
 

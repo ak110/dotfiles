@@ -14,7 +14,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_formatters as _formatters  # noqa: E402  # pylint: disable=wrong-import-position
 
 # `_parse_alert_keys`のテストは`_atk_mq_alerts_test.py`側で公開関数`existing_alert_keys`
-# 経由で行う（private関数直接テストを避けるため。`coding-standards`の
+# 経由で行う（private関数直接テストを避けるため。`agent-toolkit:coding-standards`の
 # `references/testing.md`「private関数の直接テスト禁止」節参照）。
 
 

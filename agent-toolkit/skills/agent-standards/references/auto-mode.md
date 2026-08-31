@@ -63,7 +63,7 @@ auto modeの拒否ではなく従来の確認ダイアログが対象の場合�
 | 拒否される操作 | 分類名 | 対応 |
 | --- | --- | --- |
 | 自身が作成したHEADへの`git commit --amend` | Git Destructive | 該当範囲を狭く許容するルールを追加する |
-| `exit-session`からの`kill -TERM $PPID` | Interfere With Workloads | transcriptの直前のツール呼び出しを条件とするルールを追加する |
+| `agent-toolkit:exit-session`からの`kill -TERM $PPID` | Interfere With Workloads | transcriptの直前のツール呼び出しを条件とするルールを追加する |
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 設定に`Release Workflow Dispatch`が存在する場合、個人リポジトリの`release.yaml`起動に限定して同ルールを使う |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | フィードバック処理由来に限定するルールを追加する |
 | MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | マージ操作を無条件に許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |

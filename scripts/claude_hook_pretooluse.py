@@ -45,6 +45,7 @@ from _hook_notice import (
 # pylint: disable-next=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402
 from _hook_tool_input import new_content_fields  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan_file import new_plans_root  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_format import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -289,10 +290,10 @@ def _has_triple_underscore_filename(file_path: str) -> bool:
 
 
 def _is_under_claude_plans(file_path: str) -> bool:
-    """書き込み先パスが ``~/.claude/plans/`` 配下かを判定する (言及チェック除外用)。
+    """書き込み先パスが新旧いずれかの計画root配下かを判定する (言及チェック除外用)。
 
-    plans/ 配下は版管理外の計画ファイル領域で、版管理経由でのファイル名漏洩リスクが
-    存在しないため警告を抑止する設計とする。
+    計画root配下は版管理対象外または専用保存先の計画ファイル領域で、版管理経由での
+    ファイル名漏洩リスクが存在しないため警告を抑止する設計とする。
     """
     if not file_path:
         return False
@@ -300,19 +301,18 @@ def _is_under_claude_plans(file_path: str) -> bool:
         resolved = pathlib.Path(file_path).expanduser().resolve(strict=False)
     except (OSError, RuntimeError):
         return False
-    plans_dir = (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False)
-    try:
-        resolved.relative_to(plans_dir)
-        return True
-    except ValueError:
-        return False
+    plans_dirs = (
+        (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False),
+        new_plans_root().resolve(strict=False),
+    )
+    return any(resolved.is_relative_to(plans_dir) for plans_dir in plans_dirs)
 
 
 def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """個人用 / ローカル専用ファイルの言及の警告メッセージを返す (該当しなければ None)。
 
     対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
-    対象ファイル自身の編集および書き込み先が ``~/.claude/plans/`` 配下の場合は警告をスキップする。
+    対象ファイル自身の編集および書き込み先が新旧いずれかの計画root配下の場合は警告をスキップする。
     文脈依存の判断はコーディングエージェントに委ね、hook は緩い警告のみを表示してブロックはしない。
     """
     if _is_under_claude_plans(file_path):

@@ -127,7 +127,7 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
     `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つフィードバックファイルを
     実際に配置して`existing_alert_keys`経由で検証する
-    （`coding-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。
+    （`agent-toolkit:coding-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。
     """
     notes = tmp_path / "private-notes"
     inbox = notes / "inbox"

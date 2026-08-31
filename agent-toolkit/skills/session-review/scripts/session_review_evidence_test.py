@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sys
 
-import _session_review_evidence as evidence
 import pytest
-from _test_helpers import _write_transcript
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _test_helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
@@ -273,7 +276,7 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     assert output.err == ""
     lines = output.out.splitlines()
     assert len(lines) == 1
-    assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "line": 1, "sequence": 1}
+    assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "line": 1, "sequence": 1, "record": "main"}
 
 
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
@@ -765,11 +768,18 @@ def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.
         assert event["text"] in raw_lines[event["line"] - 1]
 
 
-def _read_jsonl(capsys: pytest.CaptureFixture[str]) -> list[dict]:
-    """標準出力のJSONLを辞書列として読む。"""
+def _read_jsonl(capsys: pytest.CaptureFixture[str], *, raw: bool = False) -> list[dict]:
+    """標準出力のJSONLを読み、既存の単一記録テストでは由来欄を除く。"""
     captured = capsys.readouterr()
     assert captured.err == ""
-    return [json.loads(line) for line in captured.out.splitlines()]
+    events = [json.loads(line) for line in captured.out.splitlines()]
+    if raw:
+        return events
+    return [
+        {key: value for key, value in event.items() if key != "record"}
+        for event in events
+        if not (event.get("kind") == "summary" and "record" in event)
+    ]
 
 
 def test_warn_mode_reports_matching_entries_with_line_and_tool(
@@ -868,6 +878,40 @@ def test_warn_mode_accepts_real_line_start_markers_only(
     assert evidence.main([str(transcript), "--warn"]) == 0
 
     assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": warning_line}]
+
+
+@pytest.mark.parametrize(
+    ("warning_line", "matched"),
+    [
+        ("  [warn] 明示警告", True),
+        ("12\t[warning] 明示警告", True),
+        ("12\t [warn] 明示警告", False),
+        ("  warning: 一般警告", False),
+        ("12\twarning: 一般警告", False),
+        ("12\t warning: 一般警告", False),
+        ("warning: 一般警告", True),
+    ],
+)
+def test_warn_mode_restricts_generic_markers_to_actual_line_start(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    warning_line: str,
+    matched: bool,
+) -> None:
+    """一般警告語だけを引用・行番号付き表示から除外し、明示マーカーは維持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": warning_line}]}}],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    expected = (
+        [{"kind": "warning", "line": 1, "text": warning_line.lstrip()}]
+        if matched
+        else [{"kind": "warning", "text": "一致なし"}]
+    )
+    assert _read_jsonl(capsys) == expected
 
 
 def test_warn_mode_accepts_structured_warning_fields_and_grep_keeps_arbitrary_search(
@@ -1291,7 +1335,8 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
     assert evidence.main(arguments) == 0
 
     events = _read_jsonl(capsys)
-    assert events[0] == {"kind": "warning" if option == "--warn" else "match", "line": 1, "text": "12\twarning: 同じ本文"}
+    expected_text = "warning: 同じ本文" if option == "--warn" else "12\twarning: 同じ本文"
+    assert events[0] == {"kind": "warning" if option == "--warn" else "match", "line": 1, "text": expected_text}
     if option == "--grep":
         assert events[-1] == {"kind": "summary", "count": 1}
         assert len(events) == 2
@@ -1329,10 +1374,8 @@ def test_query_modes_keep_numbered_and_unnumbered_lines_in_one_body_distinct(
     assert evidence.main(arguments) == 0
 
     events = _read_jsonl(capsys)
-    assert [event["text"] for event in events if event["kind"] in {"warning", "match"}] == [
-        "12\twarning: 本文",
-        "warning: 本文",
-    ]
+    expected = ["warning: 本文"] if option == "--warn" else ["12\twarning: 本文", "warning: 本文"]
+    assert [event["text"] for event in events if event["kind"] in {"warning", "match"}] == expected
     if option == "--grep":
         assert events[-1] == {"kind": "summary", "count": 1}
 
@@ -1393,11 +1436,11 @@ def _self_invocation_entries(command: str) -> list[dict]:
 @pytest.mark.parametrize(
     "command",
     [
-        "python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl",
-        "uv run --no-project --script /plugin/scripts/_session_review_evidence.py /tmp/foo.jsonl",
-        "./agent-toolkit/scripts/_session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
-        "cd /repo && python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl",
-        "bash -lc 'python3 /plugin/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl'",
+        "python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
+        "uv run --no-project --script /plugin/skills/session-review/scripts/session_review_evidence.py /tmp/foo.jsonl",
+        "./agent-toolkit/skills/session-review/scripts/session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
+        "cd /repo && python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
+        "bash -lc 'python3 /plugin/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl'",
     ],
 )
 def test_query_modes_ignore_own_invocation_and_its_result(
@@ -1420,7 +1463,7 @@ def test_query_modes_ignore_own_invocation_recorded_as_codex_exec_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Codexのコマンド実行記録（`arguments`が`cmd`キーを持つ形式）の自己呼び出しも報告しない。"""
-    command = "python3 /plugin/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl"
+    command = "python3 /plugin/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1456,7 +1499,7 @@ def test_query_modes_keep_warnings_outside_own_invocation(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """自己呼び出しの除外は当該記録に限り、無関係なエントリの警告は照会し続ける。"""
-    command = "python3 agent-toolkit/scripts/_session_review_evidence.py --warn /tmp/foo.jsonl"
+    command = "python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
     entries = [
         *_self_invocation_entries(command),
         {
@@ -1479,14 +1522,14 @@ def test_query_modes_keep_warnings_outside_own_invocation(
 @pytest.mark.parametrize(
     "command",
     [
-        "rg -n _session_review_evidence agent-toolkit/scripts",
-        "grep -rn TODO agent-toolkit/scripts/_session_review_evidence.py",
-        "cat agent-toolkit/scripts/_session_review_evidence.py",
-        "sed -n '1,20p' agent-toolkit/scripts/_session_review_evidence.py",
-        "head -n 5 agent-toolkit/scripts/_session_review_evidence_test.py",
-        "tail -n 5 agent-toolkit/scripts/_session_review_evidence.py",
-        "vim agent-toolkit/scripts/_session_review_evidence.py",
-        "bash -lc 'rg -n _session_review_evidence agent-toolkit/scripts'",
+        "rg -n session_review_evidence agent-toolkit/skills/session-review/scripts",
+        "grep -rn TODO agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+        "cat agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+        "sed -n '1,20p' agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+        "head -n 5 agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
+        "tail -n 5 agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+        "vim agent-toolkit/skills/session-review/scripts/session_review_evidence.py",
+        "bash -lc 'rg -n session_review_evidence agent-toolkit/skills/session-review/scripts'",
     ],
 )
 def test_query_modes_keep_records_that_only_reference_the_script_file(
@@ -3418,3 +3461,235 @@ def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
         ("plan file <var> was written.", 3),
     ]
     assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "委譲された依頼"}},
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "実装を完了した"}]},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["委譲された依頼", "実装を完了した"]
+
+
+def test_claude_main_record_keeps_only_completion_from_subagent_entries(tmp_path: pathlib.Path) -> None:
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "委譲された依頼"}},
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "実装を完了した"}]},
+            },
+        ],
+    )
+
+    events = evidence.load_and_extract(str(transcript))
+
+    assert [event["text"] for event in events] == ["依頼"]
+
+
+def _write_jsonl(path: pathlib.Path, entries: list[dict]) -> None:
+    """任意の記録正本をテスト用の絶対パスへ書く。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n", encoding="utf-8")
+
+
+def test_all_modes_recursively_scan_cross_engine_delegations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """全照会が3段の実行系横断委譲と委譲先サブエージェントを1回で走査する。"""
+    codex_a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    claude_b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    codex_c = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    missing = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    home = tmp_path / "home"
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "main needle"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__agents_server__start",
+                            "id": "main-a",
+                            "input": {"engine": "codex", "threadId": codex_a},
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-root",
+        [
+            {"type": "user", "message": {"role": "user", "content": "root record"}},
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "content": "[warn] root warning"}]},
+            },
+        ],
+    )
+
+    rollout_dir = codex_home / "sessions" / "2026" / "08" / "30"
+    _write_jsonl(
+        rollout_dir / f"rollout-test-{codex_a}.jsonl",
+        [
+            {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": "codex-a needle"}},
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__start",
+                    "arguments": {"engine": "claude", "session_id": claude_b},
+                },
+            },
+        ],
+    )
+    claude_path = home / ".claude" / "projects" / "repo" / f"{claude_b}.jsonl"
+    _write_jsonl(
+        claude_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "claude-b needle"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__agents_server__start",
+                            "id": "b-c",
+                            "input": {"engine": "codex", "threadId": codex_c},
+                        }
+                    ],
+                },
+            },
+            _hook_attachment(
+                {
+                    "type": "hook_system_message",
+                    "hookName": "PostToolUse:Bash",
+                    "toolUseID": "b-c",
+                    "content": "[auto-generated: agent-toolkit/posttooluse][warn] nested notice",
+                }
+            ),
+        ],
+    )
+    _write_subagent(
+        claude_path.with_suffix("") / "subagents",
+        "agent-child",
+        [
+            _assistant_usage_entry("2026-08-30T00:00:00Z", "child", _usage(2, 3)),
+            {"type": "user", "message": {"role": "user", "content": "child record"}},
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "content": "[warning] child warning"}]},
+            },
+        ],
+    )
+    _write_jsonl(
+        rollout_dir / f"rollout-test-{codex_c}.jsonl",
+        [
+            {"type": "response_item", "payload": {"type": "message", "role": "user", "content": "codex-c needle"}},
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__start",
+                    "arguments": {"engine": "codex", "session_id": missing},
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript)]) == 0
+    default_events = _read_jsonl(capsys, raw=True)
+    assert {event["record"] for event in default_events if event["kind"] != "unresolved-record"} == {
+        "main",
+        "agent-root",
+        f"codex:{codex_a}",
+        f"claude:{claude_b}",
+        f"claude:{claude_b}/agent-child",
+        f"codex:{codex_c}",
+    }
+    assert default_events[-1] == {"kind": "unresolved-record", "record": f"codex:{missing}", "line": 2}
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    warning_events = _read_jsonl(capsys, raw=True)
+    assert [event["record"] for event in warning_events if event["kind"] == "warning"] == [
+        "agent-root",
+        f"claude:{claude_b}",
+        f"claude:{claude_b}/agent-child",
+    ]
+
+    assert evidence.main([str(transcript), "--grep", "needle"]) == 0
+    grep_events = _read_jsonl(capsys, raw=True)
+    assert {event["record"] for event in grep_events if event["kind"] == "match"} == {
+        "main",
+        f"codex:{codex_a}",
+        f"claude:{claude_b}",
+        f"codex:{codex_c}",
+    }
+    assert [event["record"] for event in grep_events if event["kind"] == "summary" and "record" in event] == [
+        "main",
+        f"codex:{codex_a}",
+        f"claude:{claude_b}",
+        f"codex:{codex_c}",
+    ]
+    assert grep_events[-2] == {"kind": "summary", "count": 4}
+
+    assert evidence.main([str(transcript), "--detail", f"claude:{claude_b}:1"]) == 0
+    assert _read_jsonl(capsys, raw=True)[0]["record"] == f"claude:{claude_b}"
+    assert evidence.main([str(transcript), "--detail", "unknown:1"]) == 2
+    assert _read_jsonl(capsys, raw=True) == [{"kind": "error", "text": "記録が不明: unknown"}]
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+    hook_events = _read_jsonl(capsys, raw=True)
+    assert next(event for event in hook_events if event["kind"] == "summary")["count"] == 1
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    stats_events = _read_jsonl(capsys, raw=True)
+    assert {event["agent"] for event in stats_events if event["kind"] == "stats-subagent"} == {
+        "agent-root",
+        f"claude:{claude_b}/agent-child",
+    }
+    assert {event["session_id"] for event in stats_events if event["kind"] == "stats-agent-thread"} == {
+        codex_a,
+        claude_b,
+        codex_c,
+    }
+
+
+def test_help_uses_one_claude_only_limitation_note(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """説明・統計・hook通知の注意書きが同じ定数を使い、Codexスレッドを除外しない。"""
+    note = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
+    monkeypatch.setenv("COLUMNS", "1000")
+    with pytest.raises(SystemExit) as raised:
+        evidence.main(["--help"])
+    help_text = " ".join(capsys.readouterr().out.split())
+
+    assert raised.value.code == 0
+    assert help_text.count(note) == 3
+    assert "Codexスレッド別集計はClaude Code形式" not in help_text

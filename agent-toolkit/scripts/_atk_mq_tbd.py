@@ -13,6 +13,7 @@ import sys
 
 from _atk_mq_common import (
     MQ_PROCESSABLE_STATES,
+    MQ_STATE_HOLD,
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
     MQ_TYPE_TBD,
@@ -25,6 +26,7 @@ from _atk_mq_common import (
     _repo_lock,
     _require_type,
     _validate_filename,
+    is_agent_environment,
 )
 from _atk_mq_repo import _resolve_repo_id
 
@@ -161,17 +163,17 @@ def _resolve_active_entry(
 ) -> pathlib.Path:
     """状態指定時は完全一致、省略時は既存の優先順で対象を解決する。
 
-    同名がinboxとprocessingの双方に存在する場合はprocessingを優先する
+    同名が複数の対象状態に存在する場合はprocessing、inbox、holdの順に優先する
     （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
     """
     if state is not None:
-        if state not in MQ_PROCESSABLE_STATES:
-            raise WebInputError("stateはinbox又はprocessingで指定してください")
+        if state not in (*MQ_PROCESSABLE_STATES, MQ_STATE_HOLD):
+            raise WebInputError("stateはinbox、processing又はholdで指定してください")
         candidate = _validate_filename(filename, private_notes / state)
         if candidate.is_file():
             return candidate
         raise FileNotFoundError(filename)
-    for candidate_state in (MQ_STATE_PROCESSING, MQ_STATE_INBOX):
+    for candidate_state in (MQ_STATE_PROCESSING, MQ_STATE_INBOX, MQ_STATE_HOLD):
         candidate = _validate_filename(filename, private_notes / candidate_state)
         if candidate.is_file():
             return candidate
@@ -227,7 +229,7 @@ def answer_tbd(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でTBD回答欄を更新する。対象はinbox・processingのTBDに限る。
+    """平引数でTBD回答欄を更新する。対象はinbox・processing・holdのTBDに限る。
 
     呼び出し元に依存せず、共有コア入口で空回答を拒否する。
     """
@@ -271,6 +273,12 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     エディターが非ゼロ終了コードで終了した場合、以降の対象を中断してexit 1を返す
     （エディター起動失敗・ユーザーによる強制終了などを成功として扱わないため）。
     """
+    if is_agent_environment():
+        print(
+            "TBDの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     filename = getattr(args, "filename", None)
     answer_body = getattr(args, "answer_body", None)
     if filename is not None and answer_body is not None:

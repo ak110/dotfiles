@@ -45,9 +45,13 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 ### 計画作成状態と計画型変換
 
 通常型フィードバックをファイル名で計画化するため、`inbox`と`processing`の間に`planning`状態を置く。
-`processing`はprocess-loopが計画作成から実装までを所有する状態であり、`process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
-`process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、`planning`を別に置く。
-`planning`は計画作業中の明示状態として一覧・詳細で確認できる。feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集、ユーザーコメント及び既存の計画変換の対象から除外する。必要な場合は`--status=planning`を明示して参照する。
+`processing`はprocess-loopが計画作成から実装までを所有する状態であり、`agent-toolkit:process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
+`agent-toolkit:process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、`planning`を別に置く。
+`planning`は計画作業中の明示状態として一覧・詳細で確認できる。
+feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集及びユーザーコメントの対象から除外する。
+計画型へ変換する公開操作は、`atk mq edit`の`--plan-file`互換経路と`atk mq convert-to-plan`に限定する。
+`atk mq convert-to-plan`による`planning`統合は正規の計画変換として受理する。
+必要な場合は`--status=planning`を明示して参照する。
 
 通常型フィードバックのファイル名を1件以上指定した場合はファイル名モードとし、全対象が同一対象リポジトリのinbox通常型feedbackであることを計画調査前に一括検証する。
 検証後に`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象をplanningへ移す。
@@ -55,13 +59,19 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 同一セッションで、既に扱った同じ計画又は計画型feedbackを後続の方針に基づいて改訂し、別の処理経路が明示されていない場合は、本スキルの再開として扱う。自然言語modeとファイル名modeのいずれでも対象リポジトリを実装せず、計画の更新を検収し、計画型feedbackの投入までを完了する。更新後に実装承認を求めず、投入したfeedbackファイル名、計画ファイル及び実装へ着手していないことを固定完了報告として返して終了する。
 
-計画レビューが収束した後は、ファイル名昇順の最古の項目を`edit --plan-file`で計画型へ変換し、同じ保存境界でplanningからinboxへ移す。
-変換結果を再取得してからplanningに残る統合元を判定し、残りが1件以上の場合だけ`rm --force`で統合先を`note`へ記録して除去する。
-入力が単一の場合は`rm`を呼ばず、計画型inbox項目だけを残して成功とする。
+計画レビューが収束した後は、全入力をファイル名昇順で次のコマンドへ1回だけ渡す。
 
-計画型編集前の中断では`return-to-inbox --state=planning`で全対象を戻す。
-変換開始後は最古の計画型inbox項目を移動せず、private-notesのHEAD、作業ツリー、upstream包含と対象内容を再取得して、滞留commitのpushと残りの`rm`だけを再開する。
-最古の変換済みinbox項目と残りのplanning又は統合済み項目が一致する場合だけ部分完了を前方回復し、それ以外の混在状態は無変更で停止する。
+```sh
+atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
+```
+
+新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値を指定する。
+既存データが参照する絶対パスは読み取り互換として受理する。
+CLIは全入力が同一対象リポジトリの`planning`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
+activeなTBD素材は状態を変更せず、統合依存へ保持できる。
+検証後は最古のfeedbackへ計画型本文、`source: plan`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
+
+入力検証、管理リポジトリのclean検査、対象の書込み、commit及びpushを分離する。入力検証、書込み又はcommitの失敗では、全統合元の作業ツリーとindexを開始時の`planning`内容へ戻し、部分変換を残さない。push失敗では変換済みのcleanなローカルcommitと保存結果を保持し、滞留commitのpushから再開する。`--skip-push`ではcommitを保持したままpushだけを省略する。単一入力と複数入力は同じ経路で処理し、変換後の別`rm`及びそのための前方回復状態を設けない。
 
 `atk mq reject`は、process-loop内で要求の全てを不採用と確定した項目だけに用いる。
 採用済み内容を統合した元項目と、別リポジトリへ移管して投入先を検収した元項目は、統合先又は移管先をnoteへ記録して`rm`で除去する。
@@ -71,7 +81,7 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。feedback用の公開一覧の`active`は`inbox`、`planning`、`processing`、`editing`、`hold`を表示する。TBDの`active`には`planning`を含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
 
-`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`、`hold`以外の`unhold`及び保留中の編集・採否・削除は拒否する。強制削除は`hold`と`editing`を候補へ含めない。
+`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`と、`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、TBD回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。強制削除は`editing`を候補へ含めない。
 
 `editing`は一覧と既存データの状態判定で認識する。今回の状態追加は編集操作の排他方式を変更せず、永続的な編集セッション、専用の復旧状態又はpush再試行APIを追加しない。
 
@@ -81,7 +91,7 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 
 テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
-`atk mq convert-to-plan FILENAME...`は入力全体を事前検証してから1つのロック区間で計画本文を更新し、1回のcommitとpushへまとめる。`--skip-push`ではcommitを保持したままpushだけを省略する。入力検証、作業ツリーまたはindexのclean検査、対象の書込み、commit及びpushを分離し、commit前の失敗では対象パスの作業ツリーとindexを開始時へ戻して部分変換を残さない。
+`atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`planning`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
 
 ### session-reviewコメントの由来と編集境界
 
@@ -92,7 +102,7 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 保存前にはコメント本文も同じ規則で解析し、コードフェンス外のH2を含む入力を無変更で拒否する。
 空コメントによる節削除は提供しない。
 
-コメント編集の正本条件は、`inbox`にあるfeedbackかつ厳密な`source: session-review`である。
+コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつ厳密な`source: session-review`である。
 planning、processing、TBD、終端項目及び別sourceの項目はAPIと画面の両方で対象外とする。
 保存時はロック内で取得した最新本文と`expected_content`を照合し、競合時は無変更で失敗を返す。
 詳細APIが返す抽出済みコメントと操作可否を画面が利用し、JavaScript側へMarkdown解析を複製しない。
@@ -102,7 +112,7 @@ planning、processing、TBD、終端項目及び別sourceの項目はAPIと画�
 sourceの原値と予約節は由来と確認境界を示す情報であり、利用者によるpush、公開、破壊的操作又は外部サービス変更の認可を証明しない。
 session-review自身は予約見出しを提案本文へ生成せず、一般全文編集が見出しを作成できる現行信頼境界を維持する。
 
-`add-feedback`・`plan-and-add-feedback`・`process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+`agent-toolkit:add-feedback`・`agent-toolkit:plan-and-add-feedback`・`agent-toolkit:process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
 主題の継続又はフィードバック投入と直接実装の境界が不明な場合は、変更又は投入の前に確認する。
 
 会話内の作業一覧だけで進捗を管理する案は、中断後に依存関係と利用者回答を再現できないため採用しない。
@@ -144,6 +154,12 @@ Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点ま
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
+継続不能の判定は`send_message`の結果だけで行う。`wait`は終端結果の保持期限を過ぎたsessionへ`session retention expired`を返すが、
+同じsessionの会話再開用の最小状態は保持され、`send_message`は当該状態から暗黙再開する。
+両操作が`unknown session`を返す場合だけ再開できる状態が無く、継続不能となる。
+呼び出し側が`wait`の保持期限超過を継続不能と扱う運用は、再開できるthreadを破棄して規範・計画・対象コードの再読込を発生させるため採用しない。
+保持期限内に継続させる別の運用を規範へ追加する案も、暗黙再開が同じ結果を与えるため採用しない。
+
 継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。閉鎖後の受理は待機させず直ちに拒否する。Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。この終了処理と呼び出し側のtimeoutを併用し、既知の終了経路では配送結果を即座に確定し、未知の停止では有限時間で制御を戻す。却下した代替案は、所有主体終了時の解決を設けず、呼び出し側のtimeoutだけで応答なしを打ち切る案である。要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
 
 backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
@@ -151,13 +167,33 @@ backend固有のserver requestは共有公開toolを増やさず、非対話の�
 通知のdeltaは進捗表示にだけ用い、終端応答で結果本文を返す。この境界により、呼び出し側は実行中の状態を照会し、
 終端後に結果を取得できる。結果の回収漏れをStopで機械的に遮断する経路は持たない。
 
+Claude Codeからclaude系モデルの実行主体へ委譲する場合の既定はAgentツールとし、`agents_server`を使わない。
+Claude CodeのUIが実行状況と応答を直接表示するため、同じ結果をより少ない観測手段で確認できるためである。
+例外は`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各定義が起動する委譲先とし、engineの別によらず`agents_server`を使う。
+これらの定義が委譲する工程は工程別モデル設定がeffortを指定し、Agentツールにeffortに相当する引数が無いためである。
+3定義の`tools`はAgentツールの許可を保つが、MCPツールを呼び出せない場合の自動代替経路は設けない。
+Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、3定義配下を`agents_server`固定とした理由自体を損なうためである。
+MCPツールを呼び出せない場合は「工程別モデル設定」手順4に従い`needs_escalation`又は未完了として返す。
+`tools`へAgentツールを残すのは、明示指示があった場合に定義を書き換えずに手段を選べるようにするためである。
+Codexからの委譲はengineの別によらず`agents_server`を使う既存の扱いを維持する。CodexのUIには同等の表示利得が無いためである。
+
 却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
 hookの配送境界及び継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
+Claude Codeからの委譲も`agents_server`へ一本化する案は、Claude CodeのUIで直接観測できる実行状況をMCPの状態照会へ置き換え、
+観測手段を増やすだけとなるため採用しない。3定義の配下もAgentツールへ統一する案は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
+
+## 大出力コマンドの分離実行
+
+目的は、広域検索、全体テスト、大量のログ取得のように出力量が大きいコマンドの結果で呼び出し元のコンテキストを消費せず、終了状態と要約だけを受け取ることである。
+構造の理由は、規範本体を`agent-toolkit/rules/02-agent-operations.md`のツール・コマンド運用へ1条だけ置き、実行環境ごとの差分を`agent-toolkit/share/codex-agents-base.md`のツール対応表へ閉じ込める点にある。ルールファイルの規範はメインエージェントとサブエージェントの双方へ等しく適用されるため、担当別のタスク文書へ同じ規範を複製しない。
+判断理由は、分離手段を実行環境の能力で選ぶことにある。スキルのfork実行が成立する環境では`agent-toolkit:shell-exec`が別コンテキストで実行して要約を返す。Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキストの起動へ写像せず、選択したスキルの本文を現在のコンテキストへ展開するため、同じ分離を`runtime-routing.md`の`agents_server`経路で行う。
+知識境界として、規範本体は分離が必要な条件と受け取る内容だけを定め、分離先の実行手段はホスト別の対応表と`runtime-routing.md`が持つ。分離先は出力全体を観測したうえで要約するため、呼び出し側で切り詰めを追加しない既存規定と両立する。
+却下した代替案は、担当別のタスク文書へ規範を置く案と、新しいログ基盤を設ける案である。前者は計画実装以外の主体へ適用されず同じ規範を複数の文書へ複製する。後者は既存の`agent-toolkit:shell-exec`と`agents_server`で目的を満たせるため採用しない。
 
 ## 委譲継続の設計意図
 
 目的は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合に、会話履歴と検収前提を保持したまま作業を続けられるようにすることである。新規起動による履歴の欠落を避けつつ、担当・タスク・実行条件が変わる引継ぎでは新しいthreadへ検収済み状態を渡す。
-構造の理由は、`runtime-routing.md`を継続可否の単一の正本とし、起動と継続の直前に工程別設定を再取得して実効`engine`・`model`・`effort`を比較するためである。実効3値が一致する場合だけ継続する。Claude Codeからは`SendMessage`を使い、Codexからは`agents_server`の`send_message`を使う。保持期限後もMCPが保持した同じ実効条件で暗黙再開し、終端後のreply開始に結果回収の前提条件は設けない。
+構造の理由は、`runtime-routing.md`を継続可否の単一の正本とし、起動と継続の直前に工程別設定を再取得して実効`engine`・`model`・`effort`を比較するためである。実効3値が一致する場合だけ継続する。継続手段は実際の起動routeと保持識別子で決める。`agents_server`で起動したthreadは実行ホストとengineによらず`send_message(session_id, ...)`を使い、Claude CodeのAgentツールで起動したthreadだけは`SendMessage`を使う。保持期限後もMCPが保持した同じ実効条件で暗黙再開し、終端後のreply開始に結果回収の前提条件は設けない。
 判断理由は、同じthreadが保持する実行条件と工程の現在値を一致させることで、実行系の別ではなく観測可能な条件を継続可否の根拠にできる点にある。継続時と新規起動時には同じ正本の絶対パス、対象ID、未記録の差分及びレビュー表を渡す。
 知識境界として、呼び出し元とexecutorは実効route、検収済み状態、全レビュー表の受け渡しを管理する。レビュー担当は指定された今回表と過去表だけを読み、継続可否を独自に再設計しない。
 TBDへの回答後も一般継続契約を適用し、同一セッションでは回答保存、TBD終端、依存解除を確認して同じpicker又はレーンを再開する。
@@ -242,14 +278,22 @@ pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上
 競合時は同じexecutorと実装担当が関係計画の目的、実施内容、設計判断、完了条件を照合して最小限に解消し、同じ単一実装レビューを再度収束させてからffマージを要求する。
 
 実装単位の初回実装と近接検証は`execute_fast_model`へ割り当てる。fast担当がエスカレーションした場合だけ、
-`plan-impl-executor`が終端を確認し、元の実装入力、同じworktreeの状態及びエスカレーション内容を新規の`execute_fix_model`へ渡す。
-この引継ぎだけはclean開始契約の限定例外とし、同時に1つの書込主体だけを置く。
+`plan-impl-executor`が`execute_fix_model`の実効設定を解決し、継続条件に従って同じthreadの継続か新規fix担当の起動のいずれかを確定する。
+この引継ぎだけはclean開始契約の限定例外とし、新規起動ではfast担当の終端を確認してから現行状態を渡し、同時に1つの書込主体だけを置く。
 レビュー修正とCI修正はfix担当へ渡す。
-CI修正の認可根拠には、承認済み計画の該当箇所、原因となった変更を認可した利用者指示の逐語文、又は既存の公開契約の該当箇所を使用する。
+CI修正の認可根拠には、承認済み計画の該当箇所、原因となった変更を認可した利用者指示の逐語文、既存の公開契約の該当箇所のいずれかを使用する。
 一般のCI失敗では計画ファイルとフィードバックファイル名一覧を必須とせず、存在しない資料の合成を避ける。
 CI修正担当の共通出力は`feedbacks`を維持し、フィードバック起因でない場合は`なし`を返す。
-fast担当とfix担当は、工程別モデル設定の実効値が一致する場合も担当ごとに新規threadで起動する。
-同一threadへの継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応、再レビューを返す場合に限る。
+同じ計画の実装単位は、最初の単位の直前に`execute_fast_model`を1回解決した1つのfast担当が、先行依存と統合順に従って順に実装する。途中の単位をfix担当へ移した場合は、当該単位の完了後にfast担当の実効設定へ戻して残りの単位を続行する。
+実装単位は同一worktreeへ書込主体を1つだけ置くため逐次実行され、単位ごとに担当を分けても並列化の利益が無い一方、規範、計画及び対象コードの読み込みが単位数だけ重複するためである。
+commit境界は計画の実装単位表を正本として維持する。単位ごとに実効設定を解決し直す案は、同じ計画の全単位が同じ`execute_fast_model`を対象とし解決結果が変わらないため採用しない。
+前の単位の試行錯誤を後続へ持ち込まない利益は、担当が単位ごとにcommitを確定して近接検証を通す既存契約で保たれる。
+単位数が多い計画で担当を分割する条件は、コンテキストの逼迫を担当自身のエスカレーションとfix担当への引継ぎで扱えるため設けない。
+fast担当からfix担当への移行は、`execute_fast_model`と`execute_fix_model`の実効`engine`・`model`・`effort`がすべて一致する場合だけ同一threadを継続する。
+同じworktreeの作業状態と会話履歴を保ったまま担当種別だけを切り替えられ、規範・計画・対象コードの再読込を避けられるためである。
+いずれかが異なる場合は、threadが保持する実行条件と工程の実効設定が一致しないため、fast担当を終端して検収済み状態を新規fix担当へ渡す。
+同一threadへの継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応、再レビューを返す場合と、実効3値が一致するfast担当とfix担当の間で担当種別を切り替える場合に限る。
+fix担当が実装単位を完了した後に残りの単位がある場合は、最初に保持した`execute_fast_model`の実効3値と現在のthreadを比較する。3値が一致する場合は同じthreadをfast担当へ戻し、一致しない場合はfix担当を終端して検収済みの先行commitと残りの単位を新規fast担当へ渡す。
 継続直前に再取得した`engine`・`model`・`effort`の実効値が起動値と一致するときだけ継続する。不一致時は検収済み状態を新規threadへ渡す。
 実効値が変わる設定変更後も同一threadを継続する案は、threadが保持する実行条件と工程の実効設定を一致させられないため採用しない。
 
@@ -270,8 +314,8 @@ Codex Custom Agent用TOMLは、Claude固有の`tools`、`skills`、本文を意�
 agent定義の欠落、frontmatterの写像不能、起動失敗をメイン主体の別経路へ迂回しない。
 本体プロセスの終了範囲は、agent定義の適用能力から独立したセッション運用とする。
 通常処理及び明示的な連続処理は、起動時に固定した項目だけを処理し、後始末後にready項目を再取得しない。
-`process-feedbacks`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
-`exit-session`は起動時の判定を再利用せず停止直前にprobeを新規実行し、表示済みPIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
+`agent-toolkit:process-feedbacks`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
+`agent-toolkit:exit-session`は起動時の判定を再利用せず停止直前にprobeを新規実行し、表示済みPIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
 本体停止は、現在のClaude Code又はCodex本体として安全に一意識別した自身か、自身が起動して停止識別子を保持した対象だけに行う。
 共用プロセス、識別不能な環境及び前記のどちらにも該当しない対象では終了案内で完了する。
 
@@ -286,22 +330,31 @@ Codex基礎指示の上書きは、確認・待機・並列化・ツール利用
 公開動作を追加又は変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数正本とし、`agent_toolkit_bump.py minor`などの正式経路で版数を更新する。
 `.claude-plugin/marketplace.json`のplugin記述は正本の版数と一致させ、`agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
 生成後は`sync_codex_plugin_manifests.py --check`でClaude Code向け正本、marketplace記述及びCodex向け派生manifestの一致を確認する。
-dotfilesの`post_apply`によるローカルagent-toolkit導入では、Codexのversion付きcache root直下へ通常versionディレクトリを置き、その配下のplugin資源をdotfiles側のagent-toolkit原本へ接続する。
-Codex CLI 0.150.1のLinux実測では、versionディレクトリ自体をシンボリックリンクにすると導入済みpluginとして列挙されず、通常versionディレクトリ配下を原本へ接続すると導入済みversionと有効状態が維持された。
-原本manifestを`2.76.1`へ更新した隔離環境では、`2.76.0`を導入した設定のまま`2.76.1`の通常versionディレクトリを原本接続として追加すると、`plugin add`を再実行せずに`2.76.1`、導入済み状態と有効状態が返った。
+プラグインマニフェストの検証は、Claude Code向けとCodex向けで到達できる保証の水準が異なるため経路を分ける。
+Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムlinter`claude-plugin-validate`から実行し、未知フィールドとメタデータ欠落を失敗として扱う。
+Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`scripts/sync_codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを検査する。
+Codexの検証器を無条件の合格条件にしないのは、同梱資料が`hooks`をマニフェストの正規フィールドとして定義しながら、検証の節では未対応フィールドとして拒否すると述べ、同一資料内で矛盾しているためである。
+資料はローカル導入での受理を保証も否定もせず、現行manifestのままの導入状態は`installed: true`かつ`enabled: true`である。
+そこで検証器の指摘を削除するのではなく既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。
+知識境界として、期待する逸脱の集合と許容根拠はテスト側が持ち、マニフェストの生成規則は`scripts/sync_codex_plugin_manifests.py`が持つ。
+却下した代替案は、`hooks`を除去し`mcpServers`を`.mcp.json`へ解決させて検証器を無条件に合格させる案である。Codexのプラグインフック機能を失い、`agent-toolkit/.mcp.json`との名前衝突を解消する追加設計を要する一方、得られるのは資料上の保証が無い体裁上の適合だけであるため採用しない。
+dotfilesの`post_apply`によるローカルagent-toolkit導入は、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
+`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
+CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
+公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)は、ローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、マーケットプレイス登録元ではなく導入先の実体をCodexが読み込むと定める。
+そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
+CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。
+`plugin add`後に失敗してもCodexの管理状態を自前で書き戻さない。
+Codex側では外部pluginを導入せず、不要な`compact-plus@compact-plus`が導入済みの場合だけ`codex plugin remove`で除去する。
+除去成功時にdaemonが稼働していれば再起動案内を追加し、一覧取得または除去に失敗した場合はローカルplugin処理を継続する。
+Codex側の外部marketplace登録、外部plugin導入、取得元検証は対応先がないため撤去する。
+Claude Code側の外部plugin管理は`install_claude_plugins.py`で維持する。
+post-apply案内とWindowsのjunction除去経路は維持する。
+cache version台帳、全過去versionの保持、POSIXの原本接続、Windowsの原本接続とファイル同期、cache退避・置換・復元は、Codex CLIが実体導入を担当するため削除する。
 
-`install_codex_plugins.py`は更新前のversion名と既存の互換台帳をメモリー上で統合し、導入済みで有効な場合は`codex plugin add`を実行せずに現versionと保存済み旧versionの通常ディレクトリを同じ原本へ接続する。台帳は最終検証後にだけ確定する。
-未導入時とdisabled時だけ`plugin add`を使い、どちらも既存cacheがあればCodexが旧cache rootを除去する前に全エントリをcache root外へ退避する。
-POSIXでは通常versionディレクトリ直下のファイルとディレクトリを相対シンボリックリンクにする。
-Windowsでは非特権で作成できるディレクトリジャンクションをディレクトリへ使い、直下の通常ファイルを更新ごとに同期する。
-全version分の配置をcache root外の同一`CODEX_HOME`内で準備・退避し、台帳の存在とbytes、legacy skillリンクの種別と接続先を変更前状態として記録する。
-cache置換後にCodexの導入状態を検証し、成功後だけ台帳をatomic commitしてlegacy skillリンクを除去する。
-失敗時はこの処理が配置した内容だけを除去して、退避したsnapshot、通常versionディレクトリ又は旧互換リンク、台帳及びlegacy skillリンクを元の状態へ戻す。`plugin add`を使う経路の退避はCLI実行より前に完了させ、CLIの偽返却・例外から全installer管理状態のcommitまでを同じ復元境界に含める。
-`plugin add`が有効化まで成功した後の失敗ではCodex設定を直接書き戻さず、この呼び出しで外部・ローカルplugin処理が蓄積した案内を例外ログへ重複なく含め、復元済みcacheから次回実行を再開する。
-
-現行snapshotを維持する案は、plugin資源をdotfiles原本へ統一する目的を満たさないため採用しない。
-versionディレクトリ自体を原本へ接続する案はCodexの導入済み判定を失い、skillごとの直接リンクを復活させる案はhooks、MCP及びscriptsを被覆しないため採用しない。
-単体インストーラーと外部pluginはdotfiles原本の寿命を前提にできないため、Codexが管理するsnapshotを維持する。
+シンボリックリンク方式は代替案として却下する。
+version directoryを原本へ接続し、`plugin list`の導入済み判定だけを満たす構成では、Codexの実測で`codex debug prompt-input`のskill一覧へ`agent-toolkit:*`が1件も公開されなかった。
+公式CLIで実体導入した構成では同一覧へskillが現れたため、スキル公開を成立させる導入責務をCodex公式CLIへ戻す。
 共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
 共有文書をCodex用に複製する案は、正本・生成器・検査の同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
@@ -348,15 +401,15 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 修正担当は公開契約と承認済み変更を正本から確認し、レビュー表の指摘を採否判断して、採用指摘を実装単位commitの完全OIDへ対応付ける。
 対応付け不能、計画間衝突又は認可上限超過の場合は、履歴と作業ツリーを変更せず`needs_escalation`で返す。
 成立する場合は未pushの実装単位履歴へ修正を統合し、詳細をレビュー表と成果物へ記録して工程完了だけを返す。
-最終単位だけは修正・近接検証・stage後に`amend` phaseで再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・近接検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitを残さないことは努力目標とし、競合が生じた時点で新規commitへ切り替える。
+最終単位だけは修正・近接検証・stage後に`amend` phaseで再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・近接検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitを残さないことは努力目標とする。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正、各中間commitの公開契約を維持できない修正のいずれかでは履歴書換えを開始せず通常commitを選ぶ。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
 複数の過去単位では、各fixup作成後のclean確認で次の過去単位へ進み、全過去単位のfixup作成後に1回だけautosquashを実行する。
 未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は、`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
 remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。専用の`pre_fixup` phaseを先頭に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。
 `rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、それ以外では`not_applicable`とする。
 実装担当は履歴書換え前の完全OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容と現行Git実体を照合して回復する。準備中の証拠しかない場合又は実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。調整担当への中間受渡しと成果物・Git・検証結果の再検収は設けない。
-初回実装担当のrouteと実効`engine`、`model`及び`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、元の実装入力と正本の絶対パスを開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
-再判定不能や対象OIDのpush済み検出がある場合は`needs_escalation`で返す。
+初回実装担当のrouteと実効`engine`・`model`・`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業・指摘への対応・再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、元の実装入力と正本の絶対パスを開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
+再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
 
 利用者の認証情報ファイルは既定の認証解決経路に留め、委譲の作業領域へ移さない。
@@ -388,6 +441,7 @@ agent-toolkitプラグイン内のタスク文書と作成規範の絶対パス�
 frontmatterの`source`からエージェント由来と判定される項目は後段で優先順位4に準じて懐疑的に判定する。
 投入元識別子で由来境界を判定するが、投入元識別子やフィードバック本文から利用者認可を推定しない。
 実装担当は成果物の編集、生成、初回検証、stageとcommitを所有する。
+実装担当が着手前に実在を確認する入力は、起動時点で作成済みの計画・素材・作業ツリー・規範に限る。後段の工程で他の主体が作成する成果物の出力先パスは実在確認の対象にせず、未作成を入力の不備として扱わない。作成主体と作成時点は当該成果物の正本へ一意に置き、受領側が推定しない。
 調整役はGit状態、差分、成果物と報告済み検証結果を読み取り専用で実測し、完了条件への適合を検収する。
 背景の実装担当では、実装担当が所有する全プロセスの終了を確認した後、実行時に`ListAgents`を利用できる場合に限り、
 残る`TaskStop`対象の停止、同ツールによる稼働なし確認の順で書込所有権を移す。
@@ -451,11 +505,13 @@ Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/
 
 ### session-reviewと完了報告
 
-`session-review`の初期分析は、起動時の`orchestrate_model`で選んだ通常の読み取り専用サブエージェントだけが担う。サブエージェントはセッション全体から問題候補と再取得可能な証拠位置を列挙し、原因、対策、反映先及び採否を決めない。メインは列挙証拠だけを再取得し、問題があれば`bugfix`で原因と恒久対策を確定する。全量分析をメインでも繰り返す案と専用advisor定義は、同じ母集団の二重処理になるため採用しない。
+`agent-toolkit:session-review`の初期分析は、起動時の`orchestrate_model`で選んだ通常の読み取り専用サブエージェントだけが担う。サブエージェントはセッション全体から問題候補と再取得可能な証拠位置を列挙し、原因、対策、反映先及び採否を決めない。メインは列挙証拠だけを再取得し、問題があれば`agent-toolkit:bugfix`で原因と恒久対策を確定する。全量分析をメインでも繰り返す案と専用advisor定義は、同じ母集団の二重処理になるため採用しない。
 
 Claude Codeは現在のtranscript絶対パスを通常サブエージェントへ渡す。Codexはメインの`CODEX_THREAD_ID`を渡し、通常サブエージェントが`$CODEX_HOME/sessions/`の正本rolloutを完全suffix一致で1件だけ選ぶ。UserPromptSubmitの追加コンテキスト、振り返り境界、開始マーカー及び起動済み状態は用いない。
 
-メインの作業完了報告は`completion-report`だけが所有する。`process-feedbacks`を実行した場合、ユーザーがエージェントの誤り等を指摘した場合、又は同じ成果物・責任範囲のレビューが第3ラウンドへ到達した場合に`session-review`を起動し、その結果を固定報告へ含める。個別スキルは共通形式を持たない。
+委譲先の記録の所在は証拠抽出器が解決する。抽出器はメインの記録から、サブエージェント記録のディレクトリと委譲先セッションの識別子を導出し、導出した記録に対しても同じ導出を繰り返すことで、入れ子の委譲先まで到達する。全ての照会モードは1回の実行で全記録へ適用する。メインが委譲先の記録の絶対パスを組み立てて渡す案は、記録の所在が実行系ごとに分かれるうえ、委譲先が増えるほどメインの手順と起動回数が伸びるため採用しない。抽出器が所在を確定できなかった記録だけを`unresolved-record`として報告し、サブエージェントが未確認範囲として返す。
+
+メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。`agent-toolkit:process-feedbacks`を実行した場合、ユーザーがエージェントの誤り等を指摘した場合、又は同じ成果物・責任範囲のレビューが第3ラウンドへ到達した場合に`agent-toolkit:session-review`を起動し、その結果を固定報告へ含める。個別スキルは共通形式を持たない。
 
 工程別モデル設定は特定のagent名ではなく、委譲する工程に適用する。
 委譲主体は各起動の直前に設定を解決し、実行系に対応する起動ツールまで同じ判断として確定する。
@@ -521,10 +577,20 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 計画構造検査は他の検査と同じシェル呼び出しへ連結せず、直接返された終了コード0だけを計画自己監査と計画レビューの開始条件にする。
 計画照合では計画からの逸脱、実装漏れ、未認可の挙動変化、生成・配布経路の追随漏れを確認し、成果物評価では`review_contract`に基づき正確性、回帰、境界条件、安全性、テスト不足及び規範適合を確認する。
 
+計画レビューは、各独立要件の正常系について起動、書込み許可、配布及び成果到達を先に走査する。
+
+主体、認可、状態更新及び出力が成立した後に主要な異常系へ進む。
+
+ロック、書込所有権、排他、復旧又は移行を根拠とする指摘は、要件の出所、対象操作、操作主体、競合主体及び同時成立条件へ対応付ける。
+
+別操作の要件とレビュー中に追加した機構は、元の利用者要求へ帰属させない。
+
 3つのレビュー調整担当は担当起動、同一threadの継続、工程遷移及びメインとの中継だけを担う。
 レビュー担当はレビュー指摘管理表へ指摘を記録して指摘件数だけを返し、作業担当は詳細を成果物・計画・表へ記録して工程完了だけを返す。
 各ラウンドの`review_round`は`round`と`findings_count`だけを持ち、第3ラウンド以降はメインが表を読んで介入する。
 レビュー収束後の`merge_request`は許可checkpointであり、許可後のrebase、競合記録、必要な再レビュー、ffマージ、`adopt`ならびに所有資源回収は最後の作業担当が完了する。
+マージ許可は当該レーンが`計画実行完了`を返すまで有効とし、競合解消と再レビューを経た再収束では`merge_request`を再送しない。収束ごとに許可を失効させると、許可の再要求と統合完了が交差して、完了済みのレーンへ同じ統合指示が届くためである。
+実装レビュー担当へ渡す開始時点の完全OIDは、渡す直前に対象worktreeで解決できることを実測してから渡す。範囲起点の誤りはレビュー対象範囲の取り違えと担当側の実行失敗を生むため、記憶と転記で識別子を組み立てない。
 
 却下した代替案も同じ節へ記録する。
 構造検査の終了コードを保存する新しいwrapperは、既存の独立コマンドと直接返却値の検収で要件を満たし、終了状態の保持と別の失敗経路を増やすため採用しない。
@@ -538,31 +604,31 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 修正担当は同表の指摘を採否判断し、採用した指摘へ対応して、詳細な採否と対応結果を表へ記録する。
 レビュー指摘の永続表の構造と操作は`agent-toolkit/scripts/_review_table.py`を正本とする。
 共通のラウンド受領、モデル解決と収束判定は`agent-toolkit/share/review-loop-coordination.md`へ集約する。
-計画レビューは計画ごとの表へ`plan-review`を付け、実装レビューはレーンごとの`review.tsv`へ`implementation-review`を付ける。
+計画レビューは計画ディレクトリの`<計画stem>.plan-review.tsv`へ`plan-review`を付け、
+実装レビューは同じディレクトリの`<計画stem>.exec-review.tsv`へ`implementation-review`を付ける。
 実装レビュー担当は同じ`track`の表をラウンドごとに引き継ぎ、過去ラウンドの行を変更せず今回の候補だけを追加する。
 レビューイーは修正対象として渡された`track`集合の行だけを扱う。
-指定された管理対象領域の検収ではレビュー表と`atk review-table`が付随して作成するファイルだけを許容し、表の構造・`track`・行数を実測する。
+計画ディレクトリのレビュー表では正規のファイル名と、`atk review-table`が扱う表の構造・`track`・行数を実測する。
 各実装担当以降のHEADや`review_contract`へ混入した未承認契約は認可根拠に含めず、
 修正後の累積差分照合は重複確認として維持する。`implementation-review`以外の新規trackは生成しない。
 
 通常モードのレビュー修正では、指摘と実装単位commitの対応が確定し、各中間commitの公開契約と近接検証を維持できる場合だけ、
-実装担当へ履歴統合を認可する。対応不能又は履歴統合に失敗した場合は新規commitで対応する。
-`needs_escalation`は、指摘の採否そのものと認可範囲のいずれかで判断が必要な場合に限る。
+実装担当へ履歴統合を認可する。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正又は各中間commitの公開契約を維持できない修正では、履歴書換えを開始せず通常commitで対応する。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
+`needs_escalation`は、指摘の採否・認可範囲の判断が必要な場合に加え、履歴書換え開始後の技術的失敗で返す。技術的失敗へ添える観測項目は同節を正本とする。
 過去単位を含む場合は、fixup作成前に最古fixup対象と履歴書換え前の元HEADを保持する。
 実装担当は各fixup作成前、autosquash直前及びamend直前の各phaseで`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定を再実行する。
 同判定は`git fetch --all --prune`と`git for-each-ref --contains=<対象sha> refs/remotes/`を使う。
 未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は同判定へ一本化し、remote広告refの直積証跡・replace ref・graft・
 shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
-範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了し、各fixup対象コミットの件名が範囲内で一意であることを確認する。
-対象コミット件名が範囲内で一意でない場合、範囲にmergeが含まれる場合は、fixupを作成せず`needs_escalation`で返す。
+範囲内のfirst-parent全OIDの公開済み判定をfixup作成前に完了する。
+fixupの作成条件は、対象コミット件名が範囲内で一意であり、範囲にmergeを含まないこととする。
 この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する。
 各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）の完全一致を`git log -1 --format=%s`で確認する。
-期待件名と一致しない場合はautosquashを実行せず、作成済みfixupと作業ツリーを保持して`needs_escalation`で返す。
 初回実装担当と今回routeの実効`engine`、`model`及び`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 autosquash成功後は実装担当が`git rev-parse HEAD`で取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。
 実装担当は履歴書換え前後の完全OID対応とphaseごとの`rewrite_guard`反復証跡をレビュー表へ保存し、統合前に現行Git実体へ照合する。
-汎用判定の失敗（Gitコマンドの非0終了を含む）は履歴を書き換えず`needs_escalation`で返す。
+汎用判定と制御件名検査を含む各phaseの失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
 
 実行環境が委譲元の起動文を`user` roleで配送しても、そのtransport上のroleは人間の発話者を証明しない。
@@ -625,11 +691,11 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 書込所有権の受け渡しは、`agent-toolkit/share/plan-drafting.subagent.md`が定める「各パスの書込主体は常に1名」契約をそのまま使う。
 新しい受け渡し機構（専用の状態ファイル、追加の設定キーなど）は設けない。
-利用者確認を要する指摘は、既存の`needs_escalation`契約で呼び出し元（`plan-and-add-feedback`の実行主体）へ返す。
+利用者確認を要する指摘は、既存の`needs_escalation`契約で呼び出し元（`agent-toolkit:plan-and-add-feedback`の実行主体）へ返す。
 
 却下した代替案は次の2つである。
 
-- メイン兼任の維持（Claude Code）: `plan-and-add-feedback`経路でClaude Codeメインが計画担当と調整主体を兼ねる案は、
+- メイン兼任の維持（Claude Code）: `agent-toolkit:plan-and-add-feedback`経路でClaude Codeメインが計画担当と調整主体を兼ねる案は、
   レビューのラウンドごとに計画全文とレビュー表がメインのコンテキストへ蓄積する構造を変えないため採らない。Codexでは名前付き定義の直接適用としてメインが調整主体を担うため、この却下理由の対象外とする
 - 新しい工程別モデル設定キーの新設: `plan-review-executor`が解決する工程は既存の`plan_model`
   （起草とレビュー指摘反映）と`plan_review_model`（計画レビュー）のいずれかであり、新しい工程を持たないため採らない
@@ -646,7 +712,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 知識境界は次のとおり分ける。
 作成基準は計画ファイルが満たす成果物要件だけを持つ。
-`plan-mode`のSKILL.mdは調査から実装引き継ぎまでの手順だけを持ち、成果物契約は作成基準を参照する。
+`agent-toolkit:plan-mode`のSKILL.mdは調査から実装引き継ぎまでの手順だけを持ち、成果物契約は作成基準を参照する。
 `agent-toolkit/share/plan-review.subagent.md`は検出手技（走査の実施方法、素材・要求の照合手順、指摘の除外規律、初回・再レビューの規定、
 出力形式）だけを持ち、成果物要件を再掲しない。
 レビュー表の操作書式は`atk review-table --help`及び使用するサブコマンドの`--help`を公開正本とし、
@@ -662,7 +728,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 計画変更履歴、実行時進捗ログ及びレビュー指摘管理表は、人間の変更確認、中断再開及び個別指摘管理という異なる利用シナリオを持つ。件数又はラウンド数で相互照合しない。
 
-作成基準を独立スキルとして新設する案は、計画ファイルが`plan-mode`経由でのみ作成されて自動発火の利益が無く、
+作成基準を独立スキルとして新設する案は、計画ファイルが`agent-toolkit:plan-mode`経由でのみ作成されて自動発火の利益が無く、
 スキル一覧のdescriptionが恒常的にコンテキストを消費するため採用しない。
 検出側だけにある要件をレビュー用タスク文書へ最小追記する案は、完成条件と点検リストの二重管理が残り、
 将来の要件追加で同じ非対称が再発するため採用しない。
@@ -670,18 +736,18 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 ## レビュー担当とレビューイーの知識境界
 
 レビュー実施側と指摘受領側は、実行主体の文脈混同を防ぐため、役割別のスキルへ分離する。
-`review-standards`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害及び解消方向を定める。
+`agent-toolkit:review-standards`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害及び解消方向を定める。
 レビュー表の公開操作は`atk review-table --help`、7列TSVの構造は`_review_table.py`と`_review_table_test.py`を正本とする。
-`reviewee-standards`はレビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領した主体による修正要否の立証、安全な修正、自己点検と公開可能性の検証を定める。
+`agent-toolkit:reviewee-standards`はレビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領した主体による修正要否の立証、安全な修正、自己点検と公開可能性の検証を定める。
 
 レビュー担当はレビューイー側スキルを読まず、レビューイーはレビュー担当側スキル本文を読まない。
 計画・設計の採用案や指摘・発見の妥当性を評価する場合だけ、両者は役割中立の共通判断手順である
 `review-standards/references/judgment-details.md`を参照する。
 
-指摘受領側の4文書は`reviewee-standards`の読込指示と経路固有の返却規定だけを持つ。
+指摘受領側の4文書は`agent-toolkit:reviewee-standards`の読込指示と経路固有の返却規定だけを持つ。
 `plan-impl-executor`は指摘の採否を常に確定するため、frontmatterから同スキルを読み込む。
 単純案の比較は、一般判断向けの局所運用案を`rules/01-agent.md`と`judgment-details.md`で扱い、
-指摘修正向けの局所修正案を`reviewee-standards`で扱う。
+指摘修正向けの局所修正案を`agent-toolkit:reviewee-standards`で扱う。
 
 レビューイーは是正要求等を受領しても修正を既定とせず、通常運用での再現経路と影響を独立に実測して必要性を立証する。
 採否は何も変更しない案を含め、残置した場合の実害と認知・保守費用、修正・検証・再レビュー費用及び変更が増やす複雑性を同じライフサイクルで比較する。
@@ -691,11 +757,17 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 重大な実害、明示要件違反、公開契約違反とセキュリティ欠陥を費用だけを理由に残置しない。
 修正前に過去の指摘・採否・合意・設計理由・事故対策と既存成功経路を確認し、修正後は変更全体の自己点検と該当する機械検査を完了して、そのまま公開できる状態だけを完了とする。
 
+レビューイーは状態管理に関する指摘の操作単位対応を独立に検証する。
+
+利用者の是正又は実測で前提が失効した場合は、その前提だけへ依存する指摘、修正方針及び追加機構を次回レビュー前に撤去し、前提に依存しない要求だけを再判定する。
+
+計画レビュー修正でコーディングエージェント向け文書又は節の確定文面を全面差替えし、運用手順、参照資料、直接操作のいずれかを含む場合は、既存の接続再列挙を適用する。差替え前後の読込経路、直接操作の対象・入力・取得経路、実行時に渡す絶対パス及び契約テストを照合する。意味・動作・契約を変えない機械的修正は対象外とする。
+
 承認済み計画に基づく実装工程では、レビューイーの修正権限は計画が確定した目的、方針、採否、対象範囲及び除外・保持の内側に限る。既存実装若しくは規範との不整合を理由に確定内容を覆す修正は、レビューイーが確定せず呼び出し元へ返し、ユーザー接点を持つ主体が確認経路で解消する。矛盾の判定は計画ファイル（メイン）が保持する由来と変更履歴を入力とし、新しい状態、表の列又は工程を設けない。実装レビュー担当は再レビューでも修正箇所を計画の確定内容へ照合し、覆した箇所を指摘として登録する。
 
 レビューイー側だけへ規定する案は、覆した修正が検出されず差し戻しも生じないため採用しない。計画レビュー工程まで同じ禁止を広げる案は、計画自身の方針を更新する正規の工程を止めるため採用しない。矛盾を機械検査する案は、判定が本文の意味解釈を要し、判定対象を公開APIや実行結果から取得できないため採用しない。
 
-共通手順を`review-standards`配下の参照文書へ集約する案は、レビューイーがレビュー担当側の規範へ依存するため採用しない。
+共通手順を`agent-toolkit:review-standards`配下の参照文書へ集約する案は、レビューイーがレビュー担当側の規範へ依存するため採用しない。
 重複を残して文言だけを統一する案は、各経路の改訂で再び文言差が生じるため採用しない。
 `judgment-details.md`をレビューイー側へ移す案は、レビュー担当から役割中立の判断手順へ到達できなくなるため採用しない。
 指摘修正向けの判定文を一般判断向けの原則だけで代替する案は、修正文脈固有の適用条件を保持できないため採用しない。
@@ -706,7 +778,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 成果物の直接検査、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
-Stopは`agent-toolkit/scripts/_stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`exit-session`呼び忘れだけを扱う。利用者の意図、作業完了、振り返り要否、Git変更件数及びmanaged-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
+Stopは`agent-toolkit/scripts/_stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れだけを扱う。利用者の意図、作業完了、振り返り要否、Git変更件数及びmanaged-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
 
 `SubagentStop`、`StopFailure`及び`SessionEnd`は別イベントの既存契約として維持する。
 
@@ -824,7 +896,7 @@ CLIは内容が不要になったかを推測せず、呼び出し元もパス�
 登録済み領域の検証・列挙・回収は登録簿の`path`の親をroot境界として使い、現在の`tempfile.gettempdir()`へ再束縛しない。
 各操作はrootの非リンク・所有者・権限又はACLとidentityを、rootを開く直前及び子を操作する直前に再検証し、置換中の対象・rootを処理しない。
 実装worktreeを別namespaceへ渡す呼び出し元は、全消費主体から同一絶対パスへ到達できることを読み取り専用で確認する。
-実装レビュー用managed-temp、MQ、レビュー表、CI及びpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
+実装レビュー用managed-temp、MQ、CI及びpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
 汎用の一時ディレクトリを直接作成して再帰削除する案は、所有対象を証明できないため採用しない。
 マーカーファイルだけを信頼する案は、既存ディレクトリへ後からマーカーファイルを置く誤操作を区別できないため採用しない。
 列挙した既存領域を自動的に現在の作業へ割り当てる案も、用途と所有主体を確認できないため採用しない。
@@ -833,6 +905,10 @@ CLIは内容が不要になったかを推測せず、呼び出し元もパス�
 実体が失われ登録記録だけが残った領域は、列挙時の自動回収と、明示指定した後始末での記録の消費という2経路で整合する。
 専用の整理サブコマンドを新設する案は、許可判定と契約検査を含む同時改訂の費用が既存サブコマンドの整合化を上回るため採用しない。
 列挙を非破壊の表示へ戻す案も、実体不在の記録が増え続ける状態へ回帰するため採用しない。
+
+放置された領域の増加を後始末の呼び忘れとは独立に解消するため、最終更新から7日を超えた領域は`atk`の任意のコマンド実行時に自動削除する。専用のサブコマンドや常駐処理は新設しない。判定に作成時刻を使うと中断後に再開した領域を誤って削除するため、領域内を含む最終更新日時を使う。`.git`を含む領域は、git worktreeとリポジトリの複製を巻き込まないよう自動削除から除外する。
+
+管理CLIは領域の真正性と更新時刻だけを知り、キューの処理状況は知らない。対応フィードバックのファイル名は登録情報へ記録するが、削除判定には使わない。キューの状態を判定へ持ち込むと、キューに依存しない現行構成が崩れるためである。削除の実行を明示指定に限る案は、呼び忘れによる蓄積という観測事象を解消しないため採用しない。
 
 ## developとmasterのbranch・リリース設計
 
@@ -845,11 +921,10 @@ repository設定ではマージコミットを有効にし、squash merge、reba
 既定branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
-rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の7必須check、削除禁止及びforce push禁止を設定する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の6必須check、削除禁止及びforce push禁止を設定する。
 
 - `test-linux`
 - `test-windows`
-- `python-lint (3.12)`
 - `python-lint (3.13)`
 - `python-lint (3.14)`
 - `rust-lint`
@@ -860,19 +935,19 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 共通CIは`push`と`master`向け`pull_request`の全経路でjobを開始し、job表示名とmatrixを評価する。
 共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
 
-| イベント | head repository | head branch | base branch | 共通6 jobの実処理所有者 | 表示名 |
+| イベント | head repository | head branch | base branch | 共通5 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | 任意 | 該当なし | `push` run | 6件のrequired check名 |
-| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 6件の`(non-owner)`名 |
-| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 6件のrequired check名 |
-| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 6件のrequired check名 |
+| `push` | base repository | 任意 | 該当なし | `push` run | 5件のrequired check名 |
+| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 5件の`(non-owner)`名 |
+| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 5件のrequired check名 |
+| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 5件のrequired check名 |
 
 同一repositoryのheadが`develop`、baseが`master`のpull requestでは、共通jobの先頭で非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
 このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
 非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、`test-windows`は`pwsh`、その他の共通jobは`bash`を明示する。
 `rust-lint`の既存job既定作業場所は維持し、非所有markerだけがworkspace rootを明示して既定を上書きする。
 
-job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の6件の表示名を保証できない。
+job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の5件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
 pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示すが、check runの`head_sha`はstatusを関連付けるpull request head commitを示すため、両者を同一視しない。
 `master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
@@ -880,7 +955,7 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 statuslineのCargo versionとbase・head version及びtagの検査は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
 同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。
-ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、既存6名を変更しない。
+ruleset `21524717`のrequired checkは共通5名と`statusline-version`の6件とし、既存5名を変更しない。
 ruleset更新の失敗又は更新後の検査不一致時は現行状態を再取得し、追加のPUTを実行せず、変更前状態と現行状態を保持して`needs_escalation`で終端する。
 
 ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch ruleset及び`refs/heads/master`を確認する。
@@ -914,7 +989,7 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインが版数・生成物同期、push、CI及び終端工程を1回だけ実行する。
 
-`process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`completion-report`を起動する。`completion-report`は必須の`session-review`と固定報告を完了し、その後に`exit-session`を起動する。各工程は同じ完了本文を再生成しない。
+`agent-toolkit:process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。
 
 本文の明示記載を不可逆操作の認可とし、明記のない操作はTBDへ送る。
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、
@@ -945,11 +1020,24 @@ detail側は、検索範囲、一致・不一致結果、対象判断、変更�
 ファイル間の参照はメイン側からdetail側への片方向だけとし、対応はstem一致で確定する。
 既存の単一ファイル形式と素材・要求IDを持つ二ファイル形式は読み取り互換として受理する。
 
+新規計画は`$(atk config get private_notes)/plans/yyyy/MM/dd-{名称}-{小文字16進数4桁}.md`と同じstemの`.detail.md`を同じディレクトリへ保存する。
+plan-modeの内部作成経路が同じディレクトリで二ファイルを準備し、stemを確定してから構造検査へ渡す。
+永続する本文・detail・付属ファイル・レビュー表・キューの`plan_file`は、固定接頭辞を含む可搬表記で保存する。
+実行時のファイル操作、session state及び診断は解決済み絶対パスを使う。
+計画レビューと実装後レビューが収束した時点で、所有主体は計画stemのバンドルだけを`atk plans commit`へ渡し、別stemの差分を含めない。
+旧`~/.claude/plans/`直下の既存計画と過去に保存された絶対パスは読み書き互換として扱うが、新規作成先には使わない。
+
+この保存契約の目的は、計画の物理的な保存先をprivate-notesへ集約し、複数環境で同じ参照値を利用しながら、計画のレビュー時点をGit履歴へ残すことである。
+知識境界は、保存rootと可搬表記の解決を`_plan_file.py`、二ファイル作成と構造検査の接続をplan-mode、操作許可と早期警告を各フック、利用者向けの操作説明を本リポジトリのガイドへ分ける。
+新規作成を旧rootへ継続する案は、環境固有のhomeに依存して可搬参照とprivate-notesのGit同期を分断するため採用しない。
+任意の保存先をshell展開する公開作成CLIを設ける案は、コマンド置換と作成責務の境界を増やすため採用しない。
+メインとdetailを別々の直接Writeで確定する案は、片側だけが残る計画を生むため採用しない。
+
 ## バグ調査の原因分析機構
 
 バグ調査ファイルは、原因分析表と調査表の2表でバグ単位を表す。
 原因分析表は`要因系統`、`L1 現象`、`L2 判断`、`L3 構造`、`L4 システム`の5列に、
-`作り込み要因`と`見逃し要因`の2行を持つ。調査表は`項目`・`内容`の2列に12行を持つ。
+`実装に起因する要因`と`検出に至らなかった要因`の2行を持つ。調査表は`項目`・`内容`の2列に12行を持つ。
 
 段階を列として持つのは、各セルがどの問いへの答えかを表構造から確定するためである。
 行名の列挙だけで記録対象を示す方式では、各記述がどの深さに到達したかを起草側もレビュー側も判定できず、
@@ -983,7 +1071,7 @@ TBD終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 それぞれ独立しており、かつ分割によってrevertの単位又は公開契約の境界を分ける利益がある場合に限る。
 細かい分割はレビュー修正時のfixupとautosquashで競合を招くため、既定では分割しない。
 
-実装単位は、変更する定義、その直接消費側、契約テスト及び生成・配布物のうち中間commitの正式な近接検証に必要な対象を含む。検索で確認した直接参照だけを扱い、推測した間接依存と無関係な同語使用は含めない。先行commitだけで後続単位着手前の近接検証が成功する場合だけ分割する。
+実装単位は、変更する定義、その直接消費側、契約テスト及び生成・配布物のうち中間commitの正式な近接検証に必要な対象を含む。検索で確認した直接参照だけを扱い、推測した間接依存と無関係な同語使用は含めない。先行commitだけで後続単位着手前の近接検証が成功する場合だけ分割する。この近接検証の条件は分割する場合にだけ判定し、既定の単一commitでは中間commitが生じないため適用しない。
 計画担当はcommit境界を設計し、構造検査は実装単位名の一意性、先行依存先の実在、統合順、空欄を検査する。
 `plan-impl-executor`は検査済みの各単位を先行依存と統合順に従って実装担当へ渡し、各commitと実装単位名の対応を維持する。
 人間向けの実施内容表へ実装単位名を複製せず、採否判断と実装順序の知識境界を維持する。
@@ -992,11 +1080,15 @@ TBD終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 
 ## 規範の正本集約と参照方向
 
-複数の実行主体が使う契約は、契約本文を1つの正本へ置き、各主体の文書には読む時点と経路固有の差分だけを残す。一括取得は`add-feedback`、採否レコードは`process-feedbacks`、履歴書換えは`commit`、レビュー観点は`review-standards`を正本とする。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
+複数の実行主体が使う契約は、契約本文を1つの正本へ置き、各主体の文書には読む時点と経路固有の差分だけを残す。一括取得は`agent-toolkit:add-feedback`、採否レコードは`agent-toolkit:process-feedbacks`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`を正本とする。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
 
 判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全又は公開契約を保護する場合を除き、各エージェント文書へ常設しない。
 
 呼び出し元は割当と認可を知り、受信側は自身の実行手順と出力を知る。この知識境界を維持するため、同じ契約を呼び出し元文書とagent定義へ複製しない。正本宣言と本文複製を併存させる案は同期漏れを残すため採用しない。共通文書を契約ごとに新設する案も参照段数を増やすため、既存の責務所有者へ集約できる場合は採用しない。
+
+委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」を単一の正本とする。
+`agent-toolkit/agents/plan-impl-executor.md`と`agent-toolkit/share/implementation.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。
+同じ判定条件を3文書へ複製した結果、暫定修正で1文書だけが旧規定のまま残り、実装担当が矛盾を報告する事象が発生したためである。
 
 サブエージェントを起動する手順は、呼び元用文書（`<役割名>.parent.md`）と呼び先用文書（`<役割名>.subagent.md`）のペアへ分け、呼び先の所在にかかわらずプラグインの`share/`配下へ置く。`agents/`配下の定義とスキル本体の双方から同じ役割を起動する場合も、両者が`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`という同じ形式で参照先を解決できる。呼び元用文書は起動経路、渡す入力、受領するcheckpointと検収条件だけを持ち、呼び先固有の作業手順を複製しない。呼び先用文書は責務、入力、実行手順及び出力形式だけを持ち、呼び出し元の割当・認可判断を複製しない。定義済みサブエージェント自体が呼び先の場合は、定義本文が呼び先用文書を兼ねるため呼び元用文書だけを置く。
 却下した代替案は、呼び先用文書を各スキルの`references/`配下に残し、`agents/`配下の定義から読むものだけを`share/`へ移す案である。計画レビュー担当の呼び先用文書（`agent-toolkit/share/plan-review.subagent.md`）のようにスキル本体と`agents/`配下の定義の双方から参照される文書の所在が一意に定まらず、同じ役割の起動手順が2箇所へ分かれるため採らない。

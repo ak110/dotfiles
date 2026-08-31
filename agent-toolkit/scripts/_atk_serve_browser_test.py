@@ -297,10 +297,24 @@ def _write_entries(root: Path) -> None:
         )
 
 
+@pytest_asyncio.fixture(scope="session", name="browser")
+async def _browser_fixture() -> AsyncGenerator[playwright.async_api.Browser]:
+    playwright_instance = await playwright.async_api.async_playwright().start()
+    browser = None
+    try:
+        browser = await playwright_instance.chromium.launch()
+        yield browser
+    finally:
+        if browser is not None:
+            await browser.close()
+        await playwright_instance.stop()
+
+
 @pytest_asyncio.fixture(name="browser_harness")
 async def _browser_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_BrowserHarness]:
     _write_entries(tmp_path)
     original_parse = serve_app.frontmatter.parse_frontmatter
@@ -334,13 +348,9 @@ async def _browser_harness_fixture(
         await shutdown.wait()
 
     server_task = asyncio.create_task(app.run_task("127.0.0.1", port, shutdown_trigger=shutdown_trigger))
-    playwright_instance = None
-    browser = None
     context = None
     try:
         await _wait_for_server(port)
-        playwright_instance = await playwright.async_api.async_playwright().start()
-        browser = await playwright_instance.chromium.launch()
         context = await browser.new_context()
         page = await context.new_page()
         yield _BrowserHarness(
@@ -354,10 +364,6 @@ async def _browser_harness_fixture(
     finally:
         if context is not None:
             await context.close()
-        if browser is not None:
-            await browser.close()
-        if playwright_instance is not None:
-            await playwright_instance.stop()
         shutdown.set()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task
@@ -636,14 +642,14 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
         lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=agent&page=1")
     ):
         await page.locator("#source-filter").select_option("agent")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     await playwright.async_api.expect(feedback_row).to_be_visible()
+    await playwright.async_api.expect(empty_row).to_be_visible()
     async with page.expect_response(
         lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=human&page=1")
     ):
         await page.locator("#source-filter").select_option("human")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(1)
-    await playwright.async_api.expect(empty_row).to_be_visible()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await page.locator("#clear-filters-button").click()
 
     await page.locator("#target-filter").select_option("example/repo")
@@ -789,6 +795,44 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#delete-button")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_hold_and_rejected_details_offer_recovery_operations(browser_harness: _BrowserHarness) -> None:
+    """保留中の全操作と、不採用項目のinbox復帰操作を実ブラウザーで表示する。"""
+    harness = browser_harness
+    page = harness.page
+    hold = harness.root / "hold"
+    hold.mkdir()
+    (hold / "held-feedback.md").write_text(
+        "---\ntype: feedback\ntarget_repo: held/repo\nsource: session-review\n---\n\n保留中の本文\n",
+        encoding="utf-8",
+    )
+    (hold / "held-question.md").write_text(
+        "---\ntype: tbd\ntarget_repo: held/repo\nquestion_type: free-form\n---\n\n"
+        "## 質問\n\n保留中の質問\n\n## 回答\n\n"
+        "<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    await page.goto(browser_harness.base_url + "/")
+    await page.locator("#state-filter").select_option("all")
+    detail = page.get_by_role("dialog", name="詳細")
+
+    await page.locator('.entry-select[data-key="hold/held-feedback.md"]').click()
+    for button_name in ("編集", "採用", "却下", "保留を解除", "削除"):
+        await playwright.async_api.expect(detail.get_by_role("button", name=button_name, exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_visible()
+    await page.keyboard.press("Escape")
+
+    await page.locator('.entry-select[data-key="hold/held-question.md"]').click()
+    await playwright.async_api.expect(detail.get_by_role("button", name="回答", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.get_by_role("button", name="採用", exact=True)).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#reject-button")).to_be_hidden()
+    await page.keyboard.press("Escape")
+
+    await page.locator('.entry-select[data-key="rejected/rejected.md"]').click()
+    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_hidden()
+    await playwright.async_api.expect(detail.get_by_role("button", name="inboxへ戻す", exact=True)).to_be_visible()
 
 
 @pytest.mark.asyncio
@@ -1459,9 +1503,10 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     detail = page.get_by_role("dialog", name="詳細")
 
     await page.locator('.entry-select[data-key="inbox/empty.md"]').click()
+    await playwright.async_api.expect(detail).to_be_visible()
     await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_hidden()
     await page.keyboard.press("Escape")
-    await detail.wait_for(state="hidden")
+    await playwright.async_api.expect(detail).to_be_hidden()
 
     await page.locator('.entry-select[data-key="inbox/feedback.md"]').click()
     comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)

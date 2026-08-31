@@ -36,6 +36,15 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _write_tbd_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
+_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+
+
+@pytest.fixture(autouse=True)
+def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """回答テストをホスト側のエージェント環境変数から隔離する。"""
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
 
 def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
     """TBD投入検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
@@ -883,6 +892,49 @@ class TestTbdAnswerNonInteractive:
         assert "回答はTBDのエントリにのみ適用できます" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
+def test_agent_environment_rejects_tbd_answer_before_writing(
+    environment_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各エージェント環境ではTBD回答をCLI入口で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    filename = f"{_FIXED_TIMESTAMP}-001.md"
+    path = _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+    before = path.read_bytes()
+    for name in _AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(environment_name, "1")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "answer", filename, "採用する"], home=tmp_path)
+
+    assert exc_info.value.code == 1
+    assert path.read_bytes() == before
+    assert (
+        capsys.readouterr().err
+        == "TBDの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。\n"
+    )
+
+
+def test_answer_tbd_common_core_accepts_agent_environment(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ブラウザー経路が使う共有中核はエージェント環境でも回答を保存する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_tbd_file(notes, "tbd.md", question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+    assert tbd_module.answer_tbd(notes, filename=path.name, answer="採用する")
+    assert path.read_text(encoding="utf-8").endswith("採用する\n")
+
+
 class TestTbdAdopt:
     """TBD採用: inboxからadopted/へ移動しコミットする。"""
 
@@ -1348,17 +1400,19 @@ def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
     assert processing.read_text(encoding="utf-8").endswith("従来経路の回答\n")
 
 
-def test_answer_tbd_rejects_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """hold上のTBDは一覧に表示しても回答操作の対象にしない。"""
+def test_answer_tbd_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hold上のTBDへ明示状態指定で回答する。"""
     notes = _setup_notes(tmp_path)
     held = _write_tbd_file(notes, "held.md")
+    held.write_text(held.read_text(encoding="utf-8") + f"{tbd_module.ANSWER_MARKER}\n", encoding="utf-8")
     (notes / "hold").mkdir()
     held.rename(notes / "hold/held.md")
     monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    with pytest.raises(tbd_module.WebInputError, match="stateはinbox又はprocessing"):
-        tbd_module.answer_tbd(notes, filename="held.md", state="hold", answer="回答")
+    assert tbd_module.answer_tbd(notes, filename="held.md", state="hold", answer="回答") is True
+    assert (notes / "hold/held.md").read_text(encoding="utf-8").endswith("回答\n")
 
 
 def test_reject_reserved_tbd_markup_allows_plain_body() -> None:

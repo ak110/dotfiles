@@ -29,6 +29,63 @@ def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(_remote_helper, "_CREATION_TIME_INDEX_PATH", index_path)
 
 
+@pytest.mark.parametrize(
+    ("rel", "expected"),
+    [
+        ("plan.md", True),
+        ("plan.detail.md", True),
+        ("plan.bugs.md", True),
+        ("plan.plan-review.tsv", True),
+        ("plan.exec-review.tsv", True),
+        ("plan.plan-review.tsv.lock", False),
+        ("plan.plan-review.entries.tsv", False),
+        ("plan.tsv", False),
+        (".cache/plan.md", True),
+        ("plan.txt", False),
+    ],
+)
+def test_remote_safe_relative_path_suffix_boundary(rel: str, expected: bool) -> None:
+    """SSHへ渡す対象接尾辞の境界を固定する。dotdir除外はリモートヘルパー側で行う。"""
+    assert _remote.is_safe_remote_relpath(rel) is expected
+
+
+def test_remote_helper_target_and_listed_path_sets(tmp_path: Path) -> None:
+    """リモートヘルパーの読取対象と一覧対象がローカル側と同じ集合になる。"""
+    # SSH先で単独実行されるヘルパーの境界関数を直接検証する。
+    is_target_path = _remote_helper._is_target_path  # pylint: disable=protected-access  # noqa: SLF001
+    is_listed_path = _remote_helper._is_listed_path  # pylint: disable=protected-access  # noqa: SLF001
+    target_names = ("plan.md", "plan.detail.md", "plan.bugs.md", "plan.plan-review.tsv", "plan.exec-review.tsv")
+    rejected_names = ("plan.plan-review.tsv.lock", "plan.plan-review.entries.tsv", "plan.tsv", "plan.txt")
+    for name in (*target_names, *rejected_names):
+        (tmp_path / name).write_text("本文", encoding="utf-8")
+    (tmp_path / ".cache").mkdir()
+    hidden = tmp_path / ".cache" / "plan.md"
+    hidden.write_text("本文", encoding="utf-8")
+
+    assert {name for name in target_names if is_target_path(tmp_path / name, tmp_path)} == set(target_names)
+    assert {name for name in target_names if is_listed_path(tmp_path / name, tmp_path)} == {"plan.md"}
+    assert not any(is_target_path(tmp_path / name, tmp_path) for name in rejected_names)
+    assert not is_target_path(hidden, tmp_path)
+
+
+def test_remote_helper_resolve_target_suffix_boundary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """リモートの単一ファイル取得は正規TSVだけを受理し、他のTSVを拒否する。"""
+    monkeypatch.setattr(_remote_helper, "ROOT", tmp_path)
+    resolve_target = _remote_helper._resolve_target  # pylint: disable=protected-access  # noqa: SLF001
+    accepted = ("plan.md", "plan.plan-review.tsv", "plan.exec-review.tsv")
+    rejected = ("plan.entries.tsv", "plan.tsv", "plan.plan-review.tsv.lock")
+    for name in (*accepted, *rejected):
+        (tmp_path / name).write_text("本文", encoding="utf-8")
+
+    for name in accepted:
+        encoded = base64.b64encode(name.encode()).decode()
+        assert resolve_target(encoded) == (tmp_path / name).resolve()
+    for name in rejected:
+        encoded = base64.b64encode(name.encode()).decode()
+        with pytest.raises(FileNotFoundError):
+            resolve_target(encoded)
+
+
 def _watcher_with_failing_rpc(host: str, monkeypatch: pytest.MonkeyPatch) -> _remote.RemoteWatcher:
     """接続済みだがRPCが必ず失敗するwatcherを返す（SSHフォールバック経路の検証用）。"""
     watcher = _remote.RemoteWatcher(host, _state.BroadcastState())
@@ -372,6 +429,35 @@ class TestRemoteHostIntegration:
             ("local-host", "local.md"),
         ]
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("suffix", [".plan-review.tsv", ".exec-review.tsv"])
+    async def test_api_search_connects_remote_review_table_match_to_main_plan(
+        self,
+        tmp_path: Path,
+        suffix: str,
+    ) -> None:
+        """リモートのレビュー指摘管理表だけの一致から、選択可能な計画ファイル（メイン）を返す。"""
+
+        async def runner(host: str, op: str, args: list[str]) -> str:
+            assert host == "host1"
+            assert op == "search"
+            assert args
+            return json.dumps({"paths": [f"sample{suffix}"]})
+
+        app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
+        state: _state.BroadcastState = app.config["PLANS_STATE"]
+        _seed_remote_cache(
+            state,
+            "host1",
+            [{"path": "sample.md", "name": "sample.md", "mtime_epoch": 1.0, "ctime_epoch": 1.0}],
+        )
+
+        response = await app.test_client().get("/api/search", query_string={"q": "固有検索語"})
+
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert [(entry["host"], entry["path"]) for entry in data] == [("host1", "sample.md")]
+
     def test_remote_creation_time_cache_survives_updates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """リモート側も編集後に初回観測時の作成日時を維持する。"""
         root = tmp_path / "plans"
@@ -534,21 +620,33 @@ class TestRemoteHostIntegration:
 
         assert response.status_code == 200
         body = await response.get_data(as_text=True)
-        assert '<a href="#" data-plan-path="foo.detail.md">実装詳細を開く</a>' in body
+        assert '<a href="#" data-plan-path="foo.detail.md">詳細</a>' in body
+        assert "を開く" not in body
 
     @pytest.mark.asyncio
     async def test_api_file_for_remote_host_navigates_symmetrically_between_attached_plans(self, tmp_path: Path):
-        """リモートでもbase・detail・bugsの実在ページ間を相互に移動できる。"""
+        """リモートでも同じstemの5ファイル間を相互に移動できる。"""
+        review_row = "\t".join(
+            json.dumps(value, ensure_ascii=False) for value in ("1", "track", "場所", "指摘", "要", "対応", "")
+        )
         runner = _FakeSshRunner(
             read_responses={
                 ("host1", "foo.md"): "# base\n",
                 ("host1", "foo.detail.md"): "# detail\n",
                 ("host1", "foo.bugs.md"): "# bugs\n",
+                ("host1", "foo.plan-review.tsv"): review_row,
+                ("host1", "foo.exec-review.tsv"): review_row,
             },
         )
         app = _app.create_app(tmp_path, hostname="local-host", remote_hosts=["host1"], ssh_runner=runner)
         client = app.test_client()
-        labels = {"foo.md": "計画本体", "foo.detail.md": "実装詳細", "foo.bugs.md": "バグ調査"}
+        labels = {
+            "foo.md": "メイン",
+            "foo.detail.md": "詳細",
+            "foo.bugs.md": "バグ",
+            "foo.plan-review.tsv": "計画レビュー指摘管理表",
+            "foo.exec-review.tsv": "実行レビュー指摘管理表",
+        }
 
         for current, current_label in labels.items():
             response = await client.get(f"/api/file?host=host1&path={current}")
@@ -560,7 +658,30 @@ class TestRemoteHostIntegration:
                 if target == current:
                     assert f'data-plan-path="{target}"' not in body
                 else:
-                    assert f'<a href="#" data-plan-path="{target}">{target_label}を開く</a>' in body
+                    assert f'<a href="#" data-plan-path="{target}">{target_label}</a>' in body
+            assert "を開く" not in body
+
+    @pytest.mark.asyncio
+    async def test_api_file_for_remote_host_renders_review_table(self, tmp_path: Path):
+        """リモートのレビュー指摘管理表もHTML表へ変換する。"""
+        row = "\t".join(
+            json.dumps(value, ensure_ascii=False)
+            for value in ("1", "implementation-review", "a.py:1", "指摘", "要", "対応", "")
+        )
+        runner = _FakeSshRunner(read_responses={("host1", "foo.exec-review.tsv"): row})
+        client = _app.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        ).test_client()
+
+        response = await client.get("/api/file?host=host1&path=foo.exec-review.tsv")
+
+        body = await response.get_data(as_text=True)
+        assert response.status_code == 200
+        assert "<th>ラウンド</th>" in body
+        assert "<td>implementation-review</td>" in body
 
     @pytest.mark.asyncio
     async def test_api_file_for_remote_host_omits_detail_link_when_absent(self, tmp_path: Path):
@@ -626,6 +747,24 @@ class TestRemoteHostIntegration:
 
         assert response.status_code == 200
         assert response.content_type == "text/markdown; charset=utf-8"
+        assert await response.get_data(as_text=True) == body_src
+
+    @pytest.mark.asyncio
+    async def test_api_raw_for_remote_host_returns_review_table_as_plain_text(self, tmp_path: Path):
+        """リモートのレビュー指摘管理表原文をtext/plainで返す。"""
+        body_src = '"1"\t"track"\t"場所"\t"指摘"\t"要"\t"対応"\t""\n'
+        runner = _FakeSshRunner(read_responses={("host1", "foo.plan-review.tsv"): body_src})
+        client = _app.create_app(
+            tmp_path,
+            hostname="local-host",
+            remote_hosts=["host1"],
+            ssh_runner=runner,
+        ).test_client()
+
+        response = await client.get("/api/raw?host=host1&path=foo.plan-review.tsv")
+
+        assert response.status_code == 200
+        assert response.content_type == "text/plain; charset=utf-8"
         assert await response.get_data(as_text=True) == body_src
 
     @pytest.mark.asyncio

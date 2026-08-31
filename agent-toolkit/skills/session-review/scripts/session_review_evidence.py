@@ -10,7 +10,7 @@
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
-`agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+`agent-toolkit:agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と照会不能（モード併用・不正な正規表現・範囲外の行番号）を終了コード2とする区分だけを踏襲する。
 """
 
@@ -31,9 +31,11 @@ _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
 _WARNING_LINE_PATTERN = re.compile(
-    r"^\s*(?:\d+\t)?(?:"
+    r"^(?:"
+    r"\s*(?:\d+\t)?(?:"
     r"(?:\[auto-generated:[^\]]+\]\s*)?\[(?:warn|warning)\](?:\s|$)|"
-    r"⚠(?:\s+|\s*[:：])|"
+    r"⚠(?:\s+|\s*[:：])"
+    r")|"
     r"(?:warning|warn|警告)\s*[:：]"
     r")",
     re.IGNORECASE,
@@ -45,7 +47,7 @@ _STRUCTURED_WARNING_BODY_KEYS = ("text", "message", "detail", "description", "ou
 _STRUCTURED_WARNING_STREAM_KEYS = ("stdout", "stderr")
 _LINE_NUMBER_PREFIX = re.compile(r"^\s*\d+\t(.*)$")
 _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
-_SELF_SCRIPT_STEM = "_session_review_evidence"
+_SELF_SCRIPT_STEM = "session_review_evidence"
 _SEGMENT_SEPARATORS = re.compile(r"[;&|]+")
 _PATH_SEPARATORS = re.compile(r"[/\\]")
 _ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -64,6 +66,7 @@ _FALLBACK_TEXT = (
     "transcript_pathを読み取れないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
+_CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
 _METADATA_KEYS = frozenset(
     {
         # 識別子・署名
@@ -143,6 +146,26 @@ class _Record(NamedTuple):
     line: int
     text: str
     entry: dict[str, Any]
+
+
+class _CollectedRecord(NamedTuple):
+    """全照会モードが共有する、由来と識別子を持つ1記録。"""
+
+    record_id: str
+    path: Path
+    records: list[_Record]
+    runtime: _Runtime | None
+    source_record: str | None
+    source_line: int | None
+    agent_type: str | None
+    role: Literal["main", "subagent", "session"]
+
+
+class _UnresolvedRecord(NamedTuple):
+    """委譲識別子は得られたが正本を読み込めなかった記録。"""
+
+    record_id: str
+    line: int
 
 
 def _clip(text: str, limit: int = _MAX_TEXT_LENGTH) -> str:
@@ -315,12 +338,19 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
+    """記録全体が1件のサブエージェントの会話かを返す。"""
+    conversation = [entry for entry in entries if entry.get("type") in {"user", "assistant"}]
+    return bool(conversation) and all(entry.get("isSidechain") is True for entry in conversation)
+
+
 def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
     """Claude Code形式を由来別の共通イベントへ変換する。"""
     events: list[dict[str, Any]] = []
     pending_question_lines: dict[str, int] = {}
+    subagent_record = _is_subagent_record(entries)
     for line, entry in zip(lines, entries, strict=True):
-        for event in _claude_entry_events(entry, line, pending_question_lines):
+        for event in _claude_entry_events(entry, line, pending_question_lines, subagent_record):
             event.setdefault("line", line)
             events.append(event)
     return events
@@ -330,10 +360,15 @@ def _claude_entry_events(
     entry: dict[str, Any],
     line: int,
     pending_question_lines: dict[str, int],
+    subagent_record: bool = False,
 ) -> list[dict[str, Any]]:
-    """Claude Codeの1エントリから共通イベントを取得する。"""
+    """Claude Codeの1エントリから共通イベントを取得する。
+
+    メイン記録に混在するサブエージェントのエントリは完了報告だけを残す。
+    記録全体が1件のサブエージェントの会話である場合は、走査対象そのものであるため通常のエントリとして扱う。
+    """
     events: list[dict[str, Any]] = []
-    if entry.get("isSidechain") is True:
+    if entry.get("isSidechain") is True and not subagent_record:
         completion = _completion_event(entry)
         if completion:
             events.append(completion)
@@ -828,38 +863,6 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
     return summary
 
 
-def _stats_subagent_records(
-    transcript_path: str,
-) -> tuple[list[tuple[str, str | None, list[_Record]]], int]:
-    """サブエージェント記録の選択結果と列挙した記録ファイル数を返す。
-
-    記録ファイル数は主体別集計イベントを出力するかどうかの判定に用いる。
-    """
-    path = Path(transcript_path)
-    subagent_dir = path.with_suffix("") / "subagents"
-    try:
-        paths = sorted(subagent_dir.glob("agent-*.jsonl"))
-    except OSError:
-        return [], 0
-
-    selected: list[tuple[str, str | None, list[_Record]]] = []
-    for record_path in paths:
-        agent_id = record_path.stem
-        records = _load_records(str(record_path))
-        if records is None:
-            continue
-        meta_path = record_path.with_name(f"{agent_id}.meta.json")
-        try:
-            raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, ValueError):
-            raw_meta = {}
-        if not isinstance(raw_meta, dict):
-            raw_meta = {}
-        agent_type = raw_meta.get("agentType") if isinstance(raw_meta.get("agentType"), str) else None
-        selected.append((agent_id, agent_type, records))
-    return selected, len(paths)
-
-
 def _thread_id_from_mapping(value: Any) -> str | None:
     if not isinstance(value, dict):
         return None
@@ -963,49 +966,100 @@ def _session_path(engine: _Runtime, session_id: str) -> Path | None:
     return _rollout_path(session_id) if engine == "codex" else _claude_transcript_path(session_id)
 
 
-def _stats_thread_records(
-    main_records: list[_Record],
-    subagents: list[tuple[str, str | None, list[_Record]]],
-) -> dict[tuple[_Runtime, str], tuple[int, str | None]]:
-    """主記録・補助記録から委譲先sessionをエンジン別に再帰列挙する。
+def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
+    """Claude記録に付随するサブエージェント記録をファイル名順で返す。"""
+    if source.runtime != "claude":
+        return []
+    subagent_dir = source.path.with_suffix("") / "subagents"
+    try:
+        paths = sorted(subagent_dir.glob("agent-*.jsonl"))
+    except OSError:
+        return []
+    selected: list[_CollectedRecord] = []
+    for path in paths:
+        records = _load_records(str(path))
+        if records is None:
+            continue
+        meta_path = path.with_name(f"{path.stem}.meta.json")
+        try:
+            raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            raw_meta = {}
+        agent_type = raw_meta.get("agentType") if isinstance(raw_meta, dict) else None
+        record_id = path.stem if source.record_id == "main" else f"{source.record_id}/{path.stem}"
+        selected.append(
+            _CollectedRecord(
+                record_id,
+                path,
+                records,
+                _detect_runtime([record.entry for record in records]),
+                source.record_id,
+                None,
+                agent_type if isinstance(agent_type, str) else None,
+                "subagent",
+            )
+        )
+    return selected
 
-    直接の委譲先だけでなく、rollout内の`SubAgentActivity`から得られる子孫も探索する。
-    同じrolloutを複数の親が参照しても一度だけ処理し、循環した委譲木で停止しない。
-    """
-    threads: dict[tuple[_Runtime, str], tuple[int, str | None]] = {}
-    pending: list[tuple[_Runtime, str, int, str | None]] = []
 
-    def add(engine: _Runtime, session_id: str, line: int, agent_id: str | None) -> None:
-        key = (engine, session_id)
-        if key not in threads:
-            threads[key] = (line, agent_id)
-            pending.append((engine, session_id, line, agent_id))
-
-    for record in main_records:
-        for engine, session_id in _thread_ids_from_record(record):
-            add(engine, session_id, record.line, None)
-    for agent_id, _, records in subagents:
-        for record in records:
+def _collect_records(
+    transcript_path: str, main_records: list[_Record]
+) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
+    """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
+    main_path = Path(transcript_path)
+    collected = [
+        _CollectedRecord(
+            "main",
+            main_path,
+            main_records,
+            _detect_runtime([record.entry for record in main_records]),
+            None,
+            None,
+            None,
+            "main",
+        )
+    ]
+    seen_paths = {main_path.resolve()}
+    seen_sessions: set[tuple[_Runtime, str]] = set()
+    unresolved: list[_UnresolvedRecord] = []
+    index = 0
+    while index < len(collected):
+        source = collected[index]
+        index += 1
+        for subagent in _subagent_records(source):
+            resolved = subagent.path.resolve()
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
+            collected.append(subagent)
+        for record in source.records:
             for engine, session_id in _thread_ids_from_record(record):
-                add(engine, session_id, record.line, agent_id)
+                session_key = (engine, session_id)
+                if session_key in seen_sessions:
+                    continue
+                seen_sessions.add(session_key)
+                record_id = f"{engine}:{session_id}"
+                path = _session_path(engine, session_id)
+                if path is None:
+                    unresolved.append(_UnresolvedRecord(record_id, record.line))
+                    continue
+                resolved = path.resolve()
+                if resolved in seen_paths:
+                    continue
+                records = _load_records(str(path))
+                if records is None:
+                    unresolved.append(_UnresolvedRecord(record_id, record.line))
+                    continue
+                seen_paths.add(resolved)
+                collected.append(
+                    _CollectedRecord(record_id, path, records, engine, source.record_id, record.line, None, "session")
+                )
+    return collected, unresolved
 
-    visited: set[tuple[_Runtime, str]] = set()
-    while pending:
-        engine, session_id, line, agent_id = pending.pop(0)
-        key = (engine, session_id)
-        if key in visited:
-            continue
-        visited.add(key)
-        transcript = _session_path(engine, session_id)
-        if transcript is None:
-            continue
-        session_records = _load_records(str(transcript))
-        if session_records is None:
-            continue
-        for record in session_records:
-            for child_id in _native_agent_thread_ids(record.entry):
-                add("codex", child_id, line, agent_id)
-    return threads
+
+def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
+    """解決できなかった委譲先を機械可読イベントへ変換する。"""
+    return [{"kind": "unresolved-record", "record": item.record_id, "line": item.line} for item in unresolved]
 
 
 def _claude_call_hint(block_input: Any) -> str | None:
@@ -1146,7 +1200,7 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
     ]
 
 
-def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: str) -> list[dict[str, Any]]:
+def _stats_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """セッション全体を対象とした集計イベント列を返す。
 
     `stats-total`はメイン記録・全サブエージェント記録・全Codexスレッドの3区分の合算とする。
@@ -1157,39 +1211,33 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
     内包されるため、レコード単位で変換してから合算した値と、合算してから変換した値は一致する。
     個別表示の`stats-summary`と`stats-codex-thread`はCodexの全成分をそのまま表示する。
     """
-    main_records = records
+    main_record = collected[0]
+    main_records = main_record.records
+    runtime = main_record.runtime
+    if runtime is None:
+        return _fallback()
     summary = _stats_summary_data(main_records, runtime)
-    subagents: list[tuple[str, str | None, list[_Record]]] = []
-    subagent_record_count = 0
-    if runtime == "claude":
-        subagents, subagent_record_count = _stats_subagent_records(transcript_path)
-    threads = _stats_thread_records(main_records, subagents)
-    thread_summaries: list[tuple[_Runtime, str, dict[str, Any], int, str | None]] = []
-    for (engine, session_id), (line, agent_id) in threads.items():
-        transcript = _session_path(engine, session_id)
-        if transcript is None:
-            continue
-        session_records = _load_records(str(transcript))
-        if session_records is None:
-            continue
-        thread_summary = _stats_summary_data(session_records, engine)
-        thread_summaries.append((engine, session_id, thread_summary, line, agent_id))
+    subagents = [item for item in collected if item.role == "subagent" and item.runtime == "claude"]
+    thread_summaries: list[tuple[_CollectedRecord, _Runtime, dict[str, Any]]] = []
+    for item in collected:
+        if item.role == "session" and item.runtime is not None:
+            thread_summaries.append((item, item.runtime, _stats_summary_data(item.records, item.runtime)))
 
     total_tokens: dict[str, int] = {}
     if isinstance(summary.get("tokens"), dict):
         _add_tokens(total_tokens, _codex_normalized_tokens(summary["tokens"]) if runtime == "codex" else summary["tokens"])
-    for _, _, subagent_records in subagents:
-        sub_summary = _stats_summary_data(subagent_records, "claude")
+    for subagent in subagents:
+        sub_summary = _stats_summary_data(subagent.records, "claude")
         if isinstance(sub_summary.get("tokens"), dict):
             _add_tokens(total_tokens, sub_summary["tokens"])
-    for engine, _, thread_summary, _, _ in thread_summaries:
+    for _, thread_runtime, thread_summary in thread_summaries:
         if isinstance(thread_summary.get("tokens"), dict):
             _add_tokens(
                 total_tokens,
-                _codex_normalized_tokens(thread_summary["tokens"]) if engine == "codex" else thread_summary["tokens"],
+                _codex_normalized_tokens(thread_summary["tokens"]) if thread_runtime == "codex" else thread_summary["tokens"],
             )
 
-    thread_counts: dict[str, int] = collections.Counter(engine for engine, _, _, _, _ in thread_summaries)
+    thread_counts: dict[str, int] = collections.Counter(thread_runtime for _, thread_runtime, _ in thread_summaries)
 
     total_event: dict[str, Any] = {
         "kind": "stats-total",
@@ -1264,18 +1312,18 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
         events.append(event)
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
 
-    if subagent_record_count:
+    if subagents:
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
         subagent_total: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
-        for agent_id, agent_type, subagent_records in subagents:
-            sub_summary = _stats_summary_data(subagent_records, "claude")
-            row: dict[str, Any] = {"agent": agent_id, **sub_summary}
-            if agent_type:
-                row["agent_type"] = agent_type
+        for subagent in subagents:
+            sub_summary = _stats_summary_data(subagent.records, "claude")
+            row: dict[str, Any] = {"agent": subagent.record_id, **sub_summary}
+            if subagent.agent_type:
+                row["agent_type"] = subagent.agent_type
             row["elapsed_seconds"] = sub_summary.get("elapsed_seconds", 0)
             row["tokens"] = sub_summary.get("tokens", {key: 0 for key in _CLAUDE_TOKEN_KEYS})
             row["api_messages"] = sub_summary.get("api_messages", 0)
-            subagent_rows.append((agent_id, agent_type, row))
+            subagent_rows.append((subagent.record_id, subagent.agent_type, row))
             _add_tokens(subagent_total, row["tokens"])
         for _, _, row in sorted(subagent_rows, key=lambda item: (-_token_total(item[2]["tokens"]), item[0])):
             events.append({"kind": "stats-subagent", **row})
@@ -1287,23 +1335,23 @@ def _stats_events(records: list[_Record], runtime: _Runtime, transcript_path: st
             }
         )
 
-    for engine, session_id, thread_summary, line, agent_id in sorted(
+    for thread, thread_runtime, thread_summary in sorted(
         thread_summaries,
-        key=lambda item: (-item[2].get("tokens", {}).get("total_tokens", 0), item[1]),
+        key=lambda item: (-item[2].get("tokens", {}).get("total_tokens", 0), item[0].record_id),
     ):
-        # `line`はメインtranscriptの行番号を指す`--detail`用の値であるため、
-        # サブエージェント記録から見つけたスレッド（`agent_id`が非null）では付けない。
+        # `line`はメイン記録の`--detail`用であるため、メイン以外から見つけた委譲先では
+        # 由来記録IDを`agent`へ付ける。
         thread_event: dict[str, Any] = {
             "kind": "stats-agent-thread",
-            "engine": engine,
-            "session_id": session_id,
-            "thread": session_id,
+            "engine": thread_runtime,
+            "session_id": thread.record_id.split(":", 1)[1],
+            "thread": thread.record_id.split(":", 1)[1],
             **thread_summary,
         }
-        if agent_id:
-            thread_event["agent"] = agent_id
-        else:
-            thread_event["line"] = line
+        if thread.source_record != "main":
+            thread_event["agent"] = thread.source_record
+        elif thread.source_line is not None:
+            thread_event["line"] = thread.source_line
         events.append(thread_event)
     return events
 
@@ -1527,7 +1575,7 @@ def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
                 if hint:
                     event["tool"] = hint
                 events.append(event)
-    return events or [{"kind": "warning", "text": "一致なし"}]
+    return events
 
 
 def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[str, Any]]:
@@ -2001,6 +2049,66 @@ def _print_error(text: str) -> int:
     return 2
 
 
+def _events_with_record(events: list[dict[str, Any]], record_id: str) -> list[dict[str, Any]]:
+    """イベントを複製し、由来記録IDを付ける。"""
+    return [{**event, "record": record_id} for event in events]
+
+
+def _default_events(collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        events.extend(_events_with_record(_extract_records(item.records), item.record_id))
+    events.extend(_unresolved_events(unresolved))
+    return events
+
+
+def _warning_collection_events(collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        events.extend(_events_with_record(_warning_events(item.records), item.record_id))
+    if not events:
+        events.append({"kind": "warning", "text": "一致なし"})
+    events.extend(_unresolved_events(unresolved))
+    return events
+
+
+def _grep_collection_events(
+    collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], pattern: re.Pattern[str]
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    total = 0
+    for item in collected:
+        record_events = _grep_events(item.records, pattern)
+        record_count = record_events[-1]["count"]
+        total += record_count
+        events.extend(_events_with_record(record_events[:-1], item.record_id))
+        if record_count:
+            events.extend(_events_with_record(record_events[-1:], item.record_id))
+    events.append({"kind": "summary", "count": total})
+    events.extend(_unresolved_events(unresolved))
+    return events
+
+
+def _detail_collection_events(collected: list[_CollectedRecord], locators: list[str]) -> tuple[list[dict[str, Any]], int]:
+    by_id = {item.record_id: item for item in collected}
+    events: list[dict[str, Any]] = []
+    for locator in locators:
+        if ":" in locator:
+            record_id, raw_line = locator.rsplit(":", 1)
+        else:
+            record_id, raw_line = "main", locator
+        if not record_id or not raw_line.isdecimal():
+            return [{"kind": "error", "text": f"詳細位置が不正: {locator}"}], 2
+        selected = by_id.get(record_id)
+        if selected is None:
+            return [{"kind": "error", "text": f"記録が不明: {record_id}"}], 2
+        record_events, exit_code = _detail_events(selected.records, [int(raw_line)])
+        if exit_code:
+            return record_events, exit_code
+        events.extend(_events_with_record(record_events, record_id))
+    return events, 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """既定の抽出と照会モードの引数を定義する。"""
     parser = argparse.ArgumentParser(
@@ -2008,8 +2116,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
             "ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を返す。"
             "メイン記録・補助記録ともセッション全体を対象とする。"
-            "stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。"
-            "サブエージェント別集計とCodexスレッド別集計はClaude Code形式のtranscriptでのみ出力する。"
+            "stats-toolの合計秒は並列実行分を含むため壁時計時間とは一致しない。" + _CLAUDE_ONLY_NOTE
         )
     )
     parser.add_argument(
@@ -2034,8 +2141,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--detail",
         metavar="LINE",
         nargs="+",
-        type=int,
-        help="指定した行番号のエントリの詳細（tool_useの入力全体・tool_result本文。"
+        help="指定した<記録>:<行番号>（数値だけならメイン記録）のエントリの詳細（tool_useの入力全体・tool_result本文。"
         "本文が退避されている場合はツール実行結果側の本文）を照会する。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
@@ -2043,14 +2149,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stats",
         action="store_true",
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
-        "サブエージェント別集計とCodexスレッド別集計はClaude Code形式のtranscriptでのみ出力する。",
+        + _CLAUDE_ONLY_NOTE,
     )
     parser.add_argument(
         "--hook-notices",
         action="store_true",
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
         "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
-        "重複を除いた通知件数を照会する。",
+        "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE,
     )
     return parser
 
@@ -2068,33 +2174,32 @@ def main(argv: list[str] | None = None) -> int:
     if records is None:
         _print_events(_fallback())
         return 0
+    collected, unresolved = _collect_records(args.transcript_path or "", records)
 
     if args.warn:
-        _print_events(_warning_events(records))
+        _print_events(_warning_collection_events(collected, unresolved))
         return 0
     if args.grep is not None:
         try:
             pattern = re.compile(args.grep)
         except re.error as error:
             return _print_error(f"正規表現が不正: {error}")
-        _print_events(_grep_events(records, pattern))
+        _print_events(_grep_collection_events(collected, unresolved, pattern))
         return 0
     if args.detail is not None:
-        events, exit_code = _detail_events(records, args.detail)
+        events, exit_code = _detail_collection_events(collected, args.detail)
         _print_events(events)
         return exit_code
     if args.stats:
-        runtime = _detect_runtime([record.entry for record in records])
-        if runtime is None:
-            _print_events(_fallback())
-            return 0
-        _print_events(_stats_events(records, runtime, args.transcript_path or ""))
+        _print_events([*_stats_events(collected), *_unresolved_events(unresolved)])
         return 0
     if args.hook_notices:
-        _print_events(_hook_notice_events(records))
+        _print_events(
+            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)]
+        )
         return 0
 
-    _print_events(_extract_records(records))
+    _print_events(_default_events(collected, unresolved))
     return 0
 
 
