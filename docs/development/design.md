@@ -715,7 +715,11 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 知識境界は次のとおり分ける。
 作成基準は計画ファイルが満たす成果物要件だけを持つ。
-`agent-toolkit:plan-mode`のSKILL.mdは調査から実装引き継ぎまでの手順だけを持ち、成果物契約は作成基準を参照する。
+`agent-toolkit:plan-mode`のSKILL.mdは調査から起動経路別の終端までの工程制御だけを持ち、成果物契約は作成基準を参照する。
+作成基準は現行の二ファイル書式だけを扱い、旧単一ファイル形式・旧二ファイル形式の読み取り互換契約は
+`agent-toolkit/skills/plan-mode/references/legacy-plan-file-standards.md`が持つ。
+同書は旧形式計画の改訂時と書式互換の実装・検査時だけ読む条件付き資料とし、読込条件は起草側を同スキルのSKILL.md、
+レビュー側を`agent-toolkit/share/plan-review.subagent.md`が持つ。
 `agent-toolkit/share/plan-review.subagent.md`は検出手技（走査の実施方法、素材・要求の照合手順、指摘の除外規律、初回・再レビューの規定、
 出力形式）だけを持ち、成果物要件を再掲しない。
 レビュー表の操作書式は`atk review-table --help`及び使用するサブコマンドの`--help`を公開正本とし、

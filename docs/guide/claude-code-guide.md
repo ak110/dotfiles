@@ -361,7 +361,7 @@ atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
 atk plans migrate
 ```
 
-計画作成基準、可搬参照の検査及び旧形式の互換条件は`agent-toolkit:plan-mode`の`plan-file-standards.md`を正本とする。
+計画作成基準と可搬参照の検査は`agent-toolkit:plan-mode`の`plan-file-standards.md`、旧単一ファイル形式・旧二ファイル形式の互換条件は同スキルの`legacy-plan-file-standards.md`を正本とする。
 
 計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
 
