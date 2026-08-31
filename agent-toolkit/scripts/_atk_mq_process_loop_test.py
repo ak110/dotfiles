@@ -442,12 +442,20 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch.setattr(_wait_schedule, "get_prompt_cache_ttl", lambda _bucket: "5m")
         monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
         closed_descriptors: list[int] = []
+        hook_descriptors: list[int] = []
         real_close = os.close
+        real_fchmod = os.fchmod
+
+        def record_fchmod(descriptor: int, mode: int) -> None:
+            hook_descriptors.append(descriptor)
+            real_fchmod(descriptor, mode)
 
         def record_close(descriptor: int) -> None:
-            closed_descriptors.append(descriptor)
+            if hook_descriptors and descriptor == hook_descriptors[-1]:
+                closed_descriptors.append(descriptor)
             real_close(descriptor)
 
+        monkeypatch.setattr(_process_loop.os, "fchmod", record_fchmod)
         monkeypatch.setattr(_process_loop.os, "close", record_close)
 
         # 件数: 1回目は1件（claude起動）、2回目以降は0件（待機ループへ）
@@ -501,7 +509,7 @@ class TestProcessLoopPromptAndEnv:
         captured = capsys.readouterr()
         assert "Ctrl+Cを検知しました" in captured.out
         assert f"Claude hook診断ログ: {debug_log}" in captured.out
-        assert len(closed_descriptors) == 1
+        assert closed_descriptors == hook_descriptors
         assert os.environ[_PROCESS_LOOP_SESSION_ENV] == "new-original"
         assert os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] == "legacy-original"
         with pytest.raises(OSError):
@@ -563,7 +571,8 @@ class TestProcessLoopPromptAndEnv:
             raise PermissionError("権限設定失敗")
 
         def record_close(descriptor: int) -> None:
-            closed_descriptors.append(descriptor)
+            if permission_descriptors and descriptor == permission_descriptors[-1]:
+                closed_descriptors.append(descriptor)
             real_close(descriptor)
 
         monkeypatch.setattr(_process_loop.os, "fchmod", fail_fchmod)

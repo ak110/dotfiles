@@ -3,12 +3,24 @@
 import argparse
 import json
 import pathlib
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 import _review_table as table
 import pytest
 
 _TRACK = "implementation-review"
+
+
+def _git(repo: pathlib.Path, *args: str) -> str:
+    """テスト用リポジトリでGitを実行し、標準出力を返す。"""
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -53,6 +65,17 @@ def test_table_lock_is_kept_as_the_sibling_management_artifact(tmp_path: pathlib
 
     lock_path = path.with_name(path.name + ".lock")
     assert lock_path.is_file()
+
+
+def test_table_lock_is_ignored_in_plan_repository(tmp_path: pathlib.Path) -> None:
+    """計画配下へレビュー表ロックを作成する前にGit除外を保証する。"""
+    _git(tmp_path, "init", "-q")
+    path = tmp_path / "plans" / "2026" / "09" / "sample.plan-review.tsv"
+
+    table.init(path)
+
+    lock_path = path.with_name(path.name + ".lock")
+    assert _git(tmp_path, "check-ignore", str(lock_path.relative_to(tmp_path))).strip() == str(lock_path.relative_to(tmp_path))
 
 
 def test_empty_review_table_strictly_validates_after_exclusive_initialization(tmp_path: pathlib.Path) -> None:

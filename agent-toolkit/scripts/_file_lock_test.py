@@ -8,9 +8,21 @@ OS別ロック実装は`_session_state_test.py`の先例に倣い、実行環境
 import multiprocessing
 import os
 import pathlib
+import subprocess
 
 import _file_lock
 import pytest
+
+
+def _git(repo: pathlib.Path, *args: str) -> str:
+    """テスト用リポジトリでGitを実行し、標準出力を返す。"""
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
 
 
 def _append_record(path_text: str, record: str, max_bytes: int) -> None:
@@ -38,6 +50,40 @@ class TestLockedRotateAndAppend:
 
         assert set(path.read_text(encoding="utf-8").splitlines()) == set(records)
         assert path.with_suffix(".log.1").read_text(encoding="utf-8") == "x" * (max_bytes + 1)
+
+
+class TestEnsurePlanLockIgnored:
+    """計画保存先リポジトリの管理ロック除外を検証する。"""
+
+    def test_preserves_existing_content_and_ignores_all_plan_locks(self, tmp_path: pathlib.Path) -> None:
+        """既存内容を保持し、root直下と年月階層のロックを除外する。"""
+        _git(tmp_path, "init", "-q")
+        gitignore = tmp_path / ".gitignore"
+        gitignore.write_bytes(b"existing-pattern")
+        root_lock = tmp_path / "plans" / ".agent-toolkit-plan-create.lock"
+        nested_lock = tmp_path / "plans" / "2026" / "09" / "sample.plan-review.tsv.lock"
+
+        assert _file_lock.ensure_plan_lock_ignored(root_lock)
+        assert not _file_lock.ensure_plan_lock_ignored(nested_lock)
+
+        assert gitignore.read_bytes() == b"existing-pattern\n*.lock\n"
+        root_lock.parent.mkdir(parents=True)
+        nested_lock.parent.mkdir(parents=True)
+        root_lock.touch()
+        nested_lock.touch()
+        assert _git(tmp_path, "check-ignore", str(root_lock.relative_to(tmp_path))).strip() == str(
+            root_lock.relative_to(tmp_path)
+        )
+        assert _git(tmp_path, "check-ignore", str(nested_lock.relative_to(tmp_path))).strip() == str(
+            nested_lock.relative_to(tmp_path)
+        )
+
+    def test_does_not_modify_repository_for_lock_outside_plans(self, tmp_path: pathlib.Path) -> None:
+        """`plans/`外の一般ロックでは`.gitignore`を作成しない。"""
+        _git(tmp_path, "init", "-q")
+
+        assert not _file_lock.ensure_plan_lock_ignored(tmp_path / "state" / "session.lock")
+        assert not (tmp_path / ".gitignore").exists()
 
 
 class TestRotateIfNeeded:

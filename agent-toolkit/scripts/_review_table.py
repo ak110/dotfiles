@@ -10,8 +10,8 @@ import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+import _file_lock
 from _atomic_file import atomic_write
-from _file_lock import acquire_lock, release_lock
 
 COLUMNS = (
     "round",
@@ -143,8 +143,9 @@ def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[st
     """ロック内で再読込・検証・更新・原子的置換を実行する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
+    _file_lock.ensure_plan_lock_ignored(lock_path)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
-        acquire_lock(lock_file)
+        _file_lock.acquire_lock(lock_file)
         try:
             rows = _read(path) if path.exists() else []
             _validate_rows(rows)
@@ -153,7 +154,7 @@ def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[st
             _write_atomic(path, updated)
             return updated
         finally:
-            release_lock(lock_file)
+            _file_lock.release_lock(lock_file)
 
 
 def init(path: str | Path) -> int:
@@ -161,14 +162,15 @@ def init(path: str | Path) -> int:
     target = _path(str(path))
     target.parent.mkdir(parents=True, exist_ok=True)
     lock_path = target.with_name(target.name + ".lock")
+    _file_lock.ensure_plan_lock_ignored(lock_path)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
-        acquire_lock(lock_file)
+        _file_lock.acquire_lock(lock_file)
         try:
             if target.exists():
                 raise ValueError(f"レビュー表が既に存在する: {target}")
             _write_atomic(target, [])
         finally:
-            release_lock(lock_file)
+            _file_lock.release_lock(lock_file)
     print(target)
     return 0
 

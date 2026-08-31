@@ -17,6 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_readiness as _readiness  # noqa: E402  # pylint: disable=wrong-import-position
+import _file_lock  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 
@@ -1233,6 +1234,8 @@ class TestPrivateNotesAutoCreate:
         )
         for name in expected_state_dirs:
             assert (root / name).is_dir()
+        assert (root / ".gitignore").read_text(encoding="utf-8") == "*.lock\n"
+        assert not _git_stdout(root, "status", "--porcelain")
 
     def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
         """2回連続で呼んでも2回目は既存のローカルリポジトリをそのまま返す（再初期化しない）。"""
@@ -1244,6 +1247,43 @@ class TestPrivateNotesAutoCreate:
         second = _common._ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
         assert second == first
         assert marker.read_text(encoding="utf-8") == "kept"
+
+    def test_ensure_environment_commits_pending_managed_gitignore(self, tmp_path: pathlib.Path) -> None:
+        """直接ロック生成が残した管理対象差分だけを次の環境初期化でcommitする。"""
+        home = tmp_path / "home"
+        root = home / "private-notes"
+        root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+        (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        (root / "README.md").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+        _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
+
+        assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
+        assert _git_stdout(root, "show", "HEAD:.gitignore") == "*.lock\n"
+        assert not _git_stdout(root, "status", "--porcelain")
+
+    def test_ensure_environment_does_not_commit_user_gitignore_change(self, tmp_path: pathlib.Path) -> None:
+        """利用者の既存差分が混在する`.gitignore`は自動commitしない。"""
+        home = tmp_path / "home"
+        root = home / "private-notes"
+        root.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
+        (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+        (root / ".gitignore").write_text("tracked\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+        original_head = _git_stdout(root, "rev-parse", "HEAD")
+        (root / ".gitignore").write_text("tracked\nuser-change\n", encoding="utf-8")
+
+        assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
+        assert _git_stdout(root, "rev-parse", "HEAD") == original_head
+        assert (root / ".gitignore").read_text(encoding="utf-8") == "tracked\nuser-change\n*.lock\n"
 
 
 _LEGACY_FEEDBACK = "---\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
@@ -1261,6 +1301,7 @@ def _init_legacy_repo(root: pathlib.Path, entries: dict[str, str]) -> None:
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
     subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
     (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
+    (root / ".gitignore").write_text("*.lock\n", encoding="utf-8")
     for relative, text in entries.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -168,6 +168,33 @@ def test_rejects_duplicate_bug_source(repo: pathlib.Path, tmp_path: pathlib.Path
         )
 
 
+def test_creation_lock_is_ignored_in_private_notes_repo(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """計画作成ロックを作成する前に計画保存先のGit除外を保証する。"""
+    private_notes = tmp_path / "private-notes"
+    private_notes.mkdir()
+    _git(private_notes, "init", "-q")
+    main_source, detail_source = _sources(repo, tmp_path)
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    create_plan_files.create_plan_files(
+        main_source,
+        detail_source,
+        "計画保存先移行",
+        private_notes=private_notes,
+        date=datetime.date(2026, 8, 30),
+        work_dir=repo,
+    )
+
+    lock_path = private_notes / "plans" / ".agent-toolkit-plan-create.lock"
+    assert _git(private_notes, "check-ignore", str(lock_path.relative_to(private_notes))) == str(
+        lock_path.relative_to(private_notes)
+    )
+
+
 def test_retries_when_candidate_stem_is_taken(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
     """同じstemの付属ファイルがある候補を避けて再試行する。"""
     private_notes = tmp_path / "private-notes"

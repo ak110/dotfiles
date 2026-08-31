@@ -276,6 +276,7 @@ def create_plan_files(
     notes_for_resolver = pathlib.Path(private_notes).expanduser() if private_notes is not None else None
 
     lock_path = plans_root / ".agent-toolkit-plan-create.lock"
+    _file_lock.ensure_plan_lock_ignored(lock_path)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         _file_lock.acquire_lock(lock_file)
         try:
