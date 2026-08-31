@@ -166,6 +166,10 @@ _INDEX_CSS = """\
   #meta-mobile { display: none; }
   #drawer-backdrop { display: none; }
   main article { max-width: 860px; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
+  /* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
+     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
+  main article:has(> .review-table) { max-width: none; }
+  .review-table { width: 100%; }
   .diagram {
     margin: 1.5rem 0;
     padding: 1rem;

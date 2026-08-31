@@ -593,7 +593,7 @@ def _review_table_html(text: str) -> str:
 
     head = "".join(f"<th>{html.escape(header)}</th>" for header in _REVIEW_TABLE_HEADERS)
     body = "".join("<tr>" + "".join(f"<td>{html.escape(cell)}</td>" for cell in row) + "</tr>" for row in rows)
-    return f"<table>\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n"
+    return f'<table class="review-table">\n<thead><tr>{head}</tr></thead>\n<tbody>{body}</tbody>\n</table>\n'
 
 
 def _plan_paths(rel: str) -> tuple[tuple[str, str], ...]:
