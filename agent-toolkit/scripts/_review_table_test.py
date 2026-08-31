@@ -12,7 +12,7 @@ _TRACK = "implementation-review"
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog="atk")
     subcommands = parser.add_subparsers(dest="command")
     table.build_parser(subcommands)
     return parser
@@ -263,6 +263,60 @@ def test_parser_rejects_invalid_track(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(argv)
     assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("subcommand", "arguments", "guidance"),
+    [
+        *[
+            (
+                subcommand,
+                [option, "review.tsv"],
+                f"{option}は受理しない。表のパスは位置引数で指定する: atk review-table {subcommand} <表の絶対パス>",
+            )
+            for subcommand in ("init", "add", "respond", "show", "validate")
+            for option in ("--file", "--path")
+        ],
+        (
+            "show",
+            ["--all", "review.tsv"],
+            "--allは受理しない。--trackを省略すると全行を表示する: atk review-table show <表の絶対パス>",
+        ),
+        *[
+            (
+                subcommand,
+                ["--track", "plan-review", "review.tsv"],
+                "--trackは受理しない。レビュー表は<計画stem>.plan-review.tsvと"
+                "<計画stem>.exec-review.tsvへtrackごとに分かれるため、trackによる限定は指定しない: "
+                f"atk review-table {subcommand} <表の絶対パス>",
+            )
+            for subcommand in ("init", "validate")
+        ],
+    ],
+)
+def test_parser_rejects_unsupported_options_with_guidance(
+    subcommand: str,
+    arguments: list[str],
+    guidance: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", subcommand, *arguments])
+
+    assert exc_info.value.code == 2
+    error = capsys.readouterr().err
+    assert f"atk review-table {subcommand}" in error
+    assert guidance in error
+
+
+def test_show_help_hides_rejected_options(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", "show", "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    for option in ("--file", "--path", "--all"):
+        assert option not in help_text
 
 
 def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
