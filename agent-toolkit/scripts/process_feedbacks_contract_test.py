@@ -5,7 +5,9 @@
 片側だけを改訂すると、選定済み項目を`inbox`のまま②の計画・worktree作成へ渡す経路や、
 全レーン後にready一覧を再取得して起動時の集合を拡張する経路、メインが選定工程の最初に
 キュー一覧を取得する経路及び`blocked`項目を一律に除外する経路が復活する。
-本テストはこれらの文書が同じ対象集合、状態の意味及び遷移時機を保持することを検査する。
+ユーザーの明示指定でpickerを省略する経路、中断再開項目の残作業調査をメインへ戻す経路、
+成功時の出力へ採否理由を復活させる経路も同じ分散記述から生じる。
+本テストはこれらの文書が同じ対象集合、状態の意味、遷移時機及び情報境界を保持することを検査する。
 """
 
 import pathlib
@@ -80,6 +82,48 @@ def test_picker_owns_queue_listing() -> None:
     assert "atk mq list --status=processable" not in _read(_SKILL)
     assert "atk mq list --status=processable" not in _read(_PICK)
     assert "atk mq list --status=processable" in _read(_PICK_SUBAGENT)
+
+
+def test_picker_is_not_skipped_for_explicit_targets() -> None:
+    """ユーザーの明示指定でpickerを省略する経路の復活を検出する。
+
+    省略するとメインが本文取得と処理区分の判定を担い、自動選定と判定主体が分かれる。
+    """
+    text = _read(_PICK)
+    assert "pickerを起動せず" not in text
+    assert "pickerを省略せず" in text
+    assert "選定制約" in text
+    assert "当該ファイル名の一覧" in _section(text, "起動")
+    assert "ユーザーが明示したファイル名の一覧" in _read(_PICK_SUBAGENT)
+
+
+def test_resume_investigation_belongs_to_picker() -> None:
+    """中断再開項目の残作業調査がpicker側にあり、メイン側へ戻っていないことを検査する。"""
+    subagent = _read(_PICK_SUBAGENT)
+    assert "resume_point" in subagent
+    assert "`target_commit`以降" in subagent
+    assert "レーン用worktreeとbranchの残存" in subagent
+    parent = _read(_PICK)
+    assert "`target_commit`以降" not in parent
+    assert "レーン用worktreeとbranchの残存" not in parent
+
+
+def test_picker_output_carries_lane_launch_fields_only() -> None:
+    """成功時の出力が採否理由を含まず、レーン起動に必要な欄だけであることを検査する。"""
+    section = _section(_read(_PICK_SUBAGENT), "出力")
+    assert "reason:" not in section
+    assert "decision:" not in section
+    for field in ("state:", "category:", "lane:", "depends_on:", "plan_file:", "resume_point:", "terminal_order:"):
+        assert field in section, field
+    assert "項目別の採否理由及び対象実装の調査記録を出力へ含めない" in section
+
+
+def test_main_reads_feedback_bodies_only_when_judging() -> None:
+    """メインが通常経路で本文と採否理由を受け取らないことを検査する。"""
+    section = _section(_read(_PICK), "出力の受領")
+    assert "フィードバック本文、項目別の採否理由、対象実装の調査結果のいずれも受け取らない" in section
+    assert "内容に基づく判断が実際に必要になった時点に限る" in section
+    assert "メインによる本文の要約を入力の代替にしない" in _read(_RUN_LANES)
 
 
 def test_picker_excludes_external_wait_only() -> None:
