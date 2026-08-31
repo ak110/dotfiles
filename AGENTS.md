@@ -24,7 +24,7 @@
   - pyfltrの実行時間を比較する場合は、実行後に`uvx pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uvx pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検査を先に実行し、公開前に`make test`相当で全体を検査する。近接検査の成功だけを全体検査の代替にしない
-  - worktreeでの実行が`mise ERROR Config files in ... are not trusted.`で停止した場合は、複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない。検査を`XDG_STATE_HOME`を差し替えた隔離環境で起動する場合は、同じ環境変数を与えて`mise trust`を実行する（信頼登録は状態ディレクトリ配下に保持され、既定の登録を参照しないため）。`MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
+  - worktreeで検査する前に、複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行しておく。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない。検査を`XDG_STATE_HOME`を差し替えた隔離環境で起動する場合は、同じ環境変数を与えて`mise trust`を実行する（信頼登録は状態ディレクトリ配下に保持され、既定の登録を参照しないため）。`MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
   - リリースPRの作成は手動で行い、statusline（`rust/claude-statusline/`配下）を変更した場合はその版数更新も同じPRへ含める。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
