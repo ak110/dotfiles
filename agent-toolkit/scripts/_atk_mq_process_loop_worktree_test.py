@@ -15,13 +15,15 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
+import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 @pytest.fixture(autouse=True)
 def _prepare_process_loop_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """公開CLIテストの外部コマンド解決とprivate-notes同期を隔離する。"""
+    """公開CLIテストの外部コマンド解決・private-notes同期・管理対象一時領域の登録簿を隔離する。"""
+    monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(_process_loop.shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_process_loop, "_pull_private_notes", lambda _path: True)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
