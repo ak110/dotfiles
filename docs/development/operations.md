@@ -185,6 +185,25 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 - lingerが無効な場合はログアウトで停止する
   - 常駐させるには`sudo loginctl enable-linger <user>`を手動実行する
 
+## euryaleでの上流更新の自動反映
+
+`euryale`でのみ、`chezmoi apply`後処理がsystemdユーザータイマー`dotfiles-autoupdate.timer`と、
+タイマーが起動するoneshot service`dotfiles-autoupdate.service`を配置して有効化する。
+
+- タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する
+- serviceは`scripts/update_dotfiles_if_upstream_changed.py`を実行する。当該スクリプトは現在branchが`develop`で
+  upstreamが`origin/develop`であることを検証したうえで、`git ls-remote`で取得した`origin/develop`のcommit IDを
+  ローカル`HEAD`と比較する
+  - 一致する場合は何もせず正常終了し、`update-dotfiles`を起動しない
+  - 一致しない場合だけ`bin/update-dotfiles`を絶対パスで起動し、その終了コードを引き継ぐ
+  - 作業ツリーのstash、reset及びcleanは行わない。手動実行との重複は`update-dotfiles`の排他ロックへ委ねる
+- systemdユーザーマネージャーのPATHにはdotfilesの`bin`と`uv`が含まれないため、unitのExecStartには
+  導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込む
+- GitHubへの接続失敗、対象refの欠落、branch又はupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
+  systemdのjournalへ残る。次回のタイマー起動で再試行する
+- dotfilesの作業ツリーに追跡済みの未コミット差分がある場合、`update-dotfiles`の`git pull --rebase`が失敗して
+  自動反映は成立しない。差分は手動で整理する
+
 ## Windowsの電源設定の最適化（dotfiles-setup）
 
 `dotfiles-setup`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。

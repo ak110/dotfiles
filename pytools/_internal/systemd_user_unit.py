@@ -85,6 +85,93 @@ def setup(
     return True
 
 
+def setup_timer(
+    *,
+    service_unit_path: pathlib.Path,
+    timer_unit_path: pathlib.Path,
+    executable_path: pathlib.Path,
+    service_unit_content: str,
+    timer_unit_content: str,
+    log_tag: str,
+    timer_name: str,
+) -> bool:
+    """Oneshot serviceとtimerを配置し、timerを有効化して再起動する。
+
+    タイマーは待機状態でactiveとなり再起動回数を持たないため、常駐サービス向けの
+    ActiveStateとNRestartsの二重観測は適用せず、再起動後のActiveStateを1回確認する。
+
+    Returns:
+        実行ファイル不在で何もしなかった場合False、unit配置とrestartを実施した場合True。
+
+    Raises:
+        SetupError: systemctl呼び出しが失敗した場合、又はtimerがactiveでない場合に送出する。
+    """
+    if not executable_path.is_file():
+        logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
+        return False
+
+    changed = False
+    for unit_path, unit_content in (
+        (service_unit_path, service_unit_content),
+        (timer_unit_path, timer_unit_content),
+    ):
+        try:
+            existing = unit_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            existing = None
+        if existing != unit_content:
+            claude_common.atomic_write_text(unit_path, unit_content, mode=0o644, tag=log_tag)
+            logger.info(log_format.format_status(log_tag, f"ユニット配置: {unit_path}"))
+            changed = True
+
+    commands: list[tuple[list[str], float, str]] = []
+    if changed:
+        commands.append((["systemctl", "--user", "daemon-reload"], 15.0, "daemon-reload"))
+    commands.extend(
+        [
+            (["systemctl", "--user", "enable", timer_name], 15.0, "enable"),
+            (["systemctl", "--user", "restart", timer_name], 30.0, "restart"),
+        ]
+    )
+    for command, timeout, label in commands:
+        result = claude_common.run_subprocess(command, timeout=timeout, tag=log_tag)
+        if result is None or result.returncode != 0:
+            return_code = result.returncode if result is not None else "N/A"
+            raise SetupError(f"{timer_name}の{label}に失敗しました (exit {return_code})")
+
+    result = claude_common.run_subprocess(
+        ["systemctl", "--user", "show", timer_name, "--property=ActiveState"],
+        timeout=15.0,
+        tag=log_tag,
+    )
+    if result is None or result.returncode != 0:
+        raise SetupError(f"{timer_name}の状態を取得できません")
+    active_state = ""
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "ActiveState":
+            active_state = value.strip()
+            break
+    if active_state != "active":
+        raise SetupError(f"{timer_name}が起動しません: ActiveState={active_state}")
+    logger.info(log_format.format_status(log_tag, f"稼働確認: {timer_name}"))
+
+    user = getpass.getuser()
+    result = claude_common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
+    if result is None:
+        logger.warning(log_format.format_status(log_tag, "loginctlを実行できないためlinger状態を確認できません"))
+    elif result.returncode != 0:
+        logger.warning(log_format.format_status(log_tag, f"linger確認: 失敗 (exit {result.returncode})"))
+    elif "Linger=no" in result.stdout:
+        logger.info(
+            log_format.format_status(
+                log_tag,
+                f"linger 無効: ログアウト中も常駐させるには `sudo loginctl enable-linger {user}` を手動実行する",
+            )
+        )
+    return True
+
+
 def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:
     """サービスのActiveStateとNRestartsを取得する。
 

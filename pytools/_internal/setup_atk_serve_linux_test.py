@@ -16,8 +16,8 @@ from pytools._internal import claude_common, setup_atk_serve_linux, systemd_user
 
 def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """テスト共通の Linux + euryale + uv 配置済み環境をセットアップする。"""
-    monkeypatch.setattr(setup_atk_serve_linux.sys, "platform", "linux")
-    monkeypatch.setattr(setup_atk_serve_linux.socket, "gethostname", lambda: "euryale")
+    monkeypatch.setattr(claude_common.sys, "platform", "linux")
+    monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "euryale")
     monkeypatch.setattr(setup_atk_serve_linux.pathlib.Path, "home", lambda: tmp_path)
     uv = tmp_path / ".local" / "bin" / "uv"
     uv.parent.mkdir(parents=True, exist_ok=True)
@@ -45,8 +45,8 @@ class TestRunPlatformGuard:
         hostname: str,
     ) -> None:
         """Linux かつ euryale 以外では False を返し設定処理を開始しない。"""
-        monkeypatch.setattr(setup_atk_serve_linux.sys, "platform", platform)
-        monkeypatch.setattr(setup_atk_serve_linux.socket, "gethostname", lambda: hostname)
+        monkeypatch.setattr(claude_common.sys, "platform", platform)
+        monkeypatch.setattr(claude_common.socket, "gethostname", lambda: hostname)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
         assert not setup_atk_serve_linux.run()
 
@@ -61,7 +61,7 @@ class TestRunUvResolution:
     ) -> None:
         """`~/.local/bin/uv` が存在する場合は PATH 探索結果を採用しない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
-        monkeypatch.setattr(setup_atk_serve_linux.shutil, "which", lambda _name: "/shims/uv")
+        monkeypatch.setattr(claude_common.shutil, "which", lambda _name: "/shims/uv")
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
         assert setup_atk_serve_linux.run()
@@ -79,7 +79,7 @@ class TestRunUvResolution:
         """`~/.local/bin/uv` が無い場合は PATH 探索結果を埋め込む。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         (tmp_path / ".local" / "bin" / "uv").unlink()
-        monkeypatch.setattr(setup_atk_serve_linux.shutil, "which", lambda _name: "/opt/uv/bin/uv")
+        monkeypatch.setattr(claude_common.shutil, "which", lambda _name: "/opt/uv/bin/uv")
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
         assert setup_atk_serve_linux.run()
@@ -96,7 +96,7 @@ class TestRunUvResolution:
         """uv を解決できない場合は False を返しランチャーも unit も書き込まない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         (tmp_path / ".local" / "bin" / "uv").unlink()
-        monkeypatch.setattr(setup_atk_serve_linux.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(claude_common.shutil, "which", lambda _name: None)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
 
         with caplog.at_level("INFO", logger=setup_atk_serve_linux.logger.name):

@@ -6,8 +6,6 @@
 
 import logging
 import pathlib
-import socket
-import sys
 
 from pytools._internal import claude_common, log_format, systemd_user_unit
 
@@ -15,7 +13,6 @@ assert claude_common  # 既存テストと外部monkeypatch契約を共通モジ
 
 logger = logging.getLogger(__name__)
 
-_TARGET_HOSTNAME = "euryale"
 _SERVICE_UNIT = "claude-plans-viewer.service"
 _VIEWER_EXE_RELATIVE = pathlib.PurePath(".local") / "bin" / "claude-plans-viewer"
 _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVICE_UNIT
@@ -24,7 +21,7 @@ _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVIC
 # post_apply 実行時の Path.home() を埋め込まない。
 # 待受アドレス・リモートホストはホスト固有値であり、
 # `~/.config/pytools/claude-plans-viewer.toml` 経由で指定する。
-# 当該設定ファイルは chezmoi が `_TARGET_HOSTNAME` (euryale) 限定で配布するため、
+# 当該設定ファイルは chezmoi が euryale 限定で配布するため、
 # 本モジュールが対応するホストと配布対象ホストが一致する。
 _UNIT_CONTENT = """\
 [Unit]
@@ -54,11 +51,7 @@ def run() -> bool:
     Raises:
         systemd_user_unit.SetupError: restart 後にサービスが常駐状態へ至らない場合に送出する。
     """
-    if sys.platform != "linux":
-        return False
-
-    hostname = socket.gethostname().lower().split(".")[0]
-    if hostname != _TARGET_HOSTNAME:
+    if not claude_common.is_euryale():
         return False
 
     exe = _viewer_exe()
