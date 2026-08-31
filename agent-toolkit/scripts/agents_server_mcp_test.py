@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import os
 import pathlib
 import shutil
 import subprocess
@@ -182,6 +183,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server_codex.py",
         "_agents_server_claude.py",
         "_agents_server_state.py",
+        "_inherited_venv.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
 
@@ -1611,6 +1613,23 @@ def test_claude_dependency_check_builds_options_without_client(monkeypatch: pyte
     claude_backend.check_dependencies()
 
     assert calls == [(str(pathlib.Path.cwd()), None, None)]
+
+
+def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動処理が後続工程より前に、起動元ツールの仮想環境を`VIRTUAL_ENV`と`PATH`から取り除く。"""
+    venv_root = "/tmp/agents-server-environment"
+    monkeypatch.setenv("VIRTUAL_ENV", venv_root)
+    monkeypatch.setenv("PATH", os.pathsep.join([f"{venv_root}/bin", "/usr/local/bin", "", "/usr/bin"]))
+    observed: dict[str, str | None] = {}
+
+    def check_dependencies() -> None:
+        observed["virtual_env"] = os.environ.get("VIRTUAL_ENV")
+        observed["path"] = os.environ.get("PATH")
+
+    monkeypatch.setattr(subject.claude_backend, "check_dependencies", check_dependencies)
+    assert subject.main(["--check-dependencies"]) == 0
+    assert observed["virtual_env"] is None
+    assert observed["path"] == os.pathsep.join(["/usr/local/bin", "", "/usr/bin"])
 
 
 def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch) -> None:

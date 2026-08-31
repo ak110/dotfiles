@@ -25,6 +25,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
+import _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
@@ -622,7 +623,7 @@ class TestProcessLoopPromptAndEnv:
             "VIRTUAL_ENV": venv_root,
             "PATH": os.pathsep.join((f"{venv_root}/bin", "", "/usr/bin", "")),
         }
-        _process_loop._strip_inherited_venv(env)  # pylint: disable=protected-access  # noqa: SLF001
+        _inherited_venv.strip_inherited_venv(env)
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
     def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:

@@ -20,6 +20,7 @@ import _atk_config as _config
 import _atk_mq_alerts as _alerts
 import _console_title
 import _git_command
+import _inherited_venv
 import _process_loop_log
 import _wait_schedule
 import watchdog.events
@@ -42,15 +43,6 @@ _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 # Codexがexit-sessionスキル経由で終了する場合のOS別正常終了集合。
 _CODEX_NORMAL_EXIT_CODES_POSIX: frozenset[int] = frozenset({0, -15})
 _CODEX_NORMAL_EXIT_CODES_WINDOWS: frozenset[int] = frozenset({0})
-
-# `atk`は`uv run --no-project --script`で起動するため、PEP 723のエフェメラル環境を指す
-# `VIRTUAL_ENV`が本プロセスの環境に設定される。この値を子セッションへ引き継ぐと、
-# 作業対象リポジトリでのパッケージ操作が起動元ツールの環境を対象にする。
-# 実測で子プロセスへ混入した仮想環境キーだけを除去対象とする。
-_INHERITED_VENV_ENV_KEYS: tuple[str, ...] = ("VIRTUAL_ENV",)
-
-# 仮想環境のコマンド格納ディレクトリ名（POSIXは`bin`、Windowsは`Scripts`）。
-_VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
 
 # 主待機のタイムアウト秒（他端末からのフィードバック投入を`remote`同期で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
@@ -88,27 +80,6 @@ def _ask_user_question_timeout_settings() -> str:
     return '{"askUserQuestionTimeout": "5m"}'
 
 
-def _strip_inherited_venv(env: dict[str, str]) -> None:
-    """起動元ツールのエフェメラル仮想環境を子プロセス環境から除去する。
-
-    `uv run`は`VIRTUAL_ENV`の設定に加えて当該環境のコマンド格納ディレクトリを`PATH`先頭へ挿入する。
-    `VIRTUAL_ENV`だけを除去すると`PATH`側が残り、子セッション内の`python`・`pip`や
-    コンソールスクリプトが引き続き起動元ツールの環境へ解決される。
-    除去対象は`PATH`の全要素ではなく、除去する`VIRTUAL_ENV`の値から導いた
-    コマンド格納ディレクトリと一致する要素だけとする。
-    POSIXの`PATH`では空要素がカレントディレクトリを表すため、空要素は解決順序を保つよう残す。
-    """
-    venv_roots = [value for key in _INHERITED_VENV_ENV_KEYS if (value := env.get(key))]
-    for key in _INHERITED_VENV_ENV_KEYS:
-        env.pop(key, None)
-    path_value = env.get("PATH")
-    if not venv_roots or path_value is None:
-        return
-    venv_bin_dirs = {pathlib.Path(root) / name for root in venv_roots for name in _VENV_BIN_DIR_NAMES}
-    remaining = [entry for entry in path_value.split(os.pathsep) if not entry or pathlib.Path(entry) not in venv_bin_dirs]
-    env["PATH"] = os.pathsep.join(remaining)
-
-
 def _child_env() -> dict[str, str]:
     """起動元ツールの仮想環境を除いた子プロセス用の環境変数を返す。
 
@@ -121,7 +92,7 @@ def _child_env() -> dict[str, str]:
     引き継ぐと、子孫が同じファイルへ再起動対象を書き込みうる。
     """
     env = os.environ.copy()
-    _strip_inherited_venv(env)
+    _inherited_venv.strip_inherited_venv(env)
     env.pop(_RESTART_SPEC_ENV, None)
     return env
 

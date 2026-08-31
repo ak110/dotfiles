@@ -19,6 +19,7 @@ from typing import Annotated, Any
 
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
+import _inherited_venv
 from _agents_server_state import (
     ResumePrompt,
     SessionOwnerGoneError,
@@ -552,8 +553,19 @@ async def kill(
     return await _MANAGER.kill(session_id, timeout)
 
 
+def _prepare_child_environment() -> None:
+    """起動元ツールのエフェメラル仮想環境を、以降に起動する委譲先から取り除く。
+
+    Claude backendが渡す`ClaudeAgentOptions.env`は継承環境へ重なる仕様であり、
+    キーの削除を表現できない。Codex backendのApp Server子プロセスも本プロセスの環境を継承する。
+    このため両経路の起点である本プロセスの環境を、起動時に1回だけ整える。
+    """
+    _inherited_venv.strip_inherited_venv(os.environ)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """引数に応じて依存検査またはMCP stdio transportを起動する。"""
+    _prepare_child_environment()
     logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING"))
     parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
     parser.add_argument(
