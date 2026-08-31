@@ -134,7 +134,7 @@ def test_immediate_fix_is_delegated_with_execute_model() -> None:
     メインが直接修正するとレーン処理に残るコンテキストが減り、規範文書の改訂許可も渡らない。
     """
     section = _section(_read(_SKILL), "フィードバック即時対応")
-    assert "メインが自ら実施せず" in section
+    assert "サブエージェントに問題の解決からコミットまでを移譲する" in section
     assert "atk config get execute_model" in section
     assert "規範文書を改訂する許可" in section
 
