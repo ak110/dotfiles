@@ -3,7 +3,10 @@
 "npm:aws-cdk" = "latest"
 actionlint = "latest"
 chezmoi = "latest"
-dotnet = "latest"
+# dotnetは共有ランタイムのルートへのsymlinkとして導入される。symlinkで導入済みの版は
+# `latest`のような曖昧な版指定の解決でmise.lockの確定バージョンより優先されるため、
+# 版を明示してこの解決経路を通さない。版の更新は`make update`が`mise upgrade --bump`で行う。
+dotnet = "10.0.400"
 editorconfig-checker = "latest"
 fzf = "latest"
 gh = "latest"
