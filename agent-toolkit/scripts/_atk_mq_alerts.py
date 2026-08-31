@@ -82,11 +82,16 @@ def _is_disabled_response(stdout: str, disabled_messages: tuple[str, ...]) -> bo
 
 @dataclasses.dataclass(frozen=True)
 class Alert:
-    """収集した1件のアラート候補。`keys`は重複除外に使う安定識別子の集合。"""
+    """収集した1件のアラート候補。
+
+    `keys`は重複除外に使う安定識別子の集合。`completion`は種別固有の外部可視の終了状態と、
+    消費主体へ要求する操作の要否を保持する。
+    """
 
     keys: tuple[str, ...]
     title: str
     body: str
+    completion: str
 
 
 def _now_iso() -> str:
@@ -187,7 +192,11 @@ def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunList
             f"`gh run view {run_id} --log-failed`で失敗ログを取得し、根本原因を特定して修正する。\n"
             "既に後続の実行で解消済みの場合は、その旨を記録して不採用とする。"
         )
-        alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body))
+        completion = (
+            f"対象ワークフロー`{name}`の失敗が解消し、ブランチ`{branch}`で当該ワークフローが成功する。"
+            "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
+        )
+        alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body, completion=completion))
     return alerts
 
 
@@ -241,7 +250,13 @@ def collect_github_dependabot_alerts(repo: str, *, alerts_fn: GhDependabotAlerts
         "(3) 修正版未満の場合のみ依存を更新して解消する。更新できない場合は理由を記録して不採用とする。\n"
         f"詳細は`gh api /repos/{repo}/dependabot/alerts/<番号>`で取得できる。"
     )
-    return Alert(keys=keys, title=f"Dependabot未解決アラート{len(payload)}件", body=body)
+    completion = (
+        "対象アラートが未解決でなくなる。"
+        "ロック済みバージョンが修正版以上の場合は、依存を変更せずアラートを棄却する。"
+        "修正版未満の場合は依存を更新する"
+    )
+
+    return Alert(keys=keys, title=f"Dependabot未解決アラート{len(payload)}件", body=body, completion=completion)
 
 
 def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
@@ -270,7 +285,18 @@ def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiList
         f"`glab ci view {pipeline_id} -R {repo}`で失敗ログを取得し、根本原因を特定して修正する。\n"
         "既に後続の実行で解消済みの場合は、その旨を記録して不採用とする。"
     )
-    return [Alert(keys=(f"gitlab-pipeline:{pipeline_id}",), title=f"パイプライン{pipeline_id}失敗", body=body)]
+    completion = (
+        f"対象パイプライン`{pipeline_id}`の失敗が解消し、ブランチ`{branch}`で後続のパイプラインが成功する。"
+        "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
+    )
+    return [
+        Alert(
+            keys=(f"gitlab-pipeline:{pipeline_id}",),
+            title=f"パイプライン{pipeline_id}失敗",
+            body=body,
+            completion=completion,
+        )
+    ]
 
 
 def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
@@ -291,7 +317,8 @@ def _build_alert_message(target_repo_id: str, alert: Alert) -> str:
         f"- 反映先: `{target_repo_id}`\n"
         "- 理由: 自動監視が未解決の事象を検知したため\n"
         "- メリット: 障害又は脆弱性を解消し、継続的な検査を正常化できる\n"
-        "- デメリット: 調査と変更の検証に作業が必要になる\n\n"
+        "- デメリット: 調査と変更の検証に作業が必要になる\n"
+        f"- 完成条件: {alert.completion}\n\n"
         f"## 詳細\n\n{alert.body}"
     )
     return f"---\ntarget_repo: {target_repo_id}\nsource: alert-monitor\nalert_keys: {','.join(alert.keys)}\n---\n\n{body}\n"

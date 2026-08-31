@@ -157,21 +157,43 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
     assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == set()
 
 
-def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """新規アラートをフィードバックへ投入し、件数とfrontmatterを返す。"""
-    notes = tmp_path / "private-notes"
+def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Path) -> None:
+    """外部更新を無効化し、保存本文を検査できるフィードバック領域を準備する。"""
     (notes / "inbox").mkdir(parents=True)
+
+    def no_repo_lock(*_args: object, **_kwargs: object) -> contextlib.AbstractContextManager[None]:
+        return contextlib.nullcontext()
+
+    def no_repository_update(*_args: object, **_kwargs: object) -> None:
+        return None
+
     monkeypatch.setattr(  # pylint: disable=protected-access
         alerts._add,  # pylint: disable=protected-access
         "_repo_lock",
-        lambda *_a, **_k: contextlib.nullcontext(),
+        no_repo_lock,
     )
-    monkeypatch.setattr(alerts._add, "_pull", lambda _p: None)  # pylint: disable=protected-access
+    monkeypatch.setattr(alerts._add, "_pull", no_repository_update)  # pylint: disable=protected-access
     monkeypatch.setattr(  # pylint: disable=protected-access
         alerts._add,  # pylint: disable=protected-access
         "_commit_and_push",
-        lambda *_a, **_k: None,
+        no_repository_update,
     )
+
+
+def _saved_feedbacks_by_heading(notes: pathlib.Path) -> dict[str, str]:
+    """保存された通常フィードバックをH1ごとに返す。"""
+    feedbacks: dict[str, str] = {}
+    for path in (notes / "inbox").iterdir():
+        content = path.read_text(encoding="utf-8")
+        heading = next(line for line in content.splitlines() if line.startswith("# "))
+        feedbacks[heading] = content
+    return feedbacks
+
+
+def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """新規アラートをフィードバックへ投入し、件数とfrontmatterを返す。"""
+    notes = tmp_path / "private-notes"
+    _prepare_alert_submission(monkeypatch, notes)
     payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]
     count = alerts.check_and_submit_alerts(
         notes,
@@ -192,6 +214,63 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
     assert "- 理由:" in content
     assert "- メリット:" in content
     assert "- デメリット:" in content
+    assert "- 完成条件:" in content
+
+
+def test_check_and_submit_alerts_writes_kind_specific_completion(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """公開入口がアラート種別ごとの外部可視の完成条件を保存する。"""
+    notes = tmp_path / "private-notes"
+    _prepare_alert_submission(monkeypatch, notes)
+
+    def git_fn(_path: pathlib.Path, args: list[str]) -> str | None:
+        if args == ["symbolic-ref", "refs/remotes/origin/HEAD"]:
+            return "refs/remotes/origin/main"
+        return None
+
+    github_count = alerts.check_and_submit_alerts(
+        notes,
+        "github.com/owner/repo",
+        tmp_path / "github-repo",
+        forge="github",
+        now=datetime.datetime(2026, 1, 1),
+        git_fn=git_fn,
+        run_list_fn=lambda _repo, _branch: [
+            {"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 100}
+        ],
+        dependabot_fn=lambda _repo: [{"number": 21, "security_advisory": {}, "dependency": {}}],
+    )
+    gitlab_count = alerts.check_and_submit_alerts(
+        notes,
+        "gitlab.com/owner/repo",
+        tmp_path / "gitlab-repo",
+        forge="gitlab",
+        now=datetime.datetime(2026, 1, 1),
+        git_fn=git_fn,
+        ci_list_fn=lambda _repo, _branch: [{"status": "failed", "id": 200}],
+    )
+
+    assert github_count == 2
+    assert gitlab_count == 1
+    feedbacks = _saved_feedbacks_by_heading(notes)
+    workflow_completion = (
+        "- 完成条件: 対象ワークフロー`CI`の失敗が解消し、ブランチ`main`で当該ワークフローが成功する。"
+        "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
+    )
+    pipeline_completion = (
+        "- 完成条件: 対象パイプライン`200`の失敗が解消し、ブランチ`main`で後続のパイプラインが成功する。"
+        "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
+    )
+    dependabot_completion = (
+        "- 完成条件: 対象アラートが未解決でなくなる。"
+        "ロック済みバージョンが修正版以上の場合は、依存を変更せずアラートを棄却する。"
+        "修正版未満の場合は依存を更新する"
+    )
+    assert workflow_completion in feedbacks["# ワークフローCI失敗"]
+    assert pipeline_completion in feedbacks["# パイプライン200失敗"]
+    assert dependabot_completion in feedbacks["# Dependabot未解決アラート1件"]
+    assert dependabot_completion != workflow_completion
 
 
 def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
