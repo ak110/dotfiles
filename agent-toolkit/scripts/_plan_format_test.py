@@ -4,6 +4,7 @@ import pathlib
 import sys
 
 import pytest
+from pyfltr.colloquial import check as _colloquial_check
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
@@ -499,6 +500,16 @@ def test_human_readable_units_reject_ambiguous_exact_id() -> None:
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     """H1直下のバグ単位と原因分析表・固定12行表を持つ付属ファイルを受理する。"""
     assert not _plan_format.check_bug_file_structure(_BUG_FILE_CONTENT)
+
+
+def test_bug_cause_table_rows_pass_colloquial_check() -> None:
+    """許容語彙表から対象項目が失われた場合に失敗し、固定行名の改称を判断する契機とする。"""
+    deny_patterns = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
+    allow_patterns = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
+
+    for row_name in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS:
+        diagnostics = _colloquial_check.scan_text(row_name, deny_patterns, allow_patterns)
+        assert not diagnostics, (row_name, diagnostics)
 
 
 def test_bug_file_structure_rejects_missing_fixed_row() -> None:
