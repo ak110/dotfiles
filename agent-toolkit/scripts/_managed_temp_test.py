@@ -2399,16 +2399,23 @@ class TestManagedTempWindows:
             assert child.read_text(encoding="utf-8") == "replacement"
 
 
+def _isolated_cli_environment(tmp_path: pathlib.Path) -> tuple[dict[str, str], pathlib.Path]:
+    """CLI subprocessの一時領域と外部状態をOS別の専用領域へ分離する。"""
+    env = os.environ.copy()
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        env[name] = str(tmp_path)
+    if os.name == "nt":
+        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
+        state_root = tmp_path / "local-app-data" / "agent-toolkit" / "managed-temp"
+    else:
+        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+        state_root = tmp_path / "state" / "agent-toolkit" / "managed-temp"
+    return env, state_root
+
+
 def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
     """CLI正常系と修正可能エラーの終了コードを確認する。"""
-    env = os.environ.copy()
-    if os.name == "nt":
-        env["TEMP"] = str(tmp_path)
-        env["TMP"] = str(tmp_path)
-        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
-    else:
-        env["TMPDIR"] = str(tmp_path)
-        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+    env, _ = _isolated_cli_environment(tmp_path)
     created = subprocess.run(
         [sys.executable, str(_SCRIPT), "create", "--prefix", "cli-test"],
         capture_output=True,
@@ -2440,9 +2447,7 @@ def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize("quarantine", [False, True])
 def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: bool) -> None:
     """公開CLIは消費直後と隔離直後の中断を同じcleanupで回収する。"""
-    env = os.environ.copy()
-    env["TMPDIR"] = str(tmp_path)
-    env["XDG_STATE_HOME"] = str(tmp_path / "state")
+    env, state_root = _isolated_cli_environment(tmp_path)
     created = subprocess.run(
         [sys.executable, str(_SCRIPT), "create", "--prefix", "cli-resume"],
         capture_output=True,
@@ -2451,7 +2456,7 @@ def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: 
         env=env,
     )
     target = pathlib.Path(created.stdout.strip())
-    registry = tmp_path / "state" / "agent-toolkit" / "managed-temp" / subject._registry_name(target)
+    registry = state_root / subject._registry_name(target)
     record = json.loads(registry.read_text(encoding="utf-8"))
     nonce = record["nonce"]
     consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")
@@ -2480,14 +2485,7 @@ def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: 
 @pytest.mark.skipif(os.name == "nt", reason="Windowsの明示rootはACLを設定した実機テストで検証する")
 def test_cli_explicit_root_returns_managed_temp_path(tmp_path: pathlib.Path) -> None:
     """CLIの明示root形が指定root直下の絶対pathを返す。"""
-    env = os.environ.copy()
-    if os.name == "nt":
-        env["TEMP"] = str(tmp_path / "default")
-        env["TMP"] = str(tmp_path / "default")
-        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
-    else:
-        env["TMPDIR"] = str(tmp_path / "default")
-        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+    env, _ = _isolated_cli_environment(tmp_path / "default")
     explicit_root = tmp_path / "shared-root"
     explicit_root.mkdir()
     created = subprocess.run(
