@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["mcp>=1.28.1,<2", "claude-agent-sdk>=0.2.144,<0.3"]
+# dependencies = ["mcp>=1.28.1,<2", "claude-agent-sdk>=0.2.144,<0.3", "pydantic>=2"]
 # ///
 """CodexとClaudeの委譲先を非同期MCPとして公開する。"""
 
