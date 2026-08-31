@@ -981,7 +981,12 @@ statuslineのCargo versionとbase・head version及びtagの検査は、共通`r
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
 同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。
 ruleset `21524717`のrequired checkは共通5名と`statusline-version`の6件とし、既存5名を変更しない。
-ruleset更新の失敗又は更新後の検査不一致時は現行状態を再取得し、追加のPUTを実行せず、変更前状態と現行状態を保持して`needs_escalation`で終端する。
+ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを検査する。検査した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
+ruleset更新の本文は管理対象一時領域のJSONファイルへ保存し、送信前に当該ファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、6件のrequired check名を検査する。
+検査に成功した同じファイルを`gh api --method PUT --input <当該ファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
+更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検査時から変化しておらず、失敗の原因が本文の搬送であって送信経路をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
+現行状態を取得できない場合、現行状態が更新前状態と一致しない場合、更新後の検査が期待値と一致しない場合は再送せず、変更前状態と現行状態を保持して`needs_escalation`で終端する。
+更新本文を擬似端末の標準入力へ渡す案は、本文が欠落した場合に更新未成立と適用結果不確定を区別できないため採用しない。全ての更新失敗を状態不明として一律に再送禁止とする案も、更新が成立していないことを再取得で確定できる場合まで工程を停止させるため採用しない。
 
 ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch ruleset及び`refs/heads/master`を確認する。
 候補が0件の場合は作成し、1件の場合は完全IDへPUTする。
