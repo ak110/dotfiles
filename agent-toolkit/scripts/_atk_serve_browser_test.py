@@ -1366,8 +1366,9 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         harness.current_state.publish()
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible")
         release.set()
-        await page.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
-        assert "詳細を閉じて開き直してから保存してください" in await page.locator("#operation-notice-message").inner_text()
+        await detail.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
+        assert "詳細を閉じて開き直してから保存してください" in await detail.locator("#detail-alert").inner_text()
+        await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
         assert await field.input_value() == user_input
         await playwright.async_api.expect(detail.get_by_role("button", name=submit_name, exact=True)).to_be_disabled()
         await page.unroute(mutation_pattern, fail_mutation)
@@ -1488,6 +1489,72 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     detail = page.get_by_role("dialog", name="詳細")
     await playwright.async_api.expect(detail).to_be_hidden()
     await page.locator("#entry-list .entry-select").filter(has_text="frontmatter指定の本文").wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+async def test_create_failure_is_visible_inside_open_dialog(browser_harness: _BrowserHarness) -> None:
+    """新規追加の失敗は開いたダイアログ内へ表示し、ページ通知を表示しない。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+
+    async def fail_create(route: playwright.async_api.Route) -> None:
+        await route.fulfill(status=500, json={"error": "追加処理に失敗しました"})
+
+    await page.route("**/api/entries", fail_create)
+    await page.get_by_role("button", name="新規追加").click()
+    create_dialog = page.get_by_role("dialog", name="新規追加")
+    await create_dialog.locator("#create-content").fill("新規本文")
+    await create_dialog.locator("#create-target").fill("example/repo")
+    await create_dialog.get_by_role("button", name="追加").click()
+
+    await playwright.async_api.expect(create_dialog.locator("#create-alert")).to_contain_text("追加処理に失敗しました")
+    await playwright.async_api.expect(create_dialog.locator("#create-alert")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+    await page.unroute("**/api/entries", fail_create)
+
+
+@pytest.mark.asyncio
+async def test_save_failure_message_stays_at_scrolled_dialog_top(browser_harness: _BrowserHarness) -> None:
+    """本文末尾までスクロールした保存失敗でも結果をダイアログ本文の上端へ留める。"""
+    harness = browser_harness
+    path = harness.root / "inbox" / "long-entry.md"
+    path.write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n" + "長い本文\n\n" * 120,
+        encoding="utf-8",
+    )
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator('.entry-select[data-key="inbox/long-entry.md"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.get_by_role("button", name="編集", exact=True).click()
+    body = detail.locator(".dialog-body")
+    await body.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+
+    async def fail_save(route: playwright.async_api.Route) -> None:
+        await route.fulfill(status=500, json={"error": "保存処理に失敗しました"})
+
+    await page.route("**/api/entries/inbox/long-entry.md", fail_save)
+    await detail.get_by_role("button", name="保存", exact=True).click()
+    alert = detail.locator("#detail-alert")
+    await playwright.async_api.expect(alert).to_contain_text("保存処理に失敗しました")
+    await playwright.async_api.expect(detail.locator("#edit-content")).to_be_focused()
+    metrics = await body.evaluate(
+        """element => {
+          const bodyRect = element.getBoundingClientRect();
+          const alertRect = document.getElementById('detail-alert').getBoundingClientRect();
+          return {
+            bodyTop: bodyRect.top,
+            bodyBottom: bodyRect.bottom,
+            alertTop: alertRect.top,
+            alertBottom: alertRect.bottom,
+            paddingTop: Number.parseFloat(getComputedStyle(element).paddingTop)
+          };
+        }"""
+    )
+    assert metrics["bodyTop"] <= metrics["alertTop"] <= metrics["bodyTop"] + metrics["paddingTop"] + 1
+    assert metrics["alertBottom"] <= metrics["bodyBottom"]
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+    await page.unroute("**/api/entries/inbox/long-entry.md", fail_save)
 
 
 @pytest.mark.asyncio

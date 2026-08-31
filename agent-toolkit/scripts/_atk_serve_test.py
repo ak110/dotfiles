@@ -1623,7 +1623,7 @@ async function exercise(kind, status, code, withExternalUpdate) {
   const button = elements[answering ? 'save-answer-button' : 'save-entry-button'];
   const input = elements[answering ? 'answer-input' : 'edit-content'];
   const outcome = {
-    alert: elements['operation-notice-message'].textContent,
+    alert: elements['detail-alert'].textContent,
     disabled: button.disabled,
     input: input.value,
     mode: currentDetailMode()
@@ -1828,21 +1828,26 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_operation_result_uses_page_notification_with_dismiss_action() -> None:
-    """操作結果は開いているdialogに依存せず、閉じる操作付きのページ通知へ送る。"""
+def test_operation_result_uses_active_dialog_or_page_notification() -> None:
+    """操作結果は最上位ダイアログへ送り、ダイアログが無い場合だけページ通知へ送る。"""
     result = _run_node_ui(
         """
-elements['detail-dialog'].open = true;
-dialogStack.push('detail-dialog');
-elements['delete-dialog'].open = true;
-dialogStack.push('delete-dialog');
-closeDialog(elements['delete-dialog']);
-deliverOperationMessage('削除完了');
-const detailMessage = elements['detail-status'].textContent;
-closeDialog(elements['detail-dialog']);
+const dialogResults = {};
+for (const name of ['detail', 'create', 'delete']) {
+  elements['operation-notice'].hidden = true;
+  elements[`${name}-dialog`].open = true;
+  dialogStack.push(`${name}-dialog`);
+  deliverOperationMessage(`${name}失敗`, true);
+  dialogResults[name] = {
+    alert: elements[`${name}-alert`].textContent,
+    status: elements[`${name}-status`].textContent,
+    pageHidden: elements['operation-notice'].hidden
+  };
+  closeDialog(elements[`${name}-dialog`]);
+}
 deliverOperationMessage('保存完了', true);
 process.stdout.write(JSON.stringify({
-  detailMessage,
+  dialogResults,
   message: elements['operation-notice-message'].textContent,
   error: elements['operation-notice'].dataset.error,
   role: elements['operation-notice'].attributes.role,
@@ -1851,7 +1856,11 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "detailMessage": "",
+        "dialogResults": {
+            "detail": {"alert": "detail失敗", "status": "", "pageHidden": True},
+            "create": {"alert": "create失敗", "status": "", "pageHidden": True},
+            "delete": {"alert": "delete失敗", "status": "", "pageHidden": True},
+        },
         "message": "保存完了",
         "error": "true",
         "role": "alert",
@@ -2419,20 +2428,18 @@ async def test_read_routes_remain_available_during_entry_move(
     adopted.mkdir()
     entry = inbox / "entry.md"
     entry.write_text("---\ntype: feedback\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
-    original_entry_type_of = common.entry_type_of
+    original_entry_type_from_metadata = common.entry_type_from_metadata
 
     async def race_request(path: str) -> typing.Any:
         started = threading.Event()
         release = threading.Event()
 
-        def entry_type_of(entry_path: pathlib.Path, text: str) -> str:
+        def entry_type_from_metadata(entry_path: pathlib.Path, metadata: typing.Mapping[str, object]) -> str:
             started.set()
             release.wait()
-            result = original_entry_type_of(entry_path, text)
-            assert result is not None
-            return result
+            return original_entry_type_from_metadata(entry_path, metadata)
 
-        monkeypatch.setattr(common, "entry_type_of", entry_type_of)
+        monkeypatch.setattr(common, "entry_type_from_metadata", entry_type_from_metadata)
         request = asyncio.create_task(app.test_client().get(path))
         await asyncio.to_thread(started.wait)
         entry.rename(adopted / entry.name)
@@ -2773,7 +2780,7 @@ def test_detail_disables_only_bare_address_links(tmp_path: pathlib.Path) -> None
 def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """空のfrontmatterは空表を生成せず、分離後の本文だけを整形する。"""
     _write_detail_entry(tmp_path, "---\n---\n\n本文\n")
-    monkeypatch.setattr(common, "entry_type_of", lambda *_args: "feedback")
+    monkeypatch.setattr(common, "entry_type_from_metadata", lambda *_args: "feedback")
     rendered = typing.cast(str, serve_app.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert '<table class="frontmatter">' not in rendered
     # 分離自体は成立するため、開始区切りが水平線として残らない。
@@ -2851,6 +2858,15 @@ def test_operations_sort_entries_by_filename_across_states_and_render_markdown(t
     assert '<code class="language-python">' in rendered
     assert "<script>" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+
+
+def test_render_body_renders_footnote_with_document_anchor() -> None:
+    """注記記法は本文と同一文書内の参照リンクとして描画する。"""
+    rendered = serve_app._render_body("本文です[^1]。\n\n[^1]: 注記の本文\n")
+
+    assert "注記の本文" in rendered
+    assert 'href="#fn1"' in rendered
+    assert 'href="%E6%B3%A8%E8%A8%98%E3%81%AE%E6%9C%AC%E6%96%87"' not in rendered
 
 
 def test_operations_active_includes_planning_feedback_but_excludes_planning_tbd(tmp_path: pathlib.Path) -> None:
@@ -2948,6 +2964,35 @@ def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.
     assert not warnings
 
     assert [item["filename"] for item in result] == ["entry.md"]
+
+
+def test_operations_parses_each_scanned_entry_once_before_query_filter(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本文検索で除外するエントリも含め、走査したMarkdownを1件1回だけ解析する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    for filename, body in (("match.md", "検索対象"), ("other.md", "別の本文")):
+        (inbox / filename).write_text(
+            f"---\ntype: feedback\ntarget_repo: example/repo\n---\n\n{body}\n",
+            encoding="utf-8",
+        )
+    original_parse = serve_app.frontmatter.parse_frontmatter
+    parse_calls = 0
+
+    def counting_parse(text: str) -> tuple[dict[str, typing.Any], str] | None:
+        nonlocal parse_calls
+        parse_calls += 1
+        return original_parse(text)
+
+    monkeypatch.setattr(serve_app.frontmatter, "parse_frontmatter", counting_parse)
+
+    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"q": "検索対象"})
+
+    assert not warnings
+    assert [item["filename"] for item in result] == ["match.md"]
+    assert parse_calls == 2
 
 
 def test_operations_source_empty_filter_returns_items_with_missing_or_empty_source(

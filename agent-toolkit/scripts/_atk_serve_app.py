@@ -28,6 +28,7 @@ import _atk_serve_state as serve_state
 import _git_remote
 import filelock
 import markdown_it
+import mdit_py_plugins.footnote
 import pytilpack.quart
 import quart
 import werkzeug.exceptions
@@ -48,7 +49,8 @@ _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
-_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+# エンドユーザーが記述する注記記法を注記として描画する。
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(mdit_py_plugins.footnote.footnote_plugin)
 
 # pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
 
@@ -169,9 +171,13 @@ def _source_kind(source: typing.Any) -> str:
     return "human" if source is None else "agent"
 
 
-def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:
-    parsed = frontmatter.parse_frontmatter(text)
-    metadata = parsed[0] if parsed is not None else {}
+def _entry(
+    path: pathlib.Path,
+    kind: str,
+    state: str,
+    text: str,
+    metadata: dict[str, typing.Any],
+) -> dict[str, object]:
     answered = common.is_tbd_answered(text) if kind == "tbd" else None
     return {
         "kind": kind,
@@ -408,12 +414,14 @@ class Operations:
         )
         for state, path, text in self._iter_entry_files(states, warnings):
             try:
-                kind = common.entry_type_of(path, text)
+                parsed = frontmatter.parse_frontmatter(text)
+                metadata = parsed[0] if parsed is not None else {}
+                kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
                 if not _is_selected_state(status_filter, state, kind):
                     continue
                 if kind_filter not in ("all", kind):
                     continue
-                item = _entry(path, kind or "unknown", state, text)
+                item = _entry(path, kind or "unknown", state, text, metadata)
             except FileNotFoundError:
                 continue
             except OSError:
@@ -472,11 +480,11 @@ class Operations:
         path = common.validate_filename(filename, self.private_notes / state)
         try:
             text = path.read_text(encoding="utf-8")
-            kind = common.entry_type_of(path, text)
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
+            kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
             question_type, choices = _question_metadata(metadata, kind or "unknown")
-            detail_entry = _entry(path, kind or "unknown", state, text)
+            detail_entry = _entry(path, kind or "unknown", state, text, metadata)
             try:
                 extracted_comment = user_comment_mutations.extract_user_comment(text)
             except user_comment_mutations.UserCommentError:
@@ -539,7 +547,7 @@ class Operations:
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
                 continue
-            if not _is_selected_state(status, _state, common.entry_type_of(_path, text)):
+            if not _is_selected_state(status, _state, common.entry_type_from_metadata(_path, parsed[0])):
                 continue
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:

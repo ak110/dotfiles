@@ -10,6 +10,7 @@
 #   "pytilpack[quart]>=1.47.0",
 #   "pyyaml",
 #   "markdown-it-py[linkify]>=4.0.0",
+#   "mdit-py-plugins>=0.6",
 # ]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。

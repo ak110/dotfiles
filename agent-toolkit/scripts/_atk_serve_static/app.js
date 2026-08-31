@@ -127,7 +127,16 @@ function topmostDialog() {
 }
 
 function deliverOperationMessage(message, isError = false) {
-  showToast(message, isError);
+  const dialog = topmostDialog();
+  if (!dialog) {
+    showToast(message, isError);
+    return;
+  }
+  // モーダルはtop layerへ描画され、ページ固定の通知は`::backdrop`の下へ入り、暗転して操作も受け付けない。
+  // 開いているダイアログがあるときは、そのダイアログ内の結果表示領域へ配送する。
+  const name = dialog.id.replace(/-dialog$/, '');
+  setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
+  setTextMessage(`${name}-${isError ? 'status' : 'alert'}`, '');
 }
 
 function openDialog(dialog, origin, focusTarget) {

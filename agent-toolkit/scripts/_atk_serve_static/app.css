@@ -127,6 +127,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   background: #fff1f0;
   white-space: pre-wrap;
 }
+/* ダイアログ本文はスクロールするため、結果表示領域を上端へ留め、スクロール位置によらず可視にする。 */
+.dialog-message { position: sticky; top: 0; z-index: 1; }
 .global-error {
   display: flex;
   align-items: flex-start;

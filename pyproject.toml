@@ -14,6 +14,7 @@ dependencies = [
     "libarchive-c",
     "markdown-it-py[linkify]>=4.0.0",
     "mcp>=1.28.1,<2",
+    "mdit-py-plugins>=0.6",
     "natsort",
     "numpy",
     "pdf2image",

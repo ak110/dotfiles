@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 
 import _atk_git_sync
 import _atk_mq_legacy
@@ -693,9 +693,16 @@ def make_filename_completer(
 
 def _require_type(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を検証して返す。"""
-    if parse_frontmatter(text) is None:
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return None
-    entry_type = _parse_type(text)
+    return entry_type_from_metadata(path, parsed[0])
+
+
+def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object]) -> str:
+    """解析済みfrontmatterの種別を検証して返す。"""
+    value = metadata.get("type")
+    entry_type = value if isinstance(value, str) and value else None
     if entry_type not in MQ_TYPES:
         print(
             f"frontmatterのtypeが不正または欠落しています（feedback・tbdのいずれかが必要）: {path}",

@@ -88,20 +88,13 @@ _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
 
 
-def _parse_type(text: str) -> str | None:
-    """本文先頭のfrontmatterから種別を抽出する。"""
+def _require_type(path: pathlib.Path, text: str) -> str | None:
+    """エントリの種別を検証して返す。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
     value = parsed[0].get("type")
-    return value if isinstance(value, str) and value else None
-
-
-def _require_type(path: pathlib.Path, text: str) -> str | None:
-    """エントリの種別を検証して返す。"""
-    if parse_frontmatter(text) is None:
-        return None
-    entry_type = _parse_type(text)
+    entry_type = value if isinstance(value, str) and value else None
     if entry_type not in MQ_TYPES:
         print(f"frontmatterのtypeが不正または欠落しています（feedback・tbdのいずれかが必要）: {path}", file=sys.stderr)
         raise SystemExit(2)
