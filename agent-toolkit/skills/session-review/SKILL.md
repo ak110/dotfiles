@@ -11,7 +11,7 @@ description: >
 
 ## 問題候補の抽出
 
-1. `agent-toolkit:delegation`を起動し、起動直前に`atk config get orchestrate_model`で実効engine・model・effortを解決する。
+1. `agent-toolkit:delegation`を起動し、起動直前に`atk config get session_review_model`で実効engine・model・effortを解決する。
 2. メインが読み込んだ本`SKILL.md`の絶対パスから現行plugin rootを確定し、`skills/session-review/scripts/session_review_evidence.py`の実在を確認する。実在しなければ分析失敗として扱う。
 3. `agents_server`で通常の読み取り専用サブエージェントを1つ起動する。専用agent定義、固定モデル及び代替モデルを使わない。
 4. Claude Codeでは、メインが把握する現在のtranscript絶対パスと、確認済み抽出器の絶対パスを渡す。Codexではメインの`CODEX_THREAD_ID`と同じ抽出器絶対パスを渡し、サブエージェントが`$CODEX_HOME/sessions/*/*/*/rollout-*<thread-id>.jsonl`から完全suffix一致する正本1件を選ぶ。backupを検索せず、0件又は複数件なら`evidence_insufficient`とする。

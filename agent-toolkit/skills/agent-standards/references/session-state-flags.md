@@ -27,8 +27,8 @@
 ## plan系
 
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画ファイル検査の適用判定に使う
-- `plan_impl_executor_active_subagent_sessions`: SubagentStartが`plan-impl-executor`と`feedbacks-planner`の`agent_id`を
-  Agent識別子別に記録し、SubagentStopが完了報告を検査する。記録した要素は、正常報告、SendMessage再開、
+- `plan_executor_active_subagent_sessions`: SubagentStartが`plan-executor`と`feedbacks-planner`の`agent_id`を
+  Agent識別子別に記録する。記録した要素は、正常報告、SendMessage再開、
   plan-mode起動のいずれでも削除されず、別の調整役の要素と併存する。状態JSON全体の寿命は末尾の規定に従う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。

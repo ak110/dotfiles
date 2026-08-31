@@ -647,7 +647,7 @@ def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.P
     work_dir, base = repo
     content = _plan(work_dir, base).replace(
         "対象の構造を更新する。",
-        "`agent-toolkit:plan-mode`を起動し、Agentツールで`agent-toolkit:plan-impl-executor`を起動する。",
+        "`agent-toolkit:plan-mode`を起動し、Agentツールで`agent-toolkit:plan-executor`を起動する。",
     )
     errors, _warnings = _check(work_dir, content)
     assert not errors, errors

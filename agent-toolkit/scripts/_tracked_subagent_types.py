@@ -4,8 +4,8 @@ from __future__ import annotations
 
 TRACKED_SUBAGENT_TYPES: frozenset[str] = frozenset(
     {
-        "plan-impl-executor",
-        "agent-toolkit:plan-impl-executor",
+        "plan-executor",
+        "agent-toolkit:plan-executor",
         "feedbacks-planner",
         "agent-toolkit:feedbacks-planner",
         "plan-review-executor",

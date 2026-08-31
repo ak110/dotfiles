@@ -10,8 +10,8 @@ def test_tracked_subagent_types_are_orchestrators() -> None:
     assert (
         frozenset(
             {
-                "plan-impl-executor",
-                "agent-toolkit:plan-impl-executor",
+                "plan-executor",
+                "agent-toolkit:plan-executor",
                 "feedbacks-planner",
                 "agent-toolkit:feedbacks-planner",
                 "plan-review-executor",

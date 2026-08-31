@@ -14,7 +14,7 @@ agent-toolkit変更では、メインがMINOR版数更新と派生manifest同期
 ## CI失敗
 
 CI失敗は`agent-toolkit:bugfix`のCI失敗処理契約で原因を確定する。修正commitが必要な場合は専用worktreeのCI修正レーンを作成し、
-担当種別`CI修正担当`として起動した`execute_fix_model`の実装担当と単一の`implementation-review`だけを実行する。新しい計画と計画レビューを作成しない。
+担当種別`CI修正担当`として起動した`execute_model`の実装担当と単一の`implementation-review`だけを実行する。新しい計画と計画レビューを作成しない。
 
 CI修正レーンは修正、検証、commit及び実装レビュー後に最新ベースへrebaseし、メインの直列許可を得てffマージし、所有worktree、branch及びmanaged-tempを回収する。
 各マージ後かつ再push前に、直前にpushした完全OID以降の未push差分を版数規範へ照合する。

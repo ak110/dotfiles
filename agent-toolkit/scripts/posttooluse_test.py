@@ -373,7 +373,7 @@ class TestSubagentEndProcessLoopLog:
 
     @pytest.mark.parametrize(
         ("subagent_type", "enable_env", "expect_logged"),
-        [("plan-impl-executor", True, True), ("plan-impl-executor", False, False), ("claude", True, False)],
+        [("plan-executor", True, True), ("plan-executor", False, False), ("claude", True, False)],
     )
     def test_subagent_end_logging(self, tmp_path: pathlib.Path, subagent_type: str, enable_env: bool, expect_logged: bool):
         xdg_state_home = tmp_path / "xdg-state"

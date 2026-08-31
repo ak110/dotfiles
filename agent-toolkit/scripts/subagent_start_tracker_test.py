@@ -1,4 +1,4 @@
-"""`SubagentStart`による`plan-impl-executor`追跡開始のテスト。"""
+"""`SubagentStart`による`plan-executor`追跡開始のテスト。"""
 
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ def _state(state_dir: pathlib.Path, session_id: str) -> dict:
 @pytest.mark.parametrize(
     "agent_type",
     [
-        "plan-impl-executor",
-        "agent-toolkit:plan-impl-executor",
+        "plan-executor",
+        "agent-toolkit:plan-executor",
         "feedbacks-planner",
         "agent-toolkit:feedbacks-planner",
     ],
@@ -48,7 +48,7 @@ def test_executor_names_are_registered(tmp_path: pathlib.Path, agent_type: str) 
     }
 
     assert _run("subagent_start_tracker", payload, tmp_path).returncode == 0
-    active = _state(tmp_path, "sid")["plan_impl_executor_active_subagent_sessions"]
+    active = _state(tmp_path, "sid")["plan_executor_active_subagent_sessions"]
     assert active["agent-a"]["subagent_type"] == agent_type
 
 
@@ -57,16 +57,16 @@ def test_duplicate_notification_is_idempotent_and_other_agents_are_preserved(tmp
         "hook_event_name": "SubagentStart",
         "session_id": "sid",
         "agent_id": "agent-a",
-        "agent_type": "plan-impl-executor",
+        "agent_type": "plan-executor",
     }
     second = {**first, "agent_id": "agent-b"}
 
     _run("subagent_start_tracker", first, tmp_path)
-    started_at = _state(tmp_path, "sid")["plan_impl_executor_active_subagent_sessions"]["agent-a"]["started_at"]
+    started_at = _state(tmp_path, "sid")["plan_executor_active_subagent_sessions"]["agent-a"]["started_at"]
     _run("subagent_start_tracker", first, tmp_path)
     _run("subagent_start_tracker", second, tmp_path)
 
-    active = _state(tmp_path, "sid")["plan_impl_executor_active_subagent_sessions"]
+    active = _state(tmp_path, "sid")["plan_executor_active_subagent_sessions"]
     assert set(active) == {"agent-a", "agent-b"}
     assert active["agent-a"]["started_at"] == started_at
 
@@ -76,9 +76,9 @@ def test_duplicate_notification_is_idempotent_and_other_agents_are_preserved(tmp
     [
         {},
         [],
-        {"hook_event_name": "Other", "session_id": "sid", "agent_id": "agent", "agent_type": "plan-impl-executor"},
-        {"hook_event_name": "SubagentStart", "session_id": "", "agent_id": "agent", "agent_type": "plan-impl-executor"},
-        {"hook_event_name": "SubagentStart", "session_id": "sid", "agent_id": "", "agent_type": "plan-impl-executor"},
+        {"hook_event_name": "Other", "session_id": "sid", "agent_id": "agent", "agent_type": "plan-executor"},
+        {"hook_event_name": "SubagentStart", "session_id": "", "agent_id": "agent", "agent_type": "plan-executor"},
+        {"hook_event_name": "SubagentStart", "session_id": "sid", "agent_id": "", "agent_type": "plan-executor"},
         {"hook_event_name": "SubagentStart", "session_id": "sid", "agent_id": "agent", "agent_type": "other"},
     ],
 )
@@ -93,7 +93,7 @@ def test_first_nonempty_subagent_stop_passes_without_posttooluse(tmp_path: pathl
         "hook_event_name": "SubagentStart",
         "session_id": "sid",
         "agent_id": "agent-a",
-        "agent_type": "plan-impl-executor",
+        "agent_type": "plan-executor",
     }
     _run("subagent_start_tracker", start, tmp_path)
 

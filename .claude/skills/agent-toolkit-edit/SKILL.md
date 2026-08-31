@@ -82,7 +82,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit:plan-mode`から作業を開始し、承認後はAgentツールで`agent-toolkit:plan-impl-executor`を
+`agent-toolkit:plan-mode`から作業を開始し、承認後はAgentツールで`agent-toolkit:plan-executor`を
 起動して引き継ぐ。工程の詳細は各スキル・agent定義を正本とする。
 計画ファイルの実装者向け領域にあるレビューステップへ
 `レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップする。

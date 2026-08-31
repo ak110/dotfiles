@@ -128,23 +128,28 @@ def test_main_reads_feedback_bodies_only_when_judging() -> None:
     assert "メインによる本文の要約を入力の代替にしない" in _read(_RUN_LANES)
 
 
-def test_immediate_fix_is_delegated_with_execute_fix_model() -> None:
+def test_immediate_fix_is_delegated_with_execute_model() -> None:
     """即時対応の修正をメインが自ら実施する経路の復活を検出する。
 
     メインが直接修正するとレーン処理に残るコンテキストが減り、規範文書の改訂許可も渡らない。
     """
     section = _section(_read(_SKILL), "フィードバック即時対応")
     assert "メインが自ら実施せず" in section
-    assert "atk config get execute_fix_model" in section
+    assert "atk config get execute_model" in section
     assert "規範文書を改訂する許可" in section
 
 
-def test_execute_fix_model_row_covers_immediate_fix() -> None:
-    """工程別モデル設定の`execute_fix_model`行が即時対応と解決主体を含むことを検査する。"""
-    rows = [line for line in _read(_RUNTIME_ROUTING).splitlines() if line.startswith("| `execute_fix_model` |")]
+def test_immediate_fix_route_is_registered_for_resolved_model_key() -> None:
+    """即時対応が解決する設定キーの工程表行に、対象工程と解決主体が登録されることを検査する。"""
+    section = _section(_read(_SKILL), "フィードバック即時対応")
+    config_line = next(line for line in section.splitlines() if "atk config get " in line)
+    model_key = config_line.split("atk config get ", 1)[1].split("`", 1)[0]
+    rows = [line for line in _read(_RUNTIME_ROUTING).splitlines() if line.startswith(f"| `{model_key}` |")]
     assert len(rows) == 1, rows
     assert "フィードバック即時対応" in rows[0]
     assert "process-feedbacksのメイン" in rows[0]
+    assert "CI失敗修正" in rows[0]
+    assert "process-feedbacksのCI修正レーン" in rows[0]
 
 
 def test_picker_excludes_external_wait_only() -> None:

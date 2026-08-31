@@ -14,7 +14,7 @@ from _tracked_subagent_types import (  # noqa: E402  # pylint: disable=wrong-imp
     TRACKED_SUBAGENT_TYPES,
 )
 
-_PLAN_IMPL_EXECUTOR_ACTIVE_KEY = "plan_impl_executor_active_subagent_sessions"
+_PLAN_EXECUTOR_ACTIVE_KEY = "plan_executor_active_subagent_sessions"
 
 
 def main(payload_text: str) -> int:
@@ -39,14 +39,14 @@ def main(payload_text: str) -> int:
         return 0
 
     def _register(state: dict) -> dict | None:
-        active = state.get(_PLAN_IMPL_EXECUTOR_ACTIVE_KEY)
+        active = state.get(_PLAN_EXECUTOR_ACTIVE_KEY)
         if not isinstance(active, dict):
             active = {}
         current = active.get(agent_id)
         if isinstance(current, dict) and current.get("subagent_type") == agent_type:
             return None
         active[agent_id] = {"subagent_type": agent_type, "started_at": time.time()}
-        state[_PLAN_IMPL_EXECUTOR_ACTIVE_KEY] = active
+        state[_PLAN_EXECUTOR_ACTIVE_KEY] = active
         return state
 
     update_state(session_id, _register)

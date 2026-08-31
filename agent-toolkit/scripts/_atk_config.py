@@ -10,6 +10,7 @@ import json
 import pathlib
 import re
 import sys
+from typing import cast
 
 import platformdirs
 from _atk_mq_common import _private_notes_path
@@ -17,17 +18,18 @@ from _atk_mq_common import _private_notes_path
 _CONFIG_FILENAME = "config.json"
 
 _DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
-_DEFAULT_EXECUTE_FAST_MODEL = "codex:gpt-5.6-luna/max"
-_DEFAULT_EXECUTE_FIX_MODEL = _DEFAULT_STAGE_MODEL
-_LEGACY_EXECUTE_MODEL_KEY = "execute_model"
 _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
+# 暫定処理: 旧キー名で`atk config get`を受けたときに現行キーの解決値を返す読替表。
+# 導入日: 2026-08-31。削除可能日: 2026-09-03。旧キー名を参照する並行セッションが残らなくなった後に削除してよい。
+_LEGACY_GET_KEY_ALIASES = {"execute_fix_model": "execute_model"}
 _MUTABLE_KEY_DEFAULTS = {
     "pick_feedbacks_model": _DEFAULT_STAGE_MODEL,
     "plan_model": _DEFAULT_STAGE_MODEL,
     "plan_review_model": _DEFAULT_STAGE_MODEL,
-    "execute_fast_model": _DEFAULT_EXECUTE_FAST_MODEL,
-    "execute_fix_model": _DEFAULT_EXECUTE_FIX_MODEL,
+    "execute_fast_model": _DEFAULT_STAGE_MODEL,
+    "execute_model": _DEFAULT_STAGE_MODEL,
     "execute_review_model": _DEFAULT_STAGE_MODEL,
+    "session_review_model": _DEFAULT_STAGE_MODEL,
     "orchestrate_model": _ORCHESTRATE_MODEL_DEFAULT,
 }
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/]+(?:/[^/]+)?$")
@@ -73,27 +75,6 @@ def _save_config(config: dict[str, str]) -> None:
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _resolved_mutable_settings(config: dict[str, str]) -> dict[str, str]:
-    """保存値と既定値を解決し、旧`execute_model`を新2キーへ遅延移行する。"""
-    settings = {key: config.get(key, default) for key, default in _MUTABLE_KEY_DEFAULTS.items()}
-    legacy_value = config.get(_LEGACY_EXECUTE_MODEL_KEY)
-    if legacy_value is not None:
-        for key in ("execute_fast_model", "execute_fix_model"):
-            if key not in config:
-                settings[key] = legacy_value
-    return settings
-
-
-def _migrate_legacy_execute_model(config: dict[str, str]) -> None:
-    """旧`execute_model`がある場合だけ新2キーを補い、辞書をその場で更新する。"""
-    legacy_value = config.get(_LEGACY_EXECUTE_MODEL_KEY)
-    if legacy_value is None:
-        return
-    for key in ("execute_fast_model", "execute_fix_model"):
-        config.setdefault(key, legacy_value)
-    config.pop(_LEGACY_EXECUTE_MODEL_KEY, None)
-
-
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
     config = _load_config()
@@ -103,7 +84,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
         "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes_path(home)),
-        **_resolved_mutable_settings(config),
+        **{key: config.get(key, default) for key, default in _MUTABLE_KEY_DEFAULTS.items()},
     }
 
 
@@ -116,14 +97,16 @@ def _cmd_config_show(home: pathlib.Path) -> None:
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     """getサブコマンド: 1件以上の設定値を表示する。未知キーはexit 2。"""
     settings = _resolved_settings(home)
-    unknown_keys = [key for key in args.key if key not in settings]
+    requested_keys = cast(list[str], args.key)
+    resolved_keys = [_LEGACY_GET_KEY_ALIASES.get(key, key) for key in requested_keys]
+    unknown_keys = [key for key in resolved_keys if key not in settings]
     if unknown_keys:
         print(
             f"未知の設定キーです: {', '.join(unknown_keys)}（利用可能: {', '.join(sorted(settings))}）",
             file=sys.stderr,
         )
         sys.exit(2)
-    for key in args.key:
+    for key in resolved_keys:
         print(settings[key])
 
 
@@ -155,7 +138,6 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
     config = _load_config()
-    _migrate_legacy_execute_model(config)
     config[args.key] = args.value
     _save_config(config)
     print(f"設定を更新しました: {args.key}={args.value}")

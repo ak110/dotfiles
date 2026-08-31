@@ -169,7 +169,7 @@ backend固有のserver requestは共有公開toolを増やさず、非対話の�
 
 Claude Codeからclaude系モデルの実行主体へ委譲する場合の既定はAgentツールとし、`agents_server`を使わない。
 Claude CodeのUIが実行状況と応答を直接表示するため、同じ結果をより少ない観測手段で確認できるためである。
-例外は`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各定義が起動する委譲先とし、engineの別によらず`agents_server`を使う。
+例外は`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各定義が起動する委譲先とし、engineの別によらず`agents_server`を使う。
 これらの定義が委譲する工程は工程別モデル設定がeffortを指定し、Agentツールにeffortに相当する引数が無いためである。
 3定義の`tools`はAgentツールの許可を保つが、MCPツールを呼び出せない場合の自動代替経路は設けない。
 Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、3定義配下を`agents_server`固定とした理由自体を損なうためである。
@@ -270,7 +270,7 @@ pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上
 ①はpicker出力の検収直後に、選定時点で`inbox`だった項目へ既存の一括`start-processing`を1回実行し、全件の`processing`配置を確認して完了する。
 計画ファイル、managed-temp、worktree及び実装担当の起動をこの遷移の成功より後へ置くことで、着手済みの処理回が占有する範囲を外部観測と中断後の再開位置から識別できる。
 起動時に固定した集合の全レーンが完了した後はready一覧を再取得せず③へ進み、処理回の進行中に追加された項目は次回の処理で扱う。
-②では通常レーンの計画だけを`feedbacks-planner`、実装単位の調整を`plan-impl-executor`、変更の作成を実装担当へ分ける。
+②では通常レーンの計画だけを`feedbacks-planner`、実装単位の調整を`plan-executor`、変更の作成を実装担当へ分ける。
 各レーンは担当工程に必要な正本だけを受け取り、最新ベースへのrebase、競合解消後の単一実装レビュー、メインから直列に許可されたffマージ、`adopt`、所有資源の回収までを完了する。
 ③ではメインが版数・生成物同期、push、CI、必要なCI修正、フィードバック固有の終端工程を所有する。全体レビューは追加しない。
 1つの計画ファイルに属する実装単位は同じworktreeで順次実装し、同時に1つの実装担当だけを置く。
@@ -278,7 +278,7 @@ pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上
 競合時は同じexecutorと実装担当が関係計画の目的、実施内容、設計判断、完了条件を照合して最小限に解消し、同じ単一実装レビューを再度収束させてからffマージを要求する。
 
 実装単位の初回実装と近接検証は`execute_fast_model`へ割り当てる。fast担当がエスカレーションした場合だけ、
-`plan-impl-executor`が`execute_fix_model`の実効設定を解決し、継続条件に従って同じthreadの継続か新規fix担当の起動のいずれかを確定する。
+`plan-executor`が`execute_model`の実効設定を解決し、継続条件に従って同じthreadの継続か新規fix担当の起動のいずれかを確定する。
 この引継ぎだけはclean開始契約の限定例外とし、新規起動ではfast担当の終端を確認してから現行状態を渡し、同時に1つの書込主体だけを置く。
 レビュー修正とCI修正はfix担当へ渡す。
 CI修正の認可根拠には、承認済み計画の該当箇所、原因となった変更を認可した利用者指示の逐語文、既存の公開契約の該当箇所のいずれかを使用する。
@@ -289,7 +289,7 @@ CI修正担当の共通出力は`feedbacks`を維持し、フィードバック�
 commit境界は計画の実装単位表を正本として維持する。単位ごとに実効設定を解決し直す案は、同じ計画の全単位が同じ`execute_fast_model`を対象とし解決結果が変わらないため採用しない。
 前の単位の試行錯誤を後続へ持ち込まない利益は、担当が単位ごとにcommitを確定して近接検証を通す既存契約で保たれる。
 単位数が多い計画で担当を分割する条件は、コンテキストの逼迫を担当自身のエスカレーションとfix担当への引継ぎで扱えるため設けない。
-fast担当からfix担当への移行は、`execute_fast_model`と`execute_fix_model`の実効`engine`・`model`・`effort`がすべて一致する場合だけ同一threadを継続する。
+fast担当からfix担当への移行は、`execute_fast_model`と`execute_model`の実効`engine`・`model`・`effort`がすべて一致する場合だけ同一threadを継続する。
 同じworktreeの作業状態と会話履歴を保ったまま担当種別だけを切り替えられ、規範・計画・対象コードの再読込を避けられるためである。
 いずれかが異なる場合は、threadが保持する実行条件と工程の実効設定が一致しないため、fast担当を終端して検収済み状態を新規fix担当へ渡す。
 同一threadへの継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応、再レビューを返す場合と、実効3値が一致するfast担当とfix担当の間で担当種別を切り替える場合に限る。
@@ -391,13 +391,13 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 
 メインはキュー、利用者合意、公開認可及び工程全体の完了を知る。
 `feedbacks-planner`は要求と調査対象を知るが、成果物を変更しない。
-`plan-impl-executor`は承認済み計画と実装結果を知るが、要求を再定義しない。
+`plan-executor`は承認済み計画と実装結果を知るが、要求を再定義しない。
 実装担当は担当単位と対象worktreeを知るが、他のレーンの統合順や公開時機を決定しない。
 実装担当は自身が起動した外部プロセスと背景ジョブの実行識別子と停止操作を知り、
 同じworktreeの書込所有権を手放す前に全ての終了を確認する。
 委譲元は完了報告、報告されたツール終了結果又は実行識別子、`TaskStop`の結果及び実行時に公開され呼び出しに成功した`ListAgents`の状態を知り、
 同じworktreeへ実装担当を引き継ぐ場合に終了確認の成立を検収する。
-通常の実装モードでレビュー修正を委譲する場合は、`plan-impl-executor`が元の実装入力、レビュー表及び対象worktreeの絶対パスを修正担当へ渡す。
+通常の実装モードでレビュー修正を委譲する場合は、`plan-executor`が元の実装入力、レビュー表及び対象worktreeの絶対パスを修正担当へ渡す。
 修正担当は公開契約と承認済み変更を正本から確認し、レビュー表の指摘を採否判断して、採用指摘を実装単位commitの完全OIDへ対応付ける。
 対応付け不能、計画間衝突又は認可上限超過の場合は、履歴と作業ツリーを変更せず`needs_escalation`で返す。
 成立する場合は未pushの実装単位履歴へ修正を統合し、詳細をレビュー表と成果物へ記録して工程完了だけを返す。
@@ -406,7 +406,7 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 未pushかつ単一の実装担当が所有するworktreeの履歴書換え保護は、`agent-toolkit/skills/commit/references/history-rewrite.md`が定める汎用のプッシュ済み判定へ一本化する。
 remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。専用の`pre_fixup` phaseを先頭に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。
-`rewrite_guard`のphaseは通常の`plan-impl`レビュー修正だけに記録し、それ以外では`not_applicable`とする。
+`rewrite_guard`のphaseは通常の計画実行モードのレビュー修正だけに記録し、それ以外では`not_applicable`とする。
 実装担当は履歴書換え前の完全OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容と現行Git実体を照合して回復する。準備中の証拠しかない場合又は実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。調整担当への中間受渡しと成果物・Git・検証結果の再検収は設けない。
 初回実装担当のrouteと実効`engine`・`model`・`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業・指摘への対応・再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、元の実装入力と正本の絶対パスを開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
@@ -422,7 +422,7 @@ remote広告refの直積証跡・replace ref・graft・shallow複製への追加
 各検査は担当する契約だけを知り、対象固有テストをauto mode classifierの意味解釈の検査として扱わない。
 比較不能な総合出力又は実在しないauto mode classifierの検査を必須にする案は、変更の成否を識別できないため採用しない。
 
-`feedbacks-planner`と`plan-impl-executor`は受信者専用のタスク文書及び作成規範を読み込まず、その絶対パスを実装担当へ渡す。
+`feedbacks-planner`と`plan-executor`は受信者専用のタスク文書及び作成規範を読み込まず、その絶対パスを実装担当へ渡す。
 agent-toolkitプラグイン内のタスク文書と作成規範の絶対パスは、両者が注入済み委譲スキルの所在から現行plugin rootを確定して解決する。
 呼び出し元はプラグイン内文書の絶対パスと作成規範の指定を渡さない。
 呼び出し元は新規成果物の絶対パスを起動時に指定するか、委譲先から報告を受領してから観測する。
@@ -505,7 +505,7 @@ Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/
 
 ### session-reviewと完了報告
 
-`agent-toolkit:session-review`の初期分析は、起動時の`orchestrate_model`で選んだ通常の読み取り専用サブエージェントだけが担う。サブエージェントはセッション全体から問題候補と再取得可能な証拠位置を列挙し、原因、対策、反映先及び採否を決めない。メインは列挙証拠だけを再取得し、問題があれば`agent-toolkit:bugfix`で原因と恒久対策を確定する。全量分析をメインでも繰り返す案と専用advisor定義は、同じ母集団の二重処理になるため採用しない。
+`agent-toolkit:session-review`の初期分析は、起動時の`session_review_model`で選んだ通常の読み取り専用サブエージェントだけが担う。サブエージェントはセッション全体から問題候補と再取得可能な証拠位置を列挙し、原因、対策、反映先及び採否を決めない。メインは列挙証拠だけを再取得し、問題があれば`agent-toolkit:bugfix`で原因と恒久対策を確定する。全量分析をメインでも繰り返す案と専用advisor定義は、同じ母集団の二重処理になるため採用しない。振り返りが読む記録の量は常駐セッション本体が扱う量と異なるため、`orchestrate_model`を流用せず工程別モデル設定へ専用キーを置く。既定値は他の工程別キーと同じ`codex:gpt-5.6-sol/medium`とする。
 
 Claude Codeは現在のtranscript絶対パスを通常サブエージェントへ渡す。Codexはメインの`CODEX_THREAD_ID`を渡し、通常サブエージェントが`$CODEX_HOME/sessions/`の正本rolloutを完全suffix一致で1件だけ選ぶ。UserPromptSubmitの追加コンテキスト、振り返り境界、開始マーカー及び起動済み状態は用いない。
 
@@ -679,7 +679,7 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 Claude Codeでは`plan-review-executor`へ委譲する。Codexではメインが同定義を同一セッションへ直接適用し、
 計画レビューの調整主体を担う。Codexで同定義内のレビュー担当を起動する場合は、
 `plan_review_model`のagents_server別セッションへ委譲する。
-`plan-review-executor`は`plan-impl-executor`が実装レビューの調整主体を担う
+`plan-review-executor`は`plan-executor`が実装レビューの調整主体を担う
 構成と対称であり、計画ファイル初稿の絶対パスを入力として計画レビューの調整主体を担う。
 `plan-review-executor`と`feedbacks-planner`は、成果物を直接編集せず委譲と検収を担う点を共有する。
 pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
@@ -758,7 +758,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 `review-standards/references/judgment-details.md`を参照する。
 
 指摘受領側の4文書は`agent-toolkit:reviewee-standards`の読込指示と経路固有の返却規定だけを持つ。
-`plan-impl-executor`は指摘の採否を常に確定するため、frontmatterから同スキルを読み込む。
+`plan-executor`は指摘の採否を常に確定するため、frontmatterから同スキルを読み込む。
 単純案の比較は、一般判断向けの局所運用案を`rules/01-agent.md`と`judgment-details.md`で扱い、
 指摘修正向けの局所修正案を`agent-toolkit:reviewee-standards`で扱う。
 
@@ -858,7 +858,7 @@ patch全体を仮想ファイルシステムへ展開する案も、同一patch�
 外部ファイルを読む適用後検査は、適用後に存在する対象の内容確認又は計画構成要素の実在確認へ限定する。
 
 実装レビューでは、`execute_review_model`が指すengineと実際の起動ツールの一致を
-フックで強制せず、`runtime-routing.md`「工程別モデル設定」と`plan-impl-executor`の手順で統制する。
+フックで強制せず、`runtime-routing.md`「工程別モデル設定」と`plan-executor`の手順で統制する。
 フックは設定値、タスク文書及び起動ツールを同時に観測できる一方、当該engineが実際に応答するかを
 観測できない。Codexを指定した状態で`agents_server` MCP経路自体を利用できない場合、
 可用性に起因する正当な代替であるClaude経路の起動まで遮断され、代替の候補が残らない。
@@ -1104,7 +1104,7 @@ TBD終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 
 実装単位は、変更する定義、その直接消費側、契約テスト及び生成・配布物のうち中間commitの正式な近接検証に必要な対象を含む。検索で確認した直接参照だけを扱い、推測した間接依存と無関係な同語使用は含めない。先行commitだけで後続単位着手前の近接検証が成功する場合だけ分割する。この近接検証の条件は分割する場合にだけ判定し、既定の単一commitでは中間commitが生じないため適用しない。
 計画担当はcommit境界を設計し、構造検査は実装単位名の一意性、先行依存先の実在、統合順、空欄を検査する。
-`plan-impl-executor`は検査済みの各単位を先行依存と統合順に従って実装担当へ渡し、各commitと実装単位名の対応を維持する。
+`plan-executor`は検査済みの各単位を先行依存と統合順に従って実装担当へ渡し、各commitと実装単位名の対応を維持する。
 人間向けの実施内容表へ実装単位名を複製せず、採否判断と実装順序の知識境界を維持する。
 
 依存グラフ又は同語一致による自動単位統合は、計画時の検索結果と既存の正式な近接検証で必要な直接依存を確定でき、推測した間接依存と無関係な同語使用を取り込むため採用しない。
@@ -1118,7 +1118,7 @@ TBD終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 呼び出し元は割当と認可を知り、受信側は自身の実行手順と出力を知る。この知識境界を維持するため、同じ契約を呼び出し元文書とagent定義へ複製しない。正本宣言と本文複製を併存させる案は同期漏れを残すため採用しない。共通文書を契約ごとに新設する案も参照段数を増やすため、既存の責務所有者へ集約できる場合は採用しない。
 
 委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」を単一の正本とする。
-`agent-toolkit/agents/plan-impl-executor.md`と`agent-toolkit/share/implementation.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。
+`agent-toolkit/agents/plan-executor.md`と`agent-toolkit/share/implementation.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。
 同じ判定条件を3文書へ複製した結果、暫定修正で1文書だけが旧規定のまま残り、実装担当が矛盾を報告する事象が発生したためである。
 
 サブエージェントを起動する手順は、呼び元用文書（`<役割名>.parent.md`）と呼び先用文書（`<役割名>.subagent.md`）のペアへ分け、呼び先の所在にかかわらずプラグインの`share/`配下へ置く。`agents/`配下の定義とスキル本体の双方から同じ役割を起動する場合も、両者が`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`という同じ形式で参照先を解決できる。呼び元用文書は起動経路、渡す入力、受領するcheckpointと検収条件だけを持ち、呼び先固有の作業手順を複製しない。呼び先用文書は責務、入力、実行手順及び出力形式だけを持ち、呼び出し元の割当・認可判断を複製しない。定義済みサブエージェント自体が呼び先の場合は、定義本文が呼び先用文書を兼ねるため呼び元用文書だけを置く。

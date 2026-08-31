@@ -1,6 +1,6 @@
-# 計画実装担当の起動と受領
+# 計画実行担当の起動と受領
 
-呼び出し元は1計画1レーンの専用worktreeで`plan-impl-executor`を起動し、checkpointとエスカレーションを受領する。
+呼び出し元は1計画1レーンの専用worktreeで`plan-executor`を起動し、checkpointとエスカレーションを受領する。
 実装担当の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`、レビューラウンドの受領は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を正本とする。
 
 ## 起動
@@ -8,7 +8,7 @@
 同じ計画ファイルへ書き込む計画担当の終端を確認し、各レーンへ専用managed-tempと専用git worktreeを作成する。
 現在worktreeの借用、統合branch及び統合worktreeを使わない。複数の計画ファイルを同じレーンへまとめない。
 
-`plan-impl-executor`へ次を渡す。
+`plan-executor`へ次を渡す。
 
 - 計画ファイル（メイン・詳細）、プロジェクト規範、作成規範スキル及びタスク文書の絶対パス
 - レーン専用worktree及びレーンmanaged-tempの絶対パス
