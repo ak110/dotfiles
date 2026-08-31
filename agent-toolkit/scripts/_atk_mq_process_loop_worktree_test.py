@@ -73,7 +73,10 @@ def _run_public_process_loop(
 
     def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         if cmd[:1] in (["claude"], ["codex"]):
-            session_calls.append({"cmd": list(cmd), "cwd": kwargs.get("cwd")})
+            # `claude auth status`は待機間隔をキャッシュTTLで決めるための事前照会であり、
+            # 委譲セッションの起動ではないため件数へ数えない。
+            if cmd[:3] != ["claude", "auth", "status"]:
+                session_calls.append({"cmd": list(cmd), "cwd": kwargs.get("cwd")})
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
         if cmd[:1] == ["git"]:
             git_calls.append(list(cmd))

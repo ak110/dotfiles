@@ -360,7 +360,10 @@ class TestWaitLoopAutoRestart:
             pending_count=1,
         )
 
-        claude_command = next(call for call in subprocess_calls if call[:1] == ["claude"])
+        # `claude auth status`は待機間隔をキャッシュTTLで決めるための事前照会であり、委譲セッションの起動ではない。
+        claude_command = next(
+            call for call in subprocess_calls if call[:1] == ["claude"] and call[:3] != ["claude", "auth", "status"]
+        )
         assert claude_command[:3] == ["claude", "--debug=hooks", "--debug-file"]
         debug_log = pathlib.Path(claude_command[3])
         assert debug_log.is_file()
