@@ -488,7 +488,7 @@ class Operations:
                 comment_editable = (
                     state in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}
                     and kind == common.MQ_TYPE_FEEDBACK
-                    and metadata.get("source") == "session-review"
+                    and _source_kind(metadata.get("source")) == "agent"
                 )
             return {
                 **detail_entry,
@@ -570,7 +570,7 @@ class Operations:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """session-review由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
+        """エージェント由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
         if state not in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}:
             raise common.WebInputError("ユーザーコメントを編集できる状態はinbox又はholdだけです")
         if not isinstance(comment, str) or not comment.strip():
@@ -584,8 +584,10 @@ class Operations:
         metadata, _body = parsed
         if metadata.get("type") != common.MQ_TYPE_FEEDBACK:
             raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
-        if metadata.get("source") != "session-review":
-            raise common.WebInputError("ユーザーコメントの対象sourceはsession-reviewだけです")
+        if _source_kind(metadata.get("source")) != "agent":
+            raise common.WebInputError(
+                "ユーザーコメントの対象はエージェント由来のfeedbackだけです。sourceが未設定またはhumanの項目は対象になりません"
+            )
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)
         except user_comment_mutations.UserCommentError as error:

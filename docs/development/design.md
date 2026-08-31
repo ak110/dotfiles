@@ -82,6 +82,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。feedback用の公開一覧の`active`は`inbox`、`planning`、`processing`、`editing`、`hold`を表示する。TBDの`active`には`planning`を含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
 
 `hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`と、`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、TBD回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。強制削除は`editing`を候補へ含めない。
+削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`planning`・`processing`の削除保護だけを維持する。
 
 `editing`は一覧と既存データの状態判定で認識する。今回の状態追加は編集操作の排他方式を変更せず、永続的な編集セッション、専用の復旧状態又はpush再試行APIを追加しない。
 
@@ -93,7 +94,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 
 `atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`planning`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
 
-### session-reviewコメントの由来と編集境界
+### ユーザーコメントの由来と編集境界
 
 コメント本文はMarkdownのtoken位置から解析し、コードフェンス内の`## ユーザーコメント`は予約節として扱わない。
 予約節がない場合は本文末尾へ空行2つを正規化して追記し、同名節が1件だけ末尾にある場合はその節本文だけを置換する。
@@ -102,12 +103,13 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 保存前にはコメント本文も同じ規則で解析し、コードフェンス外のH2を含む入力を無変更で拒否する。
 空コメントによる節削除は提供しない。
 
-コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつ厳密な`source: session-review`である。
-planning、processing、TBD、終端項目及び別sourceの項目はAPIと画面の両方で対象外とする。
+コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつエージェント由来（frontmatterの`source`が未設定でも`human`でもない）であることとする。
+planning、processing、TBD、終端項目及び人間由来の項目はAPIと画面の両方で対象外とする。
+由来の判定は一覧フィルターと同じ`_source_kind`を用い、`source`値の列挙をユーザーコメント側へ複製しない。
 保存時はロック内で取得した最新本文と`expected_content`を照合し、競合時は無変更で失敗を返す。
 詳細APIが返す抽出済みコメントと操作可否を画面が利用し、JavaScript側へMarkdown解析を複製しない。
 
-`source: session-review`の通常本文はエージェント由来とし、末尾の厳密なH2 `## ユーザーコメント`配下から導出した要求だけを人間由来とする。
+エージェント由来のfeedbackの通常本文はエージェント由来の要求とし、末尾の厳密なH2 `## ユーザーコメント`配下から導出した要求だけを人間由来とする。
 両方にまたがる記述は独立して採否を記録し、ファイル全体の由来を人間へ昇格させない。
 sourceの原値と予約節は由来と確認境界を示す情報であり、利用者によるpush、公開、破壊的操作又は外部サービス変更の認可を証明しない。
 session-review自身は予約見出しを提案本文へ生成せず、一般全文編集が見出しを作成できる現行信頼境界を維持する。

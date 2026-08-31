@@ -20,7 +20,11 @@ def test_filename_mode_consumers_use_atomic_convert_to_plan_contract() -> None:
     concepts = (_REPOSITORY_ROOT / "docs/development/concepts.md").read_text(encoding="utf-8")
 
     skill_section = _section(skill, "## ファイル名モード", "## 自然言語要件モード")
-    guide_section = _section(guide, "### 通常型ファイル名を指定した計画作成", "### session-reviewのユーザーコメント")
+    guide_section = _section(
+        guide,
+        "### 通常型ファイル名を指定した計画作成",
+        "### エージェント由来フィードバックへのユーザーコメント",
+    )
     guide_procedure = guide_section.split("\n`atk mq reject`", 1)[0]
     design_section = _section(design, "### 計画作成状態と計画型変換", "### キュー状態と公開一覧")
     planning_policy = next(

@@ -127,7 +127,7 @@ def test_transition_explicit_state_contract_matches_web_operations() -> None:
         "return-to-inbox": ("planning", "rejected"),
         "adopt": ("hold",),
         "reject": ("inbox", "hold"),
-        "remove": ("inbox", "planning", "processing", "hold"),
+        "remove": ("inbox", "planning", "processing", "hold", "adopted", "rejected"),
     }
     for action, states in common.TRANSITION_EXPLICIT_STATES.items():
         for state_name in states:

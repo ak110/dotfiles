@@ -821,8 +821,8 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_assets_keep_terminal_entry_read_only_and_show_identifiers() -> None:
-    """終端状態では操作を隠し、kind/state識別子をそのまま表示する。"""
+def test_assets_keep_terminal_entry_editing_read_only_and_show_identifiers() -> None:
+    """終端状態では編集を隠し、削除とkind/state識別子を表示する。"""
     result = _run_node_ui(
         """
 displayEntry({
@@ -850,7 +850,7 @@ process.stdout.write(JSON.stringify({
         "readonly": True,
         "editHidden": True,
         "answerHidden": True,
-        "deleteHidden": True,
+        "deleteHidden": False,
     }
 
 
@@ -908,7 +908,7 @@ process.stdout.write(JSON.stringify({visibility, sent}));
                 "edit": False,
                 "adopt": False,
                 "reject": False,
-                "remove": False,
+                "remove": True,
                 "unhold": False,
                 "returnToInbox": True,
             },
@@ -5526,9 +5526,15 @@ process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body)}));
     assert result == {"body": {"type": "feedback", "messages": ["---\ntarget_repo: example/repo\n---\n\n本文"]}}
 
 
-def _session_review_feedback(body: str, *, entry_type: str = "feedback", source: str = "session-review") -> str:
+def _session_review_feedback(
+    body: str,
+    *,
+    entry_type: str = "feedback",
+    source: str | None = "session-review",
+) -> str:
     """ユーザーコメント操作テスト用のfeedback本文を組み立てる。"""
-    return f"---\ntype: {entry_type}\ntarget_repo: example/repo\nsource: {source}\n---\n\n{body}"
+    source_line = f"source: {source}\n" if source is not None else ""
+    return f"---\ntype: {entry_type}\ntarget_repo: example/repo\n{source_line}---\n\n{body}"
 
 
 def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -5679,14 +5685,56 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
 
 
 @pytest.mark.asyncio
-async def test_user_comment_api_rejects_non_inbox_or_non_session_review_entries(
+@pytest.mark.parametrize(
+    ("source", "editable"),
+    [(None, False), ("human", False), ("alert-monitor", True), ("plan", True)],
+)
+async def test_user_comment_api_matches_agent_source_classification(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str | None,
+    editable: bool,
+) -> None:
+    """詳細表示と保存APIが同じエージェント由来判定を使う。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    original = _session_review_feedback("本文\n", source=source)
+    path = inbox / "feedback.md"
+    path.write_text(original, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    detail = await (await client.get("/api/entries/inbox/feedback.md")).get_json()
+    assert detail["entry"]["user_comment_editable"] is editable
+    response = await client.post(
+        "/api/entries/user-comment",
+        json={
+            "state": "inbox",
+            "filename": "feedback.md",
+            "comment": "追加コメント",
+            "expected_content": original,
+        },
+    )
+    assert response.status_code == (200 if editable else 400)
+    if editable:
+        assert user_comment.extract_user_comment(path.read_text(encoding="utf-8")) == "追加コメント"
+    else:
+        assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.asyncio
+async def test_user_comment_api_rejects_non_inbox_states_and_tbd(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """planning・processing・終端状態、TBD及び他sourceには操作を提供しない。"""
+    """planning・processing・終端状態及びTBDには操作を提供しない。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents = {
-        "inbox": _session_review_feedback("inbox本文\n", source="other"),
         "planning": _session_review_feedback("planning本文\n"),
         "processing": _session_review_feedback("processing本文\n"),
         "adopted": _session_review_feedback("adopted本文\n"),
@@ -5719,6 +5767,52 @@ async def test_user_comment_api_rejects_non_inbox_or_non_session_review_entries(
         assert response.status_code == 400
         actual_path = tmp_path / ("inbox" if state_name == "tbd" else state_name) / filename
         assert actual_path.read_text(encoding="utf-8") == content
+
+
+@pytest.mark.asyncio
+async def test_remove_api_accepts_terminal_states_and_preserves_protected_states(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """終端状態は削除し、作業中状態の保護とeditingの拒否を維持する。"""
+    _patch_comment_edit_dependencies(monkeypatch)
+    content = _session_review_feedback("本文\n")
+    for state_name in ("adopted", "rejected", "planning", "processing", "editing"):
+        directory = tmp_path / state_name
+        directory.mkdir()
+        (directory / f"{state_name}.md").write_text(content, encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+    )
+    client = app.test_client()
+
+    for state_name in ("adopted", "rejected"):
+        response = await client.post(
+            "/api/entries/remove",
+            json={
+                "filenames": [f"{state_name}.md"],
+                "state": state_name,
+                "expected_content": content,
+                "force": False,
+            },
+        )
+        assert response.status_code == 200
+        assert not (tmp_path / state_name / f"{state_name}.md").exists()
+
+    for state_name in ("planning", "processing", "editing"):
+        response = await client.post(
+            "/api/entries/remove",
+            json={
+                "filenames": [f"{state_name}.md"],
+                "state": state_name,
+                "expected_content": content,
+                "force": False,
+            },
+        )
+        assert response.status_code == 400
+        assert (tmp_path / state_name / f"{state_name}.md").is_file()
 
 
 @pytest.mark.asyncio

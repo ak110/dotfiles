@@ -773,7 +773,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
 
 @pytest.mark.asyncio
 async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
-    """既存回答の変更、終端状態の読取り専用、識別子表示を実ブラウザーで検証する。"""
+    """既存回答の変更、終端状態の編集制限、削除及び識別子表示を検証する。"""
     harness = browser_harness
     page = harness.page
     question_path = harness.root / "inbox" / "question.md"
@@ -792,9 +792,10 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / adopted")
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_have_text("この項目は編集と回答の対象外です。")
     await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
-    await playwright.async_api.expect(detail.locator("#delete-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
 
 
 @pytest.mark.asyncio
@@ -1493,7 +1494,7 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
 async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updates(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """対象限定UIの追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。"""
+    """エージェント由来UIの追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。"""
     harness = browser_harness
     page = harness.page
     path = harness.root / "inbox" / "feedback.md"
@@ -1504,7 +1505,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
 
     await page.locator('.entry-select[data-key="inbox/empty.md"]').click()
     await playwright.async_api.expect(detail).to_be_visible()
-    await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_visible()
     await page.keyboard.press("Escape")
     await playwright.async_api.expect(detail).to_be_hidden()
 
