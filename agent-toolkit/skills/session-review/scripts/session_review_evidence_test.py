@@ -255,14 +255,15 @@ def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_pa
     ]
 
 
-def test_missing_path_returns_fallback_instruction() -> None:
-    events = evidence.load_and_extract(None)
+@pytest.mark.parametrize("transcript_path", ["/not-found/session.jsonl", "relative/session.jsonl"])
+def test_main_rejects_unreadable_transcript_path(
+    transcript_path: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対象記録を解決できない呼び出しはerrorイベントと終了コード2を返す。"""
+    assert evidence.main([transcript_path]) == 2
 
-    assert len(events) == 1
-    assert events[0]["sequence"] == 1
-    assert events[0]["kind"] == "fallback"
-    assert "継承した会話履歴" in events[0]["text"]
-    assert "未検証" in events[0]["text"]
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": f"対象記録を読み込めない: {transcript_path}"}]
 
 
 def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
@@ -746,7 +747,16 @@ def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> 
 
     events = evidence.load_and_extract(str(transcript))
 
-    assert [event["kind"] for event in events] == ["fallback"]
+    assert events == [
+        {
+            "sequence": 1,
+            "kind": "fallback",
+            "text": (
+                "記録は読み込めたが形式を判定できないため抽出証拠を生成できない。"
+                "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
+            ),
+        }
+    ]
 
 
 def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.Path) -> None:
@@ -1674,7 +1684,7 @@ def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
         ],
     )
 
-    assert evidence.main([str(transcript), "--detail", "1", "2"]) == 0
+    assert evidence.main([str(transcript), "--detail", "1", "--detail", "2"]) == 0
 
     events = _read_jsonl(capsys)
     assert [event["line"] for event in events] == [1, 1, 1, 2]
@@ -1869,6 +1879,23 @@ def test_detail_mode_rejects_line_number_outside_transcript(
     assert evidence.main([str(transcript), "--detail", "9"]) == 2
 
     assert _read_jsonl(capsys) == [{"kind": "error", "text": "行番号9は範囲外"}]
+
+
+def test_detail_mode_rejects_space_separated_values(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数位置は`--detail`を繰り返して指定し、空白区切りの複数値は受理しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "message": {"role": "user", "content": "依頼"}}],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        evidence.main([str(transcript), "--detail", "1", "2"])
+
+    assert raised.value.code == 2
+    assert capsys.readouterr().out == ""
 
 
 def test_grep_mode_reports_matching_lines_and_entry_count(
@@ -2552,6 +2579,47 @@ def test_stats_recursively_discovers_native_subagent_activity_without_cycles(
         "cache_creation_input_tokens": 0,
         "cache_read_input_tokens": 0,
     }
+
+
+def test_stats_resolves_runtime_unspecified_thread_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """実行系未指定の識別子を実体から解決し、実行系付きの再出現と重複させない。"""
+    thread_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    codex_home = tmp_path / "codex"
+    _write_rollout(
+        codex_home,
+        thread_id,
+        [("2026-08-19T00:00:01Z", {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7})],
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__agents_server__start",
+                            "id": "unspecified",
+                            "input": {"session_id": thread_id},
+                        }
+                    ],
+                },
+            },
+            _codex_tool_use_entry("2026-08-19T00:00:02Z", "specified", thread_id),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert not _events_by_kind(events, "unresolved-record")
+    assert [event["session_id"] for event in _events_by_kind(events, "stats-agent-thread")] == [thread_id]
 
 
 def _usage(input_tokens: int, output_tokens: int = 0) -> dict[str, int]:
@@ -3248,7 +3316,7 @@ def test_multi_line_detail_query_keeps_each_problem_locator_stable(
             },
         ],
     )
-    query = "--detail 1 2"
+    query = "--detail 1 --detail 2"
     query_args = query.split()
     locators = [{"event_index": index} for index in range(3)]
 
@@ -3261,7 +3329,7 @@ def test_multi_line_detail_query_keeps_each_problem_locator_stable(
     assert [second[locator["event_index"]] for locator in locators] == first
     assert [event["line"] for event in second] == [1, 1, 2]
     assert second[2] == {"kind": "detail", "line": 2, "tool": "call-1", "text": "別イベント"}
-    assert query == "--detail 1 2"
+    assert query == "--detail 1 --detail 2"
     assert "別イベント" not in query
     assert all(set(locator) == {"event_index"} for locator in locators)
 
@@ -3516,6 +3584,7 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     claude_b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     codex_c = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     missing = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    unrelated = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     home = tmp_path / "home"
     codex_home = tmp_path / "codex"
     monkeypatch.setenv("HOME", str(home))
@@ -3562,8 +3631,37 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
                 "type": "response_item",
                 "payload": {
                     "type": "custom_tool_call",
-                    "name": "mcp__agents_server__start",
-                    "arguments": {"engine": "claude", "session_id": claude_b},
+                    "name": "exec",
+                    "call_id": "exec-agents-server",
+                    "input": "await tools.mcp__agents_server__start({engine: 'claude'})",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "exec-agents-server",
+                    "output": [
+                        {"type": "input_text", "text": "Script completed"},
+                        {"type": "input_text", "text": json.dumps({"session_id": claude_b})},
+                    ],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "exec-unrelated",
+                    "input": "text('unrelated')",
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "exec-unrelated",
+                    "output": [{"type": "input_text", "text": json.dumps({"engine": "claude", "session_id": unrelated})}],
                 },
             },
         ],
@@ -3596,6 +3694,10 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
                 }
             ),
         ],
+    )
+    _write_jsonl(
+        home / ".claude" / "projects" / "repo" / f"{unrelated}.jsonl",
+        [{"type": "user", "message": {"role": "user", "content": "unrelated needle"}}],
     )
     _write_subagent(
         claude_path.with_suffix("") / "subagents",
@@ -3634,7 +3736,8 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
         f"claude:{claude_b}/agent-child",
         f"codex:{codex_c}",
     }
-    assert default_events[-1] == {"kind": "unresolved-record", "record": f"codex:{missing}", "line": 2}
+    assert default_events[-1] == {"kind": "unresolved-record", "record": missing, "line": 2}
+    assert unrelated not in {event["record"] for event in default_events}
 
     assert evidence.main([str(transcript), "--warn"]) == 0
     warning_events = _read_jsonl(capsys, raw=True)

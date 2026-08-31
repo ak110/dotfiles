@@ -11,7 +11,8 @@
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
 `agent-toolkit:agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
-引数誤用と照会不能（モード併用・不正な正規表現・範囲外の行番号）を終了コード2とする区分だけを踏襲する。
+引数誤用と照会不能（対象記録の読込不能・モード併用・不正な正規表現・範囲外の行番号）を
+終了コード2とする区分だけを踏襲する。
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ _HOOK_NOTICE_KIND_LENGTH = 80
 _HOOK_NOTICE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")
 _HOOK_NOTICE_VARIABLE_PLACEHOLDER = "<var>"
 _FALLBACK_TEXT = (
-    "transcript_pathを読み取れないため抽出証拠を生成できない。"
+    "記録は読み込めたが形式を判定できないため抽出証拠を生成できない。"
     "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
 )
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
@@ -673,11 +674,11 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
     return records
 
 
-def load_and_extract(raw_path: str | None) -> list[dict[str, Any]]:
-    """絶対パスのJSONLを一度読み、抽出結果またはfallbackを返す。"""
+def load_and_extract(raw_path: str) -> list[dict[str, Any]]:
+    """絶対パスのJSONLを一度読み、抽出結果を返す。"""
     records = _load_records(raw_path)
     if records is None:
-        return _fallback()
+        raise ValueError(f"対象記録を読み込めない: {raw_path}")
     return _extract_records(records)
 
 
@@ -873,12 +874,33 @@ def _thread_id_from_mapping(value: Any) -> str | None:
     return None
 
 
-def _thread_ids_from_record(record: _Record) -> list[tuple[_Runtime, str]]:
-    """Claude transcriptとCodex rolloutからエンジン付きsession識別子を抽出する。"""
-    entry = record.entry
-    found: list[tuple[_Runtime, str]] = [("codex", thread_id) for thread_id in _native_agent_thread_ids(entry)]
+def _agents_server_call_ids(records: list[_Record]) -> set[str]:
+    """Codexの呼び出し入力にagents_server名を含む呼び出しIDを返す。"""
+    call_ids: set[str] = set()
+    for record in records:
+        payload = record.entry.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call", "function_call"}:
+            continue
+        call_id = payload.get("call_id")
+        if not isinstance(call_id, str):
+            continue
+        values = (payload.get("input"), payload.get("arguments"))
+        if any(
+            isinstance(value, str) and any(tool_name in value for tool_name in _AGENTS_SERVER_TOOL_NAMES) for value in values
+        ):
+            call_ids.add(call_id)
+    return call_ids
 
-    def add_mapping(value: Any, default_engine: _Runtime) -> None:
+
+def _thread_ids_from_record(
+    record: _Record,
+    agents_server_call_ids: set[str],
+) -> list[tuple[_Runtime | None, str]]:
+    """Claude transcriptとCodex rolloutからsession識別子と実行系ヒントを抽出する。"""
+    entry = record.entry
+    found: list[tuple[_Runtime | None, str]] = [("codex", thread_id) for thread_id in _native_agent_thread_ids(entry)]
+
+    def add_mapping(value: Any) -> None:
         mapping = value if isinstance(value, dict) else _json_object(value)
         if not isinstance(mapping, dict):
             return
@@ -887,11 +909,11 @@ def _thread_ids_from_record(record: _Record) -> list[tuple[_Runtime, str]]:
             return
         engine = mapping.get("engine")
         if engine == "claude":
-            chosen_engine: _Runtime = "claude"
+            chosen_engine: _Runtime | None = "claude"
         elif engine == "codex":
             chosen_engine = "codex"
         else:
-            chosen_engine = default_engine
+            chosen_engine = None
         found.append((chosen_engine, session_id))
 
     message = entry.get("message")
@@ -901,22 +923,25 @@ def _thread_ids_from_record(record: _Record) -> list[tuple[_Runtime, str]]:
             if not isinstance(block, dict) or block.get("type") != "tool_use":
                 continue
             if block.get("name") in _AGENTS_SERVER_TOOL_NAMES:
-                add_mapping(block.get("input"), "claude")
+                add_mapping(block.get("input"))
 
     mcp_meta = entry.get("mcpMeta")
     if isinstance(mcp_meta, dict):
-        add_mapping(mcp_meta.get("structuredContent"), "claude")
+        add_mapping(mcp_meta.get("structuredContent"))
 
     tool_result = entry.get("toolUseResult")
-    add_mapping(tool_result, "claude")
+    add_mapping(tool_result)
 
     payload = entry.get("payload")
     if isinstance(payload, dict) and payload.get("type") in {"custom_tool_call", "custom_tool_call_output"}:
         name = payload.get("name")
         if payload.get("type") == "custom_tool_call" and name in _AGENTS_SERVER_TOOL_NAMES:
-            add_mapping(payload.get("arguments") or payload.get("input"), "codex")
-        if payload.get("type") == "custom_tool_call_output":
-            add_mapping(payload.get("output"), "codex")
+            add_mapping(payload.get("arguments") or payload.get("input"))
+        if payload.get("type") == "custom_tool_call_output" and payload.get("call_id") in agents_server_call_ids:
+            output = payload.get("output")
+            add_mapping(output)
+            for text in _codex_text_blocks(output):
+                add_mapping(text)
 
     notification_texts: list[str] = []
     if entry.get("type") == "queue-operation":
@@ -924,7 +949,7 @@ def _thread_ids_from_record(record: _Record) -> list[tuple[_Runtime, str]]:
     notification_texts.extend(_text_blocks(content))
     for text in notification_texts:
         for match in _TASK_RESULT_PATTERN.finditer(text):
-            add_mapping(match.group(1), "claude")
+            add_mapping(match.group(1))
     return list(dict.fromkeys(found))
 
 
@@ -962,8 +987,18 @@ def _claude_transcript_path(session_id: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _session_path(engine: _Runtime, session_id: str) -> Path | None:
-    return _rollout_path(session_id) if engine == "codex" else _claude_transcript_path(session_id)
+def _session_path(engine: _Runtime | None, session_id: str) -> tuple[Path, _Runtime] | None:
+    """実行系ヒントを優先して両方の記録正本を探索する。"""
+    lookups = {
+        "codex": _rollout_path,
+        "claude": _claude_transcript_path,
+    }
+    runtimes: tuple[_Runtime, _Runtime]
+    runtimes = ("claude", "codex") if engine == "claude" else ("codex", "claude")
+    for runtime in runtimes:
+        if path := lookups[runtime](session_id):
+            return path, runtime
+    return None
 
 
 def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
@@ -1020,12 +1055,13 @@ def _collect_records(
         )
     ]
     seen_paths = {main_path.resolve()}
-    seen_sessions: set[tuple[_Runtime, str]] = set()
+    seen_sessions: set[str] = set()
     unresolved: list[_UnresolvedRecord] = []
     index = 0
     while index < len(collected):
         source = collected[index]
         index += 1
+        agents_server_call_ids = _agents_server_call_ids(source.records)
         for subagent in _subagent_records(source):
             resolved = subagent.path.resolve()
             if resolved in seen_paths:
@@ -1033,26 +1069,35 @@ def _collect_records(
             seen_paths.add(resolved)
             collected.append(subagent)
         for record in source.records:
-            for engine, session_id in _thread_ids_from_record(record):
-                session_key = (engine, session_id)
-                if session_key in seen_sessions:
+            for engine, session_id in _thread_ids_from_record(record, agents_server_call_ids):
+                if session_id in seen_sessions:
                     continue
-                seen_sessions.add(session_key)
-                record_id = f"{engine}:{session_id}"
-                path = _session_path(engine, session_id)
-                if path is None:
-                    unresolved.append(_UnresolvedRecord(record_id, record.line))
+                seen_sessions.add(session_id)
+                resolved_session = _session_path(engine, session_id)
+                if resolved_session is None:
+                    unresolved.append(_UnresolvedRecord(session_id, record.line))
                     continue
+                path, resolved_engine = resolved_session
+                record_id = f"{resolved_engine}:{session_id}"
                 resolved = path.resolve()
                 if resolved in seen_paths:
                     continue
                 records = _load_records(str(path))
                 if records is None:
-                    unresolved.append(_UnresolvedRecord(record_id, record.line))
+                    unresolved.append(_UnresolvedRecord(session_id, record.line))
                     continue
                 seen_paths.add(resolved)
                 collected.append(
-                    _CollectedRecord(record_id, path, records, engine, source.record_id, record.line, None, "session")
+                    _CollectedRecord(
+                        record_id,
+                        path,
+                        records,
+                        resolved_engine,
+                        source.record_id,
+                        record.line,
+                        None,
+                        "session",
+                    )
                 )
     return collected, unresolved
 
@@ -2121,8 +2166,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "transcript_path",
-        nargs="?",
-        help="transcriptの絶対パス。省略時と読み込み失敗時はfallback指示を出力する。",
+        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(
         "--warn",
@@ -2139,10 +2183,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--detail",
-        metavar="LINE",
-        nargs="+",
+        action="append",
+        default=None,
+        metavar="RECORD:LINE",
         help="指定した<記録>:<行番号>（数値だけならメイン記録）のエントリの詳細（tool_useの入力全体・tool_result本文。"
-        "本文が退避されている場合はツール実行結果側の本文）を照会する。"
+        "本文が退避されている場合はツール実行結果側の本文）を照会する。複数指定ではオプションを繰り返す。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
     )
     parser.add_argument(
@@ -2172,9 +2217,8 @@ def main(argv: list[str] | None = None) -> int:
 
     records = _load_records(args.transcript_path)
     if records is None:
-        _print_events(_fallback())
-        return 0
-    collected, unresolved = _collect_records(args.transcript_path or "", records)
+        return _print_error(f"対象記録を読み込めない: {args.transcript_path}")
+    collected, unresolved = _collect_records(args.transcript_path, records)
 
     if args.warn:
         _print_events(_warning_collection_events(collected, unresolved))
