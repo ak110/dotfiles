@@ -773,7 +773,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
 
 @pytest.mark.asyncio
 async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
-    """既存回答の変更、終端状態の読取り専用、識別子表示を実ブラウザーで検証する。"""
+    """既存回答の変更、終端状態の編集制限、削除及び識別子表示を検証する。"""
     harness = browser_harness
     page = harness.page
     question_path = harness.root / "inbox" / "question.md"
@@ -792,9 +792,10 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / adopted")
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
+    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_have_text("この項目は編集と回答の対象外です。")
     await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
-    await playwright.async_api.expect(detail.locator("#delete-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
 
 
 @pytest.mark.asyncio
@@ -1365,8 +1366,9 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         harness.current_state.publish()
         await detail.get_by_role("alert").filter(has_text="外部で項目が更新されました").wait_for(state="visible")
         release.set()
-        await page.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
-        assert "詳細を閉じて開き直してから保存してください" in await page.locator("#operation-notice-message").inner_text()
+        await detail.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
+        assert "詳細を閉じて開き直してから保存してください" in await detail.locator("#detail-alert").inner_text()
+        await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
         assert await field.input_value() == user_input
         await playwright.async_api.expect(detail.get_by_role("button", name=submit_name, exact=True)).to_be_disabled()
         await page.unroute(mutation_pattern, fail_mutation)
@@ -1490,10 +1492,76 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
 
 
 @pytest.mark.asyncio
+async def test_create_failure_is_visible_inside_open_dialog(browser_harness: _BrowserHarness) -> None:
+    """新規追加の失敗は開いたダイアログ内へ表示し、ページ通知を表示しない。"""
+    page = browser_harness.page
+    await page.goto(browser_harness.base_url + "/")
+
+    async def fail_create(route: playwright.async_api.Route) -> None:
+        await route.fulfill(status=500, json={"error": "追加処理に失敗しました"})
+
+    await page.route("**/api/entries", fail_create)
+    await page.get_by_role("button", name="新規追加").click()
+    create_dialog = page.get_by_role("dialog", name="新規追加")
+    await create_dialog.locator("#create-content").fill("新規本文")
+    await create_dialog.locator("#create-target").fill("example/repo")
+    await create_dialog.get_by_role("button", name="追加").click()
+
+    await playwright.async_api.expect(create_dialog.locator("#create-alert")).to_contain_text("追加処理に失敗しました")
+    await playwright.async_api.expect(create_dialog.locator("#create-alert")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+    await page.unroute("**/api/entries", fail_create)
+
+
+@pytest.mark.asyncio
+async def test_save_failure_message_stays_at_scrolled_dialog_top(browser_harness: _BrowserHarness) -> None:
+    """本文末尾までスクロールした保存失敗でも結果をダイアログ本文の上端へ留める。"""
+    harness = browser_harness
+    path = harness.root / "inbox" / "long-entry.md"
+    path.write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n" + "長い本文\n\n" * 120,
+        encoding="utf-8",
+    )
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator('.entry-select[data-key="inbox/long-entry.md"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.get_by_role("button", name="編集", exact=True).click()
+    body = detail.locator(".dialog-body")
+    await body.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+
+    async def fail_save(route: playwright.async_api.Route) -> None:
+        await route.fulfill(status=500, json={"error": "保存処理に失敗しました"})
+
+    await page.route("**/api/entries/inbox/long-entry.md", fail_save)
+    await detail.get_by_role("button", name="保存", exact=True).click()
+    alert = detail.locator("#detail-alert")
+    await playwright.async_api.expect(alert).to_contain_text("保存処理に失敗しました")
+    await playwright.async_api.expect(detail.locator("#edit-content")).to_be_focused()
+    metrics = await body.evaluate(
+        """element => {
+          const bodyRect = element.getBoundingClientRect();
+          const alertRect = document.getElementById('detail-alert').getBoundingClientRect();
+          return {
+            bodyTop: bodyRect.top,
+            bodyBottom: bodyRect.bottom,
+            alertTop: alertRect.top,
+            alertBottom: alertRect.bottom,
+            paddingTop: Number.parseFloat(getComputedStyle(element).paddingTop)
+          };
+        }"""
+    )
+    assert metrics["bodyTop"] <= metrics["alertTop"] <= metrics["bodyTop"] + metrics["paddingTop"] + 1
+    assert metrics["alertBottom"] <= metrics["bodyBottom"]
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+    await page.unroute("**/api/entries/inbox/long-entry.md", fail_save)
+
+
+@pytest.mark.asyncio
 async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updates(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """対象限定UIの追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。"""
+    """エージェント由来UIの追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。"""
     harness = browser_harness
     page = harness.page
     path = harness.root / "inbox" / "feedback.md"
@@ -1504,7 +1572,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
 
     await page.locator('.entry-select[data-key="inbox/empty.md"]').click()
     await playwright.async_api.expect(detail).to_be_visible()
-    await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#user-comment-button")).to_be_visible()
     await page.keyboard.press("Escape")
     await playwright.async_api.expect(detail).to_be_hidden()
 

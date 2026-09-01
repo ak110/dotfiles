@@ -21,7 +21,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
@@ -50,7 +50,7 @@ Skill:
 
 Agent / Task:
 
-- `plan-impl-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
+- `plan-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
 - `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
 - 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
 
@@ -1031,7 +1031,7 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     """`file_path`の祖先ディレクトリを起点に`referenced`（相対パス）の実ファイルを探索する。
 
     frontmatterの同期注記は同一ディレクトリまたは近隣ディレクトリの兄弟ファイルを
-    裸ファイル名（例: `plan-impl-executor.md`）で参照する形式が実運用で使われるため、
+    裸ファイル名（例: `plan-executor.md`）で参照する形式が実運用で使われるため、
     `.git`を持つ祖先（リポジトリルート）を発見しても即確定とせず、以下の順に実在確認する。
 
     1. `file_path`の各祖先ディレクトリ（近い順。同一ディレクトリの兄弟ファイル参照に対応）
@@ -1132,7 +1132,9 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__plugin_agent-toolkit_agents_server__",
     "mcp__agents_server__",
 )
-_AGENTS_SERVER_START_TOOLS = frozenset(f"{namespace}start" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_START_TOOLS = frozenset(
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore")
+)
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -1159,8 +1161,8 @@ def _check_plan_mode_skill_first(
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が偽
     - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が新規計画root（`$(atk config get private_notes)/plans/`）または
-      既存計画root（`~/.claude/plans/`）の計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）
+    - 対象の`file_path`が計画作業root（`~/.claude/plans/`）または保存済み計画root
+      （`$(atk config get private_notes)/plans/`）の計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）
 
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
     サブエージェント経由の呼び出しでも同一の判定が働く
@@ -1316,7 +1318,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
 
     連続判定は`last_agent_toolkit_edit_path`と対象パスを比較し、
     直前と異なるパスのときのみ`direct_agent_toolkit_edit_count`をincrementする。
-    新規計画root（`$(atk config get private_notes)/plans/`）または既存計画root（`~/.claude/plans/`）の
+    計画作業root（`~/.claude/plans/`）または保存済み計画root（`$(atk config get private_notes)/plans/`）の
     計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）へのWrite/Edit時は
     `plan_file_written`を真にしてカウンタをリセットする。
     対象外パスへの編集時もカウンタをリセットする。
@@ -1409,10 +1411,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             _block_notice(
                 f"blocked: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
                 f" operations targeted files under agent-toolkit/ without first creating a plan file.",
-                fix=(
-                    "Create a plan file under `$(atk config get private_notes)/plans/` "
-                    "before editing any file under agent-toolkit/."
-                ),
+                fix=("Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/."),
             ),
             file=sys.stderr,
         )
@@ -1422,7 +1421,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
             f" operations targeted files under agent-toolkit/ without first creating a plan file."
             " The next such edit will be blocked."
-            " Create a plan file under `$(atk config get private_notes)/plans/` first.",
+            " Create a plan file under `~/.claude/plans/` first.",
             tag="warn",
         )
     return False, None
@@ -1467,15 +1466,15 @@ def _apply_edits_to_content(tool_name: str, tool_input: dict, existing: str) -> 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
-# Agent/Taskツールの`subagent_type`引数として許容するplan-impl-executor識別子。
+# Agent/Taskツールの`subagent_type`引数として許容するplan-executor識別子。
 # フルネームと短縮名の両方を許容する。
-_PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-impl-executor", "plan-impl-executor"})
+_PLAN_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-executor", "plan-executor"})
 _FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:feedbacks-planner", "feedbacks-planner"})
 _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-review-executor", "plan-review-executor"})
 
 # `model`引数指定を一律禁止する対象。調整役は定義済みモデルを使う委譲窓口として動く。
 _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
-    _PLAN_IMPL_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
+    _PLAN_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
 )
 _WEBFETCH_VERBATIM_RE = re.compile(
     r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
@@ -1512,7 +1511,7 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
 def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
     """定義済みモデルを使う委譲調整役への`model`引数指定を一律ブロックする。
 
-    `plan-impl-executor`は定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
+    `plan-executor`は定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
     """
     if subagent_type not in _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES:
         return False

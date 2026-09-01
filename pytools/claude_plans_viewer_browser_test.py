@@ -361,6 +361,42 @@ async def test_attached_plan_navigation_is_symmetric(browser_harness: _BrowserHa
 
 
 @pytest.mark.asyncio
+async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
+    browser_harness: _BrowserHarness,
+) -> None:
+    harness = browser_harness
+    review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
+    (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")
+    await harness.page.set_viewport_size({"width": 1600, "height": 900})
+    await harness.page.goto(harness.base_url + "/")
+
+    normal_widths = await harness.page.locator("#preview").evaluate(
+        """preview => {
+            const main = preview.closest("main");
+            const rect = preview.getBoundingClientRect();
+            const mainRect = main.getBoundingClientRect();
+            return {
+                preview: rect.width,
+                leftMargin: rect.left - mainRect.left,
+                rightMargin: mainRect.right - rect.right,
+            };
+        }""",
+    )
+    assert normal_widths["preview"] <= 860
+    assert normal_widths["leftMargin"] == pytest.approx(normal_widths["rightMargin"], abs=1)
+
+    await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
+    review_widths = await harness.page.locator("#preview").evaluate(
+        """preview => ({
+            preview: preview.getBoundingClientRect().width,
+            main: preview.closest("main").clientWidth,
+        })""",
+    )
+    assert review_widths["preview"] == pytest.approx(review_widths["main"], abs=1)
+
+
+@pytest.mark.asyncio
 async def test_mermaid_strict_security_blocks_active_content(browser_harness: _BrowserHarness) -> None:
     harness = browser_harness
     await harness.page.goto(harness.base_url + "/")

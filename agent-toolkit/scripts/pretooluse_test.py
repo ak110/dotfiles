@@ -911,7 +911,7 @@ class TestPlanModeSkillFirstCheck:
     一切ブロックも警告もしない。新旧計画root配下の`*.md`に対する
     Writeと進捗ログ節外を変更するEdit/MultiEditが警告対象となる。`permission_mode`の値には依存しない。
     既存計画の一意かつ最後の`## 進捗ログ`節だけを変更するEdit/MultiEditは警告しない。
-    完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-impl-executor`起動時の
+    完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-executor`起動時の
     ブロックへ集約する。
     """
 
@@ -1204,7 +1204,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
     `permission_mode`の値に依らず、新旧計画root配下の`*.md`に対する
     Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
     一切ブロック・警告しない。完成条件を満たさない状態での次工程移行の抑止は
-    `ExitPlanMode`・`plan-impl-executor`起動時のブロックへ集約する。
+    `ExitPlanMode`・`plan-executor`起動時のブロックへ集約する。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
@@ -3218,6 +3218,19 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "relative/path" in result.stderr
 
+    def test_start_explore_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
+        """探索起動も相対`cwd`を開始前に拒否する。"""
+        result = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_explore",
+                "tool_input": {"prompt": "調査", "cwd": "relative/path"},
+                "session_id": "explore-cwd-relative",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "relative/path" in result.stderr
+
     def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が絶対パスの場合は許可する。"""
         result = _run(
@@ -4179,12 +4192,12 @@ class TestAgentNameParameterAccepted:
 class TestSubagentModelOverrideGate:
     """定義済みモデルを使う委譲調整役への`model`引数指定の一律ブロック。"""
 
-    def test_plan_impl_executor_with_model_blocked_short_form(self, tmp_path: pathlib.Path):
+    def test_plan_executor_with_model_blocked_short_form(self, tmp_path: pathlib.Path):
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-impl-executor", "model": "haiku", "prompt": "x"},
-                "session_id": "model-override-plan-impl-executor",
+                "tool_input": {"subagent_type": "plan-executor", "model": "haiku", "prompt": "x"},
+                "session_id": "model-override-plan-executor",
                 "permission_mode": "default",
             },
             env_overrides=_plan_file_state_env(tmp_path),
@@ -4192,11 +4205,11 @@ class TestSubagentModelOverrideGate:
         assert result.returncode == 2
 
     def test_no_model_argument_passes(self, tmp_path: pathlib.Path):
-        """`plan-impl-executor`でモデル指定を省略した起動は通過する。"""
+        """`plan-executor`でモデル指定を省略した起動は通過する。"""
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "x"},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-executor", "prompt": "x"},
                 "session_id": "model-override-none",
                 "permission_mode": "default",
             },
@@ -4396,7 +4409,7 @@ class TestSubagentStartLogOrdering:
             {
                 "tool_name": "Agent",
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "subagent_type": "agent-toolkit:plan-executor",
                     "model": "opus",
                     "prompt": "計画を実装する。",
                 },
@@ -4409,12 +4422,12 @@ class TestSubagentStartLogOrdering:
         assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
 
     def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path):
-        """モデル指定なし・見出し検査対象外・`process7`未起動時の`plan-impl-executor`は通過し記録される。"""
+        """モデル指定なし・見出し検査対象外・`process7`未起動時の`plan-executor`は通過し記録される。"""
         log_path = self._log_path(tmp_path)
         result = _run(
             {
                 "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-impl-executor", "prompt": "計画を実装して。"},
+                "tool_input": {"subagent_type": "agent-toolkit:plan-executor", "prompt": "計画を実装して。"},
                 "session_id": "log-order-pass",
                 "permission_mode": "default",
             },
@@ -5065,7 +5078,7 @@ class TestAgentTaskLaunchIndependence:
                 "session_id": sid,
                 "tool_name": tool_name,
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-impl-executor",
+                    "subagent_type": "agent-toolkit:plan-executor",
                     "prompt": f"計画ファイル `{plan}` を実装する。",
                 },
             },

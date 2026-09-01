@@ -43,6 +43,21 @@ description: >
 ただし`.sh.tmpl`では既存スクリプトに合わせて`set -eux`を使う。
 Windows版と同じ処理を別の記法で書いているだけの場合、両方に同一のコメントを付けて対応関係を示す。
 
+## ローカル検査とCIジョブの対応
+
+`make test`が実行するツール集合は、CIの`python-lint (3.14)`ジョブが実行する集合とほぼ同じである。
+CIが`claude-plugin-validate`を無効化する点だけが異なる。
+次の検査はローカルの`make test`では実行されない。
+
+- `test-windows`ジョブ: Windows実機でのchezmoi適用と、Windows固有のテスト
+- `test-linux`ジョブ: `install.sh`とchezmoiの実適用
+- `python-lint (3.13)`ジョブ: Python 3.13でのpytest
+- `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検査
+- `python-lint (3.14)`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
+
+Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されない。
+`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
+
 ## 変更フロー
 
 1. 編集対象がfrontmatterのファイル名規則に該当するか確認し、対応するもう一方のパスを特定する

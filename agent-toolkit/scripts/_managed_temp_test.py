@@ -330,6 +330,19 @@ def _replace_records(target: pathlib.Path, transform: typing.Callable[[dict[str,
             path.chmod(0o600)
 
 
+def _interrupt_cleanup(target: pathlib.Path, *, quarantine: bool = False) -> tuple[pathlib.Path, pathlib.Path]:
+    """登録を消費途中へ移し、必要なら実体も隔離した状態を再現する。"""
+    registry = subject._registry_path(target)
+    record = subject._load_private_json(registry)
+    nonce = typing.cast(str, record["nonce"])
+    consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")
+    registry.replace(consuming)
+    quarantine_path = target.parent / f".agent-toolkit-cleanup-{nonce}"
+    if quarantine:
+        target.replace(quarantine_path)
+    return consuming, quarantine_path
+
+
 def _set_tree_mtime(path: pathlib.Path, timestamp_ns: int) -> None:
     """対象ツリー全体の最終更新日時を同じ値へ固定する。"""
     for entry in path.rglob("*"):
@@ -877,13 +890,13 @@ class TestManagedTempPosix:
         assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
         assert registry.exists()
 
-    def test_list_removes_registry_of_a_missing_target_without_warning(
+    def test_list_removes_registry_of_a_confirmed_missing_target_with_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """実体を失った登録は警告を出力せず登録ファイルごと回収する。"""
+        """実体の消滅を確定した登録は警告して登録ファイルごと回収する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("valid")
         missing = subject.create_managed_temp("missing")
@@ -899,7 +912,7 @@ class TestManagedTempPosix:
                 "feedbacks": [],
             }
         ]
-        assert capsys.readouterr().err == ""
+        assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
         assert not registry.exists()
 
     def test_list_removes_registry_of_a_missing_target_recorded_under_another_temp_root(
@@ -908,7 +921,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """記録時と列挙時で一時領域が異なる実体不在の登録も、警告を出力せずに回収する。"""
+        """記録時と列挙時で一時領域が異なる実体不在の登録も警告して回収する。"""
         recorded_root = tmp_path / "recorded"
         listed_root = tmp_path / "listed"
         recorded_root.mkdir()
@@ -922,8 +935,86 @@ class TestManagedTempPosix:
 
         assert subject.is_missing_registered_temp(missing) is True
         assert subject.list_managed_temp() == []
-        assert capsys.readouterr().err == ""
+        assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
         assert not registry.exists()
+
+    def test_list_keeps_registry_when_recorded_device_differs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """記録deviceが現在のrootと異なる場合は実体不在を確定せず登録を保持する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("different-device")
+        registry = subject._registry_path(target)
+
+        def change_device(record: dict[str, object]) -> None:
+            identity = typing.cast(list[int], record["identity"])
+            identity[0] += 1
+
+        _replace_registry(target, change_device)
+        (target / _MARKER_NAME).unlink()
+        target.rmdir()
+
+        assert subject.list_managed_temp() == []
+        assert capsys.readouterr().err == ""
+        assert registry.exists()
+
+    def test_list_reports_recovery_candidates(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """報告モードは保持登録と登録欠落領域に別々の再開方法を案内する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        unreachable = subject.create_managed_temp("unreachable")
+        orphan = subject.create_managed_temp("orphan")
+        unreachable_registry = subject._registry_path(unreachable)
+
+        def change_device(record: dict[str, object]) -> None:
+            identity = typing.cast(list[int], record["identity"])
+            identity[0] += 1
+
+        _replace_registry(unreachable, change_device)
+        (unreachable / _MARKER_NAME).unlink()
+        unreachable.rmdir()
+        subject._registry_path(orphan).unlink()
+
+        assert subject.list_managed_temp(report_recovery_candidates=True) == []
+        error = capsys.readouterr().err
+        assert str(unreachable) in error
+        assert "同じ絶対パスへ到達できる実行文脈" in error
+        assert str(orphan) in error
+        assert "--recover-registry" in error
+        assert unreachable_registry.exists()
+
+    def test_list_with_prefix_ignores_other_prefix_records(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """prefix指定時は別prefixの保持登録を報告も回収もしない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        selected = subject.create_managed_temp("selected")
+        ignored = subject.create_managed_temp("ignored")
+        for target in (selected, ignored):
+            registry = subject._registry_path(target)
+            _replace_registry(
+                target,
+                lambda record: typing.cast(list[int], record["identity"]).__setitem__(0, os.lstat(tmp_path).st_dev + 1),
+            )
+            (target / _MARKER_NAME).unlink()
+            target.rmdir()
+            assert registry.exists()
+
+        assert subject.list_managed_temp("selected", report_recovery_candidates=True) == []
+        error = capsys.readouterr().err
+        assert str(selected) in error
+        assert str(ignored) not in error
+        assert subject._registry_path(ignored).exists()
 
     def test_cleanup_consumes_registry_of_a_missing_target(
         self,
@@ -970,6 +1061,306 @@ class TestManagedTempPosix:
         assert subject.is_missing_registered_temp(unregistered) is False
         with pytest.raises(subject.ManagedTempError):
             subject.cleanup_managed_temp(unregistered)
+
+    def test_cleanup_restores_registry_from_marker_only_when_requested(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """登録欠落領域は明示指定時だけマーカーから登録を復元して後始末する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("registry-recovery")
+        registry = subject._registry_path(target)
+        registry.unlink()
+
+        assert subject._classify_quarantine(target.parent, target).state is subject._QuarantineState.ABSENT
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target)
+        assert target.exists()
+        assert not registry.exists()
+
+        subject.cleanup_managed_temp(target, recover_registry=True)
+        assert not target.exists()
+        assert not registry.exists()
+
+    def test_cleanup_recovers_a_confirmed_absent_registry_via_cli(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """公開引数の明示指定だけが確認済み登録不在からの復元を有効にする。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("registry-recovery-cli")
+        registry = subject._registry_path(target)
+        registry.unlink()
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+
+        assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 2
+        assert target.exists()
+        assert not registry.exists()
+        assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target), "--recover-registry"])) == 0
+        assert not target.exists()
+        assert not registry.exists()
+
+    def test_cleanup_rejects_a_self_consistent_marker_placed_afterwards(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """管理CLIが作成していない領域の自己整合マーカーを既定では信頼しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = tmp_path / "handmade"
+        target.mkdir(mode=0o700)
+        metadata = target.stat()
+        marker = {
+            "schema_version": 3,
+            "path": str(target),
+            "platform": os.name,
+            "owner": subject._owner_record(),
+            "identity": [metadata.st_dev, metadata.st_ino],
+            "nonce": "0" * 64,
+            "prefix": "handmade",
+            "created_at": "2026-08-31T00:00:00+00:00",
+            "feedbacks": [],
+        }
+        subject._write_private_json(target / _MARKER_NAME, marker)
+        (target / "keep.txt").write_text("keep", encoding="utf-8")
+
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target)
+        assert (target / "keep.txt").read_text(encoding="utf-8") == "keep"
+        assert not subject._registry_path(target).exists()
+
+    def test_cleanup_rejects_marker_that_does_not_match_the_target(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """別領域から複製したマーカーは登録復元を指定しても受理しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        source = subject.create_managed_temp("marker-source")
+        target = tmp_path / "marker-copy"
+        target.mkdir(mode=0o700)
+        (target / _MARKER_NAME).write_bytes((source / _MARKER_NAME).read_bytes())
+        (target / _MARKER_NAME).chmod(0o600)
+
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target, recover_registry=True)
+        assert target.exists()
+        assert not subject._registry_path(target).exists()
+
+    def test_cleanup_resumes_after_an_interrupted_consume(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """消費途中状態から登録を取り戻して通常の後始末を再開する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("resume-consume")
+        consuming, _ = _interrupt_cleanup(target)
+
+        subject.cleanup_managed_temp(target)
+        assert "中断した後始末の登録を復元しました" in capsys.readouterr().err
+        assert not target.exists()
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+
+    def test_cleanup_terminates_when_the_target_is_absent_with_a_consuming_state(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """実体不在でも消費途中状態を登録へ戻して管理記録を終端する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("resume-missing")
+        consuming, _ = _interrupt_cleanup(target)
+        (target / _MARKER_NAME).unlink()
+        target.rmdir()
+
+        subject.cleanup_managed_temp(target)
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+
+    def test_cleanup_resumes_after_an_interrupted_quarantine(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """真正な隔離途中状態の内容を削除して登録を終端する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("resume-quarantine")
+        (target / "content.txt").write_text("remove", encoding="utf-8")
+        consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
+
+        subject.cleanup_managed_temp(target)
+        assert "中断した後始末の隔離先を後始末しました" in capsys.readouterr().err
+        assert not target.exists()
+        assert not quarantine.exists()
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+
+    @pytest.mark.parametrize("mismatch", ["nonce", "identity"])
+    def test_cleanup_keeps_a_quarantine_that_does_not_match_the_registry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        mismatch: str,
+    ) -> None:
+        """記録から導出できない、又はidentityが異なる隔離先を削除しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"quarantine-{mismatch}")
+        (target / "keep.txt").write_text("keep", encoding="utf-8")
+        _, quarantine = _interrupt_cleanup(target, quarantine=True)
+        if mismatch == "nonce":
+            preserved = quarantine.with_name(f"{quarantine.name}-other")
+            quarantine.replace(preserved)
+        else:
+            preserved = quarantine
+            displaced = quarantine.with_name(f"{quarantine.name}-original")
+            quarantine.replace(displaced)
+            quarantine.mkdir()
+            (quarantine / "keep.txt").write_text("keep", encoding="utf-8")
+
+        subject.cleanup_managed_temp(target)
+        assert (preserved / "keep.txt").read_text(encoding="utf-8") == "keep"
+        assert not subject._registry_path(target).exists()
+
+    @pytest.mark.parametrize(
+        ("scenario", "expected"),
+        [
+            ("target-exists", subject._QuarantineState.ABSENT),
+            ("matched", subject._QuarantineState.MATCHED),
+            ("mismatched", subject._QuarantineState.MISMATCHED),
+            ("unverifiable", subject._QuarantineState.UNVERIFIABLE),
+        ],
+    )
+    def test_classify_quarantine_maps_each_state(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        scenario: str,
+        expected: subject._QuarantineState,
+    ) -> None:
+        """隔離途中状態の入力を対象不在・一致・不一致・検査不能へ分類する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"classify-{scenario}")
+        if scenario == "target-exists":
+            judgement = subject._classify_quarantine(target.parent, target)
+        else:
+            _, quarantine = _interrupt_cleanup(target, quarantine=True)
+            registry = subject._registry_path(target)
+            consuming = subject._consuming_registry_path(registry)
+            assert consuming is not None
+            consuming.replace(registry)
+            if scenario == "mismatched":
+                displaced = quarantine.with_name(f"{quarantine.name}-original")
+                quarantine.replace(displaced)
+                quarantine.mkdir()
+            if scenario == "unverifiable":
+                original_load = subject._load_private_json
+                with monkeypatch.context() as patcher:
+                    patcher.setattr(
+                        subject,
+                        "_load_private_json",
+                        lambda path: (_ for _ in ()).throw(OSError("failure")) if path == registry else original_load(path),
+                    )
+                    judgement = subject._classify_quarantine(target.parent, target)
+            else:
+                judgement = subject._classify_quarantine(target.parent, target)
+        assert judgement.state is expected
+
+    @pytest.mark.parametrize("failure_point", ["registry", "target", "identity"])
+    def test_cleanup_reports_an_unverifiable_quarantine(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        failure_point: str,
+    ) -> None:
+        """隔離状態を検査できない場合は管理情報と隔離先を保持して再試行できる。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"unverifiable-{failure_point}")
+        (target / "content.txt").write_text("keep", encoding="utf-8")
+        _, quarantine = _interrupt_cleanup(target, quarantine=True)
+        registry = subject._registry_path(target)
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+        original_load = subject._load_private_json
+        original_lstat = subject.os.lstat
+        original_identity = subject._path_identity
+
+        with monkeypatch.context() as patcher:
+            if failure_point == "registry":
+                patcher.setattr(
+                    subject,
+                    "_load_private_json",
+                    lambda path: (
+                        (_ for _ in ()).throw(OSError("registry failure")) if path == registry else original_load(path)
+                    ),
+                )
+            elif failure_point == "target":
+                patcher.setattr(
+                    subject.os,
+                    "lstat",
+                    lambda path: (
+                        (_ for _ in ()).throw(OSError("target failure"))
+                        if pathlib.Path(path) == target
+                        else original_lstat(path)
+                    ),
+                )
+            else:
+                patcher.setattr(
+                    subject,
+                    "_path_identity",
+                    lambda path: (
+                        (_ for _ in ()).throw(OSError("identity failure")) if path == quarantine else original_identity(path)
+                    ),
+                )
+            assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 2
+
+        error = capsys.readouterr().err
+        assert "中断した後始末の状態を判定できない" in error
+        assert "再試行できる" in error
+        assert registry.exists()
+        assert subject._consuming_registry_path(registry) is None
+        assert (quarantine / "content.txt").exists()
+
+        assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 0
+        assert not registry.exists()
+        assert not quarantine.exists()
+
+    def test_cleanup_reports_a_failed_quarantine_resume(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """隔離先の削除失敗でも管理情報を保持し、同じcleanupを再試行できる。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("failed-resume")
+        (target / "content.txt").write_text("keep", encoding="utf-8")
+        _, quarantine = _interrupt_cleanup(target, quarantine=True)
+        registry = subject._registry_path(target)
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+
+        with monkeypatch.context() as patcher:
+            patcher.setattr(subject, "_clear_directory", lambda _descriptor: (_ for _ in ()).throw(OSError("failure")))
+            assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 2
+
+        error = capsys.readouterr().err
+        assert "中断した後始末の隔離先を後始末できない" in error
+        assert "再試行できる" in error
+        assert registry.exists()
+        assert subject._consuming_registry_path(registry) is None
+        assert (quarantine / "content.txt").exists()
+
+        assert subject.dispatch(parser.parse_args(["cleanup", "--path", str(target)])) == 0
+        assert not registry.exists()
+        assert not quarantine.exists()
 
     @pytest.mark.parametrize(
         ("prefix", "violation"),
@@ -1434,6 +1825,90 @@ class TestManagedTempPosix:
 class TestManagedTempWindows:
     """WindowsのSID・ACL・reparse point・cleanupを実環境で確認する。"""
 
+    def test_cleanup_restores_registry_from_marker_only_when_requested(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Windowsでも明示指定時だけマーカーから登録を復元する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-registry-recovery")
+        registry = subject._registry_path(target)
+        registry.unlink()
+
+        with pytest.raises(subject.ManagedTempError):
+            subject.cleanup_managed_temp(target)
+        assert target.exists()
+        subject.cleanup_managed_temp(target, recover_registry=True)
+        assert not target.exists()
+        assert not registry.exists()
+
+    def test_cleanup_resumes_after_an_interrupted_consume(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Windowsでも消費途中状態から通常の後始末を再開する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-resume-consume")
+        consuming, _ = _interrupt_cleanup(target)
+
+        subject.cleanup_managed_temp(target)
+        assert not target.exists()
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+
+    def test_cleanup_resumes_after_an_interrupted_quarantine(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """Windowsでも真正な隔離途中状態の削除を再開する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-resume-quarantine")
+        (target / "content.txt").write_text("remove", encoding="utf-8")
+        consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
+
+        subject.cleanup_managed_temp(target)
+        assert not target.exists()
+        assert not quarantine.exists()
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+
+    @pytest.mark.parametrize("mismatch", ["identity", "junction"])
+    def test_cleanup_keeps_a_quarantine_that_does_not_match_the_registry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        mismatch: str,
+    ) -> None:
+        """Windowsではidentity不一致とジャンクションの隔離先を削除しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"windows-quarantine-{mismatch}")
+        _, quarantine = _interrupt_cleanup(target, quarantine=True)
+        displaced = quarantine.with_name(f"{quarantine.name}-original")
+        quarantine.replace(displaced)
+        if mismatch == "identity":
+            quarantine.mkdir()
+            subject._windows_secure_path(quarantine, directory=True)
+            (quarantine / "keep.txt").write_text("keep", encoding="utf-8")
+            preserved = quarantine
+        else:
+            outside = tmp_path / "outside-junction"
+            outside.mkdir()
+            (outside / "keep.txt").write_text("keep", encoding="utf-8")
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(quarantine), str(outside)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            preserved = outside
+
+        subject.cleanup_managed_temp(target)
+        assert (preserved / "keep.txt").read_text(encoding="utf-8") == "keep"
+        assert not subject._registry_path(target).exists()
+
     def test_create_validate_and_cleanup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("windows-roundtrip")
@@ -1498,13 +1973,13 @@ class TestManagedTempWindows:
         assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
         assert registry.exists()
 
-    def test_list_removes_registry_of_a_missing_target_without_warning(
+    def test_list_removes_registry_of_a_confirmed_missing_target_with_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Windowsでも実体を失った登録は警告を出力せず登録ファイルごと回収する。"""
+        """Windowsでも実体の消滅を確定した登録は警告して回収する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         valid = subject.create_managed_temp("windows-valid")
         missing = subject.create_managed_temp("windows-missing")
@@ -1513,7 +1988,7 @@ class TestManagedTempWindows:
         missing.rmdir()
 
         assert {entry["path"] for entry in subject.list_managed_temp()} == {str(valid)}
-        assert capsys.readouterr().err == ""
+        assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
         assert not registry.exists()
 
     def test_cleanup_consumes_registry_of_a_missing_target(
@@ -1924,16 +2399,23 @@ class TestManagedTempWindows:
             assert child.read_text(encoding="utf-8") == "replacement"
 
 
+def _isolated_cli_environment(tmp_path: pathlib.Path) -> tuple[dict[str, str], pathlib.Path]:
+    """CLI subprocessの一時領域と外部状態をOS別の専用領域へ分離する。"""
+    env = os.environ.copy()
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        env[name] = str(tmp_path)
+    if os.name == "nt":
+        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
+        state_root = tmp_path / "local-app-data" / "agent-toolkit" / "managed-temp"
+    else:
+        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+        state_root = tmp_path / "state" / "agent-toolkit" / "managed-temp"
+    return env, state_root
+
+
 def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
     """CLI正常系と修正可能エラーの終了コードを確認する。"""
-    env = os.environ.copy()
-    if os.name == "nt":
-        env["TEMP"] = str(tmp_path)
-        env["TMP"] = str(tmp_path)
-        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
-    else:
-        env["TMPDIR"] = str(tmp_path)
-        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+    env, _ = _isolated_cli_environment(tmp_path)
     created = subprocess.run(
         [sys.executable, str(_SCRIPT), "create", "--prefix", "cli-test"],
         capture_output=True,
@@ -1962,17 +2444,48 @@ def test_cli_round_trip_uses_exit_codes(tmp_path: pathlib.Path) -> None:
     assert not target.exists()
 
 
+@pytest.mark.parametrize("quarantine", [False, True])
+def test_cli_resumes_an_interrupted_cleanup(tmp_path: pathlib.Path, quarantine: bool) -> None:
+    """公開CLIは消費直後と隔離直後の中断を同じcleanupで回収する。"""
+    env, state_root = _isolated_cli_environment(tmp_path)
+    created = subprocess.run(
+        [sys.executable, str(_SCRIPT), "create", "--prefix", "cli-resume"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    target = pathlib.Path(created.stdout.strip())
+    registry = state_root / subject._registry_name(target)
+    record = json.loads(registry.read_text(encoding="utf-8"))
+    nonce = record["nonce"]
+    consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")
+    registry.replace(consuming)
+    quarantine_path = target.parent / f".agent-toolkit-cleanup-{nonce}"
+    (target / "content.txt").write_text("remove", encoding="utf-8")
+    if quarantine:
+        target.replace(quarantine_path)
+
+    cleaned = subprocess.run(
+        [sys.executable, str(_SCRIPT), "cleanup", "--path", str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert created.returncode == 0
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not target.exists()
+    assert not quarantine_path.exists()
+    assert not registry.exists()
+    assert not consuming.exists()
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Windowsの明示rootはACLを設定した実機テストで検証する")
 def test_cli_explicit_root_returns_managed_temp_path(tmp_path: pathlib.Path) -> None:
     """CLIの明示root形が指定root直下の絶対pathを返す。"""
-    env = os.environ.copy()
-    if os.name == "nt":
-        env["TEMP"] = str(tmp_path / "default")
-        env["TMP"] = str(tmp_path / "default")
-        env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
-    else:
-        env["TMPDIR"] = str(tmp_path / "default")
-        env["XDG_STATE_HOME"] = str(tmp_path / "state")
+    env, _ = _isolated_cli_environment(tmp_path / "default")
     explicit_root = tmp_path / "shared-root"
     explicit_root.mkdir()
     created = subprocess.run(

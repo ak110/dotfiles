@@ -483,6 +483,15 @@ class TestDefaultSteps:
         assert names.index(serve_name) == names.index(plans_name) + 1
         assert names.index(serve_name) < names.index("Windowsレジストリ設定")
 
+    def test_dotfiles_autoupdate_follows_atk_serve_before_windows_steps(self) -> None:
+        """dotfiles自動更新timerをatk serve直後かつWindows固有処理前に1回登録する。"""
+        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        timer_name = "dotfiles自動更新タイマー セットアップ (Linux)"
+        serve_name = "atk serve 自動起動セットアップ (Linux)"
+        assert names.count(timer_name) == 1
+        assert names.index(timer_name) == names.index(serve_name) + 1
+        assert names.index(timer_name) < names.index("Windowsレジストリ設定")
+
 
 class TestPluginRecommendations:
     """``install_claude_plugins.run()`` の推奨コマンド戻り値による案内出力。"""

@@ -167,6 +167,34 @@ def test_portable_plan_file_round_trips_inside_private_notes(tmp_path: pathlib.P
     assert _plan_file.resolve_plan_file(portable, private_notes=private_notes) == plan.resolve()
 
 
+def test_portable_plan_file_resolves_working_copy_before_saved_copy(tmp_path: pathlib.Path) -> None:
+    """保存先が未作成ならportable参照を同じ相対パスの作業実体へ解決する。"""
+    home = tmp_path / "home"
+    private_notes = tmp_path / "private-notes"
+    working = home / ".claude/plans/2026/08/30-計画保存先移行-d4f9.md"
+    working.parent.mkdir(parents=True)
+    working.write_text("# 作業中\n", encoding="utf-8")
+    portable = "$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md"
+
+    assert _plan_file.resolve_plan_file(portable, private_notes=private_notes, home=home) == working.resolve()
+    assert _plan_file.to_portable_plan_file(working, private_notes=private_notes, home=home) == portable
+
+
+def test_portable_plan_file_prefers_saved_copy_after_finalization(tmp_path: pathlib.Path) -> None:
+    """保存先と作業側が併存する再実行状態では保存済み実体を優先する。"""
+    home = tmp_path / "home"
+    private_notes = tmp_path / "private-notes"
+    relative = pathlib.Path("2026/08/30-計画保存先移行-d4f9.md")
+    working = home / ".claude/plans" / relative
+    saved = private_notes / "plans" / relative
+    for path in (working, saved):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# 計画\n", encoding="utf-8")
+    portable = "$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md"
+
+    assert _plan_file.resolve_plan_file(portable, private_notes=private_notes, home=home) == saved.resolve()
+
+
 @pytest.mark.parametrize(
     "value",
     [

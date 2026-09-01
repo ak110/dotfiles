@@ -1,7 +1,10 @@
 """frontmatterパーサー・直列化モジュールのテスト。"""
 
+import typing
+
 import _atk_mq_frontmatter as frontmatter
 import pytest
+import yaml
 
 
 class TestParseFrontmatter:
@@ -62,6 +65,60 @@ queue_schedule:
         assert data["queue_schedule"]["type"] == "normal"
         assert data["queue_schedule"]["carry_count"] == 2
         assert body == "本文"
+
+    def test_parse_frontmatter_matches_for_python_and_libyaml_loader_bases(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """純Python実装とlibyaml実装で字面保持と`queue_schedule`の型が一致する。"""
+        text = """---
+bool_value: true
+int_value: 42
+float_value: 1.5
+null_value: null
+timestamp_value: 2024-01-01T12:00:00+09:00
+queue_schedule:
+  carry_count: 2
+  enabled: true
+---
+本文"""
+        loader_bases: list[type[yaml.SafeLoader]] = [yaml.SafeLoader]
+        c_safe_loader = getattr(yaml, "CSafeLoader", None)
+        if c_safe_loader is not None:
+            loader_bases.append(c_safe_loader)
+        results: list[tuple[dict[str, typing.Any], str] | None] = []
+
+        for loader_base in loader_bases:
+            literal_scalar_loader = typing.cast(typing.Any, type("LiteralScalarLoader", (loader_base,), {}))
+
+            def construct_literal_scalar(loader: typing.Any, node: yaml.Node) -> str:
+                assert isinstance(node, yaml.ScalarNode)
+                return typing.cast(str, loader.construct_scalar(node))
+
+            for tag in (
+                "tag:yaml.org,2002:bool",
+                "tag:yaml.org,2002:int",
+                "tag:yaml.org,2002:float",
+                "tag:yaml.org,2002:null",
+                "tag:yaml.org,2002:timestamp",
+            ):
+                literal_scalar_loader.add_constructor(tag, construct_literal_scalar)
+            monkeypatch.setattr(frontmatter, "_SafeLoaderBase", loader_base)
+            monkeypatch.setattr(frontmatter, "_LiteralScalarLoader", literal_scalar_loader)
+            results.append(frontmatter.parse_frontmatter(text))
+
+        assert results and all(result == results[0] for result in results)
+        assert results[0] == (
+            {
+                "bool_value": "true",
+                "int_value": "42",
+                "float_value": "1.5",
+                "null_value": "null",
+                "timestamp_value": "2024-01-01T12:00:00+09:00",
+                "queue_schedule": {"carry_count": 2, "enabled": True},
+            },
+            "本文",
+        )
 
     def test_parse_frontmatter_preserves_depends_on_sequence(self) -> None:
         """トップレベルの`depends_on`を文字列配列として保持する。"""

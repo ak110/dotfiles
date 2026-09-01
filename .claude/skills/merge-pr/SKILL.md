@@ -27,10 +27,23 @@ GitHubの設定でhead branchを`develop`だけに制限する操作は行わな
 
 ## マージ前の検査
 
-作業ツリーがcleanであることを確認する。
-現在branchは`develop`とし、ローカル`develop`、`origin/develop`及びPRの`headRefOid`を完全OIDで比較する。
-ローカルだけが遅れている場合はfast-forwardで同期できるが、ローカル固有commit又は差分がある場合は停止する。
+`git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPRの`headRefOid`が同じ完全OIDであることを確認する。
 PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeableが成立していなければならない。
+マージの前提はこれらのリモート側の条件だけとし、作業ツリーのclean、現在branch及びローカル`develop`の位置を前提にしない。
+ローカルの状態を理由にマージを停止しない。
+
+ローカル`develop`を同期するかどうかは、マージの前提とは分けて次の読み取りコマンドで判定し、判定結果をマージ後まで保持する。
+
+```sh
+git status --porcelain
+git rev-parse --abbrev-ref HEAD
+git rev-parse origin/develop
+git merge-base --is-ancestor HEAD origin/develop
+```
+
+`git status --porcelain`の出力が空で、現在branchが`develop`で、`git merge-base --is-ancestor HEAD origin/develop`が終了コード0を返す場合だけ、マージ後にローカル`develop`の同期を試みる。
+いずれかを満たさない場合は、既存の未コミット差分とローカルbranchを変更せず保持し、リモートだけでリリースを完遂する。
+この判定はマージ前時点の見込みであり、同期を実行してよいかはマージ後に同じ観点を再取得して確定する。
 
 必須checkの完了を次のコマンドで待つ。
 
@@ -69,26 +82,46 @@ gh pr merge <PR番号またはURL> --repo ak110/dotfiles --merge --match-head-co
 ## マージ後のbranch同期とCI
 
 マージ後にPRの`mergeCommit.oid`を取得し、完全OIDを`MERGE_OID`として保持する。
-`origin/master`をfetchして`MERGE_OID`と一致することを確認し、ローカル`develop`をfast-forwardする。
+`origin/master`をfetchして`MERGE_OID`と一致することを確認する。
 
 ```sh
 git fetch origin master
 git rev-parse origin/master
-git merge --ff-only origin/master
 ```
 
 push前に管理対象一時領域を作成し、`origin/develop`のCI runをbaselineへ保存する。
 baseline作成と同期pushの順序を変更しない。push後に同期先のrefを再取得して、develop CIの待機を省略できるか判定する。
 `--repo`、`--forge`、`--ref`及び`--source-ref`は毎回明示する。
+`origin/develop`の更新はローカルbranchを操作元にせず、`MERGE_OID`と宛先refを明示したrefspecでpushする。
 
 ```sh
 uv run --no-project --script /home/aki/dotfiles/agent-toolkit/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
-git push origin develop
+git push origin <MERGE_OID>:refs/heads/develop
 git fetch origin develop master
-git rev-parse develop origin/develop origin/master
+git rev-parse origin/develop origin/master
 ```
 
-`MERGE_OID`とローカル`develop`、`origin/develop`及び`origin/master`の完全OIDがすべて一致することを確認する。develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、local develop・origin/develop・origin/masterの最終完全OID照合は省略しない。
+`MERGE_OID`、`origin/develop`及び`origin/master`の完全OIDがすべて一致することを確認する。
+マージ前の判定でローカル`develop`の同期を試みるとした場合は、同期を実行する直前に次を再取得する。
+
+```sh
+git status --porcelain
+git rev-parse --abbrev-ref HEAD
+git merge-base --is-ancestor HEAD origin/master
+```
+
+`git status --porcelain`の出力が空で、現在branchが`develop`で、`git merge-base --is-ancestor HEAD origin/master`が終了コード0を返すことをすべて満たす場合だけ、続けて次を実行する。
+`git merge --ff-only origin/master`は対象branchを引数に取らず現在branchを更新するため、この再取得を省いて実行しない。
+
+```sh
+git merge --ff-only origin/master
+git rev-parse develop
+```
+
+実行後に`git rev-parse develop`が`MERGE_OID`と一致することを確認する。
+再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略し、既存の未コミット差分とローカルbranchを変更せずリモートの完遂を維持する。
+
+develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`の最終完全OID照合は省略しない。
 
 ```sh
 # OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
@@ -131,14 +164,18 @@ Release run、tag、Release又はassetの検収に失敗した場合は、自動
 
 ## 完了条件と失敗時の扱い
 
-成功時に次の値を完全OIDで再取得する。
+成功時に次を取得する。
 
 ```sh
-git rev-parse develop origin/develop origin/master
+git rev-parse origin/develop origin/master
 git status --short
 ```
 
-ローカル`develop`、`origin/develop`及び`origin/master`が`MERGE_OID`と一致し、作業ツリーがcleanである場合だけ完了とする。
+`origin/develop`と`origin/master`が`MERGE_OID`と一致し、必須CIと必要なRelease検収が成功した場合だけ完了とする。
+ローカル`develop`を同期した場合は、`git rev-parse develop`も`MERGE_OID`と一致することを確認する。
+ローカルの作業ツリーとローカルbranchの状態は完了条件にしない。同期を実施した経路ではローカル`develop`の参照を更新し、同期を省略した経路では本手順がローカルへ書き込まないため、待機中に利用者が加えた変更もそのまま残る。
+`git status --short`の出力は合否判定に使わず、完了報告へ添える現状の情報として扱う。
+完了報告では、リモートの完了と、ローカル`develop`を同期したかどうかを区別して示す。
 
 マージ後のCI又はReleaseが失敗した場合は、待機終了後の診断で次の読み取りコマンドを使って詳細ログを取得する。
 

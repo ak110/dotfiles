@@ -85,6 +85,22 @@ Codexの委譲待機では、ホストが提供する`wait_agent`を使って終
 `wait_agent`が提供される場面では、共有規範の待機表明でターンを終えず、未完了のまま`final`を返さない。
 完了通知だけを提供するホストでは、共有規範の待機表明による再開経路を使う。
 
+### agents_serverの二層待機
+
+Codexが`functions.exec`のように遅延実行されるツールを介して`agents_server`の`wait`を呼ぶ場合、内側の`wait`と外側の実行セルは独立した待機である。
+
+- タスク固有の待機要件がない限り、内側の`agents_server.wait`へ`timeout`を指定せず既定値を使う。この扱いは`agent-toolkit:delegation`が定めるtimeout省略の原則をCodexの二層構造へ写像したものである
+- 外側の実行が`cell_id`を返した場合は、その`cell_id`を`functions.wait`へ渡して同じ実行セルを再開する。内側の待機は継続しているため、同じ`session_id`へ`wait`を新たに発行し直さない
+- 外側の進捗通知の周期と実行セルのyieldは、内側の`agents_server.wait`のタスク固有timeoutとして扱わない。応答性の制御は外側のyieldと再開で成立する
+
+順序の例を次に示す。
+
+1. `agents_server.start`でsessionを開始し、`session_id`を保持する。
+2. 遅延実行されるツールの中で`agents_server.wait`を`timeout`引数なしで呼ぶ。
+3. 外側の実行が終端前にyieldして`cell_id`を返した場合は、進捗をユーザーへ伝えたうえで`functions.wait`へ同じ`cell_id`を渡す。内側の`wait`は継続しているため、`agents_server.wait`を再度呼ばない。
+4. 外側の実行セルが再開して終わった時点で、内側の`wait`が返した終端結果を同じ応答から受け取る。
+5. `cell_id`を得られない実行環境では、外側のyieldが起きないため、内側の`wait`の戻り値をそのまま受け取る。
+
 独立した複数のツール呼び出しは、Codexホストと各ツールの契約がともに許可する場合だけ同一応答内で並列化する。
 個別ツールが逐次呼び出しを要求する場合は、その契約を優先する。
 Web調査ツールのように逐次呼び出しを要求する個別ツールでは、依存関係のない呼び出しも逐次化する。
@@ -128,7 +144,7 @@ frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Code
    frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、部分適用も別の実行経路への迂回もせず、失敗として返す。
 
 名前付き定義の役割がレビュー担当・実装担当などの実際の別主体を必要とする場合、その委譲は特殊経路に含めず、`agent-toolkit:delegation`と`runtime-routing.md`に従う。
-Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeではclaude系モデルの実行主体への委譲にAgentツールを既定で使い、`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各定義が起動する委譲先だけを`agents_server`で起動する。
+Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeではclaude系モデルの実行主体への委譲にAgentツールを既定で使い、`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各定義が起動する委譲先だけを`agents_server`で起動する。
 
 名前付きagentの直接適用は、外側のメイン工程から呼び出した一時的な役割適用区間として扱う。
 メインは呼び出し前の工程、入力及び再開位置を保持し、定義が出力契約に従ってstatusを組み立てた時点で当該役割と`tools`制約の適用を終了する。
@@ -152,7 +168,7 @@ Codexメインが名前付き定義を直接適用して役割を遂行すると
 | `TaskStop` | 実際の別主体へ委譲した経路の中断操作を使い、返された識別子で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
-| `mcp__agents_server__start`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・継続・中断） | 名前付き定義の適用自体には使わない。定義内で実際の別主体へ委譲する場合は、`runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
+| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・探索委譲・継続・中断） | 名前付き定義の適用自体には使わない。定義内で実際の別主体へ委譲する場合は、`runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeではユーザーへ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
@@ -162,7 +178,9 @@ Codexメインが名前付き定義を直接適用して役割を遂行すると
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
 
-Claude Code側の`agents_server`は、`start`・`wait`・`send_message`・`kill`の4ツールでCodexまたはClaudeへ委譲する。
+Claude Code側の`agents_server`は、`start`・`start_explore`・`wait`・`send_message`・`kill`の5ツールでCodexまたはClaudeへ委譲する。
+`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`と`exclude_session_id`で次の候補を起動する。サーバーは可用性の失敗を自ら判定せず、候補を進めるのは`exclude_session_id`を伴う起動だけとする。`exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。
+`start_explore`は調査専用の軽量な起動条件でthreadを開始し、Codex backendではプロジェクト指示の読込を省く。
 Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
 
 会話履歴を継承する起動は`Agent`ツールの読み替えに含めず、別の運用として明示する。
@@ -175,9 +193,9 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 
 工程別モデル設定と名前付きagentの直接適用は別の判断である。
 `runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
-`engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使い、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
+`engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start`へ対応する`model_type`を渡し、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 指定engineの経路を利用できない場合は同文書の手順4に従って`needs_escalation`又は未完了として返す。
-`engine=codex`の場合は、当該工程の設定値から解決した`model`・`effort`を`agents_server`の`start`へ渡す。
+`engine=codex`の場合は、当該工程の`model_type`を`agents_server`の`start`へ渡し、engine、model及びeffortの解決をサーバーへ委ねる。
 工程別モデル設定のキーを持たない名前付きagentの呼び出しは、当該設定の`engine`判定を経ず、本節の直接適用契約に従う。
 
 公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。

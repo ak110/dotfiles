@@ -7,6 +7,7 @@ const STATE_LABELS = {
 };
 const PROCESSABLE_STATES = new Set(['inbox', 'processing']);
 const MUTABLE_STATES = new Set(['inbox', 'processing', 'hold']);
+const DELETABLE_STATES = new Set(['inbox', 'processing', 'hold', 'adopted', 'rejected']);
 const SEARCH_FALLBACK_MAX_RESULTS = 5;
 const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
@@ -126,7 +127,16 @@ function topmostDialog() {
 }
 
 function deliverOperationMessage(message, isError = false) {
-  showToast(message, isError);
+  const dialog = topmostDialog();
+  if (!dialog) {
+    showToast(message, isError);
+    return;
+  }
+  // モーダルはtop layerへ描画され、ページ固定の通知は`::backdrop`の下へ入り、暗転して操作も受け付けない。
+  // 開いているダイアログがあるときは、そのダイアログ内の結果表示領域へ配送する。
+  const name = dialog.id.replace(/-dialog$/, '');
+  setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
+  setTextMessage(`${name}-${isError ? 'status' : 'alert'}`, '');
 }
 
 function openDialog(dialog, origin, focusTarget) {
@@ -631,6 +641,7 @@ function setDetailMode(mode) {
   const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
   const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
   const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
+  const deletable = currentEntry && DELETABLE_STATES.has(currentEntry.state);
   const held = currentEntry?.state === 'hold';
   const rejected = currentEntry?.state === 'rejected';
   byId('edit-panel').hidden = !editing;
@@ -647,7 +658,7 @@ function setDetailMode(mode) {
   byId('hold-button').hidden = mutating || !processable;
   byId('unhold-button').hidden = mutating || !held;
   byId('return-to-inbox-button').hidden = mutating || !rejected;
-  byId('delete-button').hidden = mutating || !mutable;
+  byId('delete-button').hidden = mutating || !deletable;
   byId('save-entry-button').hidden = !editing;
   byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;

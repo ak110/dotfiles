@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import os
 import pathlib
 import re
 import stat
 import subprocess
+import tempfile
 from collections.abc import Iterable
 
 import _atk_git_sync
@@ -28,12 +30,17 @@ def build_parser(parser) -> None:
     sub = parser.add_subparsers(dest="plans_subcommand", required=True)
     commit_parser = sub.add_parser(
         "commit",
-        help="新しいplans rootの指定計画バンドルだけをcommit・pushする",
+        help="作業中の指定計画バンドルを保存rootへ移動してcommit・pushする",
     )
     commit_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
         help="plans rootからの相対メイン計画パス（yyyy/MM/dd-{名称}-{16進数4桁}.md）。",
+    )
+    commit_parser.add_argument(
+        "--skip-push",
+        action="store_true",
+        help="保存rootへ対象限定commitを作成し、pushは行わない",
     )
     migrate_parser = sub.add_parser(
         "migrate",
@@ -97,6 +104,91 @@ def _plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tu
     return tuple(sorted(candidates))
 
 
+def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """作業rootにある指定stemの通常ファイルを返す。"""
+    root = _plan_file.working_plans_root(home).resolve(strict=False)
+    parent = (root / relative_main.parent).resolve(strict=False)
+    if not parent.is_relative_to(root):
+        raise _common.WebInputError("計画作業バンドルが作業root外を指しています")
+    main = parent / relative_main.name
+    if not main.is_file() or main.is_symlink():
+        return ()
+    stem = main.stem
+    candidates = tuple(
+        sorted(
+            path
+            for path in parent.iterdir()
+            if (path == main or path.name.startswith(f"{stem}."))
+            and path.is_file()
+            and not path.is_symlink()
+            and not _excluded_path(path)
+        )
+    )
+    return candidates
+
+
+def _copy_working_bundle(
+    private_notes: pathlib.Path,
+    relative_main: pathlib.Path,
+    working_bundle: tuple[pathlib.Path, ...],
+) -> tuple[tuple[pathlib.Path, ...], dict[pathlib.Path, tuple[tuple[int, int], bytes]]]:
+    """作業バンドルを保存rootへ排他的に複製し、回収用snapshotを返す。"""
+    destination_directory = _plan_file.new_plans_root(private_notes) / relative_main.parent
+    destination_directory.mkdir(parents=True, exist_ok=True)
+    snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
+    destinations: list[pathlib.Path] = []
+    for source in working_bundle:
+        source_stat = source.stat(follow_symlinks=False)
+        content = source.read_bytes()
+        snapshots[source] = ((source_stat.st_dev, source_stat.st_ino), content)
+        destination = destination_directory / source.name
+        if destination.exists():
+            if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
+                raise _common.WebInputError(f"保存先に内容の異なる計画ファイルがあります: {destination}")
+            destinations.append(destination)
+            continue
+        descriptor, raw_temporary = tempfile.mkstemp(prefix=f".{source.name}.", suffix=".tmp", dir=destination_directory)
+        temporary = pathlib.Path(raw_temporary)
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(content)
+                output.flush()
+                os.fsync(output.fileno())
+            try:
+                os.link(temporary, destination)
+            except FileExistsError:
+                if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
+                    raise _common.WebInputError(f"保存先に内容の異なる計画ファイルがあります: {destination}") from None
+            if destination.read_bytes() != content:
+                raise _common.WebInputError(f"保存した計画ファイルの読戻し内容が一致しません: {destination}")
+        finally:
+            temporary.unlink(missing_ok=True)
+        destinations.append(destination)
+    return tuple(sorted(destinations)), snapshots
+
+
+def _remove_finalized_working_bundle(
+    working_bundle: tuple[pathlib.Path, ...],
+    snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]],
+    home: pathlib.Path | str | None,
+) -> None:
+    """保存成功後に変更されていない作業ファイルだけを削除する。"""
+    for source in working_bundle:
+        identity, content = snapshots[source]
+        current = source.stat(follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != identity or source.read_bytes() != content:
+            raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
+    for source in working_bundle:
+        source.unlink()
+    root = _plan_file.working_plans_root(home).resolve(strict=False)
+    for directory in (working_bundle[0].parent, working_bundle[0].parent.parent):
+        if directory != root and directory.is_relative_to(root):
+            try:
+                directory.rmdir()
+            except OSError:
+                break
+
+
 def _plan_display_name(relative_main: pathlib.Path) -> str:
     """commitメッセージへ含める計画名を返す。"""
     filename = relative_main.name
@@ -109,8 +201,15 @@ def _plan_display_name(relative_main: pathlib.Path) -> str:
     return relative_main.stem
 
 
-def commit_plan(private_notes: pathlib.Path, plan_file: str, *, lock_timeout: float = -1) -> dict[str, object]:
-    """指定計画bundleだけを対象限定commit・pushする。"""
+def commit_plan(
+    private_notes: pathlib.Path,
+    plan_file: str,
+    *,
+    home: pathlib.Path | str | None = None,
+    lock_timeout: float = -1,
+    skip_push: bool = False,
+) -> dict[str, object]:
+    """指定計画bundleを保存rootへ移し、対象限定commitを作成する。"""
     try:
         relative_main = _plan_file.validate_plan_relative_path(plan_file)
     except ValueError as error:
@@ -118,13 +217,24 @@ def commit_plan(private_notes: pathlib.Path, plan_file: str, *, lock_timeout: fl
             relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
         except ValueError:
             raise _common.WebInputError(str(error)) from error
+    working_bundle = _working_plan_bundle(home, relative_main)
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _atk_git_sync.push_pending_commits(private_notes)
-        _atk_git_sync.pull(private_notes)
-        bundle = _plan_bundle(private_notes, relative_main)
+        saved_main = _plan_file.new_plans_root(private_notes) / relative_main
+        saved_bundle_exists = saved_main.is_file()
+        if not working_bundle or not saved_bundle_exists:
+            if not skip_push:
+                _atk_git_sync.push_pending_commits(private_notes)
+            _atk_git_sync.pull(private_notes)
+        snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
+        if working_bundle:
+            bundle, snapshots = _copy_working_bundle(private_notes, relative_main, working_bundle)
+        else:
+            bundle = _plan_bundle(private_notes, relative_main)
         relative_paths = tuple(_as_relative_notes_path(path, private_notes) for path in bundle)
         message = f"chore: update plan {_plan_display_name(relative_main)}"
-        _atk_git_sync.commit_and_push(private_notes, message, relative_paths)
+        _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=skip_push)
+        if working_bundle:
+            _remove_finalized_working_bundle(working_bundle, snapshots, home)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
 
 
@@ -217,6 +327,21 @@ def _associated_groups(files: tuple[pathlib.Path, ...]) -> dict[pathlib.Path, tu
         group_key = matches[0] if matches else path
         groups.setdefault(group_key, []).append(path)
     return {key: tuple(sorted(values)) for key, values in groups.items()}
+
+
+def _migratable_legacy_files(
+    legacy_root: pathlib.Path,
+    files: tuple[pathlib.Path, ...],
+) -> tuple[pathlib.Path, ...]:
+    """日付階層の正規作業バンドルを除いた旧形式ファイルを返す。"""
+    migratable: list[pathlib.Path] = []
+    for main, members in _associated_groups(files).items():
+        try:
+            relative = main.relative_to(legacy_root)
+            _plan_file.validate_plan_relative_path(relative)
+        except ValueError:
+            migratable.extend(members)
+    return tuple(sorted(migratable))
 
 
 def _destination_map(
@@ -433,7 +558,7 @@ def migrate_plans(
         except _atk_git_sync.GitSyncError as error:
             raise _common.WebInputError(str(error)) from error
 
-        files = _legacy_files(legacy_root)
+        files = _migratable_legacy_files(legacy_root, _legacy_files(legacy_root))
         if not files:
             return {"migrated": 0, "deleted": 0, "commit": None}
         destinations = _destination_map(private_notes, files)
@@ -546,8 +671,9 @@ def _git_head(private_notes: pathlib.Path) -> str:
 def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     """`atk plans`のサブコマンドを実行する。"""
     if args.plans_subcommand == "commit":
-        result = commit_plan(private_notes, args.plan_file)
-        print(f"計画bundleをcommit・pushしました: {result['plan_file']}")
+        result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
+        action = "commitしました" if args.skip_push else "commit・pushしました"
+        print(f"計画bundleを保存rootへ移動して{action}: {result['plan_file']}")
         return 0
     if args.plans_subcommand == "migrate":
         result = migrate_plans(private_notes, home)

@@ -126,13 +126,23 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-委譲は`start`・`wait`・`send_message`・`kill`の4ツールで行う。`start`は`engine`（`codex`または`claude`）、
-`prompt`、既存ディレクトリの絶対`cwd`、必要に応じて`model`と`effort`を受け取り、完了を待たず`session_id`を返す。
+委譲は`start`・`start_explore`・`wait`・`send_message`・`kill`の5ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
+`prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
+応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`と失敗した`session_id`を`exclude_session_id`へ渡して次の候補を起動する。
+`start_explore`は`fast`、`prompt`、絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使う。`exclude_session_id`へ渡せるのは、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件の一致しないsession IDは、別の設定キーの候補が除外へ混入するため開始前にエラーとなる。
+軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
+`send_message`は、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補が、起動に使った実効値と一致しない場合に`configuration changed`を返す。呼び出し側は検収済み状態を渡して新規起動する。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返し、
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。
 成功応答の`kill_requested`は中断要求の受理事実を示し、自然終端を中断成功へ置き換えない。MCP内部で承認・一覧操作は公開しない。
+
+工程別モデル設定の各キーは、`<engine>:<model>[/<effort>]`をASCIIカンマで区切った複数候補を受け取る。
+先頭の候補から順に起動を試み、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、`atk config show`と`atk config get`が当該値を返し、
+委譲の起動でも当該値を使う。環境変数は保存済みの設定より優先し、当該変数を解除すると保存済みの設定へ戻る。
+`atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
 
 ## Claude Codeの推奨設定
 
@@ -236,13 +246,13 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 採用内容を統合した元項目又は別リポジトリへ移管した元項目は、統合先又は移管先をnoteへ記録して`atk mq rm --force`で除去する。
 技術的な失敗、入力不足及び外部条件待ちは、不採用にせずTBD依存を持つactive項目として保持する。
 
-### session-reviewのユーザーコメント
+### エージェント由来フィードバックへのユーザーコメント
 
-`atk serve`の詳細画面では、inboxにある`source: session-review`のfeedbackだけにユーザーコメントの編集操作が表示される。
+`atk serve`の詳細画面では、inbox又はholdにあるエージェント由来のfeedbackにユーザーコメントの編集操作が表示される。エージェント由来とは、frontmatterの`source`が設定されており、その値が`human`でないものを指す。
 コメントがない場合は末尾の`## ユーザーコメント`節へ追記し、既存のコメントを保存すると同じ節だけを置換する。
 空のコメントによる節削除はできない。
-コメント本文にコードフェンス外のH2を含める入力、同名節が複数ある入力又は末尾でない入力は保存できない。
-planning、processing、TBD、終端項目及び別sourceの項目では操作を使用できない。
+コードフェンス外のH2を含めるコメント、同名節が複数ある本文、末尾以外に予約節がある本文は保存できない。
+planning、processing、TBD、終端項目及び人間由来の項目では操作を使用できない。
 
 ユーザーコメントに操作、対象及び範囲を明記すると、その範囲の外部操作に対する承認として処理される。
 一般的な「進めて」だけでは外部操作の範囲が確定しないため、実行してよい操作を具体的に記載する。
@@ -327,7 +337,6 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や新旧計画rootへの書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
-| plugin `SubagentStart/subagent_start_tracker` | 委譲調整役の起動を記録し、SubagentStopの完了判定へ接続する | 対応 | 非対応。Codexの`agent_type`はspawn時のrole名又は`default`であり、現行の公開入力から追跡対象を識別できない |
 | plugin `PostToolUseFailure/posttooluse` | ツール失敗時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |
@@ -339,29 +348,32 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 信頼前は変更済みHookがスキップされるため、圧縮後通知は発火しない。
 信頼後に`/compact`を実行し、次のモデル継続前に自動生成通知が現れることを確認する。
 
-### 計画ファイルの保存とレビュー時commit
+### 計画ファイルの作業領域と実装レビュー後の保存
 
-新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次のrootへメイン側とdetail側を同時に保存する。
+新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次の作業rootへメイン側とdetail側を同時に保存する。
 
 ```text
-$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
-$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
+~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
+~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
 ```
 
-永続する計画参照は上記の可搬表記で記録する。既存の`~/.claude/plans/`直下の単一・二ファイル計画と、過去に保存された絶対パスは読み書き互換として受理するが、新規作成先には使わない。
-計画レビューが収束した後と実装後レビューが収束した後は、計画rootからの相対パスを指定して計画バンドルを保存する。
+計画本文とキューへ記録する永続参照は、作業中も移動後の`$(atk config get private_notes)/plans/yyyy/MM/`を指す可搬表記にする。
+viewerのパスコピーは選択中の実体を指すため、作業中は`~/.claude/plans/...`、保存後はprivate-notes側の可搬表記を返す。
+実装後レビューが収束した後だけ、作業rootからの相対パスを指定して計画バンドルを保存する。
 
 ```bash
 atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
 ```
 
-`atk plans commit`は同じstemのメイン側、detail側及び付属ファイルだけを対象にする。旧rootの既存計画を新rootへ移す1回限りの操作は、内容と参照を検証したうえで次のコマンドから実行する。
+`atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表をprivate-notesへ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
+pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
+`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。日付階層の新しい作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
 
 ```bash
 atk plans migrate
 ```
 
-計画作成基準、可搬参照の検査及び旧形式の互換条件は`agent-toolkit:plan-mode`の`plan-file-standards.md`を正本とする。
+計画作成基準と可搬参照の検査は`agent-toolkit:plan-mode`の`plan-file-standards.md`、旧単一ファイル形式・旧二ファイル形式の互換条件は同スキルの`legacy-plan-file-standards.md`を正本とする。
 
 計画ファイルと計画運用に関する検査は、上表の`PreToolUse`・`PostToolUse`が扱う。
 
@@ -379,7 +391,7 @@ atk plans migrate
 - 計画変更履歴、実行時進捗ログ及びレビュー指摘管理表は用途別に保持し、行数又はラウンド数を相互照合しない
 - 計画レビューは欠落した事実と阻害される判断・検証・成果が対応する指摘だけを受理し、体裁や記述量を指摘理由にしない
 - 計画レビューでは、メインセッションが機械チェック・修正系と計画レビュー系へ直接委譲する
-- 計画実装では、`plan-impl-executor`がコミット単位ごとの実装担当と単一の読み取り専用実装レビュー担当を管理する。
+- 計画実装では、`plan-executor`がコミット単位ごとの実装担当と単一の読み取り専用実装レビュー担当を管理する。
   各レビューラウンドはラウンド番号と指摘件数だけを返し、第3ラウンド以降はメインがレビュー指摘管理表を確認して介入する。
   `merge_request`の許可後は最後の作業担当が最新ベースへのrebase、必要な競合記録と再レビュー、ffマージ、`adopt`及び後始末までを担当する
 
@@ -407,7 +419,7 @@ Claude Codeで有効化する。
   - 計画時の変更履歴は`## 変更履歴（計画時）`、実装時の進捗は`## 進捗ログ（実行時）`へ分離し、旧見出しは読み取り互換とする
   - 計画レビューでは計画ファイルと同じディレクトリの`<計画stem>.plan-review.tsv`、実装レビューでは同じディレクトリの`<計画stem>.exec-review.tsv`をレビュー担当が作成・更新し、全ラウンドで同じ表を使う
   - 初回起動後の追送利用者発言は起草担当が逐語の真正性を保証し、レビュー担当は本文との対応だけを照合する
-  - バグ対応計画は計画メタ情報の固定記法から判定し、バグ調査ファイルの原因分析表と固定12行の調査表で両要因の深掘り、原因起点の類似見直し、是正・横展開・再発防止を記録する
+  - バグ対応計画は計画メタ情報の固定記法から判定し、バグ調査ファイルの原因分析表と固定12行の調査表で両要因を分析し、原因起点の類似見直し、是正・横展開・再発防止を記録する
   - 変更履歴は5列表でレビュー指摘を系統・ラウンド単位に集約し、指摘原文・個別採否・対応内容はレビュー指摘管理表を正本とする
   - 進捗ログは日時・完了した工程・結果の3列表で実装工程の作業状況を追跡し、異常終了からの再開に使う
   - 実装単位は1計画1commitを既定とし、成果、commit、対象ファイル集合及び近接検証が独立し分割の利益がある場合だけ分割する。判断から一意に導出できる詳細手順は安全性・データ保全・公開契約に必要な場合だけ常設する

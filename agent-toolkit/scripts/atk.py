@@ -10,6 +10,7 @@
 #   "pytilpack[quart]>=1.47.0",
 #   "pyyaml",
 #   "markdown-it-py[linkify]>=4.0.0",
+#   "mdit-py-plugins>=0.6",
 # ]
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
@@ -601,7 +602,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         metavar="PLAN_FILE",
         required=True,
         help=(
-            "新規計画は$(atk config get private_notes)/plans/から始まるportable値を指定する。"
+            "新規計画は移動後の$(atk config get private_notes)/plans/から始まるportable値を指定する。"
             "既存の絶対パスも読み取り互換として受理する。"
         ),
     )
@@ -683,7 +684,8 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help=(
             "対象リポジトリのフィードバック消化をオーケストレーターの常駐起動で反復実行する。"
             "オーケストレーター・model・effortはatk configのorchestrate_model設定"
-            "（既定claude:opus[1m]/medium、書式<claude|codex>:<model>[/<effort>]）で決まる。"
+            "（既定claude:opus[1m]/medium、書式<claude|codex>:<model>[/<effort>]、複数候補はASCIIカンマ区切り）"
+            "で決まる。"
         ),
     )
     loop.add_argument(

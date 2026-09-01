@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import setup_plans_viewer_linux
+from pytools._internal import claude_common, setup_plans_viewer_linux
 
 
 def _make_subprocess_fake(
@@ -59,8 +59,8 @@ def _no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """テスト共通の Linux + euryale 環境セットアップ。"""
-    monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "linux")
-    monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "euryale")
+    monkeypatch.setattr(claude_common.sys, "platform", "linux")
+    monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "euryale")
     monkeypatch.setattr(setup_plans_viewer_linux.pathlib.Path, "home", lambda: tmp_path)
 
 
@@ -99,7 +99,7 @@ class TestRunPlatformGuard:
 
     def test_non_linux_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         """sys.platform が linux でなければ False を返し副作用ゼロ。"""
-        monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "win32")
+        monkeypatch.setattr(claude_common.sys, "platform", "win32")
         calls: list[list[str]] = []
         monkeypatch.setattr(
             setup_plans_viewer_linux.claude_common,
@@ -111,8 +111,8 @@ class TestRunPlatformGuard:
 
     def test_non_euryale_hostname_returns_false(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         """hostname が euryale 以外なら False を返し unit ファイルを書き込まない。"""
-        monkeypatch.setattr(setup_plans_viewer_linux.sys, "platform", "linux")
-        monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "circe.local")
+        monkeypatch.setattr(claude_common.sys, "platform", "linux")
+        monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "circe.local")
         monkeypatch.setattr(setup_plans_viewer_linux.pathlib.Path, "home", lambda: tmp_path)
         calls: list[list[str]] = []
         monkeypatch.setattr(
@@ -163,7 +163,7 @@ class TestRunUnitDeployment:
     def _prepared(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         """euryale + viewer 配置済みの状態を共通セットアップする。"""
         _run_linux_euryale(monkeypatch, tmp_path)
-        monkeypatch.setattr(setup_plans_viewer_linux.socket, "gethostname", lambda: "EURYALE")
+        monkeypatch.setattr(claude_common.socket, "gethostname", lambda: "EURYALE")
         viewer = tmp_path / ".local" / "bin" / "claude-plans-viewer"
         viewer.parent.mkdir(parents=True, exist_ok=True)
         viewer.touch()

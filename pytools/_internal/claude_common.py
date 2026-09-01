@@ -4,6 +4,8 @@ import contextlib
 import json
 import logging
 import os
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -34,11 +36,26 @@ CLAUDE_TIMEOUT = 30
 
 # バランスモード・フィードバック蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
 TARGET_HOSTS: tuple[str, ...] = ("stheno", "circe", "circe-container", "euryale", "euryale-container")
+_EURYALE_HOSTNAME = "euryale"
 
 
 def is_target_host(hostname: str) -> bool:
     """ホスト名が`TARGET_HOSTS`に含まれるかを判定する（大文字小文字無視・FQDN接尾辞除去）。"""
     return hostname.lower().split(".")[0] in TARGET_HOSTS
+
+
+def is_euryale() -> bool:
+    """Linux上のeuryaleホストである場合だけ真を返す。"""
+    return sys.platform == "linux" and socket.gethostname().lower().split(".")[0] == _EURYALE_HOSTNAME
+
+
+def resolve_uv_path() -> Path | None:
+    """公式導入先を優先して`uv`の絶対パスを返す。"""
+    candidate = Path.home() / ".local" / "bin" / "uv"
+    if candidate.is_file():
+        return candidate
+    found = shutil.which("uv")
+    return Path(found) if found else None
 
 
 def ensure_flag_file_present(flag_path: Path, *, tag: str) -> bool:

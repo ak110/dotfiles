@@ -403,6 +403,22 @@ class TestShouldAllowBash:
         unregistered = temp_root / "permission-absent"
         assert hook.should_allow_bash(f"atk managed-temp cleanup --path {unregistered}", str(tmp_path)) is False
 
+    def test_managed_temp_cleanup_with_recover_registry_not_allowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """登録復元を伴うcleanupは真正な管理対象でも自動許可しない。"""
+        temp_root = tmp_path / "temp"
+        temp_root.mkdir()
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
+        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
+        target = _managed_temp.create_managed_temp("permission-recovery")
+        _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access
+
+        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is False
+        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target} --recover-registry", str(tmp_path)) is False
+
     @pytest.mark.parametrize(
         "command",
         [
@@ -413,6 +429,7 @@ class TestShouldAllowBash:
             "atk managed-temp create --prefix agent-work --root /tmp extra",
             "atk managed-temp cleanup --path relative",
             "atk managed-temp cleanup --path /tmp/unmanaged",
+            "atk managed-temp cleanup --path /tmp/unmanaged --recover-registry",
             "atk managed-temp validate --path /tmp/unmanaged",
             "atk managed-temp",
             "atk mq rm --all",

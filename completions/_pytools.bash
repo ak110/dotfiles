@@ -38,9 +38,11 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete dateRelocat
 complete -o nospace -o default -o bashdefault -F _python_argcomplete deletehomonym
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dirsize
 complete -o nospace -o default -o bashdefault -F _python_argcomplete dotfiles-media-remote
+complete -o nospace -o default -o bashdefault -F _python_argcomplete fable
 complete -o nospace -o default -o bashdefault -F _python_argcomplete git-justify
 complete -o nospace -o default -o bashdefault -F _python_argcomplete markdown-viewer
 complete -o nospace -o default -o bashdefault -F _python_argcomplete mvdir
+complete -o nospace -o default -o bashdefault -F _python_argcomplete opus
 complete -o nospace -o default -o bashdefault -F _python_argcomplete psgrep
 complete -o nospace -o default -o bashdefault -F _python_argcomplete py-imageconverter
 complete -o nospace -o default -o bashdefault -F _python_argcomplete py-pdf-to-image
@@ -50,4 +52,5 @@ complete -o nospace -o default -o bashdefault -F _python_argcomplete randfile
 complete -o nospace -o default -o bashdefault -F _python_argcomplete releaser
 complete -o nospace -o default -o bashdefault -F _python_argcomplete rename2hash
 complete -o nospace -o default -o bashdefault -F _python_argcomplete repack-archive
+complete -o nospace -o default -o bashdefault -F _python_argcomplete sonnet
 complete -o nospace -o default -o bashdefault -F _python_argcomplete touch-file

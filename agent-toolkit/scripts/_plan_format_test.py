@@ -4,6 +4,7 @@ import pathlib
 import sys
 
 import pytest
+from pyfltr.colloquial import check as _colloquial_check
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
@@ -171,9 +172,11 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 
 - 起動経路: `agent-toolkit:plan-mode`
 - 対象リポジトリ: `/repo`
+- 関連フィードバック:
+  - 20260817-223603-001.md: 入力の境界を追加確認する
+  - 20260817-223603-002.md: 保留中の要求を確認する
 - 作業種別: 通常変更
 - ベースコミット: `作成時点の参照値`
-- 計画ファイル（詳細）: `human.detail.md`
 
 ## 実施内容
 
@@ -181,14 +184,15 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 | --- | --- | --- | --- |
 | 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |
 | 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |
-| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |
+| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |
 
-## 提示素材
+## エージェント判断
 
-- feedback.md
-- pending.md
+| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |
+| --- | --- | --- | --- | --- |
+| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |
 
-## 変更履歴
+## 変更履歴（計画時）
 
 ### ユーザー発言: 本セッションの直接指示
 
@@ -211,7 +215,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 
 なし
 
-## 進捗ログ
+## 進捗ログ（実行時）
 
 | 日時 | 完了した工程 | 結果・特記事項 |
 | --- | --- | --- |
@@ -313,11 +317,15 @@ def test_human_readable_main_and_detail_pass_structure_check() -> None:
     assert not _plan_format.check_plan_detail_structure(_HUMAN_DETAIL_CONTENT, work_type)
 
 
-def test_human_readable_materials_and_units_do_not_expose_internal_ids() -> None:
-    """人間向け形式は素材ファイル名と説明的な実装単位だけを解析する。"""
-    materials, material_errors = _plan_format.parse_plan_materials(_HUMAN_MAIN_CONTENT)
-    assert not material_errors, material_errors
-    assert materials is not None and materials.is_human_readable
+def test_human_readable_feedback_and_units_do_not_expose_internal_ids() -> None:
+    """人間向け形式は正本ファイル名と説明的な実装単位だけを解析する。"""
+    metadata, metadata_errors = _plan_format.parse_plan_metadata(_HUMAN_MAIN_CONTENT)
+    assert not metadata_errors, metadata_errors
+    assert metadata is not None
+    assert tuple(filename for filename, _summary in metadata.related_feedback) == (
+        "20260817-223603-001.md",
+        "20260817-223603-002.md",
+    )
     units, unit_errors = _plan_format.parse_plan_implementation_units(_HUMAN_DETAIL_CONTENT)
     assert not unit_errors, unit_errors
     assert units is not None
@@ -356,7 +364,7 @@ def test_human_readable_action_accepts_review_origin_with_matching_round(tmp_pat
     review_path = tmp_path / "review.tsv"
     review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
     content = _HUMAN_MAIN_CONTENT.replace(
-        "| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |",
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |",
         f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | 採用 | {review_path.as_posix()}のround 2 |",
         1,
     )
@@ -378,7 +386,7 @@ def test_human_readable_action_rejects_invalid_review_origin_or_root(
     review_path = tmp_path / "review.tsv"
     review_path.write_text("1\tplan-review\t指摘\n", encoding="utf-8")
     content = _HUMAN_MAIN_CONTENT.replace(
-        "| 入力の境界を追加確認する | 人間由来のフィードバック (feedback.md) | 部分採用 | - |",
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |",
         f"| 入力の境界を追加確認する | {origin} | 採用 | {root.format(path=review_path.as_posix())} |",
         1,
     )
@@ -389,39 +397,58 @@ def test_human_readable_action_rejects_invalid_review_origin_or_root(
 def test_human_readable_action_rejects_independent_exclusion_table() -> None:
     """人間向けメイン側は実施内容と別の除外・保持表を持たない。"""
     content = _HUMAN_MAIN_CONTENT.replace(
-        "\n## 提示素材\n",
-        "\n### 合意済みの除外・保持\n\n対象外の類似箇所は維持する。\n\n## 提示素材\n",
+        "\n## エージェント判断\n",
+        "\n### 合意済みの除外・保持\n\n対象外の類似箇所は維持する。\n\n## エージェント判断\n",
         1,
     )
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any("独立した除外・保持表を置かない" in error for error in errors), errors
 
 
-def test_human_readable_action_rejects_feedback_missing_from_materials() -> None:
-    """フィードバック由来の正本は提示素材から逆照合できる。"""
-    content = _HUMAN_MAIN_CONTENT.replace("(feedback.md)", "(not-listed.md)", 1)
+def test_human_readable_action_rejects_feedback_missing_from_metadata() -> None:
+    """フィードバック由来の正本は関連フィードバックから逆照合できる。"""
+    content = _HUMAN_MAIN_CONTENT.replace("(20260817-223603-001.md)", "(20260817-223603-999.md)", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("フィードバック由来が提示素材に無い" in error for error in errors), errors
+    assert any("フィードバック由来が関連フィードバックに無い" in error for error in errors), errors
 
 
-def test_human_readable_materials_reject_paths() -> None:
-    """提示素材は任意文書のパスではなく正本ファイル名だけを受理する。"""
-    content = _HUMAN_MAIN_CONTENT.replace("- feedback.md", "- docs/notes.md", 1)
+def test_related_feedback_rejects_invalid_filename() -> None:
+    """関連フィードバックは正本ファイル名だけを受理する。"""
+    content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "docs/notes.md", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("正本ファイル名の箇条書き" in error for error in errors), errors
+    assert any("ファイル名が不正" in error for error in errors), errors
 
 
-def test_human_readable_materials_reject_ambiguous_id_filename() -> None:
-    """構造化された提示素材では曖昧な外部識別子も旧素材IDとして拒否する。"""
-    content = _HUMAN_MAIN_CONTENT.replace("- feedback.md", "- P-256.md", 1)
+@pytest.mark.parametrize(
+    ("replacement", "expected"),
+    [
+        ("- 関連フィードバック:\n  - 20260817-223603-001.md:", "1行要約が空"),
+        (
+            "- 関連フィードバック:\n  - 20260817-223603-001.md: 入力の境界を追加確認する\n"
+            "  - 20260817-223603-001.md: 重複した要求",
+            "ファイル名が重複",
+        ),
+        (
+            "- 関連フィードバック: なし\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
+            "なし`と子項目",
+        ),
+    ],
+)
+def test_related_feedback_rejects_invalid_children(replacement: str, expected: str) -> None:
+    """関連フィードバックの要約欠落、重複及び`なし`との併記を拒否する。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        "- 関連フィードバック:\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
+        replacement,
+        1,
+    )
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("提示素材へ合成IDを記載しない" in error for error in errors), errors
+    assert any(expected in error for error in errors), errors
 
 
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
-        ("- feedback.md", "提示素材へ合成IDを記載しない"),
+        ("関連フィードバック", "ファイル名が不正"),
         (
             "| 対象外の類似するが対象外の記述は変更しない |",
             "`## 実施内容`へ素材・要求・履歴・実装単位の合成IDを記載しない",
@@ -430,8 +457,8 @@ def test_human_readable_materials_reject_ambiguous_id_filename() -> None:
 )
 def test_human_readable_main_rejects_internal_identifiers(mutation: str, expected: str) -> None:
     """人間向けメイン側に内部管理IDを持ち込まない。"""
-    if mutation == "- feedback.md":
-        content = _HUMAN_MAIN_CONTENT.replace(mutation, "- P-001.md", 1)
+    if mutation == "関連フィードバック":
+        content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "P-001.md", 1)
     else:
         content = _HUMAN_MAIN_CONTENT.replace(
             "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
@@ -499,6 +526,16 @@ def test_human_readable_units_reject_ambiguous_exact_id() -> None:
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
     """H1直下のバグ単位と原因分析表・固定12行表を持つ付属ファイルを受理する。"""
     assert not _plan_format.check_bug_file_structure(_BUG_FILE_CONTENT)
+
+
+def test_bug_cause_table_rows_pass_colloquial_check() -> None:
+    """許容語彙表から対象項目が失われた場合に失敗し、固定行名の改称を判断する契機とする。"""
+    deny_patterns = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
+    allow_patterns = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
+
+    for row_name in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS:
+        diagnostics = _colloquial_check.scan_text(row_name, deny_patterns, allow_patterns)
+        assert not diagnostics, (row_name, diagnostics)
 
 
 def test_bug_file_structure_rejects_missing_fixed_row() -> None:
@@ -1507,16 +1544,7 @@ def _canonical_main_content() -> str:
 
 def _canonical_human_main_content() -> str:
     """新しい固定H2とエージェント提案の判断表を持つ人間向けメイン本文を返す。"""
-    judgment = (
-        "## エージェント判断\n\n"
-        "| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |\n"
-        "| --- | --- | --- | --- | --- |\n"
-        "| 類似するが対象外の記述は変更しない | 類似箇所は公開契約へ影響しない。 | "
-        "ユーザー要求は公開契約の更新に限定される。 | 類似箇所を対象外として保持する。 | "
-        "対象箇所の実測と差分確認。 |\n\n"
-    )
-    content = _HUMAN_MAIN_CONTENT.replace("\n## 提示素材\n", f"\n{judgment}## 提示素材\n", 1)
-    return content.replace("## 変更履歴", "## 変更履歴（計画時）", 1).replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+    return _HUMAN_MAIN_CONTENT
 
 
 def test_main_and_detail_canonical_pass_structure_check() -> None:
@@ -1556,11 +1584,7 @@ def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> 
     assert not errors, errors
 
     missing = _canonical_human_main_content().replace(
-        (
-            "| 類似するが対象外の記述は変更しない | 類似箇所は公開契約へ影響しない。 | "
-            "ユーザー要求は公開契約の更新に限定される。 | 類似箇所を対象外として保持する。 | "
-            "対象箇所の実測と差分確認。 |\n"
-        ),
+        "| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |\n",
         "",
         1,
     )
@@ -1576,15 +1600,8 @@ def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> 
             "| 実施内容 | 観測事象 | ユーザー要求との関係 | 根拠 |",
         ),
         (
-            (
-                "| 類似するが対象外の記述は変更しない | 類似箇所は公開契約へ影響しない。 | "
-                "ユーザー要求は公開契約の更新に限定される。 | 類似箇所を対象外として保持する。 | "
-                "対象箇所の実測と差分確認。 |"
-            ),
-            (
-                "| 類似するが対象外の記述は変更しない |  | ユーザー要求は公開契約の更新に限定される。 | "
-                "類似箇所を対象外として保持する。 | 対象箇所の実測と差分確認。 |"
-            ),
+            "| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |",
+            "| 類似するが対象外の記述は変更しない |  | 対象外。 | 維持する。 | 実測。 |",
         ),
     ],
 )

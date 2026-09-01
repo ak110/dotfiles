@@ -285,3 +285,144 @@ def test_setup_raises_when_state_query_fails(
             log_tag="test",
             service_name="tool.service",
         )
+
+
+def test_setup_timer_writes_units_and_enables_only_timer(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2 unitを配置し、oneshot serviceではなくtimerだけを有効化する。"""
+    executable = tmp_path / "uv"
+    executable.write_text("", encoding="utf-8")
+    service_unit = tmp_path / "tool.service"
+    timer_unit = tmp_path / "tool.timer"
+    commands: list[list[str]] = []
+    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands))
+
+    assert systemd_user_unit.setup_timer(
+        service_unit_path=service_unit,
+        timer_unit_path=timer_unit,
+        executable_path=executable,
+        service_unit_content="service\n",
+        timer_unit_content="timer\n",
+        log_tag="test",
+        timer_name="tool.timer",
+    )
+
+    assert service_unit.read_text(encoding="utf-8") == "service\n"
+    assert timer_unit.read_text(encoding="utf-8") == "timer\n"
+    assert commands[:4] == [
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "tool.timer"],
+        ["systemctl", "--user", "restart", "tool.timer"],
+        ["systemctl", "--user", "show", "tool.timer", "--property=ActiveState"],
+    ]
+    assert ["systemctl", "--user", "enable", "tool.service"] not in commands
+
+
+def test_setup_timer_skips_missing_executable(tmp_path: pathlib.Path) -> None:
+    """実行ファイル不在時はunitを配置しない。"""
+    assert not systemd_user_unit.setup_timer(
+        service_unit_path=tmp_path / "tool.service",
+        timer_unit_path=tmp_path / "tool.timer",
+        executable_path=tmp_path / "missing",
+        service_unit_content="service\n",
+        timer_unit_content="timer\n",
+        log_tag="test",
+        timer_name="tool.timer",
+    )
+
+
+def test_setup_timer_matching_units_skip_daemon_reload(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2 unitが同一内容の場合は再配置せずdaemon-reloadを省く。"""
+    executable = tmp_path / "uv"
+    executable.write_text("", encoding="utf-8")
+    service_unit = tmp_path / "tool.service"
+    timer_unit = tmp_path / "tool.timer"
+    service_unit.write_text("service\n", encoding="utf-8")
+    timer_unit.write_text("timer\n", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def unexpected_write(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("一致するunitを書き直した")
+
+    monkeypatch.setattr(claude_common, "atomic_write_text", unexpected_write)
+    monkeypatch.setattr(claude_common, "run_subprocess", _recording(commands))
+    assert systemd_user_unit.setup_timer(
+        service_unit_path=service_unit,
+        timer_unit_path=timer_unit,
+        executable_path=executable,
+        service_unit_content="service\n",
+        timer_unit_content="timer\n",
+        log_tag="test",
+        timer_name="tool.timer",
+    )
+    assert commands[:3] == [
+        ["systemctl", "--user", "enable", "tool.timer"],
+        ["systemctl", "--user", "restart", "tool.timer"],
+        ["systemctl", "--user", "show", "tool.timer", "--property=ActiveState"],
+    ]
+
+
+@pytest.mark.parametrize(
+    ("failed_label", "return_value"),
+    [("daemon-reload", 1), ("enable", 2), ("restart", 3)],
+)
+def test_setup_timer_raises_for_systemctl_failures(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_label: str,
+    return_value: int,
+) -> None:
+    """timer設定のsystemctl失敗を例外へ変換して打ち切る。"""
+    executable = tmp_path / "uv"
+    executable.write_text("", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        label = command[2] if command[:2] == ["systemctl", "--user"] else "loginctl"
+        code = return_value if label == failed_label else 0
+        return subprocess.CompletedProcess(command, code, "", "")
+
+    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    with pytest.raises(systemd_user_unit.SetupError, match=f"{failed_label}に失敗"):
+        systemd_user_unit.setup_timer(
+            service_unit_path=tmp_path / "tool.service",
+            timer_unit_path=tmp_path / "tool.timer",
+            executable_path=executable,
+            service_unit_content="service\n",
+            timer_unit_content="timer\n",
+            log_tag="test",
+            timer_name="tool.timer",
+        )
+
+
+def test_setup_timer_raises_when_timer_is_not_active(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """timerがactiveでない場合はSetupErrorを送出する。"""
+    executable = tmp_path / "uv"
+    executable.write_text("", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if "show" in command:
+            return subprocess.CompletedProcess(command, 0, "ActiveState=inactive\n", "")
+        return subprocess.CompletedProcess(command, 0, "Linger=yes\n", "")
+
+    monkeypatch.setattr(claude_common, "run_subprocess", run)
+    with pytest.raises(systemd_user_unit.SetupError, match="ActiveState=inactive"):
+        systemd_user_unit.setup_timer(
+            service_unit_path=tmp_path / "tool.service",
+            timer_unit_path=tmp_path / "tool.timer",
+            executable_path=executable,
+            service_unit_content="service\n",
+            timer_unit_content="timer\n",
+            log_tag="test",
+            timer_name="tool.timer",
+        )

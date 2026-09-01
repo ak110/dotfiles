@@ -23,7 +23,9 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from _agents_server_state import (
+    EXPLORE_SYSTEM_PROMPT,
     TERMINAL_STATUSES,
+    ModelCandidate,
     ResumePrompt,
     SessionState,
     _append_bounded,
@@ -368,6 +370,10 @@ class AppServerManager:
         cwd: str,
         model: str | None = None,
         effort: str | None = None,
+        *,
+        model_type: str | None = None,
+        explore: bool = False,
+        excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """新しいthreadとturnを開始し、直ちにsession状態を返す。"""
         _validate_prompt(prompt)
@@ -381,12 +387,24 @@ class AppServerManager:
         }
         if model is not None:
             params["model"] = model
+        if explore:
+            params["config"] = {"project_doc_max_bytes": 0}
+            params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT
         thread_response = await client.request("thread/start", params)
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
             raise AppServerError("thread/start returned no thread.id")
         session_id = thread["id"]
-        session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort, engine="codex")
+        session = SessionState(
+            session_id=session_id,
+            cwd=cwd,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded_candidates,
+            model=model,
+            effort=effort,
+            engine="codex",
+        )
         self.sessions[session_id] = session
         _initialize_turn(session)
         try:
@@ -406,12 +424,25 @@ class AppServerManager:
         cwd: str,
         model: str | None = None,
         effort: str | None = None,
+        *,
+        model_type: str | None = None,
+        explore: bool = False,
+        excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
         _validate_cwd(cwd)
         _validate_model_effort(model, effort)
         client = await self._ensure_client()
-        session = SessionState(session_id=session_id, cwd=cwd, model=model, effort=effort, engine="codex")
+        session = SessionState(
+            session_id=session_id,
+            cwd=cwd,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded_candidates,
+            model=model,
+            effort=effort,
+            engine="codex",
+        )
         self.sessions[session_id] = session
         _initialize_turn(session)
         try:
@@ -533,6 +564,9 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
+        if session.explore:
+            resume_params["config"] = {"project_doc_max_bytes": 0}
+            resume_params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:

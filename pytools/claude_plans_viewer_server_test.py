@@ -570,6 +570,7 @@ class TestApiEndpoints:
 
         body = await response.get_data(as_text=True)
         assert response.status_code == 200
+        assert '<table class="review-table">' in body
         assert "<th>ラウンド</th>" in body
         assert "<th>対応不要理由</th>" in body
         assert "<td>implementation-review</td>" in body

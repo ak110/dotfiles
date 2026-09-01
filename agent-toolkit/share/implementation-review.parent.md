@@ -1,6 +1,6 @@
 # 実装レビュー担当の起動とレビュー修正
 
-`plan-impl-executor`が実装単位のHEADを実装レビュー担当へレビューさせ、指摘へのレビュー修正担当の起動と履歴統合を管理する際に本書へ従う。
+`plan-executor`が実装単位のHEADを実装レビュー担当へレビューさせ、指摘へのレビュー修正担当の起動と履歴統合を管理する際に本書へ従う。
 実装レビュー担当自身の手順は`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を正本とする。
 レビュー修正担当自身の手順は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`を正本とする。
 
@@ -10,7 +10,7 @@
 レビュー担当へ渡す開始時点の完全OIDは、渡す直前に`git -C <対象worktreeの絶対パス> rev-parse --verify --quiet <検収したOID>^{commit}`を実行し、終了コード0で出力された文字列をそのまま渡す。
 終了コードが0でない場合はレビュー担当を起動せず、実行したコマンドと終了コードを呼び出し元へ返す。記憶、転記又は短縮形からの復元でOIDを組み立てない。
 
-同worktreeだけへ単一の修正用の実装担当を割り当て、修正用の実装担当を新規起動する直前に`atk config get execute_fix_model`を実行する。継続接続の直前も同じ設定値を再取得する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
+同worktreeだけへ単一の修正用の実装担当を割り当て、新規起動では`agents_server.start`へ`model_type="execute"`を渡す。継続接続では同じ`model_type`を保持する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
 新規起動では`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`と`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を渡す。
 あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、フィードバックファイル名一覧、複製元と対象外worktreeも渡す。

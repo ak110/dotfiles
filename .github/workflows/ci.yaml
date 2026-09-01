@@ -209,6 +209,17 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: pinact run --check
 
+      - name: ネイティブ依存インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
+        # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
+        # libarchive13 の共有ライブラリを必要とする。
+        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends poppler-utils libarchive13 make zstd
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
@@ -224,16 +235,6 @@ jobs:
       - name: Install dependencies
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: uv sync --all-groups --all-extras
-
-      - name: ネイティブ依存インストール
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
-        # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
-        # libarchive13 の共有ライブラリを必要とする。
-        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
-        run: |
-          set -euo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends poppler-utils libarchive13 make
 
       - name: Playwright Chromiumの導入
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'

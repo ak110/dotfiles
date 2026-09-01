@@ -37,6 +37,8 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
   各入力の期待動作と検査を計画の実装者向け領域へ記載する
 - hook定義が`command`で参照するスクリプトのパスを改名、移動又は削除する場合は、旧パスへ新しい入口を呼び出すだけの互換入口を残す。
   hook定義はセッション起動時に読み込まれ、稼働中のセッションは旧パスを参照し続けるため、実体を失うと当該セッションのツール呼び出しがフック実行の失敗で拒否される。
+  hook定義が共通入口へサブコマンドを渡し、共通入口が未知のサブコマンドを終了コード0で通過させる場合は、
+  サブコマンドの削除でツール呼び出しが拒否されないため、旧サブコマンド名の実体を残さなくてよい。
   互換入口のdocstringへ役割と撤去条件を書く。撤去は、旧定義を読み込んだセッションが全て終了したことを確認できた場合だけ行い、
   確認できない場合は互換入口を維持する。
   配布物では、新しい入口を含む版を配布した後の版数更新以降を撤去可能な時機の下限とし、版数更新だけを撤去の契機にしない
@@ -112,8 +114,8 @@ Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolU
 `updatedInput`による入力書き換えは、確認ダイアログの発生自体を抑止しない。
 ダイアログを伴う値を拒否する必要がある場合は書き換えでなくブロックで扱う。
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
-PreToolUseは`start`の絶対`cwd`と`wait`・`send_message`・`kill`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
-PostToolUseは成功した`start`のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。失敗時は状態を変更せず、既存の開始点用
+PreToolUseは開始ツール（`start`・`start_explore`）の絶対`cwd`と`wait`・`send_message`・`kill`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
+PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。失敗時は状態を変更せず、既存の開始点用
 `PostToolUseFailure` matcherを拡張しない。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` は移行説明と保護対象の識別にだけ残し、新経路へ渡さない。
 

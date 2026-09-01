@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import typing
 import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
 
+import _file_lock
 from _atomic_file import atomic_write
-from _file_lock import acquire_lock, release_lock
 
 COLUMNS = (
     "round",
@@ -143,8 +143,9 @@ def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[st
     """ロック内で再読込・検証・更新・原子的置換を実行する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
+    _file_lock.ensure_plan_lock_ignored(lock_path)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
-        acquire_lock(lock_file)
+        _file_lock.acquire_lock(lock_file)
         try:
             rows = _read(path) if path.exists() else []
             _validate_rows(rows)
@@ -153,7 +154,7 @@ def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[st
             _write_atomic(path, updated)
             return updated
         finally:
-            release_lock(lock_file)
+            _file_lock.release_lock(lock_file)
 
 
 def init(path: str | Path) -> int:
@@ -161,14 +162,15 @@ def init(path: str | Path) -> int:
     target = _path(str(path))
     target.parent.mkdir(parents=True, exist_ok=True)
     lock_path = target.with_name(target.name + ".lock")
+    _file_lock.ensure_plan_lock_ignored(lock_path)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
-        acquire_lock(lock_file)
+        _file_lock.acquire_lock(lock_file)
         try:
             if target.exists():
                 raise ValueError(f"レビュー表が既に存在する: {target}")
             _write_atomic(target, [])
         finally:
-            release_lock(lock_file)
+            _file_lock.release_lock(lock_file)
     print(target)
     return 0
 
@@ -290,73 +292,99 @@ def show(path: str | Path, track: str | None = None) -> int:
     return 0
 
 
+class _GuidedSubcommandParser(argparse.ArgumentParser):
+    """解釈できない引数を、当該サブコマンドの受理形式を示して拒否するサブパーサー。
+
+    `argparse`の既定では、サブコマンドが解釈できない引数はトップレベルの
+    `unrecognized arguments`として報告され、当該サブコマンドのusageも受理形式も表示されない。
+    受理しない名前を個別に登録する方式では、未登録の名前をトップレベルのエラーとして報告するため、
+    残余引数を一律に捕捉して受理形式を返す。
+    """
+
+    @typing.override
+    def parse_known_args(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # ty: ignore[invalid-method-override]
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> tuple[argparse.Namespace, list[str]]:
+        parsed, remaining = super().parse_known_args(args, namespace)
+        assert parsed is not None
+        if remaining:
+            self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
+        return parsed, remaining
+
+    def _accepted_form(self) -> str:
+        """当該サブコマンドが受理するオプションと表のパスの指定方法を説明する。"""
+        options = sorted(option for option in self._option_string_actions if option.startswith("--") and option != "--help")
+        accepted = "・".join(options) if options else "なし"
+        return f"{self.prog}が受理するオプションは{accepted}で、表のパスは位置引数で指定する"
+
+
+def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
+    """セル本文を受け取るオプションと、同じ本文をファイルから読むオプションを対で登録する。
+
+    `atk mq add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
+    シェルの引用規則を経由せずに渡せるようにする。
+    """
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(f"--{option}", help=description)
+    group.add_argument(
+        f"--{option}-file",
+        metavar="PATH",
+        help=f"{description}を記載したファイルのパス。引用符・改行・バッククォートを含む本文をシェルのエスケープを介さず渡す場合に使う。",
+    )
+
+
+def _read_cell_file(option: str, raw_path: str) -> str:
+    """セル本文を記載したファイルをUTF-8で読む。"""
+    path = Path(raw_path).expanduser()
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"{option}の読み込みに失敗した: {raw_path}（{error}）") from error
+    except UnicodeDecodeError as error:
+        raise ValueError(f"{option}をUTF-8として解釈できない: {raw_path}") from error
+
+
+def _cell_value(args: argparse.Namespace, dest: str) -> str:
+    """`--<名前>`と`--<名前>-file`のうち指定された方からセル本文を返す。"""
+    raw_path = getattr(args, f"{dest}_file", None)
+    if raw_path is not None:
+        return _read_cell_file(f"--{dest.replace('_', '-')}-file", raw_path)
+    return getattr(args, dest, None) or ""
+
+
+def _cell_value_with_positional(args: argparse.Namespace, dest: str, positional: str) -> str:
+    """ファイル指定を優先し、未指定の場合だけ位置引数へフォールバックする。"""
+    if getattr(args, f"{dest}_file", None) is not None:
+        return _cell_value(args, dest)
+    return _cell_value(args, dest) or getattr(args, positional) or ""
+
+
 def _required_value(args: argparse.Namespace, option: str, positional: str) -> str:
-    value = getattr(args, option) or getattr(args, positional)
+    value = _cell_value_with_positional(args, option, positional)
     if not isinstance(value, str) or not value:
         raise ValueError(f"--{option}を指定する")
     return value
 
 
-class _RejectedOption(argparse.Action):
-    """受理しないオプションを、正しい指定方法を示して拒否する。"""
-
-    def __call__(
-        self,
-        parser: argparse.ArgumentParser,
-        namespace: argparse.Namespace,
-        values: str | Sequence[Any] | None,
-        option_string: str | None = None,
-    ) -> None:
-        del namespace, values
-        parser.error(str(self.const).format(option=option_string))
-
-
-def _reject_option(
-    parser: argparse.ArgumentParser,
-    option: str,
-    guidance: str,
-    *,
-    nargs: int | str | None = None,
-) -> None:
-    """公開helpへ表示せず、誤指定時だけ誘導文を返すオプションを登録する。"""
-    parser.add_argument(
-        option,
-        dest=f"rejected_{option.removeprefix('--').replace('-', '_')}",
-        action=_RejectedOption,
-        const=guidance,
-        nargs=nargs,
-        help=argparse.SUPPRESS,
-    )
-
-
-def _reject_path_options(parser: argparse.ArgumentParser, subcommand: str) -> None:
-    guidance = f"{{option}}は受理しない。表のパスは位置引数で指定する: atk review-table {subcommand} <表の絶対パス>"
-    for option in ("--file", "--path"):
-        _reject_option(parser, option, guidance)
-
-
 def build_parser(parent: argparse._SubParsersAction) -> None:
     """`review-table`配下のサブコマンドを登録する。"""
     review = parent.add_parser("review-table", help="レビュー指摘管理表（7列TSV）を操作する")
-    sub = review.add_subparsers(dest="review_table_subcommand", required=True)
+    sub = review.add_subparsers(
+        dest="review_table_subcommand",
+        required=True,
+        parser_class=_GuidedSubcommandParser,
+    )
     init_parser = sub.add_parser("init", help="空のレビュー表を作成する")
     init_parser.add_argument("path")
-    _reject_path_options(init_parser, "init")
-    _reject_option(
-        init_parser,
-        "--track",
-        "--trackは受理しない。レビュー表は<計画stem>.plan-review.tsvと<計画stem>.exec-review.tsvへ"
-        "trackごとに分かれるため、trackによる限定は指定しない: "
-        "atk review-table init <表の絶対パス>",
-    )
     add_parser = sub.add_parser("add", help="レビュー担当の指摘を追加する")
     add_parser.add_argument("path")
-    _reject_path_options(add_parser, "add")
     add_parser.add_argument("--round", required=True)
     add_parser.add_argument("--track", required=True, choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
-    for name, positional in (("location", "location_arg"), ("issue", "issue_arg")):
+    for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
         add_parser.add_argument(positional, nargs="?")
-        add_parser.add_argument(f"--{name}")
+        _add_cell_options(add_parser, name, description)
     respond_parser = sub.add_parser(
         "respond",
         help=(
@@ -365,25 +393,17 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         ),
     )
     respond_parser.add_argument("path")
-    _reject_path_options(respond_parser, "respond")
     respond_parser.add_argument("--round")
     respond_parser.add_argument("--track", choices=TRACK_VALUES)
-    for name, positional in (("location", "location_arg"), ("issue", "issue_arg")):
+    for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
         respond_parser.add_argument(positional, nargs="?")
-        respond_parser.add_argument(f"--{name}")
+        _add_cell_options(respond_parser, name, description)
     respond_parser.add_argument("--response-needed", required=True, choices=("yes", "no", "対応要", "対応不要"))
-    respond_parser.add_argument("--response", default="")
-    respond_parser.add_argument("--no-response-reason", default="")
+    _add_cell_options(respond_parser, "response", "対応内容")
+    _add_cell_options(respond_parser, "no-response-reason", "対応不要理由")
     show_parser = sub.add_parser("show", help="レビュー表を表示する")
     show_parser.add_argument("path")
     show_parser.add_argument("--track", choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
-    _reject_path_options(show_parser, "show")
-    _reject_option(
-        show_parser,
-        "--all",
-        "--allは受理しない。--trackを省略すると全行を表示する: atk review-table show <表の絶対パス>",
-        nargs=0,
-    )
     validate_parser = sub.add_parser("validate", help="レビュー表を検証する")
     validate_parser.add_argument(
         "--allow-unanswered",
@@ -391,14 +411,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         help=f"未応答行を許容し、{_COLUMN_COUNT}列と複合キーなどの構造だけを検証する。{_RECOVERY_GUIDANCE}",
     )
     validate_parser.add_argument("path")
-    _reject_path_options(validate_parser, "validate")
-    _reject_option(
-        validate_parser,
-        "--track",
-        "--trackは受理しない。レビュー表は<計画stem>.plan-review.tsvと<計画stem>.exec-review.tsvへ"
-        "trackごとに分かれるため、trackによる限定は指定しない: "
-        "atk review-table validate <表の絶対パス>",
-    )
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -417,8 +429,8 @@ def dispatch(args: argparse.Namespace) -> int:
     if command == "respond":
         round_value = args.round or ""
         track = args.track or ""
-        location = args.location or args.location_arg or ""
-        issue = args.issue or args.issue_arg or ""
+        location = _cell_value_with_positional(args, "location", "location_arg")
+        issue = _cell_value_with_positional(args, "issue", "issue_arg")
         if not any((round_value, track, location, issue)):
             raise ValueError("round・track・location・issueのいずれかを指定する")
         return respond(
@@ -428,7 +440,7 @@ def dispatch(args: argparse.Namespace) -> int:
             location,
             issue,
             args.response_needed,
-            args.response,
-            args.no_response_reason,
+            _cell_value(args, "response"),
+            _cell_value(args, "no_response_reason"),
         )
     raise ValueError(f"未知のreview-tableサブコマンド: {command}")

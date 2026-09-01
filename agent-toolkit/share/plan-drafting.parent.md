@@ -10,7 +10,7 @@
 
 ## 起動
 
-`atk config get plan_model`で実効設定を解決し、新規の計画担当へ次の入力を渡す。
+`agents_server.start`へ`model_type="plan"`を渡し、新規の計画担当へ次の入力を渡す。
 
 - `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の絶対パス
 - 対象
@@ -21,6 +21,7 @@
 - プロジェクト規範
 - 作成規範
 - フィードバック固有の指示
+- フィードバック由来の計画では、同じ対象リポジトリかつ同じ条件の正本フィードバックファイル名の全件
 - 計画ファイルの保存先
 
 ## 受領

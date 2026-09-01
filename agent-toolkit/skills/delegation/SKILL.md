@@ -15,7 +15,7 @@ user-invocable: false
 委譲先とモデルを選ぶ時点では`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読み、同文書の経路選択とモデル区分を適用する。
 Claude Code固有経路を確定する時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む。
 完了通知及び待機・停滞を確定する時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を全文読む。
-計画実装の受領契約を確定する時は`${CLAUDE_PLUGIN_ROOT}/share/plan-impl-executor.parent.md`を全文読む。
+計画実装の受領契約を確定する時は`${CLAUDE_PLUGIN_ROOT}/share/plan-executor.parent.md`を全文読む。
 
 ## 送信
 
@@ -122,7 +122,7 @@ Codexの初回起動（元担当不在を実測確認した初回生成前失敗
 元担当の回復、置換、再起動、代替起動又は役割引継ぎには、`runtime-routing.md`「Codex後続操作の共通先行条件」を先行して適用する。
 
 - 同じ作業と判断履歴を継続し、計画、進捗ログ、保存済みのレビュー表のいずれかが状態の正本となる場合は、
-  同じrouteと識別子へ正本の絶対パス、対象ID、正本に未記録の差分だけを送る
+  同じroute、`model_type`及び識別子へ正本の絶対パス、対象ID、正本に未記録の差分だけを送る
 - 参照可能な状態の正本がない場合は、未完了事項と検収済み状態を起動文内で完結させる。
   レビュー表の保存先がない場合は、呼び出し元が管理対象領域へ表を作成してから継続する。
   表の内容を起動文へ埋め込む経路は採用しない
@@ -141,7 +141,7 @@ Codexの初回起動（元担当不在を実測確認した初回生成前失敗
   配送不能の判定手段は`references/claude-code-runtime.md`を正本とする。
   Codexでは、`runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから新規起動する。
   完了報告を受領して停止済みの識別子は一律に禁止せず、`references/claude-code-runtime.md`と
-  `references/runtime-routing.md`が定める、同じ担当へ同じタスクを返し、継続直前の実効`engine`・`model`・`effort`が一致する条件を満たす場合だけ再利用する
+  `references/runtime-routing.md`が定める、同じ担当へ同じタスクを返し、継続直前の`model_type`が一致する条件を満たす場合だけ再利用する
 - 計画ファイルなどを反復編集する工程は、整合確認と修正を同じ委譲先へまとめる
 - ユーザーの介入が生じた場合は強制停止・再起動を既定とせず、介入内容を追加指示として伝えて
   委譲先自身に反映させる。停止するのは介入により対象範囲・前提が無効化され、
@@ -166,7 +166,7 @@ response: <受信者の最小完了報告>
 
 `checkpoint`は作業継続中の定義済み中間報告として受理する。
 `checkpoint`を返せるのは、呼び出し元が最上位セッションであり、呼び出し元のタスク文書がチェックポイントを
-定義する委譲に限る（`agent-toolkit/agents/plan-impl-executor.md`のチェックポイント契約を参照）。
+定義する委譲に限る（`agent-toolkit/agents/plan-executor.md`のチェックポイント契約を参照）。
 
 `needs_escalation`は確認、認可又は前提の補正を呼び出し元へ返す状態である。
 回答後は同じ担当へ同じtaskを返す一般的な継続条件を適用する。
@@ -195,6 +195,10 @@ response: <受信者の最小完了報告>
 
 委譲先または背景ジョブの完了待機を開始する直前に
 `references/waiting-and-monitoring.md`を全文読む（努力目標）。
+
+Codexが遅延実行されるツールを介して`agents_server`の`wait`を呼ぶ二層待機では、
+内側の`wait`へタスク固有のtimeoutを指定せず、外側の実行セルの再開で応答性を制御する。
+写像の詳細は`${CLAUDE_PLUGIN_ROOT}/share/codex-agents-base.md`「agents_serverの二層待機」節を正本とする。
 
 - 委譲機能が返す状態・識別子を優先して停滞を検知し、状態を取得できない経路だけ
   `git log`と`git status`を補助的に用いる

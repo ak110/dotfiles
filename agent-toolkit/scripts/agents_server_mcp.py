@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["mcp>=1.28.1,<2", "claude-agent-sdk>=0.2.144,<0.3", "pydantic>=2"]
+# dependencies = ["mcp>=1.28.1,<2", "claude-agent-sdk>=0.2.144,<0.3", "pydantic>=2", "platformdirs>=4.0"]
 # ///
 """CodexとClaudeの委譲先を非同期MCPとして公開する。"""
 
@@ -19,7 +19,10 @@ from typing import Annotated, Any
 
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
+import _atk_config
+import _inherited_venv
 from _agents_server_state import (
+    ModelCandidate,
     ResumePrompt,
     SessionOwnerGoneError,
     SessionResumeState,
@@ -123,24 +126,107 @@ class AgentsServerManager:
         if session is not None:
             self.expired_sessions[session_id] = SessionResumeState.from_session(session)
 
+    def _route_state(
+        self,
+        session_id: str,
+        *,
+        unknown_label: str = "exclude_session_id",
+    ) -> SessionState | SessionResumeState:
+        """除外元sessionの起動条件を保持中の全状態から取得する。"""
+        if not isinstance(session_id, str) or not session_id:
+            raise ValueError("exclude_session_id must be a non-empty string")
+        session = self.sessions.get(session_id)
+        if session is not None:
+            return session
+        resume_state = self.expired_sessions.get(session_id)
+        if resume_state is not None:
+            return resume_state
+        pending = self._pending_resumes.get(session_id)
+        if pending is not None:
+            return pending.state
+        raise ValueError(f"unknown {unknown_label}: {session_id}")
+
+    def _resolve_start_candidate(
+        self,
+        model_type: str,
+        *,
+        explore: bool,
+        exclude_session_id: str | None,
+    ) -> tuple[ModelCandidate, frozenset[ModelCandidate]]:
+        """起動条件を検証し、除外後の先頭候補と除外集合を返す。"""
+        candidates = _atk_config.resolve_model_candidates(model_type)
+        excluded: frozenset[ModelCandidate] = frozenset()
+        if exclude_session_id is not None:
+            source = self._route_state(exclude_session_id)
+            if source.model_type != model_type or source.explore != explore:
+                raise ValueError(
+                    "exclude_session_id start conditions differ: "
+                    f"source model_type={source.model_type}, explore={source.explore}; "
+                    f"requested model_type={model_type}, explore={explore}"
+                )
+            if source.model is None or source.effort is None:
+                raise ValueError(f"exclude_session_id has no selected candidate: {exclude_session_id}")
+            excluded = source.excluded_candidates | frozenset({(source.engine, source.model, source.effort)})
+        candidate = next((item for item in candidates if item not in excluded), None)
+        if candidate is None:
+            raise ValueError(f"no model candidates remain for model_type: {model_type}")
+        return candidate, excluded
+
     async def start(
         self,
-        engine: str,
+        model_type: str,
         prompt: str,
         cwd: str,
-        model: str | None = None,
-        effort: str | None = None,
+        exclude_session_id: str | None = None,
+        *,
+        explore: bool = False,
     ) -> dict[str, Any]:
-        """指定したエンジンのturnを開始する。"""
+        """工程別モデル設定の先頭候補でturnを開始する。"""
+        candidate, excluded = self._resolve_start_candidate(
+            model_type,
+            explore=explore,
+            exclude_session_id=exclude_session_id,
+        )
+        engine, model, effort = candidate
         if engine not in SUPPORTED_ENGINES:
             raise ValueError(f"unsupported engine: {engine}")
         _validate_prompt(prompt)
         _validate_cwd(cwd)
         _validate_model_effort(model, effort)
         backend = self._backend(engine)
-        session = await backend.start(prompt, cwd, model, effort)
+        session = await backend.start(
+            prompt,
+            cwd,
+            model,
+            effort,
+            model_type=model_type,
+            explore=explore,
+            excluded_candidates=excluded,
+        )
         session.engine = engine
-        return session.public_status()
+        return {
+            **session.public_status(),
+            "model_type": model_type,
+            "model": model,
+            "effort": effort,
+        }
+
+    async def start_explore(
+        self,
+        fast: bool,
+        prompt: str,
+        cwd: str,
+        exclude_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """探索専用の軽量な起動条件でturnを開始する。"""
+        model_type = "explore_fast" if fast else "explore"
+        return await self.start(
+            model_type,
+            prompt,
+            cwd,
+            exclude_session_id,
+            explore=True,
+        )
 
     async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
         """sessionの終端を待ち、登録簿の現在値から結果本文を返す。"""
@@ -185,12 +271,15 @@ class AgentsServerManager:
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
             return session.public_status(include_result=session.result_available)
-        return {
+        result: dict[str, Any] = {
             "session_id": pending.state.session_id,
             "engine": pending.state.engine,
             "status": "running",
             "progress": "",
         }
+        if pending.state.model_type is not None:
+            result["model_type"] = pending.state.model_type
+        return result
 
     async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:
         """backendの再開を完了し、失敗時だけ再試行用状態を復元する。"""
@@ -203,6 +292,9 @@ class AgentsServerManager:
                 resume_state.cwd,
                 resume_state.model,
                 resume_state.effort,
+                model_type=resume_state.model_type,
+                explore=resume_state.explore,
+                excluded_candidates=resume_state.excluded_candidates,
             )
         except BaseException:
             if session_id not in self.sessions:
@@ -299,6 +391,13 @@ class AgentsServerManager:
         _validate_prompt(prompt)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ValueError("timeout must be positive")
+        route_state = self._route_state(session_id, unknown_label="session")
+        if route_state.model_type is not None:
+            candidates = _atk_config.resolve_model_candidates(route_state.model_type)
+            expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
+            actual = (route_state.engine, route_state.model, route_state.effort)
+            if expected != actual:
+                raise ValueError(f"configuration changed: {session_id}")
         try:
             async with asyncio.timeout(float(timeout)):
                 while True:
@@ -488,14 +587,24 @@ with warnings.catch_warnings():
 
 @mcp.tool(name="start", structured_output=True)
 async def start(
-    engine: str,
+    model_type: str,
     prompt: str,
     cwd: str,
-    model: str | None = None,
-    effort: str | None = None,
+    exclude_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """指定したエンジンの委譲先turnを開始する。"""
-    return await _MANAGER.start(engine, prompt, cwd, model, effort)
+    """工程別モデル設定の候補から委譲先turnを開始する。"""
+    return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
+
+
+@mcp.tool(name="start_explore", structured_output=True)
+async def start_explore(
+    prompt: str,
+    cwd: str,
+    fast: bool = False,
+    exclude_session_id: str | None = None,
+) -> dict[str, Any]:
+    """探索専用の軽量な起動条件で委譲先turnを開始する。"""
+    return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)
 
 
 @mcp.tool(name="wait", structured_output=True)
@@ -552,8 +661,19 @@ async def kill(
     return await _MANAGER.kill(session_id, timeout)
 
 
+def _prepare_child_environment() -> None:
+    """起動元ツールのエフェメラル仮想環境を、以降に起動する委譲先から取り除く。
+
+    Claude backendが渡す`ClaudeAgentOptions.env`は継承環境へ重なる仕様であり、
+    キーの削除を表現できない。Codex backendのApp Server子プロセスも本プロセスの環境を継承する。
+    このため両経路の起点である本プロセスの環境を、起動時に1回だけ整える。
+    """
+    _inherited_venv.strip_inherited_venv(os.environ)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """引数に応じて依存検査またはMCP stdio transportを起動する。"""
+    _prepare_child_environment()
     logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING"))
     parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
     parser.add_argument(

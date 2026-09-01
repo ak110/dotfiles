@@ -64,13 +64,24 @@ PLAN_MAIN_H2_ORDER: tuple[str, ...] = (
     PLAN_H2_OVERVIEW,
     PLAN_H2_ACTION,
     PLAN_H2_AGENT_JUDGMENT,
-    PLAN_H2_MATERIALS,
     PLAN_H2_HISTORY,
     PLAN_H2_VERIFICATION,
     PLAN_H2_TERMINATION,
     PLAN_H2_PROGRESS,
 )
 """新書式の計画ファイル（メイン）が固定順で持つH2。"""
+
+PLAN_TWO_FILE_MAIN_H2_ORDER: tuple[str, ...] = (
+    PLAN_H2_OVERVIEW,
+    PLAN_H2_ACTION,
+    PLAN_H2_AGENT_JUDGMENT,
+    PLAN_H2_MATERIALS,
+    PLAN_H2_HISTORY,
+    PLAN_H2_VERIFICATION,
+    PLAN_H2_TERMINATION,
+    PLAN_H2_PROGRESS,
+)
+"""改訂前の二ファイル計画が持つ固定H2順序。読み取り互換専用。"""
 
 PLAN_LEGACY_MAIN_H2_ORDER: tuple[str, ...] = (
     PLAN_H2_OVERVIEW,
@@ -100,18 +111,30 @@ PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ"
 """計画メタ情報の正規形が持つ項目と順序（旧形式単一ファイル・新書式計画ファイル（詳細）は本4項目のみ）。"""
 
 PLAN_METADATA_DETAIL_FIELD: str = "計画ファイル（詳細）"
-"""新書式計画ファイル（メイン）の計画メタ情報が末尾へ追加で持つ項目。値は計画ファイル（詳細）のファイル名を指す。"""
+"""改訂前の二ファイル計画が持つ計画ファイル（詳細）の参照項目。読み取り互換専用。"""
+
+PLAN_METADATA_RELATED_FEEDBACK_FIELD: str = "関連フィードバック"
+"""新書式計画ファイル（メイン）が入力の正本ファイル名と要約を持つ項目。"""
 
 PLAN_METADATA_LEGACY_DETAIL_FIELD: str = "実装詳細"
 """読み取り互換で受理する旧形式の計画ファイル（詳細）参照項目。"""
 
-PLAN_METADATA_MAIN_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
-"""新書式計画ファイル（メイン）の計画メタ情報が持つ項目と順序（4項目 + `計画ファイル（詳細）`）。"""
+PLAN_METADATA_MAIN_FIELDS: tuple[str, ...] = (
+    "起動経路",
+    "対象リポジトリ",
+    PLAN_METADATA_RELATED_FEEDBACK_FIELD,
+    "作業種別",
+    "ベースコミット",
+)
+"""新書式計画ファイル（メイン）の計画メタ情報が持つ項目と順序。"""
+
+PLAN_METADATA_TWO_FILE_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
+"""改訂前の二ファイル計画が持つ計画メタ情報の項目と順序。読み取り互換専用。"""
 
 PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset(
     {"起動経路", "対象リポジトリ", "ベースコミット", PLAN_METADATA_DETAIL_FIELD}
 )
-"""値をバッククォートで囲む項目。`作業種別`だけは固定値を裸で書く。"""
+"""値をバッククォートで囲む項目。`関連フィードバック`と`作業種別`は裸で書く。"""
 
 PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
 
@@ -608,7 +631,10 @@ class PlanMetadata:
     """記載順の(項目名, 生の値)。順序と記法の検査に使う。"""
 
     values: dict[str, str]
-    """正規4項目の値。バッククォートは除去済みで、欠落項目は含めない。"""
+    """認識した項目の値。バッククォートは除去済みで、欠落項目は含めない。"""
+
+    related_feedback: tuple[tuple[str, str], ...]
+    """関連フィードバックの(正本ファイル名, 1行要約)。記載順を保持する。"""
 
     base_commit_candidates: tuple[str, ...]
     """`ベースコミット`と旧別名`基準コミット`から抽出した16進値の全候補。"""
@@ -619,7 +645,8 @@ class PlanMetadata:
         return self.parent == PLAN_H2_OVERVIEW
 
 
-_METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+): (?P<value>.*?)\s*$")
+_METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+):(?: (?P<value>.*?))?\s*$")
+_METADATA_RELATED_FEEDBACK_PATTERN = re.compile(r"^  - (?P<filename>[^:]+):(?: (?P<summary>.*?))?\s*$")
 _METADATA_BASE_COMMIT_LINE = re.compile(r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`(?P<oid>[0-9a-fA-F]+)`.*$")
 """ベースコミットを記載した箇条書きからOIDを読み取る互換パターン。
 
@@ -676,13 +703,28 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     for _lineno, line in section:
         match = _METADATA_ENTRY_PATTERN.fullmatch(line)
         if match is not None:
-            entries.append((match.group("field").strip(), match.group("value")))
+            entries.append((match.group("field").strip(), match.group("value") or ""))
+
+    related_feedback: list[tuple[str, str]] = []
+    in_related_feedback = False
+    for _lineno, line in section:
+        entry_match = _METADATA_ENTRY_PATTERN.fullmatch(line)
+        if entry_match is not None:
+            in_related_feedback = entry_match.group("field").strip() == PLAN_METADATA_RELATED_FEEDBACK_FIELD
+            continue
+        if not in_related_feedback:
+            continue
+        child_match = _METADATA_RELATED_FEEDBACK_PATTERN.fullmatch(line)
+        if child_match is not None:
+            related_feedback.append((child_match.group("filename").strip(), (child_match.group("summary") or "").strip()))
+        elif line.strip():
+            in_related_feedback = False
 
     values: dict[str, str] = {}
     conflicts: list[str] = []
     for field, raw_value in entries:
         canonical_field = PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
-        if canonical_field not in PLAN_METADATA_MAIN_FIELDS:
+        if canonical_field not in (*PLAN_METADATA_MAIN_FIELDS, PLAN_METADATA_DETAIL_FIELD):
             continue
         normalized = _strip_backticks(raw_value)
         if canonical_field in values and values[canonical_field] != normalized:
@@ -693,7 +735,7 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     ]
     if conflicts:
         return None, conflicts
-    return PlanMetadata(parent, tuple(entries), values, tuple(base_candidates)), []
+    return PlanMetadata(parent, tuple(entries), values, tuple(related_feedback), tuple(base_candidates)), []
 
 
 def extract_implementer_region(content: str) -> list[tuple[int, str]]:
@@ -888,8 +930,7 @@ def _check_metadata_block(
 ) -> tuple[str | None, list[str]]:
     """計画メタ情報の配置、項目、順序、記法、値を検査して(作業種別, エラー)を返す。
 
-    `expected_fields`は旧形式・新書式の計画ファイル（詳細）では4項目固定、新書式の計画ファイル（メイン）では
-    末尾へ`計画ファイル（詳細）`を加えた5項目を渡す。
+    `expected_fields`は対象書式が定める計画メタ情報の項目順を渡す。
     """
     metadata, errors = parse_plan_metadata(content)
     if metadata is None:
@@ -911,8 +952,10 @@ def _check_metadata_block(
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲む")
         if canonical_field not in PLAN_METADATA_QUOTED_FIELDS and quoted:
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲まない")
-        if not _strip_backticks(raw_value):
+        if not _strip_backticks(raw_value) and canonical_field != PLAN_METADATA_RELATED_FEEDBACK_FIELD:
             errors.append(f"計画メタ情報の`{field}`が空である")
+    if PLAN_METADATA_RELATED_FEEDBACK_FIELD in expected_fields:
+        errors.extend(check_plan_related_feedback(metadata))
     work_type = metadata.values.get("作業種別")
     if work_type is not None and work_type not in PLAN_WORK_TYPES:
         errors.append(f"計画メタ情報の`作業種別`は{list(PLAN_WORK_TYPES)}のいずれかで記載する")
@@ -920,6 +963,29 @@ def _check_metadata_block(
     # `ベースコミット`は計画作成時点の参照値であり、存在・完全長・HEADとの一致は
     # 計画構造の成立条件ではない。実際のGit操作へ渡す値だけを各操作側で検証する。
     return work_type, errors
+
+
+def check_plan_related_feedback(metadata: PlanMetadata) -> list[str]:
+    """計画メタ情報の関連フィードバックの値と子項目を検査する。"""
+    errors: list[str] = []
+    related_value = metadata.values.get(PLAN_METADATA_RELATED_FEEDBACK_FIELD, "")
+    if related_value == "なし":
+        if metadata.related_feedback:
+            errors.append("計画メタ情報の`関連フィードバック: なし`と子項目を併記しない")
+    elif related_value:
+        errors.append("計画メタ情報の`関連フィードバック`は子項目又は`なし`で記載する")
+    elif not metadata.related_feedback:
+        errors.append("計画メタ情報の`関連フィードバック`には正本ファイル名と1行要約を1件以上記載する")
+    seen_feedback: set[str] = set()
+    for filename, summary in metadata.related_feedback:
+        if PLAN_QUEUE_ID_PATTERN.fullmatch(filename) is None:
+            errors.append(f"計画メタ情報の`関連フィードバック`のファイル名が不正である: {filename}")
+        if not summary:
+            errors.append(f"計画メタ情報の`関連フィードバック`の1行要約が空である: {filename}")
+        if filename in seen_feedback:
+            errors.append(f"計画メタ情報の`関連フィードバック`のファイル名が重複している: {filename}")
+        seen_feedback.add(filename)
+    return errors
 
 
 def _materials_section(
@@ -1601,6 +1667,7 @@ def _check_action_section(
     requirement_ids: set[str],
     adopted_requirement_ids: set[str],
     identifiers: set[str],
+    related_feedback: frozenset[str] = frozenset(),
 ) -> list[str]:
     """`## 実施内容`の固定表と新旧の除外・保持表を検査する。"""
     if action_index is None:
@@ -1611,7 +1678,7 @@ def _check_action_section(
     table, table_errors = _check_action_table(extract_tables(section))
     errors.extend(table_errors)
     if table is not None and table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
-        errors.extend(_check_human_action_table(table, materials))
+        errors.extend(_check_human_action_table(table, materials, related_feedback))
         if any(heading.level == 3 for _position, heading in child_headings(headings, action_index, 3)):
             errors.append(f"`## {PLAN_H2_ACTION}`直下に独立した除外・保持表を置かない")
         return errors
@@ -1646,7 +1713,9 @@ def _check_action_section(
     return errors
 
 
-def _check_human_action_table(table: MarkdownTable, materials: PlanMaterials | None) -> list[str]:
+def _check_human_action_table(
+    table: MarkdownTable, materials: PlanMaterials | None, related_feedback: frozenset[str]
+) -> list[str]:
     """新規書式の実施内容4列表を検査する。"""
     errors: list[str] = []
     if not table.rows:
@@ -1670,8 +1739,10 @@ def _check_human_action_table(table: MarkdownTable, materials: PlanMaterials | N
             )
             if match is None:
                 errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
-            elif materials is None or match.group(1) not in materials.material_paths:
-                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が提示素材に無い: {match.group(1)}")
+            elif match.group(1) not in related_feedback and (
+                materials is None or match.group(1) not in materials.material_paths
+            ):
+                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が関連フィードバックに無い: {match.group(1)}")
         elif review_origin is None:
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}又は計画レビュー第nラウンド、"
@@ -2035,36 +2106,58 @@ def check_plan_structure(content: str) -> list[str]:
 def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
     """新書式の計画ファイル（メイン）`<計画名>.md`を検査して(作業種別, 違反一覧)を返す。
 
-    固定H2順は`PLAN_MAIN_H2_ORDER`（概要・実施内容・エージェント判断・提示素材・変更履歴（計画時）・検証区分・終端工程・進捗ログ（実行時））。
-    計画メタ情報は末尾に`計画ファイル（詳細）`を加えた5項目とする。
+    固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は関連フィードバックを含む5項目とする。
+    改訂前の二ファイル形式は提示素材と計画ファイル（詳細）参照を読み取り互換で受理する。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
     errors.extend(check_duplicate_headings(content))
 
-    work_type, metadata_errors = _check_metadata_block(content, expected_fields=PLAN_METADATA_MAIN_FIELDS)
+    metadata, _parse_errors = parse_plan_metadata(content)
+    old_two_file_format = bool(
+        metadata is not None
+        and PLAN_METADATA_DETAIL_FIELD in metadata.values
+        and PLAN_METADATA_RELATED_FEEDBACK_FIELD not in metadata.values
+    )
+    expected_metadata = PLAN_METADATA_TWO_FILE_FIELDS if old_two_file_format else PLAN_METADATA_MAIN_FIELDS
+    work_type, metadata_errors = _check_metadata_block(content, expected_fields=expected_metadata)
     errors.extend(metadata_errors)
 
     if not [heading for heading in headings if heading.level == 2]:
         errors.append("固定H2が1件も無い")
         return work_type, errors
     canonical_format = is_canonical_main_format(headings)
-    expected_h2 = list(PLAN_MAIN_H2_ORDER if canonical_format else PLAN_LEGACY_MAIN_H2_ORDER)
+    if old_two_file_format:
+        expected_h2 = list(PLAN_TWO_FILE_MAIN_H2_ORDER if canonical_format else PLAN_LEGACY_MAIN_H2_ORDER)
+    else:
+        expected_h2 = list(PLAN_MAIN_H2_ORDER if canonical_format else PLAN_LEGACY_MAIN_H2_ORDER)
     errors.extend(_check_fixed_h2_layout(headings, expected_h2))
 
     overview_index = find_heading_index(headings, 2, PLAN_H2_OVERVIEW)
     if overview_index is not None:
         errors.extend(_check_overview_section(body, headings, overview_index))
 
-    identifiers, requirement_ids, adopted_requirement_ids, materials, material_errors = _check_materials_and_identifiers(
-        content, headings
-    )
+    if old_two_file_format or not canonical_format:
+        identifiers, requirement_ids, adopted_requirement_ids, materials, material_errors = _check_materials_and_identifiers(
+            content, headings
+        )
+    else:
+        identifiers, requirement_ids, adopted_requirement_ids, materials, material_errors = set(), set(), set(), None, []
     errors.extend(material_errors)
 
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
     errors.extend(
-        _check_action_section(body, headings, action_index, materials, requirement_ids, adopted_requirement_ids, identifiers)
+        _check_action_section(
+            body,
+            headings,
+            action_index,
+            materials,
+            requirement_ids,
+            adopted_requirement_ids,
+            identifiers,
+            frozenset(filename for filename, _summary in metadata.related_feedback) if metadata is not None else frozenset(),
+        )
     )
 
     judgment_index = find_heading_index(headings, 2, PLAN_H2_AGENT_JUDGMENT)

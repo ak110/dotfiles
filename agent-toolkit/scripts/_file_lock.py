@@ -12,6 +12,79 @@ import os
 from pathlib import Path
 from typing import IO
 
+PLAN_LOCK_IGNORE_PATTERN = "*.lock"
+"""計画保存先リポジトリでagent-toolkitの管理ロックを除外するパターン。"""
+
+_GITIGNORE_UPDATE_LOCK = "agent-toolkit-plan-lock-gitignore.lock"
+
+
+def plan_lock_gitignore_content(content: bytes) -> bytes:
+    """既存内容を保持し、計画ロックの除外行を1回だけ含む内容を返す。"""
+    pattern = PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
+    if pattern in content.splitlines():
+        return content
+    separator = b"" if not content or content.endswith((b"\n", b"\r")) else b"\n"
+    return content + separator + pattern + b"\n"
+
+
+def ensure_plan_lock_ignored(lock_path: Path) -> bool:
+    """`plans/`配下の管理ロックをリポジトリの`.gitignore`へ追加する。
+
+    Gitリポジトリ外または`plans/`外のロックは変更しない。
+    変更した場合だけ真を返す。
+    """
+    resolved_lock = lock_path.expanduser().resolve(strict=False)
+    repository = _repository_for_plan_lock(resolved_lock)
+    if repository is None:
+        return False
+    root, git_directory = repository
+    gitignore = root / ".gitignore"
+    update_lock = git_directory / _GITIGNORE_UPDATE_LOCK
+    with update_lock.open("a+", encoding="utf-8") as lock_file:
+        acquire_lock(lock_file)
+        try:
+            current = gitignore.read_bytes() if gitignore.exists() else b""
+            updated = plan_lock_gitignore_content(current)
+            if updated == current:
+                return False
+            gitignore.write_bytes(updated)
+            return True
+        finally:
+            release_lock(lock_file)
+
+
+def _repository_for_plan_lock(lock_path: Path) -> tuple[Path, Path] | None:
+    """計画ロックを含むGitリポジトリrootと管理ディレクトリを返す。"""
+    for candidate in lock_path.parents:
+        git_directory = _resolve_git_directory(candidate)
+        if git_directory is None:
+            continue
+        relative = lock_path.relative_to(candidate)
+        if relative.parts and relative.parts[0] == "plans" and lock_path.name.endswith(".lock"):
+            return candidate, git_directory
+        return None
+    return None
+
+
+def _resolve_git_directory(root: Path) -> Path | None:
+    """通常cloneとworktreeの`.git`から実体ディレクトリを解決する。"""
+    dot_git = root / ".git"
+    if dot_git.is_dir():
+        return dot_git
+    if not dot_git.is_file():
+        return None
+    try:
+        marker, raw_path = dot_git.read_text(encoding="utf-8").strip().split(":", maxsplit=1)
+    except (OSError, UnicodeError, ValueError):
+        return None
+    if marker != "gitdir":
+        return None
+    git_directory = Path(raw_path.strip())
+    if not git_directory.is_absolute():
+        git_directory = root / git_directory
+    resolved = git_directory.resolve(strict=False)
+    return resolved if resolved.is_dir() else None
+
 
 def acquire_lock(fh: IO, *, blocking: bool = True) -> None:
     """ファイルハンドル`fh`へ排他ロックを取得する。

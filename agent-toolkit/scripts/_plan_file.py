@@ -1,8 +1,9 @@
 """計画ファイルの保存root・可搬表記・種別判定を扱う共通モジュール。
 
-新規計画はprivate-notes内の`plans/yyyy/MM/`へ保存し、永続参照には
-`$(atk config get private_notes)/`を固定接頭辞として用いる。旧`~/.claude/plans/`
-直下の既存ファイルと、過去に保存された絶対パスは読み取り互換として受理する。
+新規計画は`~/.claude/plans/yyyy/MM/`で作業し、永続参照には移動後の
+`$(atk config get private_notes)/`を固定接頭辞として用いる。実装レビュー完了後は
+private-notes内の同じ相対パスへ移す。旧root直下の既存ファイルと、過去に保存された
+絶対パスは読み取り互換として受理する。
 本モジュールはシェルを起動せず、portable値を通常の相対パスとして検証する。
 """
 
@@ -49,14 +50,19 @@ def private_notes_root(
 
 
 def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.Path:
-    """新しい計画rootの絶対パスを返す。"""
+    """保存済み計画rootの絶対パスを返す。"""
     return private_notes_root(private_notes) / NEW_PLANS_DIRECTORY
 
 
-def legacy_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
-    """旧計画rootの絶対パスを返す。"""
+def working_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
+    """実装レビュー完了まで使う計画作業rootの絶対パスを返す。"""
     home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
     return home_path / ".claude" / "plans"
+
+
+def legacy_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
+    """旧直下形式も残る計画作業rootの絶対パスを返す。"""
+    return working_plans_root(home)
 
 
 def _resolve(path: pathlib.Path) -> pathlib.Path:
@@ -169,10 +175,11 @@ def _main_candidate_for_new_path(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
-    """新root内のファイル種別を返す。"""
+    """作業root又は保存root内の日付階層ファイルの種別を返す。"""
     try:
         path = _resolve(pathlib.Path(file_path))
-        root = _resolve(new_plans_root())
+        roots = (_resolve(working_plans_root()), _resolve(new_plans_root()))
+        root = next(candidate for candidate in roots if path.is_relative_to(candidate))
         relative = path.relative_to(root)
         if len(relative.parts) != 3:
             return None
@@ -190,7 +197,7 @@ def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
             return "detail"
         if path.name.endswith(".md"):
             return "main"
-    except (OSError, ValueError):
+    except (OSError, StopIteration, ValueError):
         return None
     return None
 
@@ -199,23 +206,33 @@ def resolve_plan_file(
     value: pathlib.Path | str,
     *,
     private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
     allow_legacy_absolute: bool = True,
 ) -> pathlib.Path:
     """保存済み計画参照を実ファイルパスへ解決する。
 
-    portable値はprivate-notes内へ限定する。旧rootのパスと過去の絶対パスは、
-    既存データを読むための互換経路として受理する。新規保存値の正規化には
-    `normalize_plan_file`を用いる。
+    portable値はprivate-notes内へ限定する。保存先が存在せず、同じ日付相対パスの
+    作業ファイルが存在する場合は作業実体を返す。旧直下形式と過去の絶対パスは
+    既存データを読むための互換経路として受理する。
     """
     raw = os.fspath(value)
     if not raw:
         raise ValueError("plan_fileが空です")
     notes = _resolve(private_notes_root(private_notes))
+    working_root = _resolve(working_plans_root(home))
     if raw.startswith(PORTABLE_PLAN_PREFIX):
         relative = _validate_portable_remainder(raw[len(PORTABLE_PLAN_PREFIX) :])
         candidate = _resolve(notes / relative)
         if not candidate.is_relative_to(notes):
             raise ValueError("計画ファイルの可搬パスがprivate-notes外を指しています")
+        if candidate.exists():
+            return candidate
+        if relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
+            working_candidate = _resolve(working_root.joinpath(*relative.parts[1:]))
+            if working_candidate.exists():
+                if not working_candidate.is_relative_to(working_root):
+                    raise ValueError("計画ファイルの作業パスが作業root外を指しています")
+                return working_candidate
         return candidate
     if "$(" in raw:
         raise ValueError("plan_fileには固定された可搬接頭辞以外のシェル式を指定できません")
@@ -223,10 +240,10 @@ def resolve_plan_file(
     if not path.is_absolute():
         raise ValueError("plan_fileは可搬表記または絶対パスで指定してください")
     resolved = _resolve(path)
-    for root in (notes / NEW_PLANS_DIRECTORY, legacy_plans_root()):
+    for root in (notes / NEW_PLANS_DIRECTORY, working_plans_root(home)):
         if _lexically_under(path, root) and not resolved.is_relative_to(_resolve(root)):
             raise ValueError("計画ファイルのシンボリックリンクが許可root外を指しています")
-    if resolved.is_relative_to(notes) or resolved.is_relative_to(_resolve(legacy_plans_root())):
+    if resolved.is_relative_to(notes) or resolved.is_relative_to(working_root):
         return resolved
     if allow_legacy_absolute:
         return resolved
@@ -237,16 +254,35 @@ def to_portable_plan_file(
     path: pathlib.Path | str,
     *,
     private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
 ) -> str:
-    """新plans root内の絶対パスをportable値へ変換する。
+    """保存root又は日付階層の作業root内の絶対パスをportable値へ変換する。
 
-    旧rootまたは過去のroot外絶対パスは読み取り互換のため絶対表記を維持する。
+    旧直下形式または過去のroot外絶対パスは読み取り互換のため絶対表記を維持する。
     """
     notes = _resolve(private_notes_root(private_notes))
-    resolved = resolve_plan_file(path, private_notes=notes)
+    resolved = resolve_plan_file(path, private_notes=notes, home=home)
     relative = _relative_to(resolved, notes)
     if relative is not None and relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
         return PORTABLE_PLAN_PREFIX + pathlib.PurePosixPath(*relative.parts).as_posix()
+    working_relative = _relative_to(resolved, working_plans_root(home))
+    if working_relative is not None:
+        try:
+            main_candidate = _main_candidate_for_new_path(resolved)
+            if main_candidate is not None:
+                relative_main = _relative_to(main_candidate, working_plans_root(home))
+                if relative_main is None:
+                    raise ValueError("計画メインファイルが作業root外です")
+                validate_plan_relative_path(relative_main.as_posix())
+                return (
+                    PORTABLE_PLAN_PREFIX
+                    + pathlib.PurePosixPath(
+                        NEW_PLANS_DIRECTORY,
+                        *working_relative.parts,
+                    ).as_posix()
+                )
+        except ValueError:
+            pass
     return str(resolved)
 
 
@@ -333,6 +369,7 @@ def is_plan_adjunct_file(file_path: str) -> bool:
 
 # 実装側で読みやすい公開別名。既存hookの関数名は維持する。
 plan_root = new_plans_root
+work_plan_root = working_plans_root
 portable_path = to_portable_plan_file
 resolve_stored_plan_file = resolve_plan_file
 is_valid_plan_relative_path = validate_plan_relative_path

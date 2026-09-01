@@ -6,10 +6,7 @@
 
 import logging
 import pathlib
-import shutil
-import socket
 import stat
-import sys
 
 from pytools._internal import claude_common, log_format, systemd_user_unit
 
@@ -17,11 +14,9 @@ assert claude_common  # 既存テストと外部monkeypatch契約を共通モジ
 
 logger = logging.getLogger(__name__)
 
-_TARGET_HOSTNAME = "euryale"
 _SERVICE_UNIT = "atk-serve.service"
 _LAUNCHER_RELATIVE = pathlib.PurePath(".local") / "bin" / "atk-serve"
 _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVICE_UNIT
-_UV_RELATIVE = pathlib.PurePath(".local") / "bin" / "uv"
 
 # ランチャー本文のテンプレート。agent-toolkit プラグインはバージョン付きディレクトリへ
 # 展開されるため、最新バージョンの scripts/atk.py を起動時に解決する。
@@ -66,14 +61,10 @@ def run() -> bool:
     Raises:
         systemd_user_unit.SetupError: restart 後にサービスが常駐状態へ至らない場合に送出する。
     """
-    if sys.platform != "linux":
+    if not claude_common.is_euryale():
         return False
 
-    hostname = socket.gethostname().lower().split(".")[0]
-    if hostname != _TARGET_HOSTNAME:
-        return False
-
-    uv = _uv_path()
+    uv = claude_common.resolve_uv_path()
     if uv is None:
         logger.info(log_format.format_status("atk-serve", "uvが見つからないため設定を見送る"))
         return False
@@ -91,21 +82,6 @@ def run() -> bool:
         log_tag="atk-serve",
         service_name=_SERVICE_UNIT,
     )
-
-
-def _uv_path() -> pathlib.Path | None:
-    """実行ファイル uv の絶対パスを返す。存在しない場合は None を返す。
-
-    公式インストーラーの導入先 `~/.local/bin/uv` を優先する。
-    mise の shim は systemd user service の環境でバージョン未解決となり起動しないため、
-    PATH 探索は同ディレクトリーに uv が無い場合のフォールバックに留める。
-    誤った候補を採用した場合は systemd_user_unit の常駐確認が導入時に検知する。
-    """
-    candidate = pathlib.Path.home() / _UV_RELATIVE
-    if candidate.is_file():
-        return candidate
-    found = shutil.which("uv")
-    return pathlib.Path(found) if found else None
 
 
 def _read_text(path: pathlib.Path) -> str | None:

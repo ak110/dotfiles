@@ -18,15 +18,17 @@ import argparse
 import datetime
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 
 import _atk_git_sync
 import _atk_mq_legacy
+import _file_lock
 import _git_command
 import _git_remote
 import filelock
@@ -75,12 +77,20 @@ TRANSITION_EXPLICIT_STATES = {
     "return-to-inbox": (MQ_STATE_PLANNING, MQ_STATE_REJECTED),
     "adopt": (MQ_STATE_HOLD,),
     "reject": (MQ_STATE_INBOX, MQ_STATE_HOLD),
-    "remove": (MQ_STATE_INBOX, MQ_STATE_PLANNING, MQ_STATE_PROCESSING, MQ_STATE_HOLD),
+    "remove": (
+        MQ_STATE_INBOX,
+        MQ_STATE_PLANNING,
+        MQ_STATE_PROCESSING,
+        MQ_STATE_HOLD,
+        MQ_STATE_ADOPTED,
+        MQ_STATE_REJECTED,
+    ),
 }
 """操作ごとに明示`state`として受理する遷移元の状態。
 
 暗黙解決（`inbox`・`processing`）は各操作の既定として別に扱い、本表は明示指定だけを統治する。
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
+`remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
 """
 MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
 MQ_FEEDBACK_ACTIVE_STATES = (
@@ -216,6 +226,7 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
         state_dir = root / name
         state_dir.mkdir(parents=True, exist_ok=True)
         (state_dir / ".gitkeep").touch()
+    _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
     _run_git(["add", "-A"], cwd=root)
     subprocess.run(
         [
@@ -246,8 +257,46 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
             print(f"フィードバック保存ディレクトリが見つかりません: {root}", file=sys.stderr)
             sys.exit(1)
         _init_local_private_notes_repo(root)
+    with _repo_lock(root):
+        _ensure_plan_lock_gitignore(root)
     _migrate_legacy_layout(root)
     return root
+
+
+def _ensure_plan_lock_gitignore(private_notes: pathlib.Path) -> None:
+    """計画ロックの除外設定を保証し、安全に帰属できる差分だけをcommitする。"""
+    _assert_repo_lock_held(private_notes)
+    lock_path = private_notes / "plans" / ".agent-toolkit-plan-create.lock"
+    _file_lock.ensure_plan_lock_ignored(lock_path)
+    if not _gitignore_is_managed_change(private_notes):
+        return
+    _commit_and_push(
+        private_notes,
+        "chore: ignore agent-toolkit plan locks",
+        [".gitignore"],
+    )
+
+
+def _gitignore_is_managed_change(private_notes: pathlib.Path) -> bool:
+    """worktreeの`.gitignore`差分が管理パターンの追加だけなら真を返す。"""
+    gitignore = private_notes / ".gitignore"
+    if not gitignore.exists():
+        return False
+    result = _git_command.run(
+        ["show", "HEAD:.gitignore"],
+        private_notes,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        assert isinstance(result.stdout, bytes)
+        base = result.stdout
+    elif result.returncode == 128:
+        base = b""
+    else:
+        raise subprocess.CalledProcessError(result.returncode, ["git", "show", "HEAD:.gitignore"])
+    expected = _file_lock.plan_lock_gitignore_content(base)
+    return expected != base and gitignore.read_bytes() == expected
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
@@ -283,6 +332,107 @@ _PULL_MIN_INTERVAL_SECONDS = 30.0
 定期バックグラウンド更新の省略と、ユーザー操作での同期再利用案内に共用する。
 """
 
+_TERMINAL_COMMIT_SUBJECT = re.compile(
+    r"^chore: process (?P<count>[1-9][0-9]*) (?P<noun>entry|entries) \((?P<outcome>adopted|rejected)\)$"
+)
+_PROCESSING_TIMESTAMP_PREFIX = "- 処理日時: "
+
+
+def _normalized_terminal_content(content: str) -> str | None:
+    """最後の処理結果にある処理日時だけを比較用の固定値へ置換する。"""
+    lines = content.splitlines(keepends=True)
+    logical_lines = [line.rstrip("\r\n") for line in lines]
+    headings = [index for index, line in enumerate(logical_lines) if line == "## 処理結果"]
+    timestamps = [index for index, line in enumerate(logical_lines) if line.startswith(_PROCESSING_TIMESTAMP_PREFIX)]
+    if not headings or len(timestamps) != 1 or timestamps[0] <= headings[-1]:
+        return None
+    timestamp_index = timestamps[0]
+    try:
+        datetime.datetime.fromisoformat(logical_lines[timestamp_index].removeprefix(_PROCESSING_TIMESTAMP_PREFIX))
+    except ValueError:
+        return None
+    line_ending = lines[timestamp_index][len(logical_lines[timestamp_index]) :]
+    lines[timestamp_index] = _PROCESSING_TIMESTAMP_PREFIX + line_ending
+    return "".join(lines)
+
+
+def _git_file_content(private_notes: pathlib.Path, revision_path: str) -> str:
+    """Git tree上のファイル内容を前後の空白も保持して返す。"""
+    result = _git_command.run(
+        ["show", revision_path],
+        private_notes,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert isinstance(result.stdout, str)
+    return result.stdout
+
+
+def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> bool:
+    """単一のローカルcommitがupstream上の同等なMQ終端だけを含むか判定する。"""
+    subject = _git_command.output(["show", "-s", "--format=%s", commit], private_notes)
+    match = _TERMINAL_COMMIT_SUBJECT.fullmatch(subject)
+    if match is None:
+        return False
+    count = int(match.group("count"))
+    if (count == 1) != (match.group("noun") == "entry"):
+        return False
+    outcome = match.group("outcome")
+    changes = _git_command.lines(
+        ["diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", commit],
+        private_notes,
+    )
+    if changes is None:
+        return False
+    removed: dict[str, str] = {}
+    added: dict[str, str] = {}
+    for line in changes:
+        fields = line.split("\t")
+        if len(fields) != 2:
+            return False
+        status, relative = fields
+        path = pathlib.PurePosixPath(relative)
+        if len(path.parts) != 2 or path.suffix != ".md":
+            return False
+        state, filename = path.parts
+        if status == "D" and state in MQ_FEEDBACK_ACTIVE_STATES:
+            removed[filename] = relative
+        elif status == "A" and state == outcome:
+            added[filename] = relative
+        else:
+            return False
+    if len(changes) != count * 2 or len(removed) != count or removed.keys() != added.keys():
+        return False
+
+    for filename, destination in added.items():
+        source = removed[filename]
+        source_result = _git_command.run(
+            ["cat-file", "-e", f"@{{u}}:{source}"],
+            private_notes,
+            capture_output=True,
+            text=True,
+        )
+        if source_result.returncode == 0:
+            return False
+        local_content = _git_file_content(private_notes, f"{commit}:{destination}")
+        upstream_content = _git_file_content(private_notes, f"@{{u}}:{destination}")
+        local_normalized = _normalized_terminal_content(local_content)
+        if local_normalized is None or local_normalized != _normalized_terminal_content(upstream_content):
+            return False
+    return True
+
+
+def _redundant_terminal_divergence(private_notes: pathlib.Path) -> bool:
+    """ローカル側の全commitがupstream反映済みの同等なMQ終端なら真を返す。"""
+    try:
+        commits = _git_command.lines(["rev-list", "--reverse", "@{u}..HEAD"], private_notes)
+        if not commits:
+            return False
+        return all(_terminal_commit_is_redundant(private_notes, commit) for commit in commits)
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return False
+
 
 def _pull(private_notes: pathlib.Path) -> None:
     """フィードバック保存リポジトリを明示したupstreamへfast-forward同期する。
@@ -299,9 +449,13 @@ def _pull(private_notes: pathlib.Path) -> None:
 
 
 def _pull_remote(private_notes: pathlib.Path) -> None:
-    """フィードバック保存リポジトリのremoteをfetchし、upstreamへ統合する。"""
+    """remoteをfetchし、同等終端の安全な回復を含めてupstreamへ統合する。"""
     _assert_repo_lock_held(private_notes)
-    _atk_git_sync.pull(private_notes, run_git=_run_git)
+    _atk_git_sync.pull(
+        private_notes,
+        run_git=_run_git,
+        redundant_divergence=_redundant_terminal_divergence,
+    )
 
 
 def _pull_with_recent_reuse(private_notes: pathlib.Path, *, force_pull: bool = False) -> None:
@@ -403,8 +557,12 @@ def _commit_and_push(
 
 
 def _push_pending_commits(private_notes: pathlib.Path) -> None:
-    """ローカルcommitをpushし、競合時は明示したupstreamへのrebase後に1回だけ再試行する。"""
-    _atk_git_sync.push_pending_commits(private_notes, run_git=_run_git)
+    """ローカルcommitをpushし、同等終端の回復又はrebase後に1回だけ再試行する。"""
+    _atk_git_sync.push_pending_commits(
+        private_notes,
+        run_git=_run_git,
+        redundant_divergence=_redundant_terminal_divergence,
+    )
 
 
 def _stamp_result(
@@ -575,9 +733,16 @@ def make_filename_completer(
 
 def _require_type(path: pathlib.Path, text: str) -> str | None:
     """エントリの種別を検証して返す。"""
-    if parse_frontmatter(text) is None:
+    parsed = parse_frontmatter(text)
+    if parsed is None:
         return None
-    entry_type = _parse_type(text)
+    return entry_type_from_metadata(path, parsed[0])
+
+
+def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object]) -> str:
+    """解析済みfrontmatterの種別を検証して返す。"""
+    value = metadata.get("type")
+    entry_type = value if isinstance(value, str) and value else None
     if entry_type not in MQ_TYPES:
         print(
             f"frontmatterのtypeが不正または欠落しています（feedback・tbdのいずれかが必要）: {path}",

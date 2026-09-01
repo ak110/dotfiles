@@ -9,14 +9,21 @@ import typing
 
 import yaml
 
+if typing.TYPE_CHECKING:
+    _SafeLoaderBase = yaml.SafeLoader
+else:
+    # libyamlを同梱したPyYAMLではC実装のローダーを基底に選ぶ。
+    # 同梱しない配布では純Python実装を基底とし、解析結果は変わらない。
+    _SafeLoaderBase = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
-class _LiteralScalarLoader(yaml.SafeLoader):  # pylint: disable=too-many-ancestors
+
+class _LiteralScalarLoader(_SafeLoaderBase):  # pylint: disable=too-many-ancestors
     """暗黙の型推論を行わず、スカラーノードの字面をそのまま`str`として構築するローダー。
 
     bool・int・float・null・timestampの各タグに対する既定コンストラクターを、
     型変換済みのPythonオブジェクトではなく`construct_scalar`が返すノード文字列
     （引用符解決後の生のYAML字面）へ差し替える。マッピング・シーケンスの構築は
-    `SafeLoader`既定のまま維持するため、入れ子構造そのものは保持される。
+    選択した安全な基底ローダーの既定を維持するため、入れ子構造そのものは保持される。
     """
 
 
@@ -44,7 +51,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     空dictとして扱う。
     `queue_schedule`以外の値は`_LiteralScalarLoader`で解析し、暗黙の型推論を経ない
     字面のままの`str`として保持する（マッピング・シーケンスの構造自体はそのまま保つ）。
-    `queue_schedule`だけは通常の`yaml.safe_load`で別途解析し、`carry_count`等の
+    `queue_schedule`だけは選択した安全な基底ローダーで別途解析し、`carry_count`等の
     ネイティブ型を保つ。frontmatter全文を2種のローダーでそれぞれ1回ずつ解析する
     （`queue_schedule`は`carry_count`のような整数を必要とするため、字面保持ローダーの
     対象から除く）。
@@ -63,7 +70,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     frontmatter_source = text[4:end]
     try:
         literal = yaml.load(frontmatter_source, Loader=_LiteralScalarLoader)
-        typed = yaml.safe_load(frontmatter_source)
+        typed = yaml.load(frontmatter_source, Loader=_SafeLoaderBase)
     except yaml.YAMLError:
         return None
     # `frontmatter_source`が空文字列（または空白のみ）の場合だけ空dictへ正規化する。

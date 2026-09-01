@@ -28,6 +28,7 @@ import _atk_serve_state as serve_state
 import _git_remote
 import filelock
 import markdown_it
+import mdit_py_plugins.footnote
 import pytilpack.quart
 import quart
 import werkzeug.exceptions
@@ -48,7 +49,8 @@ _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
-_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+# エンドユーザーが記述する注記記法を注記として描画する。
+_MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(mdit_py_plugins.footnote.footnote_plugin)
 
 # pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
 
@@ -162,18 +164,20 @@ def _summary(text: str, kind: str) -> str:
 def _source_kind(source: typing.Any) -> str:
     """保存された投入元を一覧フィルターの分類へ変換する。
 
-    `agent-toolkit:feedback-standards`の由来判定に従い、`source`の欠落と`human`だけを
-    人間由来とし、それ以外の値をすべてエージェント由来とする。
+    `agent-toolkit:feedback-standards`の由来判定に従い、`source`の欠落だけを人間由来とし、
+    値を持つ項目をすべてエージェント由来とする。
     既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
     """
-    if source is None:
-        return "human"
-    return "human" if isinstance(source, str) and source == "human" else "agent"
+    return "human" if source is None else "agent"
 
 
-def _entry(path: pathlib.Path, kind: str, state: str, text: str) -> dict[str, object]:
-    parsed = frontmatter.parse_frontmatter(text)
-    metadata = parsed[0] if parsed is not None else {}
+def _entry(
+    path: pathlib.Path,
+    kind: str,
+    state: str,
+    text: str,
+    metadata: dict[str, typing.Any],
+) -> dict[str, object]:
     answered = common.is_tbd_answered(text) if kind == "tbd" else None
     return {
         "kind": kind,
@@ -410,12 +414,14 @@ class Operations:
         )
         for state, path, text in self._iter_entry_files(states, warnings):
             try:
-                kind = common.entry_type_of(path, text)
+                parsed = frontmatter.parse_frontmatter(text)
+                metadata = parsed[0] if parsed is not None else {}
+                kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
                 if not _is_selected_state(status_filter, state, kind):
                     continue
                 if kind_filter not in ("all", kind):
                     continue
-                item = _entry(path, kind or "unknown", state, text)
+                item = _entry(path, kind or "unknown", state, text, metadata)
             except FileNotFoundError:
                 continue
             except OSError:
@@ -474,11 +480,11 @@ class Operations:
         path = common.validate_filename(filename, self.private_notes / state)
         try:
             text = path.read_text(encoding="utf-8")
-            kind = common.entry_type_of(path, text)
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
+            kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
             question_type, choices = _question_metadata(metadata, kind or "unknown")
-            detail_entry = _entry(path, kind or "unknown", state, text)
+            detail_entry = _entry(path, kind or "unknown", state, text, metadata)
             try:
                 extracted_comment = user_comment_mutations.extract_user_comment(text)
             except user_comment_mutations.UserCommentError:
@@ -488,7 +494,7 @@ class Operations:
                 comment_editable = (
                     state in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}
                     and kind == common.MQ_TYPE_FEEDBACK
-                    and metadata.get("source") == "session-review"
+                    and _source_kind(metadata.get("source")) == "agent"
                 )
             return {
                 **detail_entry,
@@ -541,7 +547,7 @@ class Operations:
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
                 continue
-            if not _is_selected_state(status, _state, common.entry_type_of(_path, text)):
+            if not _is_selected_state(status, _state, common.entry_type_from_metadata(_path, parsed[0])):
                 continue
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:
@@ -570,7 +576,7 @@ class Operations:
             raise common.WebInputError("指定したエントリを操作できません") from error
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """session-review由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
+        """エージェント由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
         if state not in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}:
             raise common.WebInputError("ユーザーコメントを編集できる状態はinbox又はholdだけです")
         if not isinstance(comment, str) or not comment.strip():
@@ -584,8 +590,10 @@ class Operations:
         metadata, _body = parsed
         if metadata.get("type") != common.MQ_TYPE_FEEDBACK:
             raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
-        if metadata.get("source") != "session-review":
-            raise common.WebInputError("ユーザーコメントの対象sourceはsession-reviewだけです")
+        if _source_kind(metadata.get("source")) != "agent":
+            raise common.WebInputError(
+                "ユーザーコメントの対象はエージェント由来のfeedbackだけです。sourceが未設定の項目は対象になりません"
+            )
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)
         except user_comment_mutations.UserCommentError as error:

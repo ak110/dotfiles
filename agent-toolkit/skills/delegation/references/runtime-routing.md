@@ -24,10 +24,13 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業は、実行ホストの互換規範に従って定義を適用する。Codexではメインエージェントが同一セッションへ直接適用し、Claude Codeでは定義を実装するAgent機能で起動する
 - 名前付きagent定義の適用と、その役割が要求する実際の別主体への委譲を区別する。特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない
-- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。3定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
-- `agents_server`を利用できる環境では、ToolSearchで`start`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
-  - 新規開始は`start(engine, prompt, cwd, model, effort)`へ作業ディレクトリの絶対パスを渡す。`engine`は`codex`または`claude`とし、`model`と`effort`は両方指定するか、両方省略する
-  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返す。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
+- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。3定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
+- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+  - 新規開始は`start(model_type, prompt, cwd)`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む
+  - モデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start(model_type, prompt, cwd, exclude_session_id=<失敗したsession_id>)`を呼ぶ。サーバーは当該sessionが使った候補を除外集合へ加え、残る候補の先頭で新しいsessionを開始する。サーバーは可用性の失敗を自ら判定しないため、次の候補を使うかどうかは呼び出し側が`wait`の状態とエラー本文から判断する。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない
+  - `exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。`start_explore`では、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件が一致しないsession IDを渡すと、サーバーはbackendの起動前にエラーを返す。別の設定キーの候補が除外集合へ混入して候補順序が崩れることを防ぐためである
+  - 調査だけを委譲する場合は`start_explore(fast, prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。書込は機械的に禁止されないため、対象ファイルを変更しない旨を`prompt`へ明示する
+  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。`timeout=0`は待機せず現状態を返す。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
   - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt, timeout)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
   - 実行中turnを明示的に中断する場合は`kill(session_id, timeout=270)`を使う。`timeout=0`は要求配送後の現状態を返す。正のtimeoutは中断後の終端と結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない
   - 計画の最初のfast担当とCI修正は新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。fast担当からfix担当への引継ぎと通常実装モードのレビュー修正は、後段の継続条件で継続又は新規起動を確定する
@@ -39,29 +42,31 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 ## 工程別モデル設定
 
-次の工程では、委譲する実行主体が起動直前に`atk config get <キー>`を実行して実効値を取得する。
+次の工程では、委譲する実行主体が`agents_server`の`start`へ表の`model_type`を渡し、engine、model及びeffortの解決をサーバーへ委ねる。
+Agentツール経路を使う工程だけ、起動直前に`atk config get <キー>`を実行して実効値を取得する。
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバックの選定とレーン分け | `agent-toolkit:process-feedbacks`のメイン | `agents_server` MCP | Agentツール |
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
 | `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
-| `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
-| `execute_fix_model` | fast担当のエスカレーション引継ぎ、レビュー修正及びCI失敗修正 | 引継ぎ修正とレビュー修正では`plan-impl-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン | `agents_server` MCP | Agentツール |
-| `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-impl-executor` | `agents_server` MCP | Agentツール |
+| `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-executor` | `agents_server` MCP | Agentツール |
+| `execute_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及びフィードバック即時対応の修正 | 引継ぎ修正とレビュー修正では`plan-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン、フィードバック即時対応ではprocess-feedbacksのメイン | `agents_server` MCP | Agentツール |
+| `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-executor` | `agents_server` MCP | Agentツール |
+| `session_review_model` | セッション振り返りの問題候補の抽出 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
-上表の未設定時の実効値は、`execute_fast_model`が`codex:gpt-5.6-luna/max`、その他のキーが`codex:gpt-5.6-sol/medium`とする。effort省略時は`medium`とする。
+1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試し、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
+上表の未設定時の実効値は、いずれのキーも`codex:gpt-5.6-sol/medium`の1候補とする。effort省略時は`medium`とする。
 モデル名とeffortの受理可否は各engineの実行機能へ委ねる。
-`atk config set`は主に使うモデル名・effortの参考一覧に無い値へ警告を表示するが、新モデルの利用を妨げないため受理する。
+`atk config set`は主に使うモデル名・effortの参考一覧に無い値へ候補ごとの警告を表示するが、新モデルの利用を妨げないため受理する。
+`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、当該キーの実効値を環境変数の値とする。
+環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
 
-1. 設定値を`engine`、`model`、`effort`へ分解する。
-2. `engine=codex`では`agents_server` MCPを使う。`start(engine="codex", ...)`へ`model`と`effort`を両方渡し、開始後は`wait`で状態と結果を観測する。
-   agents定義の`tools`で4つのMCPツールを直接許可している場合は、ToolSearchによる実在とスキーマの照会を省略できる。
-3. `engine=claude`ではClaude CodeからはAgentツールを使い、`model`へモデル名部分を渡す。
-   ただし`feedbacks-planner`、`plan-impl-executor`及び`plan-review-executor`が本表の工程を委譲する場合は、Claude Codeでも`agents_server`の`start(engine="claude", ...)`を使う。
-   CodexからClaudeへ委譲する場合は`agents_server`の`start(engine="claude", ...)`を使う。いずれも`effort`部はAgentツールへ渡さず、`agents_server`では指定値をそのまま渡す。
-4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す（後述の代替起動を除く）。
+1. `agents_server`経路では、表の`model_type`を`start`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
+2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合は当該工程を`needs_escalation`または未完了として返す。
+3. `agents_server`の応答は、採用した`model_type`、`engine`、`model`及び`effort`を含む。呼び出し側はこの応答値を保持し、実際に用いた組合せとして報告へ記録する。
+4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 5. 計画の最初のfast担当とCI修正は、前の担当の識別子を再利用せず新規threadで起動する。
    同じ計画の2件目以降の実装単位は本項の対象外とし、手順6の直後の規定に従って1つのfast担当が順に実装する。
@@ -70,52 +75,62 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    Codexで既存担当を置換する新規threadを起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。
 6. 継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合と、
    同じworktreeを所有するthreadの担当種別をfast担当とfix担当の間で切り替える場合だけ使う。
-   継続直前に工程別モデル設定と本節の経路規定を再取得し、新たに用いる実効`engine`、`model`及び`effort`を、
-   現在のthreadの起動に用いた実効3値と比較する。
-   3値がすべて一致する場合だけ同一threadへ継続接続する。
-   比較に用いる実効3値は、当該セッションの当該工程で代替の組合せへ切り替えている場合、切り替え後に実際に用いた組合せとする。
-   `atk config get`が返す設定値を実効値として比較しない。
-   代替の有効範囲は当該セッションの当該工程とし、その範囲では設定値との不一致を理由に新規起動へ切り替えない。
-   本項は、`claude`経路の配送不能から`codex:gpt-5.6-sol/medium`へ代替起動した担当へ継続を送る段で、設定値`claude:opus[1m]/medium`との不一致を継続不能と読んだレーン担当が停止した観測（2026-08-30、`5737d70a`時点）に基づく。再検証は、代替起動した担当へ継続を送り、新規起動へ切り替わらないことの確認による。
-   fast担当へfix担当の作業を移す場合は、`execute_fix_model`の実効3値を`execute_fast_model`で起動した現在のthreadの実効3値と比較し、
+   継続直前に、現在のthreadの起動へ用いた`model_type`と、これから委譲する工程の`model_type`を比較する。
+   両者が一致する場合だけ同じ`session_id`へ`send_message`を送る。
+   engine、model及びeffortの実効値はサーバーが保持し、継続時に、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補と一致するかをサーバーが判定する。
+   一致しない場合は`send_message`が`configuration changed: <session_id>`を返すため、呼び出し側は検収済み状態を渡して新規起動する。
+   この判定により、設定が変わらない限り可用性の失敗で後続候補へ切り替わった担当へは継続を送り、保存済み設定又は環境変数オーバーライドで候補列の内容若しくは順序が変わった場合は新規起動する。
+   fast担当へfix担当の作業を移す場合は、`execute_model`の`model_type`を`execute_fast_model`で起動した現在のthreadの`model_type`と比較し、
    継続本文へ担当種別を`fix担当`へ切り替える旨と、エスカレーション内容かレビュー指摘の所在を含める。
-   fix担当が完了した後に残りの実装単位へ進む場合は、最初の単位の開始前に保持した`execute_fast_model`の実効3値を現在のfix担当threadの実効3値と比較する。
+   fix担当が完了した後に残りの実装単位へ進む場合は、最初の単位の開始前に保持した`execute_fast_model`の`model_type`を現在のfix担当threadの`model_type`と比較する。
    一致する場合は継続本文へ担当種別を`fast担当`へ戻す旨と次の実装単位を含める。一致しない場合はfix担当を終端し、検収済みの先行commitと残りの実装単位を新規fast担当へ渡す。
    実際の起動routeが`agents_server`の場合は、engineと実行ホストによらず`send_message(session_id, prompt, timeout)`で同じ担当へ追加指示を返す。実際の起動routeがClaude CodeのAgentツールの場合だけ、`SendMessage`で同じ担当へ追加指示を返す。`agents_server`では実行中turnへのsteer・終端後のreply・保持期限後の暗黙再開から状態に合う操作を選択する。終端後のreply開始に結果回収の前提条件は設けない。所有する実行主体が終了している場合も同じ呼び出しが暗黙に再開する。
-   実効値の不一致、異なる担当又はタスクへの切替、中断済み・完了配送不能・前提無効化のいずれかに該当する場合は、同一threadを継続しない。
+   `model_type`の不一致、異なる担当又はタスクへの切替、中断済み・完了配送不能・前提無効化のいずれかに該当する場合は、同一threadを継続しない。
    検収済み状態を渡し、解決後のengineで新規起動する。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用してから行う。
-   初回レビューの指摘対応では、最後に完了した実装単位の現在担当がfast担当なら本項の実効3値の比較に従って継続か新規fix担当の起動を確定する。現在担当がfix担当なら同じthreadを継続する。
-   2回目以降の指摘対応は同じfix担当threadを継続する。継続直前に解決した実効3値が現在のthreadと異なる場合は、`needs_escalation`でメインへ返す。
+   初回レビューの指摘対応では、最後に完了した実装単位の現在担当がfast担当なら本項の`model_type`の比較に従って継続か新規fix担当の起動を確定する。現在担当がfix担当なら同じthreadを継続する。
+   2回目以降の指摘対応は同じfix担当threadを継続する。継続直前の`model_type`が現在のthreadと異なる場合は、`needs_escalation`でメインへ返す。
    Codexで新規起動する場合は、`Codex後続操作の共通先行条件`を適用し、旧担当の終端と書込所有権の解放を確認してから行う。
    継続不能かどうかは、実際に継続手段を呼び出した結果で判定する。
-   `agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけ継続不能とし、`wait`が返す`session retention expired: <session_id>`を継続不能の根拠にしない。
+   `send_message`のtimeoutは配送の成否が未確定であることだけを示し、それ自体を継続不能の根拠にしない。
+   timeout後は、当該継続要求の受理結果又は当該要求によって開始した新しいreplyの開始を確認できた場合だけ、配送済みとして同じthreadで待機を継続する。
+   `wait`が返す`status=completed`だけを配送済みの根拠にしない。
+   当該継続要求へ対応付く観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず`needs_escalation`で呼び出し元へ返す。
+   `agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけ継続不能とする。
+   `wait`が返す`session retention expired: <session_id>`を継続不能の根拠にしない。
+   送信前後の`agent_message`の文字列一致は未配送の証拠に用いない。同じ定型本文を返す正常replyと未配送を、文字列一致だけでは区別できないためである。
    Claude Codeの`SendMessage`では`references/claude-code-runtime.md`が定める配送不能の判定手段による。
    同じ計画の実装単位で継続不能と判定した場合は、検収済みの先行commitの完全OID、完了した実装単位名及び残りの実装単位名を新規threadへ渡す。
    計画、進捗ログ、保存済みのレビュー表のいずれかで検収済み状態を一意に参照できる場合は、
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
    参照可能な正本がない場合は、呼び出し元が管理対象領域へレビュー表を作成してから継続し、表の内容を起動文へ埋め込まない。
 
+本節の代替起動はAgentツール経路にだけ適用する。
+`agents_server`経路では、設定の候補列と`exclude_session_id`による次候補の起動が同じ役割を担うため、本節の代替起動を重ねて適用しない。
 指定した組合せを一時的に利用できない事象を実際に観測した場合に限り、当該工程の設定を解決して委譲を起動した主体は、当該セッション内の起動時指定だけで代替の組合せへ切り替えて再起動してよい。
 この判断は当該主体が行い、当該主体自身がサブエージェントとして起動されているかを問わない。
 対象は、実行経路が返す過負荷、レート制限、サーバー障害、指定したモデルや経路の利用不能など、モデル実行環境の可用性に起因すると観測できる失敗に限る。
 委譲した作業自体の失敗（実装の不良、テストの失敗、入力の不備など）は対象に含めない。
 `atk config set`による設定値の書き換えは行わない。
 設定はユーザー単位の単一値を全セッションが共有し、並行セッションへ波及するためである。
-代替の候補は「代替時の組合せの目安」の表の行とし、失敗を観測した時点の同表の内容で確定する。
-失敗を観測した組合せを除く各行を、表の記載順に1回ずつ起動する。
-起動を試みずに当該行を除外できるのは、当該行のengineの実行機能自体を呼び出せない場合に限る。
-この場合だけ当該行を利用不能と判定し、次の行へ進む。
+代替の候補は「代替時の組合せの目安」の表が示す各組合せとし、失敗を観測した時点の同表の内容で確定する。
+表の走査順は、上位行から軽量行の順に進み、各行の中では`codex`列、`claude`列の順とする。
+設定値が表のどの組合せに当たるかは`engine`と`model`の一致で判定し、effortを判定に用いない。
+失敗を観測した組合せが表にある場合は、まず同じ行のもう一方の組合せを起動し、以降は走査順で未起動の組合せを順に起動する。
+失敗を観測した組合せが表に無い場合は、走査順の先頭から未起動の組合せを順に起動する。
+レビュー工程では、いずれの場合も上位の行の組合せだけを候補とする。
+起動を試みずに当該組合せを除外できるのは、当該組合せのengineの実行機能自体を呼び出せない場合に限る。
+この場合だけ当該組合せを利用不能と判定し、次の組合せへ進む。
 成立しないという推定だけを根拠として起動の試行を省略しない。
-残る全ての行で可用性に起因する失敗を観測したか利用不能と判定した場合は代替を打ち切り、手順4の経路へ戻る。
-代替を試みた場合は、観測した失敗、`atk config get`で取得した設定値、実際に用いた組合せ、対象工程、利用不能と判定して試行しなかった行とその理由の5項目を当該工程の報告へ記録する。
+残る全ての組合せで可用性に起因する失敗を観測したか利用不能と判定した場合は代替を打ち切り、手順4の経路へ戻る。
+代替を試みた場合は、観測した失敗、`atk config get`で取得した設定値、実際に用いた組合せ、対象工程、利用不能と判定して試行しなかった組合せとその理由の5項目を当該工程の報告へ記録する。
 委譲先は、可用性に起因する失敗を観測した場合も、設定と異なるengineとモデルのどちらへも自身の判断で切り替えず、手順4のとおり`needs_escalation`または未完了として呼び出し元へ返す。
 代替の判断と起動は委譲を起動した主体が行う。
 初回生成前失敗に該当しないCodexの代替起動は、`Codex後続操作の共通先行条件`を適用してから行う。
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
 工程別モデル設定のキーを持たない名前付きagentの呼び出しは、「工程別モデル設定」及び「modelとreasoning effort」の対象外とし、Codexではメインエージェントが定義を同一セッションへ直接適用し、Claude Codeでは既存の名前付きAgent起動へ従う。
-同じ計画に複数の実装単位がある場合、`plan-impl-executor`は最初の単位へ着手する直前に`execute_fast_model`を1回だけ解決し、
+同じ計画に複数の実装単位がある場合、`plan-executor`は最初の単位へ着手する直前に`execute_fast_model`を1回だけ解決し、
 先行依存と統合順に従って残りの単位を同じfast担当へ順に渡す。単位ごとに実効値を解決し直さず、単位ごとの都合だけでは新規threadを起動しない。
 同じ計画の実装単位は同一worktreeへ書込主体を1つだけ置くため逐次実行され、分割しても並列化の利益が無い一方、
 規範、計画並びに対象コードの読み込みが単位数だけ重複するためである。実装単位ごとのcommit境界は計画の実装単位表のとおり維持する。
@@ -123,7 +138,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 Codexで最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う。
 
 fast担当がエスカレーションを返した場合だけfix担当の作業へ移す。
-`execute_fix_model`の実効3値が現在のfast担当threadの実効3値とすべて一致する場合は、同じthreadを継続してfix担当の作業を指示する。
+`execute_model`の`model_type`が現在のfast担当threadの`model_type`と一致する場合は、同じthreadを継続してfix担当の作業を指示する。
 一致しない場合はfast担当を終端し、元の実装入力、同じworktreeの作業状態及びエスカレーション内容を新規fix担当へ渡す。
 Codexで新規fix担当を起動して役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う。同一threadを継続する場合は元担当が変わらないため同条件を適用しない。
 fix担当が実装単位を完了した後に残りの単位がある場合は、手順6に従って担当種別をfast担当へ戻す。同一threadを継続できない場合はfix担当を終端し、検収済みの先行commitと残りの実装単位を新規fast担当へ渡す。Codexで新規fast担当を起動する場合は、`Codex後続操作の共通先行条件`を適用する。
@@ -133,8 +148,11 @@ fix担当が実装単位を完了した後に残りの単位がある場合は�
 次の基準を上から評価し、最初に該当した項を選ぶ。reasoning effortの既定値は`medium`とする。
 
 1. 設計判断を伴う実装とレビューは上位モデルを選ぶ
-2. 内容が確定済みで低リスクな機械作業は軽量モデルとreasoning effort `max`を選ぶ
-3. その他は標準モデルを選ぶ
+2. その他は標準モデルを選ぶ
+
+既定より高いreasoning effortを選べるのは、読むファイル数が少なく、推論の深さが結果を左右すると事前に判明している工程に限る。
+本項は、軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザー報告）。
+再検証は、同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
 
 モデルを明示する経路ではreasoning effortも併せて指定する。
 指定モデルを利用できない場合は、作業を成立させる利用可能なモデルへ切り替える。
@@ -148,22 +166,20 @@ fix担当が実装単位を完了した後に残りの単位がある場合は�
 本節は代替起動の候補選定にだけ適用し、モデルを明示する他の委譲には「modelとreasoning effort」を適用する。
 以下の対応関係と向き不向きはユーザーが運用上の目安として指定した値であり、検証した能力比較ではない。
 
-| engine | model | effort |
+| レベル | `codex` | `claude` |
 | --- | --- | --- |
-| `codex` | `gpt-5.6-sol` | `medium` |
-| `codex` | `gpt-5.6-terra` | `high`〜`xhigh` |
-| `codex` | `gpt-5.6-luna` | `xhigh`〜`max` |
-| `claude` | `opus` | `high` |
-| `claude` | `sonnet` | `xhigh`〜`max` |
+| 上位 | `gpt-5.6-sol` | `opus` |
+| 中位 | `gpt-5.6-terra` | `sonnet` |
+| 軽量 | `gpt-5.6-luna` | `haiku` |
 
-- 上表の各行は同等の能力とみなす組合せであり、代替起動で試す候補の全体を示す。effortに範囲を書いた行では範囲内の値を1つ選ぶ
-- 上表に無いモデルは候補を増やす用途では使わない。上表のある行の組合せを、同等以上と確認できる別の組合せへ置き換える用途にだけ使う
-- レビュー工程では上表の組合せより能力が下がる組合せを選ばない
-- effortを指定できない経路で上表の組合せを満たせない場合は、`codex`の行へ切り替えるか、より上位のモデルの行を選ぶ。
+- 同じ行の`codex`と`claude`の組合せを同等とみなす。effortはいずれも`medium`を第一候補とする
+- 代替起動では、まず同じ行のもう一方のengineを試す（起動順の正本は「工程別モデル設定」の代替起動の規定とする）
+- 上位の行を既定とし、中位・軽量の行は内容が確定済みで低リスクな機械作業に限って選ぶ
+- レビュー工程では上位の行を用い、中位・軽量の行へ下げない
+- 上表に無いモデルは候補を増やす用途では使わない。上表のある組合せを、同等以上と確認できる別の組合せへ置き換える用途にだけ使う
+- effortを指定できない経路で上表の組合せを満たせない場合は、`codex`の列へ切り替えるか、より上位の行を選ぶ。
   Claude経路のeffortはエージェント定義のfrontmatterで確定し、frontmatterを持たない経路では指定できない（`agent-toolkit:delegation`のClaude Code経路契約）
-- 細部の欠陥検出は`codex`、設計判断は`claude`を優先する。実装工程では`claude`の行のeffortを上表の値より下げてよい
-- 読むファイル数が多いと事前に判明している工程へは、軽量モデルの高effortを割り当てない。推論部分がコンテキスト長を消費するためである。
-  対象ファイル数が判明していない工程には適用せず、「modelとreasoning effort」の第2項による軽量モデルとreasoning effort `max`の選択を妨げない
+- 細部の欠陥検出は`codex`、設計判断は`claude`を優先する
 
 ## 読み取り専用
 
@@ -176,7 +192,7 @@ fix担当が実装単位を完了した後に残りの単位がある場合は�
 
 - 1つのworktreeへ同時に起動する実装担当は1つだけとする
 - 実装担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
-  ただし、`execute_fast_model`から`execute_fix_model`への引継ぎだけはclean開始契約の例外とする。
+  ただし、`execute_fast_model`から`execute_model`への引継ぎだけはclean開始契約の例外とする。
   新規fix担当を起動する場合はfast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合して渡し、同一threadを継続する場合は書込主体が変わらないため終端確認を要さない
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない

@@ -21,6 +21,8 @@ def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
     monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
+    for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
+        monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
 
 
 class TestConfigShow:
@@ -41,13 +43,16 @@ class TestConfigShow:
             "pick_feedbacks_model",
             "plan_model",
             "plan_review_model",
+            "execute_fast_model",
+            "execute_model",
             "execute_review_model",
+            "session_review_model",
         ):
             assert f"{key}: codex:gpt-5.6-sol/medium" in out
-        assert "execute_fast_model: codex:gpt-5.6-luna/max" in out
-        assert "execute_fix_model: codex:gpt-5.6-sol/medium" in out
-        assert "execute_model:" not in out
+        assert "execute_fix_model:" not in out
         assert "orchestrate_model: claude:opus[1m]/medium" in out
+        assert "explore_model: codex:gpt-5.6-sol/medium" in out
+        assert "explore_fast_model: codex:gpt-5.6-terra/medium" in out
         assert "codex_model:" not in out
         assert "merge_model:" not in out
 
@@ -74,14 +79,15 @@ class TestConfigGet:
     @pytest.mark.parametrize(
         ("key", "expected"),
         [
-            ("execute_fast_model", "codex:gpt-5.6-luna/max"),
-            ("execute_fix_model", "codex:gpt-5.6-sol/medium"),
+            ("execute_fast_model", "codex:gpt-5.6-sol/medium"),
+            ("execute_model", "codex:gpt-5.6-sol/medium"),
+            ("session_review_model", "codex:gpt-5.6-sol/medium"),
         ],
     )
     def test_get_execute_model_defaults(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, expected: str
     ) -> None:
-        """未設定の実装工程モデルはfastとfixで異なる既定値を返す。"""
+        """未設定の工程別モデルは共通の既定値を返す。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", key], home=tmp_path)
 
@@ -112,9 +118,10 @@ class TestConfigGet:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert not captured.out
-        assert "execute_model" not in captured.err
         assert "execute_fast_model" in captured.err
-        assert "execute_fix_model" in captured.err
+        assert "execute_model" in captured.err
+        assert "session_review_model" in captured.err
+        assert "execute_fix_model" not in captured.err
 
     def test_get_known_and_unknown_keys_is_atomic(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """既知キーの間に未知キーがある場合は値を出力せずexit 2とする。"""
@@ -124,15 +131,94 @@ class TestConfigGet:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert not captured.out
-        assert "execute_model" not in captured.err
         assert "execute_fast_model" in captured.err
-        assert "execute_fix_model" in captured.err
+        assert "execute_model" in captured.err
+        assert "session_review_model" in captured.err
+        assert "execute_fix_model" not in captured.err
+
+    def test_environment_override_applies_to_get_and_show_then_restores_saved_value(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """空でない環境変数は保存値より優先され、解除後は保存値へ戻る。"""
+        saved = "codex:gpt-5.6-sol/high"
+        override = "claude:sonnet/low,codex:gpt-5.6-terra/medium"
+        with pytest.raises(SystemExit):
+            atk.main(["config", "set", "plan_model", saved], home=tmp_path)
+        capsys.readouterr()
+
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PLAN_MODEL", override)
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "plan_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{override}\n"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "show"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert f"plan_model: {override}" in capsys.readouterr().out
+
+        monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_PLAN_MODEL")
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "plan_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{saved}\n"
+
+    @pytest.mark.parametrize("subcommand", [["get", "plan_model"], ["show"]])
+    def test_invalid_environment_override_exits_2(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        subcommand: list[str],
+    ) -> None:
+        """不正な環境変数値は実効値へ渡さず、変数名と値を示して拒否する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PLAN_MODEL", "codex:gpt-5.6-sol/medium, invalid")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", *subcommand], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert not captured.out
+        assert "AGENT_TOOLKIT_CONFIG_PLAN_MODEL" in captured.err
+        assert "codex:gpt-5.6-sol/medium, invalid" in captured.err
+
+    def test_empty_environment_override_is_ignored(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """空文字列の環境変数は未指定として既定値を返す。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PLAN_MODEL", "")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "plan_model"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
+
+    def test_immutable_environment_name_does_not_override_private_notes(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """変更可能キー以外を模した環境変数は既存の解決経路へ影響しない。"""
+        with pytest.raises(SystemExit):
+            atk.main(["config", "get", "private_notes"], home=tmp_path)
+        original = capsys.readouterr().out
+
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PRIVATE_NOTES", "/unexpected")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "private_notes"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == original
 
 
 class TestConfigSet:
     """`atk config set`の変更可能設定更新を検証する。"""
 
-    @pytest.mark.parametrize("key", ["execute_fast_model", "execute_fix_model"])
+    @pytest.mark.parametrize("key", ["execute_fast_model", "execute_model"])
     @pytest.mark.parametrize("value", ["codex:gpt-5.6-sol/medium", "claude:sonnet", "claude:opus/high"])
     def test_set_stage_model_persists_and_is_read_back(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, value: str
@@ -154,83 +240,47 @@ class TestConfigSet:
         assert config_file.exists()
         assert value in config_file.read_text(encoding="utf-8")
 
-    def test_legacy_execute_model_is_rejected(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """旧`execute_model`は公開設定キーとして変更できない。"""
+    def test_legacy_execute_fix_model_is_rejected(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """旧`execute_fix_model`は公開設定キーとして変更できない。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "execute_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
+            atk.main(["config", "set", "execute_fix_model", "codex:gpt-5.6-sol/medium"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert "変更できない設定キーです: execute_model" in capsys.readouterr().err
+        assert "変更できない設定キーです: execute_fix_model" in capsys.readouterr().err
+        assert not (tmp_path / "config" / "config.json").exists()
 
-    @pytest.mark.parametrize(
-        ("stored", "expected_fast", "expected_fix"),
-        [
-            ({"execute_model": "claude:sonnet/high"}, "claude:sonnet/high", "claude:sonnet/high"),
-            (
-                {"execute_model": "claude:sonnet/high", "execute_fast_model": "codex:gpt-5.6-luna/max"},
-                "codex:gpt-5.6-luna/max",
-                "claude:sonnet/high",
-            ),
-            (
-                {"execute_model": "claude:sonnet/high", "execute_fix_model": "codex:gpt-5.6-sol/medium"},
-                "claude:sonnet/high",
-                "codex:gpt-5.6-sol/medium",
-            ),
-            (
-                {
-                    "execute_model": "claude:sonnet/high",
-                    "execute_fast_model": "codex:gpt-5.6-luna/max",
-                    "execute_fix_model": "codex:gpt-5.6-sol/medium",
-                },
-                "codex:gpt-5.6-luna/max",
-                "codex:gpt-5.6-sol/medium",
-            ),
-        ],
-    )
-    def test_legacy_execute_model_is_lazily_migrated_with_new_key_precedence(
-        self,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-        stored: dict[str, str],
-        expected_fast: str,
-        expected_fix: str,
-    ) -> None:
-        """旧キーは読み取り時に新2キーへ補い、新キーの明示値を優先する。"""
-        config_file = tmp_path / "config" / "config.json"
-        config_file.parent.mkdir(parents=True)
-        config_file.write_text(json.dumps(stored) + "\n", encoding="utf-8")
-        original = config_file.read_text(encoding="utf-8")
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "get", "execute_fast_model", "execute_fix_model"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert capsys.readouterr().out == f"{expected_fast}\n{expected_fix}\n"
-        assert config_file.read_text(encoding="utf-8") == original
-
-    def test_next_set_persists_resolved_new_keys_and_removes_legacy_key(
+    def test_legacy_execute_fix_model_get_aliases_execute_model(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """次回の設定保存時に旧キーを除き、解決済みの新2キーを永続化する。"""
-        config_file = tmp_path / "config" / "config.json"
-        config_file.parent.mkdir(parents=True)
-        config_file.write_text(
-            json.dumps({"execute_model": "claude:sonnet/high", "other_setting": "keep"}) + "\n",
-            encoding="utf-8",
-        )
+        """旧キー名の`get`は現行キーの解決値を返す。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "execute_fix_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["config", "set", "plan_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
+            atk.main(["config", "set", "execute_model", "claude:sonnet/high"], home=tmp_path)
+        assert exc_info.value.code == 0
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "execute_fix_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "claude:sonnet/high\n"
+
+    def test_stored_legacy_execute_fix_model_does_not_affect_execute_model(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """保存済み旧キーは現行キーの実効値へ影響しない。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps({"execute_fix_model": "claude:sonnet/high"}) + "\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "execute_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not capsys.readouterr().err
-        saved = json.loads(config_file.read_text(encoding="utf-8"))
-        assert saved["execute_fast_model"] == "claude:sonnet/high"
-        assert saved["execute_fix_model"] == "claude:sonnet/high"
-        assert "execute_model" not in saved
-        assert saved["other_setting"] == "keep"
-        assert "pick_feedbacks_model" not in saved
-        assert "execute_review_model" not in saved
+        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
 
     def test_set_preserves_unconfigured_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """旧キーがない設定保存では、未設定の既定値を永続化しない。"""
@@ -265,6 +315,104 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{value}\n"
 
+    def test_set_candidate_list_persists_and_is_read_back(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """複数候補を指定順の文字列のまま保存して読み戻す。"""
+        value = "codex:gpt-5.6-sol/medium,claude:opus[1m]/medium"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", value], home=tmp_path)
+        assert exc_info.value.code == 0
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "plan_model"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{value}\n"
+
+    def test_invalid_second_candidate_does_not_update_saved_value(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """2候補目だけが不正でも候補列全体を拒否し、保存済み設定を維持する。"""
+        saved = "codex:gpt-5.6-terra/high"
+        with pytest.raises(SystemExit):
+            atk.main(["config", "set", "plan_model", saved], home=tmp_path)
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", f"{saved},不正な値"], home=tmp_path)
+        assert exc_info.value.code == 2
+        capsys.readouterr()
+
+        with pytest.raises(SystemExit):
+            atk.main(["config", "get", "plan_model"], home=tmp_path)
+        assert capsys.readouterr().out == f"{saved}\n"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "codex:gpt-5.6-sol/medium,",
+            ",codex:gpt-5.6-sol/medium",
+            "codex:gpt-5.6-sol/medium,,claude:sonnet/high",
+            "codex:gpt-5.6-sol/medium, claude:sonnet/high",
+        ],
+    )
+    def test_set_rejects_empty_or_space_padded_candidate(self, tmp_path: pathlib.Path, value: str) -> None:
+        """空候補と前後に空白を持つ候補を拒否する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", value], home=tmp_path)
+
+        assert exc_info.value.code == 2
+
+    def test_candidate_warnings_identify_only_unknown_candidate(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """候補ごとの既知一覧照合で一覧外の候補だけを警告し、保存は成功する。"""
+        known = "codex:gpt-5.6-sol/medium"
+        unknown = "claude:fable/ultra"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", f"{known},{unknown}"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"候補`{unknown}`" in captured.err
+        assert f"候補`{known}`" not in captured.err
+
+    def test_set_with_environment_override_warns_but_updates_saved_value(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """環境変数が優先中でも保存先を更新し、実効値にならない旨を警告する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PLAN_MODEL", "claude:sonnet/high")
+        saved = "codex:gpt-5.6-terra/low"
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "set", "plan_model", saved], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "AGENT_TOOLKIT_CONFIG_PLAN_MODEL" in captured.err
+        config_file = tmp_path / "config" / "config.json"
+        assert json.loads(config_file.read_text(encoding="utf-8"))["plan_model"] == saved
+
+    def test_parse_candidates_normalizes_effort_and_preserves_distinct_values(self) -> None:
+        """候補列を3つ組へ分解し、省略effortを補完して異なるeffortを保持する。"""
+        assert config_module.parse_stage_model_candidates("codex:gpt-5.6-sol,claude:sonnet/high,claude:sonnet/low") == [
+            ("codex", "gpt-5.6-sol", "medium"),
+            ("claude", "sonnet", "high"),
+            ("claude", "sonnet", "low"),
+        ]
+
+    def test_resolve_model_candidates_maps_model_type_and_rejects_unknown(self) -> None:
+        """model_typeを対応設定の候補へ解決し、未知値は利用可能一覧付きで拒否する。"""
+        assert config_module.resolve_model_candidates("explore_fast") == [("codex", "gpt-5.6-terra", "medium")]
+        with pytest.raises(ValueError, match=r"unknown model_type: no-such.*explore_fast.*plan"):
+            config_module.resolve_model_candidates("no-such")
+
     def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""
         with pytest.raises(SystemExit) as exc_info:
@@ -273,7 +421,7 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "設定を更新しました: execute_fast_model=claude:fable" in captured.out
-        assert "警告: モデル名`fable`は主に使うモデルの一覧" in captured.err
+        assert "モデル名`fable`は主に使うモデルの一覧" in captured.err
         assert "利用可否は実行時に各engineが判定します" in captured.err
 
         with pytest.raises(SystemExit) as exc_info:
@@ -288,9 +436,9 @@ class TestConfigSet:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "警告: effort`ultra`は主に使う値の一覧" in captured.err
+        assert "effort`ultra`は主に使う値の一覧" in captured.err
         assert "利用可否は実行時に各engineが判定します" in captured.err
-        assert "警告: モデル名" not in captured.err
+        assert "のモデル名" not in captured.err
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "plan_model"], home=tmp_path)
@@ -304,8 +452,8 @@ class TestConfigSet:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "警告: モデル名`new-model`は主に使うモデルの一覧" in captured.err
-        assert "警告: effort`ultra`は主に使う値の一覧" in captured.err
+        assert "モデル名`new-model`は主に使うモデルの一覧" in captured.err
+        assert "effort`ultra`は主に使う値の一覧" in captured.err
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "execute_review_model"], home=tmp_path)
