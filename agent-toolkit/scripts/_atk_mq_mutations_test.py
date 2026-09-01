@@ -23,6 +23,7 @@ import _atk_mq_common as common  # noqa: E402  # pylint: disable=wrong-import-po
 import _atk_mq_frontmatter as frontmatter_parser  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_mutations as mutations  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_mq_user_comment as user_comment  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
@@ -34,9 +35,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-_USER_COMMENT_ERROR = (
-    "ユーザーコメントはユーザーだけが書き込みます。エージェント環境から起動したatkではユーザーコメントを変更できません。\n"
-)
+_USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 @pytest.fixture(autouse=True)
@@ -2819,7 +2818,7 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     else:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     if route == "append":
-        argv = ["mq", "edit", "--append", filename, "変更する"]
+        argv = ["mq", "edit", "--append", filename, "変更後\n\n## ユーザーコメント\n\n変更する"]
     elif route == "plan":
         planning_path = notes / "planning" / filename
         path.replace(planning_path)
@@ -2867,24 +2866,84 @@ def test_agent_environment_allows_comment_neutral_edit_and_append(
     assert append_path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
 
 
-def test_agent_environment_allows_edit_that_preserves_user_comment(
+def test_agent_environment_edit_preserves_saved_user_comment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """既存ユーザーコメントを同値で保持する本文編集は成功する。"""
+    """予約節を含まないMESSAGEで保存済みユーザーコメント節を保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_feedback_file(notes, "fb.md", body="編集前\n\n## ユーザーコメント\n\n保持する")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
     with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "edit", "fb.md", "編集後"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert path.read_text(encoding="utf-8").endswith("編集後\n\n## ユーザーコメント\n\n保持する\n")
+
+
+def test_agent_environment_append_inserts_before_user_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """追記MESSAGEを保存済みユーザーコメント節の直前へ追加する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_feedback_file(notes, "fb.md", body="追記前\n\n## ユーザーコメント\n\n保持する")
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "edit", "--append", "fb.md", "追記後"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    text = path.read_text(encoding="utf-8")
+    assert text.index("追記前") < text.index("追記後") < text.index("## ユーザーコメント")
+    assert text.endswith("## ユーザーコメント\n\n保持する\n")
+
+
+def test_agent_environment_plan_edit_preserves_saved_user_comment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """計画型編集でも保存済みユーザーコメント節を保持する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    path = _write_feedback_file(notes, filename, body="編集前\n\n## ユーザーコメント\n\n保持する")
+    planning_path = notes / "planning" / filename
+    path.replace(planning_path)
+    plan = tmp_path / "plan.md"
+    plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        lambda _value: ("github.com/example/foo", worktree),
+    )
+    monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
+    monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda *_args: "a" * 40)
+
+    with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["mq", "edit", "fb.md", "編集後\n\n## ユーザーコメント\n\n保持する"],
+            [
+                "mq",
+                "edit",
+                filename,
+                "編集後",
+                "--plan-file",
+                str(plan),
+                "--target-repo",
+                "github.com/example/foo",
+            ],
             home=tmp_path,
         )
 
     assert exc_info.value.code == 0
-    assert "編集後" in path.read_text(encoding="utf-8")
+    saved = notes / "inbox" / filename
+    assert saved.read_text(encoding="utf-8").endswith("編集後\n\n## ユーザーコメント\n\n保持する\n")
 
 
 def test_agent_environment_rejects_add_with_user_comment(

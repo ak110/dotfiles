@@ -6,6 +6,15 @@ from markdown_it.token import Token
 
 _COMMENT_HEADING = "ユーザーコメント"
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
+_AGENT_USER_COMMENT_PREFIX = "ユーザーコメントはユーザーだけが書き込みます。"
+AGENT_USER_COMMENT_ADD_ERROR = (
+    _AGENT_USER_COMMENT_PREFIX + "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
+    "ユーザーの発言は本文中へ出所を示して引用してください。"
+)
+AGENT_USER_COMMENT_EDIT_ERROR = (
+    _AGENT_USER_COMMENT_PREFIX + "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を指定できません。"
+    "ユーザーコメント節は編集の対象から外し、保存済みの内容をそのまま残します。"
+)
 
 
 class UserCommentError(ValueError):
@@ -89,6 +98,17 @@ def extract_user_comment(text: str) -> str | None:
     return _normalize_comment("".join(lines[heading.map[1] :]))
 
 
+def split_before_user_comment(text: str) -> tuple[str, str]:
+    """本文を予約見出しの直前までと予約見出し以降へ分けて返す。"""
+    prefix, body = _body_parts(text)
+    heading = _find_reserved_heading(body)
+    if heading is None:
+        return text, ""
+    lines = _lines(body)
+    assert heading.map is not None
+    return prefix + "".join(lines[: heading.map[0]]), "".join(lines[heading.map[0] :])
+
+
 def has_reserved_heading(text: str) -> bool:
     """本文がコードフェンス外の予約見出しを含むか返す。"""
     _prefix, body = _body_parts(text)
@@ -126,4 +146,12 @@ def update_user_comment(text: str, comment: str) -> str:
     return f"{prefix}{before_section}\n\n{normalized}\n"
 
 
-__all__ = ["UserCommentError", "extract_user_comment", "has_reserved_heading", "update_user_comment"]
+__all__ = [
+    "AGENT_USER_COMMENT_ADD_ERROR",
+    "AGENT_USER_COMMENT_EDIT_ERROR",
+    "UserCommentError",
+    "extract_user_comment",
+    "has_reserved_heading",
+    "split_before_user_comment",
+    "update_user_comment",
+]
