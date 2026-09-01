@@ -3,6 +3,7 @@
 import os
 import pathlib
 import subprocess
+import types
 import typing
 
 import _atk_git_sync
@@ -46,8 +47,8 @@ def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
 def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:
     """取得できる作成日時と更新日時を返す。"""
     try:
-        birth = _atk_plans._birth_epoch(path)  # pylint: disable=protected-access
-    except _common.WebInputError:
+        birth = _plan_file._birth_epoch(path)  # pylint: disable=protected-access
+    except OSError:
         birth = None
     return birth, path.stat().st_mtime_ns
 
@@ -57,7 +58,7 @@ def _assert_preserved_times(path: pathlib.Path, expected: tuple[float | None, in
     birth, mtime_ns = expected
     assert path.stat().st_mtime_ns == mtime_ns
     if birth is not None:
-        assert _atk_plans._birth_epoch(path) == birth  # pylint: disable=protected-access
+        assert _plan_file._birth_epoch(path) == birth  # pylint: disable=protected-access
 
 
 def _set_stable_mtime(path: pathlib.Path) -> tuple[float | None, int]:
@@ -84,6 +85,23 @@ def _prepare_migration(
     destination = notes / "plans" / year / month / f"{day}-legacy.md"
     portable = _plan_file.to_portable_plan_file(destination, private_notes=notes)
     return home, source, notes, destination, f"legacy: {portable}\n".encode()
+
+
+def test_preserved_times_ignores_unavailable_birth_time(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作成日時を取得できない場合も更新日時を検証対象として返す。"""
+    source = tmp_path / "plan.md"
+    source.write_text("# plan\n", encoding="utf-8")
+    expected_mtime_ns = source.stat().st_mtime_ns
+
+    def fail_birth_epoch(_path: pathlib.Path) -> float:
+        raise OSError("作成日時を取得できない")
+
+    monkeypatch.setattr(_plan_file, "_birth_epoch", fail_birth_epoch)
+
+    assert _preserved_times(source) == (None, expected_mtime_ns)
 
 
 def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> None:
@@ -229,6 +247,58 @@ def test_commit_resumes_after_partial_bundle_move_failure(
     for source in (main, detail, review):
         assert not source.exists()
         _assert_preserved_times(notes / "plans" / relative.parent / source.name, expected_times[source.name])
+
+
+def test_commit_plan_moves_direct_working_bundle_to_birth_month(tmp_path: pathlib.Path) -> None:
+    """直下の全付属ファイルを作成月の保存先へ移し、stemと内容を維持する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("30-計画保存先移行-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    contents = {
+        main: "# main\n",
+        main.with_name(main.stem + ".detail.md"): "# detail\n",
+        main.with_name(main.stem + ".bugs.md"): "# bugs\n",
+        main.with_name(main.stem + ".exec-review.tsv"): '1\t"implementation-review"\n',
+        main.with_name(main.stem + ".supplement.md"): "# supplement\n",
+    }
+    for path, content in contents.items():
+        path.write_text(content, encoding="utf-8")
+    birth_date = _atk_plans._birth_date(main)  # pylint: disable=protected-access
+    year, month, _day = birth_date.split("/")
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    saved_relative = pathlib.Path(year, month, relative.name)
+    assert result["plan_file"] == saved_relative.as_posix()
+    assert result["message"] == "chore: update plan 計画保存先移行"
+    for source, content in contents.items():
+        destination = notes / "plans" / year / month / source.name
+        assert destination.read_text(encoding="utf-8") == content
+        assert not source.exists()
+
+
+def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """直下計画のcommit出力は作成月を付けた保存先相対パスを示す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("30-計画保存先移行-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    year, month, _day = _atk_plans._birth_date(main).split("/")  # pylint: disable=protected-access
+    args = types.SimpleNamespace(plans_subcommand="commit", plan_file=relative.as_posix(), skip_push=True)
+
+    result = _atk_plans.dispatch(args, notes, home)
+
+    assert result == 0
+    assert capsys.readouterr().out == (f"計画bundleを保存rootへ移動してcommitしました: {year}/{month}/{relative.name}\n")
 
 
 def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path: pathlib.Path) -> None:
@@ -569,10 +639,10 @@ def test_migrate_plans_pushes_pending_commit_before_deleting_legacy_files(
     assert _git(remote, "rev-parse", "refs/heads/main").stdout.strip() == pending_head
 
 
-def test_migrate_plans_skips_canonical_working_bundle(tmp_path: pathlib.Path) -> None:
-    """日付階層の正規作業バンドルは旧形式移行の対象にしない。"""
+@pytest.mark.parametrize("relative", [pathlib.Path("30-作業中計画-d4f9.md"), pathlib.Path("2026/08/30-作業中計画-d4f9.md")])
+def test_migrate_plans_skips_canonical_working_bundle(tmp_path: pathlib.Path, relative: pathlib.Path) -> None:
+    """直下形式と日付階層の正規作業バンドルは旧形式移行の対象にしない。"""
     home = tmp_path / "home"
-    relative = pathlib.Path("2026/08/30-作業中計画-d4f9.md")
     main = _plan_file.working_plans_root(home) / relative
     detail = main.with_name(main.stem + ".detail.md")
     main.parent.mkdir(parents=True)

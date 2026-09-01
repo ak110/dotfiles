@@ -353,8 +353,8 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次の作業rootへメイン側とdetail側を同時に保存する。
 
 ```text
-~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
-~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
+~/.claude/plans/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
+~/.claude/plans/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
 ```
 
 計画本文とキューへ記録する永続参照は、作業中も移動後の`$(atk config get private_notes)/plans/yyyy/MM/`を指す可搬表記にする。
@@ -362,12 +362,12 @@ viewerのパスコピーは選択中の実体を指すため、作業中は`~/.c
 実装後レビューが収束した後だけ、作業rootからの相対パスを指定して計画バンドルを保存する。
 
 ```bash
-atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
+atk plans commit dd-{名称}-{小文字16進数4桁}.md
 ```
 
-`atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表をprivate-notesへ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
+`atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表を、メイン計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
 pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
-`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。日付階層の新しい作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
+`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。直下の正規作業バンドルと既存の日付階層の正規作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
 
 ```bash
 atk plans migrate

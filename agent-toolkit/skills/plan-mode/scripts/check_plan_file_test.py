@@ -735,6 +735,31 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
     assert not warnings, warnings
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [pathlib.Path("30-計画保存先移行-d4f9.md"), pathlib.Path("2026/08/30-計画保存先移行-d4f9.md")],
+)
+def test_accepts_direct_and_date_hierarchy_working_paths(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+    relative: pathlib.Path,
+) -> None:
+    """直下形式と既存の日付階層形式の作業計画を同じ構造検査で受理する。"""
+    work_dir, _base = repo
+    home = tmp_path / "home"
+    main_path = home / ".claude/plans" / relative
+    detail_path = main_path.with_name(main_path.stem + ".detail.md")
+    main_path.parent.mkdir(parents=True, exist_ok=True)
+    main_content, detail_content = human_new_format_plan(work_dir)
+    main_path.write_text(main_content, encoding="utf-8")
+    detail_path.write_text(detail_content, encoding="utf-8")
+
+    errors, warnings = check_plan_file.check(main_path, work_dir, home=home)
+
+    assert not errors, errors
+    assert not warnings, warnings
+
+
 def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
     repo: tuple[pathlib.Path, str],
 ) -> None:

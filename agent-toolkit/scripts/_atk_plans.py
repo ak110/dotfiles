@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import hashlib
 import os
 import pathlib
@@ -39,7 +38,10 @@ def build_parser(parser) -> None:
     commit_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
-        help="plans rootからの相対メイン計画パス（yyyy/MM/dd-{名称}-{16進数4桁}.md）。",
+        help=(
+            "計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
+            "または保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md。"
+        ),
     )
     commit_parser.add_argument(
         "--skip-push",
@@ -274,14 +276,25 @@ def commit_plan(
     skip_push: bool = False,
 ) -> dict[str, object]:
     """指定計画bundleを保存rootへ移し、対象限定commitを作成する。"""
+    working_relative: pathlib.Path | None = None
     try:
-        relative_main = _plan_file.validate_plan_relative_path(plan_file)
-    except ValueError as error:
+        working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
+        relative_main = working_relative
+    except ValueError as working_error:
         try:
-            relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
-        except ValueError:
-            raise _common.WebInputError(str(error)) from error
-    working_bundle = _working_plan_bundle(home, relative_main)
+            relative_main = _plan_file.validate_plan_relative_path(plan_file)
+        except ValueError as saved_error:
+            try:
+                relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
+            except ValueError:
+                raise _common.WebInputError(str(working_error)) from saved_error
+    working_bundle = _working_plan_bundle(home, working_relative or relative_main)
+    if working_relative is not None and not working_bundle:
+        raise _common.WebInputError(f"指定した作業中の計画バンドルが見つかりません: {working_relative}")
+    if working_relative is not None and working_bundle:
+        working_main = _plan_file.working_plans_root(home) / working_relative
+        date = _birth_date(working_main).split("/")
+        relative_main = pathlib.Path(date[0], date[1], working_relative.name)
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
         saved_bundle_exists = saved_main.is_file()
@@ -302,38 +315,12 @@ def commit_plan(
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
 
 
-def _birth_epoch(path: pathlib.Path) -> float:
-    """ファイルのbirth timeを取得し、取得不能なら明示的に停止する。"""
-    try:
-        info = path.stat(follow_symlinks=False)
-    except OSError as error:
-        raise _common.WebInputError(f"作成日時を取得できません: {path}") from error
-    value = getattr(info, "st_birthtime", None)
-    if value is None:
-        try:
-            result = subprocess.run(
-                ["stat", "--format=%W", "--", str(path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except OSError as error:
-            raise _common.WebInputError(f"作成日時を取得できません（GNU stat）: {path}") from error
-        if result.returncode != 0:
-            raise _common.WebInputError(f"作成日時を取得できません（GNU stat）: {path}")
-        raw = result.stdout.strip()
-        try:
-            value = float(raw)
-        except ValueError as error:
-            raise _common.WebInputError(f"作成日時の形式が不正です: {path}") from error
-    if not isinstance(value, (int, float)) or value <= 0:
-        raise _common.WebInputError(f"作成日時を取得できないため移行を停止しました: {path}")
-    return float(value)
-
-
 def _birth_date(path: pathlib.Path) -> str:
     """Birth timeを実行ホストのローカル日付へ変換する。"""
-    return datetime.datetime.fromtimestamp(_birth_epoch(path)).strftime("%Y/%m/%d")
+    try:
+        return _plan_file.file_birth_date(path).strftime("%Y/%m/%d")
+    except OSError as error:
+        raise _common.WebInputError(str(error)) from error
 
 
 def _legacy_files(legacy_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
@@ -397,12 +384,15 @@ def _migratable_legacy_files(
     legacy_root: pathlib.Path,
     files: tuple[pathlib.Path, ...],
 ) -> tuple[pathlib.Path, ...]:
-    """日付階層の正規作業バンドルを除いた旧形式ファイルを返す。"""
+    """正規作業バンドルを除いた旧形式ファイルを返す。"""
     migratable: list[pathlib.Path] = []
     for main, members in _associated_groups(files).items():
         try:
             relative = main.relative_to(legacy_root)
-            _plan_file.validate_plan_relative_path(relative)
+            if len(relative.parts) == 1:
+                _plan_file.validate_working_plan_relative_path(relative)
+            else:
+                _plan_file.validate_plan_relative_path(relative)
         except ValueError:
             migratable.extend(members)
     return tuple(sorted(migratable))

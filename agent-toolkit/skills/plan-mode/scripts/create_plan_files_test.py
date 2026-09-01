@@ -60,7 +60,7 @@ def _sources(repo: pathlib.Path, directory: pathlib.Path, *, bug: bool = False) 
 
 
 def test_creates_two_files_for_normal_plan(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
-    """通常変更は作業rootの日付階層へ二ファイルを保存する。"""
+    """通常変更は未作成の作業root直下へ二ファイルを保存する。"""
     private_notes = tmp_path / "private-notes"
     main_source, detail_source = _sources(repo, tmp_path)
     monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
@@ -74,9 +74,10 @@ def test_creates_two_files_for_normal_plan(repo: pathlib.Path, tmp_path: pathlib
         work_dir=repo,
     )
 
-    assert main_path == tmp_path / "home/.claude/plans/2026/08/30-計画保存先移行-a1b2.md"
-    assert detail_path == tmp_path / "home/.claude/plans/2026/08/30-計画保存先移行-a1b2.detail.md"
+    assert main_path == tmp_path / "home/.claude/plans/30-計画保存先移行-a1b2.md"
+    assert detail_path == tmp_path / "home/.claude/plans/30-計画保存先移行-a1b2.detail.md"
     assert detail_path.is_file()
+    assert not (tmp_path / "home/.claude/plans/2026").exists()
     assert not private_notes.exists()
 
 
@@ -110,9 +111,9 @@ def test_cli_creates_three_files_for_bug_plan(
         ]
     )
     output = capsys.readouterr()
+    assert result == 0, output.err
     main_path, detail_path, bug_path = (pathlib.Path(value) for value in output.out.splitlines())
 
-    assert result == 0, output.err
     assert detail_path == main_path.with_name("30-バグ対応計画-a1b2.detail.md")
     assert bug_path == main_path.with_name("30-バグ対応計画-a1b2.bugs.md")
     assert create_plan_files.PLAN_STEM_PLACEHOLDER not in detail_path.read_text(encoding="utf-8")
@@ -199,7 +200,7 @@ def test_creation_lock_does_not_touch_private_notes_repo(
 def test_retries_when_candidate_stem_is_taken(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
     """同じstemの付属ファイルがある候補を避けて再試行する。"""
     private_notes = tmp_path / "private-notes"
-    directory = tmp_path / "home/.claude/plans/2026/08"
+    directory = tmp_path / "home/.claude/plans"
     directory.mkdir(parents=True)
     (directory / "30-計画保存先移行-a1b2.review.md").write_text("既存\n", encoding="utf-8")
     main_source, detail_source = _sources(repo, tmp_path)
@@ -238,7 +239,7 @@ def test_removes_partial_files_when_structure_check_fails(repo: pathlib.Path, tm
             work_dir=repo,
         )
 
-    directory = tmp_path / "home/.claude/plans/2026/08"
+    directory = tmp_path / "home/.claude/plans"
     assert not list(directory.glob("30-計画保存先移行-a1b2.*"))
 
 
@@ -263,7 +264,7 @@ def test_removes_three_files_when_structure_check_fails(repo: pathlib.Path, tmp_
             work_dir=repo,
         )
 
-    assert not list((tmp_path / "home/.claude/plans/2026/08").glob("30-バグ対応計画-a1b2.*"))
+    assert not list((tmp_path / "home/.claude/plans").glob("30-バグ対応計画-a1b2.*"))
 
 
 def test_rejects_portable_reference_outside_private_notes(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
@@ -286,25 +287,25 @@ def test_rejects_portable_reference_outside_private_notes(repo: pathlib.Path, tm
             work_dir=repo,
         )
 
-    assert not list((tmp_path / "home/.claude/plans/2026/08").glob("30-計画保存先移行-a1b2.*"))
+    assert not list((tmp_path / "home/.claude/plans").glob("30-計画保存先移行-a1b2.*"))
 
 
-def test_rejects_date_directory_symlink_outside_private_notes(
+def test_rejects_working_root_symlink_outside_claude_directory(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """年月ディレクトリの祖先がroot外symlinkなら計画ファイルを作成しない。"""
+    """計画作業rootが~/.claude外のsymlinkなら計画ファイルを作成しない。"""
     private_notes = tmp_path / "private-notes"
-    plans_root = tmp_path / "home/.claude/plans"
-    plans_root.mkdir(parents=True)
+    claude_root = tmp_path / "home/.claude"
+    claude_root.mkdir(parents=True)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (plans_root / "2026").symlink_to(outside, target_is_directory=True)
+    (claude_root / "plans").symlink_to(outside, target_is_directory=True)
     main_source, detail_source = _sources(repo, tmp_path)
     monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
 
-    with pytest.raises(create_plan_files.PlanCreationError, match="計画作業rootの外"):
+    with pytest.raises(create_plan_files.PlanCreationError, match=r"計画作業rootが~?/?.*外"):
         create_plan_files.create_plan_files(
             main_source,
             detail_source,
@@ -348,7 +349,7 @@ def test_removes_only_owned_main_when_detail_finalization_fails(
             work_dir=repo,
         )
 
-    assert not list((tmp_path / "home/.claude/plans/2026/08").glob("30-計画保存先移行-a1b2.*"))
+    assert not list((tmp_path / "home/.claude/plans").glob("30-計画保存先移行-a1b2.*"))
 
 
 def test_removes_main_and_detail_when_bug_finalization_fails(
@@ -383,7 +384,7 @@ def test_removes_main_and_detail_when_bug_finalization_fails(
             work_dir=repo,
         )
 
-    assert not list((tmp_path / "home/.claude/plans/2026/08").glob("30-バグ対応計画-a1b2.*"))
+    assert not list((tmp_path / "home/.claude/plans").glob("30-バグ対応計画-a1b2.*"))
 
 
 def test_removes_files_when_final_readback_does_not_match(
@@ -395,7 +396,7 @@ def test_removes_files_when_final_readback_does_not_match(
     private_notes = tmp_path / "private-notes"
     main_source, detail_source = _sources(repo, tmp_path)
     original_read_bytes = pathlib.Path.read_bytes
-    final_main = tmp_path / "home/.claude/plans/2026/08/30-計画保存先移行-a1b2.md"
+    final_main = tmp_path / "home/.claude/plans/30-計画保存先移行-a1b2.md"
     mismatched = False
 
     def return_mismatch_once(path: pathlib.Path) -> bytes:
@@ -418,7 +419,7 @@ def test_removes_files_when_final_readback_does_not_match(
             work_dir=repo,
         )
 
-    assert not list((tmp_path / "home/.claude/plans/2026/08").glob("30-計画保存先移行-a1b2.*"))
+    assert not list((tmp_path / "home/.claude/plans").glob("30-計画保存先移行-a1b2.*"))
 
 
 def test_parallel_creation_returns_complete_distinct_pairs(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
@@ -444,4 +445,4 @@ def test_parallel_creation_returns_complete_distinct_pairs(repo: pathlib.Path, t
         assert main_path.is_file()
         assert detail_path == main_path.with_name(main_path.stem + ".detail.md")
         assert detail_path.is_file()
-    assert not list((tmp_path / "home/.claude/plans/2026/08").glob(".*.tmp"))
+    assert not list((tmp_path / "home/.claude/plans").glob(".*.tmp"))
