@@ -166,7 +166,10 @@ PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
 )
 PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)$")
-PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "保留", "対象外", "移管")
+PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
+"""計画ファイル（メイン）の実施内容表が受理する採否値。"""
+PLAN_ACTION_NON_ADOPTED_DECISIONS: tuple[str, ...] = ("不採用", "充足済み", "保留", "対象外", "移管")
+"""実装単位を持たない採否値。根拠へ理由の記載を要求し、`ユーザー指示との関係`へ`非該当`を許容する。"""
 PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
 PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- 計画ファイル（バグ）:"
 PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX: str = "- バグ調査ファイル:"
@@ -2275,7 +2278,7 @@ def _check_action_references(
                 elif reference not in adopted_requirement_ids:
                     errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
             continue
-        if decision in ("不採用", "保留", "対象外", "移管"):
+        if decision in PLAN_ACTION_NON_ADOPTED_DECISIONS:
             if not root:
                 errors.append("`## 実施内容`の非採用系の`根拠`は理由を記載する")
                 continue
@@ -2414,7 +2417,7 @@ def _check_history_rows(
 
 
 def _check_action_decisions(table: MarkdownTable) -> list[str]:
-    """新形式の実施内容表の`採否`が6値のいずれかであることを検査する。"""
+    """新形式の実施内容表の`採否`が宣言済みの値であることを検査する。"""
     if table.header != PLAN_ACTION_TABLE_HEADER:
         return []
     column = table.header.index("採否")
@@ -2437,13 +2440,7 @@ def _check_action_relations(table: MarkdownTable) -> list[str]:
         if (
             decision_column is not None
             and len(row) > decision_column
-            and row[decision_column]
-            in (
-                "不採用",
-                "保留",
-                "対象外",
-                "移管",
-            )
+            and row[decision_column] in PLAN_ACTION_NON_ADOPTED_DECISIONS
         ):
             allowed = (*PLAN_ACTION_RELATIONS, PLAN_NON_QUEUE_VALUE)
         if row[column] not in allowed:

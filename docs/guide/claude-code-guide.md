@@ -429,7 +429,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、通常型フィードバック又はTBDを手動投入する
 - `agent-toolkit:process-feedbacks`: ①選定とレーン分け、②並列レーン実行、③全レーン後のpush・CI・終了の3段階でフィードバックを処理する。
   計画型は既存計画を、通常型は1レーン1計画を使い、全ての実装要求に計画・計画レビュー・実装・実装レビューを要求する。
-  実装不要、既存実装で充足済み、reject又はholdの項目は計画やworktreeを作成せず終端する。
+  実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
   各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
 - `agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
 - `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス

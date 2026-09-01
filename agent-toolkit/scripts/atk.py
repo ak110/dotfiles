@@ -441,7 +441,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         type=_cooldown_days,
         default=None,
         metavar="DAYS",
-        help="外部条件待ちのフィードバックを指定日数（3以上）だけ再処理対象から除外する。",
+        help="時間経過だけで解除される待機のため、指定日数（3以上）だけ再処理対象から除外する。",
     )
     return_to_inbox.add_argument(
         "--state",
