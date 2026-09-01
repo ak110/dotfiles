@@ -414,6 +414,73 @@ def _write_feedback_file(
     return path
 
 
+def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
+    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。"""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
+    notes = _setup_notes(tmp_path)
+    (notes / ".gitignore").write_text("plans/.agent-toolkit-plan-create.lock\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "base"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "remote", "add", "origin", str(origin)], check=True)
+    subprocess.run(["git", "-C", str(notes), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    marker = notes / "pending.txt"
+    marker.write_text("pending\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "pending"], check=True, capture_output=True)
+    return notes
+
+
+def test_main_reports_pending_commit_only_for_sync_mutations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同期対象操作だけが未pushを終了コード3で通知する。"""
+    notes = _setup_notes_with_pending_commit(tmp_path)
+    atk_members = vars(atk)
+    common_module = atk_members["_common"]
+    mutations_module = atk_members["_mutations"]
+    list_module = atk_members["_list"]
+    plans_module = atk_members["_plans"]
+    monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(common_module, "notify_unanswered_tbds_if_any", lambda *_args: None)
+    monkeypatch.setattr(mutations_module, "_cmd_start_processing", lambda *_args: None)
+    monkeypatch.setattr(list_module, "_cmd_list", lambda *_args: None)
+    monkeypatch.setattr(mutations_module, "_cmd_convert_to_plan", lambda *_args: None)
+    monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "start-processing", "feedback.md"], home=tmp_path)
+    assert exc_info.value.code == 3
+    stderr = capsys.readouterr().err
+    assert "private-notesに未pushのcommitが1件残っています" in stderr
+    assert f"`git -C {notes.resolve()} status`" in stderr
+    assert "atk mq commit" in stderr
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
+    assert exc_info.value.code == 0
+    assert "未pushのcommit" not in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "convert-to-plan", "feedback.md", "--plan-file", str(tmp_path / "plan.md"), "--skip-push"],
+            home=tmp_path,
+        )
+    assert exc_info.value.code == 0
+    assert "未pushのcommit" not in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["plans", "migrate"], home=tmp_path)
+    assert exc_info.value.code == 3
+    assert "private-notesに未pushのcommitが1件残っています" in capsys.readouterr().err
+
+
 class TestMutationTargetRepoParserOption:
     """mutation系サブコマンドの`--target-repo`受理をargparseレベルで検証する。"""
 

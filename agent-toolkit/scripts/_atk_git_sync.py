@@ -3,6 +3,16 @@
 MQ固有のfrontmatterや状態遷移を持たず、同じGit作業コピーを更新する処理に共通する
 ロック、対象限定commit、remote同期、push再試行だけを提供する。呼び出し元は
 `repo_lock()`保持下でファイル変更とGit操作を行う。
+
+private-notesへcommitする操作は、副作用を確定した後も未pushのcommitが残る場合に、
+呼び出し元のCLIが専用の終了コードで同期未達を通知する。同期の保留は
+`push_pending_commits`の内部分岐で決まり、各サブコマンドからは観測できないため、
+通知の判定材料を本モジュールが提供する。
+pullとpushの失敗も呼び出し元の実行主体が次の操作を決められる必要があるため、
+失敗理由を示すgitの出力に続けて、本モジュールが確認コマンドと再実行の手順を出力する。
+前提検査と失敗時の復元は、当該操作が書き込む対象パスへ限定する。共有Git作業コピーへ
+複数の実行主体が並行して書き込むため、repo全体を対象とする前提と復元は他の主体の成果を
+壊すか、当該操作を恒常的に成立させなくする。
 """
 
 from __future__ import annotations
@@ -209,6 +219,26 @@ def pull(
     redundant_divergence: _DivergenceRecovery | None = None,
 ) -> None:
     """remoteをfetchし、fast-forwardと安全な回復で明示したupstreamへ統合する。"""
+    try:
+        _pull_impl(
+            private_notes,
+            run_git=run_git,
+            result_runner=result_runner,
+            redundant_divergence=redundant_divergence,
+        )
+    except subprocess.CalledProcessError:
+        _report_sync_failure(private_notes, "pull")
+        raise
+
+
+def _pull_impl(
+    private_notes: pathlib.Path,
+    *,
+    run_git: _GitRunner,
+    result_runner: _GitResultRunner,
+    redundant_divergence: _DivergenceRecovery | None,
+) -> None:
+    """pullのGit操作本体を実行する。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
@@ -270,13 +300,34 @@ def _history_has_diverged(private_notes: pathlib.Path, *, run_git: _GitRunner) -
 def is_worktree_dirty(
     private_notes: pathlib.Path,
     *,
+    paths: Iterable[str] | None = None,
     result_runner: _GitResultRunner = _run_git_result,
 ) -> bool:
     """index・worktree・未追跡ファイルを含む変更の有無を返す。"""
-    result = result_runner(["status", "--porcelain"], private_notes)
+    args = ["status", "--porcelain"]
+    if paths is not None:
+        args.extend(("--", *paths))
+    result = result_runner(args, private_notes)
     if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, ["git", "status", "--porcelain"], result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, ["git", *args], result.stdout, result.stderr)
     return bool(result.stdout.strip())
+
+
+def pending_commit_count(
+    private_notes: pathlib.Path,
+    *,
+    result_runner: _GitResultRunner = _run_git_result,
+) -> int | None:
+    """upstreamへ未送信のローカルcommit数を返す。"""
+    if not has_remote(private_notes):
+        return 0
+    result = result_runner(["rev-list", "--count", "@{u}..HEAD"], private_notes)
+    if result.returncode != 0:
+        return None
+    try:
+        return int(result.stdout.strip())
+    except ValueError:
+        return None
 
 
 def _recover_redundant_divergence(
@@ -356,6 +407,18 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
     )
 
 
+def _report_sync_failure(private_notes: pathlib.Path, operation: str) -> None:
+    """pull又はpush失敗後に確認と再実行の手順を表示する。"""
+    resolved = private_notes.resolve()
+    print(f"private-notesの{operation}に失敗しました: {resolved}", file=sys.stderr)
+    print(
+        "直前のgitの出力が失敗理由です。認証、ネットワーク接続、remoteの状態のいずれかを解消してください。",
+        file=sys.stderr,
+    )
+    print(f"確認: `git -C {resolved} status`", file=sys.stderr)
+    print("解消後、失敗した`atk`操作を再実行すると同期を完了できます。", file=sys.stderr)
+
+
 def push_pending_commits(
     private_notes: pathlib.Path,
     *,
@@ -364,6 +427,26 @@ def push_pending_commits(
     redundant_divergence: _DivergenceRecovery | None = None,
 ) -> None:
     """branch上の未push commitを送信し、履歴分岐だけをrebaseして再送する。"""
+    try:
+        _push_pending_commits_impl(
+            private_notes,
+            run_git=run_git,
+            result_runner=result_runner,
+            redundant_divergence=redundant_divergence,
+        )
+    except subprocess.CalledProcessError:
+        _report_sync_failure(private_notes, "push")
+        raise
+
+
+def _push_pending_commits_impl(
+    private_notes: pathlib.Path,
+    *,
+    run_git: _GitRunner,
+    result_runner: _GitResultRunner,
+    redundant_divergence: _DivergenceRecovery | None,
+) -> None:
+    """pushのGit操作本体を実行する。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):

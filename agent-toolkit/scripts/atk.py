@@ -86,6 +86,25 @@ _inbox_filename_completer = _common.make_filename_completer((_common.MQ_STATE_IN
 _processing_filename_completer = _common.make_filename_completer((_common.MQ_STATE_PROCESSING,))
 _tbd_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES, _common.MQ_TYPE_TBD)
 
+_MQ_SYNC_MUTATIONS = frozenset(
+    (
+        "add",
+        "start-planning",
+        "start-processing",
+        "hold",
+        "unhold",
+        "return-to-inbox",
+        "adopt",
+        "reject",
+        "rm",
+        "edit",
+        "convert-to-plan",
+        "set-dependencies",
+        "answer",
+        "commit",
+    )
+)
+
 
 def _cooldown_days(value: str) -> int:
     """3以上の再処理抑制日数をargparse向けに検証する。"""
@@ -856,6 +875,13 @@ def _validate_add_args(args: argparse.Namespace) -> None:
         args.type = "feedback"
 
 
+def _sync_exit_code(exit_code: int, private_notes: pathlib.Path, *, should_check: bool) -> int:
+    """成功した同期対象操作に未push通知の終了コードを反映する。"""
+    if exit_code == 0 and should_check and _common._notify_unpushed_commits_if_any(private_notes):
+        return 3
+    return exit_code
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -947,7 +973,14 @@ def main(
     if args.command == "plans":
         private_notes = _common._ensure_environment(home)
         try:
-            sys.exit(_plans.dispatch(args, private_notes, home))
+            exit_code = _plans.dispatch(args, private_notes, home)
+            sys.exit(
+                _sync_exit_code(
+                    exit_code,
+                    private_notes,
+                    should_check=not getattr(args, "skip_push", False),
+                )
+            )
         except (_common.WebInputError, _atk_git_sync.RebaseInProgressError) as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
@@ -996,6 +1029,11 @@ def main(
     except subprocess.CalledProcessError as error:
         print(f"Git操作に失敗しました: {error}", file=sys.stderr)
         sys.exit(1)
+    exit_code = _sync_exit_code(
+        exit_code,
+        private_notes,
+        should_check=sub in _MQ_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
+    )
     suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
         sub == "show" and _show._covers_unanswered_tbds(args)
     )
