@@ -1095,7 +1095,7 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインが版数・生成物同期、push、CI及び終端工程を1回だけ実行する。
 
-`agent-toolkit:process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。
+`agent-toolkit:process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りが即時対応のcommitを生む場合は、固定報告の前に同じ版数判定・生成同期・push・CI確認を当該commitへ1巡だけ適用する。振り返りを再実施しないことで、公開経路と振り返りの相互再帰を避ける。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
 
 本文の明示記載を不可逆操作の認可とし、明記のない操作はTBDへ送る。
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、
