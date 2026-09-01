@@ -299,6 +299,23 @@ def test_parser_rejects_invalid_track(argv: list[str]) -> None:
             ["review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘", "--file", "本文.txt"],
             ("--issue", "--issue-file", "--location", "--location-file", "--round", "--track"),
         ),
+        (
+            "respond",
+            ["review.tsv", "--file", "response.txt", "--response-needed=yes", "位置", "指摘"],
+            (
+                "--issue",
+                "--issue-file",
+                "--location",
+                "--location-file",
+                "--no-response-reason",
+                "--no-response-reason-file",
+                "--response",
+                "--response-file",
+                "--response-needed",
+                "--round",
+                "--track",
+            ),
+        ),
         ("show", ["review.tsv", "--all"], ("--track",)),
         (
             "add",
@@ -342,6 +359,50 @@ def test_cell_file_options_are_shown_in_help(
     help_text = capsys.readouterr().out
     for option in options:
         assert option in help_text
+
+
+@pytest.mark.parametrize(
+    ("subcommand", "expected_descriptions"),
+    (
+        ("add", ("指摘を登録するレビューの区分", "追加する指摘箇所", "追加する指摘内容")),
+        (
+            "respond",
+            (
+                "更新する行を特定する指摘箇所",
+                "更新する行を特定する指摘内容",
+                "対応要とした指摘へ記録する対応内容",
+                "対応不要とした指摘へ記録する理由",
+            ),
+        ),
+        ("show", ("表示対象を指定したレビュー区分の行だけに限定する",)),
+        ("validate", ("未応答行を許容し、7列と複合キーなどの構造だけを検証する",)),
+    ),
+)
+def test_option_help_describes_each_subcommand_role(
+    subcommand: str,
+    expected_descriptions: tuple[str, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各オプションの説明だけで、当該サブコマンドにおける役割を判断できる。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", subcommand, "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    for description in expected_descriptions:
+        assert description in help_text
+    assert "旧8列形式はseverity列を除いて7列形式で再作成する" not in help_text
+
+
+def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:
+    """サブコマンド共通の列構成と旧形式の復旧案内は親コマンドに集約する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "列は`round`、`track`、`location`、`issue`、`response-needed`、`response`、`no-response-reason`の順" in help_text
+    assert "旧8列形式は`severity`列を除いて7列形式で作成し直す" in help_text
 
 
 def test_cell_files_preserve_issue_and_supply_responses(

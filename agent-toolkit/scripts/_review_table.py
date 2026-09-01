@@ -389,8 +389,16 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         required=True,
         help="指摘を登録するレビューのラウンド番号。1以上の整数で指定する。",
     )
-    add_command_parser.add_argument("--track", required=True, choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
-    for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
+    add_command_parser.add_argument(
+        "--track",
+        required=True,
+        choices=TRACK_VALUES,
+        help="指摘を登録するレビューの区分。レビュー工程に対応する正規値から指定する。",
+    )
+    for name, positional, description in (
+        ("location", "location_arg", "追加する指摘箇所"),
+        ("issue", "issue_arg", "追加する指摘内容"),
+    ):
         help_text = (
             "指摘箇所。`--location`か`--location-file`でも指定できる。"
             if name == "location"
@@ -409,7 +417,10 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=TRACK_VALUES,
         help="更新する行を特定するレビューの区分。省略すると他の列だけで行を特定する。",
     )
-    for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
+    for name, positional, description in (
+        ("location", "location_arg", "更新する行を特定する指摘箇所"),
+        ("issue", "issue_arg", "更新する行を特定する指摘内容"),
+    ):
         help_text = (
             "更新する行を特定する指摘箇所。`--location`か`--location-file`でも指定できる。"
             if name == "location"
@@ -423,16 +434,20 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=("yes", "no", "対応要", "対応不要"),
         help="指摘への対応要否。yes又は対応要、no又は対応不要を指定する。",
     )
-    _add_cell_options(respond_parser, "response", "対応内容")
-    _add_cell_options(respond_parser, "no-response-reason", "対応不要理由")
+    _add_cell_options(respond_parser, "response", "対応要とした指摘へ記録する対応内容")
+    _add_cell_options(respond_parser, "no-response-reason", "対応不要とした指摘へ記録する理由")
     show_parser = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk review-table show"])
     show_parser.add_argument("path", help=path_help)
-    show_parser.add_argument("--track", choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
+    show_parser.add_argument(
+        "--track",
+        choices=TRACK_VALUES,
+        help="表示対象を指定したレビュー区分の行だけに限定する。省略すると全行を表示する。",
+    )
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",
         action="store_true",
-        help=f"未応答行を許容し、{_COLUMN_COUNT}列と複合キーなどの構造だけを検証する。{_RECOVERY_GUIDANCE}",
+        help=f"未応答行を許容し、{_COLUMN_COUNT}列と複合キーなどの構造だけを検証する。",
     )
     validate_parser.add_argument("path", help=path_help)
 

@@ -28,6 +28,8 @@ def _record_operation(
     local_session_id: str,
     operation: str,
     response: dict[str, object],
+    *,
+    transcript_path: str | None = None,
 ) -> None:
     """PostToolUseを通してagents_serverの公開操作応答を記録する。"""
     remote_session_id = str(response["session_id"])
@@ -36,19 +38,19 @@ def _record_operation(
         tool_input = {"cwd": str(state_directory), "prompt": "委譲する"}
     elif operation == "send_message":
         tool_input["prompt"] = "続行する"
+    payload: dict[str, object] = {
+        "session_id": local_session_id,
+        "hook_event_name": "PostToolUse",
+        "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
+        "tool_input": tool_input,
+        "tool_response": {"structuredContent": response},
+    }
+    if transcript_path is not None:
+        payload["transcript_path"] = transcript_path
     result = _fork_runner.run_script(
         _HOOK,
         argv=("posttooluse",),
-        input=json.dumps(
-            {
-                "session_id": local_session_id,
-                "hook_event_name": "PostToolUse",
-                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
-                "tool_input": tool_input,
-                "tool_response": {"structuredContent": response},
-            },
-            ensure_ascii=False,
-        ),
+        input=json.dumps(payload, ensure_ascii=False),
         env=_environment(state_directory),
     )
     assert result.returncode == 0
@@ -59,12 +61,16 @@ def _run_stop(
     local_session_id: str,
     *,
     stop_hook_active: bool = False,
+    transcript_path: str | None = None,
 ) -> str:
     """指定セッションでStopフックを実行しstdoutを返す。"""
+    payload: dict[str, object] = {"session_id": local_session_id, "stop_hook_active": stop_hook_active}
+    if transcript_path is not None:
+        payload["transcript_path"] = transcript_path
     result = _fork_runner.run_script(
         _HOOK,
         argv=("agents_server_session_advisor",),
-        input=json.dumps({"session_id": local_session_id, "stop_hook_active": stop_hook_active}),
+        input=json.dumps(payload),
         env=_environment(state_directory),
     )
     assert result.returncode == 0
@@ -106,8 +112,8 @@ def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_pa
         json.dumps(
             {
                 "agents_server_sessions": {
-                    "session-b": {"pending_observation": True},
-                    "session-a": {"pending_observation": True},
+                    "session-b": {"pending_observation": True, "owner_agent_id": "main"},
+                    "session-a": {"pending_observation": True, "owner_agent_id": "main"},
                 }
             }
         ),
@@ -127,6 +133,28 @@ def test_start_only_record_emits_warning(tmp_path: pathlib.Path) -> None:
     """startだけの操作列は未観測作業を警告する。"""
     _record_start(tmp_path, "start-only", "remote-start-only")
     assert _run_stop(tmp_path, "start-only")
+
+
+def test_main_stop_warns_only_sessions_started_by_main(tmp_path: pathlib.Path) -> None:
+    """同じローカルsessionのサブエージェントが起動した作業をメインへ警告しない。"""
+    local_session_id = "owner-filter"
+    child_transcript = str(tmp_path / "agent-child-1.jsonl")
+    _record_operation(
+        tmp_path,
+        local_session_id,
+        "start",
+        {"session_id": "remote-child", "status": "running"},
+        transcript_path=child_transcript,
+    )
+    _record_start(tmp_path, local_session_id, "remote-main")
+
+    main_output = _run_stop(tmp_path, local_session_id)
+    assert "remote-main" in main_output
+    assert "remote-child" not in main_output
+
+    child_output = _run_stop(tmp_path, local_session_id, transcript_path=child_transcript)
+    assert "remote-child" in child_output
+    assert "remote-main" not in child_output
 
 
 def test_running_wait_satisfies_observation(tmp_path: pathlib.Path) -> None:
@@ -170,12 +198,19 @@ def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
 
 
 def test_no_pending_observation_emits_nothing(tmp_path: pathlib.Path) -> None:
-    """記録不在と全記録が偽の状態では何も出力しない。"""
+    """記録不在、偽の記録及び責任主体を確定できない旧記録では何も出力しない。"""
     assert _run_stop(tmp_path, "no-state") == ""
     local_session_id = "all-observed"
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)
     state_path.write_text(
-        json.dumps({"agents_server_sessions": {"remote": {"pending_observation": False}}}),
+        json.dumps(
+            {
+                "agents_server_sessions": {
+                    "observed": {"pending_observation": False, "owner_agent_id": "main"},
+                    "legacy": {"pending_observation": True},
+                }
+            }
+        ),
         encoding="utf-8",
     )
     assert _run_stop(tmp_path, local_session_id) == ""

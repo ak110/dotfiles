@@ -1394,6 +1394,7 @@ class TestAgentsServerSessionState:
         state = _read_state(tmp_path, sid)
         assert state["agents_server_cwd_by_session"] == {"thread-start": str(tmp_path)}
         assert "cwd" not in state["agents_server_sessions"]["thread-start"]
+        assert state["agents_server_sessions"]["thread-start"]["owner_agent_id"] == "main"
 
     @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
@@ -1552,3 +1553,50 @@ class TestAgentsServerSessionState:
         remote_session_id = "remote-kill"
         assert run_operation(sid, remote_session_id, "start", status="running") is True
         assert run_operation(sid, remote_session_id, "kill", status="interrupted") is False
+
+    def test_pending_work_records_the_agent_that_triggered_it(self, tmp_path: pathlib.Path) -> None:
+        """startと配送成立send_messageは、各作業を発生させた主体を観測責任者として記録する。"""
+        sid = "pending-owner"
+        remote_session_id = "remote-owner"
+        child_transcript = str(tmp_path / "agent-child-1.jsonl")
+        _run(
+            {
+                "session_id": sid,
+                "transcript_path": child_transcript,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"cwd": str(tmp_path), "prompt": "委譲する"},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "running"}},
+            },
+            state_dir=tmp_path,
+        )
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["pending_observation"] is True
+        assert record["owner_agent_id"] == "child-1"
+
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
+                "tool_input": {"session_id": remote_session_id},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "completed"}},
+            },
+            state_dir=tmp_path,
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+                "tool_input": {"session_id": remote_session_id, "prompt": "続行する"},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": remote_session_id,
+                        "status": "running",
+                        "delivery": "reply_started",
+                    }
+                },
+            },
+            state_dir=tmp_path,
+        )
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["pending_observation"] is True
+        assert record["owner_agent_id"] == "main"

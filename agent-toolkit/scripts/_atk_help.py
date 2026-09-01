@@ -201,7 +201,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk review-table": {
         "summary": "レビュー指摘管理表（7列TSV）を操作する",
         "description": "目的: 計画レビューと実装レビューの指摘、採否、対応内容を7列のTSVへ排他的に記録する。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。\n対象と出力: 指定したTSVファイルを読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`response-needed`、`response`、`no-response-reason`の順とする。`track`は新規の経路では`plan-review`か`implementation-review`を指定し、`plan-conformance`と`independent`は保存済みの表の読み取り互換として扱う。",
+        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`response-needed`、`response`、`no-response-reason`の順とする。`track`は新規の経路では`plan-review`か`implementation-review`を指定し、`plan-conformance`と`independent`は保存済みの表の読み取り互換として扱う。旧8列形式は`severity`列を除いて7列形式で作成し直す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
@@ -225,7 +225,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table validate": {
         "summary": "レビュー表を検証する",
-        "description": "目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。旧8列形式の表は、severity列を除いた7列形式で作成し直す。",
+        "description": "目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table validate /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
 }
