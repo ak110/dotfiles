@@ -369,6 +369,15 @@ atk plans commit dd-{名称}-{小文字16進数4桁}.md
 
 `atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表を、メイン計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
 pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
+保存済みの計画を再び実装するときは、保存rootからの相対パスを指定して計画バンドルを作業rootへ取得する。
+
+```bash
+atk plans checkout yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
+```
+
+`atk plans checkout`は同じstemのメイン側、detail側、付属ファイル及びレビュー表を作業root直下へ複製し、取得時点の内容を保存の照合用に記録する。
+取得した計画は`atk plans commit`で取得元と同じ保存先へ戻す。
+取得の後に保存元が変わった場合は、保存先と作業側のいずれも変更せずに失敗する。
 `~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。直下の正規作業バンドルと既存の日付階層の正規作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
 
 ```bash

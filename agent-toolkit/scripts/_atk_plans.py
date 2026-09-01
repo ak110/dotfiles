@@ -1,8 +1,14 @@
-"""計画ファイルのcommitと旧保存先からの移行を提供するCLI補助。"""
+"""計画ファイルのcheckout・commitと旧保存先からの移行を提供するCLI補助。
+
+checkout記録は取得からcommit成功まで保持し、取得元と取得時点の内容を更新時の
+競合検出に使う。commit又はpush失敗後の再実行と、作業バンドルを削除して取得を
+取り消した後の記録回収も、同じ`atk plans commit`で処理する。
+"""
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import pathlib
 import re
@@ -18,6 +24,7 @@ import _atk_mq_common as _common
 import _atk_mq_frontmatter as _frontmatter
 import _git_command
 import _plan_file
+import platformdirs
 
 _MIGRATION_SECTION_NAMES = frozenset(("変更履歴（計画時）", "変更履歴"))
 _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]*)")
@@ -47,6 +54,12 @@ def build_parser(parser) -> None:
         "--skip-push",
         action="store_true",
         help="保存rootへ対象限定commitを作成し、pushは行わない",
+    )
+    checkout_parser = _atk_help.add_command(sub, "checkout", **_atk_help.HELP["atk plans checkout"])
+    checkout_parser.add_argument(
+        "plan_file",
+        metavar="PLAN_FILE",
+        help="plans rootからの相対メイン計画パス。",
     )
     _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
 
@@ -128,6 +141,188 @@ def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib
     return candidates
 
 
+def _saved_plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """保存rootに実在する指定stemの通常ファイルを返す。"""
+    root = _plan_file.new_plans_root(private_notes).resolve(strict=False)
+    parent = (root / relative_main.parent).resolve(strict=False)
+    if not parent.is_relative_to(root):
+        raise _common.WebInputError("計画保存バンドルが保存root外を指しています")
+    main = parent / relative_main.name
+    if not main.is_file() or main.is_symlink():
+        return ()
+    stem = main.stem
+    return tuple(
+        sorted(
+            path
+            for path in parent.iterdir()
+            if (path == main or path.name.startswith(f"{stem}."))
+            and path.is_file()
+            and not path.is_symlink()
+            and not _excluded_path(path)
+        )
+    )
+
+
+def _bundle_contents_at_ref(
+    private_notes: pathlib.Path,
+    relative_main: pathlib.Path,
+    ref: str,
+) -> dict[str, bytes]:
+    """Git参照上の指定stemをworktreeへ反映せず読み取る。"""
+    relative_parent = pathlib.Path(_plan_file.NEW_PLANS_DIRECTORY) / relative_main.parent
+    result = _git_command.run(
+        ["ls-tree", "-rz", "--name-only", ref, "--", relative_parent.as_posix()],
+        cwd=private_notes,
+        check=True,
+        capture_output=True,
+        text=False,
+    )
+    if not isinstance(result.stdout, bytes):
+        raise RuntimeError("git ls-treeの出力をbytesとして取得できません")
+    main_path = relative_parent / relative_main.name
+    stem = relative_main.stem
+    paths = tuple(pathlib.Path(raw.decode("utf-8")) for raw in result.stdout.split(b"\0") if raw)
+    bundle = tuple(
+        path
+        for path in paths
+        if path.parent == relative_parent
+        and (path == main_path or path.name.startswith(f"{stem}."))
+        and not _excluded_path(path)
+    )
+    if main_path not in bundle:
+        return {}
+    contents: dict[str, bytes] = {}
+    for path in bundle:
+        content = _git_command.run(
+            ["show", f"{ref}:{path.as_posix()}"],
+            cwd=private_notes,
+            check=True,
+            capture_output=True,
+            text=False,
+        )
+        if not isinstance(content.stdout, bytes):
+            raise RuntimeError("git showの出力をbytesとして取得できません")
+        contents[path.name] = content.stdout
+    return contents
+
+
+def _checkout_record_root(relative_main: pathlib.Path) -> pathlib.Path:
+    """指定計画stemのcheckout記録ディレクトリを返す。"""
+    state_root = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    return state_root / "plan-checkouts" / relative_main.stem
+
+
+def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
+    """正規形式又は移行済み形式の保存root相対メイン計画パスを返す。"""
+    try:
+        return _plan_file.validate_plan_relative_path(plan_file)
+    except ValueError as canonical_error:
+        try:
+            return _plan_file.validate_migrated_plan_relative_path(plan_file)
+        except ValueError as migrated_error:
+            raise _common.WebInputError(str(canonical_error)) from migrated_error
+
+
+def _read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, dict[str, bytes]] | None:
+    """checkout記録を検証して読み込む。"""
+    root = _checkout_record_root(relative_main)
+    if not root.exists():
+        return None
+    if root.is_symlink() or not root.is_dir():
+        raise _common.WebInputError(f"計画の取得記録が不正です: {root}")
+    try:
+        raw_metadata = json.loads((root / "meta.json").read_text(encoding="utf-8"))
+        recorded_relative = _validate_saved_plan_relative_path(raw_metadata["relative_main"])
+    except (OSError, KeyError, TypeError, _common.WebInputError, json.JSONDecodeError) as error:
+        raise _common.WebInputError(f"計画の取得記録を読み取れません: {root}") from error
+    if recorded_relative.stem != relative_main.stem:
+        raise _common.WebInputError(f"計画の取得記録とstemが一致しません: {root}")
+    files_root = root / "files"
+    if files_root.is_symlink() or not files_root.is_dir():
+        raise _common.WebInputError(f"計画の取得記録にファイルsnapshotがありません: {root}")
+    snapshots: dict[str, bytes] = {}
+    for path in files_root.iterdir():
+        if path.is_symlink() or not path.is_file() or _excluded_path(path):
+            raise _common.WebInputError(f"計画の取得記録に不正なファイルがあります: {path}")
+        snapshots[path.name] = path.read_bytes()
+    if recorded_relative.name not in snapshots:
+        raise _common.WebInputError(f"計画の取得記録にメイン計画がありません: {root}")
+    return recorded_relative, snapshots
+
+
+def _remove_checkout_record(relative_main: pathlib.Path) -> None:
+    """指定計画のcheckout記録だけを回収する。"""
+    root = _checkout_record_root(relative_main)
+    if not root.exists():
+        return
+    files_root = root / "files"
+    if files_root.is_dir() and not files_root.is_symlink():
+        for path in files_root.iterdir():
+            if path.is_file() and not path.is_symlink():
+                path.unlink()
+        files_root.rmdir()
+    metadata = root / "meta.json"
+    if metadata.is_file() and not metadata.is_symlink():
+        metadata.unlink()
+    root.rmdir()
+
+
+def _write_checkout_record(relative_main: pathlib.Path, snapshots: dict[str, bytes]) -> None:
+    """取得元と取得時点のbytesをcheckout記録へ排他的に保存する。"""
+    root = _checkout_record_root(relative_main)
+    try:
+        root.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise _common.WebInputError(f"同じ計画を取得済みです: {relative_main}") from error
+    try:
+        files_root = root / "files"
+        files_root.mkdir()
+        (root / "meta.json").write_text(
+            json.dumps({"relative_main": relative_main.as_posix()}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        for name, content in snapshots.items():
+            (files_root / name).write_bytes(content)
+    except Exception:
+        _remove_checkout_record(relative_main)
+        raise
+
+
+def checkout_plan(
+    private_notes: pathlib.Path,
+    plan_file: str,
+    *,
+    home: pathlib.Path | str | None = None,
+) -> tuple[pathlib.Path, ...]:
+    """保存済み計画バンドルを作業rootへ取得し、取得時点を記録する。"""
+    relative_main = _validate_saved_plan_relative_path(plan_file)
+    if _checkout_record_root(relative_main).exists():
+        raise _common.WebInputError(f"同じ計画を取得済みです: {relative_main}")
+    saved_bundle = _saved_plan_bundle(private_notes, relative_main)
+    if not saved_bundle:
+        raise _common.WebInputError(f"指定したメイン計画が見つかりません: {relative_main}")
+    working_root = _plan_file.working_plans_root(home)
+    destinations = tuple(working_root / path.name for path in saved_bundle)
+    conflicts = tuple(path for path in destinations if path.exists())
+    if conflicts:
+        raise _common.WebInputError(f"作業rootに同名ファイルがあります: {conflicts[0]}")
+    snapshots = {path.name: path.read_bytes() for path in saved_bundle}
+    working_root.mkdir(parents=True, exist_ok=True)
+    copied: list[pathlib.Path] = []
+    try:
+        for destination in destinations:
+            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(snapshots[destination.name])
+            copied.append(destination)
+        _write_checkout_record(relative_main, snapshots)
+    except Exception:
+        for path in copied:
+            path.unlink(missing_ok=True)
+        raise
+    return destinations
+
+
 def _copy_working_bundle(
     private_notes: pathlib.Path,
     relative_main: pathlib.Path,
@@ -192,6 +387,64 @@ def _remove_finalized_working_bundle(
                 directory.rmdir()
             except OSError:
                 break
+
+
+def _working_snapshots(
+    working_bundle: tuple[pathlib.Path, ...],
+) -> dict[pathlib.Path, tuple[tuple[int, int], bytes]]:
+    """作業バンドルの回収前照合用snapshotを返す。"""
+    snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
+    for source in working_bundle:
+        metadata = source.stat(follow_symlinks=False)
+        snapshots[source] = ((metadata.st_dev, metadata.st_ino), source.read_bytes())
+    return snapshots
+
+
+def _remove_checked_out_working_bundle(
+    working_bundle: tuple[pathlib.Path, ...],
+    snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]],
+    relative_main: pathlib.Path,
+) -> None:
+    """保存成功後に変更されていないcheckout作業バンドルを回収する。"""
+    for source in working_bundle:
+        identity, content = snapshots[source]
+        current = source.stat(follow_symlinks=False)
+        if (current.st_dev, current.st_ino) != identity or source.read_bytes() != content:
+            raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
+    for source in sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name)):
+        source.unlink()
+
+
+def _bundle_contents(bundle: Iterable[pathlib.Path]) -> dict[str, bytes]:
+    """計画バンドルをファイル名からbytesへの写像として返す。"""
+    return {path.name: path.read_bytes() for path in bundle}
+
+
+def _update_saved_bundle(
+    destination_directory: pathlib.Path,
+    saved_bundle: tuple[pathlib.Path, ...],
+    working_contents: dict[str, bytes],
+) -> tuple[pathlib.Path, ...]:
+    """保存側のinodeを維持して作業側の内容へ更新する。
+
+    claude-plans-viewerは作成日時を計画の並び順へ使うため、同名の既存ファイルは
+    置換せず書き込み、新規ファイルだけを排他的に作成する。
+    """
+    saved_by_name = {path.name: path for path in saved_bundle}
+    for name, content in working_contents.items():
+        destination = destination_directory / name
+        if name in saved_by_name:
+            destination.write_bytes(content)
+        else:
+            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(content)
+        if destination.read_bytes() != content:
+            raise _common.WebInputError(f"保存した計画ファイルの読戻し内容が一致しません: {destination}")
+    for name, path in saved_by_name.items():
+        if name not in working_contents:
+            path.unlink()
+    return tuple(sorted(destination_directory / name for name in working_contents))
 
 
 def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content: bytes) -> None:
@@ -288,29 +541,68 @@ def commit_plan(
                 relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
             except ValueError:
                 raise _common.WebInputError(str(working_error)) from saved_error
-    working_bundle = _working_plan_bundle(home, working_relative or relative_main)
-    if working_relative is not None and not working_bundle:
+    requested_relative = working_relative or relative_main
+    checkout_record = _read_checkout_record(requested_relative)
+    recorded_contents: dict[str, bytes] = {}
+    if checkout_record is not None:
+        relative_main, recorded_contents = checkout_record
+        working_lookup_relative = pathlib.Path(relative_main.name)
+    else:
+        working_lookup_relative = requested_relative
+    working_bundle = _working_plan_bundle(home, working_lookup_relative)
+    if checkout_record is not None:
+        if not working_bundle:
+            _remove_checkout_record(requested_relative)
+            return {"plan_file": relative_main.as_posix(), "paths": (), "message": ""}
+    elif working_relative is not None and not working_bundle:
         raise _common.WebInputError(f"指定した作業中の計画バンドルが見つかりません: {working_relative}")
-    if working_relative is not None and working_bundle:
+    if checkout_record is None and working_relative is not None and working_bundle:
         working_main = _plan_file.working_plans_root(home) / working_relative
         date = _birth_date(working_main).split("/")
         relative_main = pathlib.Path(date[0], date[1], working_relative.name)
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
         saved_bundle_exists = saved_main.is_file()
-        if not working_bundle or not saved_bundle_exists:
+        if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
+            _git_command.run(["fetch"], cwd=private_notes, check=True)
+        elif not working_bundle or not saved_bundle_exists:
             if not skip_push:
                 _atk_git_sync.push_pending_commits(private_notes)
             _atk_git_sync.pull(private_notes)
         snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
-        if working_bundle:
+        if checkout_record is not None:
+            saved_bundle = _saved_plan_bundle(private_notes, relative_main)
+            if not saved_bundle:
+                raise _common.WebInputError(f"取得元の計画バンドルが見つかりません: {relative_main}")
+            saved_contents = _bundle_contents(saved_bundle)
+            working_contents = _bundle_contents(working_bundle)
+            remote_contents = (
+                _bundle_contents_at_ref(private_notes, relative_main, "@{u}")
+                if _atk_git_sync.has_remote(private_notes)
+                else saved_contents
+            )
+            if saved_contents not in (recorded_contents, working_contents) or remote_contents not in (
+                recorded_contents,
+                working_contents,
+            ):
+                raise _common.WebInputError(f"取得後に保存元の計画バンドルが変更されています: {relative_main}")
+            snapshots = _working_snapshots(working_bundle)
+            if saved_contents == recorded_contents:
+                _update_saved_bundle(saved_main.parent, saved_bundle, working_contents)
+            bundle = _plan_bundle(private_notes, relative_main)
+        elif working_bundle:
             bundle, snapshots = _copy_working_bundle(private_notes, relative_main, working_bundle)
         else:
             bundle = _plan_bundle(private_notes, relative_main)
         relative_paths = tuple(_as_relative_notes_path(path, private_notes) for path in bundle)
         message = f"chore: update plan {_plan_display_name(relative_main)}"
         _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=skip_push)
-        if working_bundle:
+        if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
+            raise _common.WebInputError("計画commitがremote branchへ到達したことを確認できません")
+        if checkout_record is not None:
+            _remove_checked_out_working_bundle(working_bundle, snapshots, requested_relative)
+            _remove_checkout_record(requested_relative)
+        elif working_bundle:
             _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
 
@@ -723,6 +1015,10 @@ def _git_head(private_notes: pathlib.Path) -> str:
 
 def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     """`atk plans`のサブコマンドを実行する。"""
+    if args.plans_subcommand == "checkout":
+        for path in checkout_plan(private_notes, args.plan_file, home=home):
+            print(path.resolve(strict=False))
+        return 0
     if args.plans_subcommand == "commit":
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
         action = "commitしました" if args.skip_push else "commit・pushしました"
@@ -737,4 +1033,5 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
 
 # テスト・既存呼び出し向けの短い別名。
 commit = commit_plan
+checkout = checkout_plan
 migrate = migrate_plans

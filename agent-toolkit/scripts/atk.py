@@ -30,7 +30,7 @@
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans commit/migrate: 計画bundleの対象限定commit・pushと旧保存先からの一括移行
+- plans checkout/commit/migrate: 保存済み計画の取得、計画bundleの対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する

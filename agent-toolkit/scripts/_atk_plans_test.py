@@ -1,4 +1,4 @@
-"""`atk plans commit`と旧計画root移行の実Git検証。"""
+"""`atk plans checkout`・`commit`と旧計画root移行の実Git検証。"""
 
 import datetime
 import os
@@ -11,7 +11,18 @@ import _atk_git_sync
 import _atk_mq_common as _common
 import _atk_plans
 import _plan_file
+import atk
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_state_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """POSIXとWindowsの状態ディレクトリ解決をテスト固有の場所へ隔離する。"""
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
+    monkeypatch.setenv("LOCALAPPDATA", str(state_root))
+    monkeypatch.setenv("APPDATA", str(state_root))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
 
 
 def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -45,6 +56,14 @@ def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
     _git(root, "push", "--set-upstream", "origin", "main")
 
 
+def _clone_notes(remote: pathlib.Path, clone: pathlib.Path) -> None:
+    """並行更新用のprivate-notes cloneを作成する。"""
+    _git(remote.parent, "clone", str(remote), str(clone))
+    _git(clone, "config", "user.name", "plans-test-clone")
+    _git(clone, "config", "user.email", "plans-test-clone@example.invalid")
+    _git(clone, "config", "core.quotePath", "false")
+
+
 def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:
     """取得できる作成日時と更新日時を返す。"""
     birth = _plan_file._creation_epoch(path)  # pylint: disable=protected-access
@@ -64,6 +83,24 @@ def _set_stable_mtime(path: pathlib.Path) -> tuple[float | None, int]:
     timestamp_ns = 1_700_000_000_123_456_789
     os.utime(path, ns=(timestamp_ns, timestamp_ns))
     return _preserved_times(path)
+
+
+def _assert_preserved_birth(path: pathlib.Path, expected_birth: float | None) -> None:
+    """取得できる環境では作成日時だけの維持を確認する。"""
+    if expected_birth is not None:
+        assert _plan_file._creation_epoch(path) == expected_birth  # pylint: disable=protected-access
+
+
+def _create_saved_plan(notes: pathlib.Path, relative: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """commit済みのメイン・詳細計画を作成する。"""
+    main = notes / "plans" / relative
+    detail = main.with_name(main.stem + ".detail.md")
+    main.parent.mkdir(parents=True)
+    main.write_text("# saved main\n", encoding="utf-8")
+    detail.write_text("# saved detail\n", encoding="utf-8")
+    _git(notes, "add", "plans")
+    _git(notes, "commit", "-m", "add saved plan")
+    return main, detail
 
 
 def _prepare_migration(
@@ -100,6 +137,291 @@ def test_preserved_times_ignores_unavailable_birth_time(
     monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
 
     assert _preserved_times(source) == (None, expected_mtime_ns)
+
+
+def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) -> None:
+    """保存済みバンドルをbytes保持で作業rootへ取得し、取得時点を記録する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-再実装-d4f9.md")
+    main, detail = _create_saved_plan(notes, relative)
+
+    copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    working_root = _plan_file.working_plans_root(home)
+    assert copied == (working_root / detail.name, working_root / main.name)
+    assert {path.name: path.read_bytes() for path in copied} == {
+        detail.name: detail.read_bytes(),
+        main.name: main.read_bytes(),
+    }
+    record = _atk_plans._read_checkout_record(pathlib.Path(main.name))  # pylint: disable=protected-access
+    assert record is not None
+    recorded_relative, snapshots = record
+    assert recorded_relative == relative
+    assert snapshots == {detail.name: detail.read_bytes(), main.name: main.read_bytes()}
+
+
+@pytest.mark.parametrize("conflict", ["working", "record", "missing-main"])
+def test_checkout_rejects_conflicting_working_file_and_existing_record(
+    tmp_path: pathlib.Path,
+    conflict: str,
+) -> None:
+    """作業側衝突、取得済み、メイン欠落は保存側と作業側を変えず拒否する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-取得拒否-d4f9.md")
+    main, detail = _create_saved_plan(notes, relative)
+    working_main = _plan_file.working_plans_root(home) / main.name
+    if conflict == "working":
+        working_main.parent.mkdir(parents=True)
+        working_main.write_text("existing\n", encoding="utf-8")
+    elif conflict == "record":
+        _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    else:
+        main.unlink()
+    saved_before = {path.name: path.read_bytes() for path in (main, detail) if path.exists()}
+    working_before = {path.name: path.read_bytes() for path in _plan_file.working_plans_root(home).glob("*") if path.is_file()}
+
+    with pytest.raises(_common.WebInputError):
+        _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    assert {path.name: path.read_bytes() for path in (main, detail) if path.exists()} == saved_before
+    assert {
+        path.name: path.read_bytes() for path in _plan_file.working_plans_root(home).glob("*") if path.is_file()
+    } == working_before
+
+
+@pytest.mark.parametrize("saved_change", ["changed-main", "added-file"])
+def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
+    tmp_path: pathlib.Path,
+    saved_change: str,
+) -> None:
+    """取得後の保存側の変更とファイル追加を競合として双方無変更で拒否する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-並行変更-d4f9.md")
+    main, _detail = _create_saved_plan(notes, relative)
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / main.name
+    working_main.write_text("# working\n", encoding="utf-8")
+    if saved_change == "changed-main":
+        main.write_text("# concurrent\n", encoding="utf-8")
+    else:
+        main.with_name(main.stem + ".new.md").write_text("# concurrent\n", encoding="utf-8")
+    saved_before = _atk_plans._bundle_contents(  # pylint: disable=protected-access
+        _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
+    )
+
+    with pytest.raises(_common.WebInputError, match="取得後に保存元"):
+        _atk_plans.commit_plan(notes, main.name, home=home)
+
+    assert (
+        _atk_plans._bundle_contents(  # pylint: disable=protected-access
+            _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
+        )
+        == saved_before
+    )
+    assert working_main.read_text(encoding="utf-8") == "# working\n"
+
+
+@pytest.mark.parametrize("remote_change", ["changed-main", "added-file"])
+def test_commit_rejects_remote_saved_bundle_change_after_checkout(
+    tmp_path: pathlib.Path,
+    remote_change: str,
+) -> None:
+    """取得後にremoteで更新された同一ファイルと付属追加を同期して拒否する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    other = tmp_path / "other-notes"
+    _init_remote_notes(notes, remote)
+    relative = pathlib.Path("2026/08/30-remote並行変更-d4f9.md")
+    saved_main, _detail = _create_saved_plan(notes, relative)
+    _git(notes, "push")
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / saved_main.name
+    working_main.write_text("# working\n", encoding="utf-8")
+    _clone_notes(remote, other)
+    other_main = other / "plans" / relative
+    if remote_change == "changed-main":
+        other_main.write_text("# concurrent\n", encoding="utf-8")
+    else:
+        other_main.with_name(other_main.stem + ".supplement.md").write_text(
+            "# concurrent\n",
+            encoding="utf-8",
+        )
+    _git(other, "add", "plans")
+    _git(other, "commit", "-m", "concurrent plan update")
+    _git(other, "push")
+    saved_before = _atk_plans._bundle_contents(  # pylint: disable=protected-access
+        _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
+    )
+
+    with pytest.raises(_common.WebInputError, match="取得後に保存元"):
+        _atk_plans.commit_plan(notes, saved_main.name, home=home)
+
+    actual = _atk_plans._bundle_contents(  # pylint: disable=protected-access
+        _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
+    )
+    assert actual == saved_before
+    assert working_main.read_text(encoding="utf-8") == "# working\n"
+    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
+    assert _git(notes, "rev-parse", "HEAD").stdout != _git(notes, "rev-parse", "@{u}").stdout
+
+
+def test_commit_updates_checked_out_plan_and_preserves_saved_creation_time(tmp_path: pathlib.Path) -> None:
+    """取得済み計画を同じinodeへ更新し、保存側の作成日時を維持する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-作成日時維持-d4f9.md")
+    saved_main, saved_detail = _create_saved_plan(notes, relative)
+    saved_inode = saved_main.stat().st_ino
+    saved_birth = _plan_file._creation_epoch(saved_main)  # pylint: disable=protected-access
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / saved_main.name
+    working_main.write_text("# updated\n", encoding="utf-8")
+    working_detail = working_main.with_name(saved_detail.name)
+    working_detail.unlink()
+    working_attachment = working_main.with_name(working_main.stem + ".supplement.md")
+    working_attachment.write_text("# supplement\n", encoding="utf-8")
+    _set_stable_mtime(working_main)
+
+    _atk_plans.commit_plan(notes, saved_main.name, home=home)
+
+    assert saved_main.read_text(encoding="utf-8") == "# updated\n"
+    assert saved_main.stat().st_ino == saved_inode
+    _assert_preserved_birth(saved_main, saved_birth)
+    assert not working_main.exists()
+    assert not saved_detail.exists()
+    assert (saved_main.parent / working_attachment.name).read_text(encoding="utf-8") == "# supplement\n"
+    assert not working_attachment.exists()
+
+
+def test_commit_uses_recorded_relative_main_instead_of_birth_month(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """取得済み計画は作業側の作成月でなく記録した取得元へ戻す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2024/02/03-取得元維持-d4f9.md")
+    saved_main, _detail = _create_saved_plan(notes, relative)
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / saved_main.name
+    working_main.write_text("# updated\n", encoding="utf-8")
+    monkeypatch.setattr(_atk_plans, "_birth_date", lambda _path: "2030/12/31")
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert result["plan_file"] == relative.as_posix()
+    assert saved_main.read_text(encoding="utf-8") == "# updated\n"
+    assert not (notes / "plans/2030/12" / saved_main.name).exists()
+
+
+def test_commit_resumes_checked_out_plan_after_push_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存更新後のpush失敗では作業側と記録を保持し、再実行で完了する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    relative = pathlib.Path("2026/08/30-push再開-d4f9.md")
+    saved_main, _detail = _create_saved_plan(notes, relative)
+    _git(notes, "push")
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / saved_main.name
+    working_main.write_text("# updated\n", encoding="utf-8")
+    original = _atk_git_sync.commit_and_push
+
+    def fail_after_commit(private_notes, message, paths, *, skip_push: bool = False):  # pylint: disable=unused-argument
+        original(private_notes, message, paths, skip_push=True)
+        raise RuntimeError("push failure")
+
+    monkeypatch.setattr(_atk_git_sync, "commit_and_push", fail_after_commit)
+    with pytest.raises(RuntimeError, match="push failure"):
+        _atk_plans.commit_plan(notes, saved_main.name, home=home)
+    assert working_main.is_file()
+    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
+
+    monkeypatch.setattr(_atk_git_sync, "commit_and_push", original)
+    _atk_plans.commit_plan(notes, saved_main.name, home=home)
+
+    assert not working_main.exists()
+    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is None  # pylint: disable=protected-access
+    assert _git(notes, "rev-parse", "HEAD").stdout == _git(notes, "rev-parse", "@{u}").stdout
+
+
+def test_commit_keeps_checkout_when_diverged_push_is_deferred(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """remote分岐と無関係なdirty差分でpushを保留した場合は取得状態を保持する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    other = tmp_path / "other-notes"
+    _init_remote_notes(notes, remote)
+    relative = pathlib.Path("2026/08/30-push保留-d4f9.md")
+    saved_main, _detail = _create_saved_plan(notes, relative)
+    _git(notes, "push")
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / saved_main.name
+    working_main.write_text("# working\n", encoding="utf-8")
+    unrelated = notes / "unrelated.tmp"
+    unrelated.write_text("dirty\n", encoding="utf-8")
+    _clone_notes(remote, other)
+    other_main = other / "plans" / relative
+    original = _atk_git_sync.commit_and_push
+
+    def diverge_then_commit(private_notes, message, paths, *, skip_push: bool = False):
+        other_main.write_text("# concurrent\n", encoding="utf-8")
+        _git(other, "add", "plans")
+        _git(other, "commit", "-m", "concurrent plan update")
+        _git(other, "push")
+        original(private_notes, message, paths, skip_push=skip_push)
+
+    monkeypatch.setattr(_atk_git_sync, "commit_and_push", diverge_then_commit)
+
+    with pytest.raises(_common.WebInputError, match="remote branch"):
+        _atk_plans.commit_plan(notes, saved_main.name, home=home)
+
+    assert working_main.read_text(encoding="utf-8") == "# working\n"
+    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is not None  # pylint: disable=protected-access
+    assert saved_main.read_text(encoding="utf-8") == "# working\n"
+    assert unrelated.read_text(encoding="utf-8") == "dirty\n"
+    assert _git(notes, "rev-parse", "HEAD").stdout != _git(notes, "rev-parse", "@{u}").stdout
+
+
+def test_commit_recovers_checkout_record_without_working_bundle(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """公開CLIは作業バンドルが無い取得記録だけを回収する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-取得取消-d4f9.md")
+    saved_main, saved_detail = _create_saved_plan(notes, relative)
+    copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    for path in copied:
+        path.unlink()
+    saved_before = {path.name: path.read_bytes() for path in (saved_main, saved_detail)}
+    head_before = _git(notes, "rev-parse", "HEAD").stdout
+    monkeypatch.setattr(_common, "_ensure_environment", lambda _home: notes)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["plans", "commit", saved_main.name], home=home)
+
+    assert {path.name: path.read_bytes() for path in (saved_main, saved_detail)} == saved_before
+    assert _git(notes, "rev-parse", "HEAD").stdout == head_before
+    assert _atk_plans._read_checkout_record(pathlib.Path(saved_main.name)) is None  # pylint: disable=protected-access
 
 
 def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> None:
