@@ -1717,3 +1717,22 @@ class TestPullWithRecentNotice:
 
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
         assert "同期形跡" not in capsys.readouterr().err
+
+
+class TestUpstreamCrossRepoDependency:
+    """別の対象リポジトリの依存先が着手可否を制御することを検査する。"""
+
+    def test_cross_repo_dependency_blocks_until_terminal(self, tmp_path: pathlib.Path) -> None:
+        """別target_repoの依存先がactiveの間はblockedで、終端でreadyへ戻る。"""
+        _write_feedback(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
+        _write_feedback(tmp_path, "upstream.md", target_repo="github.com/example/upstream")
+        readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+        assert not readiness.ready
+        assert readiness.blocked == ("downstream.md",)
+        assert not readiness.missing_dependencies
+
+        (tmp_path / "adopted").mkdir(exist_ok=True)
+        (tmp_path / "inbox" / "upstream.md").rename(tmp_path / "adopted" / "upstream.md")
+        readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
+        assert readiness.ready == ("downstream.md",)
+        assert not readiness.blocked
