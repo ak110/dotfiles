@@ -29,7 +29,7 @@ user-invocable: false
 3. fast担当からエスカレーションを受領した場合だけ、`model_type="execute"`での起動を選ぶ。`agent-toolkit:delegation`の経路選択契約が定める継続条件に従い、継続か新規起動のいずれかを確定する。
    継続する場合は、同じfast担当threadへfix担当の作業を指示する。新規起動する場合は、同じworktreeの状態、元の実装入力及びエスカレーション内容を新規fix担当へ渡す。以後は当該threadを当該単位の現在担当とする。
 4. 各単位の現在担当から`実装完了`を受領した時点で残りの実装単位がある場合は、次のfast担当を確定してから次の単位へ進む。現在担当がfast担当なら同じthreadを継続する。現在担当がfix担当なら、手順2で保持した`model_type`と現在のthreadの`model_type`を`agent-toolkit:delegation`の経路選択契約に従って比較する。
-   `model_type`が一致する場合は同じthreadの担当種別を`fast担当`へ戻して次の単位を指示する。一致しない場合はfix担当を終端し、検収済みの先行commitと残りの実装単位を`model_type="execute_fast"`で起動した新規fast担当へ渡す。全単位の完了後、`agents_server.start`へ`model_type="execute_review"`を渡し、新規の実装レビュー担当へ初回入力を渡す。
+   `model_type`が一致する場合は同じthreadの担当種別を`fast担当`へ戻して次の単位を指示する。一致しない場合はfix担当を終端し、検収済みの先行commitと残りの実装単位を`model_type="execute_fast"`で起動した新規fast担当へ渡す。全単位の完了後、前述の呼び出し元用文書の生成契約に従って`review_contract`を生成する。続いて`agents_server.start`へ`model_type="execute_review"`を渡し、生成済みの`review_contract`を含む初回入力を新規の実装レビュー担当へ渡す。
 5. レビュー担当から`指摘件数: <非負整数>`を受領した場合は、ラウンド番号と指摘件数で遷移を分ける。指摘件数が0件の場合と第3ラウンド以降の場合は、次のcheckpointだけをメインへ返す。
 
    ```text

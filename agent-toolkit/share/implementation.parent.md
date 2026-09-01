@@ -34,4 +34,4 @@ fast担当からエスカレーションを受領した場合は、`model_type="
 
 fix担当が実装単位を完了した後に残りの単位がある場合は、保持した`model_type="execute_fast"`と現在のthreadの`model_type`を比較する。一致する場合は同じthreadの担当種別を`fast担当`へ戻して次の単位を指示する。一致しない場合はfix担当の終端を確認し、検収済みの先行commitと残りの実装単位を新規fast担当へ渡す。
 
-各単位の現在担当を保持し、全単位の完了後に生成同期と最終検証を最後の担当へ指示する。同worktreeのHEADをレビュー対象とし、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`に従う単一の実装レビューへ進む。
+各単位の現在担当を保持し、全単位の完了後に生成同期と最終検証を最後の担当へ指示する。同worktreeのHEADをレビュー対象とし、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`に従って`review_contract`を生成してから、単一の実装レビューへ進む。
