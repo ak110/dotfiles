@@ -16,6 +16,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import typing
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
@@ -36,6 +37,9 @@ _GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
 # 第75百分位と第90百分位の間から選び、通常規模の計画を警告せず肥大した計画だけを検出する。
 # 閾値を超えても計画として成立し得るため、エラーではなく警告に留める。
 _PLAN_LINE_WARNING_THRESHOLD = 1200
+
+type _WarningKind = typing.Literal["migration", "advisory"]
+type _ClassifiedWarning = tuple[_WarningKind, str]
 
 
 def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
@@ -142,13 +146,16 @@ def _classify_skill_references(text: str) -> set[str]:
     return references
 
 
-def _check_plan_size(lines: list[str]) -> list[str]:
+def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
     """計画の行数が閾値を超える場合に警告を返す。"""
     if len(lines) <= _PLAN_LINE_WARNING_THRESHOLD:
         return []
     return [
-        f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
-        "重複する記述を単一の情報源へ集約し、実装工程の入力として参照する素材を外部ファイルへ分けることを検討する"
+        (
+            "advisory",
+            f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
+            "重複する記述を単一の情報源へ集約し、実装工程の入力として参照する素材を外部ファイルへ分けることを検討する",
+        )
     ]
 
 
@@ -203,52 +210,67 @@ def _check_bug_file_reference(
     return _plan_format.check_bug_file_structure(bug_text)
 
 
-def _legacy_action_warnings(text: str) -> list[str]:
+def _legacy_action_warnings(text: str) -> list[_ClassifiedWarning]:
     """旧3列表の実施内容表を新4列表へ移行するwarningを返す。"""
     if not _plan_format.has_legacy_action_table(text):
         return []
-    return ["実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する"]
+    return [("migration", "実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")]
 
 
-def _legacy_bug_warnings(text: str) -> list[str]:
+def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
     """旧形式の本文内バグ調査表を分離先ファイルへ移行するwarningを返す。"""
     if not _plan_format.has_legacy_bug_table(text):
         return []
-    return ["バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する"]
+    return [("migration", "バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")]
 
 
-def _legacy_h2_warnings(text: str) -> list[str]:
+def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
     """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
     if not _plan_format.is_canonical_main_format(text):
         return []
     headings = _plan_format.extract_headings(text)
     names = {heading.text for heading in headings if heading.level == 2}
-    warnings: list[str] = []
+    warnings: list[_ClassifiedWarning] = []
     if _plan_format.PLAN_H2_LEGACY_HISTORY in names:
-        warnings.append("変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する")
+        warnings.append(("migration", "変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する"))
     if _plan_format.PLAN_H2_LEGACY_PROGRESS in names:
-        warnings.append("進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する")
+        warnings.append(("migration", "進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する"))
     return warnings
 
 
-def _legacy_fixed_notation_warnings(text: str) -> list[str]:
+def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
     """読み取り互換で受理した旧形式の固定記法に移行警告を返す。"""
-    warnings: list[str] = []
+    warnings: list[_ClassifiedWarning] = []
     metadata, _errors = _plan_format.parse_plan_metadata(text)
     if metadata is not None and any(
         field == _plan_format.PLAN_METADATA_LEGACY_DETAIL_FIELD for field, _value in metadata.entries
     ):
-        warnings.append("計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する")
+        warnings.append(("migration", "計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する"))
     if metadata is not None and _plan_format.PLAN_METADATA_DETAIL_FIELD in metadata.values:
-        warnings.append("計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける")
+        warnings.append(
+            (
+                "migration",
+                "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
+            )
+        )
     headings = _plan_format.extract_headings(text)
     if _plan_format.find_heading_index(headings, 2, _plan_format.PLAN_H2_MATERIALS) is not None:
-        warnings.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する")
+        warnings.append(
+            (
+                "migration",
+                "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+            )
+        )
     if any(
         line.strip().startswith(_plan_format.PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
         for _lineno, line in _plan_format.iter_markdown_body_lines(text)
     ):
-        warnings.append("バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する")
+        warnings.append(
+            (
+                "migration",
+                "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する",
+            )
+        )
     return warnings
 
 
@@ -258,14 +280,14 @@ def _check_new_format(
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[_ClassifiedWarning]]:
     """二ファイル形式の計画を検査してエラーと警告を返す。
 
     呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
     計画ファイル（詳細）の実在は呼び出し前提として扱う。
     """
     errors: list[str] = []
-    warnings: list[str] = []
+    warnings: list[_ClassifiedWarning] = []
     work_type, main_errors = _plan_format.check_plan_main_structure(text)
     errors.extend(main_errors)
 
@@ -295,11 +317,11 @@ def _check_new_format(
     if is_canonical and not _plan_format.has_human_action_table(text):
         errors.append("canonical形式の`## 実施内容`には人間向け4列表が必要である")
     elif not _plan_format.has_human_action_table(text):
-        warnings.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
+        warnings.append(("migration", "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する"))
     if is_canonical and materials is not None and materials.is_legacy:
         errors.append("canonical形式の`## 提示素材`には素材表と要求表が必要である")
     elif materials is not None and materials.is_legacy:
-        warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
+        warnings.append(("migration", "提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する"))
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(text.splitlines()))
@@ -312,17 +334,17 @@ def _check_legacy_format(
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[_ClassifiedWarning]]:
     """旧形式（単一ファイル9節）を検査してエラーと警告を返す。読み取り互換であり新規作成では生成しない。"""
     lines = text.splitlines()
     errors = _plan_format.check_plan_structure(text)
     materials, _material_errors = _plan_format.parse_plan_materials(text)
-    warnings: list[str] = []
+    warnings: list[_ClassifiedWarning] = []
     warnings.extend(_legacy_action_warnings(text))
     warnings.extend(_legacy_bug_warnings(text))
     warnings.extend(_legacy_fixed_notation_warnings(text))
     if materials is not None and materials.is_legacy:
-        warnings.append("提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する")
+        warnings.append(("migration", "提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する"))
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
@@ -338,12 +360,15 @@ def check(
     *,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
+    reject_legacy_format: bool = False,
 ) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
     計画作業root直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
     対応する`<stem>.detail.md`の実在により二ファイル形式と旧単一ファイル形式を分ける。
     二ファイル形式ではメインのcanonical固定H2により新規書式と旧二ファイル形式を分ける。
+    警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
+    種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -353,10 +378,16 @@ def check(
 
     detail_path = _detail_path_for(plan_path)
     if detail_path.is_file():
-        format_errors, warnings = _check_new_format(detail_path, text, work_dir, private_notes, home)
+        format_errors, classified_warnings = _check_new_format(detail_path, text, work_dir, private_notes, home)
     else:
-        format_errors, warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
+        format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
+    warnings: list[str] = []
+    for kind, message in classified_warnings:
+        if reject_legacy_format and kind == "migration":
+            errors.append(message)
+        else:
+            warnings.append(message)
     return errors, warnings
 
 

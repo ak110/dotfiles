@@ -180,7 +180,13 @@ def _check_structure(
     sys.path.insert(0, str(scripts_directory))
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, home=home)
+    errors, _warnings = check_plan_file.check(
+        main_path,
+        work_dir,
+        private_notes=private_notes,
+        home=home,
+        reject_legacy_format=True,
+    )
     if errors:
         raise PlanCreationError("計画構造検査に失敗しました: " + " / ".join(errors))
 
