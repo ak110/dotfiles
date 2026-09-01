@@ -177,6 +177,26 @@ def test_file_birth_date_falls_back_to_mtime_when_creation_time_is_unavailable(
 
 
 @pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statの後退経路を持たない環境")
+def test_file_birth_date_falls_back_to_mtime_when_gnu_stat_cannot_start(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GNU statを起動できない場合も更新日時をローカル日付へ変換する。"""
+    plan = tmp_path / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    modified_epoch = datetime.datetime(2024, 2, 2, 12).timestamp()
+    os.utime(plan, (modified_epoch, modified_epoch))
+    expected = datetime.datetime.fromtimestamp(modified_epoch).date()
+
+    def unavailable_stat(_args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(_plan_file.subprocess, "run", unavailable_stat)
+
+    assert _plan_file.file_birth_date(plan) == expected
+
+
+@pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statの後退経路を持たない環境")
 @pytest.mark.parametrize("raw_creation_time", ["0\n", "-1\n"])
 def test_creation_epoch_rejects_non_positive_gnu_stat_birth_time(
     tmp_path: pathlib.Path,

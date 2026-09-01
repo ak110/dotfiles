@@ -992,10 +992,10 @@ def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
     )
 
 
-def _rollout_path(thread_id: str) -> Path | None:
+def _rollout_path(thread_id: str, codex_home: str | None = None) -> Path | None:
     """Thread IDへ一意に対応するrolloutを返し、0件又は複数件ではNoneを返す。"""
     try:
-        return _resolve_codex_transcript(thread_id)
+        return _resolve_codex_transcript(thread_id, codex_home)
     except ValueError:
         return None
 
@@ -1022,16 +1022,17 @@ def _claude_transcript_path(session_id: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _session_path(engine: _Runtime | None, session_id: str) -> tuple[Path, _Runtime] | None:
+def _session_path(
+    engine: _Runtime | None,
+    session_id: str,
+    codex_home: str | None = None,
+) -> tuple[Path, _Runtime] | None:
     """実行系ヒントを優先して両方の記録正本を探索する。"""
-    lookups = {
-        "codex": _rollout_path,
-        "claude": _claude_transcript_path,
-    }
     runtimes: tuple[_Runtime, _Runtime]
     runtimes = ("claude", "codex") if engine == "claude" else ("codex", "claude")
     for runtime in runtimes:
-        if path := lookups[runtime](session_id):
+        path = _rollout_path(session_id, codex_home) if runtime == "codex" else _claude_transcript_path(session_id)
+        if path is not None:
             return path, runtime
     return None
 
@@ -1073,7 +1074,9 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
 
 
 def _collect_records(
-    transcript_path: str, main_records: list[_Record]
+    transcript_path: str,
+    main_records: list[_Record],
+    codex_home: str | None = None,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
@@ -1108,7 +1111,7 @@ def _collect_records(
                 if session_id in seen_sessions:
                     continue
                 seen_sessions.add(session_id)
-                resolved_session = _session_path(engine, session_id)
+                resolved_session = _session_path(engine, session_id, codex_home)
                 if resolved_session is None:
                     unresolved.append(_UnresolvedRecord(session_id, record.line))
                     continue
@@ -2276,7 +2279,8 @@ def main(argv: list[str] | None = None) -> int:
     records = _load_records(transcript_path)
     if records is None:
         return _print_error(f"対象記録を読み込めない: {transcript_path}")
-    collected, unresolved = _collect_records(transcript_path, records)
+    delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
+    collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
 
     if args.warn:
         _print_events(_warning_collection_events(collected, unresolved))

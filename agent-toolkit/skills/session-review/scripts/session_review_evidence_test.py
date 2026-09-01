@@ -3716,6 +3716,45 @@ def test_delegate_record_with_ambiguous_thread_id_is_unresolved(
     assert "混入してはならない記録2" not in serialized
 
 
+def test_explicit_codex_home_applies_to_parent_and_delegate_records(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """明示した保存先から親rolloutと委譲先rolloutを再帰収集する。"""
+    parent_id = "77777777-7777-4777-8777-777777777777"
+    child_id = "88888888-8888-4888-8888-888888888888"
+    explicit_home = tmp_path / "explicit-codex"
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "environment-codex"))
+    rollout_dir = explicit_home / "sessions" / "2026" / "09" / "01"
+    _write_jsonl(
+        rollout_dir / f"rollout-parent-{parent_id}.jsonl",
+        [_codex_tool_use_entry("2026-09-01T00:00:00Z", "parent-child", child_id)],
+    )
+    _write_jsonl(
+        rollout_dir / f"rollout-child-{child_id}.jsonl",
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": "明示先の委譲記録"},
+            }
+        ],
+    )
+
+    assert evidence.main(["--codex-thread-id", parent_id, "--codex-home", str(explicit_home)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert events == [
+        {
+            "kind": "user",
+            "text": "明示先の委譲記録",
+            "line": 1,
+            "sequence": 1,
+            "record": f"codex:{child_id}",
+        }
+    ]
+
+
 def test_backup_only_thread_id_is_evidence_insufficient(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

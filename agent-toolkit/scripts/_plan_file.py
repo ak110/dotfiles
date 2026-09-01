@@ -165,12 +165,15 @@ def _creation_epoch(path: pathlib.Path) -> float | None:
     info = path.stat(follow_symlinks=False)
     value = getattr(info, "st_birthtime", None)
     if value is None:
-        result = subprocess.run(
-            ["stat", "--format=%W", "--", str(path)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["stat", "--format=%W", "--", str(path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return None
         if result.returncode != 0:
             return None
         try:
