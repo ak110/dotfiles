@@ -47,6 +47,28 @@ def _run_hook(subcommand: str, payload: object) -> subprocess.CompletedProcess[s
 class TestDistributionPath:
     """隔離実行の経路での起動を検査する。"""
 
+    def test_missing_hook_script_does_not_block(self, tmp_path: pathlib.Path):
+        """参照先スクリプトが不在でも終了コード0で通過する。"""
+        settings = json.loads(_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        command = next(
+            hook["command"]
+            for group in settings["hooks"]["PreToolUse"]
+            if group["matcher"] == "Write|Edit|MultiEdit"
+            for hook in group["hooks"]
+        )
+        missing_hook = tmp_path / "missing-hook.py"
+        command = command.replace("~/dotfiles/scripts/claude_hook.py", str(missing_hook))
+
+        result = subprocess.run(
+            ["sh", "-c", command],
+            capture_output=True,
+            check=False,
+            cwd=_REPO_ROOT,
+            encoding="utf-8",
+        )
+
+        assert result.returncode == 0, result.stderr
+
     def test_registered_subcommands_run_without_traceback(self):
         """登録済みの各サブコマンドがtracebackなしで終了する。"""
         subcommands = _registered_subcommands()
