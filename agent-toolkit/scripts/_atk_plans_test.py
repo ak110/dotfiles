@@ -1,7 +1,9 @@
 """`atk plans commit`と旧計画root移行の実Git検証。"""
 
+import os
 import pathlib
 import subprocess
+import typing
 
 import _atk_git_sync
 import _atk_mq_common as _common
@@ -39,6 +41,49 @@ def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
     _git(remote.parent, "init", "--bare", "--initial-branch=main", str(remote))
     _git(root, "remote", "add", "origin", str(remote))
     _git(root, "push", "--set-upstream", "origin", "main")
+
+
+def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:
+    """取得できる作成日時と更新日時を返す。"""
+    try:
+        birth = _atk_plans._birth_epoch(path)  # pylint: disable=protected-access
+    except _common.WebInputError:
+        birth = None
+    return birth, path.stat().st_mtime_ns
+
+
+def _assert_preserved_times(path: pathlib.Path, expected: tuple[float | None, int]) -> None:
+    """作成日時を取得できる環境では作成日時も含めて一致を確認する。"""
+    birth, mtime_ns = expected
+    assert path.stat().st_mtime_ns == mtime_ns
+    if birth is not None:
+        assert _atk_plans._birth_epoch(path) == birth  # pylint: disable=protected-access
+
+
+def _set_stable_mtime(path: pathlib.Path) -> tuple[float | None, int]:
+    """日時維持の検査用に更新日時を固定して返す。"""
+    timestamp_ns = 1_700_000_000_123_456_789
+    os.utime(path, ns=(timestamp_ns, timestamp_ns))
+    return _preserved_times(path)
+
+
+def _prepare_migration(
+    tmp_path: pathlib.Path,
+) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path, bytes]:
+    """本文変換が生じる旧計画とremote付き保存先を作成する。"""
+    home = tmp_path / "home"
+    legacy = home / ".claude" / "plans"
+    legacy.mkdir(parents=True)
+    source = legacy / "legacy.md"
+    source.write_text(f"legacy: {source}\n", encoding="utf-8")
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    date = _atk_plans._birth_date(source)  # pylint: disable=protected-access
+    year, month, day = date.split("/")
+    destination = notes / "plans" / year / month / f"{day}-legacy.md"
+    portable = _plan_file.to_portable_plan_file(destination, private_notes=notes)
+    return home, source, notes, destination, f"legacy: {portable}\n".encode()
 
 
 def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> None:
@@ -102,6 +147,88 @@ def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_pa
     assert not main.exists()
     assert not detail.exists()
     assert not review.exists()
+
+
+def test_commit_preserves_source_creation_and_modification_time(tmp_path: pathlib.Path) -> None:
+    """保存確定は作業側の作成日時と更新日時を移動先へ維持する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-日時維持-d4f9.md")
+    source = _plan_file.working_plans_root(home) / relative
+    source.parent.mkdir(parents=True)
+    source.write_text("# main\n", encoding="utf-8")
+    expected_times = _set_stable_mtime(source)
+
+    _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    destination = notes / "plans" / relative
+    _assert_preserved_times(destination, expected_times)
+    assert not source.exists()
+
+
+def test_commit_fails_and_keeps_source_when_replace_fails(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存の確定に失敗した場合は例外を返して作業側を残す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-確定失敗-d4f9.md")
+    source = _plan_file.working_plans_root(home) / relative
+    source.parent.mkdir(parents=True)
+    source.write_text("# main\n", encoding="utf-8")
+
+    def fail_replace(_source: pathlib.Path, _destination: pathlib.Path) -> None:
+        raise OSError("想定した確定失敗")
+
+    monkeypatch.setattr(_atk_plans.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="想定した確定失敗"):
+        _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert source.read_text(encoding="utf-8") == "# main\n"
+
+
+def test_commit_resumes_after_partial_bundle_move_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """メイン計画を最後に移すため、途中失敗後も再実行で全バンドルを回収する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-部分確定-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    detail = main.with_name(main.stem + ".detail.md")
+    review = main.with_name(main.stem + ".plan-review.tsv")
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    detail.write_text("# detail\n", encoding="utf-8")
+    review.write_text('1\t"plan-review"\n', encoding="utf-8")
+    expected_times = {path.name: _set_stable_mtime(path) for path in (main, detail, review)}
+    original_replace = _atk_plans.os.replace
+
+    def fail_review_replace(source: pathlib.Path, destination: pathlib.Path) -> None:
+        if pathlib.Path(source) == review:
+            raise OSError("想定したバンドル途中失敗")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(_atk_plans.os, "replace", fail_review_replace)
+
+    with pytest.raises(OSError, match="想定したバンドル途中失敗"):
+        _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert main.is_file()
+    assert any(path.is_file() for path in (detail, review))
+    monkeypatch.setattr(_atk_plans.os, "replace", original_replace)
+
+    _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    for source in (main, detail, review):
+        assert not source.exists()
+        _assert_preserved_times(notes / "plans" / relative.parent / source.name, expected_times[source.name])
 
 
 def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path: pathlib.Path) -> None:
@@ -281,6 +408,136 @@ def test_migrate_plans_moves_bundle_references_and_deletes_after_remote_push(tmp
     local_head = _git(notes, "rev-parse", "HEAD").stdout.strip()
     remote_head = _git(remote, "rev-parse", "refs/heads/main").stdout.strip()
     assert local_head == remote_head
+
+
+def test_migrate_preserves_source_creation_and_modification_time(tmp_path: pathlib.Path) -> None:
+    """本文変換後も旧計画の作成日時と更新日時を移行先へ維持する。"""
+    home, source, notes, destination, transformed = _prepare_migration(tmp_path)
+    expected_times = _set_stable_mtime(source)
+
+    _atk_plans.migrate_plans(notes, home=home)
+
+    assert destination.read_bytes() == transformed
+    _assert_preserved_times(destination, expected_times)
+    assert not source.exists()
+
+
+@pytest.mark.parametrize("failure", ["write", "utime", "replace"])
+def test_migrate_keeps_source_and_clean_destination_when_post_move_step_fails(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    """確定前の一過性障害では旧計画を復元し、再実行で移行を完了する。"""
+    home, source, notes, destination, transformed = _prepare_migration(tmp_path)
+    original_content = source.read_bytes()
+    expected_times = _set_stable_mtime(source)
+    original_write_bytes = pathlib.Path.write_bytes
+    original_utime = _atk_plans.os.utime
+    original_replace = _atk_plans.os.replace
+    injected = False
+
+    def write_bytes_once(path: pathlib.Path, content: bytes) -> int:
+        nonlocal injected
+        if failure == "write" and path == source and not injected:
+            injected = True
+            original_write_bytes(path, b"")
+            raise OSError("想定した書込み失敗")
+        return original_write_bytes(path, content)
+
+    def utime_once(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+        nonlocal injected
+        if failure == "utime" and pathlib.Path(path) == source and not injected:
+            injected = True
+            raise OSError("想定した日時復元失敗")
+        original_utime(path, *args, **kwargs)
+
+    def replace_once(source_path: pathlib.Path, destination_path: pathlib.Path) -> None:
+        nonlocal injected
+        if failure == "replace" and pathlib.Path(source_path) == source and not injected:
+            injected = True
+            raise OSError("想定した確定失敗")
+        original_replace(source_path, destination_path)
+
+    monkeypatch.setattr(pathlib.Path, "write_bytes", write_bytes_once)
+    monkeypatch.setattr(_atk_plans.os, "utime", utime_once)
+    monkeypatch.setattr(_atk_plans.os, "replace", replace_once)
+
+    with pytest.raises(OSError, match="想定した"):
+        _atk_plans.migrate_plans(notes, home=home)
+
+    assert source.read_bytes() == original_content
+    _assert_preserved_times(source, expected_times)
+    assert not tuple(source.parent.glob(f".{source.name}.*.tmp"))
+    assert not _git(notes, "status", "--porcelain").stdout
+    monkeypatch.setattr(pathlib.Path, "write_bytes", original_write_bytes)
+    monkeypatch.setattr(_atk_plans.os, "utime", original_utime)
+    monkeypatch.setattr(_atk_plans.os, "replace", original_replace)
+
+    _atk_plans.migrate_plans(notes, home=home)
+
+    assert not source.exists()
+    assert destination.read_bytes() == transformed
+    _assert_preserved_times(destination, expected_times)
+
+
+def test_migrate_reports_leftover_backup_when_cleanup_fails(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """確定後の複製削除失敗は移行成功と残存パスを別々に報告する。"""
+    home, source, notes, destination, transformed = _prepare_migration(tmp_path)
+    expected_times = _set_stable_mtime(source)
+    original_unlink = pathlib.Path.unlink
+
+    def fail_backup_unlink(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+        if path.parent == source.parent and path.name.startswith(f".{source.name}.") and path.suffix == ".tmp":
+            raise OSError("想定した複製削除失敗")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "unlink", fail_backup_unlink)
+
+    result = _atk_plans.migrate_plans(notes, home=home)
+
+    backups = tuple(source.parent.glob(f".{source.name}.*.tmp"))
+    assert result["migrated"] == 1
+    assert destination.read_bytes() == transformed
+    _assert_preserved_times(destination, expected_times)
+    assert not source.exists()
+    assert len(backups) == 1
+    error = capsys.readouterr().err
+    assert str(backups[0]) in error
+    assert "この複製は移行結果に影響しません" in error
+
+
+def test_migrate_reports_manual_recovery_when_restore_fails(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """自動復元も失敗した場合は残存パスと手作業を報告する。"""
+    home, source, notes, destination, _transformed = _prepare_migration(tmp_path)
+    original_write_bytes = pathlib.Path.write_bytes
+
+    def fail_source_write(path: pathlib.Path, _content: bytes) -> int:
+        if path == source:
+            original_write_bytes(path, b"")
+            raise OSError("想定した持続的な書込み失敗")
+        return original_write_bytes(path, _content)
+
+    monkeypatch.setattr(pathlib.Path, "write_bytes", fail_source_write)
+
+    with pytest.raises(_common.WebInputError, match="自動復元"):
+        _atk_plans.migrate_plans(notes, home=home)
+
+    backups = tuple(source.parent.glob(f".{source.name}.*.tmp"))
+    assert len(backups) == 1
+    error = capsys.readouterr().err
+    assert str(source) in error
+    assert str(destination) in error
+    assert str(backups[0]) in error
+    assert "へ書き戻し" in error
 
 
 def test_migrate_plans_pushes_pending_commit_before_deleting_legacy_files(

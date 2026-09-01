@@ -9,6 +9,7 @@ import pathlib
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 
@@ -42,12 +43,10 @@ def build_parser(parser) -> None:
         action="store_true",
         help="保存rootへ対象限定commitを作成し、pushは行わない",
     )
-    migrate_parser = sub.add_parser(
+    sub.add_parser(
         "migrate",
         help="旧~/.claude/plans/の計画ファイルをprivate-notes/plans/へ移行する",
     )
-    if hasattr(migrate_parser, "set_defaults"):
-        migrate_parser.set_defaults()
 
 
 def _excluded_path(path: pathlib.Path) -> bool:
@@ -170,16 +169,20 @@ def _copy_working_bundle(
 def _remove_finalized_working_bundle(
     working_bundle: tuple[pathlib.Path, ...],
     snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]],
+    destinations: tuple[pathlib.Path, ...],
+    relative_main: pathlib.Path,
     home: pathlib.Path | str | None,
 ) -> None:
-    """保存成功後に変更されていない作業ファイルだけを削除する。"""
+    """保存成功後に変更されていない作業ファイルを日時ごと移す。"""
     for source in working_bundle:
         identity, content = snapshots[source]
         current = source.stat(follow_symlinks=False)
         if (current.st_dev, current.st_ino) != identity or source.read_bytes() != content:
             raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
-    for source in working_bundle:
-        source.unlink()
+    destination_by_name = {path.name: path for path in destinations}
+    ordered_sources = sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name))
+    for source in ordered_sources:
+        _finalize_plan_file(source, destination_by_name[source.name], snapshots[source][1])
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     for directory in (working_bundle[0].parent, working_bundle[0].parent.parent):
         if directory != root and directory.is_relative_to(root):
@@ -187,6 +190,67 @@ def _remove_finalized_working_bundle(
                 directory.rmdir()
             except OSError:
                 break
+
+
+def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content: bytes) -> None:
+    """commit済みの移し先を、移し元の内容と日時を保って確定する。
+
+    内容が同じ場合は`os.replace`だけでinodeごと移す。内容を変換する場合は、移し元と同じ
+    ディレクトリへ原文の複製を作成し、移し元への書戻し、日時復元及び内容検証を確定前に行う。
+    確定前の失敗では複製から移し元を復元し、復元自体が失敗した場合は実在するパスと手作業を
+    報告する。確定後の複製削除だけが失敗した場合は、移行結果へ影響しない警告として扱う。
+
+    claude-plans-viewerは作成日時を計画の並び順へ使う。Linuxには作成日時を設定するAPIが
+    無いため、新規ファイルによる確定ではなく移し元のinodeを`os.replace`で移す。
+    """
+    original = source.read_bytes()
+    if original == content:
+        os.replace(source, destination)
+        return
+
+    metadata = source.stat(follow_symlinks=False)
+    timestamps = (metadata.st_atime_ns, metadata.st_mtime_ns)
+    descriptor, raw_backup = tempfile.mkstemp(prefix=f".{source.name}.", suffix=".tmp", dir=source.parent)
+    backup = pathlib.Path(raw_backup)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(original)
+            output.flush()
+            os.fsync(output.fileno())
+        os.utime(backup, ns=timestamps)
+    except OSError:
+        backup.unlink(missing_ok=True)
+        raise
+
+    try:
+        source.write_bytes(content)
+        os.utime(source, ns=timestamps)
+        if source.read_bytes() != content:
+            raise _common.WebInputError(f"確定前の計画ファイルの読戻し内容が一致しません: {source}")
+        os.replace(source, destination)
+    except (OSError, _common.WebInputError) as error:
+        try:
+            source.write_bytes(backup.read_bytes())
+            os.utime(source, ns=timestamps)
+            backup.unlink()
+        except OSError as recovery_error:
+            existing = "、".join(str(path) for path in (source, destination, backup) if path.exists())
+            print(
+                f"error: 計画ファイルを自動復元できません: {recovery_error}。"
+                f"実在するパス: {existing}。退避用の複製 {backup} の内容を {source} へ書き戻し、"
+                "移行前の日時を復元してください",
+                file=sys.stderr,
+            )
+            raise _common.WebInputError(f"計画ファイルを自動復元できません: {source}") from error
+        raise
+
+    try:
+        backup.unlink()
+    except OSError as error:
+        print(
+            f"warning: 移行は完了しましたが、退避用の複製を削除できません: {backup}: {error}。この複製は移行結果に影響しません",
+            file=sys.stderr,
+        )
 
 
 def _plan_display_name(relative_main: pathlib.Path) -> str:
@@ -234,7 +298,7 @@ def commit_plan(
         message = f"chore: update plan {_plan_display_name(relative_main)}"
         _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=skip_push)
         if working_bundle:
-            _remove_finalized_working_bundle(working_bundle, snapshots, home)
+            _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
 
 
@@ -569,10 +633,12 @@ def migrate_plans(
         }
 
         changes: dict[pathlib.Path, bytes] = {}
+        finalized_contents: dict[pathlib.Path, bytes] = {}
         protected_before: dict[pathlib.Path, tuple[str, ...]] = {}
         replacement_count = 0
         for source, destination in destinations.items():
             transformed, count, hashes = _read_transformed(source, replacements)
+            finalized_contents[source] = transformed
             replacement_count += count
             protected_before[destination] = hashes
             existing = destination.read_bytes() if destination.is_file() else None
@@ -640,12 +706,9 @@ def migrate_plans(
             raise
 
         for source in files:
-            try:
-                if source.is_symlink() or not source.is_file() or source.read_bytes() != source_snapshots[source]:
-                    raise _common.WebInputError(f"旧ファイルの内容が移行中に変化しました: {source}")
-                source.unlink()
-            except OSError as error:
-                raise _common.WebInputError(f"旧ファイルを削除できません: {source}") from error
+            if source.is_symlink() or not source.is_file() or source.read_bytes() != source_snapshots[source]:
+                raise _common.WebInputError(f"旧ファイルの内容が移行中に変化しました: {source}")
+            _finalize_plan_file(source, destinations[source], finalized_contents[source])
         return {
             "migrated": len(destinations),
             "deleted": len(files),
