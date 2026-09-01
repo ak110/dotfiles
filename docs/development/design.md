@@ -149,6 +149,8 @@ MCPサーバー自身の作業ディレクトリはホストの起動条件で�
 plugin更新で当該ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
 
+`wait`・`send_message`・`kill`及び`exclude_session_id`は、受け取った識別子を先に保持中の状態へ解決する。いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。登録簿に無いUUIDへ返す`unknown session`には、agents_serverの再起動でsessionを失った可能性を診断として添える。
+
 ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
 この境界により、プラグイン配置が初回engine選択まで利用できない場合も、既に読込済みのclassからbackendを生成できる。
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用経路へSDK依存を持ち込まない。

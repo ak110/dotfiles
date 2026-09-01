@@ -97,6 +97,7 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
    `wait`が返す`status=completed`だけを配送済みの根拠にしない。
    当該継続要求へ対応付く観測を得られない場合は、同じ継続指示を再送せず、継続不能とも確定せず`needs_escalation`で呼び出し元へ返す。
    `agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけ継続不能とする。
+   識別子体系の相違を示すエラーは`unknown session`を含まず、継続不能の条件に当たらない。
    `wait`が返す`session retention expired: <session_id>`を継続不能の根拠にしない。
    送信前後の`agent_message`の文字列一致は未配送の証拠に用いない。同じ定型本文を返す正常replyと未配送を、文字列一致だけでは区別できないためである。
    Claude Codeの`SendMessage`では`references/claude-code-runtime.md`が定める配送不能の判定手段による。
