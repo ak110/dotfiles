@@ -244,6 +244,12 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """無関係なサブコマンドは未登録領域を件数だけの1行で報告する。"""
+
+        def fixed_schedule(request_bucket: str) -> str:
+            assert request_bucket == "main"
+            return "fixed-subcommand-output"
+
+        monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
         monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", lambda: count)
 
@@ -252,7 +258,7 @@ class TestWaitScheduleParser:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "*/30 * * * *\n"
+        assert captured.out == "fixed-subcommand-output\n"
         warning_lines = [line for line in captured.err.splitlines() if "登録を持たない管理対象" in line]
         if count == 0:
             assert not warning_lines
@@ -269,6 +275,12 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """未登録領域の件数取得失敗は本来の出力と終了コードを変えない。"""
+
+        def fixed_schedule(request_bucket: str) -> str:
+            assert request_bucket == "main"
+            return "fixed-subcommand-output"
+
+        monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
         monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
 
         def fail_count() -> int:
@@ -281,7 +293,7 @@ class TestWaitScheduleParser:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "*/30 * * * *\n"
+        assert captured.out == "fixed-subcommand-output\n"
         assert captured.err == "warning: 登録を持たない管理対象を探索できませんでした: 走査失敗\n"
 
     def test_managed_temp_list_reports_unregistered_paths(
