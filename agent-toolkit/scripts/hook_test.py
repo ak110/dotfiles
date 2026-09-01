@@ -22,6 +22,7 @@ _SUBCOMMANDS = (
     "pretooluse",
     "posttooluse",
     "autonomous_exit",
+    "plan_save_advisor",
     "subagent_stop_advisor",
     "session_end_cleanup",
     "stopfailure_notifier",
@@ -41,7 +42,7 @@ class TestEntrypointExceptionStages:
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
-    @pytest.mark.parametrize("subcommand", ["autonomous_exit"])
+    @pytest.mark.parametrize("subcommand", ["autonomous_exit", "plan_save_advisor"])
     def test_main_import_error_emits_summary_traceback_and_empty_json(
         self,
         tmp_path: pathlib.Path,
