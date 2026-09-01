@@ -600,6 +600,37 @@ def test_rejects_target_repo_mismatched_with_worktree(repo: tuple[pathlib.Path, 
     assert any("対象リポジトリが作業ディレクトリのGitルートと一致しない" in error for error in errors), errors
 
 
+def test_cli_requires_metadata_target_repo_instead_of_linked_worktree(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """構造検査は同じGitリポジトリの別作業ツリーを対象リポジトリとして代用しない。"""
+    work_dir, _base = repo
+    linked_worktree = work_dir.parent / f"{work_dir.name}-linked"
+    _git(work_dir, "worktree", "add", "-q", str(linked_worktree), "HEAD")
+    main_content, detail_content = human_new_format_plan(work_dir)
+    plan_path = work_dir / "target-repo-plan.md"
+    plan_path.write_text(main_content, encoding="utf-8")
+    plan_path.with_name("target-repo-plan.detail.md").write_text(detail_content, encoding="utf-8")
+    command = [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir"]
+
+    target_result = subprocess.run(
+        [*command, str(work_dir), str(plan_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    linked_result = subprocess.run(
+        [*command, str(linked_worktree), str(plan_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert target_result.returncode == 0, target_result.stderr
+    assert linked_result.returncode == 1
+    assert "対象リポジトリが作業ディレクトリのGitルートと一致しない" in linked_result.stderr
+
+
 def test_accepts_relative_target_repo_matching_worktree(repo: tuple[pathlib.Path, str]) -> None:
     """相対表記の対象リポジトリを正規化してGitルートと照合する。"""
     work_dir, base = repo
