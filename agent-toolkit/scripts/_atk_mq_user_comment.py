@@ -89,6 +89,12 @@ def extract_user_comment(text: str) -> str | None:
     return _normalize_comment("".join(lines[heading.map[1] :]))
 
 
+def has_reserved_heading(text: str) -> bool:
+    """本文がコードフェンス外の予約見出しを含むか返す。"""
+    _prefix, body = _body_parts(text)
+    return any(_reserved_heading(token, content) for token, content in _heading_tokens(body))
+
+
 def _validate_comment(text: str) -> str:
     """入力コメントを検証し、前後の空行を正規化する。"""
     normalized = _normalize_comment(text)
@@ -120,4 +126,4 @@ def update_user_comment(text: str, comment: str) -> str:
     return f"{prefix}{before_section}\n\n{normalized}\n"
 
 
-__all__ = ["UserCommentError", "extract_user_comment", "update_user_comment"]
+__all__ = ["UserCommentError", "extract_user_comment", "has_reserved_heading", "update_user_comment"]

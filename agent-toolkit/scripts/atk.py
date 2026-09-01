@@ -914,6 +914,18 @@ def main(
         automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
         print(f"warning: 管理対象一時領域の自動削除に失敗しました: {error}", file=sys.stderr)
+    if args.command != "managed-temp":
+        try:
+            unregistered_count = _managed_temp.count_unregistered_candidates()
+        except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない
+            print(f"warning: 登録を持たない管理対象を探索できませんでした: {error}", file=sys.stderr)
+        else:
+            if unregistered_count:
+                print(
+                    f"warning: 登録を持たない管理対象が{unregistered_count}件あります"
+                    "（一覧と回収方法は atk managed-temp list で確認できます）",
+                    file=sys.stderr,
+                )
     _validate_rm_args(args)
     args.repo_path_override = repo_path_override
     if args.command == "mq" and args.mq_subcommand == "add":

@@ -30,6 +30,7 @@ import tempfile
 import typing
 
 import _atk_mq_frontmatter as _frontmatter
+import _atk_mq_user_comment as _user_comment
 import _plan_file
 from _atk_mq_add import _body_is_effectively_empty, read_body_files
 from _atk_mq_common import (
@@ -45,6 +46,7 @@ from _atk_mq_common import (
     _pull,
     _repo_lock,
     _subdir,
+    is_agent_environment,
     validate_filename,
 )
 from _atk_mq_formatters import _shorten_home
@@ -443,6 +445,14 @@ def _cmd_add_batch(
     remote同期失敗時は確定済みの入力をstderrへ再表示し、内容の消失を防ぐ。
     """
     texts = _collect_batch_texts(args)
+    if is_agent_environment() and any(_user_comment.has_reserved_heading(text) for text in texts):
+        print(
+            "投入を拒否しました: ユーザーコメントはユーザーだけが書き込みます。"
+            "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
+            "ユーザーの発言は本文中へ出所を示して引用してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     try:
         mapping, warnings = add_batch_entries(private_notes, texts=texts, now=now)
     except WebInputError as error:

@@ -3,6 +3,7 @@
 import os
 import pathlib
 import subprocess
+import tempfile
 from collections.abc import Callable
 
 import pytest
@@ -64,6 +65,14 @@ def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
     （`_setup_notes`等）が担う。
     """
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+
+
+@pytest.fixture(autouse=True)
+def _managed_temp_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """管理対象一時領域のrootを実行環境から隔離する。"""
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(name, str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
 
 
 @pytest.fixture(autouse=True)

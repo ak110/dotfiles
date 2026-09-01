@@ -20,6 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import _atk_mq_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_frontmatter as frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_mq_tbd as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_HEAD_COMMIT,
@@ -29,6 +30,14 @@ from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-
 )
 from _atk_mq_common import MQ_TYPE_TBD, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+@pytest.fixture(autouse=True)
+def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """共通起動の管理対象一時領域をテストごとのrootへ隔離する。"""
+    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    (tmp_path / "temp").mkdir()
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
 
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1543,19 +1552,19 @@ def test_add_entries_rejects_answer_heading_in_tbd_body(tmp_path: pathlib.Path, 
         )
 
 
+def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
+    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        resp = _fake_git_worktree_remote_response(cmd, repo, kwargs)
+        if resp is not None:
+            return resp
+        empty: Any = "" if kwargs.get("text") else b""
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+
 class TestAddBodyFile:
     """`mq add --body-file`によるシェル引用符を経由しない本文入力経路を検証する。"""
-
-    @staticmethod
-    def _fake_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, repo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
 
     def test_body_file_content_becomes_message(
         self,
@@ -1566,7 +1575,7 @@ class TestAddBodyFile:
         notes = _setup_notes(tmp_path)
         repo = tmp_path / "myrepo"
         repo.mkdir()
-        self._fake_git(monkeypatch, repo)
+        _patch_add_git(monkeypatch, repo)
         # シェルの引用規則を経由すると破損しやすい文字を含む本文を用いる。
         body = '### 見出し\n\n- `バッククォート` と $変数 と "引用符" を含む本文\n'
         body_path = tmp_path / "body.md"
@@ -1588,7 +1597,7 @@ class TestAddBodyFile:
         notes = _setup_notes(tmp_path)
         repo = tmp_path / "myrepo"
         repo.mkdir()
-        self._fake_git(monkeypatch, repo)
+        _patch_add_git(monkeypatch, repo)
         first = tmp_path / "first.md"
         second = tmp_path / "second.md"
         first.write_text("1件目の本文\n", encoding="utf-8")
@@ -1638,6 +1647,83 @@ class TestAddBodyFile:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "--body-file" in captured.err
+
+
+@pytest.mark.parametrize("input_kind", ["position", "body-file"])
+def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
+    input_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境では全ての通常入力経路で予約見出しを拒否する。"""
+    notes = _setup_notes(tmp_path)
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    _patch_add_git(monkeypatch, repo)
+    monkeypatch.setenv("AI_AGENT", "1")
+    body = "本文\n\n## ユーザーコメント\n\nユーザーの記入"
+    argv = ["mq", "add", body]
+    if input_kind == "body-file":
+        body_path = tmp_path / "body.md"
+        body_path.write_text(body, encoding="utf-8")
+        argv = ["mq", "add", "--body-file", str(body_path)]
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 1
+    assert not list((notes / "inbox").iterdir())
+    assert "ユーザーコメント節を含む本文を投入できません" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("input_kind", ["position", "body-file"])
+def test_add_accepts_reserved_user_comment_heading_outside_agent_environment(
+    input_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """エージェント環境でなければ全ての通常入力経路で予約見出しを受理する。"""
+    notes = _setup_notes(tmp_path)
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    _patch_add_git(monkeypatch, repo)
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+    body = "本文\n\n## ユーザーコメント\n\nユーザーの記入"
+    argv = ["mq", "add", body]
+    if input_kind == "body-file":
+        body_path = tmp_path / "body.md"
+        body_path.write_text(body, encoding="utf-8")
+        argv = ["mq", "add", "--body-file", str(body_path)]
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 0
+    assert "## ユーザーコメント" in next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+
+
+def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """エージェント環境でもコードフェンス内だけの予約見出しは受理する。"""
+    notes = _setup_notes(tmp_path)
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    _patch_add_git(monkeypatch, repo)
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "add", "本文\n\n```markdown\n## ユーザーコメント\n```"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    assert list((notes / "inbox").iterdir())
 
 
 def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

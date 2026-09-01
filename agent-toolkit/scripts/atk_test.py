@@ -52,6 +52,9 @@ def _isolate_agent_and_managed_temp_environment(
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    temp_root = tmp_path / "temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
     worktree_root = pathlib.Path(atk.__file__).resolve().parents[2]
     trusted_config_paths = [worktree_root]
     git_entry = worktree_root / ".git"
@@ -231,6 +234,75 @@ class TestWaitScheduleParser:
 
         assert exc_info.value.code == 0
         assert calls == [_FIXED_DT]
+
+    @pytest.mark.parametrize("count", [0, 1, 3])
+    def test_unregistered_managed_temp_warning_is_summarized_for_unrelated_subcommand(
+        self,
+        count: int,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """無関係なサブコマンドは未登録領域を件数だけの1行で報告する。"""
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", lambda: count)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "*/30 * * * *\n"
+        warning_lines = [line for line in captured.err.splitlines() if "登録を持たない管理対象" in line]
+        if count == 0:
+            assert not warning_lines
+        else:
+            assert warning_lines == [
+                f"warning: 登録を持たない管理対象が{count}件あります（一覧と回収方法は atk managed-temp list で確認できます）"
+            ]
+            assert str(tmp_path) not in captured.err
+
+    def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """未登録領域の件数取得失敗は本来の出力と終了コードを変えない。"""
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+
+        def fail_count() -> int:
+            raise _managed_temp.ManagedTempError("走査失敗")
+
+        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", fail_count)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "*/30 * * * *\n"
+        assert captured.err == "warning: 登録を持たない管理対象を探索できませんでした: 走査失敗\n"
+
+    def test_managed_temp_list_reports_unregistered_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """managed-temp listは未登録領域の絶対パスと回収方法を表示する。"""
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = _managed_temp.create_managed_temp("orphan")
+        _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["managed-temp", "list"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert str(target) in captured.err
+        assert f"atk managed-temp cleanup --path {target} --recover-registry" in captured.err
+        assert "登録を持たない管理対象が1件あります" not in captured.err
 
     def test_cleanup_failure_does_not_change_subcommand_exit_code(
         self,

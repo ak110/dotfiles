@@ -57,14 +57,6 @@ from _atk_mq_repo import append_entry as _append_entry
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _GIT_TIMEOUT_SECONDS = 10.0
-_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
-    "target_commit",
-    "depends_on",
-    "cooldown_until",
-    "repair_target",
-    "repair_kind",
-    "plan_file",
-)
 _AGENT_USER_COMMENT_ERROR = (
     "ユーザーコメントはユーザーだけが書き込みます。エージェント環境から起動したatkではユーザーコメントを変更できません。"
 )
@@ -202,44 +194,6 @@ def _commit_values_by_path(
             )
             warned.add(target_repo)
     return values
-
-
-def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
-    """frontmatterの予約キーが不正に追加・変更・削除されていないかを検証する。
-
-    ユーザーが$EDITORまたはWeb APIで内部管理用frontmatterを書き換えることを防ぐ。
-    """
-    original_parsed = _frontmatter.parse_frontmatter(original)
-    updated_parsed = _frontmatter.parse_frontmatter(updated)
-
-    if original_parsed is None and updated_parsed is None:
-        return
-    if original_parsed is None or updated_parsed is None:
-        raise WebInputError("frontmatterの解析に失敗しました")
-
-    original_data, _ = original_parsed
-    updated_data, _ = updated_parsed
-    target_repo_changed = original_data.get("target_repo") != updated_data.get("target_repo")
-
-    for key in _RESERVED_FRONTMATTER_KEYS_FOR_EDITING:
-        original_has_key = key in original_data
-        updated_has_key = key in updated_data
-
-        # 予約キーの追加を検出（キー不在 → キー有無を区別）
-        if not original_has_key and updated_has_key:
-            raise WebInputError(f"予約キー`{key}`の追加は許可されていません")
-
-        # 対象リポジトリ変更時の分類失効はシステムが行う正当な削除である。
-        if key == "target_commit" and original_has_key and not updated_has_key and target_repo_changed:
-            continue
-
-        # 予約キーの削除を検出
-        if original_has_key and not updated_has_key:
-            raise WebInputError(f"予約キー`{key}`の削除は許可されていません")
-
-        # 予約キーの変更を検出
-        if original_has_key and updated_has_key and original_data[key] != updated_data[key]:
-            raise WebInputError(f"予約キー`{key}`の変更は許可されていません")
 
 
 def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
@@ -555,10 +509,7 @@ def edit_entry_content(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でフィードバック本文を更新する。
-
-    保存前に新旧frontmatterを比較し、内部管理用予約キーの追加・変更・削除を禁止する。
-    """
+    """平引数でフィードバック本文を更新する。"""
     if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD}:
         raise WebInputError("編集可能状態はinbox、processing又はholdです")
 
@@ -572,7 +523,6 @@ def edit_entry_content(
         lock_timeout=lock_timeout,
         expected_content=expected_content,
         commit_message="chore: edit feedback item",
-        content_validator=_validate_no_reserved_frontmatter_modification,
         content_transformer=_invalidate_repo_bound_metadata,
     )
 
@@ -595,7 +545,7 @@ def append_entry_content(
     path = directory / filename
 
     def validate(previous: str, updated: str) -> None:
-        _validate_no_reserved_frontmatter_modification(previous, updated)
+        del updated
         if _require_type(path, previous) == MQ_TYPE_TBD:
             raise WebInputError("TBDには追記できません")
 
@@ -645,6 +595,8 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         raise WebInputError("depends_onは予約キーのため atk mq edit では指定できません")
     if "target_commit" in updates:
         raise WebInputError("target_commitは予約キーのため atk mq edit では指定できません")
+    if "cooldown_until" in updates:
+        raise WebInputError("cooldown_untilは予約キーのため atk mq edit では指定できません")
     if "repair_target" in updates:
         raise WebInputError("repair_targetは予約キーのため atk mq edit では指定できません")
     if "repair_kind" in updates:

@@ -1014,6 +1014,21 @@ class TestManagedTempPosix:
         assert "--recover-registry" in error
         assert unreachable_registry.exists()
 
+    @pytest.mark.parametrize("count", [0, 1, 3])
+    def test_count_unregistered_candidates(
+        self,
+        count: int,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """登録を失った管理対象が0件、1件、複数件の場合の件数を返す。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        for index in range(count):
+            target = subject.create_managed_temp(f"orphan-{index}")
+            subject._registry_path(target).unlink()
+
+        assert subject.count_unregistered_candidates() == count
+
     def test_list_with_prefix_ignores_other_prefix_records(
         self,
         monkeypatch: pytest.MonkeyPatch,

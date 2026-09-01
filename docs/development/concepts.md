@@ -386,7 +386,7 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
 - `editing`は一覧と既存データの状態判定で認識する。今回の状態追加を理由に、永続的な編集セッション、専用の復旧状態又はpush再試行APIを新設しない
 - `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
 - `atk mq list`のテキスト表示はstdoutがTTYの場合だけ端末幅に応じて短縮し、非TTYでは`target_repo`と要約を全文で保持する。人間TTYの幅適応は維持する
-- TBDの回答欄とフィードバックのユーザーコメント節はユーザーだけが書き込む。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境から起動した`atk`は、これらの書き込みを拒否する。`atk serve`のブラウザー操作は人間の入力であるため拒否の対象にしない
+- TBDの回答欄とフィードバックのユーザーコメント節はユーザーだけが書き込む。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境から起動した`atk`は、既存項目への書き込みと、当該節を含む新規投入の双方を拒否する。エージェントはユーザーの発言を本文中へ出所を示して引用する。`atk serve`のブラウザー操作は人間の入力であるため拒否の対象にしない（2026年9月1日、利用者指示。エージェントがユーザーコメント節を生成した事故に由来する）
 - `atk`はユーザーとコーディングエージェントが使うツールであり、複数条件の同時成立を要する未観測の競合を閉じるための恒常的な機構を足さない。変更の優先順位は、実際に観測された不具合、公開インターフェースの破壊、データの明白な喪失への対応を上位に置く。ユーザーが明示した機能追加とユーザービリティ改善は、この優先順位にかかわらず対象とする
 - `atk mq add`・`atk mq edit`は保存結果から読み直した本文を同じ出力へ含める。投入・編集した主体は追加の`atk mq show`を実行せずに送信元本文と保存本文を照合する
 - `atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文と状態を保持して計画実装型へ変換し、`planning`入力では`--message`を伴う全入力を最古の1件へ統合する。異なる状態を混在させず、全入力を事前検証して1回のロック・commit・任意pushで処理する。commit前の失敗では部分変換を残さず、push失敗では変換済みのcleanなローカルcommitを保持する
@@ -441,6 +441,7 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
 - 投入前に事実を確定し、未調査の推測・未検証の因果を本文へ含めない
 - すぐ解消しない外部依存待ちの項目は、無視期間（数日のcooldown）や依存指定で空転を防ぐ
 - 作業対象リポジトリとprivate-notesは別のリポジトリとして扱い、コーディングエージェントはprivate-notesを`atk mq`・`atk plans`・`atk serve`が提供する経路からだけ変更する。ユーザーが外部のエディターで直接編集した変更は`atk mq commit`で確定する。`atk worktree-stash`はprivate-notesの作業ツリーで拒否する（2026年9月1日、利用者指示。作業対象リポジトリとprivate-notesを取り違えた退避の試行に由来する。incidents.md参照）
+- フィードバック及びTBDの投入は`atk config get private_notes`が返す正本の作業ツリーへ直接行い、別の作業ツリーを作成しない。投入の完了は、当該作業ツリー、対象branch並びにremoteからの取得可能性で判定する（2026年9月1日、利用者指示。別の作業ツリーのローカルcommitを投入完了として扱った事故に由来する）
 
 通常型フィードバックを複数件処理する場合、ファイル単位の終端、通常レーン及びキュー操作の責務境界は
 `agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
@@ -485,7 +486,8 @@ sourceを指定しない場合は本文、`target_repo`と非予約frontmatter�
   実装worktreeをDockerやVMなど別namespaceへ渡す場合だけ、全消費主体から到達できる既存共有ディレクトリを読み取り専用で確認して`create --root <絶対パス>`を使う。
   同一namespaceの実装worktreeとMQ、レビュー表、CI、publishの補助領域は既定rootを維持し、Dockerの可視性を推測しない
   登録済み領域の自動回収は、記録した実行文脈と現在の実行文脈が一致し実体の消滅を確定できた場合だけ行い、回収を警告として報告する。
-  確定できない登録は保持し、到達できる実行文脈での再実行を案内する。登録を失った領域は`atk managed-temp list`が報告する。
+  確定できない登録は保持し、到達できる実行文脈での再実行を案内する。登録を失った領域は`atk managed-temp list`が絶対パスと回収方法とともに報告する。
+  `atk`の共通起動では、登録を失った領域の件数と`atk managed-temp list`による確認方法だけを1件の警告として報告し、個々の絶対パスを列挙しない。
   中断した後始末の消費途中状態が残る領域は通常の後始末が再開し、消費途中状態も持たない領域の回収は
   利用者が明示指定する`atk managed-temp cleanup --path <絶対パス> --recover-registry`でだけ行う
 - 同一リポジトリのworktreeへ`.env`等のGit管理外の実行前提ファイルを複製する操作は、
