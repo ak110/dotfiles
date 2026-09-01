@@ -14,6 +14,7 @@ import tempfile
 from collections.abc import Iterable
 
 import _atk_git_sync
+import _atk_help
 import _atk_mq_common as _common
 import _atk_mq_frontmatter as _frontmatter
 import _git_command
@@ -28,11 +29,13 @@ _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaroun
 
 def build_parser(parser) -> None:
     """`atk plans`配下のparserを構築する。"""
-    sub = parser.add_subparsers(dest="plans_subcommand", required=True)
-    commit_parser = sub.add_parser(
-        "commit",
-        help="作業中の指定計画バンドルを保存rootへ移動してcommit・pushする",
+    sub = _atk_help.add_subcommands(
+        parser,
+        dest="plans_subcommand",
+        required=False,
+        show_help_when_missing=True,
     )
+    commit_parser = _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk plans commit"])
     commit_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
@@ -43,10 +46,7 @@ def build_parser(parser) -> None:
         action="store_true",
         help="保存rootへ対象限定commitを作成し、pushは行わない",
     )
-    sub.add_parser(
-        "migrate",
-        help="旧~/.claude/plans/の計画ファイルをprivate-notes/plans/へ移行する",
-    )
+    _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
 
 
 def _excluded_path(path: pathlib.Path) -> bool:

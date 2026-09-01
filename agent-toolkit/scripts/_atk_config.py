@@ -14,6 +14,7 @@ import re
 import sys
 from typing import cast
 
+import _atk_help
 import platformdirs
 
 _CONFIG_FILENAME = "config.json"
@@ -213,11 +214,11 @@ def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
 
 def build_parser(config: argparse.ArgumentParser) -> None:
     """`config`サブパーサ配下にshow/get/setサブコマンドを登録する。"""
-    sub = config.add_subparsers(dest="config_subcommand")
-    sub.add_parser("show", help="XDG関連パスと工程別モデル設定を一覧表示する（既定動作）")
-    get = sub.add_parser("get", help="1件以上の設定値を取得する")
+    sub = _atk_help.add_subcommands(config, dest="config_subcommand", required=False)
+    _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
+    get = _atk_help.add_command(sub, "get", **_atk_help.HELP["atk config get"])
     get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
-    set_ = sub.add_parser("set", help="変更可能な設定値を更新する")
+    set_ = _atk_help.add_command(sub, "set", **_atk_help.HELP["atk config set"])
     set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}")
     set_.add_argument("value", metavar="VALUE", help="設定する値。複数候補はASCIIカンマ区切りで指定できる。")
 

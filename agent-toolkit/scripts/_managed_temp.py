@@ -26,6 +26,8 @@ import typing
 import unicodedata
 from ctypes import wintypes
 
+import _atk_help
+
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 3
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
@@ -1907,24 +1909,42 @@ def cleanup_managed_temp(path_arg: pathlib.Path | str, *, recover_registry: bool
 
 def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "command") -> None:
     """管理対象一時領域のサブコマンドを登録する。"""
-    subparsers = parser.add_subparsers(dest=command_dest, required=True)
-    create_parser = subparsers.add_parser("create", help="管理対象一時ディレクトリを作成する")
-    create_parser.add_argument("--prefix", required=True)
-    create_parser.add_argument("--root", type=pathlib.Path)
+    subparsers = _atk_help.add_subcommands(
+        parser,
+        dest=command_dest,
+        required=False,
+        show_help_when_missing=True,
+    )
+    create_parser = _atk_help.add_command(subparsers, "create", **_atk_help.HELP["atk managed-temp create"])
+    create_parser.add_argument(
+        "--prefix",
+        required=True,
+        help="作成するディレクトリ名の先頭へ付ける用途識別子。英小文字、数字、ハイフンで指定する。",
+    )
+    create_parser.add_argument(
+        "--root",
+        type=pathlib.Path,
+        help=("作成先の一時root。別のnamespaceからも同じ絶対パスで到達できる既存ディレクトリを指定する場合だけ使う。"),
+    )
     create_parser.add_argument(
         "--feedback",
         action="append",
         help="この領域が対応するフィードバックのファイル名。複数回指定できる",
     )
-    cleanup_parser = subparsers.add_parser("cleanup", help="管理対象一時ディレクトリを後始末する")
-    cleanup_parser.add_argument("--path", required=True, type=pathlib.Path)
+    cleanup_parser = _atk_help.add_command(subparsers, "cleanup", **_atk_help.HELP["atk managed-temp cleanup"])
+    cleanup_parser.add_argument(
+        "--path",
+        required=True,
+        type=pathlib.Path,
+        help="後始末する管理対象一時ディレクトリの絶対パス。作成時に出力された値を指定する。",
+    )
     cleanup_parser.add_argument(
         "--recover-registry",
         action="store_true",
         help="登録を失った管理対象を、実体側マーカーの検証を通過した場合に限り復元して後始末する",
     )
-    list_parser = subparsers.add_parser("list", help="管理対象一時ディレクトリを列挙する")
-    list_parser.add_argument("--prefix")
+    list_parser = _atk_help.add_command(subparsers, "list", **_atk_help.HELP["atk managed-temp list"])
+    list_parser.add_argument("--prefix", help="列挙する領域を用途識別子で限定する。")
 
 
 def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:

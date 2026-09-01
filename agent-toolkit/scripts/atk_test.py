@@ -1006,14 +1006,15 @@ class TestPrivateNotesMissing:
 
 
 class TestNoSubcommand:
-    """サブコマンド未指定時にargparse由来のexit 2が発生すること。"""
+    """サブコマンド未指定時にコマンド一覧を標準出力へ表示すること。"""
 
-    def test_exits_with_usage_error(self) -> None:
-        """サブコマンド未指定の場合はexit 2でSystemExitが発生する。"""
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main([])
+    def test_prints_help(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """サブコマンド未指定の場合はhelpを表示して正常終了する。"""
+        atk.main([])
 
-        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "使い方: atk" in captured.out
+        assert captured.err == ""
 
 
 class TestAddSingleMessage:

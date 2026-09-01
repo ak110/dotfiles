@@ -1132,7 +1132,7 @@ class TestAddRepoPathOverrideCli:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "usage: atk mq add" in captured.err
+        assert "使い方: atk mq add" in captured.err
         error_line = captured.err.rstrip("\n").splitlines()[-1]
         assert "パスの指定は不要です" in error_line
         assert "REPO_PATH" not in error_line

@@ -378,7 +378,7 @@ class TestShowRequiresFilenameOrAll:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "usage: atk mq show" in captured.err
+        assert "使い方: atk mq show" in captured.err
         assert "FILENAME" in captured.err
         assert "--all" in captured.err
         error_line = captured.err.rstrip("\n").splitlines()[-1]

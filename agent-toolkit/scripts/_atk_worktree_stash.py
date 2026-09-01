@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 
+import _atk_help
 import _file_lock
 
 _LOCK_NAME = "agent-toolkit-stash.lock"
@@ -231,10 +232,10 @@ def drop(
 
 def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "command") -> None:
     """worktree退避サブコマンドを登録する。"""
-    subparsers = parser.add_subparsers(dest=command_dest, required=True)
-    save_parser = subparsers.add_parser("save", help="現在worktreeの変更をworktree固有refへ退避する")
+    subparsers = _atk_help.add_subcommands(parser, dest=command_dest)
+    save_parser = _atk_help.add_command(subparsers, "save", **_atk_help.HELP["atk worktree-stash save"])
     save_parser.add_argument("--label", required=True, help="退避先refのラベル")
-    drop_parser = subparsers.add_parser("drop", help="退避識別子をOID照合して削除する")
+    drop_parser = _atk_help.add_command(subparsers, "drop", **_atk_help.HELP["atk worktree-stash drop"])
     drop_parser.add_argument("identifier", help="削除するstash又はworktree固有refの識別子")
 
 

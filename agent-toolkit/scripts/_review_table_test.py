@@ -318,7 +318,7 @@ def test_parser_rejects_unsupported_options_with_guidance(
 
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
-    assert error.startswith(f"usage: atk review-table {subcommand}")
+    assert error.startswith(f"使い方: atk review-table {subcommand}")
     accepted = "・".join(accepted_options) if accepted_options else "なし"
     assert f"atk review-table {subcommand}が受理するオプションは{accepted}で、表のパスは位置引数で指定する" in error
 

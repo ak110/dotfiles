@@ -10,6 +10,7 @@ import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+import _atk_help
 import _file_lock
 from _atomic_file import atomic_write
 
@@ -370,47 +371,70 @@ def _required_value(args: argparse.Namespace, option: str, positional: str) -> s
 
 def build_parser(parent: argparse._SubParsersAction) -> None:
     """`review-table`配下のサブコマンドを登録する。"""
-    review = parent.add_parser("review-table", help="レビュー指摘管理表（7列TSV）を操作する")
-    sub = review.add_subparsers(
+    review = _atk_help.add_command(parent, "review-table", **_atk_help.HELP["atk review-table"])
+    sub = _atk_help.add_subcommands(
+        review,
         dest="review_table_subcommand",
-        required=True,
+        required=False,
+        show_help_when_missing=True,
         parser_class=_GuidedSubcommandParser,
     )
-    init_parser = sub.add_parser("init", help="空のレビュー表を作成する")
-    init_parser.add_argument("path")
-    add_parser = sub.add_parser("add", help="レビュー担当の指摘を追加する")
-    add_parser.add_argument("path")
-    add_parser.add_argument("--round", required=True)
-    add_parser.add_argument("--track", required=True, choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
-    for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
-        add_parser.add_argument(positional, nargs="?")
-        _add_cell_options(add_parser, name, description)
-    respond_parser = sub.add_parser(
-        "respond",
-        help=(
-            "round・track・location・issueのうち行を一意に特定できる列だけを指定してレビューイーの応答を更新する。"
-            " 各セルはJSON文字列として保存されるため、--issueには復号後の本文を渡す。"
-        ),
+    init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
+    path_help = "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`を指定する。"
+    init_parser.add_argument("path", help=path_help)
+    add_command_parser = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk review-table add"])
+    add_command_parser.add_argument("path", help=path_help)
+    add_command_parser.add_argument(
+        "--round",
+        required=True,
+        help="指摘を登録するレビューのラウンド番号。1以上の整数で指定する。",
     )
-    respond_parser.add_argument("path")
-    respond_parser.add_argument("--round")
-    respond_parser.add_argument("--track", choices=TRACK_VALUES)
+    add_command_parser.add_argument("--track", required=True, choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
     for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
-        respond_parser.add_argument(positional, nargs="?")
+        help_text = (
+            "指摘箇所。`--location`か`--location-file`でも指定できる。"
+            if name == "location"
+            else "指摘内容。`--issue`か`--issue-file`でも指定できる。"
+        )
+        add_command_parser.add_argument(positional, nargs="?", help=help_text)
+        _add_cell_options(add_command_parser, name, description)
+    respond_parser = _atk_help.add_command(sub, "respond", **_atk_help.HELP["atk review-table respond"])
+    respond_parser.add_argument("path", help=path_help)
+    respond_parser.add_argument(
+        "--round",
+        help="更新する行を特定するラウンド番号。省略すると他の列だけで行を特定する。",
+    )
+    respond_parser.add_argument(
+        "--track",
+        choices=TRACK_VALUES,
+        help="更新する行を特定するレビューの区分。省略すると他の列だけで行を特定する。",
+    )
+    for name, positional, description in (("location", "location_arg", "指摘箇所"), ("issue", "issue_arg", "指摘内容")):
+        help_text = (
+            "更新する行を特定する指摘箇所。`--location`か`--location-file`でも指定できる。"
+            if name == "location"
+            else "更新する行を特定する指摘内容。`--issue`か`--issue-file`でも指定できる。"
+        )
+        respond_parser.add_argument(positional, nargs="?", help=help_text)
         _add_cell_options(respond_parser, name, description)
-    respond_parser.add_argument("--response-needed", required=True, choices=("yes", "no", "対応要", "対応不要"))
+    respond_parser.add_argument(
+        "--response-needed",
+        required=True,
+        choices=("yes", "no", "対応要", "対応不要"),
+        help="指摘への対応要否。yes又は対応要、no又は対応不要を指定する。",
+    )
     _add_cell_options(respond_parser, "response", "対応内容")
     _add_cell_options(respond_parser, "no-response-reason", "対応不要理由")
-    show_parser = sub.add_parser("show", help="レビュー表を表示する")
-    show_parser.add_argument("path")
+    show_parser = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk review-table show"])
+    show_parser.add_argument("path", help=path_help)
     show_parser.add_argument("--track", choices=TRACK_VALUES, help=_RECOVERY_GUIDANCE)
-    validate_parser = sub.add_parser("validate", help="レビュー表を検証する")
+    validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",
         action="store_true",
         help=f"未応答行を許容し、{_COLUMN_COUNT}列と複合キーなどの構造だけを検証する。{_RECOVERY_GUIDANCE}",
     )
-    validate_parser.add_argument("path")
+    validate_parser.add_argument("path", help=path_help)
 
 
 def dispatch(args: argparse.Namespace) -> int:
