@@ -26,6 +26,8 @@
 
 ## plan系
 
+- `working_plan_save_notified`: 計画作業rootに残る計画バンドルの保存確認をStopフックが促した事実を記録する。`agent-toolkit/scripts/plan_save_advisor.py`が記録し、同フックが再通知の抑止に読む。セッション終了まで保持し、リセット経路は設けない
+- `session_plan_main_paths`: 当該セッションが編集又は作成した計画ファイル（メイン）の絶対パスを重複なく保持する。`agent-toolkit/scripts/posttooluse.py`が編集ツールの処理と計画ファイル作成処理の実行結果から追記し、`agent-toolkit/scripts/plan_save_advisor.py`が保存確認の対象として読む。セッション終了まで保持し、リセット経路は設けない
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画ファイル検査の適用判定に使う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。
@@ -50,7 +52,7 @@
 ## agents_server連携系
 
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の検査及び各ツールのPostToolUse状態更新に使う
-- `agents_server_sessions`: `session_id`ごとに公開状態の`status`、`kill_requested`及び内部の`turn_id`を記録する。`wait`・`send_message`・`kill`の応答境界で状態を更新し、結果回収済みを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
+- `agents_server_sessions`: `session_id`ごとに公開状態の`status`、`kill_requested`、観測を試みていない作業の有無を示す`pending_observation`及び内部の`turn_id`を記録する。記録は`start`・`start_explore`の成功応答で生成し、`wait`・`send_message`・`kill`の応答境界で更新する。`pending_observation`は`start`・`start_explore`の成功応答と、配送が成立した`send_message`の応答で真になり、`wait`の応答と`kill`の成功応答で偽になる。`wait`は`status`を問わず偽にする。委譲先が稼働中のまま待機表明でターンを終える正常終端を警告しないためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真の記録の残存だけを警告へ使う。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
 
 ## TBD系
 

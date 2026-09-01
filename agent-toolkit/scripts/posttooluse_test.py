@@ -445,6 +445,113 @@ class TestCurrentPlanFilePathTracking:
         state = _read_state(tmp_path, sid)
         assert "current_plan_file_path" not in state
 
+
+class TestSessionPlanMainPathTracking:
+    """保存確認Stopフックへ渡すメイン計画パスの蓄積。"""
+
+    def test_editing_main_detail_and_bugs_records_main_once(self, tmp_path: pathlib.Path) -> None:
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        main_path = plans_dir / "sample.md"
+        for suffix in (".md", ".detail.md", ".bugs.md"):
+            _run(
+                {
+                    "session_id": "plan-bundle-edits",
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(plans_dir / f"sample{suffix}"), "content": "# x\n"},
+                },
+                state_dir=tmp_path,
+                home_dir=home,
+            )
+        state = _read_state(tmp_path, "plan-bundle-edits")
+        assert state["session_plan_main_paths"] == [str(main_path.resolve())]
+
+    def test_create_script_stdout_records_absolute_working_plans(self, tmp_path: pathlib.Path) -> None:
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        first = plans_dir / "first.md"
+        second = plans_dir / "second.md"
+        outside = tmp_path / "outside.md"
+        commands = (
+            "/repo/create_plan_files.py main detail name",
+            "uv run --no-project --script /repo/create_plan_files.py main detail name",
+        )
+        for command, path in zip(commands, (first, second), strict=True):
+            _run(
+                {
+                    "session_id": "created-plans",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                    "tool_response": {"stdout": f"{path}\n{outside}\nrelative.md\n"},
+                },
+                state_dir=tmp_path,
+                home_dir=home,
+            )
+        state = _read_state(tmp_path, "created-plans")
+        assert state["session_plan_main_paths"] == [str(first.resolve()), str(second.resolve())]
+
+    def test_relative_edit_path_is_recorded_absolutely(self, tmp_path: pathlib.Path) -> None:
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        _run(
+            {
+                "session_id": "relative-plan-edit",
+                "tool_name": "Write",
+                "tool_input": {"file_path": "relative.md", "content": "# x\n"},
+                "cwd": str(plans_dir),
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        _run(
+            {
+                "session_id": "relative-plan-edit",
+                "tool_name": "Bash",
+                "tool_input": {"command": "pwd"},
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        state = _read_state(tmp_path, "relative-plan-edit")
+        assert state["session_plan_main_paths"] == [str((plans_dir / "relative.md").resolve())]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo create_plan_files.py",
+            "rg create_plan_files.py /repo",
+            "printf '%s' create_plan_files.py",
+        ],
+    )
+    def test_script_name_outside_execution_position_does_not_record(
+        self,
+        tmp_path: pathlib.Path,
+        command: str,
+    ) -> None:
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        _run(
+            {
+                "session_id": f"not-executed-{command.split()[0]}",
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "tool_response": {"stdout": str(plans_dir / "fake.md")},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        state = _read_state(tmp_path, f"not-executed-{command.split()[0]}")
+        assert "session_plan_main_paths" not in state
+
+
+class TestDetailCurrentPlanPathTracking:
+    """詳細計画の編集が既存の現在計画パス契約を変えないことを検証する。"""
+
     def test_detail_file_write_does_not_record_current_plan_file_path(self, tmp_path: pathlib.Path):
         """計画ファイル（詳細）は計画ファイル（メイン）述語で偽のため現在値を記録しない。"""
         home = tmp_path / "home"
@@ -1352,3 +1459,96 @@ class TestAgentsServerSessionState:
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
         assert record["status"] == "completed"
         assert "cwd" not in record
+
+    def test_pending_observation_transitions(self, tmp_path: pathlib.Path) -> None:
+        """公開操作の応答だけから未観測作業の発生と解消を記録する。"""
+
+        def run_operation(
+            sid: str,
+            remote_session_id: str,
+            operation: str,
+            *,
+            status: str,
+            delivery: str | None = None,
+        ) -> bool:
+            tool_input: dict[str, object] = {"session_id": remote_session_id}
+            if operation in {"start", "start_explore"}:
+                tool_input = {"cwd": str(tmp_path), "prompt": "委譲する"}
+            elif operation == "send_message":
+                tool_input["prompt"] = "続行する"
+            response: dict[str, object] = {"session_id": remote_session_id, "status": status}
+            if delivery is not None:
+                response["delivery"] = delivery
+            if operation == "kill":
+                response["kill_requested"] = True
+            result = _run(
+                {
+                    "session_id": sid,
+                    "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
+                    "tool_input": tool_input,
+                    "tool_response": {"structuredContent": response},
+                },
+                state_dir=tmp_path,
+            )
+            assert result.returncode == 0
+            return _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]["pending_observation"]
+
+        for operation in ("start", "start_explore"):
+            sid = f"pending-{operation}"
+            assert run_operation(sid, f"remote-{operation}", operation, status="running") is True
+
+        for status in ("running", "completed"):
+            sid = f"pending-wait-{status}"
+            remote_session_id = f"remote-wait-{status}"
+            assert run_operation(sid, remote_session_id, "start", status="running") is True
+            assert run_operation(sid, remote_session_id, "wait", status=status) is False
+
+        for delivery in ("steered", "reply_started", "reply_ambiguous"):
+            sid = f"pending-send-{delivery}"
+            remote_session_id = f"remote-send-{delivery}"
+            assert run_operation(sid, remote_session_id, "start", status="running") is True
+            assert run_operation(sid, remote_session_id, "wait", status="running") is False
+            assert (
+                run_operation(
+                    sid,
+                    remote_session_id,
+                    "send_message",
+                    status="running",
+                    delivery=delivery,
+                )
+                is True
+            )
+
+        sid = "pending-send-reply-failed"
+        remote_session_id = "remote-send-reply-failed"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert run_operation(sid, remote_session_id, "wait", status="completed") is False
+        assert (
+            run_operation(
+                sid,
+                remote_session_id,
+                "send_message",
+                status="completed",
+                delivery="reply_failed",
+            )
+            is False
+        )
+
+        sid = "pending-send-reply-failed-preserves-true"
+        remote_session_id = "remote-send-reply-failed-preserves-true"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert (
+            run_operation(
+                sid,
+                remote_session_id,
+                "send_message",
+                status="completed",
+                delivery="reply_failed",
+            )
+            is True
+        )
+
+        sid = "pending-kill"
+        remote_session_id = "remote-kill"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert run_operation(sid, remote_session_id, "kill", status="interrupted") is False

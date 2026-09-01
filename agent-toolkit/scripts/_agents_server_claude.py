@@ -238,10 +238,11 @@ class ClaudeServerManager:
         task.add_done_callback(self._forget_task)
         try:
             return await initialized
-        except Exception:
+        except BaseException:
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+            self._forget_task(task)
             raise
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:

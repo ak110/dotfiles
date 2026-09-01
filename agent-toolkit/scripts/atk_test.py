@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
@@ -133,6 +134,38 @@ def test_cli_local_path_filter_notifies_legacy_and_current_tbds(tmp_path: pathli
     assert "legacy.md" in result.stderr
     assert "current.md" in result.stderr
     assert "other.md" not in result.stderr
+
+
+class TestWorktreeStashDispatch:
+    """`worktree-stash`の公開dispatchを検証する。"""
+
+    def test_worktree_stash_dispatch_receives_private_notes(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """worktree-stash分岐は解決したprivate-notesをdispatchへ渡す。"""
+        received: dict[str, object] = {}
+
+        def fake_dispatch(
+            args: object,
+            *,
+            command_dest: str,
+            private_notes: pathlib.Path,
+        ) -> int:
+            received.update(args=args, command_dest=command_dest, private_notes=private_notes)
+            return 0
+
+        monkeypatch.setattr(_worktree_stash, "dispatch", fake_dispatch)
+        private_notes = tmp_path / "private-notes"
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["worktree-stash", "save", "--label=test"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert received["command_dest"] == "worktree_stash_subcommand"
+        assert received["private_notes"] == private_notes
 
 
 class TestWaitScheduleParser:
@@ -379,6 +412,73 @@ def _write_feedback_file(
         encoding="utf-8",
     )
     return path
+
+
+def _setup_notes_with_pending_commit(tmp_path: pathlib.Path) -> pathlib.Path:
+    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。"""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    subprocess.run(["git", "init", "--bare", "--initial-branch=main", str(origin)], check=True, capture_output=True)
+    notes = _setup_notes(tmp_path)
+    (notes / ".gitignore").write_text("plans/.agent-toolkit-plan-create.lock\n", encoding="utf-8")
+    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "base"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "remote", "add", "origin", str(origin)], check=True)
+    subprocess.run(["git", "-C", str(notes), "push", "-u", "origin", "main"], check=True, capture_output=True)
+    marker = notes / "pending.txt"
+    marker.write_text("pending\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "-m", "pending"], check=True, capture_output=True)
+    return notes
+
+
+def test_main_reports_pending_commit_only_for_sync_mutations(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同期対象操作だけが未pushを終了コード3で通知する。"""
+    notes = _setup_notes_with_pending_commit(tmp_path)
+    atk_members = vars(atk)
+    common_module = atk_members["_common"]
+    mutations_module = atk_members["_mutations"]
+    list_module = atk_members["_list"]
+    plans_module = atk_members["_plans"]
+    monkeypatch.setattr(common_module, "_ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(common_module, "notify_unanswered_tbds_if_any", lambda *_args: None)
+    monkeypatch.setattr(mutations_module, "_cmd_start_processing", lambda *_args: None)
+    monkeypatch.setattr(list_module, "_cmd_list", lambda *_args: None)
+    monkeypatch.setattr(mutations_module, "_cmd_convert_to_plan", lambda *_args: None)
+    monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "start-processing", "feedback.md"], home=tmp_path)
+    assert exc_info.value.code == 3
+    stderr = capsys.readouterr().err
+    assert "private-notesに未pushのcommitが1件残っています" in stderr
+    assert f"`git -C {notes.resolve()} status`" in stderr
+    assert "atk mq commit" in stderr
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
+    assert exc_info.value.code == 0
+    assert "未pushのcommit" not in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "convert-to-plan", "feedback.md", "--plan-file", str(tmp_path / "plan.md"), "--skip-push"],
+            home=tmp_path,
+        )
+    assert exc_info.value.code == 0
+    assert "未pushのcommit" not in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["plans", "migrate"], home=tmp_path)
+    assert exc_info.value.code == 3
+    assert "private-notesに未pushのcommitが1件残っています" in capsys.readouterr().err
 
 
 class TestMutationTargetRepoParserOption:
@@ -973,14 +1073,15 @@ class TestPrivateNotesMissing:
 
 
 class TestNoSubcommand:
-    """サブコマンド未指定時にargparse由来のexit 2が発生すること。"""
+    """サブコマンド未指定時にコマンド一覧を標準出力へ表示すること。"""
 
-    def test_exits_with_usage_error(self) -> None:
-        """サブコマンド未指定の場合はexit 2でSystemExitが発生する。"""
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main([])
+    def test_prints_help(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """サブコマンド未指定の場合はhelpを表示して正常終了する。"""
+        atk.main([])
 
-        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "使い方: atk" in captured.out
+        assert captured.err == ""
 
 
 class TestAddSingleMessage:

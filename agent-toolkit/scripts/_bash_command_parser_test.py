@@ -15,10 +15,34 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    ExecutionSegment,
     GitEvent,
+    extract_execution_segments,
     extract_git_events,
     split_bash_segments,
 )
+
+
+class TestExtractExecutionSegments:
+    """助言・状態記録が共有するBash実行位置の抽出。"""
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ("/repo/create_plan_files.py a b", ("/repo/create_plan_files.py", "a", "b")),
+            (
+                "uv run --no-project --script /repo/create_plan_files.py a b",
+                ("/repo/create_plan_files.py", "a", "b"),
+            ),
+            ("echo create_plan_files.py", ("echo", "create_plan_files.py")),
+        ],
+    )
+    def test_execution_position_is_resolved(self, command: str, expected: tuple[str, ...]) -> None:
+        assert extract_execution_segments(command) == [ExecutionSegment(expected, True, False)]
+
+    def test_shell_command_is_expanded_once(self) -> None:
+        segments = extract_execution_segments("bash -lc 'uv run --script /repo/create_plan_files.py'")
+        assert segments == [ExecutionSegment(("/repo/create_plan_files.py",), True, False)]
 
 
 class TestSplitBashSegments:

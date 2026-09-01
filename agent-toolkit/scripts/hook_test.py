@@ -22,6 +22,8 @@ _SUBCOMMANDS = (
     "pretooluse",
     "posttooluse",
     "autonomous_exit",
+    "plan_save_advisor",
+    "agents_server_session_advisor",
     "subagent_stop_advisor",
     "session_end_cleanup",
     "stopfailure_notifier",
@@ -41,17 +43,21 @@ class TestEntrypointExceptionStages:
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
-    @pytest.mark.parametrize("subcommand", ["autonomous_exit"])
+    @pytest.mark.parametrize(
+        "subcommand",
+        ["autonomous_exit", "plan_save_advisor", "agents_server_session_advisor"],
+    )
     def test_main_import_error_emits_summary_traceback_and_empty_json(
         self,
         tmp_path: pathlib.Path,
         subcommand: str,
     ) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
+        approve_body = "    return None\n" if subcommand == "agents_server_session_advisor" else "    print(json.dumps({}))\n"
         (tmp_path / f"{subcommand}.py").write_text(
             "import json\n\n"
             "def _approve() -> None:\n"
-            "    print(json.dumps({}))\n\n"
+            f"{approve_body}\n"
             "def main(payload_text: str) -> int:\n"
             "    del payload_text\n"
             "    raise ImportError('main failure')\n",
@@ -67,7 +73,8 @@ class TestEntrypointExceptionStages:
         )
 
         assert result.returncode == 0
-        assert result.stdout == "{}\n"
+        expected_stdout = "" if subcommand == "agents_server_session_advisor" else "{}\n"
+        assert result.stdout == expected_stdout
         assert result.stderr.startswith(f"[{subcommand}] 想定外エラー: ImportError: main failure")
         assert "Traceback (most recent call last):" in result.stderr
 

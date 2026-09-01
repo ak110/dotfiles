@@ -123,7 +123,7 @@ class TestRemoveAllArguments:
     ) -> None:
         """不足または排他的な引数の組合せを環境初期化前に拒否する。"""
         assert _run_main(argv, tmp_path) == 2
-        assert "usage:" in capsys.readouterr().err
+        assert "使い方:" in capsys.readouterr().err
         assert not (tmp_path / "private-notes").exists()
 
 

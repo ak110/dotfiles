@@ -276,10 +276,8 @@ def create_plan_files(
         raise PlanCreationError("作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません")
 
     plans_root = _resolved_plans_root(home)
-    date_directory = plans_root / f"{plan_date.year:04d}" / f"{plan_date.month:02d}"
-    _require_plans_root_path(date_directory, plans_root)
-    date_directory.mkdir(parents=True, exist_ok=True)
-    _require_plans_root_path(date_directory, plans_root)
+    plans_root.mkdir(parents=True, exist_ok=True)
+    _require_plans_root_path(plans_root, plans_root)
     checked_work_dir = pathlib.Path(work_dir or pathlib.Path.cwd()).expanduser().resolve()
     notes_for_resolver = pathlib.Path(private_notes).expanduser() if private_notes is not None else None
 
@@ -287,17 +285,17 @@ def create_plan_files(
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         _file_lock.acquire_lock(lock_file)
         try:
-            _require_plans_root_path(date_directory, plans_root)
+            _require_plans_root_path(plans_root, plans_root)
             for _attempt in range(max_attempts):
                 token = secrets.token_hex(2)
                 if _TOKEN_RE.fullmatch(token) is None:
                     raise PlanCreationError(f"乱数suffixが4桁16進数ではありません: {token}")
                 stem = f"{plan_date.day:02d}-{name}-{token}"
-                if _candidate_is_taken(date_directory, stem):
+                if _candidate_is_taken(plans_root, stem):
                     continue
                 try:
                     return _finalize_candidate(
-                        date_directory,
+                        plans_root,
                         plans_root,
                         stem,
                         _replace_placeholder(main_content, stem),

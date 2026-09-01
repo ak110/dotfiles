@@ -20,6 +20,7 @@ import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 from _agents_server_state import (
@@ -39,6 +40,9 @@ from _agents_server_state import (
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
+# Codexホストでは親の作業ディレクトリが版数付きplugin cacheとなり、
+# plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
+APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
 # App ServerのJSONL通知用StreamReader上限（バイト）。
 # asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
@@ -131,6 +135,7 @@ class JsonRpcProcess:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 limit=APP_SERVER_STREAM_LIMIT_BYTES,
+                cwd=APP_SERVER_WORKING_DIRECTORY,
             )
         except OSError as exc:
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc
@@ -149,7 +154,13 @@ class JsonRpcProcess:
             await self.close()
             raise
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         """JSON-RPC requestを送り、対応するIDの応答を返す。"""
         if self.process is None or self.process.stdin is None:
             raise AppServerError("Codex App Server is not running")
@@ -162,6 +173,8 @@ class JsonRpcProcess:
         self._pending[request_id] = future
         try:
             await self._send({"id": request_id, "method": method, "params": params or {}})
+            if on_sent is not None:
+                on_sent()
             response = await future
         finally:
             self._pending.pop(request_id, None)
@@ -448,12 +461,38 @@ class AppServerManager:
         try:
             await self._resume_thread(session, client)
             await prompt.deliver(lambda value: self._start_turn(session, value, client))
+        except asyncio.CancelledError:
+            await self._cancel_resume(session)
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 await self._mark_failed(session, exc, retryable=False)
         return session
+
+    async def _cancel_resume(self, session: SessionState) -> None:
+        """再開取消時に配送済みturnを中断し、実作業の終端まで待つ。"""
+        if not session.turn_start_sent:
+            session.status = "interrupted"
+            session.turn_completed = True
+            session.turn_start_ambiguous = False
+            session.interrupt_requested = False
+            session.touch()
+            await self._notify_waiters()
+            return
+
+        if not session.turn_id and not session.turn_completed:
+            async with self._condition:
+                await self._condition.wait_for(lambda: bool(session.turn_id) or session.turn_completed)
+        if session.turn_completed:
+            return
+
+        session.interrupt_requested = True
+        session.touch()
+        await self._notify_waiters()
+        await self.interrupt(session)
+        async with self._condition:
+            await self._condition.wait_for(lambda: session.turn_completed)
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """実行中turnへ追加指示を送り、終端競合時は同じthreadのreplyを開始する。"""
@@ -684,7 +723,11 @@ class AppServerManager:
             params["model"] = session.model
         if session.effort is not None:
             params["effort"] = session.effort
-        response = await client.request("turn/start", params)
+        response = await client.request(
+            "turn/start",
+            params,
+            on_sent=lambda: self._mark_turn_start_sent(session),
+        )
         turn = response.get("turn")
         turn_id = turn.get("id") if isinstance(turn, dict) else None
         if not isinstance(turn_id, str) or not turn_id:
@@ -695,13 +738,11 @@ class AppServerManager:
         session.touch()
         await self._notify_waiters()
 
-    def _get_session(self, session_id: str) -> SessionState:
-        if not isinstance(session_id, str) or not session_id:
-            raise ValueError("session_id must be a non-empty string")
-        try:
-            return self.sessions[session_id]
-        except KeyError as exc:
-            raise ValueError(f"unknown Codex session: {session_id}") from exc
+    @staticmethod
+    def _mark_turn_start_sent(session: SessionState) -> None:
+        """turn/startの送信完了を応答待ちより先に記録する。"""
+        session.turn_start_sent = True
+        session.touch()
 
     async def _notify_waiters(self) -> None:
         async with self._condition:
@@ -720,6 +761,7 @@ class AppServerManager:
             return
         turn = params.get("turn")
         if method == "turn/started":
+            session.turn_start_sent = True
             if isinstance(turn, dict):
                 turn_id = turn.get("id")
                 if isinstance(turn_id, str):

@@ -231,7 +231,7 @@ class TestTbdAdd:
             )
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "usage: atk mq add" in captured.err
+        assert "使い方: atk mq add" in captured.err
         assert "--choices を指定してください" in captured.err
 
     def test_add_without_question_mark_warns(
@@ -465,7 +465,7 @@ class TestTbdAddRepoPathOverrideCli:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "usage: atk mq add" in captured.err
+        assert "使い方: atk mq add" in captured.err
         error_line = captured.err.rstrip("\n").splitlines()[-1]
         assert "パスの指定は不要です" in error_line
         assert "REPO_PATH" not in error_line

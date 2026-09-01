@@ -132,6 +132,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `start_explore`は`fast`、`prompt`、絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使う。`exclude_session_id`へ渡せるのは、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件の一致しないsession IDは、別の設定キーの候補が除外へ混入するため開始前にエラーとなる。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
 `send_message`は、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補が、起動に使った実効値と一致しない場合に`configuration changed`を返す。呼び出し側は検収済み状態を渡して新規起動する。
+`start`・`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返し、
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
@@ -328,12 +329,13 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
-| plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。Bashでは`sleep`直後の状態確認連結・`uv run python`の誤用・パターン一致によるプロセス終了をブロックし、出力の切り詰め・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・否定規定表現・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
+| plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。ユーザーが直接読む質問本文と計画本文にも同じ本文検査を適用する。Bashでは`sleep`直後の状態確認連結・`uv run python`の誤用・パターン一致によるプロセス終了をブロックし、出力の切り詰め・高容量のユーザー領域を無限定に対象とする再帰検索・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・否定規定表現・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。ユーザーが直接読む本文の検査は、対応する入力を持たないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みTBDの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。新形式計画の2ファイルがそろったwhole-writeでは、非遮断の品質想起通知も返す。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
 | plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/autonomous_exit` | process-loop環境で`agent-toolkit:completion-report`後の`agent-toolkit:exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
+| plugin `Stop/agents_server_session_advisor` | 観測を試みていない作業が残る`agents_server` sessionがある状態での終了を警告する | 対応 | 非対応。CodexのStopは`hookSpecificOutput`を受理しない |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や新旧計画rootへの書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
@@ -353,8 +355,8 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次の作業rootへメイン側とdetail側を同時に保存する。
 
 ```text
-~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
-~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
+~/.claude/plans/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
+~/.claude/plans/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
 ```
 
 計画本文とキューへ記録する永続参照は、作業中も移動後の`$(atk config get private_notes)/plans/yyyy/MM/`を指す可搬表記にする。
@@ -362,12 +364,12 @@ viewerのパスコピーは選択中の実体を指すため、作業中は`~/.c
 実装後レビューが収束した後だけ、作業rootからの相対パスを指定して計画バンドルを保存する。
 
 ```bash
-atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
+atk plans commit dd-{名称}-{小文字16進数4桁}.md
 ```
 
-`atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表をprivate-notesへ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
+`atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表を、メイン計画ファイルの作成日に対応する`private-notes/plans/yyyy/MM/`へ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
 pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
-`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。日付階層の新しい作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
+`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。直下の正規作業バンドルと既存の日付階層の正規作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
 
 ```bash
 atk plans migrate
@@ -429,7 +431,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、通常型フィードバック又はTBDを手動投入する
 - `agent-toolkit:process-feedbacks`: ①選定とレーン分け、②並列レーン実行、③全レーン後のpush・CI・終了の3段階でフィードバックを処理する。
   計画型は既存計画を、通常型は1レーン1計画を使い、全ての実装要求に計画・計画レビュー・実装・実装レビューを要求する。
-  実装不要、既存実装で充足済み、reject又はholdの項目は計画やworktreeを作成せず終端する。
+  実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
   各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
 - `agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
 - `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス

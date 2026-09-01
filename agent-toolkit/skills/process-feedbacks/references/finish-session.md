@@ -1,12 +1,13 @@
 # push、CI及び終了
 
 ③の開始時に、通常レーンがffマージ、`adopt`及び後始末まで完了し、固有指示で`adopt`を延期したレーンがffマージと実装資源回収を完了したprocess-feedbacksのメインがこの文書を全文読む。
+`upstream_submission`が`混在`のレーンは、ffマージと実装資源回収を完了し、元項目を依存付きで`inbox`へ戻した状態を③の開始条件とする。
 ①で固定した集合の全レーンが完了した時点で③を開始し、ready一覧を再取得しない。
 ここでは先行レーンが渡した終端工程だけを処理し、③の開始後にactive一覧を再取得しない。
 
 ## 生成物とpush
 
-agent-toolkit変更では、メインがMINOR版数更新と派生manifest同期を機械操作として実施し、差分と生成同期を検査する。
+配布物の版数更新を要する変更では、メインが対象リポジトリの版数規範へ未push差分を照合して種別を判定し、版数更新と派生manifest同期を機械操作として実施し、差分と生成同期を検査する。
 この機械差分だけを対象とする追加レビューは行わない。
 
 メインがベースbranchをpushし、pushした完全OIDのCIを確認する。全レーン横断の総合レビューと統合差分レビューを追加しない。
@@ -29,6 +30,8 @@ CI成功まで同じ原因別経路と再判定を反復し、既に`adopt`済�
 
 ## セッション終了
 
-最後に`agent-toolkit:completion-report`を起動する。同スキルは`agent-toolkit:process-feedbacks`実行条件により`agent-toolkit:session-review`を必ず実施し、固有成果と振り返り結果を1回だけ報告する。報告完了後に`agent-toolkit:exit-session`を起動する。
+最後に`agent-toolkit:completion-report`を起動する。同スキルは`agent-toolkit:process-feedbacks`実行条件により`agent-toolkit:session-review`を必ず実施し、固有成果と振り返り結果を1回だけ報告する。
+振り返りの結果を「フィードバック即時対応」で修正してcommitした場合は、報告の前に「生成物とpush」節の版数判定と生成同期を当該commitへ適用し、pushとCI確認まで完了する。CIが失敗した場合は「CI失敗」節の経路で処理する。この再公開でsession-reviewを再実施しない。
+報告完了後に`agent-toolkit:exit-session`を起動する。
 
 active一覧を再取得して追加分を同じセッションへ混ぜず、追加分は次回セッションで扱う。

@@ -808,7 +808,7 @@ class TestManagedTempPosix:
         assert not subject.sweep_expired_managed_temp(now=now)
         assert target.exists()
 
-    def test_sweep_keeps_an_untrusted_expired_directory(
+    def test_sweep_does_not_report_unverifiable_registration(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -825,7 +825,31 @@ class TestManagedTempPosix:
 
         assert not subject.sweep_expired_managed_temp(now=now)
         assert target.exists()
-        assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+        assert capsys.readouterr().err == ""
+
+    def test_list_reports_unverifiable_registration_when_requested(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`managed-temp list`は検証不能な登録と回収手順を報告する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("unverifiable")
+        registry = subject._registry_path(target)
+        (target / _MARKER_NAME).write_text("{}", encoding="utf-8")
+        (target / _MARKER_NAME).chmod(0o600)
+        parser = argparse.ArgumentParser()
+        subject.build_parser(parser)
+
+        assert subject.dispatch(parser.parse_args(["list"])) == 1
+        error = capsys.readouterr().err
+        assert str(registry) in error
+        assert str(target) in error
+        assert f"warning: 管理対象を列挙できない: {registry}: {target}: " in error
+        assert f"atk managed-temp cleanup --path {target}" in error
+        assert "実体を削除した場合は、次回の atk managed-temp list で登録を回収します" in error
+        assert registry.exists()
 
     def test_sweep_keeps_a_managed_temp_at_the_deadline_without_scanning(
         self,
@@ -887,7 +911,7 @@ class TestManagedTempPosix:
                 "feedbacks": [],
             }
         ]
-        assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+        assert capsys.readouterr().err == ""
         assert registry.exists()
 
     def test_list_removes_registry_of_a_confirmed_missing_target_with_warning(
@@ -1970,7 +1994,7 @@ class TestManagedTempWindows:
             _replace_registry(invalid, rename_recorded_path)
 
         assert {entry["path"] for entry in subject.list_managed_temp()} == {str(valid)}
-        assert "warning: 管理対象を列挙できない" in capsys.readouterr().err
+        assert capsys.readouterr().err == ""
         assert registry.exists()
 
     def test_list_removes_registry_of_a_confirmed_missing_target_with_warning(

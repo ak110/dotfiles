@@ -565,6 +565,20 @@ def _push_pending_commits(private_notes: pathlib.Path) -> None:
     )
 
 
+def _notify_unpushed_commits_if_any(private_notes: pathlib.Path) -> bool:
+    """未pushのcommitが残る場合に対応手順を表示する。"""
+    count = _atk_git_sync.pending_commit_count(private_notes)
+    if count is None or count == 0:
+        return False
+    resolved = private_notes.resolve()
+    print(f"private-notesに未pushのcommitが{count}件残っています。操作自体は完了しています。", file=sys.stderr)
+    print(
+        f"`git -C {resolved} status`で差分を確認し、cleanにしてから`atk mq commit`でpushしてください。",
+        file=sys.stderr,
+    )
+    return True
+
+
 def _stamp_result(
     path: pathlib.Path,
     *,

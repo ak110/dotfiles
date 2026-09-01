@@ -317,6 +317,22 @@ def test_human_readable_main_and_detail_pass_structure_check() -> None:
     assert not _plan_format.check_plan_detail_structure(_HUMAN_DETAIL_CONTENT, work_type)
 
 
+def test_human_readable_main_accepts_satisfied_action() -> None:
+    """新書式の実施内容表は裏付けを持つ`充足済み`を受理する。"""
+    source = "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |"
+    replacement = (
+        "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 充足済み | "
+        "対象実装と要求を突合して充足を確認した。 |"
+    )
+    content = _HUMAN_MAIN_CONTENT.replace(
+        source,
+        replacement,
+        1,
+    )
+    _work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert not errors, errors
+
+
 def test_human_readable_feedback_and_units_do_not_expose_internal_ids() -> None:
     """人間向け形式は正本ファイル名と説明的な実装単位だけを解析する。"""
     metadata, metadata_errors = _plan_format.parse_plan_metadata(_HUMAN_MAIN_CONTENT)
@@ -983,7 +999,7 @@ def test_action_references_rejected_requirement_are_rejected() -> None:
 
 @pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
 def test_action_decisions_accept_all_declared_values(decision: str) -> None:
-    """実施内容表が定義する6種類の採否値を受理する。"""
+    """実施内容表が定義する7種類の採否値を受理する。"""
     relation = "指示どおり" if decision in {"採用", "部分採用"} else "非該当"
     root = "R-P-001-001" if decision in {"採用", "部分採用"} else "R-P-001-002を採用しない理由を記載する。"
     row = f"| 診断件数を2件から1件へ減らす | {decision} | {relation} | {root} |"

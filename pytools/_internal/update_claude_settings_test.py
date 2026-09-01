@@ -475,9 +475,30 @@ class TestProductionManagedSettings:
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
         text = raw.decode("utf-8-sig")
-        assert "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py pretooluse" in text
+        assert "$hookScript = Join-Path $env:USERPROFILE 'dotfiles\\scripts\\claude_hook.py'" in text
+        assert "Test-Path -LiteralPath $hookScript -PathType Leaf" in text
+        assert "uv run --no-project --script $hookScript pretooluse" in text
         assert "if ($LASTEXITCODE -eq 2)" in text
         assert text.rstrip().endswith("exit 0")
+
+    def test_windows_pretooluse_script_allows_missing_hook_via_pwsh(self, tmp_path: Path) -> None:
+        """フック本体が不在の場合はPowerShell実行時も終了コード0で通過する。"""
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
+
+        env = os.environ.copy()
+        env["USERPROFILE"] = str(tmp_path / "missing-home")
+
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-File", str(_PROD_PRETOOLUSE_SCRIPT)],
+            check=False,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
 
     @pytest.mark.parametrize("uv_exit_code", [0, 2])
     @pytest.mark.parametrize("invocation", ["direct", "bash"])
@@ -493,6 +514,9 @@ class TestProductionManagedSettings:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
 
         home = tmp_path / "Aki User"
+        hook_script = home / "dotfiles" / "scripts" / "claude_hook.py"
+        hook_script.parent.mkdir(parents=True)
+        hook_script.touch()
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         args_path = tmp_path / f"uv-args-{invocation}-{uv_exit_code}.json"
@@ -544,7 +568,7 @@ sys.exit(int(os.environ["UV_EXIT_CODE"]))
             "run",
             "--no-project",
             "--script",
-            f"{home}\\dotfiles\\scripts\\claude_hook.py",
+            str(hook_script),
             "pretooluse",
         ]
 

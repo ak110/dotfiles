@@ -160,6 +160,7 @@ class SessionState:
     reply_attempted: bool = False
     reply_turn_started: bool = False
     reply_retryable: bool = False
+    turn_start_sent: bool = False
     turn_start_ambiguous: bool = False
     interrupt_requested: bool = False
     turn_completed: bool = False
@@ -273,6 +274,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.agent_message = ""
     session.protocol_warnings = []
     session.reply_retryable = False
+    session.turn_start_sent = False
     session.turn_start_ambiguous = False
     session.interrupt_requested = False
     session.turn_completed = False

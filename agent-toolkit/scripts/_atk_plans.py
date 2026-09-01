@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-import datetime
 import hashlib
 import os
 import pathlib
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 
 import _atk_git_sync
+import _atk_help
 import _atk_mq_common as _common
 import _atk_mq_frontmatter as _frontmatter
 import _git_command
@@ -27,27 +28,27 @@ _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaroun
 
 def build_parser(parser) -> None:
     """`atk plans`配下のparserを構築する。"""
-    sub = parser.add_subparsers(dest="plans_subcommand", required=True)
-    commit_parser = sub.add_parser(
-        "commit",
-        help="作業中の指定計画バンドルを保存rootへ移動してcommit・pushする",
+    sub = _atk_help.add_subcommands(
+        parser,
+        dest="plans_subcommand",
+        required=False,
+        show_help_when_missing=True,
     )
+    commit_parser = _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk plans commit"])
     commit_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
-        help="plans rootからの相対メイン計画パス（yyyy/MM/dd-{名称}-{16進数4桁}.md）。",
+        help=(
+            "計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
+            "または保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md。"
+        ),
     )
     commit_parser.add_argument(
         "--skip-push",
         action="store_true",
         help="保存rootへ対象限定commitを作成し、pushは行わない",
     )
-    migrate_parser = sub.add_parser(
-        "migrate",
-        help="旧~/.claude/plans/の計画ファイルをprivate-notes/plans/へ移行する",
-    )
-    if hasattr(migrate_parser, "set_defaults"):
-        migrate_parser.set_defaults()
+    _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
 
 
 def _excluded_path(path: pathlib.Path) -> bool:
@@ -170,16 +171,20 @@ def _copy_working_bundle(
 def _remove_finalized_working_bundle(
     working_bundle: tuple[pathlib.Path, ...],
     snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]],
+    destinations: tuple[pathlib.Path, ...],
+    relative_main: pathlib.Path,
     home: pathlib.Path | str | None,
 ) -> None:
-    """保存成功後に変更されていない作業ファイルだけを削除する。"""
+    """保存成功後に変更されていない作業ファイルを日時ごと移す。"""
     for source in working_bundle:
         identity, content = snapshots[source]
         current = source.stat(follow_symlinks=False)
         if (current.st_dev, current.st_ino) != identity or source.read_bytes() != content:
             raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
-    for source in working_bundle:
-        source.unlink()
+    destination_by_name = {path.name: path for path in destinations}
+    ordered_sources = sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name))
+    for source in ordered_sources:
+        _finalize_plan_file(source, destination_by_name[source.name], snapshots[source][1])
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     for directory in (working_bundle[0].parent, working_bundle[0].parent.parent):
         if directory != root and directory.is_relative_to(root):
@@ -187,6 +192,67 @@ def _remove_finalized_working_bundle(
                 directory.rmdir()
             except OSError:
                 break
+
+
+def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content: bytes) -> None:
+    """commit済みの移し先を、移し元の内容と日時を保って確定する。
+
+    内容が同じ場合は`os.replace`だけでinodeごと移す。内容を変換する場合は、移し元と同じ
+    ディレクトリへ原文の複製を作成し、移し元への書戻し、日時復元及び内容検証を確定前に行う。
+    確定前の失敗では複製から移し元を復元し、復元自体が失敗した場合は実在するパスと手作業を
+    報告する。確定後の複製削除だけが失敗した場合は、移行結果へ影響しない警告として扱う。
+
+    claude-plans-viewerは作成日時を計画の並び順へ使う。Linuxには作成日時を設定するAPIが
+    無いため、新規ファイルによる確定ではなく移し元のinodeを`os.replace`で移す。
+    """
+    original = source.read_bytes()
+    if original == content:
+        os.replace(source, destination)
+        return
+
+    metadata = source.stat(follow_symlinks=False)
+    timestamps = (metadata.st_atime_ns, metadata.st_mtime_ns)
+    descriptor, raw_backup = tempfile.mkstemp(prefix=f".{source.name}.", suffix=".tmp", dir=source.parent)
+    backup = pathlib.Path(raw_backup)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(original)
+            output.flush()
+            os.fsync(output.fileno())
+        os.utime(backup, ns=timestamps)
+    except OSError:
+        backup.unlink(missing_ok=True)
+        raise
+
+    try:
+        source.write_bytes(content)
+        os.utime(source, ns=timestamps)
+        if source.read_bytes() != content:
+            raise _common.WebInputError(f"確定前の計画ファイルの読戻し内容が一致しません: {source}")
+        os.replace(source, destination)
+    except (OSError, _common.WebInputError) as error:
+        try:
+            source.write_bytes(backup.read_bytes())
+            os.utime(source, ns=timestamps)
+            backup.unlink()
+        except OSError as recovery_error:
+            existing = "、".join(str(path) for path in (source, destination, backup) if path.exists())
+            print(
+                f"error: 計画ファイルを自動復元できません: {recovery_error}。"
+                f"実在するパス: {existing}。退避用の複製 {backup} の内容を {source} へ書き戻し、"
+                "移行前の日時を復元してください",
+                file=sys.stderr,
+            )
+            raise _common.WebInputError(f"計画ファイルを自動復元できません: {source}") from error
+        raise
+
+    try:
+        backup.unlink()
+    except OSError as error:
+        print(
+            f"warning: 移行は完了しましたが、退避用の複製を削除できません: {backup}: {error}。この複製は移行結果に影響しません",
+            file=sys.stderr,
+        )
 
 
 def _plan_display_name(relative_main: pathlib.Path) -> str:
@@ -210,14 +276,25 @@ def commit_plan(
     skip_push: bool = False,
 ) -> dict[str, object]:
     """指定計画bundleを保存rootへ移し、対象限定commitを作成する。"""
+    working_relative: pathlib.Path | None = None
     try:
-        relative_main = _plan_file.validate_plan_relative_path(plan_file)
-    except ValueError as error:
+        working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
+        relative_main = working_relative
+    except ValueError as working_error:
         try:
-            relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
-        except ValueError:
-            raise _common.WebInputError(str(error)) from error
-    working_bundle = _working_plan_bundle(home, relative_main)
+            relative_main = _plan_file.validate_plan_relative_path(plan_file)
+        except ValueError as saved_error:
+            try:
+                relative_main = _plan_file.validate_migrated_plan_relative_path(plan_file)
+            except ValueError:
+                raise _common.WebInputError(str(working_error)) from saved_error
+    working_bundle = _working_plan_bundle(home, working_relative or relative_main)
+    if working_relative is not None and not working_bundle:
+        raise _common.WebInputError(f"指定した作業中の計画バンドルが見つかりません: {working_relative}")
+    if working_relative is not None and working_bundle:
+        working_main = _plan_file.working_plans_root(home) / working_relative
+        date = _birth_date(working_main).split("/")
+        relative_main = pathlib.Path(date[0], date[1], working_relative.name)
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
         saved_bundle_exists = saved_main.is_file()
@@ -234,42 +311,16 @@ def commit_plan(
         message = f"chore: update plan {_plan_display_name(relative_main)}"
         _atk_git_sync.commit_and_push(private_notes, message, relative_paths, skip_push=skip_push)
         if working_bundle:
-            _remove_finalized_working_bundle(working_bundle, snapshots, home)
+            _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
-
-
-def _birth_epoch(path: pathlib.Path) -> float:
-    """ファイルのbirth timeを取得し、取得不能なら明示的に停止する。"""
-    try:
-        info = path.stat(follow_symlinks=False)
-    except OSError as error:
-        raise _common.WebInputError(f"作成日時を取得できません: {path}") from error
-    value = getattr(info, "st_birthtime", None)
-    if value is None:
-        try:
-            result = subprocess.run(
-                ["stat", "--format=%W", "--", str(path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except OSError as error:
-            raise _common.WebInputError(f"作成日時を取得できません（GNU stat）: {path}") from error
-        if result.returncode != 0:
-            raise _common.WebInputError(f"作成日時を取得できません（GNU stat）: {path}")
-        raw = result.stdout.strip()
-        try:
-            value = float(raw)
-        except ValueError as error:
-            raise _common.WebInputError(f"作成日時の形式が不正です: {path}") from error
-    if not isinstance(value, (int, float)) or value <= 0:
-        raise _common.WebInputError(f"作成日時を取得できないため移行を停止しました: {path}")
-    return float(value)
 
 
 def _birth_date(path: pathlib.Path) -> str:
     """Birth timeを実行ホストのローカル日付へ変換する。"""
-    return datetime.datetime.fromtimestamp(_birth_epoch(path)).strftime("%Y/%m/%d")
+    try:
+        return _plan_file.file_birth_date(path).strftime("%Y/%m/%d")
+    except OSError as error:
+        raise _common.WebInputError(str(error)) from error
 
 
 def _legacy_files(legacy_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
@@ -333,12 +384,15 @@ def _migratable_legacy_files(
     legacy_root: pathlib.Path,
     files: tuple[pathlib.Path, ...],
 ) -> tuple[pathlib.Path, ...]:
-    """日付階層の正規作業バンドルを除いた旧形式ファイルを返す。"""
+    """正規作業バンドルを除いた旧形式ファイルを返す。"""
     migratable: list[pathlib.Path] = []
     for main, members in _associated_groups(files).items():
         try:
             relative = main.relative_to(legacy_root)
-            _plan_file.validate_plan_relative_path(relative)
+            if len(relative.parts) == 1:
+                _plan_file.validate_working_plan_relative_path(relative)
+            else:
+                _plan_file.validate_plan_relative_path(relative)
         except ValueError:
             migratable.extend(members)
     return tuple(sorted(migratable))
@@ -569,10 +623,12 @@ def migrate_plans(
         }
 
         changes: dict[pathlib.Path, bytes] = {}
+        finalized_contents: dict[pathlib.Path, bytes] = {}
         protected_before: dict[pathlib.Path, tuple[str, ...]] = {}
         replacement_count = 0
         for source, destination in destinations.items():
             transformed, count, hashes = _read_transformed(source, replacements)
+            finalized_contents[source] = transformed
             replacement_count += count
             protected_before[destination] = hashes
             existing = destination.read_bytes() if destination.is_file() else None
@@ -640,12 +696,9 @@ def migrate_plans(
             raise
 
         for source in files:
-            try:
-                if source.is_symlink() or not source.is_file() or source.read_bytes() != source_snapshots[source]:
-                    raise _common.WebInputError(f"旧ファイルの内容が移行中に変化しました: {source}")
-                source.unlink()
-            except OSError as error:
-                raise _common.WebInputError(f"旧ファイルを削除できません: {source}") from error
+            if source.is_symlink() or not source.is_file() or source.read_bytes() != source_snapshots[source]:
+                raise _common.WebInputError(f"旧ファイルの内容が移行中に変化しました: {source}")
+            _finalize_plan_file(source, destinations[source], finalized_contents[source])
         return {
             "migrated": len(destinations),
             "deleted": len(files),

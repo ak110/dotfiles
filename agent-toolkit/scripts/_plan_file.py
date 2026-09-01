@@ -1,9 +1,9 @@
 """計画ファイルの保存root・可搬表記・種別判定を扱う共通モジュール。
 
-新規計画は`~/.claude/plans/yyyy/MM/`で作業し、永続参照には移動後の
+新規計画は`~/.claude/plans/`直下で作業し、永続参照には移動後の
 `$(atk config get private_notes)/`を固定接頭辞として用いる。実装レビュー完了後は
-private-notes内の同じ相対パスへ移す。旧root直下の既存ファイルと、過去に保存された
-絶対パスは読み取り互換として受理する。
+作成日の年月階層を付けてprivate-notesへ移す。既存の日付階層の作業ファイルと、
+過去に保存された絶対パスは読み取り互換として受理する。
 本モジュールはシェルを起動せず、portable値を通常の相対パスとして検証する。
 """
 
@@ -13,6 +13,7 @@ import datetime
 import os
 import pathlib
 import re
+import subprocess
 
 import platformdirs
 
@@ -129,6 +130,63 @@ def validate_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Pa
     return pathlib.Path(*relative.parts)
 
 
+def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Path:
+    """計画作業root直下のメイン計画パスを検証して返す。"""
+    raw = os.fspath(relative_path)
+    if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
+        raise ValueError("作業中の計画ファイルの相対パスが不正です")
+    relative = pathlib.PurePosixPath(raw)
+    if relative.is_absolute() or len(relative.parts) != 1 or relative.parts[0] in ("", ".", ".."):
+        raise ValueError("作業中の計画ファイルは計画作業root直下のファイル名で指定してください")
+    filename = relative.name
+    canonical = _CANONICAL_MAIN_RE.fullmatch(filename)
+    migrated = _MIGRATED_MAIN_RE.fullmatch(filename)
+    if canonical is not None:
+        label = canonical.group("label")
+        if not label or any(character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in label):
+            raise ValueError("作業中の計画ファイル名に使用できない文字が含まれています")
+        day = int(canonical.group("day"))
+    elif migrated is not None:
+        legacy_name = migrated.group("legacy_name")
+        if legacy_name.endswith((".detail.md", ".bugs.md", ".review.md", "-workaround-check.md")) or any(
+            character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in legacy_name
+        ):
+            raise ValueError("作業中の移行済み計画ファイル名に使用できない文字が含まれています")
+        day = int(migrated.group("day"))
+    else:
+        raise ValueError("作業中の計画ファイル名はdd-{名称}-{小文字16進数4桁}.mdの形式で指定してください")
+    if not 1 <= day <= 31:
+        raise ValueError("作業中の計画ファイル名の日が不正です")
+    return pathlib.Path(filename)
+
+
+def _birth_epoch(path: pathlib.Path) -> float:
+    """ファイルのbirth timeを取得し、取得不能なら明示的に停止する。"""
+    info = path.stat(follow_symlinks=False)
+    value = getattr(info, "st_birthtime", None)
+    if value is None:
+        result = subprocess.run(
+            ["stat", "--format=%W", "--", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise OSError(f"作成日時を取得できません（GNU stat）: {path}")
+        try:
+            value = float(result.stdout.strip())
+        except ValueError as error:
+            raise OSError(f"作成日時の形式が不正です: {path}") from error
+    if not isinstance(value, (int, float)) or value <= 0:
+        raise OSError(f"作成日時を取得できません: {path}")
+    return float(value)
+
+
+def file_birth_date(path: pathlib.Path) -> datetime.date:
+    """ファイルの作成日時を実行ホストのローカル日付へ変換する。"""
+    return datetime.datetime.fromtimestamp(_birth_epoch(path)).date()
+
+
 def validate_migrated_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Path:
     """移行で生成した旧ファイル名の新root相対パスを検証して返す。
 
@@ -175,22 +233,23 @@ def _main_candidate_for_new_path(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def _new_plan_kind(file_path: str | os.PathLike[str]) -> str | None:
-    """作業root又は保存root内の日付階層ファイルの種別を返す。"""
+    """作業root又は保存root内の計画ファイルの種別を返す。"""
     try:
         path = _resolve(pathlib.Path(file_path))
-        roots = (_resolve(working_plans_root()), _resolve(new_plans_root()))
-        root = next(candidate for candidate in roots if path.is_relative_to(candidate))
-        relative = path.relative_to(root)
-        if len(relative.parts) != 3:
-            return None
+        working_root = _resolve(working_plans_root())
+        saved_root = _resolve(new_plans_root())
+        root = next(candidate for candidate in (working_root, saved_root) if path.is_relative_to(candidate))
         candidate = _main_candidate_for_new_path(path)
         if candidate is None:
             return None
         candidate_rel = candidate.relative_to(root)
-        try:
-            validate_plan_relative_path(candidate_rel)
-        except ValueError:
-            validate_migrated_plan_relative_path(candidate_rel)
+        if root == working_root and len(candidate_rel.parts) == 1:
+            validate_working_plan_relative_path(candidate_rel)
+        else:
+            try:
+                validate_plan_relative_path(candidate_rel)
+            except ValueError:
+                validate_migrated_plan_relative_path(candidate_rel)
         if path.name.endswith(".bugs.md"):
             return "adjunct"
         if path.name.endswith(".detail.md"):
@@ -211,8 +270,8 @@ def resolve_plan_file(
 ) -> pathlib.Path:
     """保存済み計画参照を実ファイルパスへ解決する。
 
-    portable値はprivate-notes内へ限定する。保存先が存在せず、同じ日付相対パスの
-    作業ファイルが存在する場合は作業実体を返す。旧直下形式と過去の絶対パスは
+    portable値はprivate-notes内へ限定する。保存先が存在せず、同じファイル名の
+    直下作業ファイル又は同じ日付相対パスの作業ファイルが存在する場合は作業実体を返す。過去の絶対パスは
     既存データを読むための互換経路として受理する。
     """
     raw = os.fspath(value)
@@ -228,6 +287,20 @@ def resolve_plan_file(
         if candidate.exists():
             return candidate
         if relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
+            if len(relative.parts) == 4:
+                direct_candidate = _resolve(working_root / relative.name)
+                direct_main = _main_candidate_for_new_path(direct_candidate)
+                try:
+                    if direct_main is None:
+                        raise ValueError("計画ファイルの種別が不正です")
+                    validate_working_plan_relative_path(direct_main.name)
+                except ValueError:
+                    pass
+                else:
+                    if direct_candidate.exists():
+                        if not direct_candidate.is_relative_to(working_root):
+                            raise ValueError("計画ファイルの作業パスが作業root外を指しています")
+                        return direct_candidate
             working_candidate = _resolve(working_root.joinpath(*relative.parts[1:]))
             if working_candidate.exists():
                 if not working_candidate.is_relative_to(working_root):
@@ -256,7 +329,7 @@ def to_portable_plan_file(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> str:
-    """保存root又は日付階層の作業root内の絶対パスをportable値へ変換する。
+    """保存root又は作業root内の絶対パスをportable値へ変換する。
 
     旧直下形式または過去のroot外絶対パスは読み取り互換のため絶対表記を維持する。
     """
@@ -273,14 +346,19 @@ def to_portable_plan_file(
                 relative_main = _relative_to(main_candidate, working_plans_root(home))
                 if relative_main is None:
                     raise ValueError("計画メインファイルが作業root外です")
-                validate_plan_relative_path(relative_main.as_posix())
-                return (
-                    PORTABLE_PLAN_PREFIX
-                    + pathlib.PurePosixPath(
+                if len(relative_main.parts) == 1:
+                    validate_working_plan_relative_path(relative_main.as_posix())
+                    birth_date = file_birth_date(main_candidate)
+                    portable_parts = (
                         NEW_PLANS_DIRECTORY,
+                        f"{birth_date.year:04d}",
+                        f"{birth_date.month:02d}",
                         *working_relative.parts,
-                    ).as_posix()
-                )
+                    )
+                else:
+                    validate_plan_relative_path(relative_main.as_posix())
+                    portable_parts = (NEW_PLANS_DIRECTORY, *working_relative.parts)
+                return PORTABLE_PLAN_PREFIX + pathlib.PurePosixPath(*portable_parts).as_posix()
         except ValueError:
             pass
     return str(resolved)

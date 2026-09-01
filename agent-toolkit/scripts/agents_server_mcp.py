@@ -16,6 +16,7 @@ import os
 import warnings
 from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
+from uuid import UUID
 
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
@@ -107,6 +108,7 @@ class AgentsServerManager:
         raise ValueError(f"unsupported engine: {engine}")
 
     def _get_session(self, session_id: str) -> SessionState:
+        """保持中のsessionを返し、未解決値は識別子体系と喪失に分けて診断する。"""
         if not isinstance(session_id, str) or not session_id:
             raise ValueError("session_id must be a non-empty string")
         try:
@@ -114,7 +116,7 @@ class AgentsServerManager:
         except KeyError as exc:
             if session_id in self.expired_sessions:
                 raise ValueError(f"session retention expired: {session_id}") from exc
-            raise ValueError(f"unknown session: {session_id}") from exc
+            raise self._unresolved_session_error(session_id, label="session") from exc
         if session.retention_deadline is not None and asyncio.get_running_loop().time() >= session.retention_deadline:
             self._expire_session(session_id)
             raise ValueError(f"session retention expired: {session_id}")
@@ -132,7 +134,7 @@ class AgentsServerManager:
         *,
         unknown_label: str = "exclude_session_id",
     ) -> SessionState | SessionResumeState:
-        """除外元sessionの起動条件を保持中の全状態から取得する。"""
+        """全保持状態からsessionを返し、未解決値だけを体系と喪失に分ける。"""
         if not isinstance(session_id, str) or not session_id:
             raise ValueError("exclude_session_id must be a non-empty string")
         session = self.sessions.get(session_id)
@@ -144,7 +146,25 @@ class AgentsServerManager:
         pending = self._pending_resumes.get(session_id)
         if pending is not None:
             return pending.state
-        raise ValueError(f"unknown {unknown_label}: {session_id}")
+        raise self._unresolved_session_error(session_id, label=unknown_label)
+
+    @staticmethod
+    def _unresolved_session_error(session_id: str, *, label: str) -> ValueError:
+        """未解決の識別子を体系相違または失われたsessionとして診断する。
+
+        保持状態の照会後だけ呼び、登録済みの非UUID識別子は拒否しない。
+        体系相違の本文には、継続不能の判定に使う`unknown session`を含めない。
+        """
+        try:
+            parsed = UUID(session_id)
+        except ValueError:
+            parsed = None
+        if parsed is None or str(parsed) != session_id.lower():
+            return ValueError(f"{label} identifier scheme mismatch: {session_id}; expected UUID")
+        return ValueError(
+            f"unknown {label}: {session_id}; agents_server may have restarted and lost this session; "
+            "start a new session with the verified state"
+        )
 
     def _resolve_start_candidate(
         self,
@@ -361,6 +381,52 @@ class AgentsServerManager:
             response["previous_result"] = previous_result
         return response
 
+    async def _cancel_pending_resume(
+        self,
+        pending: _PendingResume,
+        timeout: float,
+    ) -> tuple[SessionState, bool]:
+        """保留中の再開と配下作業を回収し、中断要求の受理有無を返す。"""
+        pending.discard_previous_result()
+        pending.prompt.close()
+        cancellation_requested = not pending.task.done()
+        if cancellation_requested:
+            pending.task.cancel()
+        outcomes = await asyncio.wait_for(
+            asyncio.gather(pending.task, return_exceptions=True),
+            timeout=timeout,
+        )
+        outcome = outcomes[0]
+        if not isinstance(outcome, asyncio.CancelledError):
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome, outcome.interrupt_requested
+
+        resume_state = pending.state
+        session = self.sessions.get(resume_state.session_id)
+        if session is None:
+            session = SessionState(
+                session_id=resume_state.session_id,
+                cwd=resume_state.cwd,
+                model=resume_state.model,
+                effort=resume_state.effort,
+                engine=resume_state.engine,
+                model_type=resume_state.model_type,
+                explore=resume_state.explore,
+                excluded_candidates=resume_state.excluded_candidates,
+            )
+            self.sessions[session.session_id] = session
+        self.expired_sessions.pop(session.session_id, None)
+        if self._pending_resumes.get(session.session_id) is pending:
+            self._pending_resumes.pop(session.session_id, None)
+        session.status = "interrupted"
+        session.turn_completed = True
+        session.turn_start_ambiguous = False
+        session.interrupt_requested = False
+        session.touch()
+        await self._notify_waiters()
+        return session, False
+
     async def _resume_and_reply(
         self,
         resume_state: SessionResumeState,
@@ -459,7 +525,24 @@ class AgentsServerManager:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
-        session = self._get_session(session_id)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + float(timeout) if timeout > 0 else None
+        delivery_deadline = deadline if deadline is not None else loop.time() + DEFAULT_SEND_MESSAGE_TIMEOUT
+        pending = self._pending_resumes.get(session_id)
+        if pending is not None:
+            try:
+                session, interrupt_requested = await self._cancel_pending_resume(
+                    pending,
+                    max(0.0, delivery_deadline - loop.time()),
+                )
+            except TimeoutError as exc:
+                raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
+            if interrupt_requested:
+                response = session.public_status(include_result=True)
+                response["kill_requested"] = True
+                return response
+        else:
+            session = self._get_session(session_id)
         started_terminal = session.terminal
         requested_before_call = session.interrupt_requested
         if started_terminal:
@@ -467,9 +550,6 @@ class AgentsServerManager:
             response["kill_requested"] = False
             return response
 
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + float(timeout) if timeout > 0 else None
-        delivery_deadline = deadline if deadline is not None else loop.time() + DEFAULT_SEND_MESSAGE_TIMEOUT
         requested = requested_before_call
         backend = self._backend(session.engine)
         try:
@@ -592,7 +672,10 @@ async def start(
     cwd: str,
     exclude_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """工程別モデル設定の候補から委譲先turnを開始する。"""
+    """工程別モデル設定の候補から委譲先turnを開始する。
+
+    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    """
     return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
 
 
@@ -603,7 +686,10 @@ async def start_explore(
     fast: bool = False,
     exclude_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """探索専用の軽量な起動条件で委譲先turnを開始する。"""
+    """探索専用の軽量な起動条件で委譲先turnを開始する。
+
+    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    """
     return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)
 
 

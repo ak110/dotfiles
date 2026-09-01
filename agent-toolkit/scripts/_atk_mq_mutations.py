@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 
+import _atk_git_sync
 import _atk_mq_add as _add
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_remove_all as _remove_all
@@ -1127,17 +1128,11 @@ def _git_head(private_notes: pathlib.Path) -> str:
     return commit
 
 
-def _assert_conversion_worktree_clean(private_notes: pathlib.Path) -> None:
-    """計画変換前に管理repoの作業ツリーとindex全体がcleanであることを確認する。"""
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=private_notes,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    if status.stdout.strip():
-        raise WebInputError("計画変換前に管理repoの作業ツリーとindexをcleanにしてください")
+def _assert_conversion_paths_clean(private_notes: pathlib.Path, paths: list[pathlib.Path]) -> None:
+    """計画変換前に変換対象と保存先だけがcleanであることを確認する。"""
+    relative_paths = [str(path.relative_to(private_notes)) for path in paths]
+    if _atk_git_sync.is_worktree_dirty(private_notes, paths=relative_paths):
+        raise WebInputError("計画変換前に変換対象と保存先の作業ツリー及びindexをcleanにしてください")
 
 
 def _assert_conversion_targets_tracked(
@@ -1167,7 +1162,12 @@ def _restore_conversion_paths(
     try:
         if _git_head(private_notes) != start_head:
             return
-        subprocess.run(["git", "reset", "--mixed", start_head], cwd=private_notes, check=True)
+        reset_paths = tuple(dict.fromkeys((*relative_paths, *remove_relative_paths)))
+        subprocess.run(
+            ["git", "reset", "--mixed", start_head, "--", *reset_paths],
+            cwd=private_notes,
+            check=True,
+        )
         tracked = subprocess.run(
             ["git", "ls-files", "--", *relative_paths],
             cwd=private_notes,
@@ -1377,7 +1377,6 @@ def convert_entries_to_plan(
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
 
     with _repo_lock(private_notes, timeout=lock_timeout):
-        _assert_conversion_worktree_clean(private_notes)
         _push_pending_commits(private_notes)
         _pull(private_notes)
         try:
@@ -1395,6 +1394,8 @@ def convert_entries_to_plan(
         if state == MQ_STATE_PLANNING:
             if message is None:
                 raise WebInputError("planningの入力には--messageを指定してください")
+            destination = inbox_dir / min(paths, key=lambda path: path.name).name
+            _assert_conversion_paths_clean(private_notes, [*paths, destination])
             return _convert_planning_entries(
                 private_notes,
                 paths=paths,
@@ -1412,6 +1413,7 @@ def convert_entries_to_plan(
             raise WebInputError("inbox・processingの入力には--messageを指定できません")
         if len(paths) != len(normalized_filenames):
             raise WebInputError("変換対象を一意に特定できません")
+        _assert_conversion_paths_clean(private_notes, paths)
         _assert_conversion_targets_tracked(private_notes, paths)
         snapshots = [(path, path.read_text(encoding="utf-8")) for path in paths]
         dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)

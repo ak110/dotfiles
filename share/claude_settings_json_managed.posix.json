@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
+            "command": "sh -c '[ -f ~/dotfiles/scripts/claude_hook.py ] || exit 0; uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
           }
         ]
       },

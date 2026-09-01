@@ -600,6 +600,37 @@ def test_rejects_target_repo_mismatched_with_worktree(repo: tuple[pathlib.Path, 
     assert any("対象リポジトリが作業ディレクトリのGitルートと一致しない" in error for error in errors), errors
 
 
+def test_cli_requires_metadata_target_repo_instead_of_linked_worktree(
+    repo: tuple[pathlib.Path, str],
+) -> None:
+    """構造検査は同じGitリポジトリの別作業ツリーを対象リポジトリとして代用しない。"""
+    work_dir, _base = repo
+    linked_worktree = work_dir.parent / f"{work_dir.name}-linked"
+    _git(work_dir, "worktree", "add", "-q", str(linked_worktree), "HEAD")
+    main_content, detail_content = human_new_format_plan(work_dir)
+    plan_path = work_dir / "target-repo-plan.md"
+    plan_path.write_text(main_content, encoding="utf-8")
+    plan_path.with_name("target-repo-plan.detail.md").write_text(detail_content, encoding="utf-8")
+    command = [sys.executable, str(pathlib.Path(check_plan_file.__file__)), "--work-dir"]
+
+    target_result = subprocess.run(
+        [*command, str(work_dir), str(plan_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    linked_result = subprocess.run(
+        [*command, str(linked_worktree), str(plan_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert target_result.returncode == 0, target_result.stderr
+    assert linked_result.returncode == 1
+    assert "対象リポジトリが作業ディレクトリのGitルートと一致しない" in linked_result.stderr
+
+
 def test_accepts_relative_target_repo_matching_worktree(repo: tuple[pathlib.Path, str]) -> None:
     """相対表記の対象リポジトリを正規化してGitルートと照合する。"""
     work_dir, base = repo
@@ -731,6 +762,31 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
+    assert not errors, errors
+    assert not warnings, warnings
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [pathlib.Path("30-計画保存先移行-d4f9.md"), pathlib.Path("2026/08/30-計画保存先移行-d4f9.md")],
+)
+def test_accepts_direct_and_date_hierarchy_working_paths(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+    relative: pathlib.Path,
+) -> None:
+    """直下形式と既存の日付階層形式の作業計画を同じ構造検査で受理する。"""
+    work_dir, _base = repo
+    home = tmp_path / "home"
+    main_path = home / ".claude/plans" / relative
+    detail_path = main_path.with_name(main_path.stem + ".detail.md")
+    main_path.parent.mkdir(parents=True, exist_ok=True)
+    main_content, detail_content = human_new_format_plan(work_dir)
+    main_path.write_text(main_content, encoding="utf-8")
+    detail_path.write_text(detail_content, encoding="utf-8")
+
+    errors, warnings = check_plan_file.check(main_path, work_dir, home=home)
+
     assert not errors, errors
     assert not warnings, warnings
 

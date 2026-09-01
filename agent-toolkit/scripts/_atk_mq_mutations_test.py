@@ -302,6 +302,8 @@ class TestCommitResolution:
                 return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
             if "rev-parse" in cmd:
                 return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            if cmd == ["git", "rev-list", "--count", "@{u}..HEAD"]:
+                return subprocess.CompletedProcess(cmd, 0, "0\n", "")
             raise AssertionError(cmd)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -678,7 +680,7 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(mutations, "_assert_conversion_worktree_clean", lambda _path: None)
+    monkeypatch.setattr(mutations, "_assert_conversion_paths_clean", lambda _path, _paths: None)
     monkeypatch.setattr(mutations, "_assert_conversion_targets_tracked", lambda _path, _paths: None)
     monkeypatch.setattr(mutations, "_git_head", lambda _path: "a" * 40)
 
@@ -1541,9 +1543,108 @@ def _initialize_private_notes_git(notes: pathlib.Path) -> str:
 
 def _disable_real_convert_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """実Git変換テストでremote同期だけを無効化する。"""
-    monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
+
+
+def test_convert_to_plan_ignores_unrelated_worktree_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変換対象外の未コミット差分があっても対象だけを変換する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    unrelated = notes / "unrelated.txt"
+    unrelated.write_text("before\n", encoding="utf-8")
+    start_head = _initialize_private_notes_git(notes)
+    unrelated.write_text("after\n", encoding="utf-8")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_real_convert_network(monkeypatch)
+
+    mutations.convert_entry_to_plan(
+        notes,
+        filename=path.name,
+        plan_file=str(plan),
+        skip_push=True,
+    )
+
+    end_head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert end_head != start_head
+    assert "plan_file:" in path.read_text(encoding="utf-8")
+    status = subprocess.run(
+        ["git", "-C", str(notes), "status", "--porcelain", "--", unrelated.name],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert status.stdout == " M unrelated.txt\n"
+
+
+def test_convert_to_plan_rejects_dirty_target_path(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """変換対象に未コミット差分がある場合は書込み前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_feedback(notes, "feedback.md")
+    _initialize_private_notes_git(notes)
+    original = path.read_text(encoding="utf-8") + "未コミット変更\n"
+    path.write_text(original, encoding="utf-8")
+    plan = _write_convert_plan(tmp_path, "a" * 40)
+    _disable_real_convert_network(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="変換対象と保存先"):
+        mutations.convert_entry_to_plan(notes, filename=path.name, plan_file=str(plan))
+
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_conversion_restore_preserves_unrelated_index_change(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """commit前の復元後も対象外のstage済み差分をindexへ保持する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    source = _write_convert_feedback(notes, filename, state="planning")
+    original = source.read_text(encoding="utf-8")
+    unrelated = notes / "unrelated.txt"
+    unrelated.write_text("before\n", encoding="utf-8")
+    _initialize_private_notes_git(notes)
+    unrelated.write_text("staged\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", unrelated.name], check=True)
+    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    _disable_real_convert_network(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+
+    def fail_after_write(path: pathlib.Path, content: str) -> None:
+        path.write_text(content, encoding="utf-8")
+        raise OSError("テスト用書込み失敗")
+
+    monkeypatch.setattr(mutations, "_atomic_write_text", fail_after_write)
+    with pytest.raises(OSError, match="書込み失敗"):
+        mutations.convert_entries_to_plan(
+            notes,
+            filenames=(filename,),
+            plan_file=str(plan),
+            message="統合本文",
+            local_worktree=tmp_path / "target-worktree",
+        )
+
+    assert source.read_text(encoding="utf-8") == original
+    assert not (notes / "inbox" / filename).exists()
+    staged = subprocess.run(
+        ["git", "-C", str(notes), "diff", "--cached", "--name-only"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert staged.stdout == "unrelated.txt\n"
 
 
 def test_convert_planning_entries_restores_all_paths_after_write_failure(

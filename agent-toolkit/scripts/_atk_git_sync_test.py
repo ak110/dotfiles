@@ -87,6 +87,70 @@ def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     assert "未pushのcommit" in capsys.readouterr().err
 
 
+def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path) -> None:
+    """対象外の差分を無視し、指定したpathだけの変更を判定する。"""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "unrelated.txt").write_text("changed\n", encoding="utf-8")
+
+    assert not _atk_git_sync.is_worktree_dirty(repo, paths=["target.txt"])
+    assert _atk_git_sync.is_worktree_dirty(repo, paths=["unrelated.txt"])
+    assert _atk_git_sync.is_worktree_dirty(repo)
+
+
+def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path: pathlib.Path) -> None:
+    """remoteなし、upstream不明及び未push件数を別の結果で返す。"""
+    local_only = tmp_path / "local-only"
+    local_only.mkdir()
+    (local_only / _atk_git_sync.LOCAL_ONLY_MARKER).touch()
+    assert _atk_git_sync.pending_commit_count(local_only) == 0
+
+    unresolved = tmp_path / "unresolved"
+    unresolved.mkdir()
+    assert _atk_git_sync.pending_commit_count(unresolved) is None
+
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git(origin, "init", "--bare", "--initial-branch=main")
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "-u", "origin", "main")
+    (repo / "target.txt").write_text("after\n", encoding="utf-8")
+    _git(repo, "add", "target.txt")
+    _git(repo, "commit", "-m", "local")
+
+    assert _atk_git_sync.pending_commit_count(repo) == 1
+
+
+@pytest.mark.parametrize("operation", ["pull", "push"])
+def test_sync_failure_reports_recovery_steps_and_preserves_exception(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+) -> None:
+    """pullとpushの失敗は対応手順を示して元の例外を送出する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    expected = subprocess.CalledProcessError(1, ["git", operation])
+
+    def run_git(args: list[str], cwd: pathlib.Path) -> None:
+        del cwd
+        if operation == "pull" or args == ["push"]:
+            raise expected
+        raise subprocess.CalledProcessError(1, ["git", *args])
+
+    sync = _atk_git_sync.pull if operation == "pull" else _atk_git_sync.push_pending_commits
+    with _atk_git_sync.repo_lock(repo), pytest.raises(subprocess.CalledProcessError) as exc_info:
+        sync(repo, run_git=run_git)
+
+    assert exc_info.value is expected
+    stderr = capsys.readouterr().err
+    assert f"private-notesの{operation}に失敗しました: {repo.resolve()}" in stderr
+    assert f"確認: `git -C {repo.resolve()} status`" in stderr
+    assert "失敗した`atk`操作を再実行" in stderr
+
+
 def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

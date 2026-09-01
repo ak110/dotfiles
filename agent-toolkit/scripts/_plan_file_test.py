@@ -180,6 +180,36 @@ def test_portable_plan_file_resolves_working_copy_before_saved_copy(tmp_path: pa
     assert _plan_file.to_portable_plan_file(working, private_notes=private_notes, home=home) == portable
 
 
+def test_portable_plan_file_round_trips_direct_working_copy(tmp_path: pathlib.Path) -> None:
+    """直下の作業実体を作成月付きportable参照へ変換し、同じ実体へ復元する。"""
+    home = tmp_path / "home"
+    private_notes = tmp_path / "private-notes"
+    working = home / ".claude/plans/30-計画保存先移行-d4f9.md"
+    working.parent.mkdir(parents=True)
+    working.write_text("# 作業中\n", encoding="utf-8")
+    birth_date = _plan_file.file_birth_date(working)
+    portable = f"$(atk config get private_notes)/plans/{birth_date.year:04d}/{birth_date.month:02d}/{working.name}"
+
+    assert _plan_file.to_portable_plan_file(working, private_notes=private_notes, home=home) == portable
+    assert _plan_file.resolve_plan_file(portable, private_notes=private_notes, home=home) == working.resolve()
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["01-計画-d4f9.md", "31-legacy-name.md"],
+)
+def test_validate_working_plan_relative_path_accepts_direct_formats(filename: str) -> None:
+    """直下の正規形式と移行済み形式を作業パスとして受理する。"""
+    assert _plan_file.validate_working_plan_relative_path(filename) == pathlib.Path(filename)
+
+
+@pytest.mark.parametrize("filename", ["00-計画-d4f9.md", "32-計画-d4f9.md", "2026/08/30-計画-d4f9.md"])
+def test_validate_working_plan_relative_path_rejects_invalid_day_or_directory(filename: str) -> None:
+    """直下形式の範囲外の日とディレクトリ成分を拒否する。"""
+    with pytest.raises(ValueError):
+        _plan_file.validate_working_plan_relative_path(filename)
+
+
 def test_portable_plan_file_prefers_saved_copy_after_finalization(tmp_path: pathlib.Path) -> None:
     """保存先と作業側が併存する再実行状態では保存済み実体を優先する。"""
     home = tmp_path / "home"

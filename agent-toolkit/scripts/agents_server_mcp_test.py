@@ -9,6 +9,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -151,6 +152,7 @@ class BlockingResumeBackend(FakeBackend):
     def __init__(self, sessions: dict[str, subject.SessionState], engine: str) -> None:
         super().__init__(sessions, engine)
         self.resume_started = asyncio.Event()
+        self.resume_finished = asyncio.Event()
         self.release_resume = asyncio.Event()
 
     async def resume(
@@ -163,8 +165,11 @@ class BlockingResumeBackend(FakeBackend):
         **kwargs: Any,
     ) -> subject.SessionState:
         self.resume_started.set()
-        await self.release_resume.wait()
-        return await super().resume(session_id, prompt, cwd, model, effort, **kwargs)
+        try:
+            await self.release_resume.wait()
+            return await super().resume(session_id, prompt, cwd, model, effort, **kwargs)
+        finally:
+            self.resume_finished.set()
 
 
 class ConcurrentOwnerGoneBackend(FakeBackend):
@@ -208,6 +213,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server_claude.py",
         "_agents_server_state.py",
         "_atk_config.py",
+        "_atk_help.py",
         "_inherited_venv.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
@@ -248,6 +254,16 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
     assert explore_tool.parameters["properties"]["fast"]["default"] is False
+
+
+def test_start_tool_descriptions_require_same_turn_observation() -> None:
+    """開始ツールの公開説明が返却sessionを同じ応答内で観測させる。"""
+    for tool_name in ("start", "start_explore"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "返した`session_id`" in tool.description
+        assert "同じ応答の中で`wait`を発行して観測する" in tool.description
+        assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
@@ -696,6 +712,40 @@ async def test_send_message_timeout_covers_resume(tmp_path: pathlib.Path) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "session_id",
+    ["3468feae-b2bf-4d67-ac55-3c40207e8b5b", "claude-expired"],
+)
+async def test_kill_cancels_pending_resume_without_followup_message(
+    session_id: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """再開入力のtimeout後は追加送信なしのkillで保留作業を回収する。"""
+    manager = subject.AgentsServerManager()
+    backend = BlockingResumeBackend(manager.sessions, "claude")
+    manager._claude = backend
+    session = subject.SessionState(session_id, str(tmp_path), engine="claude")
+    _complete(session)
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+
+    try:
+        with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
+            await manager.send_message(session.session_id, "追加指示", timeout=0.01)
+
+        response = await manager.kill(session.session_id, timeout=1)
+
+        assert response["session_id"] == session_id
+        assert response["status"] == "interrupted"
+        assert response["kill_requested"] is False
+        assert not manager._pending_resumes
+        assert backend.resume_finished.is_set()
+        assert backend.interrupt_calls == 0
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_owner_gone_send_messages_resume_once(tmp_path: pathlib.Path) -> None:
     """所有主体終了を同時検出した継続要求は再開を共有して両方を配送する。"""
     manager = subject.AgentsServerManager()
@@ -835,9 +885,17 @@ class FakeCodexClient:
         self.reader_failure = None
         self._turn_count = 0
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         params = params or {}
         self.requests.append((method, params))
+        if on_sent is not None:
+            on_sent()
         if method in {"thread/start", "thread/resume"}:
             thread_id = params.get("threadId", "thread-codex")
             return {"thread": {"id": thread_id}}
@@ -862,11 +920,17 @@ class BlockingResumeCodexClient(FakeCodexClient):
         self.release_resume = asyncio.Event()
         self.resume_finished = asyncio.Event()
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         if method == "thread/resume":
             self.resume_started.set()
             await self.release_resume.wait()
-        result = await super().request(method, params)
+        result = await super().request(method, params, on_sent=on_sent)
         if method == "thread/resume":
             self.resume_finished.set()
         return result
@@ -875,10 +939,16 @@ class BlockingResumeCodexClient(FakeCodexClient):
 class LostTurnStartClient(FakeCodexClient):
     """thread/start成功後にturn/start応答を喪失する偽クライアント。"""
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         if method == "turn/start":
             raise codex_backend.AppServerError("turn/start response lost")
-        return await super().request(method, params)
+        return await super().request(method, params, on_sent=on_sent)
 
 
 class SteerRaceClient(FakeCodexClient):
@@ -888,11 +958,17 @@ class SteerRaceClient(FakeCodexClient):
         super().__init__()
         self.steer_called = asyncio.Event()
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         if method == "turn/steer":
             self.steer_called.set()
             raise codex_backend.JsonRpcResponseError(method, -32600, "turn is not active")
-        return await super().request(method, params)
+        return await super().request(method, params, on_sent=on_sent)
 
 
 class ServerRequestClient(FakeCodexClient):
@@ -909,10 +985,16 @@ class ServerRequestClient(FakeCodexClient):
 class InterruptErrorClient(FakeCodexClient):
     """turn/interruptへJSON-RPC errorを返す偽クライアント。"""
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         if method == "turn/interrupt":
             raise codex_backend.JsonRpcResponseError(method, -32600, "interrupt rejected")
-        return await super().request(method, params)
+        return await super().request(method, params, on_sent=on_sent)
 
 
 class CompletingInterruptClient(FakeCodexClient):
@@ -923,7 +1005,13 @@ class CompletingInterruptClient(FakeCodexClient):
         self.backend = backend
         self.session = session
 
-    async def request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         if method == "turn/interrupt":
             await self.backend._handle_notification(
                 {
@@ -934,7 +1022,105 @@ class CompletingInterruptClient(FakeCodexClient):
                     },
                 }
             )
-        return await super().request(method, params)
+        return await super().request(method, params, on_sent=on_sent)
+
+
+class HoldingTurnStartClient(FakeCodexClient):
+    """turn/start受理後の応答を保留し、中断で実作業を終える偽クライアント。"""
+
+    def __init__(self, backend: codex_backend.AppServerManager) -> None:
+        super().__init__()
+        self.backend = backend
+        self.turn_start_received = asyncio.Event()
+        self.active_turn = False
+
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        if method != "turn/start":
+            if method == "turn/interrupt":
+                assert params is not None
+                self.active_turn = False
+                await self.backend._handle_notification(
+                    {
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": params["threadId"],
+                            "turn": {"id": params["turnId"], "status": "interrupted", "error": None},
+                        },
+                    }
+                )
+            return await super().request(method, params, on_sent=on_sent)
+
+        params = params or {}
+        self.requests.append((method, params))
+        if on_sent is not None:
+            on_sent()
+        self._turn_count += 1
+        turn_id = f"turn-{self._turn_count}"
+        self.active_turn = True
+        await self.backend._handle_notification(
+            {
+                "method": "turn/started",
+                "params": {"threadId": params["threadId"], "turn": {"id": turn_id}},
+            }
+        )
+        self.turn_start_received.set()
+        await asyncio.Event().wait()
+        raise AssertionError("保留中のturn/start応答が予期せず完了した")
+
+
+class NaturallyCompletingTurnStartClient(FakeCodexClient):
+    """turn/start応答待ちの取消中に対象turnを自然終了できる偽クライアント。"""
+
+    def __init__(self, backend: codex_backend.AppServerManager) -> None:
+        super().__init__()
+        self.backend = backend
+        self.turn_start_received = asyncio.Event()
+        self.active_turn = False
+        self.turn_id = "turn-natural"
+
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        on_sent: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        if method != "turn/start":
+            return await super().request(method, params, on_sent=on_sent)
+
+        params = params or {}
+        self.requests.append((method, params))
+        if on_sent is not None:
+            on_sent()
+        self.active_turn = True
+        self.turn_start_received.set()
+        await asyncio.Event().wait()
+        raise AssertionError("保留中のturn/start応答が予期せず完了した")
+
+    async def complete_turn(self, session_id: str) -> None:
+        """開始通知と自然完了通知を連続配送する。"""
+        await self.backend._handle_notification(
+            {
+                "method": "turn/started",
+                "params": {"threadId": session_id, "turn": {"id": self.turn_id}},
+            }
+        )
+        self.active_turn = False
+        await self.backend._handle_notification(
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": session_id,
+                    "turn": {"id": self.turn_id, "status": "completed", "error": None},
+                },
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -1127,8 +1313,8 @@ async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_codex_json_rpc_process_passes_stream_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """App Server subprocessへ64KiB超のJSONLを許容するstream limitを渡す。"""
+async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
+    """App Server subprocessへ安定した作業ディレクトリとstream limitを渡す。"""
     observed: dict[str, Any] = {}
 
     async def create_subprocess(*_args: Any, **kwargs: Any) -> Any:
@@ -1139,8 +1325,38 @@ async def test_codex_json_rpc_process_passes_stream_limit(monkeypatch: pytest.Mo
     client = codex_backend.JsonRpcProcess(lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0))
     with pytest.raises(RuntimeError, match="capture complete"):
         await client.start()
-    assert observed["limit"] == codex_backend.APP_SERVER_STREAM_LIMIT_BYTES
+    assert observed == {
+        "stdin": asyncio.subprocess.PIPE,
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
+        "limit": codex_backend.APP_SERVER_STREAM_LIMIT_BYTES,
+        "cwd": str(pathlib.Path.home()),
+    }
     assert observed["limit"] > 64 * 1024
+
+
+@pytest.mark.asyncio
+async def test_codex_json_rpc_request_marks_sent_before_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """JSON-RPC送信完了を応答待ちより先に呼出側へ通知する。"""
+    client = codex_backend.JsonRpcProcess(lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0))
+    client.process = cast(Any, SimpleNamespace(stdin=object()))
+    sent = asyncio.Event()
+
+    async def send(_message: dict[str, Any]) -> None:
+        return None
+
+    monkeypatch.setattr(client, "_send", send)
+    request = asyncio.create_task(client.request("turn/start", on_sent=sent.set))
+    await asyncio.wait_for(sent.wait(), timeout=0.1)
+
+    assert not request.done()
+    assert len(client._pending) == 1
+
+    request.cancel()
+    await asyncio.gather(request, return_exceptions=True)
+    assert not client._pending
 
 
 @pytest.mark.asyncio
@@ -1334,6 +1550,114 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
         assert [item["text"] for params in turn_starts for item in params["input"]] == ["後続指示"]
     finally:
         client.release_resume.set()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "session_id",
+    ["3468feae-b2bf-4d67-ac55-3c40207e8b5b", "thread-pending"],
+)
+async def test_codex_kill_interrupts_turn_with_pending_start_response(
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """再開turnの応答待ちでもkillだけでApp Server側作業を終える。"""
+    manager = subject.AgentsServerManager()
+    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
+    client = HoldingTurnStartClient(backend)
+
+    async def ensure_client() -> HoldingTurnStartClient:
+        return client
+
+    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
+    backend.client = cast(Any, client)
+    manager._codex = backend
+    manager.expired_sessions[session_id] = state.SessionResumeState(
+        session_id=session_id,
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="codex",
+    )
+
+    try:
+        with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
+            await manager.send_message(session_id, "再開指示", timeout=0.01)
+        assert client.turn_start_received.is_set()
+        assert client.active_turn is True
+
+        response = await manager.kill(session_id, timeout=1)
+
+        assert response["session_id"] == session_id
+        assert response["status"] == "interrupted"
+        assert response["kill_requested"] is True
+        assert [method for method, _params in client.requests] == [
+            "thread/resume",
+            "turn/start",
+            "turn/interrupt",
+        ]
+        assert client.active_turn is False
+        assert not manager._pending_resumes
+        assert not backend._background_tasks
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "session_id",
+    ["3468feae-b2bf-4d67-ac55-3c40207e8b5b", "thread-pending"],
+)
+async def test_codex_kill_reports_no_request_when_pending_turn_completes_naturally(
+    session_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """保留resumeの取消中に自然終了したturnへ中断要求済みと報告しない。"""
+    manager = subject.AgentsServerManager()
+    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
+    client = NaturallyCompletingTurnStartClient(backend)
+
+    async def ensure_client() -> NaturallyCompletingTurnStartClient:
+        return client
+
+    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
+    backend.client = cast(Any, client)
+    manager._codex = backend
+    manager.expired_sessions[session_id] = state.SessionResumeState(
+        session_id=session_id,
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="codex",
+    )
+
+    try:
+        with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
+            await manager.send_message(session_id, "再開指示", timeout=0.01)
+        assert client.turn_start_received.is_set()
+        assert client.active_turn is True
+        pending = manager._pending_resumes[session_id]
+
+        kill_task = asyncio.create_task(manager.kill(session_id, timeout=1))
+        while pending.task.cancelling() == 0:
+            await asyncio.sleep(0)
+        await client.complete_turn(session_id)
+        response = await kill_task
+
+        assert response["session_id"] == session_id
+        assert response["status"] == "completed"
+        assert response["kill_requested"] is False
+        assert [method for method, _params in client.requests] == [
+            "thread/resume",
+            "turn/start",
+        ]
+        assert client.active_turn is False
+        assert not manager._pending_resumes
+        assert not backend._background_tasks
+    finally:
         await manager.close()
 
 
@@ -1701,6 +2025,47 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
     finally:
         client.release_query.set()
         client.stop_stream.set()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_kill_cleans_owned_pending_resume(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """保留resumeのkillは応答前にClaude所有taskとclientを回収する。"""
+    client = BlockingResumeClaudeClient()
+    manager = subject.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        manager._condition,
+        client_factory=lambda _options: client,
+        expire_session=manager._expire_session,
+    )
+    manager._claude = backend
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    session_id = "claude-pending"
+    manager.expired_sessions[session_id] = state.SessionResumeState(
+        session_id=session_id,
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="claude",
+    )
+
+    try:
+        with pytest.raises(TimeoutError, match="send_message timed out: claude-pending"):
+            await manager.send_message(session_id, "再開指示", timeout=0.01)
+
+        assert backend._tasks
+        response = await manager.kill(session_id, timeout=1)
+
+        assert response["status"] == "interrupted"
+        assert response["kill_requested"] is False
+        assert not manager._pending_resumes
+        assert not backend._tasks
+        assert client.disconnected is True
+    finally:
         await manager.close()
 
 
@@ -2239,13 +2604,77 @@ async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, t
 async def test_unknown_session_is_distinct_from_expired_session(
     operation: str,
 ) -> None:
-    """未登録の識別子を期限切れ識別子と区別する。"""
+    """未登録のUUIDを期限切れ識別子と区別し、喪失時の復旧手順を返す。"""
     manager, _ = _manager_with_fake("codex")
-    with pytest.raises(ValueError, match="unknown session: missing"):
+    session_id = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
+    with pytest.raises(ValueError) as exc_info:
         if operation == "wait":
-            await manager.wait("missing", timeout=0)
+            await manager.wait(session_id, timeout=0)
         else:
-            await manager.send_message("missing", "続行")
+            await manager.send_message(session_id, "続行")
+    message = str(exc_info.value)
+    assert message.startswith(f"unknown session: {session_id}")
+    assert "agents_server may have restarted" in message
+    assert "start a new session with the verified state" in message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "expected_label"),
+    [
+        ("wait", "session"),
+        ("send_message", "session"),
+        ("kill", "session"),
+        ("exclude_session_id", "exclude_session_id"),
+    ],
+)
+async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(
+    operation: str,
+    expected_label: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """体系外の識別子をsession喪失と区別して公開操作から返す。"""
+    manager, _ = _manager_with_fake("codex")
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("codex", "model", "medium")],
+    )
+    with pytest.raises(ValueError) as exc_info:
+        if operation == "wait":
+            await manager.wait("agent-session", timeout=0)
+        elif operation == "send_message":
+            await manager.send_message("agent-session", "続行")
+        elif operation == "kill":
+            await manager.kill("agent-session", timeout=0)
+        else:
+            await manager.start("execute", "実装", str(tmp_path), exclude_session_id="agent-session")
+    message = str(exc_info.value)
+    assert message.startswith(f"{expected_label} identifier scheme mismatch: agent-session")
+    assert "unknown session" not in message
+
+
+@pytest.mark.asyncio
+async def test_identifier_resolution_precedes_scheme_classification(tmp_path: pathlib.Path) -> None:
+    """登録済み状態の解決後にだけ未解決識別子の体系を判定する。"""
+    manager, _ = _manager_with_fake("codex")
+    registered = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[registered.session_id] = registered
+
+    response = await manager.wait(registered.session_id, timeout=0)
+    assert response["session_id"] == registered.session_id
+
+    missing_uuid = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
+    with pytest.raises(ValueError) as missing_exc:
+        await manager.wait(missing_uuid, timeout=0)
+    assert str(missing_exc.value).startswith(f"unknown session: {missing_uuid}")
+    assert "agents_server may have restarted" in str(missing_exc.value)
+
+    with pytest.raises(ValueError) as mismatch_exc:
+        await manager.wait("agent-session", timeout=0)
+    assert "identifier scheme mismatch" in str(mismatch_exc.value)
+    assert "unknown session" not in str(mismatch_exc.value)
 
 
 @pytest.mark.parametrize("cwd", ["", "relative/path"])
