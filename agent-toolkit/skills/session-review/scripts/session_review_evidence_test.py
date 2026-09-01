@@ -280,6 +280,120 @@ def test_main_writes_jsonl_to_stdout(tmp_path: pathlib.Path, capsys) -> None:
     assert json.loads(lines[0]) == {"kind": "user", "text": "入力", "line": 1, "sequence": 1, "record": "main"}
 
 
+def test_main_resolves_codex_transcript_from_thread_id(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """thread IDだけで一意な親rolloutを解決して抽出する。"""
+    thread_id = "11111111-1111-4111-8111-111111111111"
+    codex_home = tmp_path / "codex"
+    _write_jsonl(
+        codex_home / "sessions" / "2026" / "09" / "01" / f"rollout-parent-{thread_id}.jsonl",
+        [
+            {
+                "type": "response_item",
+                "payload": {"type": "message", "role": "user", "content": "thread IDから解決した記録"},
+            }
+        ],
+    )
+
+    assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(codex_home)]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "user", "text": "thread IDから解決した記録", "line": 1, "sequence": 1}]
+
+
+def test_main_rejects_ambiguous_or_missing_codex_thread_id(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """親rolloutが0件又は複数件なら証拠不足として終了コード2を返す。"""
+    thread_id = "22222222-2222-4222-8222-222222222222"
+    codex_home = tmp_path / "codex"
+
+    assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(codex_home)]) == 2
+    missing = _read_jsonl(capsys)
+    assert missing == [
+        {
+            "kind": "error",
+            "text": f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが"
+            f"{codex_home / 'sessions'}配下に無い",
+        }
+    ]
+
+    candidates = [codex_home / "sessions" / "2026" / "09" / day / f"rollout-parent-{thread_id}.jsonl" for day in ("01", "02")]
+    for day, path in zip(("01", "02"), candidates, strict=True):
+        _write_jsonl(
+            path,
+            [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": day}}],
+        )
+
+    assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(codex_home)]) == 2
+    ambiguous = _read_jsonl(capsys)
+    assert ambiguous == [
+        {
+            "kind": "error",
+            "text": f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが複数ある: "
+            + ", ".join(str(path) for path in sorted(candidates)),
+        }
+    ]
+
+
+def test_codex_home_resolution_order(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """明示引数、空でない環境変数、ホーム既定値の順に保存先を解決する。"""
+    thread_id = "33333333-3333-4333-8333-333333333333"
+    home = tmp_path / "home"
+    roots = {
+        "default": home / ".codex",
+        "environment": tmp_path / "environment-codex",
+        "explicit": tmp_path / "explicit-codex",
+    }
+    for label, root in roots.items():
+        _write_jsonl(
+            root / "sessions" / "2026" / "09" / "01" / f"rollout-parent-{thread_id}.jsonl",
+            [
+                {
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": label},
+                }
+            ],
+        )
+    monkeypatch.setenv("HOME", str(home))
+
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    assert evidence.main(["--codex-thread-id", thread_id]) == 0
+    assert _read_jsonl(capsys)[0]["text"] == "default"
+
+    monkeypatch.setenv("CODEX_HOME", "")
+    assert evidence.main(["--codex-thread-id", thread_id]) == 0
+    assert _read_jsonl(capsys)[0]["text"] == "default"
+
+    monkeypatch.setenv("CODEX_HOME", str(roots["environment"]))
+    assert evidence.main(["--codex-thread-id", thread_id]) == 0
+    assert _read_jsonl(capsys)[0]["text"] == "environment"
+
+    assert evidence.main(["--codex-thread-id", thread_id, "--codex-home", str(roots["explicit"])]) == 0
+    assert _read_jsonl(capsys)[0]["text"] == "explicit"
+
+
+def test_main_requires_exactly_one_transcript_source(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """親記録のパスとthread IDは同時指定も同時省略も拒否する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
+    thread_id = "44444444-4444-4444-8444-444444444444"
+
+    assert evidence.main([str(transcript), "--codex-thread-id", thread_id]) == 2
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "transcript_pathと--codex-thread-idはいずれか一方だけを指定する"}]
+
+    assert evidence.main([]) == 2
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "transcript_pathと--codex-thread-idはいずれか一方だけを指定する"}]
+
+
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
@@ -3572,6 +3686,68 @@ def _write_jsonl(path: pathlib.Path, entries: list[dict]) -> None:
     """任意の記録正本をテスト用の絶対パスへ書く。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n", encoding="utf-8")
+
+
+def test_delegate_record_with_ambiguous_thread_id_is_unresolved(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """委譲先rolloutの複数一致では先頭を採用せず未解決として報告する。"""
+    thread_id = "55555555-5555-4555-8555-555555555555"
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [_codex_tool_use_entry("2026-09-01T00:00:00Z", "ambiguous", thread_id)],
+    )
+    for day, text in (("01", "混入してはならない記録1"), ("02", "混入してはならない記録2")):
+        _write_jsonl(
+            codex_home / "sessions" / "2026" / "09" / day / f"rollout-child-{thread_id}.jsonl",
+            [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": text}}],
+        )
+
+    assert evidence.main([str(transcript)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 1}
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert "混入してはならない記録1" not in serialized
+    assert "混入してはならない記録2" not in serialized
+
+
+def test_backup_only_thread_id_is_evidence_insufficient(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """backupに写しだけがあるthread IDは親・委譲先の両経路で証拠不足とする。"""
+    thread_id = "66666666-6666-4666-8666-666666666666"
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    _write_jsonl(
+        codex_home / "backups" / "transcripts" / f"rollout-backup-{thread_id}.jsonl",
+        [{"type": "response_item", "payload": {"type": "message", "role": "user", "content": "backupの写し"}}],
+    )
+
+    assert evidence.main(["--codex-thread-id", thread_id]) == 2
+    parent_events = _read_jsonl(capsys)
+    assert parent_events == [
+        {
+            "kind": "error",
+            "text": f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが"
+            f"{codex_home / 'sessions'}配下に無い",
+        }
+    ]
+
+    transcript = _write_transcript(
+        tmp_path,
+        [_codex_tool_use_entry("2026-09-01T00:00:00Z", "backup-only", thread_id)],
+    )
+    assert evidence.main([str(transcript)]) == 0
+    delegate_events = _read_jsonl(capsys, raw=True)
+    assert delegate_events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 1}
+    assert "backupの写し" not in json.dumps(delegate_events, ensure_ascii=False)
 
 
 def test_all_modes_recursively_scan_cross_engine_delegations(

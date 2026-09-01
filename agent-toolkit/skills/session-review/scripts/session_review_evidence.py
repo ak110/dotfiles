@@ -969,15 +969,50 @@ def _native_agent_thread_ids(value: Any) -> list[str]:
     return list(dict.fromkeys(found))
 
 
-def _rollout_path(thread_id: str) -> Path | None:
-    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+def _codex_home(explicit: str | None = None) -> Path:
+    """Codexの記録の保存先を、明示引数、空でない`CODEX_HOME`、`~/.codex`の順に解決する。"""
+    if explicit:
+        return Path(explicit)
+    env_home = os.environ.get("CODEX_HOME")
+    if env_home:
+        return Path(env_home)
+    return Path.home() / ".codex"
+
+
+def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
+    """Thread IDへ完全suffix一致する`sessions`配下のrolloutをファイル名順で返す。
+
+    backupの写しは`sessions`の外へ保存されるため、この探索範囲では一致しない。
+    """
     escaped_thread = re.escape(thread_id)
-    candidates = sorted(
+    return sorted(
         path
         for path in codex_home.glob(f"sessions/*/*/*/rollout-*{thread_id}.jsonl")
         if re.search(rf"rollout-.*{escaped_thread}\.jsonl$", path.name)
     )
-    return candidates[0] if candidates else None
+
+
+def _rollout_path(thread_id: str) -> Path | None:
+    """Thread IDへ一意に対応するrolloutを返し、0件又は複数件ではNoneを返す。"""
+    try:
+        return _resolve_codex_transcript(thread_id)
+    except ValueError:
+        return None
+
+
+def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> Path:
+    """Codex thread IDから親transcriptの正本を1件解決する。
+
+    一致が0件又は複数件の場合は証拠不足として例外を送出する。
+    """
+    base = _codex_home(codex_home)
+    candidates = _rollout_candidates(thread_id, base)
+    if not candidates:
+        raise ValueError(f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが{base / 'sessions'}配下に無い")
+    if len(candidates) > 1:
+        joined = ", ".join(str(path) for path in candidates)
+        raise ValueError(f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが複数ある: {joined}")
+    return candidates[0]
 
 
 def _claude_transcript_path(session_id: str) -> Path | None:
@@ -2166,7 +2201,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "transcript_path",
-        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。",
+        nargs="?",
+        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。`--codex-thread-id`と併用しない。",
+    )
+    parser.add_argument(
+        "--codex-thread-id",
+        metavar="THREAD_ID",
+        help="Codex thread IDから親transcriptの正本を解決して抽出を開始する。"
+        "保存先は`--codex-home`、空でない`CODEX_HOME`、`~/.codex`の順に解決し、"
+        "`sessions`配下で完全suffix一致するrolloutが1件でない場合はエラーイベントを出力して終了コード2を返す。",
+    )
+    parser.add_argument(
+        "--codex-home",
+        metavar="DIR",
+        help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
     )
     parser.add_argument(
         "--warn",
@@ -2215,10 +2263,20 @@ def main(argv: list[str] | None = None) -> int:
     if sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices)) > 1:
         return _print_error("--warn・--grep・--detail・--stats・--hook-noticesは併用できない")
 
-    records = _load_records(args.transcript_path)
+    if (args.transcript_path is None) == (args.codex_thread_id is None):
+        return _print_error("transcript_pathと--codex-thread-idはいずれか一方だけを指定する")
+    if args.codex_thread_id is not None:
+        try:
+            transcript_path = str(_resolve_codex_transcript(args.codex_thread_id, args.codex_home))
+        except ValueError as error:
+            return _print_error(str(error))
+    else:
+        transcript_path = args.transcript_path
+
+    records = _load_records(transcript_path)
     if records is None:
-        return _print_error(f"対象記録を読み込めない: {args.transcript_path}")
-    collected, unresolved = _collect_records(args.transcript_path, records)
+        return _print_error(f"対象記録を読み込めない: {transcript_path}")
+    collected, unresolved = _collect_records(transcript_path, records)
 
     if args.warn:
         _print_events(_warning_collection_events(collected, unresolved))
