@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
@@ -133,6 +134,38 @@ def test_cli_local_path_filter_notifies_legacy_and_current_tbds(tmp_path: pathli
     assert "legacy.md" in result.stderr
     assert "current.md" in result.stderr
     assert "other.md" not in result.stderr
+
+
+class TestWorktreeStashDispatch:
+    """`worktree-stash`の公開dispatchを検証する。"""
+
+    def test_worktree_stash_dispatch_receives_private_notes(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """worktree-stash分岐は解決したprivate-notesをdispatchへ渡す。"""
+        received: dict[str, object] = {}
+
+        def fake_dispatch(
+            args: object,
+            *,
+            command_dest: str,
+            private_notes: pathlib.Path,
+        ) -> int:
+            received.update(args=args, command_dest=command_dest, private_notes=private_notes)
+            return 0
+
+        monkeypatch.setattr(_worktree_stash, "dispatch", fake_dispatch)
+        private_notes = tmp_path / "private-notes"
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["worktree-stash", "save", "--label=test"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert received["command_dest"] == "worktree_stash_subcommand"
+        assert received["private_notes"] == private_notes
 
 
 class TestWaitScheduleParser:

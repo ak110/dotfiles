@@ -17,6 +17,11 @@ import _file_lock
 
 _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
+_QUEUE_REPOSITORY_ERROR = (
+    "操作を拒否しました: 対象はキュー管理リポジトリです。"
+    "変更にはatk mq・atk plans・atk serveが提供する経路を使い、"
+    "未コミットのキュー操作はatk mq commitで確定してください。"
+)
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -38,6 +43,23 @@ def _common_dir(cwd: pathlib.Path) -> pathlib.Path | None:
         return None
     value = pathlib.Path(result.stdout.strip())
     return value.resolve() if value.is_absolute() else (cwd / value).resolve()
+
+
+def _is_queue_repository(worktree: pathlib.Path, private_notes: pathlib.Path | None) -> bool:
+    """キュー管理リポジトリでは退避を拒否し、並行するキュー操作の喪失を防ぐ。"""
+    if private_notes is None or not private_notes.exists():
+        return False
+    common_dirs: list[pathlib.Path] = []
+    for repository in (worktree, private_notes):
+        try:
+            result = _run_git(["rev-parse", "--git-common-dir"], repository)
+            if result.returncode != 0 or not result.stdout.strip():
+                return False
+            value = pathlib.Path(result.stdout.strip())
+            common_dirs.append(value.resolve() if value.is_absolute() else (repository / value).resolve())
+        except (OSError, RuntimeError):
+            return False
+    return common_dirs[0] == common_dirs[1]
 
 
 def _ref_exists(ref: str, cwd: pathlib.Path) -> bool | None:
@@ -82,9 +104,17 @@ def _worktree_ref(label: str, cwd: pathlib.Path) -> str | None:
     return None
 
 
-def save(label: str, *, cwd: pathlib.Path | None = None) -> int:
+def save(
+    label: str,
+    *,
+    cwd: pathlib.Path | None = None,
+    private_notes: pathlib.Path | None = None,
+) -> int:
     """現在worktreeの変更を`refs/worktree/<label>`へ退避する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
+    if _is_queue_repository(worktree, private_notes):
+        print(_QUEUE_REPOSITORY_ERROR, file=sys.stderr)
+        return 2
     ref = _worktree_ref(label, worktree)
     if ref is None:
         return 2
@@ -154,9 +184,17 @@ def save(label: str, *, cwd: pathlib.Path | None = None) -> int:
         return 1
 
 
-def drop(identifier: str, *, cwd: pathlib.Path | None = None) -> int:
+def drop(
+    identifier: str,
+    *,
+    cwd: pathlib.Path | None = None,
+    private_notes: pathlib.Path | None = None,
+) -> int:
     """退避識別子を固定ロック下でOID照合して削除する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
+    if _is_queue_repository(worktree, private_notes):
+        print(_QUEUE_REPOSITORY_ERROR, file=sys.stderr)
+        return 2
     if identifier.startswith("refs/worktree/"):
         check = _run_git(["check-ref-format", identifier], worktree)
         is_worktree_ref = check.returncode == 0
@@ -200,13 +238,18 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     drop_parser.add_argument("identifier", help="削除するstash又はworktree固有refの識別子")
 
 
-def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
+def dispatch(
+    args: argparse.Namespace,
+    *,
+    command_dest: str = "command",
+    private_notes: pathlib.Path | None = None,
+) -> int:
     """解析済み引数に対応する退避操作を実行する。"""
     command = getattr(args, command_dest)
     if command == "save":
-        return save(args.label)
+        return save(args.label, private_notes=private_notes)
     if command == "drop":
-        return drop(args.identifier)
+        return drop(args.identifier, private_notes=private_notes)
     return 2
 
 

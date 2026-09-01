@@ -424,6 +424,7 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
   作業する
 - 投入前に事実を確定し、未調査の推測・未検証の因果を本文へ含めない
 - すぐ解消しない外部依存待ちの項目は、無視期間（数日のcooldown）や依存指定で空転を防ぐ
+- 作業対象リポジトリとprivate-notesは別のリポジトリとして扱い、コーディングエージェントはprivate-notesを`atk mq`・`atk plans`・`atk serve`が提供する経路からだけ変更する。ユーザーが外部のエディターで直接編集した変更は`atk mq commit`で確定する。`atk worktree-stash`はprivate-notesの作業ツリーで拒否する（2026年9月1日、利用者指示。作業対象リポジトリとprivate-notesを取り違えた退避の試行に由来する。incidents.md参照）
 
 通常型フィードバックを複数件処理する場合、ファイル単位の終端、通常レーン及びキュー操作の責務境界は
 `agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。

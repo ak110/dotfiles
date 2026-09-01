@@ -925,7 +925,13 @@ def main(
             sys.exit(0)
         sys.exit(_managed_temp.dispatch(args, command_dest="managed_temp_subcommand"))
     if args.command == "worktree-stash":
-        sys.exit(_worktree_stash.dispatch(args, command_dest="worktree_stash_subcommand"))
+        sys.exit(
+            _worktree_stash.dispatch(
+                args,
+                command_dest="worktree_stash_subcommand",
+                private_notes=_common._private_notes_path(home),
+            )
+        )
     if args.command == "watch":
         sys.exit(_watch.dispatch(args, now=now))
     if args.command == "config":

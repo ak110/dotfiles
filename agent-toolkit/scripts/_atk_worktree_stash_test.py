@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import pathlib
 import subprocess
@@ -29,8 +30,8 @@ def _git(args: list[str], cwd: pathlib.Path, *, check: bool = True) -> subproces
     return result
 
 
-def _make_repository(tmp_path: pathlib.Path) -> pathlib.Path:
-    repo = tmp_path / "repo"
+def _make_repository(tmp_path: pathlib.Path, name: str = "repo") -> pathlib.Path:
+    repo = tmp_path / name
     _git(["init", "--initial-branch=main", str(repo)], tmp_path)
     _git(["config", "user.name", "test"], repo)
     _git(["config", "user.email", "test@example.invalid"], repo)
@@ -194,6 +195,58 @@ def test_duplicate_label_and_no_changes_are_rejected(tmp_path: pathlib.Path) -> 
     assert duplicate.returncode == 2
     assert _git(["status", "--short"], first).stdout == before
     assert _git(["show-ref", "--verify", "--quiet", "refs/worktree/same"], first, check=False).returncode == 0
+
+
+def test_save_refuses_queue_repository_worktree(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """saveはキュー管理リポジトリを拒否し、別リポジトリでは成功する。"""
+    queue_repository = _make_repository(tmp_path, "private-notes")
+    target_repository = _make_repository(tmp_path, "target")
+    _make_changes(queue_repository, "queue")
+    _make_changes(target_repository, "target")
+    queue_status = _git(["status", "--short"], queue_repository).stdout
+    args = argparse.Namespace(command="save", label="queue-save")
+
+    monkeypatch.chdir(queue_repository)
+    assert stash.dispatch(args, private_notes=queue_repository) == 2
+    error = capsys.readouterr().err
+    assert "キュー管理リポジトリ" in error
+    assert "atk mq・atk plans・atk serve" in error
+    assert "atk mq commit" in error
+    assert _git(["status", "--short"], queue_repository).stdout == queue_status
+    assert _git(["show-ref", "--verify", "--quiet", "refs/worktree/queue-save"], queue_repository, check=False).returncode == 1
+    monkeypatch.chdir(target_repository)
+    args.label = "target-save"
+    assert stash.dispatch(args, private_notes=queue_repository) == 0
+
+
+def test_drop_refuses_queue_repository_worktree(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """dropはキュー管理リポジトリを拒否し、別リポジトリでは成功する。"""
+    queue_repository = _make_repository(tmp_path, "private-notes")
+    target_repository = _make_repository(tmp_path, "target")
+    ref = "refs/worktree/drop-target"
+    for repository in (queue_repository, target_repository):
+        oid = _git(["rev-parse", "HEAD"], repository).stdout.strip()
+        _git(["update-ref", ref, oid], repository)
+    args = argparse.Namespace(command="drop", identifier=ref)
+
+    monkeypatch.chdir(queue_repository)
+    assert stash.dispatch(args, private_notes=queue_repository) == 2
+    error = capsys.readouterr().err
+    assert "キュー管理リポジトリ" in error
+    assert "atk mq・atk plans・atk serve" in error
+    assert "atk mq commit" in error
+    assert _git(["show-ref", "--verify", "--quiet", ref], queue_repository).returncode == 0
+    monkeypatch.chdir(target_repository)
+    assert stash.dispatch(args, private_notes=queue_repository) == 0
+    assert _git(["show-ref", "--verify", "--quiet", ref], target_repository, check=False).returncode == 1
 
 
 @pytest.mark.parametrize("failure", ["update-ref", "drop"])

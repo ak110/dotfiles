@@ -54,6 +54,9 @@
 - 2026年8月: 並行worktreeで共有`refs/stash`を、stash生成・worktree固有ref記録・引数なしdropの非原子的な連続操作で移したため、別worktreeの退避物をdropし得る状態になった。
   直接原因: `refs/stash`共有を考慮せず、退避物の生成から記録までを排他しなかった。
   対策: Git共通ディレクトリの固定ロックを使う`atk worktree-stash save`へ退避処理を集約し、途中失敗時も識別子を保持する
+- 2026年9月1日: コーディングエージェントが作業対象リポジトリとキュー管理リポジトリを取り違え、`~/private-notes`の作業ツリーへ`atk worktree-stash`を適用しようとした。
+  直接原因: 両者を区別する規範が無く、並行worktreeの退避手順がprivate-notesの作業ツリーへも適用できる形で読めた。
+  対策: 両リポジトリの区別と、コーディングエージェントによるprivate-notesの変更を`atk mq`・`atk plans`・`atk serve`が提供する経路へ限定する規範を`agent-toolkit/rules/02-agent-operations.md`へ置く。あわせて`atk worktree-stash`がprivate-notesの作業ツリーで起動された場合に終了コード2で拒否する
 
 ## 無許可の公開操作・委譲範囲の逸脱
 
