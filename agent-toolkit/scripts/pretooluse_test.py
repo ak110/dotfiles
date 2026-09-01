@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -663,6 +664,8 @@ class TestHomePathCheck:
 class TestRecursiveHomeSearchCheck:
     """高容量の利用者領域を無限定に再帰検索する実行位置の警告。"""
 
+    _HOME = pathlib.Path.home()
+
     @pytest.mark.parametrize(
         "command",
         [
@@ -671,7 +674,7 @@ class TestRecursiveHomeSearchCheck:
             "grep -R keyword ~/.codex",
             "rg keyword ~/.local ~/.codex",
             "rg /tmp ~/.local",
-            "rg -n keyword /home/aki/.codex /home/aki/.claude 2>/dev/null",
+            f"rg -n keyword {shlex.quote(str(_HOME / '.codex'))} {shlex.quote(str(_HOME / '.claude'))} 2>/dev/null",
             "rg --color always -n keyword ~/.claude",
         ],
     )
