@@ -20,6 +20,7 @@ import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
+from pathlib import Path
 from typing import Any
 
 from _agents_server_state import (
@@ -39,6 +40,9 @@ from _agents_server_state import (
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
+# Codexホストでは親の作業ディレクトリが版数付きplugin cacheとなり、
+# plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
+APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
 # App ServerのJSONL通知用StreamReader上限（バイト）。
 # asyncioの既定値は64KiBで、turnのplan・diffなどの有効な通知が上限を超えると
@@ -131,6 +135,7 @@ class JsonRpcProcess:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 limit=APP_SERVER_STREAM_LIMIT_BYTES,
+                cwd=APP_SERVER_WORKING_DIRECTORY,
             )
         except OSError as exc:
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc

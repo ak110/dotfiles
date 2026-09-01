@@ -1127,8 +1127,8 @@ async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_codex_json_rpc_process_passes_stream_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """App Server subprocessへ64KiB超のJSONLを許容するstream limitを渡す。"""
+async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
+    """App Server subprocessへ安定した作業ディレクトリとstream limitを渡す。"""
     observed: dict[str, Any] = {}
 
     async def create_subprocess(*_args: Any, **kwargs: Any) -> Any:
@@ -1139,7 +1139,13 @@ async def test_codex_json_rpc_process_passes_stream_limit(monkeypatch: pytest.Mo
     client = codex_backend.JsonRpcProcess(lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0))
     with pytest.raises(RuntimeError, match="capture complete"):
         await client.start()
-    assert observed["limit"] == codex_backend.APP_SERVER_STREAM_LIMIT_BYTES
+    assert observed == {
+        "stdin": asyncio.subprocess.PIPE,
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
+        "limit": codex_backend.APP_SERVER_STREAM_LIMIT_BYTES,
+        "cwd": str(pathlib.Path.home()),
+    }
     assert observed["limit"] > 64 * 1024
 
 

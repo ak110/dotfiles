@@ -144,6 +144,11 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
 LinuxとWindowsで寿命契約を揃えられる。
 
+Codex backendは子App Serverの作業ディレクトリへ、実行主体のホームディレクトリを明示指定する。
+MCPサーバー自身の作業ディレクトリはホストの起動条件で決まり、Codexホストではpluginの版数付きcacheディレクトリになる。
+plugin更新で当該ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
+子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
+
 ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
 この境界により、プラグイン配置が初回engine選択まで利用できない場合も、既に読込済みのclassからbackendを生成できる。
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用経路へSDK依存を持ち込まない。
