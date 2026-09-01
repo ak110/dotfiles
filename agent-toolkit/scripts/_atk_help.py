@@ -199,9 +199,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk watch --worktree=lane-05=/home/aki/dotfiles/.claude/worktrees/lane-05",
     },
     "atk review-table": {
-        "summary": "レビュー指摘管理表（7列TSV）を操作する",
-        "description": "目的: 計画レビューと実装レビューの指摘、採否、対応内容を7列のTSVへ排他的に記録する。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。\n対象と出力: 指定したTSVファイルを読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`response-needed`、`response`、`no-response-reason`の順とする。`track`は新規の経路では`plan-review`か`implementation-review`を指定し、`plan-conformance`と`independent`は保存済みの表の読み取り互換として扱う。旧8列形式は`severity`列を除いて7列形式で作成し直す。",
+        "summary": "レビュー指摘管理表（8列TSV）を操作する",
+        "description": "目的: 計画レビューと実装レビューの指摘、指摘レベル、採否、対応内容を8列のTSVへ排他的に記録する。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。\n対象と出力: 指定したTSVファイルを読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
+        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response-needed`、`response`、`no-response-reason`の順とする。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。`track`は新規の経路では`plan-review`か`implementation-review`を指定し、`plan-conformance`と`independent`は保存済みの表の読み取り互換として扱う。保存済みの7列形式は`level`を空として読み込み、更新時に8列形式へ書き戻す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
@@ -210,8 +210,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存する。\n前提: `--round`と`--track`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
-        "epilog": '実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review "実装資料" "検索コマンドが未記載"',
+        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存する。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "epilog": '実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review --level=詳細 "実装資料" "検索コマンドが未記載"',
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
@@ -220,7 +220,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table show": {
         "summary": "レビュー表を表示する",
-        "description": "目的: レビュー指摘管理表の内容を復号して表示する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。ファイルは変更しない。\n前提: `--track`を指定すると、当該trackの行だけを表示する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順のまま表示する。各セルはJSON文字列として保存されており、復号せずに書き"
+        "\u51fa\u3059。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。ファイルは変更しない。\n前提: `--track`を指定すると、当該trackの行だけを表示する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
     "atk review-table validate": {

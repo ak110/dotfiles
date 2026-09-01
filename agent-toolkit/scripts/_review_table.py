@@ -1,4 +1,4 @@
-"""レビュー指摘管理表の7列TSVを排他更新する補助CLI。"""
+"""レビュー指摘管理表の8列TSVを排他更新する補助CLI。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ COLUMNS = (
     "track",
     "location",
     "issue",
+    "level",
     "response-needed",
     "response",
     "no-response-reason",
@@ -26,10 +27,12 @@ COLUMNS = (
 _COLUMN_COUNT = len(COLUMNS)
 _KEY_COLUMN_COUNT = 4
 TRACK_VALUES = ("plan-review", "implementation-review", "plan-conformance", "independent")
+LEVEL_VALUES = ("要件", "仕様", "詳細", "実装")
 _RECOVERY_GUIDANCE = (
     f"期待列数は{_COLUMN_COUNT}、trackの位置はroundの直後、"
+    f"levelの位置はissueの直後、levelの正規値集合は{', '.join(LEVEL_VALUES)}、"
     f"trackの正規値集合は{', '.join(TRACK_VALUES)}。"
-    "旧8列形式はseverity列を除いて7列形式で再作成する"
+    "保存済み7列形式はlevelを空として読み込み、更新時に8列形式へ書き戻す"
 )
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
@@ -58,21 +61,30 @@ def _decode_cell(value: str, *, line: int, column: int) -> str:
     return decoded
 
 
+def _parse_text(text: str) -> list[tuple[str, list[str]]]:
+    """Raw TSVを検証し、元の行とJSON復号済みの行を対応づけて返す。"""
+    rows: list[tuple[str, list[str]]] = []
+    for line_number, raw_line in enumerate(text.splitlines(keepends=True), start=1):
+        line = raw_line.rstrip("\r\n")
+        if not line:
+            continue
+        cells = line.split("\t")
+        if len(cells) not in (_COLUMN_COUNT - 1, _COLUMN_COUNT):
+            raise ValueError(f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}。{_RECOVERY_GUIDANCE}")
+        row = [_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)]
+        if len(row) == _COLUMN_COUNT - 1:
+            row.insert(4, "")
+        rows.append((raw_line, row))
+    return rows
+
+
 def _read(path: Path) -> list[list[str]]:
     """TSVを読み、JSON復号済みの行一覧を返す。"""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as error:
         raise ValueError(f"レビュー表を解釈できない: {path}: {error}") from error
-    rows: list[list[str]] = []
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        if not line:
-            continue
-        cells = line.split("\t")
-        if len(cells) != _COLUMN_COUNT:
-            raise ValueError(f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}。{_RECOVERY_GUIDANCE}")
-        rows.append([_decode_cell(cell, line=line_number, column=index) for index, cell in enumerate(cells, start=1)])
-    return rows
+    return [row for _, row in _parse_text(text)]
 
 
 def _normalized(value: str) -> str:
@@ -90,7 +102,7 @@ def _key(row: list[str]) -> tuple[str, str, str, str]:
 
 
 def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) -> None:
-    """7列、先頭4列の複合キー一意性及び応答分岐を検証する。"""
+    """8列、先頭4列の複合キー一意性、指摘レベル及び応答分岐を検証する。"""
     keys: set[tuple[str, str, str, str]] = set()
     for index, row in enumerate(rows, start=1):
         if len(row) != _COLUMN_COUNT:
@@ -101,13 +113,15 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
             raise ValueError(f"{index}行のラウンドが1以上の整数ではない")
         if row[1] not in TRACK_VALUES:
             raise ValueError(f"{index}行のtrackが正規値ではない。{_RECOVERY_GUIDANCE}")
+        if row[4] and row[4] not in LEVEL_VALUES:
+            raise ValueError(f"{index}行のlevelが正規値ではない。{_RECOVERY_GUIDANCE}")
         key = _key(row)
         if key in keys:
             raise ValueError(f"{index}行の先頭4列が重複している")
         keys.add(key)
-        response_needed = _normalized(row[4]).casefold()
-        response = row[5].strip()
-        reason = row[6].strip()
+        response_needed = _normalized(row[5]).casefold()
+        response = row[6].strip()
+        reason = row[7].strip()
         if not response_needed:
             if require_responses:
                 raise ValueError(f"{index}行の対応要否が未回答である")
@@ -176,10 +190,10 @@ def init(path: str | Path) -> int:
     return 0
 
 
-def add(path: str | Path, round_value: str, track: str, location: str, issue: str) -> int:
+def add(path: str | Path, round_value: str, track: str, location: str, issue: str, level: str = "詳細") -> int:
     """レビュー担当の指摘行を追加する。"""
     target = _path(str(path))
-    row = [round_value, track, location, issue, "", "", ""]
+    row = [round_value, track, location, issue, level, "", "", ""]
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
         if _key(row) in {_key(existing) for existing in rows}:
@@ -259,7 +273,7 @@ def respond(
             diagnostic = _format_key_diagnostic(rows, given, matches)
             raise ValueError(f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}")
         updated = [*rows]
-        updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], needed, replacement, reason]
+        updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], updated[matches[0]][4], needed, replacement, reason]
         return updated
 
     _locked_update(target, updater)
@@ -274,21 +288,13 @@ def show(path: str | Path, track: str | None = None) -> int:
         text = target.read_text(encoding="utf-8")
     except OSError as error:
         raise ValueError(f"レビュー表を解釈できない: {target}: {error}") from error
+    rows = _parse_text(text)
     if track is None:
         print(text, end="")
         return 0
     if track not in TRACK_VALUES:
         raise ValueError(f"trackが正規値ではない。{_RECOVERY_GUIDANCE}")
-    selected: list[str] = []
-    for line_number, line in enumerate(text.splitlines(keepends=True), start=1):
-        content = line.rstrip("\r\n")
-        if not content:
-            continue
-        cells = content.split("\t")
-        if len(cells) != _COLUMN_COUNT:
-            raise ValueError(f"{line_number}行の列数が{_COLUMN_COUNT}ではない: {len(cells)}。{_RECOVERY_GUIDANCE}")
-        if _decode_cell(cells[1], line=line_number, column=2) == track:
-            selected.append(line)
+    selected = [raw_line for raw_line, row in rows if row[1] == track]
     print("".join(selected), end="")
     return 0
 
@@ -395,6 +401,12 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=TRACK_VALUES,
         help="指摘を登録するレビューの区分。レビュー工程に対応する正規値から指定する。",
     )
+    add_command_parser.add_argument(
+        "--level",
+        required=True,
+        choices=LEVEL_VALUES,
+        help="指摘レベル。要件、仕様、詳細又は実装を指定する。",
+    )
     for name, positional, description in (
         ("location", "location_arg", "追加する指摘箇所"),
         ("issue", "issue_arg", "追加する指摘内容"),
@@ -464,7 +476,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if command == "add":
         location = _required_value(args, "location", "location_arg")
         issue = _required_value(args, "issue", "issue_arg")
-        return add(args.path, args.round, args.track, location, issue)
+        return add(args.path, args.round, args.track, location, issue, args.level)
     if command == "respond":
         round_value = args.round or ""
         track = args.track or ""
