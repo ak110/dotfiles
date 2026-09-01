@@ -23,10 +23,21 @@ review_contract:
 参照先を追加で解釈しなければ判定内容が定まらない場合は、契約本文を`内容`へ記載する。
 複数の条項を1件へ集約せず、前段が列挙する各観点と出典を欠かさない。
 `review_contract`はいずれの永続ファイルにも追記せず、初回起動後は同じ実装レビュー担当のthreadへ保持する。
+当該threadが継続不能と確定した場合は、初回起動時と同じ生成元から`review_contract`を再生成して新しい実装レビュー担当へ渡す。
+あわせて、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パス、`implementation-review`の`track`、当該時点のラウンド番号、レビュー対象HEADの完全OID及び直前修正の直接影響範囲を渡す。
+さらに、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の`## 入力`が要求する必須入力のうち、前段と重複しない次の項目を全て渡す。
+
+- 計画ファイル（メイン・詳細）、対象リポジトリ及び対象worktreeの絶対パス
+- プロジェクト規範、適用する作成規範スキル及び`agent-toolkit:review-standards`のSKILL.mdの絶対パス
+- 計画の実装単位、目的、変更説明、開始時点の完全OID、変更ファイル一覧、検証結果及び進捗の現在状態
+
+任意入力の`対象ファイル限定`を用いる場合は、当該対象も渡す。
+計画、対象リポジトリ、対象worktree、規範、実装単位及び開始時点の完全OIDは`plan-executor`の保持情報から、レビュー対象HEAD、変更ファイル一覧、検証結果及び進捗はレビュー指摘管理表と対象worktreeの現行実体から解決する。
+継続不能の判定と引き継ぎ手順は`agent-toolkit:delegation`の経路選択契約に従う。
 
 ## レビュー修正
 
-通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。新規に実装レビュー担当を起動する場合は`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の絶対パスと生成済みの`review_contract`を入力へ加えて渡す。
+通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。初回の実装レビュー担当を新規に起動する場合は、`レビュー種別: 初回レビュー`、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の絶対パス及び生成済みの`review_contract`を入力へ加えて渡す。
 レビュー担当へ渡す開始時点の完全OIDは、渡す直前に`git -C <対象worktreeの絶対パス> rev-parse --verify --quiet <検収したOID>^{commit}`を実行し、終了コード0で出力された文字列をそのまま渡す。
 終了コードが0でない場合はレビュー担当を起動せず、実行したコマンドと終了コードを呼び出し元へ返す。記憶、転記又は短縮形からの復元でOIDを組み立てない。
 
