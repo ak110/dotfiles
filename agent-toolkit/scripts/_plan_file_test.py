@@ -1,6 +1,9 @@
 """_plan_file.pyの計画ファイル（メイン）・構成要素・付属ファイル判定を検証する。"""
 
+import datetime
+import os
 import pathlib
+import subprocess
 
 import _plan_file
 import pytest
@@ -152,6 +155,64 @@ def test_is_plan_adjunct_file_subdirectory_excluded(_plans_home: pathlib.Path) -
 
 def test_is_plan_adjunct_file_empty_path_returns_false() -> None:
     assert _plan_file.is_plan_adjunct_file("") is False
+
+
+def test_file_birth_date_falls_back_to_mtime_when_creation_time_is_unavailable(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作成日時を取得できない場合は更新日時をローカル日付へ変換する。"""
+    plan = tmp_path / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    modified_epoch = datetime.datetime(2024, 2, 2, 12).timestamp()
+    os.utime(plan, (modified_epoch, modified_epoch))
+    expected = datetime.datetime.fromtimestamp(modified_epoch).date()
+
+    def unavailable_creation(_path: pathlib.Path) -> None:
+        return None
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
+
+    assert _plan_file.file_birth_date(plan) == expected
+
+
+@pytest.mark.skipif(hasattr(os.stat_result, "st_birthtime"), reason="GNU statの後退経路を持たない環境")
+@pytest.mark.parametrize("raw_creation_time", ["0\n", "-1\n"])
+def test_creation_epoch_rejects_non_positive_gnu_stat_birth_time(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raw_creation_time: str,
+) -> None:
+    """GNU statの0以下の値を作成日時として受理しない。"""
+    plan = tmp_path / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+
+    def run_stat(_args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["stat"], 0, stdout=raw_creation_time, stderr="")
+
+    monkeypatch.setattr(_plan_file.subprocess, "run", run_stat)
+
+    assert _plan_file._creation_epoch(plan) is None  # pylint: disable=protected-access
+
+
+def test_file_birth_date_prefers_creation_time_over_mtime(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作成日時を取得できる場合は更新日時より作成日時を優先する。"""
+    plan = tmp_path / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    creation_epoch = datetime.datetime(2025, 3, 3, 12).timestamp()
+    modified_epoch = datetime.datetime(2024, 2, 2, 12).timestamp()
+    os.utime(plan, (modified_epoch, modified_epoch))
+    expected = datetime.datetime.fromtimestamp(creation_epoch).date()
+
+    def fixed_creation(_path: pathlib.Path) -> float:
+        return creation_epoch
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", fixed_creation)
+
+    assert _plan_file.file_birth_date(plan) == expected
 
 
 def test_portable_plan_file_round_trips_inside_private_notes(tmp_path: pathlib.Path) -> None:

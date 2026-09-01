@@ -160,8 +160,8 @@ def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pa
     return pathlib.Path(filename)
 
 
-def _birth_epoch(path: pathlib.Path) -> float:
-    """ファイルのbirth timeを取得し、取得不能なら明示的に停止する。"""
+def _creation_epoch(path: pathlib.Path) -> float | None:
+    """ファイルの作成日時を返し、取得できない環境ではNoneを返す。"""
     info = path.stat(follow_symlinks=False)
     value = getattr(info, "st_birthtime", None)
     if value is None:
@@ -172,18 +172,30 @@ def _birth_epoch(path: pathlib.Path) -> float:
             check=False,
         )
         if result.returncode != 0:
-            raise OSError(f"作成日時を取得できません（GNU stat）: {path}")
+            return None
         try:
             value = float(result.stdout.strip())
-        except ValueError as error:
-            raise OSError(f"作成日時の形式が不正です: {path}") from error
+        except ValueError:
+            return None
     if not isinstance(value, (int, float)) or value <= 0:
-        raise OSError(f"作成日時を取得できません: {path}")
+        return None
     return float(value)
 
 
+def _birth_epoch(path: pathlib.Path) -> float:
+    """保存先の年月を決める日時を返す。
+
+    作成日時を取得できない環境では更新日時へ後退する。
+    保存先の年月は更新日時からも決まるため、取得不能を停止条件にしない。
+    """
+    creation = _creation_epoch(path)
+    if creation is not None:
+        return creation
+    return float(path.stat(follow_symlinks=False).st_mtime)
+
+
 def file_birth_date(path: pathlib.Path) -> datetime.date:
-    """ファイルの作成日時を実行ホストのローカル日付へ変換する。"""
+    """保存先の年月を決める日時を実行ホストのローカル日付へ変換する。"""
     return datetime.datetime.fromtimestamp(_birth_epoch(path)).date()
 
 

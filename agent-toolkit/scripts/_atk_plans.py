@@ -316,7 +316,7 @@ def commit_plan(
 
 
 def _birth_date(path: pathlib.Path) -> str:
-    """Birth timeを実行ホストのローカル日付へ変換する。"""
+    """保存先の年月を決める日時を実行ホストのローカル日付へ変換する。"""
     try:
         return _plan_file.file_birth_date(path).strftime("%Y/%m/%d")
     except OSError as error:

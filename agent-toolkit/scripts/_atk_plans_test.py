@@ -1,5 +1,6 @@
 """`atk plans commit`と旧計画root移行の実Git検証。"""
 
+import datetime
 import os
 import pathlib
 import subprocess
@@ -46,10 +47,7 @@ def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
 
 def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:
     """取得できる作成日時と更新日時を返す。"""
-    try:
-        birth = _plan_file._birth_epoch(path)  # pylint: disable=protected-access
-    except OSError:
-        birth = None
+    birth = _plan_file._creation_epoch(path)  # pylint: disable=protected-access
     return birth, path.stat().st_mtime_ns
 
 
@@ -58,7 +56,7 @@ def _assert_preserved_times(path: pathlib.Path, expected: tuple[float | None, in
     birth, mtime_ns = expected
     assert path.stat().st_mtime_ns == mtime_ns
     if birth is not None:
-        assert _plan_file._birth_epoch(path) == birth  # pylint: disable=protected-access
+        assert _plan_file._creation_epoch(path) == birth  # pylint: disable=protected-access
 
 
 def _set_stable_mtime(path: pathlib.Path) -> tuple[float | None, int]:
@@ -96,10 +94,10 @@ def test_preserved_times_ignores_unavailable_birth_time(
     source.write_text("# plan\n", encoding="utf-8")
     expected_mtime_ns = source.stat().st_mtime_ns
 
-    def fail_birth_epoch(_path: pathlib.Path) -> float:
-        raise OSError("作成日時を取得できない")
+    def unavailable_creation(_path: pathlib.Path) -> None:
+        return None
 
-    monkeypatch.setattr(_plan_file, "_birth_epoch", fail_birth_epoch)
+    monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
 
     assert _preserved_times(source) == (None, expected_mtime_ns)
 
@@ -278,6 +276,65 @@ def test_commit_plan_moves_direct_working_bundle_to_birth_month(tmp_path: pathli
         destination = notes / "plans" / year / month / source.name
         assert destination.read_text(encoding="utf-8") == content
         assert not source.exists()
+
+
+def test_commit_plan_succeeds_without_creation_time(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作成日時を取得できない場合は更新日時の年月へ保存する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("04-作成日時なし-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    modified_epoch = datetime.datetime(2025, 4, 4, 12).timestamp()
+    os.utime(main, (modified_epoch, modified_epoch))
+    expected_date = datetime.datetime.fromtimestamp(modified_epoch).date()
+
+    def unavailable_creation(_path: pathlib.Path) -> None:
+        return None
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    expected_relative = pathlib.Path(f"{expected_date.year:04d}", f"{expected_date.month:02d}", relative.name)
+    assert result["plan_file"] == expected_relative.as_posix()
+    assert (notes / "plans" / expected_relative).read_text(encoding="utf-8") == "# main\n"
+    assert not main.exists()
+
+
+def test_commit_plan_prefers_creation_time_over_mtime(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """作成日時を取得できる場合は更新日時より作成日時の年月を優先する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("03-作成日時優先-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    creation_epoch = datetime.datetime(2025, 3, 3, 12).timestamp()
+    modified_epoch = datetime.datetime(2024, 2, 2, 12).timestamp()
+    os.utime(main, (modified_epoch, modified_epoch))
+    expected_date = datetime.datetime.fromtimestamp(creation_epoch).date()
+
+    def fixed_creation(_path: pathlib.Path) -> float:
+        return creation_epoch
+
+    monkeypatch.setattr(_plan_file, "_creation_epoch", fixed_creation)
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    expected_relative = pathlib.Path(f"{expected_date.year:04d}", f"{expected_date.month:02d}", relative.name)
+    assert result["plan_file"] == expected_relative.as_posix()
+    assert (notes / "plans" / expected_relative).read_text(encoding="utf-8") == "# main\n"
+    assert not main.exists()
 
 
 def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
