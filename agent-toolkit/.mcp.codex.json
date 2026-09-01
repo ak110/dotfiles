@@ -6,7 +6,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "pyfltr>=3.16",
+        "pyfltr>=3.17.8",
         "pyfltr",
         "mcp"
       ]
