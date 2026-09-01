@@ -1480,13 +1480,15 @@ def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: 
     利用中の管理対象へ影響しない。消滅を確定できない登録は削除せず列挙対象から外す。
     記録時と列挙時で一時領域の設定が異なる登録も回収対象へ含めるため、現在の一時領域直下で
     あることは条件としない。
-    `report_recovery_candidates`が真の場合は、削除せず保持した登録と、既定の一時root直下で
-    登録を持たない管理対象を警告として報告する。
+    `report_recovery_candidates`が真の場合だけ、削除せず保持した登録と、既定の一時root直下で
+    登録を持たない管理対象を警告として報告する。回収候補の報告を`atk managed-temp list`に
+    限ることで、全コマンドの起動時に実行する掃引が利用者の操作と無関係な警告を出力しない。
     """
     if prefix is not None and not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
     entries: list[_ManagedTempEntry] = []
     for registry_path in _state_root().glob("*.json"):
+        recorded_path: object = None
         try:
             record = _load_private_json(registry_path)
             recorded_path = record["path"]
@@ -1528,7 +1530,18 @@ def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: 
                 }
             )
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
-            print(f"warning: 管理対象を列挙できない: {registry_path}: {error}", file=sys.stderr)
+            if report_recovery_candidates:
+                recorded_target = f": {recorded_path}" if isinstance(recorded_path, str) else ""
+                recovery = (
+                    f"。後始末する場合は atk managed-temp cleanup --path {recorded_path} を実行できます。"
+                    "実体を削除した場合は、次回の atk managed-temp list で登録を回収します"
+                    if isinstance(recorded_path, str)
+                    else ""
+                )
+                print(
+                    f"warning: 管理対象を列挙できない: {registry_path}{recorded_target}: {error}{recovery}",
+                    file=sys.stderr,
+                )
     if report_recovery_candidates:
         _report_unregistered_candidates(prefix)
     return sorted(entries, key=lambda item: (item["created_at"] is not None, item["created_at"] or "", item["path"] or ""))
