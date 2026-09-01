@@ -76,6 +76,11 @@ patchを解釈できない場合はhook側で操作を遮断せず、妥当性�
 複数ファイル・複数検査の警告は1つの`hookSpecificOutput.additionalContext`へ結合して返す。
 stdout全体が1つのJSONとして解析されるため、対象ごとに出力すると複数JSONとなり解析に失敗する。
 
+Codexのシェル実行は、matcher上で`Bash`に一致する。
+統合実行（`exec_command`）も同じく`Bash`に一致する。
+入力payloadの`tool_input.command`にはコマンド文字列が入る。
+一次資料は<https://learn.chatgpt.com/docs/hooks>のTool coverageとし、`exec`や`shell`をmatcherへ列挙しない。
+
 ## 出力フィールドの使い分け
 
 各フィールドのスキーマとイベント別の対応可否は公式ドキュメント
@@ -106,6 +111,11 @@ Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolU
 
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する。
 決定を省略すると通常の権限フローが適用され、警告表示が許可プロンプトを省略しない。
+
+コーディングエージェントの出力を対象とする検査は、適用境界を書き込み先ではなく読み手で定める。
+ユーザーが直接読む本文を出力する操作は、ファイルへ書き込まない操作であっても、編集入力と同じ本文検査へ通す。
+Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各欄と`ExitPlanMode`の計画本文が該当する。
+委譲先が読む指示は本境界の対象に含めない。
 
 組み込みのdeny / askルールはhookの戻り値に関わらず評価される。
 `.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできない。

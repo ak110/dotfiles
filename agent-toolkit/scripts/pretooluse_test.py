@@ -671,6 +671,8 @@ class TestRecursiveHomeSearchCheck:
             "grep -R keyword ~/.codex",
             "rg keyword ~/.local ~/.codex",
             "rg /tmp ~/.local",
+            "rg -n keyword /home/aki/.codex /home/aki/.claude 2>/dev/null",
+            "rg --color always -n keyword ~/.claude",
         ],
     )
     def test_warns_for_unlimited_recursive_home_search(self, command: str) -> None:
@@ -693,6 +695,8 @@ class TestRecursiveHomeSearchCheck:
             "rg --type-add custom:*.txt keyword ~/.local",
             "rg -g '*.py' keyword ~/.local",
             "rg --max-count 2 keyword ~/.local",
+            "rg --max-filesize 1M keyword ~/.claude",
+            "rg -n keyword ~/.claude /tmp/repository",
             "grep -r --include '*.py' keyword ~/.local",
             "grep -r --exclude-dir cache keyword ~/.local",
             "grep --recursive keyword ~/.local",
@@ -856,6 +860,75 @@ class TestColloquialCheck:
         )
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
+
+
+def _user_facing_payload(field: str, value: str) -> dict:
+    """指定したユーザー向け本文欄だけへ値を設定したpayloadを返す。"""
+    if field == "plan":
+        return {"tool_name": "ExitPlanMode", "tool_input": {"plan": value}}
+    option = {"label": "選択肢", "description": "説明文"}
+    question = {"question": "質問文", "header": "見出し", "options": [option]}
+    if field in {"question", "header"}:
+        question[field] = value
+    else:
+        option[field] = value
+    return {"tool_name": "AskUserQuestion", "tool_input": {"questions": [question]}}
+
+
+class TestUserFacingTextChecks:
+    """ユーザーが直接読む質問・計画本文へ共通本文検査を適用する。"""
+
+    @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
+    @pytest.mark.parametrize("check", ["mojibake", "foreign", "colloquial"])
+    def test_checks_each_user_facing_field(self, field: str, check: str, deny_substring: str) -> None:
+        values = {
+            "mojibake": "日本語の�本文",
+            "foreign": "日本語に가が混入した本文",
+            "colloquial": f"概要は{deny_substring}該当する。",
+        }
+        result = _run(_user_facing_payload(field, values[check]))
+
+        if check == "colloquial":
+            assert result.returncode == 0
+            assert "colloquial" in _additional_context(result)
+            assert "Target:" not in _additional_context(result)
+            assert deny_substring not in _agent_messages(result)
+        else:
+            assert result.returncode == 2
+            expected = "U+FFFD" if check == "mojibake" else "non-Japanese script"
+            assert expected in result.stderr
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"tool_name": "AskUserQuestion", "tool_input": {"questions": "invalid"}},
+            {"tool_name": "AskUserQuestion", "tool_input": {"questions": []}},
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {"questions": [{"question": "質問文", "header": "見出し", "options": "invalid"}]},
+            },
+            _user_facing_payload("question", "確認する対象を選択してください。"),
+            {"tool_name": "ExitPlanMode", "tool_input": {"plan": "計画に従って実装する。"}},
+        ],
+    )
+    def test_malformed_empty_or_clean_input_is_silent(self, payload: dict) -> None:
+        result = _run(payload)
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+    def test_managed_temp_cwd_does_not_skip_user_facing_text(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, deny_substring: str
+    ) -> None:
+        managed = tmp_path / "managed"
+        managed.mkdir()
+        (managed / ".agent-toolkit-managed-temp.json").write_text("{}\n", encoding="utf-8")
+        monkeypatch.chdir(managed)
+
+        result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
+
+        assert result.returncode == 0
+        assert "colloquial" in _additional_context(result)
 
 
 def _plan_file_state_env(
@@ -3843,6 +3916,18 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         assert "warn" in output["hookSpecificOutput"]["additionalContext"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "uv run --script /abs/agent-toolkit/skills/plan-mode/scripts/create_plan_files.py --help 2>&1 | tail -30",
+            "uvx pyfltr --version 2>&1 | head -40",
+        ],
+    )
+    def test_terminal_option_invocation_is_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",

@@ -12,6 +12,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 任意ツール:
 
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
+- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
@@ -161,6 +162,9 @@ _FOREIGN_SCRIPT_RE = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3\uffa0-
 # このスクリプトの hook 識別子。
 _HOOK_ID = "agent-toolkit/pretooluse"
 
+_USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
+"""ユーザーが直接読む本文を入力として受け取るツール名。"""
+
 
 _llm_notice = _notice_formatter(_HOOK_ID)
 _block_notice = _block_notice_formatter(_HOOK_ID)
@@ -257,9 +261,8 @@ def main(payload_text: str) -> int:
 
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
-    if tool_name == "ExitPlanMode":
-        flush_pending_notices()
-        return 0
+    if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
+        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
@@ -405,6 +408,53 @@ def _handle_agent_tool(
     if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
         _process_loop_log.append("subagent_start", type=subagent_type)
     flush_warning()
+    return 0
+
+
+def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
+    """ユーザーが直接読むツール入力から文字列フィールドを順序どおり抽出する。"""
+    if tool_name == "ExitPlanMode":
+        plan = tool_input.get("plan")
+        return [("plan", plan)] if isinstance(plan, str) else []
+    questions = tool_input.get("questions")
+    if not isinstance(questions, list):
+        return []
+    fields: list[tuple[str, str]] = []
+    for question_index, question in enumerate(questions):
+        if not isinstance(question, dict):
+            continue
+        for name in ("question", "header"):
+            value = question.get(name)
+            if isinstance(value, str):
+                fields.append((f"questions[{question_index}].{name}", value))
+        options = question.get("options")
+        if not isinstance(options, list):
+            continue
+        for option_index, option in enumerate(options):
+            if not isinstance(option, dict):
+                continue
+            for name in ("label", "description"):
+                value = option.get(name)
+                if isinstance(value, str):
+                    fields.append((f"questions[{question_index}].options[{option_index}].{name}", value))
+    return fields
+
+
+def _handle_user_facing_text_tool(
+    tool_name: str,
+    tool_input: dict,
+    emit_json: Callable[[dict], None],
+    flush_warning: Callable[[], None],
+) -> int:
+    """質問・計画本文へ編集入力と同じ言語品質検査を適用する。"""
+    fields = _user_facing_text_fields(tool_name, tool_input)
+    if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
+        return 2
+    warning = _check_colloquial(tool_name, fields, "")
+    if warning is None:
+        flush_warning()
+    else:
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": warning}})
     return 0
 
 
@@ -949,13 +999,14 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     """
     # 計画ファイルは起草中の素材に口語表現が含まれることがあり、専用の計画検査と
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
-    if _is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path):
+    if file_path and (_is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path)):
         return None
     for field, value in fields:
         if not value:
             continue
         hits = _colloquial_check.scan_text(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
         if hits:
+            target = f" Target: {file_path}" if file_path else ""
             listed = "; ".join(
                 f"line {line_no}, column {column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES]
             )
@@ -967,7 +1018,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                 f" (standard technical terminology, dictionary form,"
                 f" no metaphorical verbs) per agent-toolkit/rules/01-agent.md '日本語' section."
                 f" Do not just swap the detected word for a synonym; restructure the sentence."
-                f" Target: {file_path}",
+                f"{target}",
                 tag="warn",
             )
     return None
@@ -3121,6 +3172,8 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
 
 def _segment_is_verification(segment: _ExecutionSegment) -> bool:
     """区間が検証コマンドの実行位置から始まるかを返す。"""
+    if any(token in _UV_TERMINAL_OPTIONS for token in segment.tokens):
+        return False
     return (
         any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES)
         or segment.is_agent_toolkit_script
@@ -3159,7 +3212,8 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
 def _check_bash_output_truncation(command: str) -> str | None:
     """検証コマンドの出力を`tail`・`head`で切り詰める指定を検出し、全量保存を促す警告を返す。
 
-    実行自体は止めない。全量をファイルへ保存してから必要部分を抽出する形を促す。
+    実行自体は止めない。全量をファイルへ保存してから必要部分を抽出する形、または
+    構造化出力をレコード種別で抽出する形を促す。
     全パイプラインの全検証コマンド区間を対象とし、1件でも切り詰めに該当すれば1回だけ警告する。
     `;`・`&&`・`||`・`&`で連結した後続コマンドは検証コマンドの出力を受け取らないため対象外とする。
     判定は`_extract_execution_pipelines`が返す実行位置で行うため、検証ツール名を検索語・引数として
@@ -3171,7 +3225,7 @@ def _check_bash_output_truncation(command: str) -> str | None:
     return _llm_notice(
         "warn: verification command output is piped through `tail`/`head`, truncating it."
         " Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved"
-        " file instead of truncating the live output.",
+        " file, or select the required record type from structured output, instead of truncating the live output.",
         tag="warn",
     )
 
@@ -3247,24 +3301,55 @@ def _is_high_capacity_home_target(token: str) -> bool:
         str(home / ".local"),
         str(home / ".npm"),
         str(home / ".codex"),
+        str(home / ".claude"),
         "~",
         "~/.local",
         "~/.npm",
         "~/.codex",
+        "~/.claude",
         "$HOME",
         "$HOME/.local",
         "$HOME/.npm",
         "$HOME/.codex",
+        "$HOME/.claude",
         "${HOME}",
         "${HOME}/.local",
         "${HOME}/.npm",
         "${HOME}/.codex",
+        "${HOME}/.claude",
     }
     return normalized in targets
 
 
+_RECURSIVE_SEARCH_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--column",
+        "--fixed-strings",
+        "--heading",
+        "--ignore-case",
+        "--line-number",
+        "--no-heading",
+        "--smart-case",
+        "--with-filename",
+        "--word-regexp",
+        "-F",
+        "-H",
+        "-S",
+        "-i",
+        "-n",
+        "-w",
+    }
+)
+"""検索の対象集合と出力量を減らさず、値を取らない付随オプション。"""
+_RECURSIVE_SEARCH_OPTIONS_WITH_VALUE: frozenset[str] = frozenset({"--color"})
+"""検索の対象集合と出力量を減らさず、値を1つ取る付随オプション。"""
+
+
 def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
-    """オプションの無い単純な再帰検索が高容量領域だけを対象とするかを返す。"""
+    """付随オプションだけを許して、高容量領域だけを対象とする無限定再帰検索を判定する。
+
+    範囲を制限し得る未知オプションは誤警告を避けるため非検出とする。
+    """
     if len(tokens) < 3:
         return False
     if tokens[0] == "rg":
@@ -3273,9 +3358,32 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
         arguments = tokens[2:]
     else:
         return False
-    if len(arguments) < 2 or any(token.startswith("-") for token in arguments):
+    operands: list[str] = []
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        redirect_match = _SHELL_REDIRECTION_PATTERN.match(token)
+        if redirect_match is not None:
+            index += 1
+            if redirect_match.end() == len(token):
+                index += 1
+            continue
+        if token in _RECURSIVE_SEARCH_OPTIONS_WITHOUT_VALUE:
+            index += 1
+            continue
+        if token in _RECURSIVE_SEARCH_OPTIONS_WITH_VALUE:
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in _RECURSIVE_SEARCH_OPTIONS_WITH_VALUE):
+            index += 1
+            continue
+        if token.startswith("-"):
+            return False
+        operands.append(token)
+        index += 1
+    if len(operands) < 2:
         return False
-    paths = arguments[1:]
+    paths = operands[1:]
     return all(_is_high_capacity_home_target(path) for path in paths)
 
 
@@ -3289,7 +3397,8 @@ def _check_bash_recursive_home_search(command: str) -> str | None:
         return None
     return _llm_notice(
         "warn: recursive search targets a high-capacity user directory. "
-        "Limit the path to a repository or a narrower subdirectory before running `rg`/recursive `grep`.",
+        "Narrow the target directory, exclude unnecessary areas, bound the searched targets and output, "
+        "or run the search in a separated execution context before using `rg`/recursive `grep`.",
         tag="warn",
     )
 
