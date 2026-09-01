@@ -602,7 +602,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         metavar="PLAN_FILE",
         required=True,
         help=(
-            "新規計画は$(atk config get private_notes)/plans/から始まるportable値を指定する。"
+            "新規計画は移動後の$(atk config get private_notes)/plans/から始まるportable値を指定する。"
             "既存の絶対パスも読み取り互換として受理する。"
         ),
     )

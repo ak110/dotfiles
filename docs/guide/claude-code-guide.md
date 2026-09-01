@@ -339,23 +339,26 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 信頼前は変更済みHookがスキップされるため、圧縮後通知は発火しない。
 信頼後に`/compact`を実行し、次のモデル継続前に自動生成通知が現れることを確認する。
 
-### 計画ファイルの保存とレビュー時commit
+### 計画ファイルの作業領域と実装レビュー後の保存
 
-新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次のrootへメイン側とdetail側を同時に保存する。
+新規計画は、`agent-toolkit:plan-mode`が内部作成経路を使って次の作業rootへメイン側とdetail側を同時に保存する。
 
 ```text
-$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
-$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
+~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.md
+~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名称}-{小文字16進数4桁}.detail.md
 ```
 
-永続する計画参照は上記の可搬表記で記録する。既存の`~/.claude/plans/`直下の単一・二ファイル計画と、過去に保存された絶対パスは読み書き互換として受理するが、新規作成先には使わない。
-計画レビューが収束した後と実装後レビューが収束した後は、計画rootからの相対パスを指定して計画バンドルを保存する。
+計画本文とキューへ記録する永続参照は、作業中も移動後の`$(atk config get private_notes)/plans/yyyy/MM/`を指す可搬表記にする。
+viewerのパスコピーは選択中の実体を指すため、作業中は`~/.claude/plans/...`、保存後はprivate-notes側の可搬表記を返す。
+実装後レビューが収束した後だけ、作業rootからの相対パスを指定して計画バンドルを保存する。
 
 ```bash
 atk plans commit yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
 ```
 
-`atk plans commit`は同じstemのメイン側、detail側及び付属ファイルだけを対象にする。旧rootの既存計画を新rootへ移す操作は、内容と参照を検証したうえで次のコマンドから実行する。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
+`atk plans commit`は同じstemのメイン側、detail側、付属ファイル及びレビュー表をprivate-notesへ移動し、対象限定commit・pushの成功後に作業側を回収する。失敗時は作業側を保持する。
+pushを行わずローカルcommitまでで止める場合は`--skip-push`を指定する。この場合もローカルcommitの成功後に作業側を回収する。
+`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。日付階層の新しい作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
 
 ```bash
 atk plans migrate

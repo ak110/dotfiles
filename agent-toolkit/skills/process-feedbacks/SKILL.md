@@ -38,6 +38,7 @@ description: >
    - 選定時に`inbox`だった全項目を`processing`へ移すまでを①の完了条件とする。
 2. ②レーンの計画から後始末
    - ①の出力を確定した後、②を開始するときだけ`references/run-lanes.md`を全文読む。
+   - 各レーンの計画ファイルは実装レビュー収束まで`~/.claude/plans`で更新し、同文書の最終化契機でprivate-notesへ移動する。
 3. ③push、CI及び終了
    - ②の全レーンが完了した後、③を開始するときだけ`references/finish-session.md`を全文読む。
 

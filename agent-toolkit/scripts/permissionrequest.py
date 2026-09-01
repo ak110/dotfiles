@@ -12,8 +12,8 @@ PreToolUseの`permissionDecision: "allow"`は組み込みのaskルール
 
 自動許可の対象パス:
 
-- 新規計画root（`$(atk config get private_notes)/plans/`）配下
-- 既存計画root（`~/.claude/plans/`）配下
+- 計画作業root（`~/.claude/plans/`）配下
+- 保存済み計画root（`$(atk config get private_notes)/plans/`）配下
 - scratchpadディレクトリ配下（パス構成要素として`scratchpad`を含み、`/tmp/`または`~/`配下）
 - `/tmp/`配下（一時ファイル領域として自動許可対象に含める）
 - Gitワークツリー配下のコーディングエージェント向け文書（`~/.claude/`配下を除く）
@@ -196,8 +196,8 @@ def should_allow(file_path: str) -> bool:
 
     対象は次のいずれか。
 
-    - 新規計画root（`$(atk config get private_notes)/plans/`）配下
-    - 既存計画root（`~/.claude/plans/`）配下
+    - 計画作業root（`~/.claude/plans/`）配下
+    - 保存済み計画root（`$(atk config get private_notes)/plans/`）配下
     - scratchpad ディレクトリ配下（パス構成要素として `scratchpad` を含み、 `/tmp/` または `~/` 配下）
     - `/tmp/` 配下（一時ファイル領域として自動許可対象に含める）
     - Git ワークツリー配下のコーディングエージェント向け文書。

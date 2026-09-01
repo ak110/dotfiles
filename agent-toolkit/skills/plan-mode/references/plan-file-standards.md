@@ -1,6 +1,6 @@
 # 計画ファイル作成基準
 
-本書は新規計画ファイル（`$(atk config get private_notes)/plans/yyyy/MM/*.md`）の成果物契約の単一の正本である。
+本書は新規計画ファイル（作業実体は`~/.claude/plans/yyyy/MM/*.md`）の成果物契約の単一の正本である。
 計画担当は初版の起草前に本書を全文読み、全項を満たす計画を作成する。
 レビュー担当は本書の各項を点検の基準として同じ本文を読む。
 計画ファイルへの要件の追加・変更は本書へ行い、レビュー用のタスク文書へ検査項目を追加しない
@@ -12,19 +12,19 @@
 
 ## 計画ファイルの保存と参照
 
-新規計画は`$(atk config get private_notes)/plans/yyyy/MM/dd-{日本語の簡潔な名詞}-{小文字16進数4桁}.md`をメインとし、
+新規計画は`~/.claude/plans/yyyy/MM/dd-{日本語の簡潔な名詞}-{小文字16進数4桁}.md`をメインとし、
 同じstemの`<stem>.detail.md`を同じディレクトリへ保存する。stemの4桁は内部作成処理が生成し、同じディレクトリの`<stem>.*`との衝突時は再試行する。
-新規作成は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/create_plan_files.py`を経由し、旧`~/.claude/plans/`へ新しいファイルを作成しない。
+新規作成は`${CLAUDE_PLUGIN_ROOT}/skills/plan-mode/scripts/create_plan_files.py`を経由し、private-notesへ実装前の計画ファイルを作成しない。
 新規作成では計画ファイル（メイン）と計画ファイル（詳細）の本文を同じ作成処理へ渡し、作業種別が`バグ対応`の場合は計画ファイル（バグ）の本文も同時に渡す。
 作成処理は同じstemに属する全ファイルを排他的に確定し、全ファイルの読み戻しと計画構造検査に成功してからパスを返す。
 
-計画本文、付属素材、バグ調査ファイル、レビュー表及びキューmetadataの永続参照には、固定接頭辞
+作業中の実体位置にかかわらず、計画本文、付属素材、バグ調査ファイル、レビュー表及びキューmetadataの永続参照には、固定接頭辞
 `$(atk config get private_notes)/`とprivate-notes配下の相対パスを使う。接頭辞後の値は`..`、絶対パス、シェル式、Windows区切り文字を含めない。
 実際のファイル検査やセッション状態では解決済み絶対パスを使い、portable値をシェルで評価しない。
 
 レビュー指摘管理表は計画ファイルと同じディレクトリへ、計画レビュー用を`<計画stem>.plan-review.tsv`（`track`は`plan-review`）、
 実装レビュー用を`<計画stem>.exec-review.tsv`（`track`は`implementation-review`）として置く。
-両表は`atk plans commit`が計画バンドルとして収集するため、計画ファイルと同じcommitでprivate-notesへ保存される。
+両表は実装レビュー完了まで作業rootで更新し、`atk plans commit`が計画バンドルとして収集して計画ファイルと同じcommitでprivate-notesへ保存する。
 
 本書、`agent-toolkit:plan-mode`のSKILL.md及び`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、
 計画に属するファイルとレビュー記録を次の呼称で指す。新規の記述では次表の呼称以外の別名を用いない。

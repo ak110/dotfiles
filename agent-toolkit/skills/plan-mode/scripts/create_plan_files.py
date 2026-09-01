@@ -6,7 +6,7 @@
 """plan-modeが使う新規計画ファイルの内部作成処理。
 
 このスクリプトは公開CLIではなく、plan-modeが管理対象一時領域へ準備した
-メイン・detail・bug本文をprivate-notesへ確定するための内部APIを提供する。
+メイン・detail・bug本文を`~/.claude/plans`へ確定するための内部APIを提供する。
 """
 
 from __future__ import annotations
@@ -68,12 +68,13 @@ def _validate_date(value: datetime.date | None) -> datetime.date:
     return value
 
 
-def _resolved_plans_root(private_notes: pathlib.Path | str | None) -> pathlib.Path:
-    """新しい計画rootを解決し、private-notes外へのsymlinkを拒否する。"""
-    notes = _plan_file.private_notes_root(private_notes).expanduser().resolve(strict=False)
-    plans_root = (notes / _plan_file.NEW_PLANS_DIRECTORY).resolve(strict=False)
-    if not plans_root.is_relative_to(notes):
-        raise PlanCreationError("計画rootがprivate-notesの外を指しています")
+def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
+    """計画作業rootを解決し、`~/.claude`外へのsymlinkを拒否する。"""
+    home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
+    claude_root = (home_path / ".claude").resolve(strict=False)
+    plans_root = _plan_file.working_plans_root(home_path).resolve(strict=False)
+    if not plans_root.is_relative_to(claude_root):
+        raise PlanCreationError("計画作業rootが~/.claudeの外を指しています")
     return plans_root
 
 
@@ -84,7 +85,7 @@ def _require_plans_root_path(path: pathlib.Path, plans_root: pathlib.Path) -> No
     except OSError as error:
         raise PlanCreationError(f"計画作成先を検証できません: {path}") from error
     if not resolved.is_relative_to(plans_root):
-        raise PlanCreationError(f"計画作成先がprivate-notesの外を指しています: {path}")
+        raise PlanCreationError(f"計画作成先が計画作業rootの外を指しています: {path}")
 
 
 def _read_source(path: pathlib.Path | str) -> bytes:
@@ -151,7 +152,11 @@ def _portable_reference_values(text: str) -> Iterator[str]:
             yield value
 
 
-def _check_portable_references(contents: tuple[bytes, ...], private_notes: pathlib.Path | str | None) -> None:
+def _check_portable_references(
+    contents: tuple[bytes, ...],
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> None:
     """固定portable参照を安全な共通resolverで検査する。"""
     for content in contents:
         text = content.decode("utf-8")
@@ -159,7 +164,7 @@ def _check_portable_references(contents: tuple[bytes, ...], private_notes: pathl
             raise PlanCreationError("計画本文に未解決のstemプレースホルダーがあります")
         for reference in _portable_reference_values(text):
             try:
-                _plan_file.resolve_plan_file(reference, private_notes=private_notes)
+                _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
             except (OSError, ValueError) as error:
                 raise PlanCreationError(f"計画本文の可搬参照が不正です: {reference}: {error}") from error
 
@@ -168,13 +173,14 @@ def _check_structure(
     main_path: pathlib.Path,
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
 ) -> None:
     """確定した二ファイル計画を既存の構造検査へ渡す。"""
     scripts_directory = pathlib.Path(__file__).resolve().parent
     sys.path.insert(0, str(scripts_directory))
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
+    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, home=home)
     if errors:
         raise PlanCreationError("計画構造検査に失敗しました: " + " / ".join(errors))
 
@@ -188,6 +194,7 @@ def _finalize_candidate(
     bug_content: bytes | None,
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
 ) -> tuple[pathlib.Path, ...]:
     """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。"""
     main_path = directory / f"{stem}.md"
@@ -215,8 +222,8 @@ def _finalize_candidate(
             _require_plans_root_path(path, plans_root)
             if path.read_bytes() != content:
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}")
-        _check_portable_references(tuple(content for _path, content, _suffix in targets), private_notes)
-        _check_structure(main_path, work_dir, private_notes)
+        _check_portable_references(tuple(content for _path, content, _suffix in targets), private_notes, home)
+        _check_structure(main_path, work_dir, private_notes, home)
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):
@@ -235,14 +242,15 @@ def create_plan_files(
     *,
     bug_source: pathlib.Path | str | None = None,
     private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
     date: datetime.date | None = None,
     work_dir: pathlib.Path | str | None = None,
     max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
 ) -> tuple[pathlib.Path, ...]:
-    """入力本文を新しい計画rootへ作成し、確定済みパスを返す。
+    """入力本文を計画作業rootへ作成し、確定済みパスを返す。
 
     ``main_source``、``detail_source``及び任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
-    新規作成では旧`~/.claude/plans/`へ書き込まない。
+    private-notesはportable参照の検査にだけ使い、計画本文は作業rootへ保存する。
     """
     if max_attempts <= 0:
         raise ValueError("max_attemptsは1以上にしてください")
@@ -267,7 +275,7 @@ def create_plan_files(
     if work_type == "通常変更" and bug_content is not None:
         raise PlanCreationError("作業種別が通常変更の場合は計画ファイル（バグ）の入力を指定できません")
 
-    plans_root = _resolved_plans_root(private_notes)
+    plans_root = _resolved_plans_root(home)
     date_directory = plans_root / f"{plan_date.year:04d}" / f"{plan_date.month:02d}"
     _require_plans_root_path(date_directory, plans_root)
     date_directory.mkdir(parents=True, exist_ok=True)
@@ -276,7 +284,6 @@ def create_plan_files(
     notes_for_resolver = pathlib.Path(private_notes).expanduser() if private_notes is not None else None
 
     lock_path = plans_root / ".agent-toolkit-plan-create.lock"
-    _file_lock.ensure_plan_lock_ignored(lock_path)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         _file_lock.acquire_lock(lock_file)
         try:
@@ -298,6 +305,7 @@ def create_plan_files(
                         _replace_placeholder(bug_content, stem) if bug_content is not None else None,
                         checked_work_dir,
                         notes_for_resolver,
+                        home,
                     )
                 except _CandidateCollision:
                     continue
@@ -322,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bug-source", type=pathlib.Path)
     parser.add_argument("--name", required=True)
     parser.add_argument("--private-notes", type=pathlib.Path)
+    parser.add_argument("--home", type=pathlib.Path)
     parser.add_argument("--date", type=_parse_date)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
     args = parser.parse_args(argv)
@@ -332,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
             args.name,
             bug_source=args.bug_source,
             private_notes=args.private_notes,
+            home=args.home,
             date=args.date,
             work_dir=args.work_dir,
         )

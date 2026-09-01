@@ -27,7 +27,7 @@ description: >
 
 | 起動経路 | 手順4の後に実施すること | 終端 |
 | --- | --- | --- |
-| `agent-toolkit:plan-mode`の直接起動 | `${CLAUDE_PLUGIN_ROOT}/share/plan-review-executor.parent.md`を読み、`plan-review-executor`を起動してcheckpointと`計画レビュー完了`を検収する。起動から完了報告の受領までは計画ファイルを読み取り専用として扱う | 計画ファイル、成立させる結果、ユーザー指示との差分及びレビュー反映状況を提示し、ユーザー承認後に`${CLAUDE_PLUGIN_ROOT}/share/plan-executor.parent.md`を読んで`plan-executor`へ引き継ぐ |
+| `agent-toolkit:plan-mode`の直接起動 | `${CLAUDE_PLUGIN_ROOT}/share/plan-review-executor.parent.md`を読み、`plan-review-executor`を起動してcheckpointと`計画レビュー完了`を検収する。起動から完了報告の受領までは計画ファイルを読み取り専用として扱う | 計画レビュー後も`~/.claude/plans`の実体を維持する。計画ファイル、成立させる結果、ユーザー指示との差分及びレビュー反映状況を提示し、ユーザー承認後に`${CLAUDE_PLUGIN_ROOT}/share/plan-executor.parent.md`を読んで`plan-executor`へ引き継ぐ。実装レビュー収束後の移動と保存は同文書を正本とする |
 | `agent-toolkit:plan-and-add-feedback`からの起動 | なし | 計画ファイル（メイン）・計画ファイル（詳細）の絶対パスを呼出元へ返す。計画レビューは呼出元が行い、実装引き継ぎは行わない |
 | `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を受領した計画担当としての起動 | なし | 同書の完了報告契約に従って呼出元へ返す。計画レビュー担当の起動判断と実装引き継ぎを行わない |
 

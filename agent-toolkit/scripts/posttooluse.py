@@ -13,8 +13,8 @@ Codexでは成功した`apply_patch`だけが本フックへ届き、Bashは終�
 1. テスト実行 (Bash / pyfltr MCPの`run_for_agent`)
 2. git log確認状態の記録・リセット (Bash: logで記録、対象コミットの親子関係が
    変化する操作＝commit/rebase/resetでリセット)
-3. plan file（新規計画root `$(atk config get private_notes)/plans/` または
-   既存計画root `~/.claude/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
+3. plan file（計画作業root `~/.claude/plans/` または
+   保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
 6. agents_server MCP呼び出し後のsession状態記録

@@ -76,6 +76,107 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
     assert excluded.is_file()
 
 
+def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_path: pathlib.Path) -> None:
+    """作業バンドル全体を保存rootへ移し、commit成功後だけ作業側を回収する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-計画保存先移行-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    detail = main.with_name(main.stem + ".detail.md")
+    review = main.with_name(main.stem + ".exec-review.tsv")
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    detail.write_text("# detail\n", encoding="utf-8")
+    review.write_text('1\t"implementation-review"\n', encoding="utf-8")
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    saved_main = notes / "plans" / relative
+    assert result["paths"] == (
+        "plans/2026/08/30-計画保存先移行-d4f9.detail.md",
+        "plans/2026/08/30-計画保存先移行-d4f9.exec-review.tsv",
+        "plans/2026/08/30-計画保存先移行-d4f9.md",
+    )
+    assert saved_main.read_text(encoding="utf-8") == "# main\n"
+    assert not main.exists()
+    assert not detail.exists()
+    assert not review.exists()
+
+
+def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path: pathlib.Path) -> None:
+    """push省略時も保存とcommitを完了し、remote branchは変更しない。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    remote_head_before = _git(notes, "rev-parse", "@{u}").stdout.strip()
+    relative = pathlib.Path("2026/08/30-ローカル確定-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+
+    _atk_plans.commit_plan(notes, relative.as_posix(), home=home, skip_push=True)
+
+    assert not main.exists()
+    assert (notes / "plans" / relative).read_text(encoding="utf-8") == "# main\n"
+    assert _git(notes, "rev-parse", "HEAD").stdout.strip() != remote_head_before
+    assert _git(notes, "rev-parse", "@{u}").stdout.strip() == remote_head_before
+
+
+def test_commit_plan_retries_identical_destination_after_commit_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存先複製後の失敗では作業側を保持し、同内容の再実行で完了する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-再実行-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    original = _atk_git_sync.commit_and_push
+
+    def fail_commit(*_args, **_kwargs) -> None:
+        raise RuntimeError("commit failure")
+
+    monkeypatch.setattr(_atk_git_sync, "commit_and_push", fail_commit)
+
+    with pytest.raises(RuntimeError, match="commit failure"):
+        _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    saved = notes / "plans" / relative
+    assert main.is_file()
+    assert saved.read_bytes() == main.read_bytes()
+    monkeypatch.setattr(_atk_git_sync, "commit_and_push", original)
+
+    _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert not main.exists()
+    assert not _git(notes, "status", "--porcelain").stdout
+
+
+def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp_path: pathlib.Path) -> None:
+    """同じ相対パスの保存済み内容が異なる場合は双方を保持して停止する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-競合-d4f9.md")
+    working = _plan_file.working_plans_root(home) / relative
+    saved = notes / "plans" / relative
+    working.parent.mkdir(parents=True)
+    saved.parent.mkdir(parents=True)
+    working.write_text("working\n", encoding="utf-8")
+    saved.write_text("saved\n", encoding="utf-8")
+
+    with pytest.raises(_common.WebInputError, match="内容の異なる"):
+        _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert working.read_text(encoding="utf-8") == "working\n"
+    assert saved.read_text(encoding="utf-8") == "saved\n"
+
+
 def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_path: pathlib.Path) -> None:
     """親ディレクトリが消えた削除済み計画もGitの追跡情報からcommitする。"""
     notes = tmp_path / "private-notes"
@@ -209,6 +310,27 @@ def test_migrate_plans_pushes_pending_commit_before_deleting_legacy_files(
     assert result["commit"] is None
     assert not source.exists()
     assert _git(remote, "rev-parse", "refs/heads/main").stdout.strip() == pending_head
+
+
+def test_migrate_plans_skips_canonical_working_bundle(tmp_path: pathlib.Path) -> None:
+    """日付階層の正規作業バンドルは旧形式移行の対象にしない。"""
+    home = tmp_path / "home"
+    relative = pathlib.Path("2026/08/30-作業中計画-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    detail = main.with_name(main.stem + ".detail.md")
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    detail.write_text("# detail\n", encoding="utf-8")
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+
+    result = _atk_plans.migrate_plans(notes, home=home)
+
+    assert result["migrated"] == 0
+    assert main.is_file()
+    assert detail.is_file()
+    assert not (notes / "plans" / relative).exists()
 
 
 def test_migrate_plans_keeps_legacy_files_when_remote_does_not_contain_head(

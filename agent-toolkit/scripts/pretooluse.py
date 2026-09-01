@@ -1159,8 +1159,8 @@ def _check_plan_mode_skill_first(
     - `session_id`が空でない（空ならセッション状態を取得できず判定不能のためスキップ）
     - セッション状態の`plan_mode_skill_invoked`が偽
     - `tool_name`が`Write` / `Edit` / `MultiEdit`のいずれか
-    - 対象の`file_path`が新規計画root（`$(atk config get private_notes)/plans/`）または
-      既存計画root（`~/.claude/plans/`）の計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）
+    - 対象の`file_path`が計画作業root（`~/.claude/plans/`）または保存済み計画root
+      （`$(atk config get private_notes)/plans/`）の計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）
 
     `permission_mode`の値に依らず適用する（plan mode外でも計画ファイル編集時には同様に違反が起こり得るため）。
     サブエージェント経由の呼び出しでも同一の判定が働く
@@ -1316,7 +1316,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
 
     連続判定は`last_agent_toolkit_edit_path`と対象パスを比較し、
     直前と異なるパスのときのみ`direct_agent_toolkit_edit_count`をincrementする。
-    新規計画root（`$(atk config get private_notes)/plans/`）または既存計画root（`~/.claude/plans/`）の
+    計画作業root（`~/.claude/plans/`）または保存済み計画root（`$(atk config get private_notes)/plans/`）の
     計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）へのWrite/Edit時は
     `plan_file_written`を真にしてカウンタをリセットする。
     対象外パスへの編集時もカウンタをリセットする。
@@ -1409,10 +1409,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             _block_notice(
                 f"blocked: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
                 f" operations targeted files under agent-toolkit/ without first creating a plan file.",
-                fix=(
-                    "Create a plan file under `$(atk config get private_notes)/plans/` "
-                    "before editing any file under agent-toolkit/."
-                ),
+                fix=("Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/."),
             ),
             file=sys.stderr,
         )
@@ -1422,7 +1419,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
             f" operations targeted files under agent-toolkit/ without first creating a plan file."
             " The next such edit will be blocked."
-            " Create a plan file under `$(atk config get private_notes)/plans/` first.",
+            " Create a plan file under `~/.claude/plans/` first.",
             tag="warn",
         )
     return False, None
