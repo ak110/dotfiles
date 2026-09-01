@@ -213,6 +213,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server_claude.py",
         "_agents_server_state.py",
         "_atk_config.py",
+        "_atk_help.py",
         "_inherited_venv.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
@@ -253,6 +254,16 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
     assert explore_tool.parameters["properties"]["fast"]["default"] is False
+
+
+def test_start_tool_descriptions_require_same_turn_observation() -> None:
+    """開始ツールの公開説明が返却sessionを同じ応答内で観測させる。"""
+    for tool_name in ("start", "start_explore"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "返した`session_id`" in tool.description
+        assert "同じ応答の中で`wait`を発行して観測する" in tool.description
+        assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:

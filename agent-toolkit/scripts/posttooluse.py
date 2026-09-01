@@ -310,6 +310,7 @@ def _record_agents_server_session_state(
     session_id: str,
     structured: dict,
     *,
+    operation: str,
     cwd: str | None = None,
 ) -> None:
     """agents_serverの公開応答をhook側の状態へ記録する。"""
@@ -326,6 +327,14 @@ def _record_agents_server_session_state(
         record.pop("cwd", None)
         record.pop("_".join(("result", "retrieved")), None)
         record.update({"session_id": remote_session_id, "status": status})
+        if operation in {"start", "start_explore"}:
+            record["pending_observation"] = True
+        elif operation == "send_message":
+            delivery = structured.get("delivery")
+            if delivery in {"steered", "reply_started", "reply_ambiguous"}:
+                record["pending_observation"] = True
+        elif operation in {"wait", "kill"}:
+            record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
             record["kill_requested"] = kill_requested
@@ -676,14 +685,16 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 display_name = tool_name.rsplit("__", 1)[-1]
                 notices.append(_llm_notice(f"warn: {display_name} response is missing or invalid {', '.join(missing)}."))
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
+        operation = tool_name.rsplit("__", 1)[-1]
         if tool_name in _AGENTS_SERVER_START_TOOLS:
             _record_agents_server_session_state(
                 session_id,
                 structured,
+                operation=operation,
                 cwd=cwd_value if isinstance(cwd_value, str) else None,
             )
         else:
-            _record_agents_server_session_state(session_id, structured)
+            _record_agents_server_session_state(session_id, structured, operation=operation)
         return 0
 
     # Readは本フックで状態更新を行わない。

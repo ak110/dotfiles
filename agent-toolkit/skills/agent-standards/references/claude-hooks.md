@@ -87,15 +87,15 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 <https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
 本節は経路選択の方針だけを定める。
 
-PreToolUseやPostToolUseでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。
+PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。これらのイベントでは、`additionalContext`はターン継続を強制しない。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象には付けない。
-Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘導等）は`decision: "block"`＋`reason`を採用する。
+Stop/SubagentStopで当該ターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
 永続ログはstderr出力ではなく`_stop_gate.append_stop_log`等の専用APIに集約する。
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | フィードバックを渡す主経路。フックエラー扱いとならずターン継続を妨げない |
+| `hookSpecificOutput.additionalContext` | コーディングエージェント | フィードバックを渡す主経路。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
 | `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
@@ -103,7 +103,7 @@ Stop/SubagentStopで当該ターン継続を強制する用途（振り返り誘
 
 `decision: "block"`の挙動はイベント別に異なる。
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
-挙動の強制が不要であれば`additionalContext`単独で出力する。
+PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。Stop/SubagentStopでは`additionalContext`単独でもターン継続を強制する。
 
 - block通知は`_hook_notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`fix`が空文字列または空白文字だけの場合は`ValueError`となる
 - 独自の整形関数でblock本文を構成しない（解消手段の欠落を機械的に検出できなくなるため）
@@ -178,10 +178,11 @@ Stop/SubagentStopの`decision: "block"`は、対象主体が同一ターン内�
 上限に達すると警告とともにフックの判定が無視されてターンが終了する。
 上限値は`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`環境変数で変更できる。
 
-出力経路は用途で選ぶ。
-次のユーザー入力ターンまで待ってよい誘導は`hookSpecificOutput.additionalContext`を用いる。
-当該ターンの継続を強制する誘導（振り返りスキルの起動など）は`decision: "block"`と`reason`を用いる。
-いずれの経路もStop・SubagentStopの双方で採用できる。
+Stop・SubagentStopでは、`hookSpecificOutput.additionalContext`も`decision: "block"`と同じく当該ターンを継続させる。
+いずれも`stop_hook_active`と連続継続上限による同じループ保護を通る。
+両者の違いは、`additionalContext`がフックの想定内の助言としてtranscriptへ表示され、フックのエラー通知を伴わない点である。
+このため前段の厳守規定は両経路へ等しく適用し、対象主体が同一ターン内の行動で解消できる条件だけを警告と遮断の条件にする。
+PreToolUse・PostToolUse・UserPromptSubmitの`additionalContext`はターンの継続を強制せず、本項の対象外とする。
 
 ターン終了の言語的判定（完了文言・質問・待機表明の判別）をフック側のコードで
 正規表現等により行うと誤検知が生じやすい。
@@ -189,6 +190,7 @@ Stop/SubagentStopの`decision: "block"`は、対象主体が同一ターン内�
 基準を満たさない場合は誘導内容に従わずターンを終了する設計を推奨する。
 
 CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、許可時は空のJSONオブジェクトを返す。
+CodexのStopは`hookSpecificOutput`を受理しない。
 Codex固有の入力には`model`があり、Stopでは`stop_hook_active`と`last_assistant_message`も受け取る。
 Codex rolloutのtranscript形式は安定インターフェースではないため、完了判定や背景作業判定の契約に使わない。
 状態欠落時の回復判定など、必要な標識の有無を確認する限定用途でだけruntime別に変換する。

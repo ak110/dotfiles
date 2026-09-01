@@ -1459,3 +1459,96 @@ class TestAgentsServerSessionState:
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
         assert record["status"] == "completed"
         assert "cwd" not in record
+
+    def test_pending_observation_transitions(self, tmp_path: pathlib.Path) -> None:
+        """公開操作の応答だけから未観測作業の発生と解消を記録する。"""
+
+        def run_operation(
+            sid: str,
+            remote_session_id: str,
+            operation: str,
+            *,
+            status: str,
+            delivery: str | None = None,
+        ) -> bool:
+            tool_input: dict[str, object] = {"session_id": remote_session_id}
+            if operation in {"start", "start_explore"}:
+                tool_input = {"cwd": str(tmp_path), "prompt": "委譲する"}
+            elif operation == "send_message":
+                tool_input["prompt"] = "続行する"
+            response: dict[str, object] = {"session_id": remote_session_id, "status": status}
+            if delivery is not None:
+                response["delivery"] = delivery
+            if operation == "kill":
+                response["kill_requested"] = True
+            result = _run(
+                {
+                    "session_id": sid,
+                    "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
+                    "tool_input": tool_input,
+                    "tool_response": {"structuredContent": response},
+                },
+                state_dir=tmp_path,
+            )
+            assert result.returncode == 0
+            return _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]["pending_observation"]
+
+        for operation in ("start", "start_explore"):
+            sid = f"pending-{operation}"
+            assert run_operation(sid, f"remote-{operation}", operation, status="running") is True
+
+        for status in ("running", "completed"):
+            sid = f"pending-wait-{status}"
+            remote_session_id = f"remote-wait-{status}"
+            assert run_operation(sid, remote_session_id, "start", status="running") is True
+            assert run_operation(sid, remote_session_id, "wait", status=status) is False
+
+        for delivery in ("steered", "reply_started", "reply_ambiguous"):
+            sid = f"pending-send-{delivery}"
+            remote_session_id = f"remote-send-{delivery}"
+            assert run_operation(sid, remote_session_id, "start", status="running") is True
+            assert run_operation(sid, remote_session_id, "wait", status="running") is False
+            assert (
+                run_operation(
+                    sid,
+                    remote_session_id,
+                    "send_message",
+                    status="running",
+                    delivery=delivery,
+                )
+                is True
+            )
+
+        sid = "pending-send-reply-failed"
+        remote_session_id = "remote-send-reply-failed"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert run_operation(sid, remote_session_id, "wait", status="completed") is False
+        assert (
+            run_operation(
+                sid,
+                remote_session_id,
+                "send_message",
+                status="completed",
+                delivery="reply_failed",
+            )
+            is False
+        )
+
+        sid = "pending-send-reply-failed-preserves-true"
+        remote_session_id = "remote-send-reply-failed-preserves-true"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert (
+            run_operation(
+                sid,
+                remote_session_id,
+                "send_message",
+                status="completed",
+                delivery="reply_failed",
+            )
+            is True
+        )
+
+        sid = "pending-kill"
+        remote_session_id = "remote-kill"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert run_operation(sid, remote_session_id, "kill", status="interrupted") is False

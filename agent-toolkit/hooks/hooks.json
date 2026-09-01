@@ -60,6 +60,14 @@
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py plan_save_advisor"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py agents_server_session_advisor"
+          }
+        ]
       }
     ],
     "SubagentStop": [

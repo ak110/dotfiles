@@ -132,6 +132,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `start_explore`は`fast`、`prompt`、絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使う。`exclude_session_id`へ渡せるのは、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件の一致しないsession IDは、別の設定キーの候補が除外へ混入するため開始前にエラーとなる。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
 `send_message`は、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補が、起動に使った実効値と一致しない場合に`configuration changed`を返す。呼び出し側は検収済み状態を渡して新規起動する。
+`start`・`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は待機せず現状態を返し、
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
@@ -334,6 +335,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/autonomous_exit` | process-loop環境で`agent-toolkit:completion-report`後の`agent-toolkit:exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
+| plugin `Stop/agents_server_session_advisor` | 観測を試みていない作業が残る`agents_server` sessionがある状態での終了を警告する | 対応 | 非対応。CodexのStopは`hookSpecificOutput`を受理しない |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | コーディングエージェント向け文書や新旧計画rootへの書き込みなど、確認ダイアログを自動許可する | 対応 | 非対応。Claude固有の入力と広い自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |

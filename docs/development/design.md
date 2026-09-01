@@ -854,7 +854,10 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 成果物の直接検査、必要なスキルの起動記録、危険な操作の抑止及び終了前の未完了通知を、対応するイベントで実行する。
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
-Stopは`agent-toolkit/scripts/_stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れを扱う。加えて`plan_save_advisor.py`による計画作業rootに残る計画バンドルの保存確認を扱い、これら以外を扱わない。利用者の意図、作業完了、振り返り要否、Git変更件数及びmanaged-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
+Stopが扱う判定は4つに限る。
+`agent-toolkit/scripts/_stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れを扱う。
+`plan_save_advisor.py`による計画作業rootに残る計画バンドルの保存確認と、`agents_server_session_advisor.py`による観測を試みていない作業が残るsessionの警告も扱う。
+これら以外を扱わず、利用者の意図、作業完了、振り返り要否、Git変更件数及びmanaged-temp回収要否を判定しない。個人設定の入力待ちベルも同じ入力待ち判定を使う。
 
 計画作業rootの保存確認は、当該セッションが作成又は編集した計画ファイル（メイン）が計画作業rootへ現存する場合だけ発火し、セッションごとに1回だけ確認を促す。
 判定材料はセッション状態が記録する計画ファイル（メイン）の絶対パスのリストと、その実在に限り、実装レビューの収束有無を判定しない。

@@ -672,7 +672,10 @@ async def start(
     cwd: str,
     exclude_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """工程別モデル設定の候補から委譲先turnを開始する。"""
+    """工程別モデル設定の候補から委譲先turnを開始する。
+
+    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    """
     return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
 
 
@@ -683,7 +686,10 @@ async def start_explore(
     fast: bool = False,
     exclude_session_id: str | None = None,
 ) -> dict[str, Any]:
-    """探索専用の軽量な起動条件で委譲先turnを開始する。"""
+    """探索専用の軽量な起動条件で委譲先turnを開始する。
+
+    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    """
     return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)
 
 
