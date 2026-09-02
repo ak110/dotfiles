@@ -272,6 +272,33 @@ class TestLegacyPlansViewerUnit:
         assert ["systemctl", "--user", "daemon-reload"] not in calls
         assert "claude-plans-viewer.service" in caplog.text
 
+    def test_keeps_legacy_unit_when_removal_raises_os_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """削除が入出力エラーで失敗した場合もunitファイルを残し、後続の配置を止めない。"""
+        _run_linux_euryale(monkeypatch, tmp_path)
+        legacy = self._place_legacy_unit(tmp_path)
+        calls = self._record_subprocess(monkeypatch, returncode=0)
+        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
+        original_unlink = pathlib.Path.unlink
+
+        def unlink(self: pathlib.Path, **kwargs: typing.Any) -> None:
+            if self == legacy:
+                raise PermissionError("unitファイルを削除する権限がない")
+            original_unlink(self, **kwargs)
+
+        monkeypatch.setattr(setup_atk_serve_linux.pathlib.Path, "unlink", unlink)
+
+        with caplog.at_level("WARNING"):
+            assert setup_atk_serve_linux.run() is True
+
+        assert legacy.exists()
+        assert ["systemctl", "--user", "daemon-reload"] not in calls
+        assert "削除できないため残す" in caplog.text
+
     def test_absent_legacy_unit_does_not_invoke_systemctl(
         self,
         monkeypatch: pytest.MonkeyPatch,

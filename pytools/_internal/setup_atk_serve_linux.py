@@ -92,7 +92,8 @@ def run() -> bool:
 def _remove_legacy_unit() -> None:
     """旧計画ビューアーのsystemd unitを停止・無効化してから削除する。
 
-    停止と無効化に失敗した場合はunitファイルを残し、警告として記録して後続の配置を続ける。
+    停止、無効化又は削除に失敗した場合はunitファイルを残し、警告として記録して後続の配置を続ける。
+    後方互換のための後始末であり、失敗しても主目的であるサービス設定の配置を止めない。
     削除より先にunitファイルを除去すると、稼働中のサービスを停止も無効化もできないまま残すため、
     `post_apply`の一括削除ではなく本工程で扱う。
     """
@@ -109,7 +110,13 @@ def _remove_legacy_unit() -> None:
             log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止できないためunitを残す"),
         )
         return
-    unit_path.unlink(missing_ok=True)
+    try:
+        unit_path.unlink(missing_ok=True)
+    except OSError as error:
+        logger.warning(
+            log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}のunitファイルを削除できないため残す: {error}"),
+        )
+        return
     claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=30.0, tag="atk-serve")
     logger.info(log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止して削除した"))
 
