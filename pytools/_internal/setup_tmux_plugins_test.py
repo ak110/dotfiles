@@ -1,5 +1,6 @@
 """pytools._internal.setup_tmux_plugins のテスト。"""
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -189,6 +190,47 @@ def test_returns_false_when_subprocess_fails(
 
     monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
     assert setup_tmux_plugins.run() is False
+
+
+@pytest.mark.parametrize(
+    ("pin_is_tag", "failing_subcommand", "warning_prefix"),
+    [
+        (False, "pull", "pull失敗"),
+        (True, "fetch", "fetch失敗"),
+        (True, "checkout", "checkout失敗"),
+    ],
+)
+def test_update_failure_warning_includes_git_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    pin_is_tag: bool,
+    failing_subcommand: str,
+    warning_prefix: str,
+) -> None:
+    """更新に失敗した場合の警告へ、対象と併せてGitが返した失敗理由を含める。"""
+    plugins_dir = tmp_path / "plugins"
+    plugin = _make_plugin(plugins_dir, pin_is_tag=pin_is_tag)
+    _install_env(monkeypatch, plugins_dir, plugin)
+    (plugin.dest / ".git").mkdir(parents=True)
+    failure_reason = "fatal: refusing to merge unrelated histories"
+
+    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if cmd[3] == "remote":
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=f"{plugin.origin}\n", stderr="")
+        if cmd[3] == failing_subcommand:
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr=failure_reason)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(claude_common, "run_subprocess", fake_run)
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_tmux_plugins"):
+        assert setup_tmux_plugins.run() is False
+
+    messages = [message for message in caplog.messages if warning_prefix in message]
+    assert len(messages) == 1
+    assert str(plugin.dest) in messages[0]
+    assert failure_reason in messages[0]
 
 
 def test_effective_origin_uses_override_when_set(
