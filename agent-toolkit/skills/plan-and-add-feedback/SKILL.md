@@ -32,7 +32,7 @@ description: >
 1. 全入力をファイル名昇順に並べ、同一`target_repo`のinbox通常型feedbackで`plan_file`を持たないことを一括検証する。TBD、既存計画型、別対象リポジトリ、欠落又は混在状態があれば、追加調査と状態を変更せず入力エラーとして返す。
 2. 検証に成功した場合だけ、`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行する。planningへ移す前後の対象集合、保存本文及び単一遷移commitを照合する。
 3. 計画作成、レビュー及び確認待ちの再開では、入力として確定した対象worktreeの絶対パスを保持する。計画時の旧worktreeパスが本文に残っていても、実行時に渡された対象worktreeへ解決し、対象外のworktreeを操作しない。
-4. 計画レビューまで完了した後、全入力をファイル名昇順で次のコマンドへ1回渡す。
+4. 計画レビューまで完了した後、`## 計画バンドルの保存`を実施し、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
    ```sh
    atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
@@ -56,11 +56,21 @@ description: >
    起草完了後、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と計画メタ情報の関連フィードバックの出所・引用範囲を渡して`plan-review-executor`を起動する。
    起動後は計画ファイルの書込所有権が`plan-review-executor`配下の計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`計画レビュー完了`を受領したら次へ進む。
-5. 完成後、実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-feedback`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
+5. 完成後、`## 計画バンドルの保存`を実施する。続けて実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-feedback`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
 
 計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan-and-add-feedback`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
 本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:feedback-standards`へ渡した後は問い直さない。
+
+## 計画バンドルの保存
+
+いずれのモードでも、計画レビューの収束後、フィードバックへ`plan_file`を記録する前に、実行主体が計画バンドルを保存先へ移す。
+本スキルは同一セッションで対象リポジトリを実装しないため、計画レビューの収束時点を保存の契機とする。
+
+1. `atk plans commit <計画作業root直下のメイン計画ファイル名>`を1回実行し、終了コード0を確認する。
+2. `atk config get private_notes`が返す絶対パスとメイン計画ファイルの作成日から、保存先を`<private-notesの絶対パス>/plans/yyyy/MM/`として解決する。計画ファイル（メイン）、計画ファイル（詳細）、付属素材及び計画レビュー指摘管理表が当該ディレクトリに実在することを確認する。
+3. 計画作業root直下の同じstemのファイルが消失したことを、対象ごとの`test ! -e <当該ファイルの絶対パス>`が終了コード0を返すことで確認する。
+4. いずれかの確認が成立しない場合は`plan_file`を記録せず、実行したコマンド、終了コード及び観測値をユーザーへ報告する。
 
 ## 完了報告の形式
 

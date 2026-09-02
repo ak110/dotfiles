@@ -408,8 +408,8 @@ Codexが`agent-toolkit/agents/*.md`の名前付きagentを呼び出す場合だ�
   （2026年8月、利用者指示。レーンへ終端工程や進捗ログの編集権限を渡さない知識境界のため）
 - 新規の計画二ファイルは、全ての要求を充足済みと確定して実装工程を省略する場合は計画レビュー完了まで、それ以外は実装レビュー完了まで`~/.claude/plans/dd-{名称}-{小文字16進数4桁}.md`と同じstemの`.detail.md`を計画作業root直下で更新する。
   永続する計画参照は移動後の`$(atk config get private_notes)/plans/yyyy/MM/`を指す可搬表記のままにする。
-  全ての要求を充足済みと確定した計画は計画レビュー収束後に、それ以外は実装レビュー合格後に、計画と同じstemの付属ファイルを`atk plans commit`で作成日の年月階層へ移動して保存する。
-  実装工程へ進む計画は計画レビュー合格時に移動又はcommitしない（2026年9月、利用者指示。並行作業中のprivate-notesをcleanに保つため）
+  全ての要求を充足済みと確定した計画と、同一セッションで実装しない計画は計画レビュー収束後に、それ以外は実装レビュー合格後に、計画と同じstemの付属ファイルを`atk plans commit`で作成日の年月階層へ移動して保存する。
+  同一セッション内で実装工程へ進む計画は計画レビュー合格時に移動又はcommitしない（2026年9月、利用者指示。並行作業中のprivate-notesをcleanに保つため）
 - キュー項目の削除はGit履歴から復旧できる経路として維持し、エージェントが自身の誤りで投入した項目の整理に用いる
 - 計画作成中の通常型フィードバックは専用の`planning`へ移し、TBDの`active`・`processable`、`process-loop`のready集合、一般編集及びユーザーコメントから分離する。feedback用の公開一覧の`active`表示には`planning`を含めるが、計画作成途中の項目を自動処理や実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
 - キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。feedback用の公開一覧の`active`は`inbox`・`planning`・`processing`・`editing`・`hold`、TBDの`active`には`planning`を含めず、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない

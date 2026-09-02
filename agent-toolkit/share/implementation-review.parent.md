@@ -28,6 +28,7 @@ review_contract:
 さらに、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の`## 入力`が要求する必須入力のうち、前段と重複しない次の項目を全て渡す。
 
 - 計画ファイル（メイン・詳細）、対象リポジトリ及び対象worktreeの絶対パス
+- 作業種別が`バグ対応`の計画では計画ファイル（バグ）の絶対パス
 - プロジェクト規範、適用する作成規範スキル及び`agent-toolkit:review-standards`のSKILL.mdの絶対パス
 - 計画の実装単位、目的、変更説明、開始時点の完全OID、変更ファイル一覧、検証結果及び進捗の現在状態
 
