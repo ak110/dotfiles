@@ -1084,3 +1084,113 @@ def test_migrate_plans_rejects_remote_less_repository_before_writing(tmp_path: p
 
     assert source.is_file()
     assert not (notes / "plans").exists()
+
+
+def _saved_plan_with_references(notes: pathlib.Path, stem: str = "01-参照表記-1a2b") -> tuple[pathlib.Path, pathlib.Path]:
+    """保存rootへ、自計画と他計画の参照を持つ計画ファイルを作成する。"""
+    directory = notes / "plans" / "2026" / "09"
+    directory.mkdir(parents=True, exist_ok=True)
+    main = directory / f"{stem}.md"
+    detail = directory / f"{stem}.detail.md"
+    prefix = _plan_file.PORTABLE_PLAN_PREFIX
+    main.write_text(f"# 計画\n\n参照は{prefix}plans/2026/09/{stem}.norm-texts.md。\n", encoding="utf-8")
+    detail.write_text(
+        "## バグ調査結果\n\n"
+        f"- 計画ファイル（バグ）: {prefix}plans/2026/09/{stem}.bugs.md\n"
+        f"- レビュー指摘管理表: {prefix}plans/2026/09/{stem}.plan-review.tsv\n\n"
+        f"他計画は{prefix}plans/2026/08/30-別計画-c3d4.bugs.md を参照する。\n",
+        encoding="utf-8",
+    )
+    return main, detail
+
+
+def test_rewrite_references_replaces_only_matching_stem(tmp_path: pathlib.Path) -> None:
+    """当該計画のstemに一致する参照だけを新しい参照値へ書き換える。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    stem = "01-参照表記-1a2b"
+    main, detail = _saved_plan_with_references(notes, stem)
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add saved plan")
+    _git(notes, "push")
+
+    result = _atk_plans.rewrite_plan_references(notes)
+
+    assert result["plans"] == 2, result
+    assert result["references"] == 3, result
+    prefix = _plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX
+    assert f"{prefix}{stem}.norm-texts.md" in main.read_text(encoding="utf-8")
+    detail_text = detail.read_text(encoding="utf-8")
+    assert f"- 計画ファイル（バグ）: {prefix}{stem}.bugs.md" in detail_text
+    assert f"- レビュー指摘管理表: {prefix}{stem}.plan-review.tsv" in detail_text
+    assert f"{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/08/30-別計画-c3d4.bugs.md" in detail_text
+
+
+def test_rewrite_references_replaces_reference_with_spaces_in_file_name(tmp_path: pathlib.Path) -> None:
+    """ファイル名が空白を含む計画の参照も書き換える。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    stem = "01-atk serve の統合-1a2b"
+    main, _detail = _saved_plan_with_references(notes, stem)
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add saved plan")
+    _git(notes, "push")
+
+    result = _atk_plans.rewrite_plan_references(notes)
+
+    assert result["references"] == 3, result
+    expected = f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{stem}.norm-texts.md"
+    assert expected in main.read_text(encoding="utf-8")
+
+
+def test_rewrite_references_keeps_queue_items_unchanged(tmp_path: pathlib.Path) -> None:
+    """キュー項目の本文は書き換えの対象にしない。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    stem = "01-参照表記-1a2b"
+    _saved_plan_with_references(notes, stem)
+    queue_item = notes / "inbox" / "20260901-000000-001.md"
+    queue_item.parent.mkdir(parents=True, exist_ok=True)
+    queue_text = f"---\nstatus: inbox\n---\n\n{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.md\n"
+    queue_item.write_text(queue_text, encoding="utf-8")
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add saved plan and queue item")
+    _git(notes, "push")
+
+    _atk_plans.rewrite_plan_references(notes)
+
+    assert queue_item.read_text(encoding="utf-8") == queue_text
+
+
+def test_rewrite_references_reports_zero_without_targets(tmp_path: pathlib.Path) -> None:
+    """書き換え対象が無い場合は何も変更せず0件で終わる。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    head = _git(notes, "rev-parse", "HEAD").stdout.strip()
+
+    result = _atk_plans.rewrite_plan_references(notes)
+
+    assert result == {"plans": 0, "references": 0, "commit": None}
+    assert _git(notes, "rev-parse", "HEAD").stdout.strip() == head
+
+
+def test_rewrite_references_commits_and_pushes(tmp_path: pathlib.Path) -> None:
+    """書き換えを対象限定commitとして作成し、remoteへ到達させる。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    _saved_plan_with_references(notes)
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add saved plan")
+    _git(notes, "push")
+    head = _git(notes, "rev-parse", "HEAD").stdout.strip()
+
+    result = _atk_plans.rewrite_plan_references(notes)
+
+    assert result["commit"] != head
+    assert _git(notes, "status", "--porcelain").stdout == ""
+    assert _git(notes, "rev-parse", "origin/main").stdout.strip() == _git(notes, "rev-parse", "HEAD").stdout.strip()
