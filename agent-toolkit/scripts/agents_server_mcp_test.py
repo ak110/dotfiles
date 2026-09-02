@@ -269,6 +269,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_atk_config.py",
         "_atk_help.py",
         "_inherited_venv.py",
+        "_wait_schedule.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
 
@@ -337,8 +338,7 @@ def test_exclude_session_id_schema_describes_candidate_exclusion() -> None:
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
-    """公開schemaの待機系操作が270秒の既定timeoutと省略契約を示す。"""
-    assert subject.DEFAULT_WAIT_TIMEOUT == 270.0
+    """公開schemaの待機系操作が既定timeoutの決まり方と省略契約を示す。"""
     assert subject.DEFAULT_KILL_TIMEOUT == 270.0
     assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
     assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
@@ -350,12 +350,17 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert kill_tool is not None
 
     wait_timeout = wait_tool.parameters["properties"]["timeout"]
-    assert wait_timeout["default"] == 270.0
+    assert wait_timeout["default"] is None
     assert wait_timeout["description"] == (
-        "待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。0は待機せず現状態を返す。"
+        "待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。0は待機せず現状態を返す。"
     )
-    assert "通常の既定は270秒" in wait_tool.description
-    assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in wait_tool.description
+    wait_bucket = wait_tool.parameters["properties"]["request_bucket"]
+    assert wait_bucket["default"] == "main"
+    assert wait_bucket["description"] == (
+        "既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"
+    )
+    assert "プロンプトキャッシュの保持期間から導出した上限" in wait_tool.description
+    assert "固有のtimeout要件がなければ`timeout`を省略する" in wait_tool.description
     assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
@@ -728,6 +733,31 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
         "status": "running",
         "progress": "",
     }
+
+
+@pytest.mark.asyncio
+async def test_wait_without_timeout_uses_derived_bucket_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """timeout省略時はbucket別の導出値を上限に使い、同じbucketでは導出を繰り返さない。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+    requested_buckets: list[str] = []
+
+    def fake_get_wait_timeout(request_bucket: str, **kwargs: Any) -> float:
+        del kwargs
+        requested_buckets.append(request_bucket)
+        return 0.0
+
+    monkeypatch.setattr(subject._wait_schedule, "get_wait_timeout", fake_get_wait_timeout)
+
+    assert (await manager.wait(session.session_id))["status"] == "running"
+    assert (await manager.wait(session.session_id, request_bucket="subagent"))["status"] == "running"
+    assert (await manager.wait(session.session_id))["status"] == "running"
+
+    assert requested_buckets == ["main", "subagent"]
 
 
 @pytest.mark.asyncio

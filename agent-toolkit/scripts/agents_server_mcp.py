@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["mcp>=1.28.1,<2", "claude-agent-sdk>=0.2.144,<0.3", "pydantic>=2", "platformdirs>=4.0"]
+# dependencies = ["mcp>=1.28.1,<2", "claude-agent-sdk>=0.2.144,<0.3", "pydantic>=2", "platformdirs>=4.0", "pytilpack>=1.47.0"]
 # ///
 """CodexとClaudeの委譲先を非同期MCPとして公開する。"""
 
@@ -22,6 +22,7 @@ import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
 import _atk_config
 import _inherited_venv
+import _wait_schedule
 from _agents_server_state import (
     ModelCandidate,
     ResumePrompt,
@@ -40,7 +41,6 @@ try:
 except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開しない場合
     IncompleteFieldDefinitionWarning = None  # type: ignore[assignment,misc]
 
-DEFAULT_WAIT_TIMEOUT = 270.0
 DEFAULT_KILL_TIMEOUT = 270.0
 DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
 SUPPORTED_ENGINES = frozenset({"claude", "codex"})
@@ -107,6 +107,7 @@ class AgentsServerManager:
         self._resume_lock = asyncio.Lock()
         self._codex: Any = None
         self._claude: Any = None
+        self._wait_timeouts: dict[str, float] = {}
 
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
@@ -301,8 +302,25 @@ class AgentsServerManager:
             explore=True,
         )
 
-    async def wait(self, session_id: str, timeout: float = DEFAULT_WAIT_TIMEOUT) -> dict[str, Any]:
-        """sessionの終端を待ち、登録簿の現在値から結果本文を返す。"""
+    async def _resolve_wait_timeout(self, request_bucket: str) -> float:
+        """bucket別の既定待機上限を導出し、同じbucketの以降の呼び出しへ再利用する。
+
+        導出は`claude auth status`の実行を伴い得るため、イベントループ上で直接実行しない。
+        """
+        cached = self._wait_timeouts.get(request_bucket)
+        if cached is not None:
+            return cached
+        resolved = await asyncio.to_thread(_wait_schedule.get_wait_timeout, request_bucket)
+        self._wait_timeouts[request_bucket] = resolved
+        return resolved
+
+    async def wait(self, session_id: str, timeout: float | None = None, request_bucket: str = "main") -> dict[str, Any]:
+        """sessionの終端を待ち、登録簿の現在値から結果本文を返す。
+
+        `timeout`が`None`の場合は、プロンプトキャッシュの保持期間から導出した上限を使う。
+        """
+        if timeout is None:
+            timeout = await self._resolve_wait_timeout(request_bucket)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
         loop = asyncio.get_running_loop()
@@ -768,16 +786,22 @@ async def start_explore(
 async def wait(
     session_id: str,
     timeout: Annotated[
-        float,
-        Field(description="待機上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。0は待機せず現状態を返す。"),
-    ] = DEFAULT_WAIT_TIMEOUT,
+        float | None,
+        Field(
+            description="待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。0は待機せず現状態を返す。"
+        ),
+    ] = None,
+    request_bucket: Annotated[
+        str,
+        Field(description="既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"),
+    ] = "main",
 ) -> dict[str, Any]:
     """委譲先の終端を待ち、終端時だけ結果本文を返す。
 
-    通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
-    `timeout=0`は待機せず現状態を返す。
+    `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
+    固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
     """
-    return await _MANAGER.wait(session_id, timeout)
+    return await _MANAGER.wait(session_id, timeout, request_bucket)
 
 
 @mcp.tool(name="send_message", structured_output=True)
