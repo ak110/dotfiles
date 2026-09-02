@@ -36,6 +36,8 @@ review_contract:
 計画、対象リポジトリ、対象worktree、規範、実装単位及び開始時点の完全OIDは`plan-executor`の保持情報から、レビュー対象HEAD、変更ファイル一覧、検証結果及び進捗はレビュー指摘管理表と対象worktreeの現行実体から解決する。
 継続不能の判定と引き継ぎ手順は`agent-toolkit:delegation`の経路選択契約に従う。
 
+実装レビュー担当を起動する前に、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の`## 入力`が列挙する必須入力が起動文にそろっていることを確認する。生成した`review_contract`が前段の列挙する各観点と出典を欠かさないことと、絶対パスで示す入力が実在することも同じ時点で確認する。いずれかが欠ける場合は実装レビュー担当を起動せず、欠けていた入力項目又は条項を呼び出し元へ返す。
+
 ## レビュー修正
 
 通常の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には最初の実装担当の起動前に検収したworktreeの完全OIDを使う。初回の実装レビュー担当を新規に起動する場合は、`レビュー種別: 初回レビュー`、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の絶対パス及び生成済みの`review_contract`を入力へ加えて渡す。
