@@ -101,6 +101,8 @@ _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 SSH_BASE_OPTIONS = ("-o", "BatchMode=yes")
 # 単発SSH呼び出し（fallback用`read`）のタイムアウト秒。
 SSH_TIMEOUT_SEC = 30.0
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、記録を占有させない。
+STDERR_EXCERPT_MAX_CHARS = 500
 # RPCリクエスト1件あたりのタイムアウト秒。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
 # SSHフォールバック経路の検索を同時に実行する上限（全ホスト合計）。
@@ -997,11 +999,37 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     ]
 
 
+class RemoteHelperError(Exception):
+    """リモートヘルパーの実行が非0で終了したことを、失敗元の標準エラー出力とともに示す。
+
+    本例外の文字列表現は利用者へ渡る警告本文と記録へそのまま引き継がれるため、失敗元の標準エラー出力を含める。
+    SSHの接続が成立したうえでリモート側の実行が失敗する場合も本例外となるため、
+    到達可否を判別していない語で原因を断定しない。
+    """
+
+    def __init__(self, returncode: int, stderr: bytes) -> None:
+        super().__init__(f"リモートヘルパーの実行が終了コード{returncode}で失敗しました: {_stderr_excerpt(stderr)}")
+
+
+def _stderr_excerpt(stderr: bytes) -> str:
+    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
+
+    復号できない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    """
+    text = " ".join(stderr.decode("utf-8", errors="replace").split())
+    if not text:
+        return "標準エラー出力はありません"
+    if len(text) > STDERR_EXCERPT_MAX_CHARS:
+        return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
+    return text
+
+
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
     fallback経路（常駐watch経由RPCが利用できない場合）でのみ使う。
     `subprocess.run`はブロッキングのため`asyncio.to_thread`でラップする。
+    非0終了は`RemoteHelperError`として送出し、失敗元の標準エラー出力を呼び出し元へ渡す。
     """
     cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
     proc = await asyncio.to_thread(
@@ -1009,10 +1037,13 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
         cmd,
         capture_output=True,
         timeout=SSH_TIMEOUT_SEC,
-        check=True,
+        check=False,
     )
-    # capture_output=Trueかつtext未指定のため`stdout`は実行時bytes固定。型注釈はAnyのため明示する。
+    # capture_output=Trueかつtext未指定のため`stdout`・`stderr`は実行時bytes固定。型注釈はAnyのため明示する。
     assert isinstance(proc.stdout, bytes)
+    assert isinstance(proc.stderr, bytes)
+    if proc.returncode != 0:
+        raise RemoteHelperError(proc.returncode, proc.stderr)
     return proc.stdout.decode("utf-8")
 
 

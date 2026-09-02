@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import pathlib
+import subprocess
 import typing
 
 import _atk_serve_plans as plans
@@ -579,6 +580,52 @@ async def test_remote_read_passes_source_id_before_the_path() -> None:
     await plans.fetch_remote_file("circe", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
 
     assert len(calls[0][2]) == 2
+
+
+def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., subprocess.CompletedProcess[bytes]]:
+    """指定した終了コードと標準エラー出力を返す`subprocess.run`の代用を組み立てる。"""
+
+    def run(*args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
+        del args, kwargs
+        return subprocess.CompletedProcess(args=["ssh"], returncode=returncode, stdout=b"", stderr=stderr)
+
+    return run
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        (b"helper not found\n", "helper not found"),
+        (b"  \n ", "標準エラー出力はありません"),
+        (b"\xff\xfe helper failed", "helper failed"),
+    ],
+    ids=["message", "empty", "undecodable"],
+)
+async def test_remote_read_failure_reports_stderr(monkeypatch: pytest.MonkeyPatch, stderr: bytes, expected: str) -> None:
+    """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を例外本文へ引き継ぐ。"""
+    monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, stderr))
+
+    with pytest.raises(plans.RemoteHelperError) as error:
+        await plans.fetch_remote_file("circe", "p.md", plans.default_ssh_runner, None)
+
+    assert "終了コード3" in str(error.value)
+    assert expected in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
+    head = "先頭の行" * plans.STDERR_EXCERPT_MAX_CHARS
+    monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, f"{head}\n末尾の理由\n".encode()))
+
+    with pytest.raises(plans.RemoteHelperError) as error:
+        await plans.fetch_remote_file("circe", "p.md", plans.default_ssh_runner, None)
+
+    message = str(error.value)
+    assert "末尾の理由" in message
+    assert head not in message
+    assert len(message) < len(head)
 
 
 @pytest.mark.asyncio

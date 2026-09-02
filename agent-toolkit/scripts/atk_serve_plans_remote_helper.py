@@ -128,19 +128,43 @@ def _atk_env() -> dict[str, str]:
     return env
 
 
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、警告欄を占有させない。
+_STDERR_EXCERPT_MAX_CHARS = 500
+
+
+def _stderr_excerpt(stderr: str) -> str:
+    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
+
+    末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    """
+    text = " ".join(stderr.split())
+    if not text:
+        return "標準エラー出力はありません"
+    if len(text) > _STDERR_EXCERPT_MAX_CHARS:
+        return f"...{text[-_STDERR_EXCERPT_MAX_CHARS:]}"
+    return text
+
+
 def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
-    """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。"""
+    """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。
+
+    失敗理由は利用者へ渡る警告本文となるため、失敗元の標準エラー出力を引き継ぐ。
+    """
     try:
         completed = subprocess.run(
             [_atk_executable(), "config", "get", "private_notes"],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
             timeout=5,
             env=_atk_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:
         warning = f"private_notesの取得に失敗しました: {error}"
+        sys.stderr.write(f"warn: {warning}\n")
+        return None, warning
+    if completed.returncode != 0:
+        warning = f"private_notesの取得が終了コード{completed.returncode}で失敗しました: {_stderr_excerpt(completed.stderr)}"
         sys.stderr.write(f"warn: {warning}\n")
         return None, warning
     value = completed.stdout.strip()

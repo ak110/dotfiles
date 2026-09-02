@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import pathlib
+import subprocess
 import typing
 
 import _atk_serve_sessions as sessions
@@ -320,7 +321,62 @@ async def test_unreachable_host_is_reported_and_others_are_returned(tmp_path: pa
 
     assert [entry.host for entry in entries] == ["local-host"]
     assert [warning["host"] for warning in warnings] == ["down-host"]
+    assert warnings[0]["reason"].startswith("記録を取得できません: ")
     assert "接続できません" in warnings[0]["reason"]
+
+
+def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., subprocess.CompletedProcess[bytes]]:
+    """指定した終了コードと標準エラー出力を返す`subprocess.run`の代用を組み立てる。"""
+
+    def run(*args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
+        del args, kwargs
+        return subprocess.CompletedProcess(args=["ssh"], returncode=returncode, stdout=b"", stderr=stderr)
+
+    return run
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        (b"helper not found\n", "helper not found"),
+        (b"  \n ", "標準エラー出力はありません"),
+        (b"\xff\xfe helper failed", "helper failed"),
+    ],
+    ids=["message", "empty", "undecodable"],
+)
+async def test_remote_failure_warning_carries_stderr(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stderr: bytes,
+    expected: str,
+) -> None:
+    """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を警告本文へ引き継ぐ。"""
+    monkeypatch.setattr(sessions.subprocess, "run", _failed_ssh(2, stderr))
+    context = _context(tmp_path, remote_hosts=["down-host"])
+
+    _, warnings = await sessions.list_sessions(context)
+
+    reason = warnings[0]["reason"]
+    assert reason.startswith("記録を取得できません: ")
+    assert "終了コード2" in reason
+    assert expected in reason
+
+
+@pytest.mark.asyncio
+async def test_long_stderr_keeps_the_tail_in_the_warning(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
+    head = "先頭の行" * sessions.STDERR_EXCERPT_MAX_CHARS
+    stderr = f"{head}\n末尾の理由\n".encode()
+    monkeypatch.setattr(sessions.subprocess, "run", _failed_ssh(2, stderr))
+    context = _context(tmp_path, remote_hosts=["down-host"])
+
+    _, warnings = await sessions.list_sessions(context)
+
+    reason = warnings[0]["reason"]
+    assert "末尾の理由" in reason
+    assert head not in reason
+    assert len(reason) < len(head)
 
 
 @pytest.mark.asyncio
