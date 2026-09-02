@@ -168,7 +168,7 @@ def test_file_birth_date_falls_back_to_mtime_when_creation_time_is_unavailable(
     os.utime(plan, (modified_epoch, modified_epoch))
     expected = datetime.datetime.fromtimestamp(modified_epoch).date()
 
-    def unavailable_creation(_path: pathlib.Path) -> None:
+    def unavailable_creation(_path: pathlib.Path) -> float | None:
         return None
 
     monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)

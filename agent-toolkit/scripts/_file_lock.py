@@ -12,16 +12,34 @@ import os
 from pathlib import Path
 from typing import IO
 
-PLAN_LOCK_IGNORE_PATTERN = "*.lock"
-"""計画保存先リポジトリでagent-toolkitの管理ロックを除外するパターン。"""
+PLAN_LOCK_IGNORE_PATTERN = "/plans/**/*.lock"
+"""計画保存先リポジトリでagent-toolkitの管理ロックを除外するパターン。
+
+`ensure_plan_lock_ignored`が受理するロックはリポジトリroot直下の`plans/`配下に限るため、
+除外範囲も同じ範囲へ合わせる。
+"""
+
+_LEGACY_PLAN_LOCK_IGNORE_PATTERN = "*.lock"
+"""旧版が追記した、リポジトリ全体の`.lock`を除外するパターン。
+
+計画ロック以外の`.lock`まで版管理から外すため、検出した場合は現行パターンへ置き換える。
+"""
 
 _GITIGNORE_UPDATE_LOCK = "agent-toolkit-plan-lock-gitignore.lock"
 
 
 def plan_lock_gitignore_content(content: bytes) -> bytes:
-    """既存内容を保持し、計画ロックの除外行を1回だけ含む内容を返す。"""
+    """既存内容を保持し、計画ロックの除外行を1回だけ含む内容を返す。
+
+    旧版が追記したリポジトリ全体を対象とする除外行は取り除いてから現行の行を加える。
+    """
     pattern = PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
-    if pattern in content.splitlines():
+    legacy = _LEGACY_PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
+    lines = content.splitlines()
+    if legacy in lines:
+        content = b"".join(line + b"\n" for line in lines if line != legacy)
+        lines = content.splitlines()
+    if pattern in lines:
         return content
     separator = b"" if not content or content.endswith((b"\n", b"\r")) else b"\n"
     return content + separator + pattern + b"\n"

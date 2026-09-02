@@ -263,10 +263,12 @@ def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
 # ファイル名に連続アンダースコア（3〜7 文字）を含むトークンを検出する。
 # 個人用メモの慣習として使われるファイル名パターン。
 # 8 文字以上の連続アンダースコアは区切り線等の装飾用途とみなし対象外とする。
-# `[^\W_]`（= [a-zA-Z0-9]）でアンダースコア列の前後を非アンダースコアの word 文字に
-# 限定し、`(?!_)` で列が 7 文字を超えないことを保証する。
+# `[^\W_]` でアンダースコア列の前後を非アンダースコアの word 文字に限定し、
+# `(?!_)` で列が 7 文字を超えないことを保証する。
+# `re.ASCII` を指定していないため `\w` は Unicode の word 文字を表し、
+# 非 ASCII の文字を含むトークンも検出対象となる。
 # `\b` でword境界に固定することで、トークンの内側の部分マッチを避ける。
-_TRIPLE_UNDERSCORE_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
+_UNDERSCORE_RUN_TOKEN_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
 
 # 3〜7 文字の連続アンダースコアを検出するパターン（ファイル名判定用）。
 _SHORT_UNDERSCORE_RUN = re.compile(r"(?<!_)_{3,7}(?!_)")
@@ -281,7 +283,7 @@ def _is_claude_local_md(file_path: str) -> bool:
     return name == _CLAUDE_LOCAL_MD
 
 
-def _has_triple_underscore_filename(file_path: str) -> bool:
+def _has_underscore_run_filename(file_path: str) -> bool:
     """ファイル名自体に 3〜7 文字の連続アンダースコアが含まれるかを判定する (言及チェック除外用)。"""
     if not file_path:
         return False
@@ -311,7 +313,7 @@ def _is_under_claude_plans(file_path: str) -> bool:
 def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """個人用 / ローカル専用ファイルの言及の警告メッセージを返す (該当しなければ None)。
 
-    対象は `CLAUDE.local.md` と、ファイル名に `___` を含むトークン。
+    対象は `CLAUDE.local.md` と、ファイル名に 3〜7 文字の連続アンダースコアを含むトークン。
     対象ファイル自身の編集および書き込み先が新旧いずれかの計画root配下の場合は警告をスキップする。
     文脈依存の判断はコーディングエージェントに委ね、hook は緩い警告のみを表示してブロックはしない。
     """
@@ -323,11 +325,13 @@ def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]
             if _CLAUDE_LOCAL_MD in value:
                 messages.append(f"'{_CLAUDE_LOCAL_MD}' in {tool_name}.{field}")
                 break
-    if not _has_triple_underscore_filename(file_path):
+    if not _has_underscore_run_filename(file_path):
         for field, value in fields:
-            match = _TRIPLE_UNDERSCORE_PATTERN.search(value)
+            match = _UNDERSCORE_RUN_TOKEN_PATTERN.search(value)
             if match:
-                messages.append(f"'{match.group()}' (filename-like token containing '___') in {tool_name}.{field}")
+                messages.append(
+                    f"'{match.group()}' (filename-like token containing a run of 3-7 underscores) in {tool_name}.{field}"
+                )
                 break
     if not messages:
         return None

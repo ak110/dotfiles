@@ -1234,7 +1234,7 @@ class TestPrivateNotesAutoCreate:
         )
         for name in expected_state_dirs:
             assert (root / name).is_dir()
-        assert (root / ".gitignore").read_text(encoding="utf-8") == "*.lock\n"
+        assert (root / ".gitignore").read_text(encoding="utf-8") == f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n"
         assert not _git_stdout(root, "status", "--porcelain")
 
     def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
@@ -1263,7 +1263,7 @@ class TestPrivateNotesAutoCreate:
         _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
 
         assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
-        assert _git_stdout(root, "show", "HEAD:.gitignore") == "*.lock\n"
+        assert _git_stdout(root, "show", "HEAD:.gitignore") == f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n"
         assert not _git_stdout(root, "status", "--porcelain")
 
     def test_ensure_environment_does_not_commit_user_gitignore_change(self, tmp_path: pathlib.Path) -> None:
@@ -1283,7 +1283,9 @@ class TestPrivateNotesAutoCreate:
 
         assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
         assert _git_stdout(root, "rev-parse", "HEAD") == original_head
-        assert (root / ".gitignore").read_text(encoding="utf-8") == "tracked\nuser-change\n*.lock\n"
+        assert (root / ".gitignore").read_text(encoding="utf-8") == (
+            f"tracked\nuser-change\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n"
+        )
 
 
 _LEGACY_FEEDBACK = "---\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
@@ -1301,7 +1303,7 @@ def _init_legacy_repo(root: pathlib.Path, entries: dict[str, str]) -> None:
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
     subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
     (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
-    (root / ".gitignore").write_text("*.lock\n", encoding="utf-8")
+    (root / ".gitignore").write_text(f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", encoding="utf-8")
     for relative, text in entries.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)

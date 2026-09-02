@@ -109,7 +109,7 @@ def _remove_legacy_unit() -> None:
             log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止できないためunitを残す"),
         )
         return
-    unit_path.unlink()
+    unit_path.unlink(missing_ok=True)
     claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=30.0, tag="atk-serve")
     logger.info(log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止して削除した"))
 
