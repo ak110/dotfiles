@@ -1596,3 +1596,99 @@ def test_detail_structure_permanence_rejects_free_h3() -> None:
     content = _VALID_DETAIL_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
     errors = _plan_format.check_plan_detail_structure(content, "通常変更")
     assert any("固定見出し以外のH3" in error for error in errors), errors
+
+
+def _feedback_source(*, source: bool, trailing_user_comment: bool = False, answer: bool = False) -> str:
+    """フィードバック正本の本文を組み立てる。"""
+    frontmatter = ["---", "status: inbox"]
+    if source:
+        frontmatter.append(f"{_plan_format.PLAN_FEEDBACK_SOURCE_KEY}: agent-toolkit:session-review")
+    frontmatter.append("---")
+    sections = ["# 要求", "", "本文。"]
+    if answer:
+        sections += ["", f"## {_plan_format.PLAN_FEEDBACK_ANSWER_HEADING}", "", "回答本文。"]
+    if trailing_user_comment:
+        sections += ["", f"## {_plan_format.PLAN_FEEDBACK_USER_COMMENT_HEADING}", "", "ユーザーの記入。"]
+    return "\n".join([*frontmatter, "", *sections, ""])
+
+
+def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTENT) -> tuple[list[str], list[str], list[str]]:
+    """由来照合を有効にして(違反, 移行の指摘, 省略の事実)を返す。"""
+    notices: list[str] = []
+    skips: list[str] = []
+    _work_type, errors = _plan_format.check_plan_main_structure(
+        content, origin_notices=notices, origin_skips=skips, private_notes=private_notes
+    )
+    return errors, notices, skips
+
+
+def _write_feedback(private_notes: pathlib.Path, body: str, name: str = _plan_fixture.FEEDBACK_FILES[0][0]) -> None:
+    """キュー管理リポジトリの状態ディレクトリへ正本を作成する。"""
+    inbox = private_notes / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / name).write_text(body, encoding="utf-8")
+
+
+def test_origin_check_reports_notice_for_agent_sourced_feedback(tmp_path: pathlib.Path) -> None:
+    """`source`を持ち機械判定できる明示由来が無い正本を移行の指摘として報告する。"""
+    _write_feedback(tmp_path, _feedback_source(source=True))
+    errors, notices, skips = _origin_check(tmp_path)
+    assert not errors, errors
+    assert not skips, skips
+    assert any(_plan_fixture.FEEDBACK_FILES[0][0] in notice for notice in notices), notices
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _feedback_source(source=False),
+        _feedback_source(source=True, trailing_user_comment=True),
+        _feedback_source(source=True, answer=True),
+    ],
+)
+def test_origin_check_accepts_human_origin(tmp_path: pathlib.Path, body: str) -> None:
+    """`source`の欠落と機械判定できる明示由来を持つ正本は指摘の対象にしない。"""
+    _write_feedback(tmp_path, body)
+    errors, notices, skips = _origin_check(tmp_path)
+    assert not errors, errors
+    assert not notices, notices
+    assert not skips, skips
+
+
+def test_origin_check_skips_conversational_note(tmp_path: pathlib.Path) -> None:
+    """`[対話由来]`注記のある行は書式として受理し、照合の対象から除く。"""
+    _write_feedback(tmp_path, _feedback_source(source=True))
+    content = _HUMAN_MAIN_CONTENT.replace(
+        f"({_plan_fixture.FEEDBACK_FILES[0][0]})",
+        f"({_plan_fixture.FEEDBACK_FILES[0][0]}) [対話由来]",
+    )
+    errors, notices, skips = _origin_check(tmp_path, content)
+    assert not errors, errors
+    assert not notices, notices
+    assert not skips, skips
+
+
+def test_origin_check_skips_when_source_is_unresolvable(tmp_path: pathlib.Path) -> None:
+    """正本を解決できない場合は照合だけを省略し、他の検査の結果を変えない。"""
+    (tmp_path / "inbox").mkdir(parents=True)
+    errors, notices, skips = _origin_check(tmp_path)
+    assert not errors, errors
+    assert not notices, notices
+    assert any(_plan_fixture.FEEDBACK_FILES[0][0] in skip for skip in skips), skips
+
+
+def test_origin_check_skips_when_queue_repository_is_absent(tmp_path: pathlib.Path) -> None:
+    """キュー管理リポジトリのルートが実在しない環境では照合だけを省略する。"""
+    absent = tmp_path / "absent"
+    errors, notices, skips = _origin_check(absent)
+    assert not errors, errors
+    assert not notices, notices
+    assert any(str(absent) in skip for skip in skips), skips
+    assert errors == _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)[1]
+
+
+def test_origin_check_is_inactive_without_collectors(tmp_path: pathlib.Path) -> None:
+    """収集用の一覧を渡さない既存の呼び出しでは照合を行わない。"""
+    _write_feedback(tmp_path, _feedback_source(source=True))
+    _work_type, errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
+    assert not errors, errors

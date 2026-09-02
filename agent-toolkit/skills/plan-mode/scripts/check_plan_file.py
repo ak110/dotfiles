@@ -331,8 +331,19 @@ def _check_new_format(
     """
     errors: list[str] = []
     warnings: list[_ClassifiedWarning] = []
-    work_type, main_errors = _plan_format.check_plan_main_structure(text)
+    origin_notices: list[str] = []
+    origin_skips: list[str] = []
+    work_type, main_errors = _plan_format.check_plan_main_structure(
+        text,
+        origin_notices=origin_notices,
+        origin_skips=origin_skips,
+        private_notes=private_notes,
+        home=home,
+    )
     errors.extend(main_errors)
+    # 由来の不一致は移行を促す指摘とし、環境要因の省略は現行形式でも成立する助言とする。
+    warnings.extend(("migration", notice) for notice in origin_notices)
+    warnings.extend(("advisory", skip) for skip in origin_skips)
 
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}

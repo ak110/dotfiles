@@ -26,6 +26,7 @@ SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の「�
 import functools
 import pathlib
 import re
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -33,6 +34,9 @@ import markdown_it
 import markdown_it.common.html_re
 import markdown_it.rules_inline
 import markdown_it.token
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 PLAN_H2_OVERVIEW: str = "概要"
 PLAN_H2_ACTION: str = "実施内容"
@@ -177,6 +181,26 @@ PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
     "エージェント提案",
 )
 PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")
+PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN = re.compile(
+    r"(?P<kind>人間由来のフィードバック|エージェント由来のフィードバック) "
+    r"\((?P<name>[^/\\()\s]+\.md)\)(?P<note> \[対話由来\])?"
+)
+"""フィードバック由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
+
+PLAN_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
+"""正本の`source`と機械判定できる明示由来から照合する由来の区分。"""
+
+PLAN_FEEDBACK_SOURCE_KEY: str = "source"
+"""フィードバック正本のfrontmatterで投入元スキルを表すキー。"""
+
+PLAN_FEEDBACK_USER_COMMENT_HEADING: str = "ユーザーコメント"
+"""フィードバック正本の末尾に置く、ユーザー専用の記入欄の見出し。"""
+
+PLAN_FEEDBACK_ANSWER_HEADING: str = "回答"
+"""TBDの正本でユーザーの回答を記録する見出し。"""
+
+_FRONTMATTER_DELIMITER: str = "---"
+_FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_FEEDBACK_SOURCE_KEY}:[ \t]*\S")
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
 """計画ファイル（メイン）の実施内容表が受理する採否値。"""
@@ -1716,8 +1740,17 @@ def _check_action_section(
     adopted_requirement_ids: set[str],
     identifiers: set[str],
     related_feedback: frozenset[str] = frozenset(),
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """`## 実施内容`の固定表と新旧の除外・保持表を検査する。"""
+    """`## 実施内容`の固定表と新旧の除外・保持表を検査する。
+
+    `origin_notices`と`origin_skips`を渡した場合だけ、フィードバック由来行を正本へ照合する。
+    照合の結果はエラーではなく呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
+    """
     if action_index is None:
         return []
     errors: list[str] = []
@@ -1726,7 +1759,17 @@ def _check_action_section(
     table, table_errors = _check_action_table(extract_tables(section))
     errors.extend(table_errors)
     if table is not None and table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
-        errors.extend(_check_human_action_table(table, materials, related_feedback))
+        errors.extend(
+            _check_human_action_table(
+                table,
+                materials,
+                related_feedback,
+                origin_notices=origin_notices,
+                origin_skips=origin_skips,
+                private_notes=private_notes,
+                home=home,
+            )
+        )
         if any(heading.level == 3 for _position, heading in child_headings(headings, action_index, 3)):
             errors.append(f"`## {PLAN_H2_ACTION}`直下に独立した除外・保持表を置かない")
         return errors
@@ -1761,10 +1804,95 @@ def _check_action_section(
     return errors
 
 
-def _check_human_action_table(
-    table: MarkdownTable, materials: PlanMaterials | None, related_feedback: frozenset[str]
+def _has_frontmatter_source(content: str) -> bool:
+    """フィードバック正本のfrontmatterが値を伴う第1階層の`source`を持つかを返す。
+
+    キーの有無だけを判定するため、YAMLパーサーへ依存せず行頭一致で確定する。
+    本モジュールはhookとPEP 723スクリプトから読み込まれるため、依存を広げない選択とする。
+    """
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
+        return False
+    for line in lines[1:]:
+        if line.strip() == _FRONTMATTER_DELIMITER:
+            return False
+        if _FRONTMATTER_SOURCE_PATTERN.match(line):
+            return True
+    return False
+
+
+def _has_machine_detectable_human_origin(content: str) -> bool:
+    """機械判定できる明示由来を持つかを返す。
+
+    末尾の厳密なH2`## ユーザーコメント`と、TBDの`## 回答`を対象とする。
+    """
+    h2_headings = [heading for heading in extract_headings(content) if heading.level == 2]
+    if any(heading.text == PLAN_FEEDBACK_ANSWER_HEADING for heading in h2_headings):
+        return True
+    return bool(h2_headings) and h2_headings[-1].text == PLAN_FEEDBACK_USER_COMMENT_HEADING
+
+
+def _find_feedback_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
+    """キュー管理リポジトリのルート配下から正本ファイルを探す。
+
+    状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
+    """
+    for candidate in sorted(root.iterdir()):
+        source = candidate / name
+        if candidate.is_dir() and source.is_file():
+            return source
+    return None
+
+
+def _collect_origin_notices(
+    name: str,
+    origin_notices: list[str],
+    origin_skips: list[str],
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> None:
+    """`人間由来のフィードバック`行を正本へ照合し、移行の指摘と省略の事実を積む。
+
+    正本を解決できない場合とキュー管理リポジトリのルートが実在しない場合は当該行の照合だけを省略し、
+    他の検査の結果を変えない。
+    """
+    root = _plan_file.private_notes_root(private_notes, home=home)
+    try:
+        if not root.is_dir():
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。キュー管理リポジトリが実在しない: {root}")
+            return
+        source = _find_feedback_source(name, root)
+        if source is None:
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を解決できない: {name}")
+            return
+        content = source.read_text(encoding="utf-8")
+    except OSError as error:
+        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を取得できない: {name}: {error}")
+        return
+    if _has_frontmatter_source(content) and not _has_machine_detectable_human_origin(content):
+        origin_notices.append(
+            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_FEEDBACK_ORIGIN}`が正本の由来と一致しない: {name}。"
+            f"正本は`{PLAN_FEEDBACK_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
+            "`エージェント由来のフィードバック`とするか、機械判定できない明示由来を根拠とする場合は`[対話由来]`注記を付ける"
+        )
+
+
+def _check_human_action_table(  # pylint: disable=too-many-arguments
+    table: MarkdownTable,
+    materials: PlanMaterials | None,
+    related_feedback: frozenset[str],
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """新規書式の実施内容4列表を検査する。"""
+    """新規書式の実施内容4列表を検査する。
+
+    `人間由来のフィードバック`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
+    正本のfrontmatterと本文へ照合する。`[対話由来]`注記のある行は機械判定できない明示由来を
+    根拠とするため照合の対象から除く。
+    """
     errors: list[str] = []
     if not table.rows:
         return [f"`## {PLAN_H2_ACTION}`の表に1行以上の内容が必要"]
@@ -1780,17 +1908,21 @@ def _check_human_action_table(
         if origin in PLAN_HUMAN_ORIGINS:
             if origin.endswith("フィードバック"):
                 errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来には正本ファイル名を括弧内へ記載する: {origin}")
-        elif origin.startswith("人間由来のフィードバック (") or origin.startswith("エージェント由来のフィードバック ("):
-            match = re.fullmatch(
-                r"(?:人間由来のフィードバック|エージェント由来のフィードバック) \(([^/\\()\s]+\.md)\)",
-                origin,
-            )
+        elif origin.startswith(f"{PLAN_HUMAN_FEEDBACK_ORIGIN} (") or origin.startswith("エージェント由来のフィードバック ("):
+            match = PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN.fullmatch(origin)
             if match is None:
                 errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
-            elif match.group(1) not in related_feedback and (
-                materials is None or match.group(1) not in materials.material_paths
+            elif match.group("name") not in related_feedback and (
+                materials is None or match.group("name") not in materials.material_paths
             ):
-                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が関連フィードバックに無い: {match.group(1)}")
+                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が関連フィードバックに無い: {match.group('name')}")
+            elif (
+                origin_notices is not None
+                and origin_skips is not None
+                and match.group("kind") == PLAN_HUMAN_FEEDBACK_ORIGIN
+                and match.group("note") is None
+            ):
+                _collect_origin_notices(match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}又は計画レビュー第nラウンド、"
@@ -2197,11 +2329,20 @@ def check_plan_structure(content: str) -> list[str]:
     return errors
 
 
-def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
+def check_plan_main_structure(
+    content: str,
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[str | None, list[str]]:
     """新書式の計画ファイル（メイン）`<計画名>.md`を検査して(作業種別, 違反一覧)を返す。
 
     固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は関連フィードバックを含む5項目とする。
     改訂前の二ファイル形式は提示素材と計画ファイル（詳細）参照を読み取り互換で受理する。
+    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のフィードバック由来行を正本へ照合し、
+    移行を促す指摘と照合を省略した事実をそれぞれへ積む。照合の結果は違反一覧へ含めない。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -2251,6 +2392,10 @@ def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
             adopted_requirement_ids,
             identifiers,
             frozenset(filename for filename, _summary in metadata.related_feedback) if metadata is not None else frozenset(),
+            origin_notices=origin_notices,
+            origin_skips=origin_skips,
+            private_notes=private_notes,
+            home=home,
         )
     )
 

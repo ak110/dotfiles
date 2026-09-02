@@ -1029,3 +1029,53 @@ def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path
     errors, warnings = _check_new(work_dir, mixed, detail_content, plan_name="mixed-plan.md")
     assert not errors, errors
     assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in warnings, warnings
+
+
+def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
+    """由来照合の対象となる計画一式と正本を配置し、計画ファイル（メイン）のパスを返す。"""
+    main_content = _plan_fixture.human_main(repo=repo.resolve(), related_feedback=_plan_fixture.FEEDBACK_FILES)
+    main_path = repo / "plan.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (repo / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
+    frontmatter = ["---", "status: inbox"]
+    if source:
+        frontmatter.append(f"{_plan_format.PLAN_FEEDBACK_SOURCE_KEY}: agent-toolkit:session-review")
+    frontmatter.append("---")
+    inbox = private_notes / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / _plan_fixture.FEEDBACK_FILES[0][0]).write_text(
+        "\n".join([*frontmatter, "", "# 要求", "", "本文。", ""]), encoding="utf-8"
+    )
+    return main_path
+
+
+def test_origin_mismatch_is_warning_on_read(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """保存済み計画の読み取りでは由来の不一致を移行warningに留める。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    main_path = _origin_plan(work_dir, private_notes, source=True)
+    errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
+    assert not errors, errors
+    assert any("正本の由来と一致しない" in warning for warning in warnings), warnings
+
+
+def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """新規作成では同じ不一致をエラーとして報告する。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    main_path = _origin_plan(work_dir, private_notes, source=True)
+    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, reject_legacy_format=True)
+    assert any("正本の由来と一致しない" in error for error in errors), errors
+
+
+def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """照合を省略した事実は助言に留め、新規作成を遮断しない。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "absent"
+    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_feedback=_plan_fixture.FEEDBACK_FILES)
+    main_path = work_dir / "plan.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (work_dir / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
+    errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, reject_legacy_format=True)
+    assert not errors, errors
+    assert any("由来照合を省略した" in warning for warning in warnings), warnings
