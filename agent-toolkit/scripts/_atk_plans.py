@@ -31,6 +31,11 @@ _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]
 _HEADING_RE = re.compile(r"^\s*(?P<marks>#{1,6})\s+(?P<title>.*?)\s*#*\s*$")
 _PATH_TOKEN_CHARACTER_CLASS = r"[A-Za-z0-9_./\\~+%@-]"
 _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaround-check.md", ".codex.log")
+_SAVED_BUNDLE_CONFLICT_MESSAGE = (
+    "保存先に内容の異なる計画ファイルがあります: {destination}。"
+    "保存済みの計画を更新する場合は、作業側のファイルを作業root外へ退避し、"
+    "`atk plans checkout`で取得してから退避した内容へ置き換えて再実行してください"
+)
 
 
 def build_parser(parser) -> None:
@@ -340,7 +345,7 @@ def _copy_working_bundle(
         destination = destination_directory / source.name
         if destination.exists():
             if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
-                raise _common.WebInputError(f"保存先に内容の異なる計画ファイルがあります: {destination}")
+                raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=destination))
             destinations.append(destination)
             continue
         descriptor, raw_temporary = tempfile.mkstemp(prefix=f".{source.name}.", suffix=".tmp", dir=destination_directory)
@@ -354,7 +359,7 @@ def _copy_working_bundle(
                 os.link(temporary, destination)
             except FileExistsError:
                 if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != content:
-                    raise _common.WebInputError(f"保存先に内容の異なる計画ファイルがあります: {destination}") from None
+                    raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=destination)) from None
             if destination.read_bytes() != content:
                 raise _common.WebInputError(f"保存した計画ファイルの読戻し内容が一致しません: {destination}")
         finally:

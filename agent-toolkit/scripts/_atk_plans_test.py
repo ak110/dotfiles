@@ -734,7 +734,7 @@ def test_commit_plan_retries_identical_destination_after_commit_failure(
 
 
 def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp_path: pathlib.Path) -> None:
-    """同じ相対パスの保存済み内容が異なる場合は双方を保持して停止する。"""
+    """同じ相対パスの保存済み内容が異なる場合は双方を保持し、回復手順を案内して停止する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -746,9 +746,11 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
     working.write_text("working\n", encoding="utf-8")
     saved.write_text("saved\n", encoding="utf-8")
 
-    with pytest.raises(_common.WebInputError, match="内容の異なる"):
+    with pytest.raises(_common.WebInputError, match="内容の異なる") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
+    assert "作業root外へ退避" in str(error_info.value)
+    assert "atk plans checkout" in str(error_info.value)
     assert working.read_text(encoding="utf-8") == "working\n"
     assert saved.read_text(encoding="utf-8") == "saved\n"
 
