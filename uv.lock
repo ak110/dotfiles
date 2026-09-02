@@ -1680,7 +1680,6 @@ dependencies = [
     { name = "send2trash" },
     { name = "tqdm" },
     { name = "wand" },
-    { name = "watchdog" },
     { name = "zstandard" },
 ]
 
@@ -1724,7 +1723,6 @@ requires-dist = [
     { name = "send2trash" },
     { name = "tqdm" },
     { name = "wand", specifier = ">=0.7.0" },
-    { name = "watchdog", specifier = ">=6.0.0" },
     { name = "zstandard" },
 ]
 
