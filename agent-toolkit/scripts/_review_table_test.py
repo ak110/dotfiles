@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +31,16 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _invoke_table_operation(operation: str, path: pathlib.Path) -> int:
+    """レビュー表を入力として受け取る4つの操作を、同じパスで呼び出す。"""
+    return {
+        "validate": lambda: table.validate(path),
+        "show": lambda: table.show(path),
+        "add": lambda: table.add(path, "1", _TRACK, "位置", "指摘"),
+        "respond": lambda: table.respond(path, "1", _TRACK, "位置", "指摘", "yes", "修正", ""),
+    }[operation]()
+
+
 def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "review.tsv"
     assert table.init(path) == 0
@@ -42,6 +53,60 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     assert all(isinstance(json.loads(cell), str) for line in lines for cell in line.split("\t"))
     assert table.show(path) == 0
     assert capsys.readouterr().out == path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("operation", ("validate", "show", "add", "respond"))
+@pytest.mark.parametrize(
+    "target_kind",
+    (
+        pytest.param("fifo", marks=pytest.mark.skipif(os.name != "posix", reason="FIFOはPOSIX固有")),
+        "directory",
+    ),
+)
+def test_non_regular_file_input_is_rejected_with_the_expected_input_form(
+    tmp_path: pathlib.Path,
+    operation: str,
+    target_kind: str,
+) -> None:
+    """通常ファイルでない入力は、読み込みを試みずに期待する入力形と標準入力の非受理を示す。"""
+    path = tmp_path / "sample.plan-review.tsv"
+    if target_kind == "fifo":
+        os.mkfifo(path)
+    else:
+        path.mkdir()
+
+    with pytest.raises(ValueError) as exc_info:
+        _invoke_table_operation(operation, path)
+
+    message = str(exc_info.value)
+    assert f"レビュー表を読み込めない: {path}: 通常ファイルではない。" in message
+    assert ".plan-review.tsv" in message
+    assert "標準入力" in message
+
+
+@pytest.mark.parametrize("operation", ("validate", "show"))
+def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib.Path, operation: str) -> None:
+    """存在しないパスを読む操作は、存在しない旨と期待する入力形を示して拒否する。"""
+    path = tmp_path / "sample.plan-review.tsv"
+
+    with pytest.raises(ValueError) as exc_info:
+        _invoke_table_operation(operation, path)
+
+    message = str(exc_info.value)
+    assert f"レビュー表を読み込めない: {path}: 存在しない。" in message
+    assert ".plan-review.tsv" in message
+    assert "標準入力" in message
+
+
+def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pathlib.Path) -> None:
+    """存在しないパスに対する作成と追記の成功経路を、読み込みの拒否と区別して維持する。"""
+    created = tmp_path / "created.plan-review.tsv"
+    assert table.init(created) == 0
+    assert created.is_file()
+
+    appended = tmp_path / "appended.plan-review.tsv"
+    assert table.add(appended, "1", _TRACK, "位置", "指摘") == 0
+    assert table.validate(appended, require_responses=False) == 0
 
 
 def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
