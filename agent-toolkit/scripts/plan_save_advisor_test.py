@@ -55,6 +55,7 @@ def _decision(result: subprocess.CompletedProcess[str]) -> dict:
 
 
 def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) -> None:
+    """当該セッションの編集の有無によらず、作業rootに残る計画を1回だけ通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -64,7 +65,6 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     second.write_text("# second\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, [])
     session_id = "block-once"
-    _write_state(tmp_path, session_id, {"session_plan_main_paths": [str(second), str(first)]})
 
     first_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
     second_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
@@ -72,8 +72,33 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     assert first_result["decision"] == "block"
     assert str(first) in first_result["reason"]
     assert str(second) in first_result["reason"]
+    assert "Leave bundles owned by other sessions in place" in first_result["reason"]
     assert "atk plans commit <relative main plan path>" in first_result["reason"]
     assert not second_result
+
+
+def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
+    """日付階層へ置かれた計画も通知の対象とする。"""
+    home = tmp_path / "home"
+    nested = home / ".claude" / "plans" / "2026" / "09"
+    nested.mkdir(parents=True)
+    plan = nested / "01-nested-a1b2.md"
+    plan.write_text("# nested\n", encoding="utf-8")
+    transcript = _write_transcript(tmp_path, [])
+
+    result = _decision(_run(_payload("nested", transcript), state_dir=tmp_path, home=home))
+
+    assert result["decision"] == "block"
+    assert str(plan) in result["reason"]
+
+
+def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
+    """作業rootが存在しない場合は通知しない。"""
+    transcript = _write_transcript(tmp_path, [])
+
+    result = _run(_payload("no-root", transcript), state_dir=tmp_path, home=tmp_path / "home")
+
+    assert not _decision(result)
 
 
 @pytest.mark.parametrize(
@@ -100,7 +125,7 @@ def test_suppression_conditions_approve(
     plan.write_text("# plan\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, [])
     session_id = "suppressed"
-    _write_state(tmp_path, session_id, {"session_plan_main_paths": [str(plan)], **state})
+    _write_state(tmp_path, session_id, state)
 
     result = _run(
         _payload(session_id, transcript, **payload_extra),
@@ -112,20 +137,18 @@ def test_suppression_conditions_approve(
     assert not _decision(result)
 
 
-def test_missing_and_private_notes_paths_approve(tmp_path: pathlib.Path) -> None:
+def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
+    """保存先へ戻した計画と作業rootの対象外ファイルは通知しない。"""
     home = tmp_path / "home"
+    working_root = home / ".claude" / "plans"
+    working_root.mkdir(parents=True)
+    (working_root / "note.txt").write_text("対象外\n", encoding="utf-8")
     private_plan = tmp_path / "private-notes" / "plans" / "2026" / "09" / "01-saved-a1b2.md"
     private_plan.parent.mkdir(parents=True)
     private_plan.write_text("# saved\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, [])
-    session_id = "outside-working-root"
-    _write_state(
-        tmp_path,
-        session_id,
-        {"session_plan_main_paths": [str(private_plan), str(home / ".claude" / "plans" / "missing.md")]},
-    )
 
-    result = _run(_payload(session_id, transcript), state_dir=tmp_path, home=home)
+    result = _run(_payload("outside-working-root", transcript), state_dir=tmp_path, home=home)
 
     assert not _decision(result)
 
