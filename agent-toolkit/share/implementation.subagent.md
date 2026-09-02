@@ -159,4 +159,12 @@ merge進行中でなければ`atk worktree-stash save --label <退避ラベル>`
 再レビューの実施は呼び出し元が担うため、自らレビュー担当へ依頼せず、その結果も待たない。
 レビュー修正で履歴を書き換えた場合は、レビュー表の完了内容と現行Git実体から変更前後OID対応、全phaseの`rewrite_guard`、近接検証とclean状態を同じ実装担当が照合する。欠落時は前項の回復手順を適用し、呼び出し元へ詳細報告の再送又は成果物の再検収を要求しない。
 レビュー収束後にマージ先branchへfast-forward mergeし、対象フィードバックを1件ずつ`atk mq adopt --commit=<マージ後HEAD完全OID>`で終端する。
-所有するbranch、worktree及びレーンmanaged-tempを回収し、`統合完了`だけを返す。
+所有するbranch、worktree及びレーンmanaged-tempを回収し、`統合完了`に続けて次の3行を返す。各値は返却の直前に実測して得た値とし、記憶又は推測で組み立てない。
+
+```text
+merged_head: <ffマージ後に`git rev-parse <マージ先branch名>`で取得したベースHEAD完全OID>
+adopted: <`atk mq adopt`が終了コード0を返したフィードバックのファイル名をASCIIカンマ区切りで並べる。終端対象が無い場合は「なし」>
+released: <削除を確認したworktreeの絶対パス、branch名及びmanaged-tempの絶対パスをASCIIカンマ区切りで並べる>
+```
+
+この3行は`agent-toolkit/rules/02-agent-operations.md`が定める「返却形式の文面だけを出力し、地の文を加えない」規定の対象内であり、指定形式の一部として返す。
