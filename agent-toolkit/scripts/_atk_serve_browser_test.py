@@ -1744,7 +1744,10 @@ def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 @contextlib.asynccontextmanager
-async def _serve(app: Any, browser: playwright.async_api.Browser) -> Any:
+async def _serve(
+    app: Any,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[tuple[playwright.async_api.BrowserContext, playwright.async_api.Page, int]]:
     """テスト用サーバーを起動し、ページとブラウザーコンテキストを提供する。"""
     port = _reserve_port()
     shutdown = asyncio.Event()
@@ -1860,7 +1863,7 @@ async def _multi_root_harness_fixture(
 
 
 def _write_session_records(root: Path) -> None:
-    """Claude CodeとCodexのセッション記録を1件ずつ作る。"""
+    """Claude CodeとCodexのセッション記録を1件ずつ作成する。"""
     claude_path = root / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
     claude_path.parent.mkdir(parents=True, exist_ok=True)
     claude_path.write_text(
@@ -1954,7 +1957,7 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
 
 @pytest.mark.asyncio
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
-    """左ペインで実行系・ホスト・プロジェクト・日時により絞り込み、右ペインへ発話を時系列に表示する。"""
+    """左ペインで実行系・ホスト・プロジェクト・日時により一覧を限定し、右ペインへ発話を時系列に表示する。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
 
@@ -1967,12 +1970,12 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "browser-test" in listing
     assert "-home-aki-proj" in listing
 
-    # 実行系での絞り込み。
+    # 実行系による限定。
     await harness.page.locator('.engine-filter[value="codex"]').uncheck()
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
     assert await harness.page.locator("#sessions .engine-badge").inner_text() == "Claude Code"
 
-    # 文字列での絞り込み。
+    # 文字列による限定。
     await harness.page.locator('.engine-filter[value="codex"]').check()
     await harness.page.locator("#filter").fill("aaaaaaaa")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")

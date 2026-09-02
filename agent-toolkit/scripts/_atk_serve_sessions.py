@@ -2,7 +2,7 @@
 
 Claude CodeとCodexの保存済み記録を共通の表示モデルへ正規化し、一覧と詳細を返す。
 保存先の規約は`agent-toolkit/skills/agent-standards/references/session-records.md`を正本とする。
-リモートホスト側で実行するヘルパーは`_atk_serve_sessions_remote_helper.py`とする。
+リモートホスト側で実行するヘルパーは`atk_serve_sessions_remote_helper.py`とする。
 
 記録が持たない情報は0や空文字列で補わず、`None`（JSONのnull）として返す。
 閲覧は読み取り専用とし、記録を変更しない。
@@ -62,7 +62,7 @@ TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 REMOTE_BOOTSTRAP = (
     "import os, pathlib; "
     "p = pathlib.Path(os.path.expanduser('~')) / "
-    "'dotfiles/agent-toolkit/scripts/_atk_serve_sessions_remote_helper.py'; "
+    "'dotfiles/agent-toolkit/scripts/atk_serve_sessions_remote_helper.py'; "
     "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
 )
 

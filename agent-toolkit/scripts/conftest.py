@@ -83,6 +83,16 @@ def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """委譲先セッションの標識を各テストの実行環境から除去する。
+
+    process-loopが委譲先へ渡す環境を検証するテストは、実行元の環境に当該標識が無いことを前提とする。
+    委譲先のセッションから検査を実行すると標識が継承され、当該前提が崩れる。
+    """
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _fixed_terminal_size(monkeypatch: pytest.MonkeyPatch) -> None:
     """`shutil.get_terminal_size`を固定幅へ差し替え、実行環境の端末幅に依存しない結果にする。
 

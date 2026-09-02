@@ -5,7 +5,7 @@
 ルート登録は`_atk_serve_app.py`の`_register_plan_routes`が行い、本モジュールは処理の実装だけを持つ。
 
 記録の保存先とrootの規約は`agent-toolkit/skills/plan-mode`が定める計画ファイルの配置に従う。
-リモートホスト側で実行するヘルパーは`_atk_serve_plans_remote_helper.py`とする。
+リモートホスト側で実行するヘルパーは`atk_serve_plans_remote_helper.py`とする。
 """
 
 import asyncio
@@ -84,7 +84,7 @@ MARKDOWN_CACHE_MAX_ENTRIES = 128
 MARKDOWN_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 # 作成日時の永続インデックス。ホスト・root・相対パスの3項をキーとする単一JSONへ集約する。
-# 同一ホスト上でリモートヘルパー（`_atk_serve_plans_remote_helper.py`）も同じファイルを共有するため、
+# 同一ホスト上でリモートヘルパー（`atk_serve_plans_remote_helper.py`）も同じファイルを共有するため、
 # キーと値の形式を両実装で一致させる。
 # ディレクトリ名は計画ファイル閲覧機能が`atk serve`へ統合される前から蓄積した索引をそのまま使うため維持する。
 # 名前を変えると初回観測時刻が失われ、一覧の並び順が変わる。
@@ -140,7 +140,7 @@ _STATIC_DIR = pathlib.Path(__file__).with_name("_atk_serve_static")
 REMOTE_BOOTSTRAP = (
     "import os, pathlib; "
     "p = pathlib.Path(os.path.expanduser('~')) / "
-    "'dotfiles/agent-toolkit/scripts/_atk_serve_plans_remote_helper.py'; "
+    "'dotfiles/agent-toolkit/scripts/atk_serve_plans_remote_helper.py'; "
     "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
 )
 
@@ -722,7 +722,7 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
     メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
     （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める）。
-    リモート側`_atk_serve_plans_remote_helper.py`の`_is_target_path`と同一基準を保つ
+    リモート側`atk_serve_plans_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。

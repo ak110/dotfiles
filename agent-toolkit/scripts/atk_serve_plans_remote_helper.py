@@ -893,6 +893,7 @@ def _serve() -> int:
 
 
 def main() -> int:
+    """操作名を引数に取り、結果をJSONで標準出力へ出力する。"""
     if len(sys.argv) < 2:
         sys.stderr.write("missing operation\n")
         return 2
