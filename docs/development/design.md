@@ -239,6 +239,12 @@ fork先で引数の展開が成立しない場合は、`agent-toolkit:shell-exec
 TBDへの回答後も一般継続契約を適用し、同一セッションでは回答保存、TBD終端、依存解除を確認して同じpicker又はレーンを再開する。
 却下した代替案は、完了済み識別子を一律に新規起動へ置き換える案と、Claude・Codexごとに継続条件を分ける案である。前者は受領経路で回復できる継続まで失わせ、後者は同じ実効条件を持つ経路間で契約を分断するため採用しない。
 
+Claude Codeが起動する委譲先のプロンプトキャッシュ保持期間は既定値へ依存させず、`share/claude_settings_json_managed.json`の`promptCacheTtl`と`subagentPromptCacheTtl`でメイン会話側とサブエージェント側の双方へ明示する。
+このため、サブエージェント側の既定が短いことを理由に委譲を減らす設計判断は採らない。
+キャッシュ効率を根拠として委譲構造を見直す場合は、設定値ではなく実測を根拠とする。
+Claude Codeの実測は`~/.claude/projects`配下のセッション記録から`message.usage.cache_creation`の`ephemeral_1h_input_tokens`と`ephemeral_5m_input_tokens`を担当ごとに集計して得る。
+集計に用いるフィールド名はClaude Code v2.1.258で確認した。
+
 継続不能の判定は、実際に継続手段を呼び出した結果だけを入力とする。
 `send_message`のtimeoutは配送の成否が未確定であることだけを示すため、継続不能の根拠にしない。
 timeout後は、当該継続要求の受理結果又は当該要求によって開始した新しいreplyの開始を確認できた場合だけ、同じthreadで待機を継続する。
