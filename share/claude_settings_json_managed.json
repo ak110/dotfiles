@@ -69,7 +69,9 @@
       "Read(//**/.credentials.json)"
     ]
   },
+  "promptCacheTtl": "1h",
   "showClearContextOnPlanAccept": false,
   "showThinkingSummaries": true,
+  "subagentPromptCacheTtl": "1h",
   "viewMode": "verbose"
 }

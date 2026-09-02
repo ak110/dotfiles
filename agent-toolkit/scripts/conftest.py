@@ -76,6 +76,31 @@ def _managed_temp_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.fixture(autouse=True)
+def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ホームディレクトリと設定ディレクトリの参照をテスト用一時ディレクトリへ向ける。
+
+    TTL判定はユーザー設定ファイル`~/.claude/settings.json`を読むため、実行環境のホームが
+    混入すると開発機と継続的インテグレーションで結果が変わる。`HOME`の差し替えは
+    `platformdirs`が解決する状態ディレクトリの位置も一時ディレクトリ配下へ移すため、
+    計画の取得記録など状態ディレクトリを使う処理も同じfixtureで隔離される。
+    プラットフォームごとに参照される変数が異なるため、両系統をまとめて差し替える。
+    """
+    home = tmp_path / "home"
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(home))
+    for name in (
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+    ):
+        monkeypatch.setenv(name, str(home / name.lower()))
+
+
+@pytest.fixture(autouse=True)
 def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """TTL判定用の環境変数を各テストの実行環境から除去する。"""
     for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:

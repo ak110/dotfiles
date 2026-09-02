@@ -180,6 +180,16 @@ def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _home_path() -> str:
+    """検査対象プロセスが解決するホームディレクトリを実行時に返す。
+
+    `_run`が起動するフックは呼び出し時点の環境変数からホームを解決するため、
+    テスト側も同じ時点で解決する。収集時に評価したクラス変数は、実行環境のホームを
+    差し替えるfixtureの適用前の値を保持するため、フックが解決する値と一致しない。
+    """
+    return str(pathlib.Path.home())
+
+
 def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
     """工程別モデル設定を隔離したXDG設定ディレクトリへ保存する。"""
     config_home = tmp_path / "config"
@@ -410,10 +420,8 @@ class TestManifestCheck:
 class TestHomePathCheck:
     """ホームディレクトリ絶対パス混入の警告 (warn のみ)。"""
 
-    _HOME = str(pathlib.Path.home())
-
     def test_home_path_in_content_warns(self):
-        content = f"config_path = '{self._HOME}/myproj/config.yaml'\n"
+        content = f"config_path = '{_home_path()}/myproj/config.yaml'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": content}})
         assert result.returncode == 0
         assert "home directory" in _additional_context(result)
@@ -424,7 +432,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             }
         )
         assert result.returncode == 0
@@ -436,7 +444,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             }
         )
         assert result.returncode == 0
@@ -450,7 +458,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             }
         )
         assert result.returncode == 0
@@ -479,7 +487,7 @@ class TestHomePathCheck:
             json.dumps(
                 {
                     "tool_name": "Write",
-                    "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                    "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
                 },
                 ensure_ascii=False,
             )
@@ -508,7 +516,7 @@ class TestHomePathCheck:
             json.dumps(
                 {
                     "tool_name": "Write",
-                    "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                    "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
                 },
                 ensure_ascii=False,
             )
@@ -526,7 +534,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             }
         )
         assert result.returncode == 0
@@ -538,7 +546,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(sibling), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(sibling), "content": f"対象: {_home_path()}/worktree"},
             }
         )
         assert result.returncode == 0
@@ -555,7 +563,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             },
             env_overrides={"XDG_CACHE_HOME": xdg_value} if xdg_value != "unset" else None,
         )
@@ -569,7 +577,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             },
             env_overrides={"XDG_CACHE_HOME": str(cache_home)},
         )
@@ -582,7 +590,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             },
             env_overrides={"XDG_CACHE_HOME": "relative-cache"},
         )
@@ -597,7 +605,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target), "content": f"対象: {self._HOME}/worktree"},
+                "tool_input": {"file_path": str(target), "content": f"対象: {_home_path()}/worktree"},
             },
             env_overrides={"XDG_CACHE_HOME": str(cache_repo.parent)},
         )
@@ -605,13 +613,13 @@ class TestHomePathCheck:
         assert "home directory" in _additional_context(result)
 
     def test_home_path_in_local_md_skipped(self):
-        content = f"See {self._HOME}/proj for details."
+        content = f"See {_home_path()}/proj for details."
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "CLAUDE.local.md", "content": content}})
         assert result.returncode == 0
         assert result.stderr == ""
 
     def test_home_path_in_settings_local_json_skipped(self):
-        content = f'{{"path": "{self._HOME}/x"}}'
+        content = f'{{"path": "{_home_path()}/x"}}'
         result = _run(
             {
                 "tool_name": "Write",
@@ -636,7 +644,7 @@ class TestHomePathCheck:
         result = _run(
             {
                 "tool_name": "Edit",
-                "tool_input": {"file_path": "README.md", "old_string": "a", "new_string": f"{self._HOME}/x"},
+                "tool_input": {"file_path": "README.md", "old_string": "a", "new_string": f"{_home_path()}/x"},
             }
         )
         assert result.returncode == 0
@@ -664,8 +672,6 @@ class TestHomePathCheck:
 class TestRecursiveHomeSearchCheck:
     """高容量の利用者領域を無限定に再帰検索する実行位置の警告。"""
 
-    _HOME = pathlib.Path.home()
-
     @pytest.mark.parametrize(
         "command",
         [
@@ -674,12 +680,23 @@ class TestRecursiveHomeSearchCheck:
             "grep -R keyword ~/.codex",
             "rg keyword ~/.local ~/.codex",
             "rg /tmp ~/.local",
-            f"rg -n keyword {shlex.quote(str(_HOME / '.codex'))} {shlex.quote(str(_HOME / '.claude'))} 2>/dev/null",
             "rg --color always -n keyword ~/.claude",
         ],
     )
     def test_warns_for_unlimited_recursive_home_search(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "high-capacity user directory" in _additional_context(result)
+
+    def test_warns_for_expanded_absolute_home_search(self) -> None:
+        """チルダを展開済みの絶対パスで指定した再帰検索も警告する。
+
+        検索先はフックが解決するホームから実行時に組み立てる。収集時に組み立てると、
+        実行環境のホームを差し替えるfixtureの適用前の値が固定される。
+        """
+        home = pathlib.Path(_home_path())
+        targets = f"{shlex.quote(str(home / '.codex'))} {shlex.quote(str(home / '.claude'))}"
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"rg -n keyword {targets} 2>/dev/null"}})
         assert result.returncode == 0
         assert "high-capacity user directory" in _additional_context(result)
 

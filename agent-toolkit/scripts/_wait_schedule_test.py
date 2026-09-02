@@ -1,6 +1,7 @@
 """`_wait_schedule`のTTL判定を検証する。"""
 
 import json
+import pathlib
 import subprocess
 from typing import Any
 
@@ -9,12 +10,25 @@ import pytest
 
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
+_SETTING_NAME_FOR_BUCKET = {"main": "promptCacheTtl", "subagent": "subagentPromptCacheTtl"}
 
 
 def _assert_ttl_and_schedule(bucket: str, expected_ttl: str, expected_schedule: str) -> None:
     """同じ入力条件からTTLと従来のcron式が対応して得られることを確認する。"""
     assert _wait_schedule.get_prompt_cache_ttl(bucket) == expected_ttl
     assert _wait_schedule.get_schedule(bucket) == expected_schedule
+
+
+def _user_settings_path() -> pathlib.Path:
+    """隔離されたホーム配下のユーザー設定ファイルのパスを返す。"""
+    return pathlib.Path.home() / ".claude" / "settings.json"
+
+
+def _write_user_settings(text: str) -> None:
+    """引数の原文を変換せずユーザー設定ファイルへ保存する。"""
+    path = _user_settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _fail_if_auth_status_is_called(*args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -58,6 +72,103 @@ def test_bucket_ttl_override_is_selected(
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
     _assert_ttl_and_schedule(bucket, expected_ttl, expected_schedule)
+
+
+@pytest.mark.parametrize(
+    ("bucket", "value", "expected_schedule"),
+    [
+        ("main", "5m", _SCHEDULE_FOR_5M_TTL),
+        ("main", "1h", _SCHEDULE_FOR_1H_TTL),
+        ("subagent", "5m", _SCHEDULE_FOR_5M_TTL),
+        ("subagent", "1h", _SCHEDULE_FOR_1H_TTL),
+    ],
+)
+def test_user_settings_ttl_is_selected(
+    monkeypatch: pytest.MonkeyPatch,
+    bucket: str,
+    value: str,
+    expected_schedule: str,
+) -> None:
+    """bucket別の環境変数が無い場合はユーザー設定のbucket別TTL指定を採用する。"""
+    _write_user_settings(json.dumps({_SETTING_NAME_FOR_BUCKET[bucket]: value}))
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule(bucket, value, expected_schedule)
+
+
+def test_user_settings_ttl_accepts_comments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """コメント付きのユーザー設定ファイルからもTTL指定を読み取る。"""
+    _write_user_settings('{\n  // 保持期間\n  "promptCacheTtl": "1h"\n}\n')
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule("main", "1h", _SCHEDULE_FOR_1H_TTL)
+
+
+@pytest.mark.parametrize(
+    ("bucket", "environment_name"),
+    [
+        ("main", "CLAUDE_CODE_PROMPT_CACHE_TTL"),
+        ("subagent", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"),
+    ],
+)
+def test_bucket_environment_variable_overrides_user_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    bucket: str,
+    environment_name: str,
+) -> None:
+    """bucket別の環境変数はユーザー設定より優先する。"""
+    _write_user_settings(json.dumps({_SETTING_NAME_FOR_BUCKET[bucket]: "1h"}))
+    monkeypatch.setenv(environment_name, "5m")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule(bucket, "5m", _SCHEDULE_FOR_5M_TTL)
+
+
+def test_force_five_minute_precedes_user_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """強制5分指定はユーザー設定の1時間指定より優先する。"""
+    _write_user_settings(json.dumps({"promptCacheTtl": "1h"}))
+    monkeypatch.setenv("FORCE_PROMPT_CACHING_5M", "1")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"promptCacheTtl": "10m"}',
+        '{"promptCacheTtl": "1H"}',
+        '{"promptCacheTtl": 3600}',
+        '{"subagentPromptCacheTtl": "1h"}',
+        "{",
+        "[]",
+    ],
+)
+def test_unusable_user_settings_falls_through(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    """受理しない値、別bucketの指定及び解析できない内容は後続の判定へ委ねる。"""
+    _write_user_settings(text)
+    monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule("main", "1h", _SCHEDULE_FOR_1H_TTL)
+
+
+def test_missing_user_settings_falls_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ユーザー設定ファイルが不在の場合は後続の判定へ委ねる。"""
+    assert not _user_settings_path().exists()
+    monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule("main", "1h", _SCHEDULE_FOR_1H_TTL)
+
+
+def test_unreadable_user_settings_falls_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ユーザー設定ファイルを読み取れない場合は後続の判定へ委ねる。"""
+    _user_settings_path().mkdir(parents=True)
+    monkeypatch.setenv("ENABLE_PROMPT_CACHING_1H", "1")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    _assert_ttl_and_schedule("main", "1h", _SCHEDULE_FOR_1H_TTL)
 
 
 def test_bucket_ttl_override_precedes_common_one_hour(monkeypatch: pytest.MonkeyPatch) -> None:

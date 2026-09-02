@@ -1532,7 +1532,7 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
         "stdout": asyncio.subprocess.PIPE,
         "stderr": asyncio.subprocess.PIPE,
         "limit": codex_backend.APP_SERVER_STREAM_LIMIT_BYTES,
-        "cwd": str(pathlib.Path.home()),
+        "cwd": codex_backend.APP_SERVER_WORKING_DIRECTORY,
     }
     assert observed["limit"] > 64 * 1024
 

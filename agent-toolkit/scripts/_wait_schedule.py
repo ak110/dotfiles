@@ -1,11 +1,25 @@
 """公開情報からプロンプトキャッシュTTLを判定する。
 
 TTL判定は、委譲待機用cron式と質問自動継続タイムアウトが共有する正本である。
+
+Claude Codeはプロンプトキャッシュ保持期間を、`FORCE_PROMPT_CACHING_5M`、bucket別の環境変数、
+bucket別の設定、サブエージェント定義のfrontmatterの`cacheTtl`、`ENABLE_PROMPT_CACHING_1H`、
+bucket別の既定の順に評価し、最初に一致した指定を採用する。設定と環境変数はv2.1.242以降が受理し、
+値は`5m`と`1h`だけを受理する。典拠は公式資料<https://code.claude.com/docs/en/prompt-caching.md>の
+「Choose the TTL yourself」節と<https://code.claude.com/docs/en/settings-reference.md>の当該設定の節
+（いずれも2026年9月2日取得）とする。再検証は同資料の当該節を再取得して順序と受理値を照合する。
+
+本モジュールが読む設定はユーザー設定ファイル`~/.claude/settings.json`に限る。
+プロジェクト設定と`--settings`の指定は、判定を要求する主体の起動条件から確定できないため読まない。
+サブエージェント定義のfrontmatterも、判定時点では対象の定義が定まらないため読まない。
 """
 
 import json
 import os
+import pathlib
 import subprocess
+
+import pytilpack.jsonc
 
 # キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
@@ -14,6 +28,11 @@ _BUCKET_TTL_ENV = {
     "main": "CLAUDE_CODE_PROMPT_CACHE_TTL",
     "subagent": "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
 }
+_BUCKET_TTL_SETTING = {
+    "main": "promptCacheTtl",
+    "subagent": "subagentPromptCacheTtl",
+}
+_ACCEPTED_TTL_VALUES = ("5m", "1h")
 _CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
 _PROVIDER_ENV = (
     "CLAUDE_CODE_USE_BEDROCK",
@@ -22,6 +41,25 @@ _PROVIDER_ENV = (
     "CLAUDE_CODE_USE_FOUNDRY",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS",
 )
+
+
+def _user_settings_ttl(request_bucket: str) -> str | None:
+    """ユーザー設定ファイルのbucket別TTL指定を返す。
+
+    ファイルの不在、読み取り失敗、解析失敗及び受理しない値では`None`を返し、後続の判定へ委ねる。
+    設定ファイルはコメント付きで書かれる場合があるためJSONCとして解析する。
+    """
+    path = pathlib.Path.home() / ".claude" / "settings.json"
+    try:
+        settings = pytilpack.jsonc.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    if not isinstance(settings, dict):
+        return None
+    value = settings.get(_BUCKET_TTL_SETTING[request_bucket])
+    if isinstance(value, str) and value in _ACCEPTED_TTL_VALUES:
+        return value
+    return None
 
 
 def _has_valid_subscription_status() -> bool:
@@ -66,6 +104,10 @@ def get_prompt_cache_ttl(request_bucket: str) -> str:
         return "5m"
     if bucket_ttl == "1h":
         return "1h"
+
+    settings_ttl = _user_settings_ttl(request_bucket)
+    if settings_ttl is not None:
+        return settings_ttl
 
     if os.environ.get("ENABLE_PROMPT_CACHING_1H") == "1":
         return "1h"
