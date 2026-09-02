@@ -7,7 +7,7 @@
 ## `review_contract`の生成
 
 `plan-executor`は全実装単位の完了と最終検証を受領した後、初回の実装レビュー担当を起動する直前に`review_contract`を生成する。
-計画ファイル（メイン）の目的、実施内容に記録された採否・除外・保持、エージェント判断及び変更履歴と、計画ファイル（詳細）の実装資料、開始時点の完全OIDで特定した実体並びに起動元が保持する計画外の明示入力を生成元とする。
+計画ファイル（メイン）の目的、実施内容に記録された採否・除外・保持、エージェント提案詳細及び変更履歴と、計画ファイル（詳細）の実装資料、開始時点の完全OIDで特定した実体並びに起動元が保持する計画外の明示入力を生成元とする。
 
 `review_contract`は、ユーザー目的、現行の公開契約、ユーザー合意、入力生成主体、信頼境界、通常入力、対象外入力、誤許可と誤拒否の消費主体への影響を、独立して成否を判定できる条項ごとに分ける。
 各条項は次の形式で起動プロンプトへ直接記載する。
@@ -46,8 +46,8 @@ review_contract:
 新規起動では`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`と`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を渡す。
 あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、フィードバックファイル名一覧、複製元と対象外worktreeも渡す。
 起動文へ担当種別を`レビュー修正担当`として明示する。
-計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`を用いる実装レビュー指摘管理表の絶対パスと
-`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
+実装レビュー指摘管理表の絶対パスと`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
+ファイル名と配置は`agent-toolkit:plan-mode`の計画ファイル基準が定める。
 修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。
 調整担当はレビュー表を読まず、採否、対応付け又は成果物・Git・検証結果を再検収しない。
 
