@@ -41,3 +41,21 @@ def _read_static_text(filename: str) -> str:
 HTML = _read_static_text("index.html")
 CSS = _read_static_text("app.css")
 JS = _read_static_text("app.js")
+
+# 3画面が共有するヘッダーとナビゲーションの表示。
+SHELL_CSS = _read_static_text("shell.css")
+# 計画ファイル画面。
+PLANS_HTML = _read_static_text("plans.html")
+PLANS_CSS = _read_static_text("plans.css")
+PLANS_JS = _read_static_text("plans.js")
+# セッション画面。
+SESSIONS_HTML = _read_static_text("sessions.html")
+SESSIONS_CSS = _read_static_text("sessions.css")
+SESSIONS_JS = _read_static_text("sessions.js")
+# Markdown表示。同梱するMermaidは容量が大きいため、要求時に読み込む。
+MARKDOWN_CSS = _read_static_text("markdown.css")
+
+
+def read_mermaid_bundle() -> str:
+    """同梱したMermaidの単一ファイルbundleを読み込む。"""
+    return (_STATIC_DIR / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")

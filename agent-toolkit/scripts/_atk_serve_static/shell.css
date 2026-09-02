@@ -1,0 +1,72 @@
+/* 3画面が共有するヘッダーとナビゲーションの表示。各画面固有の装飾は各画面のCSSが持つ。
+   フィードバック画面は本ファイルの後に`app.css`を読み込み、同じセレクターを上書きする。 */
+
+:root {
+  --shell-header-height: 3.25rem;
+}
+
+.app-header {
+  position: sticky;
+  z-index: 10;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #e6e6e6;
+  background: rgb(255 255 255 / 0.96);
+  font-family: system-ui, sans-serif;
+}
+
+.app-header .header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.375rem;
+}
+
+.app-nav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-nav a {
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+}
+
+.app-nav a:hover {
+  background: rgb(0 0 0 / 0.06);
+}
+
+.app-nav a[aria-current="page"] {
+  background: rgb(0 0 0 / 0.08);
+  border-color: rgb(0 0 0 / 0.18);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 6px 10px;
+  }
+
+  .app-header h1 {
+    font-size: 1.05rem;
+  }
+
+  .app-nav a {
+    padding: 4px 8px;
+    font-size: 0.86rem;
+  }
+}

@@ -4,6 +4,7 @@ import asyncio
 import base64
 import collections.abc
 import contextlib
+import dataclasses
 import datetime
 import functools
 import html
@@ -24,12 +25,15 @@ import _atk_mq_tbd as tbd_mutations
 import _atk_mq_user_comment as user_comment_mutations
 import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
+import _atk_serve_plans as serve_plans
+import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as serve_state
 import _git_remote
 import filelock
 import markdown_it
 import mdit_py_plugins.footnote
 import pytilpack.quart
+import pytilpack.sse
 import quart
 import werkzeug.exceptions
 
@@ -788,8 +792,8 @@ def _register_error_handlers(app: quart.Quart) -> None:
         return quart.jsonify(error="Git同期に失敗しました"), status
 
 
-def _register_asset_routes(app: quart.Quart) -> None:
-    """HTML・静的資産・PWAメタデータのルートを登録する。"""
+def _register_feedback_asset_routes(app: quart.Quart) -> None:
+    """フィードバック画面のHTMLと静的資産のルートを登録する。"""
 
     @app.get("/")
     async def index() -> quart.Response:
@@ -808,6 +812,14 @@ def _register_asset_routes(app: quart.Quart) -> None:
             assets.JS.replace("__BASE_PATH_JS__", json.dumps(base_path)),
             content_type="text/javascript; charset=utf-8",
         )
+
+
+def _register_shell_routes(app: quart.Quart) -> None:
+    """3画面が共有するナビゲーション資産とPWAメタデータのルートを登録する。"""
+
+    @app.get("/static/shell.css")
+    async def shell_css() -> quart.Response:
+        return quart.Response(assets.SHELL_CSS, content_type="text/css; charset=utf-8")
 
     @app.get("/manifest.webmanifest")
     async def manifest() -> quart.Response:
@@ -856,15 +868,240 @@ def _register_asset_routes(app: quart.Quart) -> None:
         return png_response(assets.ICON_512_PNG)
 
 
-def _register_lifecycle(app: quart.Quart, runtime: _ServeRuntime) -> None:
-    """バックグラウンド同期の開始・終了処理を登録する。"""
+def _no_store(body: str, content_type: str) -> quart.Response:
+    """計画ファイル・セッションの応答を常に再取得させるヘッダーで返す。"""
+    return quart.Response(body, content_type=content_type, headers={"Cache-Control": "no-store"})
+
+
+def _json_no_store(payload: typing.Any) -> quart.Response:
+    """JSON応答を常に再取得させるヘッダーで返す。"""
+    return _no_store(json.dumps(payload, ensure_ascii=False), "application/json; charset=utf-8")
+
+
+def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -> None:
+    """計画ファイル画面のページ・資産・APIのルートを登録する。"""
+
+    @app.get("/plans")
+    async def plans_index() -> quart.Response:
+        base_path = _safe_base_path(quart.request.root_path)
+        # ページロード時はローカルroot情報を注入する。リモート分はSSE経由の更新か
+        # `/api/plans/root-info`への再取得で反映する。
+        local_root_info = context.state.root_info[context.hostname]
+        if len(local_root_info) == 1 and "" in local_root_info:
+            # 単一rootを明示した構成では、旧来の`host_info`形式をそのまま渡す。
+            root_dirs: dict[str, typing.Any] = {context.hostname: context.state.host_info[context.hostname]}
+        else:
+            root_dirs = {context.hostname: local_root_info}
+        bootstrap = {
+            "base_path": base_path,
+            "local_host_name": context.hostname,
+            "root_dirs": root_dirs,
+        }
+        # HTML属性向けには`html.escape(quote=True)`、`<script type="application/json">`向けには
+        # `</`の分割でHTMLの解析を終わらせない形へ変換し、コンテキスト別のエスケープ経路で埋め込む。
+        body = assets.PLANS_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True)).replace(
+            "__PLANS_BOOTSTRAP_JSON__",
+            json.dumps(bootstrap, ensure_ascii=False).replace("</", "<\\/"),
+        )
+        return _no_store(body, "text/html; charset=utf-8")
+
+    @app.get("/static/plans.css")
+    async def plans_css() -> quart.Response:
+        return _no_store(assets.PLANS_CSS, "text/css; charset=utf-8")
+
+    @app.get("/static/plans.js")
+    async def plans_js() -> quart.Response:
+        return _no_store(assets.PLANS_JS, "text/javascript; charset=utf-8")
+
+    @app.get("/static/markdown.css")
+    async def markdown_css() -> quart.Response:
+        return _no_store(assets.MARKDOWN_CSS, "text/css; charset=utf-8")
+
+    @app.get("/static/pygments.css")
+    async def pygments_css() -> quart.Response:
+        return _no_store(serve_plans.read_pygments_css(), "text/css; charset=utf-8")
+
+    @app.get("/static/vendor/mermaid.min.js")
+    async def mermaid_script() -> quart.Response:
+        bundle = await asyncio.to_thread(assets.read_mermaid_bundle)
+        response = _no_store(bundle, "text/javascript; charset=utf-8")
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.get("/api/plans/host-status")
+    async def plans_host_status() -> quart.Response:
+        async with context.state.lock:
+            snapshot = dict(context.state.host_status)
+        return _json_no_store(snapshot)
+
+    @app.get("/api/plans/host-info")
+    async def plans_host_info() -> quart.Response:
+        async with context.state.lock:
+            snapshot = dict(context.state.host_info)
+        return _json_no_store(snapshot)
+
+    @app.get("/api/plans/root-info")
+    async def plans_root_info() -> quart.Response:
+        async with context.state.lock:
+            snapshot = json.loads(json.dumps(context.state.root_info, ensure_ascii=False))
+        return _json_no_store(snapshot)
+
+    @app.get("/api/plans/root-status")
+    async def plans_root_status() -> quart.Response:
+        async with context.state.lock:
+            snapshot = json.loads(json.dumps(context.state.root_status, ensure_ascii=False))
+        return _json_no_store(snapshot)
+
+    @app.get("/api/plans/files")
+    async def plans_files() -> quart.Response:
+        entries = await serve_plans.all_entries(context)
+        return _json_no_store([dataclasses.asdict(entry) for entry in entries])
+
+    @app.get("/api/plans/search")
+    async def plans_search() -> quart.Response:
+        matched = await serve_plans.search_entries(context, quart.request.args.get("q", ""))
+        if matched is None:
+            return _no_store("search superseded", "text/plain; charset=utf-8")
+        return _json_no_store([dataclasses.asdict(entry) for entry in matched])
+
+    @app.get("/api/plans/file")
+    async def plans_file() -> quart.Response:
+        host, source_id, rel = _plan_request_target(context)
+        body = await serve_plans.render_file_html(context, host, source_id, rel)
+        return _no_store(body, "text/html; charset=utf-8")
+
+    @app.get("/api/plans/raw")
+    async def plans_raw() -> quart.Response:
+        # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため経路を分離する。
+        host, source_id, rel = _plan_request_target(context)
+        text, _mtime = await serve_plans.resolve_text_and_mtime(context, host, source_id, rel)
+        content_type = "text/plain; charset=utf-8" if serve_plans.is_review_table_path(rel) else "text/markdown; charset=utf-8"
+        return _no_store(text, content_type)
+
+    @app.get("/api/plans/events")
+    async def plans_events() -> quart.Response:
+        @pytilpack.sse.generator()
+        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
+            queue = await serve_plans.subscribe(context.state)
+            try:
+                while True:
+                    message = await queue.get()
+                    # クライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
+                    yield pytilpack.sse.SSE(data=message)
+            finally:
+                await serve_plans.unsubscribe(context.state, queue)
+
+        return quart.Response(
+            generate(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
+        )
+
+
+def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, str]:
+    """`/api/plans/file`・`/api/plans/raw`共通でhost・source・pathを取り出して検証する。
+
+    `host`未指定時はローカルホストを採用する。許可リスト外のhostは入力エラーとして拒否する
+    （サーバーが外部へ公開された場合に、クライアントが任意のSSH先へ接続試行を誘発できないようにするため）。
+    """
+    rel = quart.request.args.get("path")
+    if not rel:
+        raise common.WebInputError("pathを指定してください")
+    host = quart.request.args.get("host")
+    if host is None:
+        host = context.hostname
+    if host != context.hostname and host not in context.allowed_remote_hosts:
+        raise common.WebInputError("未知のhostです")
+    requested_source = quart.request.args.get("source") or quart.request.args.get("source_id") or ""
+    source_id = serve_plans.resolve_source_id(context, host, requested_source, rel)
+    if source_id is None:
+        raise common.WebInputError("sourceを解決できません")
+    return host, source_id, rel
+
+
+def _register_session_routes(app: quart.Quart, context: serve_sessions.SessionsContext) -> None:
+    """セッション画面のページ・資産・APIのルートを登録する。"""
+
+    @app.get("/sessions")
+    async def sessions_index() -> quart.Response:
+        base_path = _safe_base_path(quart.request.root_path)
+        bootstrap = {"base_path": base_path}
+        body = assets.SESSIONS_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True)).replace(
+            "__SESSIONS_BOOTSTRAP_JSON__",
+            json.dumps(bootstrap, ensure_ascii=False).replace("</", "<\\/"),
+        )
+        return _no_store(body, "text/html; charset=utf-8")
+
+    @app.get("/static/sessions.css")
+    async def sessions_css() -> quart.Response:
+        return _no_store(assets.SESSIONS_CSS, "text/css; charset=utf-8")
+
+    @app.get("/static/sessions.js")
+    async def sessions_js() -> quart.Response:
+        return _no_store(assets.SESSIONS_JS, "text/javascript; charset=utf-8")
+
+    @app.get("/api/sessions/list")
+    async def sessions_list() -> quart.Response:
+        entries, warnings = await serve_sessions.list_sessions(context)
+        return _json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings})
+
+    @app.get("/api/sessions/detail")
+    async def sessions_detail() -> quart.Response:
+        unknown = set(quart.request.args) - {"host", "engine", "path"}
+        if unknown:
+            raise common.WebInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+        engine = quart.request.args.get("engine", "")
+        path = quart.request.args.get("path", "")
+        host = quart.request.args.get("host") or context.hostname
+        if not engine or not path:
+            raise common.WebInputError("engineとpathを指定してください")
+        try:
+            detail = await serve_sessions.session_detail(context, engine, host, path)
+        except serve_sessions.SessionNotFoundError as error:
+            raise FileNotFoundError(str(error)) from error
+        return _json_no_store(detail)
+
+    @app.get("/api/sessions/host-status")
+    async def sessions_host_status() -> quart.Response:
+        return _json_no_store({"hosts": await serve_sessions.host_status(context)})
+
+    @app.get("/api/sessions/events")
+    async def sessions_events() -> quart.Response:
+        @pytilpack.sse.generator()
+        async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
+            queue = await serve_sessions.subscribe(context.state)
+            try:
+                while True:
+                    message = await queue.get()
+                    yield pytilpack.sse.SSE(data=message)
+            finally:
+                await serve_sessions.unsubscribe(context.state, queue)
+
+        return quart.Response(
+            generate(),
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "Connection": "keep-alive"},
+        )
+
+
+def _register_lifecycle(
+    app: quart.Quart,
+    runtime: _ServeRuntime,
+    plans: serve_plans.PlansContext,
+    sessions: serve_sessions.SessionsContext,
+) -> None:
+    """バックグラウンド同期とリモート接続の開始・終了処理を登録する。"""
 
     @app.before_serving
-    async def start_background_sync() -> None:
+    async def start_background_tasks() -> None:
         runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
+        serve_plans.start_remote_watchers(plans)
+        serve_sessions.start_remote_clients(sessions)
 
     @app.after_serving
-    async def stop_background_sync() -> None:
+    async def stop_background_tasks() -> None:
+        await serve_sessions.stop_remote_clients(sessions)
+        await serve_plans.stop_remote_watchers(plans)
         if runtime.background_task is None:
             return
         runtime.background_task.cancel()
@@ -1157,6 +1394,30 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         return quart.jsonify(changed=await workers.run(ops.commit))
 
 
+def _register_feedback_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
+    """フィードバック画面の資産・一覧・更新のルートをまとめて登録する。"""
+    _register_feedback_asset_routes(app)
+    _register_query_routes(app, runtime)
+    _register_mutation_routes(app, runtime)
+
+
+def _plans_context(config: serve_config.ServeConfig) -> serve_plans.PlansContext:
+    """設定から計画ファイル画面の依存を生成する。"""
+    return serve_plans.create_context(
+        root=pathlib.Path(config.plans.root).expanduser() if config.plans.root else None,
+        remote_hosts=config.plans.remote_hosts,
+    )
+
+
+def _sessions_context(config: serve_config.ServeConfig) -> serve_sessions.SessionsContext:
+    """設定からセッション画面の依存を生成する。"""
+    return serve_sessions.create_context(
+        claude_home=pathlib.Path(config.sessions.claude_home).expanduser() if config.sessions.claude_home else None,
+        codex_home=pathlib.Path(config.sessions.codex_home).expanduser() if config.sessions.codex_home else None,
+        remote_hosts=config.sessions.remote_hosts,
+    )
+
+
 def create_app(
     private_notes: pathlib.Path,
     config: serve_config.ServeConfig,
@@ -1164,16 +1425,26 @@ def create_app(
     *,
     operations: Operations | None = None,
     worker_limit: int = 4,
+    plans_context: serve_plans.PlansContext | None = None,
+    sessions_context: serve_sessions.SessionsContext | None = None,
 ) -> quart.Quart:
-    """Quartアプリを生成する。"""
+    """Quartアプリを生成する。
+
+    `plans_context`・`sessions_context`を渡さない場合は`config`から生成する。
+    """
     app = quart.Quart(__name__)
     app.config["SERVE_CONFIG"] = config
     app.config["SERVE_STATE"] = state
     runtime = _ServeRuntime(operations or Operations(private_notes), BoundedWorkers(worker_limit))
+    plans = plans_context if plans_context is not None else _plans_context(config)
+    sessions = sessions_context if sessions_context is not None else _sessions_context(config)
+    app.config["PLANS_CONTEXT"] = plans
+    app.config["SESSIONS_CONTEXT"] = sessions
     _register_error_handlers(app)
-    _register_asset_routes(app)
-    _register_lifecycle(app, runtime)
-    _register_query_routes(app, runtime)
-    _register_mutation_routes(app, runtime)
+    _register_shell_routes(app)
+    _register_feedback_routes(app, runtime)
+    _register_plan_routes(app, plans)
+    _register_session_routes(app, sessions)
+    _register_lifecycle(app, runtime, plans, sessions)
     app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
     return app

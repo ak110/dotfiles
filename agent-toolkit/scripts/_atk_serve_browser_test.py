@@ -3,9 +3,11 @@
 import asyncio
 import contextlib
 import dataclasses
+import json
 import os
 import socket
 import threading
+import urllib.parse
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,8 @@ from typing import Any
 import _atk_mq_user_comment as user_comment_mutations
 import _atk_serve_app as serve_app
 import _atk_serve_config as config
+import _atk_serve_plans as serve_plans
+import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as serve_state
 import playwright.async_api
 import pytest
@@ -1683,3 +1687,695 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_planning(
     await playwright.async_api.expect(comment_input).to_have_value("planning移動後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()
     await playwright.async_api.expect(detail.locator("#save-user-comment-button")).to_be_disabled()
+
+
+# --------------------------------------------------------------------------------------
+# 計画ファイル画面とセッション画面
+# --------------------------------------------------------------------------------------
+
+
+def _valid_diagram_markdown(label: str) -> str:
+    """MermaidとSVGの両方を含む計画本文を組み立てる。"""
+    return (
+        f"# {label}\n\n"
+        f"本文-{label}\n\n"
+        "```mermaid\n"
+        f'graph TD\n  A["{label}"] --> B["完了"]\n'
+        "```\n\n"
+        "```svg\n"
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">'
+        '<rect width="120" height="40" fill="#4f46e5"/>'
+        f'<text x="8" y="25" fill="white">{label}</text>'
+        "</svg>\n"
+        "```\n"
+    )
+
+
+@dataclasses.dataclass
+class _ScreenHarness:
+    page: playwright.async_api.Page
+    context: playwright.async_api.BrowserContext
+    root: Path
+    plan_path: Path
+    plans_state: serve_plans.BroadcastState
+    base_url: str
+    requests: list[str]
+    responses: list[tuple[str, int]]
+
+    async def notify_file_update(self, markdown: str) -> None:
+        """計画ファイルを書き換え、更新通知を配信する。"""
+        self.plan_path.write_text(markdown, encoding="utf-8")
+        await serve_plans.schedule_broadcast(self.plans_state)
+
+
+@dataclasses.dataclass
+class _MultiRootHarness:
+    page: playwright.async_api.Page
+    context: playwright.async_api.BrowserContext
+    new_plan: Path
+    legacy_plan: Path
+    plans_state: serve_plans.BroadcastState
+    base_url: str
+
+
+def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """作成日時インデックスを一時ディレクトリへ隔離し、開発環境の索引を書き換えない。"""
+    monkeypatch.setattr(serve_plans, "_CREATION_TIME_INDEX_PATH", tmp_path / "cache" / "index.json")
+
+
+@contextlib.asynccontextmanager
+async def _serve(app: Any, browser: playwright.async_api.Browser) -> Any:
+    """テスト用サーバーを起動し、ページとブラウザーコンテキストを提供する。"""
+    port = _reserve_port()
+    shutdown = asyncio.Event()
+
+    async def shutdown_trigger() -> None:
+        await shutdown.wait()
+
+    server_task = asyncio.create_task(app.run_task("127.0.0.1", port, shutdown_trigger=shutdown_trigger))
+    context = None
+    try:
+        await _wait_for_server(port)
+        context = await browser.new_context()
+        await context.grant_permissions(["clipboard-read", "clipboard-write"], origin=f"http://127.0.0.1:{port}")
+        page = await context.new_page()
+        yield context, page, port
+    finally:
+        if context is not None:
+            await context.close()
+        shutdown.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+
+
+@pytest_asyncio.fixture(name="screen_harness")
+async def _screen_harness_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_ScreenHarness]:
+    """3画面を登録したアプリと、計画ファイル1件・両実行系のセッション記録を用意する。"""
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    _write_entries(tmp_path)
+    plans_root = tmp_path / "plans"
+    plans_root.mkdir()
+    plan_path = plans_root / "plan.md"
+    plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
+    _write_session_records(tmp_path)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        serve_state.ServeState(tmp_path),
+        operations=_BrowserOperations(tmp_path),
+        plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
+        sessions_context=serve_sessions.create_context(
+            hostname="browser-test",
+            claude_home=tmp_path / "claude",
+            codex_home=tmp_path / "codex",
+        ),
+    )
+    plans_state: serve_plans.BroadcastState = app.config["PLANS_CONTEXT"].state
+    async with _serve(app, browser) as (context, page, port):
+        requests: list[str] = []
+        responses: list[tuple[str, int]] = []
+        page.on("request", lambda request: requests.append(request.url))
+        page.on("response", lambda response: responses.append((response.url, response.status)))
+        yield _ScreenHarness(
+            page=page,
+            context=context,
+            root=plans_root,
+            plan_path=plan_path,
+            plans_state=plans_state,
+            base_url=f"http://127.0.0.1:{port}",
+            requests=requests,
+            responses=responses,
+        )
+
+
+@pytest_asyncio.fixture(name="multi_root_harness")
+async def _multi_root_harness_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_MultiRootHarness]:
+    """同じ相対パスのファイルを持つ2rootを登録したアプリを用意する。"""
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    _write_entries(tmp_path)
+    new_root = tmp_path / "new"
+    legacy_root = tmp_path / "legacy"
+    new_root.mkdir()
+    legacy_root.mkdir()
+    new_plan = new_root / "same.md"
+    legacy_plan = legacy_root / "same.md"
+    new_plan.write_text("# 新root\n\nnew needle\n", encoding="utf-8")
+    legacy_plan.write_text("# 旧root\n\nold needle\n", encoding="utf-8")
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        serve_state.ServeState(tmp_path),
+        operations=_BrowserOperations(tmp_path),
+        plans_context=serve_plans.create_context(
+            hostname="browser-multi",
+            roots=(
+                serve_plans.RootSpec(serve_plans.NEW_SOURCE_ID, new_root, serve_plans.NEW_PORTABLE_ROOT),
+                serve_plans.RootSpec(serve_plans.LEGACY_SOURCE_ID, legacy_root, serve_plans.LEGACY_PORTABLE_ROOT),
+            ),
+        ),
+        sessions_context=serve_sessions.create_context(
+            hostname="browser-multi",
+            claude_home=tmp_path / "claude",
+            codex_home=tmp_path / "codex",
+        ),
+    )
+    plans_state: serve_plans.BroadcastState = app.config["PLANS_CONTEXT"].state
+    async with _serve(app, browser) as (context, page, port):
+        yield _MultiRootHarness(
+            page=page,
+            context=context,
+            new_plan=new_plan,
+            legacy_plan=legacy_plan,
+            plans_state=plans_state,
+            base_url=f"http://127.0.0.1:{port}",
+        )
+
+
+def _write_session_records(root: Path) -> None:
+    """Claude CodeとCodexのセッション記録を1件ずつ作る。"""
+    claude_path = root / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
+    claude_path.parent.mkdir(parents=True, exist_ok=True)
+    claude_path.write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": "2026-09-01T00:00:00Z",
+                "cwd": "/home/aki/proj",
+                "message": {"content": "Claudeの発話"},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-01T00:00:01Z",
+                "message": {
+                    "usage": {"input_tokens": 12, "output_tokens": 3},
+                    "content": [
+                        {"type": "thinking", "thinking": "Claudeの思考"},
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        # 書き込み途中の行が混在しても他の行を失わせないことを画面側でも確認する。
+        + '{"type":"user","message":{"content":"途中で途絶\n',
+        encoding="utf-8",
+    )
+    codex_path = (
+        root
+        / "codex"
+        / "sessions"
+        / "2026"
+        / "09"
+        / "01"
+        / "rollout-2026-09-01T00-00-00-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+    )
+    codex_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_path.write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "timestamp": "2026-09-01T01:00:00Z",
+                "payload": {"cwd": "/home/aki/other", "timestamp": "2026-09-01T01:00:00Z"},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T01:00:01Z",
+                "payload": {"type": "message", "role": "user", "content": [{"text": "Codexの発話"}]},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.asyncio
+async def test_navigation_switches_three_screens_in_declared_order(screen_harness: _ScreenHarness) -> None:
+    """同一のベースパスから3画面へ遷移でき、ナビゲーションの表示順と表記が指定どおりである。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/")
+
+    navigation = harness.page.locator("nav.app-nav")
+    await navigation.wait_for(state="visible")
+    assert await navigation.locator("a").all_inner_texts() == ["フィードバック", "計画ファイル", "セッション"]
+    assert await navigation.locator('a[aria-current="page"]').inner_text() == "フィードバック"
+
+    await navigation.get_by_role("link", name="計画ファイル").click()
+    await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    assert harness.page.url == harness.base_url + "/plans"
+    assert await harness.page.locator('nav.app-nav a[aria-current="page"]').inner_text() == "計画ファイル"
+
+    await harness.page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
+    assert harness.page.url == harness.base_url + "/sessions"
+    assert await harness.page.locator('nav.app-nav a[aria-current="page"]').inner_text() == "セッション"
+
+    await harness.page.locator("nav.app-nav").get_by_role("link", name="フィードバック").click()
+    await harness.page.locator("#entry-list").wait_for(state="visible")
+    assert harness.page.url == harness.base_url + "/"
+
+
+@pytest.mark.asyncio
+async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
+    """左ペインで実行系・ホスト・プロジェクト・日時により絞り込み、右ペインへ発話を時系列に表示する。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/sessions")
+
+    items = harness.page.locator("#sessions .session-item")
+    await items.nth(1).wait_for(state="visible")
+    assert await items.count() == 2
+    listing = await harness.page.locator("#sessions").inner_text()
+    assert "Claude Code" in listing
+    assert "Codex" in listing
+    assert "browser-test" in listing
+    assert "-home-aki-proj" in listing
+
+    # 実行系での絞り込み。
+    await harness.page.locator('.engine-filter[value="codex"]').uncheck()
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
+    assert await harness.page.locator("#sessions .engine-badge").inner_text() == "Claude Code"
+
+    # 文字列での絞り込み。
+    await harness.page.locator('.engine-filter[value="codex"]').check()
+    await harness.page.locator("#filter").fill("aaaaaaaa")
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
+    assert await harness.page.locator("#sessions .engine-badge").inner_text() == "Codex"
+
+    await harness.page.locator("#sessions .session-item").first.click()
+    await harness.page.locator("#detail .event").first.wait_for(state="visible")
+    assert "Codexの発話" in await harness.page.locator("#detail").inner_text()
+    assert "/home/aki/other" in await harness.page.locator("#detail-title").inner_text()
+
+    await harness.page.locator("#filter").fill("")
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
+    await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
+    await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
+    # 思考とツール呼び出しは既定で畳み、要求された時だけ本文を展開する。
+    await harness.page.locator("#detail .kind-thinking summary").click()
+    detail_text = await harness.page.locator("#detail").inner_text()
+    assert "Claudeの発話" in detail_text
+    assert "Claudeの思考" in detail_text
+    assert "Bash" in detail_text
+    assert "入力: 12" in await harness.page.locator("#detail-usage").inner_text()
+    # 破損した行は該当セッションの警告として示し、他の発話を失わせない。
+    assert "解析できない行が1件あります" in detail_text
+
+
+@pytest.mark.asyncio
+async def test_multiple_roots_keep_selection_search_update_and_copy_portable_path(
+    multi_root_harness: _MultiRootHarness,
+) -> None:
+    """同一相対パスのroot別選択・検索・更新通知・可搬パスコピーを検証する。"""
+    harness = multi_root_harness
+    await harness.page.goto(harness.base_url + "/plans")
+    items = harness.page.locator("#files .file")
+    await items.nth(1).wait_for(state="visible")
+    assert await items.count() == 2
+    assert await items.locator(".name").all_inner_texts() == ["same.md", "same.md"]
+
+    expected_paths = {
+        "新root": f"{serve_plans.NEW_PORTABLE_ROOT}/same.md",
+        "旧root": f"{serve_plans.LEGACY_PORTABLE_ROOT}/same.md",
+    }
+    headings: set[str] = set()
+    headings_by_index: list[str] = []
+    for index in range(2):
+        previous_heading = await harness.page.locator("#preview h1").inner_text() if index else None
+        await items.nth(index).click()
+        heading = harness.page.locator("#preview h1")
+        if previous_heading is None:
+            await heading.wait_for(state="visible")
+        else:
+            await harness.page.wait_for_function(
+                "(previous) => document.querySelector('#preview h1')?.innerText !== previous",
+                arg=previous_heading,
+            )
+        current_heading = await heading.inner_text()
+        headings.add(current_heading)
+        headings_by_index.append(current_heading)
+        await harness.page.get_by_role("button", name="計画ファイルのパスをコピー").click()
+        assert await harness.page.evaluate("navigator.clipboard.readText()") == expected_paths[current_heading]
+    assert headings == {"新root", "旧root"}
+
+    await harness.page.locator("#filter").fill("needle")
+    await harness.page.locator("#files .file").nth(1).wait_for(state="visible")
+    assert await harness.page.locator("#files .file").count() == 2
+
+    legacy_index = headings_by_index.index("旧root")
+    await harness.page.locator("#files .file").nth(legacy_index).click()
+    await harness.page.wait_for_function(
+        "(expected) => document.querySelector('#preview h1')?.innerText === expected",
+        arg="旧root",
+    )
+
+    harness.legacy_plan.write_text("# 旧root更新\n\nold needle\n", encoding="utf-8")
+    await serve_plans.schedule_broadcast(harness.plans_state)
+    await harness.page.locator("#preview h1", has_text="旧root更新").wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness) -> None:
+    """MermaidとSVGを描画し、更新後も能動的な内容を実行させず、古いblob URLを解放する。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/plans")
+
+    mermaid = harness.page.locator("#preview .diagram-mermaid svg")
+    svg_image = harness.page.locator("#preview .diagram-svg img")
+    await mermaid.wait_for(state="visible")
+    await svg_image.wait_for(state="visible")
+    assert await svg_image.evaluate("(image) => image.complete && image.naturalWidth > 0")
+
+    initial_blob_url = await svg_image.get_attribute("src")
+    assert initial_blob_url is not None
+    mermaid_responses = [status for url, status in harness.responses if url.endswith("/static/vendor/mermaid.min.js")]
+    assert mermaid_responses == [200]
+    assert not any("/chunks/" in url or url.endswith(".mjs") for url in harness.requests)
+
+    malicious_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" '
+        "onload=\"fetch('/svg-onload-ran')\">"
+        "<script>fetch('/svg-script-ran')</script>"
+        '<image href="/svg-external-resource.png" width="10" height="10"/>'
+        '<rect width="120" height="40" fill="green"/>'
+        "</svg>"
+    )
+    await harness.notify_file_update(
+        f"# 更新1\n\n本文-更新1\n\n```mermaid\ngraph TD\n  C[更新1] --> D[完了]\n```\n\n```svg\n{malicious_svg}\n```\n"
+    )
+    await harness.page.locator("#preview h1", has_text="更新1").wait_for()
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    updated_image = harness.page.locator("#preview .diagram-svg img")
+    await updated_image.wait_for(state="visible")
+    assert await updated_image.evaluate("(image) => image.complete && image.naturalWidth > 0")
+    assert not any(
+        marker in url
+        for url in harness.requests
+        for marker in ("svg-onload-ran", "svg-script-ran", "svg-external-resource.png")
+    )
+    assert not await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", initial_blob_url)
+
+    first_updated_blob_url = await updated_image.get_attribute("src")
+    assert first_updated_blob_url is not None
+    await harness.notify_file_update(_valid_diagram_markdown("更新2"))
+    await harness.page.locator("#preview h1", has_text="更新2").wait_for()
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    current_image = harness.page.locator("#preview .diagram-svg img")
+    await current_image.wait_for(state="visible")
+    assert await harness.page.locator("#preview h1").all_inner_texts() == ["更新2"]
+    assert not await harness.page.evaluate(
+        "(url) => fetch(url).then(() => true, () => false)",
+        first_updated_blob_url,
+    )
+    current_blob_url = await current_image.get_attribute("src")
+    assert current_blob_url is not None
+    assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
+
+
+@pytest.mark.asyncio
+async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarness) -> None:
+    """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
+    harness = screen_harness
+    (harness.root / "plan.detail.md").write_text("# 詳細ページ\n", encoding="utf-8")
+    (harness.root / "plan.bugs.md").write_text("# バグページ\n", encoding="utf-8")
+    review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
+    (harness.root / "plan.plan-review.tsv").write_text(review_row, encoding="utf-8")
+    (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")
+    await harness.page.goto(harness.base_url + "/plans")
+
+    await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
+    for attached in ("plan.detail.md", "plan.bugs.md", "plan.plan-review.tsv", "plan.exec-review.tsv"):
+        assert await harness.page.locator("#files").get_by_text(attached, exact=True).count() == 0
+    assert await harness.page.locator('a[data-plan-path="plan.detail.md"]').inner_text() == "詳細"
+
+    await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
+    await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.detail.md"
+
+    await harness.page.locator('a[data-plan-path="plan.bugs.md"]').click()
+    await harness.page.get_by_role("heading", name="バグページ").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.bugs.md"
+
+    await harness.page.locator('a[data-plan-path="plan.plan-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
+    await harness.page.get_by_role("cell", name="implementation-review").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.plan-review.tsv"
+
+    await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="対応不要理由").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.exec-review.tsv"
+
+    await harness.page.locator('a[data-plan-path="plan.md"]').click()
+    await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
+    assert await harness.page.title() == "browser-test: plan.md"
+
+
+@pytest.mark.asyncio
+async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """レビュー指摘管理表は全幅を使い、Markdown本文は読みやすさのため幅上限を保つ。"""
+    harness = screen_harness
+    review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
+    (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")
+    await harness.page.set_viewport_size({"width": 1600, "height": 900})
+    await harness.page.goto(harness.base_url + "/plans")
+
+    normal_widths = await harness.page.locator("#preview").evaluate(
+        """preview => {
+            const main = preview.closest("main");
+            const rect = preview.getBoundingClientRect();
+            const mainRect = main.getBoundingClientRect();
+            return {
+                preview: rect.width,
+                leftMargin: rect.left - mainRect.left,
+                rightMargin: mainRect.right - rect.right,
+            };
+        }""",
+    )
+    assert normal_widths["preview"] <= 860
+    assert normal_widths["leftMargin"] == pytest.approx(normal_widths["rightMargin"], abs=1)
+
+    await harness.page.locator('a[data-plan-path="plan.exec-review.tsv"]').click()
+    await harness.page.get_by_role("columnheader", name="ラウンド").wait_for(state="visible")
+    review_widths = await harness.page.locator("#preview").evaluate(
+        """preview => ({
+            preview: preview.getBoundingClientRect().width,
+            main: preview.closest("main").clientWidth,
+        })""",
+    )
+    assert review_widths["preview"] == pytest.approx(review_widths["main"], abs=1)
+
+
+@pytest.mark.asyncio
+async def test_mermaid_strict_security_blocks_active_content(screen_harness: _ScreenHarness) -> None:
+    """Mermaid図のクリック定義と埋め込みHTMLから、能動的な内容を実行させない。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    await harness.page.evaluate(
+        """() => {
+            window.__dangerousCallCount = 0;
+            window.someFunction = () => { window.__dangerousCallCount++; };
+        }""",
+    )
+
+    await harness.notify_file_update(
+        "# Mermaidセキュリティ\n\n"
+        "```mermaid\n"
+        "graph TD\n"
+        "  A[\"<img src='data:image/png;base64,invalid' "
+        "onerror=&quot;fetch('/mermaid-onerror-ran')&quot;>\"]\n"
+        '  B["リンク"]\n'
+        "  C[\"<script>fetch('/mermaid-script-ran')</script>\"]\n"
+        "  A --> B --> C\n"
+        "  click A call someFunction()\n"
+        '  click B href "/mermaid-navigation-ran"\n'
+        "```\n"
+    )
+
+    await harness.page.get_by_role("heading", name="Mermaidセキュリティ").wait_for(state="visible")
+    mermaid = harness.page.locator("#preview .diagram-mermaid svg")
+    await mermaid.wait_for(state="visible")
+    nodes = mermaid.locator("g.node")
+    assert await nodes.count() == 3
+    await nodes.nth(0).click()
+    await nodes.nth(1).click()
+    await harness.page.wait_for_timeout(100)
+
+    assert harness.page.url == harness.base_url + "/plans"
+    assert await harness.page.evaluate("window.__dangerousCallCount") == 0
+    assert not any(
+        marker in url
+        for url in harness.requests
+        for marker in (
+            "mermaid-navigation-ran",
+            "mermaid-onerror-ran",
+            "mermaid-script-ran",
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_later_file_selection_wins_when_first_response_arrives_last(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """先に選択したファイルの応答が後から届いても、後の選択の表示を保つ。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    (harness.root / "first.md").write_text("# 先の選択\n\n先の内容\n", encoding="utf-8")
+    (harness.root / "second.md").write_text("# 後の選択\n\n後の内容\n", encoding="utf-8")
+    await serve_plans.schedule_broadcast(harness.plans_state)
+    first_item = harness.page.locator("#files").get_by_text("first.md", exact=True)
+    second_item = harness.page.locator("#files").get_by_text("second.md", exact=True)
+    await first_item.wait_for(state="visible")
+    await second_item.wait_for(state="visible")
+
+    first_requested = asyncio.Event()
+    release_first = asyncio.Event()
+    first_fulfilled = asyncio.Event()
+
+    async def delay_first_response(
+        route: playwright.async_api.Route,
+        request: playwright.async_api.Request,
+    ) -> None:
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(request.url).query)
+        if query.get("path") != ["first.md"]:
+            await route.continue_()
+            return
+        response = await route.fetch()
+        first_requested.set()
+        await release_first.wait()
+        await route.fulfill(response=response)
+        first_fulfilled.set()
+
+    await harness.page.route("**/api/plans/file?*", delay_first_response)
+    await first_item.click()
+    await asyncio.wait_for(first_requested.wait(), timeout=5)
+    await second_item.click()
+    await harness.page.get_by_role("heading", name="後の選択").wait_for(state="visible")
+    release_first.set()
+    await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
+    await harness.page.evaluate(
+        "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    )
+    await harness.page.wait_for_function("document.title === 'browser-test: second.md'")
+
+    assert await harness.page.get_by_role("heading", name="後の選択").is_visible()
+    assert not await harness.page.get_by_role("heading", name="先の選択").is_visible()
+
+
+@pytest.mark.asyncio
+async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHarness) -> None:
+    """再同期が先行しても、選択状態とツールバーの操作可否を保つ。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    second_path = harness.root / "second.md"
+    second_path.write_text("# 選択直後\n\n更新前の内容\n", encoding="utf-8")
+    await serve_plans.schedule_broadcast(harness.plans_state)
+    second_item = harness.page.locator("#files").get_by_text("second.md", exact=True)
+    await second_item.wait_for(state="visible")
+
+    first_requested = asyncio.Event()
+    release_first = asyncio.Event()
+    first_fulfilled = asyncio.Event()
+    second_request_count = 0
+
+    async def delay_first_response(
+        route: playwright.async_api.Route,
+        request: playwright.async_api.Request,
+    ) -> None:
+        nonlocal second_request_count
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(request.url).query)
+        if query.get("path") != ["second.md"]:
+            await route.continue_()
+            return
+        second_request_count += 1
+        if second_request_count > 1:
+            await route.continue_()
+            return
+        response = await route.fetch()
+        first_requested.set()
+        await release_first.wait()
+        await route.fulfill(response=response)
+        first_fulfilled.set()
+
+    await harness.page.route("**/api/plans/file?*", delay_first_response)
+    await second_item.click()
+    await asyncio.wait_for(first_requested.wait(), timeout=5)
+    second_path.write_text("# 再同期後\n\n更新後の内容\n", encoding="utf-8")
+    stat = second_path.stat()
+    os.utime(second_path, (stat.st_atime, stat.st_mtime + 1))
+    await harness.page.evaluate("forceResync()")
+    await harness.page.get_by_role("heading", name="再同期後").wait_for(state="visible")
+    release_first.set()
+    await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
+    await harness.page.evaluate(
+        "() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    )
+
+    assert await harness.page.title() == "browser-test: second.md"
+    assert not await harness.page.locator("#copy-btn").is_disabled()
+    assert not await harness.page.locator("#copy-path-btn").is_disabled()
+    assert await harness.page.locator("#meta-mobile .meta-path").text_content() == "second.md"
+    prev_disabled = await harness.page.locator("#prev-btn").is_disabled()
+    next_disabled = await harness.page.locator("#next-btn").is_disabled()
+    assert not (prev_disabled and next_disabled)
+
+
+@pytest.mark.asyncio
+async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness: _ScreenHarness) -> None:
+    """Mermaidの構文エラーは図の位置へ表示し、本文と他の図の描画を保つ。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+
+    await harness.notify_file_update(
+        "# 構文エラー\n\n残る本文\n\n"
+        "```mermaid\ngraph TD\n  A[未完了 -->\n```\n\n"
+        '```svg\n<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>\n```\n'
+    )
+
+    error = harness.page.locator("#preview .diagram-mermaid .diagram-error")
+    await error.wait_for(state="visible")
+    assert "Mermaid図を描画できませんでした" in await error.inner_text()
+    assert await harness.page.locator("#preview .diagram-mermaid details").is_visible()
+    source = await harness.page.locator("#preview .diagram-mermaid details pre").text_content()
+    assert source is not None
+    assert "graph TD" in source
+    assert "残る本文" in await harness.page.locator("#preview").inner_text()
+    assert await harness.page.locator("#preview .diagram-svg img").is_visible()
+
+
+@pytest.mark.asyncio
+async def test_forwarded_prefix_uses_base_path_for_diagrams(screen_harness: _ScreenHarness) -> None:
+    """ベースパス配下でも図の資産を正しい経路から読み込む。"""
+    harness = screen_harness
+    await harness.context.set_extra_http_headers({"X-Forwarded-Prefix": "/atk"})
+    response = await harness.page.goto(harness.base_url + "/atk/plans")
+
+    assert response is not None
+    assert response.status == 200
+    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    svg_image = harness.page.locator("#preview .diagram-svg img")
+    await svg_image.wait_for(state="visible")
+    assert await svg_image.evaluate("(image) => image.complete && image.naturalWidth > 0")
+    assert any(url.endswith("/atk/static/vendor/mermaid.min.js") for url in harness.requests)

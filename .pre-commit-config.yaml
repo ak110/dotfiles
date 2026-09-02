@@ -4,10 +4,10 @@ repos:
     hooks:
       # テキストフォーマット。
       - id: trailing-whitespace
-        exclude: '\.cmd$|(^|/)pytools/claude_plans_viewer/vendor/'
+        exclude: '\.cmd$|(^|/)pytools/claude_plans_viewer/vendor/|(^|/)agent-toolkit/scripts/_atk_serve_static/vendor/'
       # Windowsで通常ファイル化するGit symlinkのリンク先へ末尾改行を追加しない。
       - id: end-of-file-fixer
-        exclude: '\.cmd$|(^|/)pytools/claude_plans_viewer/vendor/|(^|/)\.agents/skills$'
+        exclude: '\.cmd$|(^|/)pytools/claude_plans_viewer/vendor/|(^|/)agent-toolkit/scripts/_atk_serve_static/vendor/|(^|/)\.agents/skills$'
       - id: mixed-line-ending
         args: [--fix=lf]
         exclude: '\.(cmd|ps1)(\.tmpl)?$|(^|/)pytools/claude_plans_viewer/vendor/'
@@ -28,7 +28,7 @@ repos:
       - id: detect-private-key
       # ファイル検証。
       - id: check-added-large-files
-        exclude: '(^|/)pytools/claude_plans_viewer/vendor/'
+        exclude: '(^|/)pytools/claude_plans_viewer/vendor/|(^|/)agent-toolkit/scripts/_atk_serve_static/vendor/'
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
         exclude: '\.tmpl$'
