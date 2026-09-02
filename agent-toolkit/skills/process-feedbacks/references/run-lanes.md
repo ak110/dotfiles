@@ -141,6 +141,10 @@ route変更、識別子消失又は前提無効時だけ一般的な継続契約
 - 採用する実施範囲がなくマージを実行しないレーンは、メインが`git -C <記録した所有worktreeの絶対パス> status --porcelain=v1`の出力が空であることを照合する。続いて、`git -C <記録した所有worktreeの絶対パス> symbolic-ref --short HEAD`が記録した専用branch名と一致することを照合する。`git -C <記録した所有worktreeの絶対パス> rev-parse HEAD`が専用worktree作成時のHEAD完全OIDと一致することも照合する。全て一致した場合だけ、`git -C <記録した対象リポジトリの絶対パス> worktree remove <所有worktreeの絶対パス>`でworktreeを削除する。次に`git -C <記録した対象リポジトリの絶対パス> update-ref -d refs/heads/<所有branch名> <専用worktree作成時のHEAD完全OID>`を実行する。これにより、期待OIDから更新されていない所有branchだけを削除する。いずれかが一致しない場合、worktree又はbranchの削除が失敗した場合は以降を削除しない。この場合は、記録値、観測値及び残存対象を`needs_escalation`で返す。
 
 branchとworktreeの回収後に、記録したレーンmanaged-tempを照合して削除する。対象外worktree、複製元及び管理外領域は削除しない。失敗時は残存対象を`needs_escalation`へ返す。
+回収の完了を照合する検証では、対象の不在を成功として判定する。
+worktreeとbranchは、`git -C <記録した対象リポジトリの絶対パス> worktree list`と`git -C <記録した対象リポジトリの絶対パス> branch --list <所有branch名>`の出力へ当該worktreeと当該branchが現れないことで判定する。
+レーンmanaged-tempは`test ! -e <記録したレーンmanaged-tempの絶対パス>`の終了コード0で判定する。
+`ls`と`find`は対象が存在しない場合に非0で終了するため、これらの終了コードを検証結果に用いない。
 
 外部操作だけの項目は必要な認可と結果を確認して終端する。
 外部操作が上流リポジトリへのフィードバック投入である場合は、対象リポジトリ側の元項目を終端しない。メインが投入先のファイル名を元項目の`depends_on`へ加えて`inbox`へ戻す。

@@ -4,7 +4,14 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 
 ## ツールAPIと権限
 
-- `AskUserQuestion`の`options`は1問最大4件。ターン途中の地の文はハーネスが要約へ置換することがあるため、
+- `AskUserQuestion`の1回の呼び出しは`questions`を1件以上4件以下、各質問の`options`を2件以上4件以下とする。
+  選択肢1件だけの確認は組めない。
+  ユーザーが選択肢を選ばずに記述した回答は、選択肢の`label`ではなく記述本文として返る。
+  質問ごとの自由記述は当該質問の回答へ記述本文が入る。
+  質問へ答えず一般の返答をした場合は`response`欄へ別に入る
+  （2026年9月2日、Claude Code公式ドキュメント`https://code.claude.com/docs/en/agent-sdk/user-input`の
+  `Question format`節、`Response format`節及び`Limitations`節で確認した。再検証は同じ3節を読む）
+- `AskUserQuestion`の呼び出しでは、ターン途中の地の文はハーネスが要約へ置換することがある。
   判断材料は`question`本文または`options`の`preview`欄へ自己完結で含める
   （2026年8月31日、Claude Code v2.1.251・Fable 5で、ツール結果と次のツール呼び出しの間へ置いた地の文が
   `· summarized`付きの短縮文へ置換されることを実測した。ターン冒頭と`AskUserQuestion`直前の地の文は
