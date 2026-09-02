@@ -78,25 +78,37 @@ class TestEnsurePlanLockIgnored:
             nested_lock.relative_to(tmp_path)
         )
 
-    def test_replaces_legacy_repository_wide_pattern(self, tmp_path: pathlib.Path) -> None:
-        """旧版が追記したリポジトリ全体の除外行を`plans/`配下限定の行へ置き換える。"""
+    def test_keeps_legacy_repository_wide_pattern(self, tmp_path: pathlib.Path) -> None:
+        """旧版が追記したリポジトリ全体の除外行を残したまま`plans/`配下限定の行を加える。"""
         _git(tmp_path, "init", "-q")
         gitignore = tmp_path / ".gitignore"
         gitignore.write_bytes(b"existing-pattern\n*.lock\n")
 
         assert _file_lock.ensure_plan_lock_ignored(tmp_path / "plans" / ".agent-toolkit-plan-create.lock")
 
-        assert gitignore.read_bytes() == b"existing-pattern\n/plans/**/*.lock\n"
-        outside_lock = tmp_path / "state" / "session.lock"
-        outside_lock.parent.mkdir(parents=True)
-        outside_lock.touch()
-        ignored = subprocess.run(
-            ["git", "-C", str(tmp_path), "check-ignore", str(outside_lock.relative_to(tmp_path))],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        assert ignored.returncode == 1
+        assert gitignore.read_bytes() == b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
+        assert not _file_lock.ensure_plan_lock_ignored(tmp_path / "plans" / "2026" / "09" / "sample.lock")
+        assert gitignore.read_bytes() == b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"",
+            b"existing-pattern\n",
+            b"existing-pattern\n*.lock\n",
+            b"existing-pattern\n/plans/**/*.lock\n",
+            b"existing-pattern\n*.lock\n/plans/**/*.lock\n",
+        ],
+    )
+    def test_gitignore_content_is_idempotent(self, content: bytes) -> None:
+        """旧行の有無にかかわらず、既存行を保持し再適用で内容が変化しない。"""
+        pattern = _file_lock.PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
+
+        updated = _file_lock.plan_lock_gitignore_content(content)
+
+        assert updated.splitlines().count(pattern) == 1
+        assert all(line in updated.splitlines() for line in content.splitlines())
+        assert _file_lock.plan_lock_gitignore_content(updated) == updated
 
     def test_does_not_modify_repository_for_lock_outside_plans(self, tmp_path: pathlib.Path) -> None:
         """`plans/`外の一般ロックでは`.gitignore`を作成しない。"""
