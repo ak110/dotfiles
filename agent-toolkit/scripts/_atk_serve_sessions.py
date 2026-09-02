@@ -209,6 +209,8 @@ def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] 
     """セッション本体に属するサブエージェント記録の親子関係を返す。
 
     記録が無い場合は`None`を返し、取得不能であることを表す。
+    `path`は当該サブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
+    `parent_agent_id`は深さが2以上の記録にだけ現れるため、階層の復元は`spawn_depth`を典拠とする。
     """
     directory = record_path.with_suffix("") / "subagents"
     if not directory.is_dir():
@@ -221,13 +223,18 @@ def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] 
             continue
         if not isinstance(metadata, dict):
             continue
+        # `agent_id`は`agent-<16進数>`の形であり接頭辞を含むため、記録本体の名前へ重ねて付けない。
+        agent_id = meta_path.name.removesuffix(".meta.json")
+        agent_record = meta_path.with_name(f"{agent_id}{RECORD_SUFFIX}")
         found.append(
             {
-                "agent_id": meta_path.name.removesuffix(".meta.json"),
+                "agent_id": agent_id,
                 "agent_type": metadata.get("agentType"),
+                "description": metadata.get("description"),
                 "spawn_depth": metadata.get("spawnDepth"),
                 "parent_agent_id": metadata.get("parentAgentId"),
                 "model": metadata.get("model"),
+                "path": str(agent_record) if agent_record.is_file() else None,
             }
         )
     return found or None
@@ -360,8 +367,13 @@ def build_detail(
     *,
     broken_lines: int,
     subagents: list[dict[str, typing.Any]] | None,
+    subagents_unavailable: bool,
 ) -> dict[str, typing.Any]:
-    """解析済みの記録から詳細応答を組み立てる。"""
+    """解析済みの記録から詳細応答を組み立てる。
+
+    `subagents_unavailable`は、サブエージェント記録の有無そのものを判定できなかったことを表す。
+    サブエージェントが無いこと（`subagents`が`null`）と区別して画面へ示すために持たせる。
+    """
     events, totals = _claude_events(records) if engine == "claude" else _codex_events(records)
     truncated = max(0, len(events) - MAX_DETAIL_EVENTS)
     return {
@@ -370,6 +382,7 @@ def build_detail(
         "truncated_events": truncated,
         "usage": totals,
         "subagents": subagents,
+        "subagents_unavailable": subagents_unavailable,
         "broken_lines": broken_lines,
     }
 
@@ -543,7 +556,8 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
         raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
     records, broken = parse_records(data.decode("utf-8", errors="replace"))
     subagents = _claude_subagents(path) if engine == "claude" else None
-    detail = build_detail(engine, records, broken_lines=broken, subagents=subagents)
+    # ローカルの記録は保存先を直接読むため、サブエージェント記録の有無を常に判定できる。
+    detail = build_detail(engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=False)
     detail["session_id"] = path.stem if engine == "claude" else codex_session_id(path)
     detail["host"] = context.hostname
     detail["path"] = raw_path
@@ -905,6 +919,22 @@ async def list_sessions(context: SessionsContext) -> tuple[list[SessionSummary],
     return entries[:MAX_LIST_ENTRIES], warnings
 
 
+def _remote_subagents(engine: str, payload: dict[str, typing.Any]) -> tuple[list[dict[str, typing.Any]] | None, bool]:
+    """リモートの読み取り応答から、サブエージェント一覧と判定不能かどうかを返す。
+
+    リモートホストのdotfilesが古く、サブエージェント一覧を返さない版のヘルパーが動いている場合は、
+    読み取り自体が成功したまま当該欄だけが欠ける。サブエージェントが無い場合と区別するため、
+    欄が無い応答は判定不能として扱う。Codexの記録はサブエージェントを持たないため判定不能としない。
+    """
+    if engine != "claude":
+        return None, False
+    found = payload.get("subagents")
+    if not isinstance(found, list):
+        return None, True
+    # ローカルと同じく、0件は`None`で表して「サブエージェントが無い」ことを示す。
+    return found or None, False
+
+
 async def session_detail(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
     """指定ホストの記録1件を共通の表示モデルへ正規化して返す。"""
     if engine not in {"claude", "codex"}:
@@ -923,7 +953,10 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
         raise SessionNotFoundError(path) from error
     text = base64.b64decode(str(payload["data"])).decode("utf-8", errors="replace")
     records, broken = parse_records(text)
-    detail = build_detail(engine, records, broken_lines=broken, subagents=None)
+    subagents, subagents_unavailable = _remote_subagents(engine, payload)
+    detail = build_detail(
+        engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=subagents_unavailable
+    )
     detail["session_id"] = pathlib.PurePosixPath(path).stem
     detail["host"] = host
     detail["path"] = path

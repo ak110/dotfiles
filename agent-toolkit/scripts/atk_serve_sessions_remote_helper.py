@@ -5,7 +5,7 @@
 """`atk serve`のセッション画面が使うリモートホスト側ヘルパー。
 
 操作種別はargvで受け取る（`list`・`read`・`serve`）。
-`list`は保存済みセッションの一覧を、`read`は1件の記録本文をJSONで返す。
+`list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧をJSONで返す。
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 
 保存先の規約は`agent-toolkit/skills/agent-standards/references/session-records.md`を正本とし、
@@ -142,8 +142,43 @@ def _is_safe_record_path(raw: str) -> bool:
     return False
 
 
+def _subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]]:
+    """記録本体に属するサブエージェント記録の親子関係を返す。
+
+    サーバー側`_atk_serve_sessions.py`の`_claude_subagents`と同じ規約で解決する。
+    サブエージェント記録が無い場合は空のリストを返す。応答が本欄を持つこと自体を、
+    本欄を返さない旧版のヘルパーとサーバー側が区別する根拠とするためである。
+    """
+    directory = record_path.with_suffix("") / "subagents"
+    if not directory.is_dir():
+        return []
+    found: list[dict[str, typing.Any]] = []
+    for meta_path in sorted(directory.glob("*.meta.json")):
+        try:
+            metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        # `agent_id`は`agent-<16進数>`の形であり接頭辞を含むため、記録本体の名前へ重ねて付けない。
+        agent_id = meta_path.name.removesuffix(".meta.json")
+        agent_record = meta_path.with_name(f"{agent_id}{_CLAUDE_SUFFIX}")
+        found.append(
+            {
+                "agent_id": agent_id,
+                "agent_type": metadata.get("agentType"),
+                "description": metadata.get("description"),
+                "spawn_depth": metadata.get("spawnDepth"),
+                "parent_agent_id": metadata.get("parentAgentId"),
+                "model": metadata.get("model"),
+                "path": str(agent_record) if agent_record.is_file() else None,
+            }
+        )
+    return found
+
+
 def _read_payload(path_b64: str) -> dict[str, typing.Any]:
-    """指定パスの記録本文をbase64で返す。"""
+    """指定パスの記録本文をbase64で返す。サブエージェント記録の一覧も同時に返す。"""
     raw = base64.b64decode(path_b64).decode("utf-8")
     if not _is_safe_record_path(raw):
         raise ValueError("invalid record path")
@@ -151,7 +186,11 @@ def _read_payload(path_b64: str) -> dict[str, typing.Any]:
     data = path.read_bytes()
     if len(data) > MAX_RECORD_BYTES:
         raise ValueError(f"record too large: {len(data)} bytes")
-    return {"data": base64.b64encode(data).decode("ascii"), "mtime_epoch": path.stat().st_mtime}
+    return {
+        "data": base64.b64encode(data).decode("ascii"),
+        "mtime_epoch": path.stat().st_mtime,
+        "subagents": _subagents(path),
+    }
 
 
 _STDOUT_LOCK = threading.Lock()
