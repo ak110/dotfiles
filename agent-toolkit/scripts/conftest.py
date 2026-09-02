@@ -84,6 +84,10 @@ def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
     `platformdirs`が解決する状態ディレクトリの位置も一時ディレクトリ配下へ移すため、
     計画の取得記録など状態ディレクトリを使う処理も同じfixtureで隔離される。
     プラットフォームごとに参照される変数が異なるため、両系統をまとめて差し替える。
+
+    差し替えた環境変数はテストが起動する子プロセスへも継承される。実行環境のホーム・設定
+    ディレクトリから版や信頼設定を解決する外部ツール（miseのshimとして提供される`node`など）を
+    起動するテストは、この隔離を渡すと解決に失敗するため、隔離前の環境変数を控えて明示的に渡す。
     """
     home = tmp_path / "home"
     for name in ("HOME", "USERPROFILE"):
