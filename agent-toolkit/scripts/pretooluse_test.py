@@ -3919,7 +3919,105 @@ class TestBashBlockBeforeAccumulatedWarnings:
 
 
 class TestBashOutputTruncationWarning:
-    """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（warning、非block）。"""
+    """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（初回warn・再検出block）。"""
+
+    def test_output_truncation_warns_on_first_detection(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションの初回検出は終了コード0のまま警告本文を返す。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "pytest -q | tail -5"},
+                "session_id": "output-truncation-first",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "truncating it" in _additional_context(result)
+
+    def test_output_truncation_blocks_on_second_detection(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションの2回目の検出は解消手段を添えて遮断する。"""
+        session_id = "output-truncation-repeat"
+        env = _plan_file_state_env(tmp_path)
+        first = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "pytest -q | tail -5"},
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert first.returncode == 0
+        second = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "uvx pyfltr run-for-agent | head -20"},
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert second.returncode == 2
+        assert "detected again in this session" in second.stderr
+        assert "tee" in second.stderr
+        assert "agent-toolkit:shell-exec" in second.stderr
+        assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+
+    def test_output_truncation_block_suppresses_status_diagnosis(self, tmp_path: pathlib.Path) -> None:
+        """遮断した呼び出しでは終了状態の診断本文を返さない。"""
+        session_id = "output-truncation-status"
+        env = _plan_file_state_env(tmp_path)
+        _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "pytest -q | tail -5"},
+                "session_id": session_id,
+            },
+            env,
+        )
+        second = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": 'pytest -q | tail -5; echo "$?"'},
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert second.returncode == 2
+        assert "reports the status of `head`/`tail`" not in second.stderr
+
+    def test_output_truncation_uses_dedicated_state_key(self, tmp_path: pathlib.Path) -> None:
+        """切り詰めの記録は前景待機の記録と独立し、相互に遮断へ昇格させない。"""
+        session_id = "output-truncation-independent"
+        env = _plan_file_state_env(tmp_path)
+        first = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "sleep 10; git status --short"},
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert first.returncode == 0
+        second = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "pytest -q | tail -5"},
+                "session_id": session_id,
+            },
+            env,
+        )
+        assert second.returncode == 0
+        assert "truncating it" in _additional_context(second)
+
+    def test_output_truncation_without_session_id_keeps_warning(self, tmp_path: pathlib.Path) -> None:
+        """`session_id`が空の場合は記録できないため毎回初回と同じ警告になる。"""
+        env = _plan_file_state_env(tmp_path)
+        for _ in range(2):
+            result = _run(
+                {"tool_name": "Bash", "tool_input": {"command": "pytest -q | tail -5"}, "session_id": ""},
+                env,
+            )
+            assert result.returncode == 0
+            assert "truncating it" in _additional_context(result)
 
     @pytest.mark.parametrize(
         "command",

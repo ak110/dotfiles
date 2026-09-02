@@ -17,6 +17,7 @@
 - `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う
 - `sleep_poll_detected`: PreToolUse(Bash)が入れ子でなく早期離脱のない`for`・`while true`・`while :`本体のsleepポーリング、又は対象外のsleep直後の状態確認連結を検出した場合に記録する。入れ子ループは判定対象外とする
+- `output_truncation_detected`: PreToolUse(Bash)が検証コマンドの出力を`tail`・`head`で切り詰める指定を検出した場合に記録する。同一セッション内での再検出を遮断へ昇格させる判定に使う。セッション終了まで保持し、リセット経路は設けない
 - `session_edited_files`: PostToolUseが成功した編集の対象パスを重複なく記録し、
   PreToolUse(Bash)の一括stage警告が自セッション編集済み集合として読む。セッション終了まで保持し、
   リセット経路は設けない。Claude CodeではWrite・Edit・MultiEditが、Codexでは成功した`apply_patch`が
