@@ -824,10 +824,12 @@ def root_info(spec: RootSpec) -> dict[str, typing.Any]:
 
 
 def root_warning(root: pathlib.Path) -> str | None:
-    """rootを利用できない理由を返す。不在・非ディレクトリ以外は走査時に判定する。"""
-    if not root.exists():
-        return "rootが存在しません"
-    if not root.is_dir():
+    """rootを利用できない理由を返す。
+
+    rootの不在は計画をまだ保存していない通常の状態であるため警告しない。
+    非ディレクトリ以外の障害は走査時に判定する。
+    """
+    if root.exists() and not root.is_dir():
         return "rootがディレクトリではありません"
     return None
 
@@ -848,12 +850,17 @@ def scan_files(
 ) -> tuple[list[FileEntry], str | None]:
     """`root`を走査し、一覧とroot単位の警告を返す。
 
-    rootの不在・非ディレクトリ・権限不足は呼び出し元が他rootの処理を継続できるよう、
-    例外ではなく警告本文として返す。rootは自動作成しない。
+    rootの非ディレクトリ・権限不足は呼び出し元が他rootの処理を継続できるよう、
+    例外ではなく警告本文として返す。rootの不在は通常の状態として空の一覧だけを返す。
+    rootは自動作成しない。
     """
     warning = root_warning(root)
     if warning is not None:
         return [], warning
+    # 不在のrootに対する`rglob`は空を返して成功するため、走査へ進むと空の観測結果で
+    # インデックスを更新し、同じ`(host, root)`に記録済みの作成日時を回収してしまう。
+    if not root.is_dir():
+        return [], None
 
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}

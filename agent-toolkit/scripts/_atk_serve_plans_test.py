@@ -143,6 +143,23 @@ def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Pa
     ]
 
 
+def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """rootへ一時的に到達できない間は、記録済みの作成日時を回収しない。"""
+    root = tmp_path / "plans"
+    root.mkdir()
+    _plan(root, "plan.md", mtime=1_000.0)
+    plans.list_files(root, "local-host")
+    stored = json.loads(index_path.read_text(encoding="utf-8"))
+    (root / "plan.md").unlink()
+    root.rmdir()
+
+    entries, warning = plans.scan_files(root, "local-host")
+
+    assert not entries
+    assert warning is None
+    assert json.loads(index_path.read_text(encoding="utf-8")) == stored
+
+
 def test_migrates_matching_legacy_entry(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
     """旧形式の作成日時を取り込み、取り込んだ旧形式のファイルを削除する。"""
     root = tmp_path / "plans"
@@ -376,6 +393,28 @@ def test_attached_files_are_excluded_from_the_listing(tmp_path: pathlib.Path, in
     assert plans.search_files(root, "詳細の本文") == {"p.detail.md"}
     assert plans.resolve_under_root(root, "p.detail.md") is not None
     assert plans.resolve_under_root(root, "note.txt") is None
+
+
+def test_absent_root_is_listed_without_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """計画を1件も保存していないrootは通常の状態として扱い、警告を返さず一覧を空とする。"""
+    del index_path
+
+    entries, warning = plans.scan_files(tmp_path / "missing", "local-host")
+
+    assert not entries
+    assert warning is None
+
+
+def test_non_directory_root_is_reported_as_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """rootが通常ファイルの場合は、利用できない理由を警告として返す。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.write_text("x", encoding="utf-8")
+
+    entries, warning = plans.scan_files(root, "local-host")
+
+    assert not entries
+    assert warning == "rootがディレクトリではありません"
 
 
 @pytest.mark.parametrize("rel", ["../outside.md", "a/../../outside.md", "/etc/passwd.md"])
