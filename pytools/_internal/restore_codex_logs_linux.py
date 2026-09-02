@@ -50,12 +50,15 @@ def run(
     codex_dir = (home_dir or pathlib.Path.home()) / ".codex"
     pairs = _database_pairs(codex_dir, shm_root)
     states = {home_path: _home_state(home_path, target_path) for home_path, target_path in pairs}
-    unrelated = [path for path, state in states.items() if state == "unrelated"]
+    unrelated = [(home_path, target_path) for home_path, target_path in pairs if states[home_path] == "unrelated"]
     if unrelated:
+        reasons = ", ".join(
+            f"{home_path}（{_unrelated_reason(home_path, target_path)}）" for home_path, target_path in unrelated
+        )
         logger.warning(
             log_format.format_status(
                 "codex-logs",
-                "管理対象外のpathがあるため全体を変更せず復元を延期: " + ", ".join(map(str, unrelated)),
+                "管理対象外のpathがあるため全体を変更せず復元を延期: " + reasons,
             )
         )
         return False
@@ -145,6 +148,28 @@ def _home_state(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
     if not home_path.exists():
         return "missing"
     return "unrelated"
+
+
+def _unrelated_reason(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
+    """管理対象外へ分類した根拠を、symlinkの参照先又は実体の種別で表す。"""
+    if home_path.is_symlink():
+        return f"symlinkの参照先が管理対象と異なる: 参照先={home_path.readlink()}・管理対象={target_path}"
+    return f"通常ファイルでもsymlinkでもない実体: {_path_kind(home_path)}"
+
+
+def _path_kind(path: pathlib.Path) -> str:
+    """通常ファイルでもsymlinkでもない実体の種別を表す。"""
+    if path.is_dir():
+        return "ディレクトリ"
+    if path.is_fifo():
+        return "FIFO"
+    if path.is_socket():
+        return "ソケット"
+    if path.is_block_device():
+        return "ブロックデバイス"
+    if path.is_char_device():
+        return "キャラクターデバイス"
+    return "種別を判別できない実体"
 
 
 def _running_codex_processes() -> tuple[str, ...]:
