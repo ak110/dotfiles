@@ -790,6 +790,11 @@ class TestPytoolsCommandLaunchFormBlock:
             f"{_UVX} {_PYTOOLS_COMMAND} --current",
             f"{_UV_TOOL_RUN} --offline {_PYTOOLS_COMMAND} --help",
             f"{_UVX} -q {_PYTOOLS_COMMAND}",
+            f"{_UV_TOOL_RUN} --python python3 {_PYTOOLS_COMMAND}",
+            f"{_UV_TOOL_RUN} --from x {_PYTOOLS_COMMAND}",
+            f"{_UVX} --with pkg {_PYTOOLS_COMMAND}",
+            f"{_UVX} --from=x {_PYTOOLS_COMMAND}",
+            f"{_UVX} --isolated --from x {_PYTOOLS_COMMAND}",
         ],
     )
     def test_blocks_unresolvable_launch_form(self, invocation: str):
@@ -818,6 +823,20 @@ class TestPytoolsCommandLaunchFormBlock:
         )
         assert result.returncode == 2
         assert _PYTOOLS_COMMAND in result.stderr
+
+    def test_allows_command_name_in_launched_command_arguments(self):
+        """起動されるコマンドの引数位置にある配布コマンド名は、起動形の対象にしない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": self._TARGET,
+                    "content": f"```bash\n{_UVX} pyfltr run {_PYTOOLS_COMMAND}\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
 
     def test_direct_command_name_is_allowed(self):
         result = _run(
