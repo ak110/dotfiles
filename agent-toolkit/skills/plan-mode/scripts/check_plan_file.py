@@ -231,6 +231,18 @@ def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
     headings = _plan_format.extract_headings(text)
     names = {heading.text for heading in headings if heading.level == 2}
     warnings: list[_ClassifiedWarning] = []
+    if _plan_format.PLAN_H2_LEGACY_AGENT_JUDGMENT in names:
+        warnings.append(
+            ("migration", "エージェント提案の詳細の見出しが旧形式である。新規作成・改訂では`## エージェント提案詳細`へ移行する")
+        )
+    if _plan_format.has_legacy_history_user_event(text):
+        warnings.append(
+            (
+                "migration",
+                "変更履歴のユーザー発言見出しが旧形式である。新規作成・改訂では"
+                f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`へ移行する",
+            )
+        )
     if _plan_format.PLAN_H2_LEGACY_HISTORY in names:
         warnings.append(("migration", "変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する"))
     if _plan_format.PLAN_H2_LEGACY_PROGRESS in names:
@@ -369,6 +381,7 @@ def check(
     二ファイル形式ではメインのcanonical固定H2により新規書式と旧二ファイル形式を分ける。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
     種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
+    `## 進捗ログ`の内容行は実装工程の記録であり、起草時には置かないため、新規作成でだけ拒否する。
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -382,6 +395,8 @@ def check(
     else:
         format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
+    if reject_legacy_format and _plan_format.has_progress_log_rows(text):
+        errors.append(f"`## {_plan_format.PLAN_H2_PROGRESS}`は起草時に内容行を置かない")
     warnings: list[str] = []
     for kind, message in classified_warnings:
         if reject_legacy_format and kind == "migration":

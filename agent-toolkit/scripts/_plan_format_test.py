@@ -7,312 +7,34 @@ import pytest
 from pyfltr.colloquial import check as _colloquial_check
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
-_BASE = "0123456789012345678901234567890123456789"
-
-_HUMAN_SECTION = """# 計画の主題
-
-## 概要
-
-成果を得る。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `/repo`
-- 作業種別: 通常変更
-- ベースコミット: `{base}`
-
-## 実施内容
-
-| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
-
-### 合意済みの除外・保持
-
-| 合意内容 | 対象と箇所 | 素材・要求参照 | 確認方法 |
-| --- | --- | --- | --- |
-| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |
-| 対象外の挙動を変更しない | 対象外の入力処理 | P-001, R-P-001-002 | 回帰テストを実行する |
-
-## 提示素材
-
-| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
-| --- | --- | --- | --- | --- |
-| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
-| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |
-
-| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
-| --- | --- | --- | --- | --- | --- | --- |
-| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |
-| R-P-001-002 | P-001 | 対象外の検査を追加しない。 | 不採用 | 非該当 | 対象外の検査 | 実装上不要であるため。 |
-| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |
-
-## 変更履歴
-
-| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
-| --- | --- | --- | --- | --- |
-| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
-
-## 恒久化・リファクタリング内容
-
-### 恒久化
-
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |
-
-### リファクタリング
-
-| 項目 | 内容 |
-| --- | --- |
-| 対象 | 対象ファイル。 |
-| 現状の問題 | 重複がある。 |
-| 対応 | 共通化する。 |
-| 本計画に含めるか | 含める。 |
-
-### 類似見直し
-
-| 項目 | 内容 |
-| --- | --- |
-| 母集団 | リポジトリ全体。 |
-| 点検観点 | 同じ重複が残るか。 |
-| 該当箇所 | 対象ファイル。 |
-"""
-
-_IMPLEMENTER_SECTION = """
-## 実装資料
-
-### ファイル群別の変更説明
-
-対象の構造と検査を更新する。
-
-## 完了条件
-
-基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
-
-## 進捗ログ
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
-
-_BUG_CAUSE_TABLE = (
-    "| 要因系統 | L1 現象 | L2 判断 | L3 構造 | L4 システム |\n"
-    "| --- | --- | --- | --- | --- |\n"
-    "| 作り込み要因 | 古い値を返した。 | 旧値でよいと判断した。 | "
-    "更新時に破棄しない構造だった。 | 更新と破棄を別管理する設計だった。 |\n"
-    "| 見逃し要因 | 更新後も検出されなかった。 | 問題ないと判断した。 | "
-    "再実行の検査が働かなかった。 | 再実行検査を必須にする規範がなかった。 |"
-)
-
-_BUG_INVESTIGATION_TABLE = """| 項目 | 内容 |
-| --- | --- |
-| 観測事象 | 発生条件は更新後の再実行であり、実際値は旧値のままである。 |
-| 期待する契約 | 更新後の値を返す。 |
-| 直接的原因 | キャッシュを破棄していない。 |
-| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |
-| 原因分析の根拠 | 再現ログと導入コミットを確認した。 |
-| 原因分析の品質確認 | 人物、対象、危険箇所を変えても成立することを確認した。 |
-| 類似見直しの観点 | 同じキャッシュ利用箇所が残るか。 |
-| 類似見直し結果 | 対象ファイル。 |
-| 是正処置 | 破棄処理を追加する。 |
-| 横展開処置 | 同型の利用箇所を修正する。 |
-| 再発防止処置 | 回帰テストを追加する。 |
-| 設計意図の記録 | 破棄契約をコメントへ残す。 |"""
-
-_BUG_SECTION = f"""
-## バグ調査結果
-
-### バグ調査結果: 対象の陳腐化
-
-{_BUG_CAUSE_TABLE}
-
-{_BUG_INVESTIGATION_TABLE}
-"""
-
-_BUG_FILE_CONTENT = "# 計画の主題\n\n" + _BUG_SECTION.split("## バグ調査結果\n\n", 1)[1]
-
-_LEGACY_BUG_FILE_CONTENT = (
-    _BUG_FILE_CONTENT.replace(f"{_BUG_CAUSE_TABLE}\n\n", "")
-    .replace(
-        "| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n",
-        "| 混入要因 | 破棄経路を設計に含めなかった。 |\n"
-        "| 動機的要因 | 更新頻度が低いと仮定した。 |\n"
-        "| 見逃し原因 | 再実行の回帰テストが無かった。 |\n"
-        "| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n",
-    )
-    .replace(
-        "| 原因分析の品質確認 | 人物、対象、危険箇所を変えても成立することを確認した。 |\n",
-        "",
-    )
-)
-
-
-def _plan(*, base: str = _BASE, bug: bool = False) -> str:
-    """固定構造を満たす計画本文を返す。"""
-    human = _HUMAN_SECTION.format(base=base)
-    if bug:
-        human = human.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応")
-        human = human.replace("\n## 恒久化・リファクタリング内容", f"{_BUG_SECTION}\n## 恒久化・リファクタリング内容")
-    return human + _IMPLEMENTER_SECTION
-
-
-_VALID_CONTENT = _plan()
-
-_HUMAN_PARTIAL_REASON = "対象外の入力経路は変更しない。要求範囲に含まれないため。"
-
-_HUMAN_MAIN_CONTENT = f"""# 計画の主題
-
-## 概要
-
-対象の契約を更新する。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `/repo`
-- 関連フィードバック:
-  - 20260817-223603-001.md: 入力の境界を追加確認する
-  - 20260817-223603-002.md: 保留中の要求を確認する
-- 作業種別: 通常変更
-- ベースコミット: `作成時点の参照値`
-
-## 実施内容
-
-| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |
-| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |
-| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | {_HUMAN_PARTIAL_REASON} |
-
-## エージェント判断
-
-| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |
-| --- | --- | --- | --- | --- |
-| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |
-
-## 変更履歴（計画時）
-
-### ユーザー発言: 本セッションの直接指示
-
-```text
-公開契約に必要な変更だけを実施する。
-```
-
-### レビューで確定した変更
-
-レビューで確認した対象範囲を反映した。
-
-## 検証区分
-
-| 区分 | 検証コマンド |
-| --- | --- |
-| レーン内検証 | `pytest` |
-| 統合後検証 | `make test` |
-
-## 終端工程
-
-なし
-
-## 進捗ログ（実行時）
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
-
-_HUMAN_PARTIAL_ROW = (
-    f"| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | {_HUMAN_PARTIAL_REASON} |"
-)
-
-_HUMAN_DETAIL_CONTENT = """## 恒久化・リファクタリング内容
-
-### 恒久化
-
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 公開契約の境界を維持する | 実装時調査 | 対象モジュール | 変更後も同じ契約を確認するため。 |
-
-### リファクタリング
-
-| 項目 | 内容 |
-| --- | --- |
-| 対象 | 対象モジュール。 |
-| 現状の問題 | 境界が分散している。 |
-| 対応 | 判定を統合する。 |
-| 本計画に含めるか | 含める。 |
-
-### 類似見直し
-
-| 項目 | 内容 |
-| --- | --- |
-| 母集団 | 対象モジュール。 |
-| 点検観点 | 公開契約への影響。 |
-| 該当箇所 | 該当なし。 |
-
-## 実装資料
-
-### 実装単位
-
-| 実装単位 | 目的 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- |
-| 契約境界の更新 | 公開契約の判定を更新する | なし | 1 | `pytest` |
-| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |
-
-### 調査結果
-
-検索母集団は対象モジュールと関連テストである。
-検索コマンド: `rg -n "公開契約|境界" agent-toolkit`
-検索結果: 一致は2箇所で、対象外の接続面は不一致として除外した。
-
-### 確定文面
-
-```markdown
-公開契約の判定は対象境界に限定する。
-```
-
-## 完了条件
-
-近接検証と統合後検証が成功し、確定文面を対象ファイルへ反映する。
-"""
-
-
-def _legacy_plan() -> str:
-    """旧形式の素材と合意表を持つ互換fixtureを返す。"""
-    start = _VALID_CONTENT.index("## 提示素材")
-    end = _VALID_CONTENT.index("## 変更履歴")
-    legacy_materials = """## 提示素材
-
-P-001:
-
-```text
-診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
-```
-
-"""
-    content = _VALID_CONTENT[:start] + legacy_materials + _VALID_CONTENT[end:]
-    content = content.replace(
-        "| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |\n"
-        "| --- | --- | --- | --- |\n"
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
-        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
-        "| --- | --- | --- |\n"
-        "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |",
-    )
-    content = content.replace("素材・要求参照", "原文参照")
-    content = content.replace("P-001, R-P-001-001", "P-001")
-    return content
-
-
-_LEGACY_CONTENT = _legacy_plan()
+_BASE = _plan_fixture.BASE_COMMIT
+
+_VALID_CONTENT = _plan_fixture.single_file_plan()
+_BUG_CONTENT = _plan_fixture.single_file_plan(bug=True)
+_LEGACY_CONTENT = _plan_fixture.legacy_materials_single_file_plan()
+
+_BUG_SECTION = _plan_fixture.inline_bug_section()
+_BUG_CAUSE_TABLE = _plan_fixture.bug_cause_table()
+_BUG_INVESTIGATION_TABLE = _plan_fixture.bug_investigation_table()
+_BUG_FILE_CONTENT = _plan_fixture.bug_file()
+_LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(legacy=True)
+
+_HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_feedback=_plan_fixture.FEEDBACK_FILES)
+_HUMAN_DETAIL_CONTENT = _plan_fixture.human_detail()
+_HUMAN_PARTIAL_ROW = _plan_fixture.FEEDBACK_ACTION_ROW
+_HUMAN_PARTIAL_REASON = _plan_fixture.FEEDBACK_ACTION_REASON
+
+_VALID_MAIN_CONTENT = _plan_fixture.two_file_main()
+_VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
 
 
 def test_canonical_plan_passes_structure_check() -> None:
     """通常変更とバグ対応の正規形はいずれも構造検査を通過する。"""
     assert not _plan_format.check_plan_structure(_VALID_CONTENT)
-    assert not _plan_format.check_plan_structure(_plan(bug=True))
+    assert not _plan_format.check_plan_structure(_BUG_CONTENT)
 
 
 def test_human_readable_main_and_detail_pass_structure_check() -> None:
@@ -357,7 +79,7 @@ def test_human_readable_feedback_and_units_do_not_expose_internal_ids() -> None:
 def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
     """人間向け形式の採用以外の行は自足した理由を持つ。"""
     content = _HUMAN_MAIN_CONTENT.replace(
-        "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
+        _plan_fixture.PROPOSAL_ACTION_ROW,
         "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | - |",
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
@@ -365,16 +87,41 @@ def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
 
 
 def test_human_readable_history_requires_canonical_user_heading() -> None:
-    """新規書式の直接入力は`ユーザー発言:`見出しと空でない逐語本文を持つ。"""
-    content = _HUMAN_MAIN_CONTENT.replace("### ユーザー発言: 本セッションの直接指示", "### 利用者からの確認", 1)
+    """新規書式の直接入力は連番のユーザー発言見出しと空でない逐語本文を持つ。"""
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, "### 利用者からの確認", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("`### ユーザー発言:`見出し" in error for error in errors), errors
+    assert any(f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}1`見出し" in error for error in errors), errors
+
+
+def test_human_readable_history_accepts_legacy_user_heading() -> None:
+    """要旨を見出しへ書く旧書式のユーザー発言を読み取り互換として受理する。"""
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, _plan_fixture.LEGACY_USER_EVENT_HEADING, 1)
+    assert not _plan_format.check_plan_main_structure(content)[1]
+    assert _plan_format.has_legacy_history_user_event(content)
+    assert not _plan_format.has_legacy_history_user_event(_HUMAN_MAIN_CONTENT)
+
+
+@pytest.mark.parametrize("heading", ["### ユーザー発言0", "### ユーザー発言2"])
+def test_human_readable_history_rejects_invalid_user_event_sequence(heading: str) -> None:
+    """連番が1から欠番なく昇順に並ばないユーザー発言見出しを拒否する。"""
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, heading, 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert errors, errors
+
+
+def test_human_readable_history_accepts_sequential_user_events() -> None:
+    """連番のユーザー発言見出しを複数置いた変更履歴を受理する。"""
+    second = f"### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}2\n\n```text\n追加の指示。\n```\n\n"
+    content = _HUMAN_MAIN_CONTENT.replace(
+        f"{_plan_fixture.HISTORY_REVIEW_HEADING}\n", f"{second}{_plan_fixture.HISTORY_REVIEW_HEADING}\n", 1
+    )
+    assert not _plan_format.check_plan_main_structure(content)[1]
 
 
 def test_human_readable_partial_user_instruction_counts_as_adopted() -> None:
     """ユーザー指示の部分採用も採用済みとして扱う。"""
     content = _HUMAN_MAIN_CONTENT.replace(
-        "| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |",
+        _plan_fixture.USER_ACTION_ROW,
         "| 公開契約に必要な変更を実装する | ユーザー指示 | 部分採用 | - |",
         1,
     )
@@ -449,7 +196,7 @@ def test_human_readable_review_origin_rejects_missing_non_adopted_reason(tmp_pat
 @pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
 def test_human_readable_agent_proposal_requires_reason_for_every_decision(decision: str) -> None:
     """エージェント提案は全採否で空でもハイフンでもない根拠を持つ。"""
-    original = "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |"
+    original = _plan_fixture.PROPOSAL_ACTION_ROW
     accepted = _HUMAN_MAIN_CONTENT.replace(
         original,
         f"| 類似するが対象外の記述は変更しない | エージェント提案 | {decision} | 観測可能な根拠。 |",
@@ -466,7 +213,7 @@ def test_human_readable_agent_proposal_requires_reason_for_every_decision(decisi
 def test_human_readable_user_origin_applies_general_decision_rule(decision: str) -> None:
     """一般由来は採用だけハイフンとし、ほかの採否では理由を要求する。"""
     root = "-" if decision == "採用" else "実施しない範囲と理由。"
-    original = "| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |"
+    original = _plan_fixture.USER_ACTION_ROW
     accepted = _HUMAN_MAIN_CONTENT.replace(
         original,
         f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {root} |",
@@ -487,8 +234,8 @@ def test_human_readable_user_origin_applies_general_decision_rule(decision: str)
 def test_human_readable_action_rejects_independent_exclusion_table() -> None:
     """人間向けメイン側は実施内容と別の除外・保持表を持たない。"""
     content = _HUMAN_MAIN_CONTENT.replace(
-        "\n## エージェント判断\n",
-        "\n### 合意済みの除外・保持\n\n対象外の類似箇所は維持する。\n\n## エージェント判断\n",
+        f"\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
+        f"\n### 合意済みの除外・保持\n\n対象外の類似箇所は維持する。\n\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
         1,
     )
     errors = _plan_format.check_plan_main_structure(content)[1]
@@ -551,7 +298,7 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
         content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "P-001.md", 1)
     else:
         content = _HUMAN_MAIN_CONTENT.replace(
-            "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
+            _plan_fixture.PROPOSAL_ACTION_ROW,
             "| P-001 | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |",
             1,
         )
@@ -561,22 +308,22 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
 
 def test_human_readable_history_rejects_internal_identifier() -> None:
     """人間向け変更履歴は内部管理IDを含めず自然な記録を持つ。"""
-    content = _HUMAN_MAIN_CONTENT.replace("レビューで確認した対象範囲を反映した。", "P-001", 1)
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.HISTORY_REVIEW_BODY, "P-001", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any("`## 変更履歴`へ履歴・要求・実装単位の合成ID" in error for error in errors), errors
 
 
 def test_human_readable_main_accepts_external_identifiers_and_verbatim_ids() -> None:
     """通常の外部識別子と利用者発言の逐語文は合成IDとして誤拒否しない。"""
-    content = _HUMAN_MAIN_CONTENT.replace("公開契約に必要な変更を実装する", "MCP-toolとTLSのP-256を維持する", 1)
-    content = content.replace("公開契約に必要な変更だけを実施する。", "P-001という入力を変更しない。", 1)
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_ACTION_SUBJECT, "MCP-toolとTLSのP-256を維持する", 1)
+    content = content.replace(_plan_fixture.USER_EVENT_TEXT, "P-001という入力を変更しない。", 1)
     assert not _plan_format.check_plan_main_structure(content)[1]
 
 
 @pytest.mark.parametrize("external_id", ["TLS P-256", "TLSでP-256", "NIST P-256", "ECDSA P-256"])
 def test_human_readable_main_accepts_ambiguous_external_identifier(external_id: str) -> None:
     """外部仕様名と旧素材IDを区別できない完全トークンは誤拒否しない。"""
-    content = _HUMAN_MAIN_CONTENT.replace("公開契約に必要な変更を実装する", f"{external_id}を維持する", 1)
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_ACTION_SUBJECT, f"{external_id}を維持する", 1)
     assert not _plan_format.check_plan_main_structure(content)[1]
 
 
@@ -587,7 +334,7 @@ def test_human_readable_main_accepts_ambiguous_external_identifier(external_id: 
 def test_human_readable_main_rejects_internal_identifiers_before_japanese(internal_id: str) -> None:
     """日本語の助詞が続く場合も既存の合成IDを検出する。"""
     content = _HUMAN_MAIN_CONTENT.replace(
-        "公開契約に必要な変更を実装する",
+        _plan_fixture.USER_ACTION_SUBJECT,
         f"{internal_id}を実装する",
         1,
     )
@@ -630,7 +377,7 @@ def test_bug_cause_table_rows_pass_colloquial_check() -> None:
 
 def test_bug_file_structure_rejects_missing_fixed_row() -> None:
     """付属ファイルの固定12行表から行が欠けた場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace("| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n", "")
+    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.bug_row('根本原因')}\n", "")
     errors = _plan_format.check_bug_file_structure(content)
     assert any("固定12行" in error for error in errors), errors
 
@@ -638,7 +385,7 @@ def test_bug_file_structure_rejects_missing_fixed_row() -> None:
 def test_bug_file_structure_rejects_empty_content_cell() -> None:
     """付属ファイルの固定表で`内容`が空欄の場合を拒否する。"""
     content = _BUG_FILE_CONTENT.replace(
-        "| 直接的原因 | キャッシュを破棄していない。 |",
+        _plan_fixture.bug_row("直接的原因"),
         "| 直接的原因 |  |",
     )
     errors = _plan_format.check_bug_file_structure(content)
@@ -699,7 +446,7 @@ def test_optional_exclusion_section_may_be_absent() -> None:
     content = _VALID_CONTENT[:start] + _VALID_CONTENT[end:]
     # 除外表を欠くため、当該表でだけ被覆されていた採用要求の参照を`根拠`列へ追加して被覆を維持する。
     content = content.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001, R-P-002-001 |",
     )
     assert not _plan_format.check_plan_structure(content)
@@ -734,7 +481,7 @@ def test_history_review_rows_reject_duplicate_track_and_round() -> None:
         "| R01-conformance | レビュー指摘 | 追加の指摘。 | 1件を採用した。 | `## 変更履歴` |\n"
     )
     content = _VALID_CONTENT.replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n",
+        f"{_plan_fixture.HISTORY_USER_ROW}\n",
         review_rows,
         1,
     )
@@ -747,7 +494,7 @@ def test_history_review_rows_reject_invalid_identifier(review_id: str) -> None:
     """系統と正のラウンド番号を分離できないレビュー指摘IDを拒否する。"""
     review_row = f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |\n"
     content = _VALID_CONTENT.replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n",
+        f"{_plan_fixture.HISTORY_USER_ROW}\n",
         review_row,
         1,
     )
@@ -758,7 +505,7 @@ def test_history_review_rows_reject_invalid_identifier(review_id: str) -> None:
 def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:
     """旧形式の単一ファイルでは既存のレビュー指摘IDを読み取り互換として受理する。"""
     content = _VALID_CONTENT.replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        _plan_fixture.HISTORY_USER_ROW,
         "| C-002 | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
@@ -772,7 +519,7 @@ def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
     cells[empty_column] = ""
     review_row = f"| {' | '.join(cells)} |\n"
     content = _VALID_CONTENT.replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n",
+        f"{_plan_fixture.HISTORY_USER_ROW}\n",
         review_row,
         1,
     )
@@ -782,15 +529,15 @@ def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
 
 def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
     """バグ調査表は固定12行表を満たす場合だけ検出する。"""
-    content = _plan(bug=True)
+    content = _BUG_CONTENT
     assert _plan_format.has_legacy_bug_table(content)
-    invalid = content.replace("| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n", "")
+    invalid = content.replace(f"{_plan_fixture.bug_row('根本原因')}\n", "")
     assert not _plan_format.has_legacy_bug_table(invalid)
 
 
 def test_implementation_materials_allows_free_h3_composition() -> None:
     """実装資料配下では自由なH3構成を受理する。"""
-    content = _VALID_CONTENT.replace("### ファイル群別の変更説明", "### 実行方法\n\n手順。\n\n### 変更説明")
+    content = _VALID_CONTENT.replace(f"### {_plan_fixture.IMPLEMENTATION_H3}", "### 実行方法\n\n手順。\n\n### 変更説明")
     assert not _plan_format.check_plan_structure(content)
 
 
@@ -831,7 +578,7 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         (("- 作業種別: 通常変更", "- 作業種別: `通常変更`"), "バッククォートで囲まない"),
         (("- 対象リポジトリ: `/repo`", "- 対象リポジトリ: /repo"), "バッククォートで囲む"),
         (("- 作業種別: 通常変更", "- 作業種別: 改善"), "`作業種別`は"),
-        (("| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |\n", ""), "1行以上の内容が必要"),
+        ((f"{_plan_fixture.HISTORY_USER_ROW}\n", ""), "1行以上の内容が必要"),
         (
             ("| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |", "| ID | 起点 | 指摘内容 | 結論 | 同期先 |"),
             "`## 変更履歴`は",
@@ -839,37 +586,36 @@ def test_duplicate_fixed_table_is_rejected() -> None:
         (("| 日時 | 完了した工程 | 結果・特記事項 |", "| 日時 | 工程 | 結果 |"), "`## 進捗ログ`は"),
         (
             (
-                "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |",
+                _plan_fixture.EXCLUSION_ROWS[0],
                 "| 公開契約を維持する | 対象の公開API | P-999 | 差分を確認する |",
             ),
             "素材・要求参照が提示素材に無い",
         ),
         (
             (
-                "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+                _plan_fixture.TWO_FILE_ACTION_ROW,
                 "| 診断件数を2件から1件へ減らす | 採用 | 追加対応 | R-P-001-001 |",
             ),
             "`ユーザー指示との関係`は",
         ),
         (
             (
-                "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |",
+                _plan_fixture.EXCLUSION_ROWS[0],
                 "| 公開契約を維持する |  | P-002, R-P-002-001 | 差分を確認する |",
             ),
             "空cell",
         ),
-        (("### 類似見直し\n", "### 追加見直し\n"), "`### 類似見直し`は1件必要"),
-        (("| 母集団 | リポジトリ全体。 |", "| 対象 | リポジトリ全体。 |"), "3行表を置く"),
-        (("| 知見 | 出所 | 反映先 | 根拠 |", "| 項目 | 内容 |"), "4列表を置く"),
+        (("### 類似見直し\n", "### 追加見直し\n"), "固定見出し以外のH3は置かない"),
+        ((f"| {' | '.join(_plan_format.PLAN_PERMANENCE_TABLE_HEADER)} |", "| 項目 | 内容 |"), "4列表を置く"),
         (
-            ("| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |\n", ""),
+            (f"{_plan_fixture.PERMANENCE_ROW}\n", ""),
             "表に1行以上の内容が必要",
         ),
-        (("| 現状の問題 | 重複がある。 |\n", ""), "4行表を置く"),
+        ((f"{_plan_fixture.item_row('現状の問題')}\n", ""), "4行表を置く"),
         (("## 実装資料", "## 変更対象"), "固定H2は"),
         (
             (
-                "基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。",
+                _plan_fixture.COMPLETION_BODY,
                 "基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。\n\n#### 自由なH4",
             ),
             "H4以深の見出しは置かない",
@@ -906,34 +652,31 @@ def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
     assert any("空cell" in error for error in errors), errors
 
 
-def test_permanence_table_accepts_no_candidate_row() -> None:
-    """候補0件の理由を記載した1行の恒久化表を受理する。"""
-    no_candidate = "| 候補なし | 提示素材と調査結果 | 計画限り | 当該計画固有でない知見が無いため。 |"
+def test_permanence_section_accepts_prose_instead_of_table() -> None:
+    """候補0件の恒久化とリファクタリングは、固定表の代わりに理由を書いた地の文を受理する。"""
     content = _VALID_CONTENT.replace(
-        "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |",
-        no_candidate,
+        _plan_fixture.PERMANENCE_TABLE,
+        "提示素材と調査結果を確認し、当該計画固有でない知見は無かった。",
+        1,
     )
-    assert not _plan_format.check_plan_structure(content)
-
-
-def test_permanence_table_rejects_no_candidate_row_mixed_with_findings() -> None:
-    """候補なしの行と実在する知見の混在を拒否する。"""
-    row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
-    no_candidate = "| 候補なし | 提示素材と調査結果 | 計画限り | 当該計画固有でない知見が無いため。 |"
-    errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{no_candidate}\n{row}"))
-    assert any("`候補なし`の行だけを置く" in error for error in errors), errors
+    content = content.replace(
+        _plan_fixture.REFACTORING_TABLE,
+        "変更対象とその参照元を確認し、本計画の変更が是正を必要にする箇所は無かった。",
+        1,
+    )
+    assert not _plan_format.check_plan_structure(content), _plan_format.check_plan_structure(content)
 
 
 def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
     """予約値を含む通常の知見と別の知見を併記した表を受理する。"""
-    row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    row = _plan_fixture.PERMANENCE_ROW
     additional = "| 候補なし表記の検査を追加する | P-001 | 対象ファイル | 誤った記載を拒否するため。 |"
     assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
 
 
 def test_permanence_table_accepts_multiple_findings() -> None:
     """恒久化表は知見を複数行で記載できる。"""
-    row = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    row = _plan_fixture.PERMANENCE_ROW
     additional = "| 公開契約を維持する | P-001 | 計画限り | 既存文書へ記載済みのため。 |"
     assert not _plan_format.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
 
@@ -941,30 +684,30 @@ def test_permanence_table_accepts_multiple_findings() -> None:
 @pytest.mark.parametrize(
     "row",
     [
-        "| 更新経路を恒久化する | エージェント判断 |  | 後続の更新でも参照するため。 |",
-        "| 更新経路を恒久化する | エージェント判断 | 対象ファイル |",
+        "| 更新経路を恒久化する | エージェント提案詳細 |  | 後続の更新でも参照するため。 |",
+        "| 更新経路を恒久化する | エージェント提案詳細 | 対象ファイル |",
     ],
 )
 def test_permanence_table_rejects_empty_cells_and_column_mismatch(row: str) -> None:
     """恒久化表の空セルと列数不一致を拒否する。"""
-    original = "| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |"
+    original = _plan_fixture.PERMANENCE_ROW
     errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(original, row))
     assert any("空cellまたは列数不一致" in error for error in errors), errors
 
 
 def test_permanence_sections_reject_conclusion_words_only() -> None:
     """恒久化等の結論語だけの記載を検討の省略として拒否する。"""
-    content = _VALID_CONTENT[: _VALID_CONTENT.index("### 類似見直し")] + "### 類似見直し\n\n該当なし\n" + _IMPLEMENTER_SECTION
+    content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_TABLE, "該当なし", 1)
     errors = _plan_format.check_plan_structure(content)
-    assert any("結論語だけの記載は成立しない" in error for error in errors)
+    assert any("結論語だけの記載は成立しない" in error for error in errors), errors
 
 
-def test_structure_check_allows_bug_work_type_without_similar_review_table() -> None:
-    """構造検査はバグ対応へ3行表を一律に要求せず、バグ調査表との意味上の対応をレビュー担当へ委ねる。"""
-    content = _plan(bug=True)
-    reference = "### 類似見直し\n\n観点と結果はバグ調査表を正本として参照する。\n"
-    content = content[: content.index("### 類似見直し")] + reference + _IMPLEMENTER_SECTION
-    assert not _plan_format.check_plan_structure(content)
+def test_permanence_sections_accept_and_omit_retired_similar_review_heading() -> None:
+    """廃止した`### 類似見直し`を持つ既存計画と、置かない計画のいずれも受理する。"""
+    assert _plan_fixture.LEGACY_SIMILAR_REVIEW_SECTION in _VALID_CONTENT
+    assert not _plan_format.check_plan_structure(_VALID_CONTENT)
+    without = _VALID_CONTENT.replace(_plan_fixture.LEGACY_SIMILAR_REVIEW_SECTION, "", 1)
+    assert not _plan_format.check_plan_structure(without), _plan_format.check_plan_structure(without)
 
 
 @pytest.mark.parametrize(
@@ -1063,7 +806,7 @@ def test_structured_material_ids_preserve_full_namespace() -> None:
 def test_action_references_rejected_requirement_are_rejected() -> None:
     """採用系の実施内容の根拠に不採用要求を指定できない。"""
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-002 |",
         1,
     )
@@ -1078,7 +821,7 @@ def test_action_decisions_accept_all_declared_values(decision: str) -> None:
     root = "R-P-001-001" if decision in {"採用", "部分採用"} else "R-P-001-002を採用しない理由を記載する。"
     row = f"| 診断件数を2件から1件へ減らす | {decision} | {relation} | {root} |"
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         row,
         1,
     )
@@ -1095,7 +838,7 @@ def test_action_decisions_accept_all_declared_values(decision: str) -> None:
 def test_action_decision_rejects_unknown_value() -> None:
     """実施内容表の未定義な採否値を拒否する。"""
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 未定義 | 指示どおり | R-P-001-001 |",
         1,
     )
@@ -1106,7 +849,7 @@ def test_action_decision_rejects_unknown_value() -> None:
 def test_non_adopted_action_requires_free_text_reason() -> None:
     """非採用系の実施内容は要求IDでなく理由を根拠へ記載する。"""
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 |  |",
         1,
     )
@@ -1117,7 +860,7 @@ def test_non_adopted_action_requires_free_text_reason() -> None:
 def test_non_adopted_action_may_reference_rejected_requirement_in_reason() -> None:
     """非採用系の理由に存在する不採用要求IDを含めても拒否しない。"""
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 | R-P-001-002を不採用とする理由を記載する。 |",
         1,
     )
@@ -1133,7 +876,7 @@ def test_non_adopted_action_may_reference_rejected_requirement_in_reason() -> No
 def test_adopted_action_rejects_non_queue_relation() -> None:
     """採用系の実施内容に非該当の関係を指定できない。"""
     content = _VALID_CONTENT.replace(
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
+        _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 非該当 | R-P-001-001 |",
         1,
     )
@@ -1389,14 +1132,14 @@ def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> N
 
 def test_bug_section_requires_fixed_twelve_rows() -> None:
     """バグ調査表の12行から1行を削除した計画を拒否する。"""
-    content = _plan(bug=True).replace("| 根本原因 | 更新と破棄の対応付けが契約化されていない。 |\n", "")
+    content = _BUG_CONTENT.replace(f"{_plan_fixture.bug_row('根本原因')}\n", "")
     errors = _plan_format.check_plan_structure(content)
     assert any("固定12行の調査表" in error for error in errors)
 
 
 def test_bug_section_is_required_only_for_bug_work_type() -> None:
     """バグ対応でのみバグ調査結果を要求し、通常変更では置かせない。"""
-    missing = _plan(bug=True).replace(_BUG_SECTION, "\n")
+    missing = _BUG_CONTENT.replace(_BUG_SECTION, "\n")
     assert any("固定H2" in error for error in _plan_format.check_plan_structure(missing))
     extra = _VALID_CONTENT.replace("\n## 恒久化・リファクタリング内容", f"{_BUG_SECTION}\n## 恒久化・リファクタリング内容")
     assert any("作業種別が`通常変更`" in error for error in _plan_format.check_plan_structure(extra))
@@ -1405,7 +1148,7 @@ def test_bug_section_is_required_only_for_bug_work_type() -> None:
 def test_metadata_prefers_canonical_placement() -> None:
     """正規配置がある計画では旧配置を無視する。"""
     content = _VALID_CONTENT.replace(
-        "### ファイル群別の変更説明",
+        f"### {_plan_fixture.IMPLEMENTATION_H3}",
         f"### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n### ファイル群別の変更説明",
     )
     metadata, errors = _plan_format.parse_plan_metadata(content)
@@ -1514,6 +1257,28 @@ def test_duplicate_headings_checks_deep_headings_and_ignores_fences() -> None:
     assert "7行目と13行目" in errors[0]
 
 
+_PLAN_FILE_STANDARDS = (
+    pathlib.Path(__file__).resolve().parents[1] / "skills" / "plan-mode" / "references" / "plan-file-standards.md"
+)
+
+
+@pytest.mark.parametrize(
+    "expected",
+    [
+        *(f"`## {name}`" for name in _plan_format.PLAN_MAIN_H2_ORDER),
+        *(f"`## {name}`" for name in _plan_format.PLAN_DETAIL_H2_ORDER),
+        *(f"`### {name}`" for name in _plan_format.PLAN_PERMANENCE_H3),
+        f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`",
+    ],
+)
+def test_plan_file_standards_states_every_structure_constant(expected: str) -> None:
+    """構造検査が用いる見出し名を計画ファイル基準の本文が明記する。
+
+    実装だけが要件を持つ状態を避け、構造定数を改訂した場合に正本の追随漏れを検出する。
+    """
+    assert expected in _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+
+
 def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")
@@ -1523,113 +1288,10 @@ def test_agent_document_target_paths() -> None:
 
 # --- 新書式（計画2ファイル）の構造検査 ---
 
-_MAIN_CONTENT = """# 計画の主題
-
-## 概要
-
-成果を得る。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `/repo`
-- 作業種別: 通常変更
-- ベースコミット: `{base}`
-- 計画ファイル（詳細）: `sample.detail.md`
-
-## 実施内容
-
-| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
-
-## 提示素材
-
-| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
-| --- | --- | --- | --- | --- |
-| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
-
-| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
-| --- | --- | --- | --- | --- | --- | --- |
-| R-P-001-001 | P-001 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示を反映するため。 |
-
-## 変更履歴
-
-| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
-| --- | --- | --- | --- | --- |
-| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
-
-## 検証区分
-
-| 区分 | 検証コマンド |
-| --- | --- |
-| レーン内検証 | `pytest _plan_format_test.py` |
-| 統合後検証 | `make test` |
-
-## 終端工程
-
-なし
-
-## 進捗ログ
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
-
-_DETAIL_CONTENT = """## 恒久化・リファクタリング内容
-
-### 恒久化
-
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 更新経路を恒久化する | エージェント判断 | 対象ファイル | 後続の更新でも参照するため。 |
-
-### リファクタリング
-
-| 項目 | 内容 |
-| --- | --- |
-| 対象 | 対象ファイル。 |
-| 現状の問題 | 重複がある。 |
-| 対応 | 共通化する。 |
-| 本計画に含めるか | 含める。 |
-
-### 類似見直し
-
-| 項目 | 内容 |
-| --- | --- |
-| 母集団 | リポジトリ全体。 |
-| 点検観点 | 同じ重複が残るか。 |
-| 該当箇所 | 対象ファイル。 |
-
-## 実装資料
-
-### 実装単位
-
-| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- |
-| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |
-
-### ファイル群別の変更説明
-
-対象の構造と検査を更新する。
-
-## 完了条件
-
-基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
-"""
-
-_VALID_MAIN_CONTENT = _MAIN_CONTENT.format(base=_BASE)
-_VALID_DETAIL_CONTENT = _DETAIL_CONTENT
-
 
 def _canonical_main_content() -> str:
-    """新しい固定H2と、エージェント提案が無い場合の判断節を持つメイン本文を返す。"""
-    content = _VALID_MAIN_CONTENT.replace(
-        "\n## 提示素材\n",
-        "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
-        1,
-    )
-    return content.replace("## 変更履歴", "## 変更履歴（計画時）", 1).replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
+    """新しい固定H2と、エージェント提案が無い場合の提案詳細節を持つメイン本文を返す。"""
+    return _plan_fixture.to_canonical_main(_VALID_MAIN_CONTENT)
 
 
 def _canonical_human_main_content() -> str:
@@ -1658,12 +1320,13 @@ def test_main_structure_requires_judgment_for_canonical_headings() -> None:
         "## 進捗ログ", "## 進捗ログ（実行時）", 1
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
-    assert any("`## エージェント判断`が無い" in error for error in errors), errors
+    assert any(f"`## {_plan_format.PLAN_H2_AGENT_JUDGMENT}`が無い" in error for error in errors), errors
 
 
 def test_main_structure_requires_none_when_no_agent_proposal_exists() -> None:
     """提案行が無い判断節へ任意の説明文を置かない。"""
-    content = _canonical_main_content().replace("## エージェント判断\n\nなし", "## エージェント判断\n\n調査結果を記載する", 1)
+    judgment = f"## {_plan_format.PLAN_H2_AGENT_JUDGMENT}"
+    content = _canonical_main_content().replace(f"{judgment}\n\nなし", f"{judgment}\n\n調査結果を記載する", 1)
     _work_type, errors = _plan_format.check_plan_main_structure(content)
     assert any("エージェント提案が無い場合は`なし`" in error for error in errors), errors
 
@@ -1674,7 +1337,7 @@ def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> 
     assert not errors, errors
 
     missing = _canonical_human_main_content().replace(
-        "| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |\n",
+        f"{_plan_fixture.JUDGMENT_ROW}\n",
         "",
         1,
     )
@@ -1690,7 +1353,7 @@ def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> 
             "| 実施内容 | 観測事象 | ユーザー要求との関係 | 根拠 |",
         ),
         (
-            "| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |",
+            _plan_fixture.JUDGMENT_ROW,
             "| 類似するが対象外の記述は変更しない |  | 対象外。 | 維持する。 | 実測。 |",
         ),
     ],
@@ -1701,14 +1364,14 @@ def test_human_main_structure_rejects_judgment_table_shape_or_empty_cells(
     """判断表の列不足と空cellを拒否する。"""
     content = _canonical_human_main_content().replace(*mutation, 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("`## エージェント判断`" in error for error in errors), errors
+    assert any(f"`## {_plan_format.PLAN_H2_AGENT_JUDGMENT}`" in error for error in errors), errors
 
 
 @pytest.mark.parametrize("track", _plan_format.PLAN_HISTORY_TRACK_VALUES)
 def test_main_history_accepts_review_table_track_values(track: str) -> None:
     """新形式の変更履歴はレビュー表の正規trackを受理する。"""
     content = _canonical_main_content().replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        _plan_fixture.HISTORY_USER_ROW,
         f"| R1-{track} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
@@ -1719,7 +1382,7 @@ def test_main_history_accepts_review_table_track_values(track: str) -> None:
 def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track() -> None:
     """旧形式では旧trackを残せるが、正規値に無いハイフン付き系統名は拒否する。"""
     accepted = _VALID_CONTENT.replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        _plan_fixture.HISTORY_USER_ROW,
         "| R1-conformance | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
@@ -1734,7 +1397,7 @@ def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track(
 def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: str) -> None:
     """旧二ファイル計画に残るレビューIDと系統名を読み取り互換で受理する。"""
     content = _VALID_MAIN_CONTENT.replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        _plan_fixture.HISTORY_USER_ROW,
         f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
@@ -1746,7 +1409,7 @@ def test_legacy_two_file_main_accepts_legacy_review_ids_and_tracks(review_id: st
 def test_new_main_rejects_legacy_history_review_identifier(review_id: str) -> None:
     """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
     content = _canonical_main_content().replace(
-        "| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |",
+        _plan_fixture.HISTORY_USER_ROW,
         f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
         1,
     )
@@ -1757,7 +1420,7 @@ def test_new_main_rejects_legacy_history_review_identifier(review_id: str) -> No
 def test_detail_structure_requires_implementation_units() -> None:
     """detail側の`## 実装資料`直下に実装単位表を必須とする。"""
     start = _VALID_DETAIL_CONTENT.index("### 実装単位")
-    end = _VALID_DETAIL_CONTENT.index("### ファイル群別の変更説明")
+    end = _VALID_DETAIL_CONTENT.index(f"### {_plan_fixture.IMPLEMENTATION_H3}")
     content = _VALID_DETAIL_CONTENT[:start] + _VALID_DETAIL_CONTENT[end:]
     errors = _plan_format.check_plan_detail_structure(content, "通常変更")
     assert any("`### 実装単位`を1件置く" in error for error in errors), errors
@@ -1786,8 +1449,8 @@ def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
     """複数単位と先行依存を持つ正規形を受理する。"""
     second = "| U-002 | 回帰検証を追加する | U-001 | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
-        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n",
-        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n" + second,
+        f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n",
+        f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n" + second,
     )
     assert not _plan_format.check_plan_detail_structure(content, "通常変更")
 
@@ -1825,7 +1488,7 @@ def test_detail_structure_rejects_dependency_not_preceding_integration_order() -
     first = "| U-001 | 診断件数を更新する | U-002 | 1 | `pytest _plan_format_test.py` |\n"
     second = "| U-002 | 回帰検証を追加する | なし | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
-        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |\n",
+        f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n",
         first + second,
     )
     errors = _plan_format.check_plan_detail_structure(content, "通常変更")
@@ -1835,19 +1498,17 @@ def test_detail_structure_rejects_dependency_not_preceding_integration_order() -
 def test_detail_structure_accepts_legacy_implementation_unit_column() -> None:
     """既存計画の6列表を読み取り互換として受理する。"""
     legacy = _VALID_DETAIL_CONTENT.replace(
-        "| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |\n"
-        "| --- | --- | --- | --- | --- |\n"
-        "| U-001 | 診断件数を更新する | なし | 1 | `pytest _plan_format_test.py` |",
+        _plan_fixture.TWO_FILE_UNITS_TABLE,
         "| 単位ID | 目的 | 対象の実施内容 | 先行依存 | 統合順 | 近接検証 |\n"
         "| --- | --- | --- | --- | --- | --- |\n"
-        "| U-001 | 診断件数を更新する | 任意の旧値 | なし | 1 | `pytest _plan_format_test.py` |",
+        f"| U-001 | 診断件数を更新する | 任意の旧値 | なし | 1 | {_plan_fixture.VERIFICATION_COMMAND} |",
     )
     assert not _plan_format.check_plan_detail_structure(legacy, "通常変更")
 
 
 def test_main_structure_requires_detail_metadata_field() -> None:
     """計画ファイル（メイン）の計画メタ情報は詳細参照を末尾へ含む5項目にする。"""
-    content = _VALID_MAIN_CONTENT.replace("- 計画ファイル（詳細）: `sample.detail.md`\n", "")
+    content = _VALID_MAIN_CONTENT.replace(f"- {_plan_format.PLAN_METADATA_DETAIL_FIELD}: `sample.detail.md`\n", "")
     _work_type, errors = _plan_format.check_plan_main_structure(content)
     assert any("この順序で1行ずつ置く" in error for error in errors), errors
 
@@ -1855,7 +1516,7 @@ def test_main_structure_requires_detail_metadata_field() -> None:
 def test_main_structure_rejects_missing_verification_table() -> None:
     """メイン側の`## 検証区分`は固定2行2列表にする。"""
     content = _VALID_MAIN_CONTENT.replace(
-        "| レーン内検証 | `pytest _plan_format_test.py` |\n| 統合後検証 | `make test` |\n",
+        _plan_fixture.VERIFICATION_TABLE,
         "",
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
@@ -1864,7 +1525,9 @@ def test_main_structure_rejects_missing_verification_table() -> None:
 
 def test_main_structure_rejects_empty_verification_command() -> None:
     """`## 検証区分`の各行に空の検証コマンドを置けない。"""
-    content = _VALID_MAIN_CONTENT.replace("| 統合後検証 | `make test` |", "| 統合後検証 |  |")
+    content = _VALID_MAIN_CONTENT.replace(
+        f"| {_plan_format.PLAN_VERIFICATION_TABLE_ROWS[1]} | {_plan_fixture.INTEGRATION_COMMAND} |", "| 統合後検証 |  |"
+    )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
     assert any("空の検証コマンドがある" in error for error in errors), errors
 

@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 
 import _fork_runner
+import _plan_fixture
 import _plan_format
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
@@ -82,114 +83,12 @@ def _run_codex_patch(
 
 def _plan_content() -> str:
     """人間向け計画ファイル（メイン）の正規形の計画を返す。"""
-    return """# 計画の主題
-
-## 概要
-
-成果。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `/repo`
-- 関連フィードバック: なし
-- 作業種別: 通常変更
-- ベースコミット: `作成時点の参照値`
-
-## 実施内容
-
-| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 対象を更新する | ユーザー指示 | 採用 | - |
-| 対象外の類似箇所は維持する | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |
-
-## エージェント判断
-
-| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |
-| --- | --- | --- | --- | --- |
-| 対象外の類似箇所は維持する | 影響なし。 | 対象外。 | 維持する。 | 調査済み。 |
-
-## 変更履歴（計画時）
-
-### ユーザー発言: 本セッションの直接指示
-
-```text
-対象を更新する。
-```
-
-### レビューで確定した変更
-
-レビューで確定した対象を反映した。
-
-## 検証区分
-
-| 区分 | 検証コマンド |
-| --- | --- |
-| レーン内検証 | `pytest` |
-| 統合後検証 | `make test` |
-
-## 終端工程
-
-なし
-
-## 進捗ログ（実行時）
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
+    return _plan_fixture.human_main()
 
 
 def _detail_content() -> str:
     """人間向け計画ファイル（詳細）の正規形を返す。"""
-    return """## 恒久化・リファクタリング内容
-
-### 恒久化
-
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 更新経路を恒久化する | 実装時調査 | 対象モジュール | 公開契約の境界を維持するため。 |
-
-### リファクタリング
-
-| 項目 | 内容 |
-| --- | --- |
-| 対象 | 対象モジュール。 |
-| 現状の問題 | 更新経路が分散している。 |
-| 対応 | 判定を統合する。 |
-| 本計画に含めるか | 含める。 |
-
-### 類似見直し
-
-| 項目 | 内容 |
-| --- | --- |
-| 母集団 | 対象モジュール。 |
-| 点検観点 | 公開契約への影響。 |
-| 該当箇所 | 該当なし。 |
-
-## 実装資料
-
-### 実装単位
-
-| 実装単位 | 目的 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- |
-| 契約境界の更新 | 公開契約の判定を更新する | なし | 1 | `pytest` |
-
-### 調査結果
-
-検索母集団は対象モジュールと関連テストである。
-検索コマンド: `rg -n "公開契約|境界" agent-toolkit`
-検索結果: 一致は2箇所で、対象外の接続面は不一致として除外した。
-
-### 確定文面
-
-```markdown
-公開契約の判定は対象境界に限定する。
-```
-
-## 完了条件
-
-近接検証と統合後検証が成功し、確定文面を対象ファイルへ反映する。
-"""
+    return _plan_fixture.human_detail()
 
 
 class TestPlanPostWrite:
@@ -227,7 +126,8 @@ class TestPlanPostWrite:
         content = _plan_content()
         plan.write_text(content, encoding="utf-8")
         detail = plan.with_name("flexible.detail.md")
-        detail_content = _detail_content().replace("### 実装単位", "### 実行方法\n\n手順。\n\n### 実装単位")
+        units_h3 = f"### {_plan_format.PLAN_IMPLEMENTATION_UNITS_H3}"
+        detail_content = _detail_content().replace(units_h3, f"### 実行方法\n\n手順。\n\n{units_h3}")
         detail.write_text(detail_content, encoding="utf-8")
         result = _run(
             {

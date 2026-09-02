@@ -17,7 +17,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
 固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
-計画メタ情報の4項目と記法、計画単位のエージェント判断表（5項目）を含む
+計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
 フェンス整合、参照実在は
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
