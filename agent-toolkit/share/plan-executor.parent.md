@@ -14,7 +14,9 @@
 - レーン専用worktree及びレーンmanaged-tempの絶対パス
 - pickerが確定した順序を保持したフィードバックファイル名一覧
 - フィードバック固有の処理順、公開、確認又は検証指示
-- 複製元、対象外worktree、commit可、ffマージ可、所有資源の回収可、push不可という権限
+- 複製元、対象外worktree、commit可、ffマージ可、所有資源の回収可、作業対象リポジトリへのpush不可という権限。
+  `agent-toolkit/rules/02-agent-operations.md`「対象リポジトリとキュー管理リポジトリの区別」節のとおり、
+  `atk`がキュー管理リポジトリへ行う反映は当該権限の対象外である旨も渡す
 
 計画レビューの指摘管理表は渡さない。同表は計画の確定までに用いる記録であり、実装担当の入力ではない。
 実装担当が扱うのは実装レビューの指摘管理表だけとし、その受領条件は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`が定める。
