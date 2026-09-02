@@ -28,7 +28,8 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(model_type, prompt, cwd)`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む
   - `start`・`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
-  - モデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start(model_type, prompt, cwd, exclude_session_id=<失敗したsession_id>)`を呼ぶ。サーバーは当該sessionが使った候補を除外集合へ加え、残る候補の先頭で新しいsessionを開始する。サーバーは可用性の失敗を自ら判定しないため、次の候補を使うかどうかは呼び出し側が`wait`の状態とエラー本文から判断する。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない
+  - 起動直後にモデル実行環境の可用性で終端した候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ再起動を重ねない
+  - 起動後の実行中にモデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start(model_type, prompt, cwd, exclude_session_id=<失敗したsession_id>)`を呼ぶ。サーバーは当該sessionが使った候補を除外集合へ加え、残る候補の先頭で新しいsessionを開始する。次の候補を使うかどうかは呼び出し側が`wait`の状態とエラー本文から判断する。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない
   - `exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。`start_explore`では、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件が一致しないsession IDを渡すと、サーバーはbackendの起動前にエラーを返す。別の設定キーの候補が除外集合へ混入して候補順序が崩れることを防ぐためである
   - 調査だけを委譲する場合は`start_explore(fast, prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。書込は機械的に禁止されないため、対象ファイルを変更しない旨を`prompt`へ明示する
   - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。`timeout=0`は待機せず現状態を返す。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
@@ -113,7 +114,7 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
    新しい担当は、レビュー指摘管理表で解消済みと記録された行を再走査せず、未解消の行と当該ラウンドの走査範囲だけを対象とする。
 
 本節の代替起動はAgentツール経路にだけ適用する。
-`agents_server`経路では、設定の候補列と`exclude_session_id`による次候補の起動が同じ役割を担うため、本節の代替起動を重ねて適用しない。
+`agents_server`経路では、設定の候補列によるサーバー側の自動切替と`exclude_session_id`による次候補の起動が同じ役割を担うため、本節の代替起動を重ねて適用しない。
 指定した組合せを一時的に利用できない事象を実際に観測した場合に限り、当該工程の設定を解決して委譲を起動した主体は、当該セッション内の起動時指定だけで代替の組合せへ切り替えて再起動してよい。
 この判断は当該主体が行い、当該主体自身がサブエージェントとして起動されているかを問わない。
 対象は、実行経路が返す過負荷、レート制限、サーバー障害、指定したモデルや経路の利用不能など、モデル実行環境の可用性に起因すると観測できる失敗に限る。
