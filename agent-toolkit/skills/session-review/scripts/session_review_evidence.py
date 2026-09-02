@@ -8,6 +8,8 @@
 既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
+`--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査を1回の記録読み込みでまとめて行い、
+走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
 `agent-toolkit:agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
@@ -2271,6 +2273,102 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
     return events, 0
 
 
+_BUNDLE_SCAN_FILENAMES = ("timeline.jsonl", "warnings.jsonl", "stats.jsonl", "hook-notices.jsonl")
+_BUNDLE_BODY_KINDS = frozenset({"failed-tool", "agent-completion", "final-result"})
+_BUNDLE_LOCATOR_ONLY_KINDS = frozenset({"user"})
+_BUNDLE_BODY_LENGTH = 200
+_BUNDLE_WARNING_GROUP_LENGTH = 120
+_BUNDLE_WARNING_SAMPLE_COUNT = 3
+
+
+def _bundle_events(
+    collected: list[_CollectedRecord],
+    unresolved: list[_UnresolvedRecord],
+    directory: Path,
+) -> tuple[list[dict[str, Any]], int]:
+    """4走査を1回の記録読み込みで行い、走査ごとの全量をファイルへ書いて要約だけを返す。
+
+    標準出力へ返す要約の項目は、抽出担当が走査ごとの全量をファイルへ保存し、自作の集計コマンドで
+    再加工していた工程を代替する目的で設けた。項目を減らすと当該工程が抽出担当側へ戻るため、
+    取捨は代替対象の集計を確認してから判断する。
+    未解決記録のイベントは標準出力へ1回だけ書く。各ファイルの内容は、当該走査を単独で実行した
+    出力から未解決記録のイベントを除いたものと一致する。
+    """
+    if not directory.is_dir():
+        return [{"kind": "error", "text": f"出力先が実在するディレクトリでない: {directory}"}], 2
+    resolved = directory.resolve()
+    timeline = _default_events(collected, [])
+    warnings = _warning_collection_events(collected, [])
+    stats = _stats_events(collected)
+    hook_notices = _hook_notice_events([record for item in collected for record in item.records])
+
+    events: list[dict[str, Any]] = []
+    for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, (timeline, warnings, stats, hook_notices), strict=True):
+        path = resolved / filename
+        path.write_text(
+            "".join(f"{json.dumps(event, ensure_ascii=False)}\n" for event in scan_events),
+            encoding="utf-8",
+        )
+        events.append({"kind": "bundle-file", "path": str(path), "count": len(scan_events)})
+    events.extend(_bundle_timeline_events(timeline))
+    events.extend(_bundle_warning_events(warnings))
+    events.extend(stats)
+    events.extend(hook_notices)
+    events.extend(_unresolved_events(unresolved))
+    return events, 0
+
+
+def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """通常表示を、イベント種別ごとの件数と問題候補の位置へ要約する。
+
+    `assistant`と`skill-invocation`は件数だけで候補を確定できるため、本文を標準出力へ含めない。
+    位置を伴う種別の本文も冒頭に限り、全体は`--detail`で取得する。
+    """
+    counts = collections.Counter(str(event["kind"]) for event in timeline)
+    events: list[dict[str, Any]] = [
+        {"kind": "bundle-kind-count", "event_kind": event_kind, "count": count}
+        for event_kind, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    for event in timeline:
+        event_kind = event["kind"]
+        if event_kind in _BUNDLE_BODY_KINDS:
+            events.append(
+                {
+                    "kind": "bundle-locator",
+                    "event_kind": event_kind,
+                    "record": event["record"],
+                    "line": event["line"],
+                    "text": _clip(str(event.get("text", "")), _BUNDLE_BODY_LENGTH),
+                }
+            )
+        elif event_kind in _BUNDLE_LOCATOR_ONLY_KINDS:
+            events.append(
+                {"kind": "bundle-locator", "event_kind": event_kind, "record": event["record"], "line": event["line"]}
+            )
+    return events
+
+
+def _bundle_warning_events(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """警告を本文の冒頭で分類し、分類ごとの件数と先頭の代表位置へ要約する。
+
+    一致が無い場合に`_warning_collection_events`が返す位置を持たないイベントは分類の対象外とする。
+    """
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for event in warnings:
+        if event.get("kind") != "warning" or "line" not in event:
+            continue
+        groups.setdefault(str(event.get("text", ""))[:_BUNDLE_WARNING_GROUP_LENGTH], []).append(event)
+    return [
+        {
+            "kind": "bundle-warning-group",
+            "text": text,
+            "count": len(items),
+            "samples": [{"record": item["record"], "line": item["line"]} for item in items[:_BUNDLE_WARNING_SAMPLE_COUNT]],
+        }
+        for text, items in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+    ]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """既定の抽出と照会モードの引数を定義する。"""
     parser = argparse.ArgumentParser(
@@ -2340,6 +2438,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "格納された通知本文だけを集計し、hook識別子・発動元・タグ・種別ごとの件数と"
         "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE,
     )
+    parser.add_argument(
+        "--bundle",
+        metavar="DIR",
+        help="通常表示、`--warn`、`--stats`及び`--hook-notices`の走査を1回の記録読み込みで行い、"
+        "走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
+        "標準出力へは、走査ごとのファイルの絶対パスとイベント件数、通常表示のイベント種別ごとの件数、"
+        "問題候補の特定に用いるイベントの位置と本文の冒頭、警告の種別ごとの件数、集計済みの走査の全量を返す。"
+        "指定するディレクトリは実在していることを要する。他の照会オプションとは併用しない。",
+    )
     return parser
 
 
@@ -2349,8 +2456,11 @@ def main(argv: list[str] | None = None) -> int:
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
-    if sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices)) > 1:
-        return _print_error("--warn・--grep・--detail・--stats・--hook-noticesは併用できない")
+    if (
+        sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices, args.bundle is not None))
+        > 1
+    ):
+        return _print_error("--warn・--grep・--detail・--stats・--hook-notices・--bundleは併用できない")
 
     if (args.transcript_path is None) == (args.codex_thread_id is None):
         return _print_error("transcript_pathと--codex-thread-idはいずれか一方だけを指定する")
@@ -2374,6 +2484,10 @@ def main(argv: list[str] | None = None) -> int:
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
     collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
 
+    if args.bundle is not None:
+        events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle))
+        _print_events(events)
+        return exit_code
     if args.warn:
         _print_events(_warning_collection_events(collected, unresolved))
         return 0
