@@ -55,18 +55,24 @@ class TestLockedRotateAndAppend:
 class TestEnsurePlanLockIgnored:
     """計画保存先リポジトリの管理ロック除外を検証する。"""
 
+    @staticmethod
+    def _exclude_path(repository: pathlib.Path) -> pathlib.Path:
+        """通常cloneの除外設定ファイルのパスを返す。"""
+        return repository / ".git" / "info" / "exclude"
+
     def test_preserves_existing_content_and_ignores_all_plan_locks(self, tmp_path: pathlib.Path) -> None:
-        """既存内容を保持し、root直下と年月階層のロックを除外する。"""
+        """既存内容を保持し、root直下と年月階層のロックを版管理の対象外で除外する。"""
         _git(tmp_path, "init", "-q")
-        gitignore = tmp_path / ".gitignore"
-        gitignore.write_bytes(b"existing-pattern")
+        exclude = self._exclude_path(tmp_path)
+        exclude.write_bytes(b"existing-pattern")
         root_lock = tmp_path / "plans" / ".agent-toolkit-plan-create.lock"
         nested_lock = tmp_path / "plans" / "2026" / "09" / "sample.plan-review.tsv.lock"
 
         assert _file_lock.ensure_plan_lock_ignored(root_lock)
         assert not _file_lock.ensure_plan_lock_ignored(nested_lock)
 
-        assert gitignore.read_bytes() == b"existing-pattern\n/plans/**/*.lock\n"
+        assert exclude.read_bytes() == b"existing-pattern\n/plans/**/*.lock\n"
+        assert not (tmp_path / ".gitignore").exists()
         root_lock.parent.mkdir(parents=True)
         nested_lock.parent.mkdir(parents=True)
         root_lock.touch()
@@ -77,18 +83,43 @@ class TestEnsurePlanLockIgnored:
         assert _git(tmp_path, "check-ignore", str(nested_lock.relative_to(tmp_path))).strip() == str(
             nested_lock.relative_to(tmp_path)
         )
+        assert not _git(tmp_path, "status", "--porcelain")
 
-    def test_keeps_legacy_repository_wide_pattern(self, tmp_path: pathlib.Path) -> None:
-        """旧版が追記したリポジトリ全体の除外行を残したまま`plans/`配下限定の行を加える。"""
+    def test_keeps_existing_gitignore_untouched(self, tmp_path: pathlib.Path) -> None:
+        """管理パターンが`.gitignore`へ残るcloneでも、当該ファイルを変更しない。"""
         _git(tmp_path, "init", "-q")
         gitignore = tmp_path / ".gitignore"
-        gitignore.write_bytes(b"existing-pattern\n*.lock\n")
+        recorded = b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
+        gitignore.write_bytes(recorded)
 
         assert _file_lock.ensure_plan_lock_ignored(tmp_path / "plans" / ".agent-toolkit-plan-create.lock")
 
-        assert gitignore.read_bytes() == b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
-        assert not _file_lock.ensure_plan_lock_ignored(tmp_path / "plans" / "2026" / "09" / "sample.lock")
-        assert gitignore.read_bytes() == b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
+        assert gitignore.read_bytes() == recorded
+        pattern = _file_lock.PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
+        assert self._exclude_path(tmp_path).read_bytes().splitlines().count(pattern) == 1
+
+    def test_writes_shared_exclude_from_a_worktree(self, tmp_path: pathlib.Path) -> None:
+        """worktreeから呼んだ場合は共有側の除外設定へ書き、当該worktreeで除外が成立する。"""
+        repository = tmp_path / "repository"
+        repository.mkdir()
+        _git(repository, "init", "-q")
+        _git(repository, "config", "user.email", "test@example.com")
+        _git(repository, "config", "user.name", "test")
+        (repository / "queue.md").write_text("initial\n", encoding="utf-8")
+        _git(repository, "add", "queue.md")
+        _git(repository, "commit", "-qm", "initial")
+        worktree = tmp_path / "worktree"
+        _git(repository, "worktree", "add", "-q", str(worktree))
+        lock = worktree / "plans" / ".agent-toolkit-plan-create.lock"
+
+        assert _file_lock.ensure_plan_lock_ignored(lock)
+
+        pattern = _file_lock.PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
+        assert self._exclude_path(repository).read_bytes().splitlines().count(pattern) == 1
+        lock.parent.mkdir(parents=True)
+        lock.touch()
+        assert not _git(worktree, "status", "--porcelain")
+        assert not _file_lock.ensure_plan_lock_ignored(lock)
 
     @pytest.mark.parametrize(
         "content",
@@ -100,21 +131,31 @@ class TestEnsurePlanLockIgnored:
             b"existing-pattern\n*.lock\n/plans/**/*.lock\n",
         ],
     )
-    def test_gitignore_content_is_idempotent(self, content: bytes) -> None:
-        """旧行の有無にかかわらず、既存行を保持し再適用で内容が変化しない。"""
+    def test_exclude_content_is_idempotent(self, tmp_path: pathlib.Path, content: bytes) -> None:
+        """初期内容にかかわらず、既存行を保持し再適用で内容が変化しない。"""
+        _git(tmp_path, "init", "-q")
+        exclude = self._exclude_path(tmp_path)
+        exclude.write_bytes(content)
+        lock = tmp_path / "plans" / ".agent-toolkit-plan-create.lock"
         pattern = _file_lock.PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
 
-        updated = _file_lock.plan_lock_gitignore_content(content)
+        _file_lock.ensure_plan_lock_ignored(lock)
+        updated = exclude.read_bytes()
 
         assert updated.splitlines().count(pattern) == 1
         assert all(line in updated.splitlines() for line in content.splitlines())
-        assert _file_lock.plan_lock_gitignore_content(updated) == updated
+        assert not _file_lock.ensure_plan_lock_ignored(lock)
+        assert exclude.read_bytes() == updated
 
     def test_does_not_modify_repository_for_lock_outside_plans(self, tmp_path: pathlib.Path) -> None:
-        """`plans/`外の一般ロックでは`.gitignore`を作成しない。"""
+        """`plans/`外の一般ロックでは除外設定も`.gitignore`も変更しない。"""
         _git(tmp_path, "init", "-q")
+        exclude = self._exclude_path(tmp_path)
+        recorded = exclude.read_bytes()
 
         assert not _file_lock.ensure_plan_lock_ignored(tmp_path / "state" / "session.lock")
+
+        assert exclude.read_bytes() == recorded
         assert not (tmp_path / ".gitignore").exists()
 
 
