@@ -3431,6 +3431,123 @@ def test_stats_takes_codex_hint_from_input_without_arguments(tmp_path: pathlib.P
     ]
 
 
+def _compaction_entry(timestamp: str, metadata: dict | None = None) -> dict:
+    """Claude Codeのコンパクション境界レコードを作成する。"""
+    entry: dict = {"type": "system", "subtype": "compact_boundary", "timestamp": timestamp}
+    if metadata is not None:
+        entry["compactMetadata"] = metadata
+    return entry
+
+
+def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Path, capsys) -> None:
+    """メイン記録とサブエージェント記録のコンパクションを全件数え、記録に無い欄を補わない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _compaction_entry(
+                "2026-09-02T00:01:00Z",
+                {"trigger": "auto", "preTokens": 493099, "postTokens": 14213, "durationMs": 201674},
+            ),
+            _compaction_entry("2026-09-02T00:02:00Z", {"trigger": "manual"}),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_compaction_entry("2026-09-02T00:03:00Z", {"trigger": "auto", "durationMs": 1300})],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert _events_by_kind(events, "stats-compaction") == [
+        {
+            "kind": "stats-compaction",
+            "record": "agent-child",
+            "line": 1,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:03:00Z",
+            "trigger": "auto",
+            "duration_seconds": 1.3,
+        },
+        {
+            "kind": "stats-compaction",
+            "record": "main",
+            "line": 2,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:01:00Z",
+            "trigger": "auto",
+            "pre_tokens": 493099,
+            "post_tokens": 14213,
+            "duration_seconds": 201.7,
+        },
+        {
+            "kind": "stats-compaction",
+            "record": "main",
+            "line": 3,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:02:00Z",
+            "trigger": "manual",
+        },
+    ]
+    total = _events_by_kind(events, "stats-compaction-total")[0]
+    assert total == {
+        "kind": "stats-compaction-total",
+        "count": 3,
+        "by_record": {"main": 2, "agent-child": 1},
+        "total_duration_seconds": 203.0,
+    }
+    assert list(total["by_record"]) == ["main", "agent-child"]
+
+
+def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) -> None:
+    """Codex形式のコンパクションを`codex`として数え、所要時間の欄を付けない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry("2026-09-02T00:00:00Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+            {
+                "type": "compacted",
+                "timestamp": "2026-09-02T00:01:00Z",
+                "payload": {"message": "", "window_number": 1},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert _events_by_kind(events, "stats-compaction") == [
+        {
+            "kind": "stats-compaction",
+            "record": "main",
+            "line": 2,
+            "engine": "codex",
+            "timestamp": "2026-09-02T00:01:00Z",
+        }
+    ]
+    assert _events_by_kind(events, "stats-compaction-total")[0] == {
+        "kind": "stats-compaction-total",
+        "count": 1,
+        "by_record": {"main": 1},
+        "total_duration_seconds": 0.0,
+    }
+
+
+def test_stats_reports_zero_compaction_total_without_records(tmp_path: pathlib.Path, capsys) -> None:
+    """コンパクションの記録が無い場合は件数0の集計だけを返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert not _events_by_kind(events, "stats-compaction")
+    assert _events_by_kind(events, "stats-compaction-total") == [
+        {"kind": "stats-compaction-total", "count": 0, "by_record": {}, "total_duration_seconds": 0.0}
+    ]
+
+
 def test_hook_notices_mode_is_exclusive_with_other_query_modes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

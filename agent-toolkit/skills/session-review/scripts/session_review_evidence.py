@@ -1293,6 +1293,74 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
     ]
 
 
+def _claude_compaction_fields(metadata: Any) -> dict[str, Any]:
+    """Claude Codeの`compactMetadata`から契機・前後トークン・所要時間を取り出す。
+
+    所要時間はミリ秒で記録されるため秒へ換算する。欄を持たない記録もあるため、
+    取得できた欄だけを返す。
+    """
+    if not isinstance(metadata, dict):
+        return {}
+    fields: dict[str, Any] = {}
+    trigger = metadata.get("trigger")
+    if isinstance(trigger, str):
+        fields["trigger"] = trigger
+    for key, source_key in (("pre_tokens", "preTokens"), ("post_tokens", "postTokens")):
+        value = metadata.get(source_key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            fields[key] = value
+    duration_ms = metadata.get("durationMs")
+    if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool):
+        fields["duration_seconds"] = round(duration_ms / 1000, 1)
+    return fields
+
+
+def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
+    """コンパクション1回分のイベントを返す。該当しないレコードでは`None`を返す。
+
+    Claude Codeは`subtype`が`compact_boundary`のsystemレコード、Codexは`type`が`compacted`の
+    レコードとして1回の発生を記録する。所要時間の欄はClaude Code側だけが持つ。
+    """
+    entry = record.entry
+    entry_type = entry.get("type")
+    if entry_type == "system" and entry.get("subtype") == "compact_boundary":
+        engine: _Runtime = "claude"
+    elif entry_type == "compacted":
+        engine = "codex"
+    else:
+        return None
+    event: dict[str, Any] = {"kind": "stats-compaction", "record": record_id, "line": record.line, "engine": engine}
+    timestamp = entry.get("timestamp")
+    if isinstance(timestamp, str):
+        event["timestamp"] = timestamp
+    if engine == "claude":
+        event.update(_claude_compaction_fields(entry.get("compactMetadata")))
+    return event
+
+
+def _stats_compaction_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """全記録のコンパクションの発生位置と件数を返す。
+
+    メイン記録・サブエージェント記録・委譲先セッションのいずれで発生した分も数える。
+    発生が無い場合も件数0の集計イベントだけは返し、発生の有無を呼び出し側が判別できるようにする。
+    """
+    events = [
+        event
+        for item in collected
+        for record in item.records
+        if (event := _compaction_event(record, item.record_id)) is not None
+    ]
+    events.sort(key=lambda event: (event["record"], event["line"]))
+    counts = collections.Counter(event["record"] for event in events)
+    total = {
+        "kind": "stats-compaction-total",
+        "count": len(events),
+        "by_record": dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))),
+        "total_duration_seconds": round(sum(event.get("duration_seconds", 0.0) for event in events), 1),
+    }
+    return [*events, total]
+
+
 def _stats_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """セッション全体を対象とした集計イベント列を返す。
 
@@ -1404,6 +1472,7 @@ def _stats_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
             event["hint"] = call["hint"]
         events.append(event)
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
+    events.extend(_stats_compaction_events(collected))
 
     if subagents:
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
@@ -2262,7 +2331,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stats",
         action="store_true",
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
-        + _CLAUDE_ONLY_NOTE,
+        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。" + _CLAUDE_ONLY_NOTE,
     )
     parser.add_argument(
         "--hook-notices",

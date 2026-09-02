@@ -8,6 +8,10 @@ Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウト�
 ファイル名の`<thread-id>`はUUIDであり、末尾5区画がthread IDに当たる。
 いずれの記録もJSON Linesであり、各レコードの時刻フィールドはどちらも`timestamp`である。
 
+コンパクションの記録はruntimeで形が異なる。
+Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして残り、`compactMetadata`が`trigger`・`preTokens`・`postTokens`・`durationMs`を持つ。
+Codexでは`type`が`compacted`のレコードとして残り、所要時間の欄を持たない（2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で実測した。再検証は同じ2箇所を当該キーで検索する）。
+
 ## Claude Codeの記録
 
 - 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体）と
