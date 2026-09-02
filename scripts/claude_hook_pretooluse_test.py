@@ -29,6 +29,11 @@ _AT_RULES_DIR = _AT_DIR / "rules"
 # テスト対象の「言及される名前」はプログラム的に組み立てる。
 _LOCAL_MD = "CLAUDE" + ".local.md"
 
+# `uv tool run` / `uvx` に続くコマンド名の並びも、本ファイル自身がブロックされないよう分割して組み立てる。
+_PYTOOLS_COMMAND = "claude-session-" + "export"
+_UV_TOOL_RUN = "uv tool " + "run"
+_UVX = "uv" + "x"
+
 
 def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
@@ -767,6 +772,91 @@ class TestAgentToolkitDotfilesNamesCheck:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+
+
+class TestPytoolsCommandLaunchFormBlock:
+    """本リポジトリが配布するコマンドを`uv tool run`／`uvx`の引数へ置く記述の停止 (block)。
+
+    当該起動形はコマンド名を同名パッケージとしてレジストリから解決するため、
+    `uv tool install`で導入したエントリポイント名では解決できない。
+    """
+
+    _TARGET = str(_DOTFILES_ROOT / ".chezmoi-source" / "dot_claude" / "skills" / "example" / "SKILL.md")
+
+    @pytest.mark.parametrize(
+        "invocation",
+        [
+            f"{_UV_TOOL_RUN} {_PYTOOLS_COMMAND} --current",
+            f"{_UVX} {_PYTOOLS_COMMAND} --current",
+            f"{_UV_TOOL_RUN} --offline {_PYTOOLS_COMMAND} --help",
+            f"{_UVX} -q {_PYTOOLS_COMMAND}",
+        ],
+    )
+    def test_blocks_unresolvable_launch_form(self, invocation: str):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": self._TARGET, "content": f"```bash\n{invocation}\n```\n"},
+            }
+        )
+        assert result.returncode == 2
+        assert _PYTOOLS_COMMAND in result.stderr
+        assert "uv tool install" in result.stderr
+        assert "Fix: " in result.stderr
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
+
+    def test_blocks_in_edit_new_string(self):
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": self._TARGET,
+                    "old_string": "x",
+                    "new_string": f"実行例: {_UV_TOOL_RUN} {_PYTOOLS_COMMAND} --all",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert _PYTOOLS_COMMAND in result.stderr
+
+    def test_direct_command_name_is_allowed(self):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": self._TARGET,
+                    "content": f"```bash\n{_PYTOOLS_COMMAND} --current\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize("invocation", [f"{_UVX} pyfltr run", f"{_UV_TOOL_RUN} prek", f"{_UVX} --from dotfiles ruff"])
+    def test_other_registry_packages_are_allowed(self, invocation: str):
+        """本リポジトリが配布しないコマンド名は、同じ起動形でも停止しない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": self._TARGET, "content": f"```bash\n{invocation}\n```\n"},
+            }
+        )
+        assert result.returncode == 0
+
+    def test_outside_dotfiles_checkout_is_allowed(self, tmp_path: pathlib.Path):
+        """本リポジトリ外のチェックアウトへの書き込みは対象にしない。"""
+        other = tmp_path / "other"
+        (other / ".git").mkdir(parents=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": str(other / "README.md"),
+                    "content": f"```bash\n{_UV_TOOL_RUN} {_PYTOOLS_COMMAND}\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 0
 
 
 class TestAgentToolkitEditSkillWarning:
