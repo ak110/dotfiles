@@ -165,6 +165,12 @@ Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点ま
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
+両backendは委譲先の実行主体へ、自身が委譲先であることを示す指示を起動時に渡す。Codex backendは`thread/start`と`thread/resume`の`developerInstructions`、Claude backendは`ClaudeAgentOptions.system_prompt`のpreset追記へ同じ本文を載せる。目的は、規範が実行主体別に定める条文を委譲先が自身へ適用できる状態を起動時に成立させることである。両backendの既定の指示はいずれもユーザーと直接対話する主体を前提とし、起動経路の別を実行主体が観測できないためである。2026-09-02に`model_type=execute_review`で起動したClaude backendの委譲先は、自身をメインエージェントと申告し、応答の返却先を判定できないと回答した。Codexの既定指示はcodex-cli 0.152.1のバイナリで確認した。当該指示は`You and the user share the same workspace and collaborate to achieve the user's goals.`を含み、同じ前提を持つ。`developerInstructions`は同バイナリのスキーマ記述のとおりdeveloper roleメッセージとして注入され、既定の指示を置換しない。当該記述は`Developer instructions that should be injected as a developer role message.`である。再検証は、役割を明示しない起動文で委譲先を起動し、自身の立場と応答の返却先を申告させて確認する。
+
+知識境界として、実行主体が委譲先として従う規範は`agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`が持ち、本節は当該規範を適用できる状態を起動時に成立させる手段だけを扱う。
+
+却下した代替案は、委譲の起動文へ役割の明示を義務付ける規範だけを置く案と、委譲先セッションの環境変数の印を実行主体へ読ませる案である。前者は起動側の記述漏れで成立せず、役割を明示しない単発の委譲で自己申告の誤りを観測した。後者は実行主体が環境変数を観測する工程を新たに要し、指示本文で同じ結果を得られるため採用しない。
+
 `start_explore`は調査委譲の初期コンテキストと起動費用を減らすため、backend別の軽量起動条件で開始する。Codex backendは`thread/start`へ`project_doc_max_bytes=0`と探索用指示を渡し、Claude backendは利用者・プロジェクト設定とスキルの読込を省いて組込tool presetと探索用toolを維持する。探索委譲を選ぶ条件は`agent-toolkit/rules/01-agent.md`、起動手段は`runtime-routing.md`を知識境界とする。読取専用sandboxで書込を機械的に禁じる案は、`agent-toolkit:delegation`が読取専用の担保にsandbox値を用いない既存規定と衝突するため採用しない。
 
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実測した。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`及び`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`及び組込tool presetを併用できる。この経路はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。
