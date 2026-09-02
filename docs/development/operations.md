@@ -249,3 +249,23 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 - `<name>.tmpl` → Goテンプレートとして評価
 - `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時の変更検知実行
 - よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed`（配布対象確認）
+
+## 日次リリースの自動実施
+
+dotfilesリポジトリを対象とする`agent-toolkit:process-feedbacks`は、③のpushとCI成功を確認した後に、`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
+判定と実施はメインが担う。
+
+次の条件がともに成立する場合に実施する。
+
+- ①で処理対象へ固定した集合のうち、`atk mq list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力に残る項目が、`hold`のものと依存関係の未解決により`inbox`へ戻したものだけである
+- `git rev-parse origin/develop origin/master`が返す完全OIDが互いに異なる
+
+条件が成立しない場合は、成立しなかった条件と残る項目を報告し、PRを作成しない。
+③の開始後に登録された項目は判定の対象へ含めず、次回セッションで扱う。
+
+実施する場合は次の順で進める。
+
+1. 管理対象一時領域へPR本文のファイルを作成し、`gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>`でPRを作成する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したフィードバックの正本ファイル名と1行要約を列挙する
+2. `.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
+
+PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する。
