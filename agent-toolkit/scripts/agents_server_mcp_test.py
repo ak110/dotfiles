@@ -269,6 +269,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_atk_config.py",
         "_atk_help.py",
         "_inherited_venv.py",
+        "_plan_file.py",
         "_wait_schedule.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
@@ -2388,9 +2389,19 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
     assert not client.queries
 
 
+@pytest.fixture
+def _owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """所有セッションの解決に使う環境変数を未設定の状態から始める。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+
+
 @pytest.mark.asyncio
-async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> None:
-    """Claude Agent SDKへClaude Code presetと設定読込元を渡す。"""
+@pytest.mark.usefixtures("_owner_session_environment")
+async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude Agent SDKへClaude Code presetと設定読込元、解決した所有セッションを渡す。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "owner-session")
+
     options = claude_backend._build_options(str(tmp_path), "model", "high")
     assert options.system_prompt == {
         "type": "preset",
@@ -2399,7 +2410,10 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> 
     }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
-    assert options.env == {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
+    assert options.env == {
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
+    }
 
 
 def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
@@ -2408,8 +2422,12 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
     assert options.resume == "claude-saved"
 
 
+@pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
-    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。"""
+    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。
+
+    所有セッションを解決できない環境では当該キーを設定しない。
+    """
     options = claude_backend._build_options(str(tmp_path), "model", "high", explore=True)
     assert options.setting_sources == []
     assert options.skills == []

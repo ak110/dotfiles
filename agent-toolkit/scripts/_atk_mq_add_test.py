@@ -78,9 +78,9 @@ def test_add_reloads_saved_details_while_holding_lock(
 
     original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
 
-    def read_while_locked(path: pathlib.Path) -> dict[str, object | None]:
+    def read_while_locked(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
         assert lock_state["held"]
-        return original_read(path)
+        return original_read(path, expected_body=expected_body)
 
     monkeypatch.setattr(add_module, "_repo_lock", tracked_lock)
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
@@ -99,6 +99,7 @@ def test_add_reloads_saved_details_while_holding_lock(
 
     assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
     assert saved_details[generated[0]]["saved_body"] == (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert saved_details[generated[0]]["body_match"] == "一致"
 
 
 def test_cli_add_outputs_each_saved_body_without_indentation(
@@ -1790,3 +1791,89 @@ def test_add_entries_rejects_missing_or_invalid_frontmatter_target_repo(
         )
 
     assert not list((notes / "inbox").iterdir())
+
+
+def test_add_reports_body_mismatch_when_saved_body_is_altered(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存経路で本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    captured: dict[str, str] = {}
+
+    def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+        captured["expected"] = expected_body
+        path.write_text(expected_body.replace("本文", "改文", 1), encoding="utf-8")
+        return original_read(path, expected_body=expected_body)
+
+    monkeypatch.setattr(add_module, "_read_saved_entry_details", read_after_alteration)
+    saved_details: dict[str, dict[str, object | None]] = {}
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source="test",
+        now=_FIXED_DT,
+        saved_details=saved_details,
+    )
+
+    position = captured["expected"].index("本文") + 1
+    assert saved_details[generated[0]]["body_match"] == f"不一致（最初の差異: {position}文字目）"
+
+
+def test_add_reports_body_match_for_trailing_newline_difference_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """末尾改行の有無だけが異なる保存本文は一致と判定する。"""
+    notes = tmp_path / "private-notes"
+    (notes / "inbox").mkdir(parents=True)
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    original_read = add_module._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+
+    def read_without_trailing_newline(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+        path.write_text(expected_body.removesuffix("\n"), encoding="utf-8")
+        return original_read(path, expected_body=expected_body)
+
+    monkeypatch.setattr(add_module, "_read_saved_entry_details", read_without_trailing_newline)
+    saved_details: dict[str, dict[str, object | None]] = {}
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source="test",
+        now=_FIXED_DT,
+        saved_details=saved_details,
+    )
+
+    assert saved_details[generated[0]]["body_match"] == "一致"
+
+
+def test_cli_add_outputs_body_match_before_saved_body(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """投入の出力は保存本文の直前へ一致判定を書く。"""
+    _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["mq", "add", "--target-repo", "github.com/example/repo", "投入本文"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "    body_match: 一致\n    saved_body:\n" in output

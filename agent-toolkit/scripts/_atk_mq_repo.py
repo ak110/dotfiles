@@ -201,6 +201,7 @@ def edit_entry(
     commit_message: str,
     content_validator: typing.Callable[[str, str], None] | None = None,
     content_transformer: typing.Callable[[str, str], str] | None = None,
+    finalized_content: dict[str, str] | None = None,
 ) -> bool:
     """フィードバック・TBD共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
@@ -208,6 +209,8 @@ def edit_entry(
     編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
     （`_verify_target_repo_content`と同じくexit 2で拒否する。種別は平坦化後の唯一の
     分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。
+    `finalized_content`を渡した場合は、変換後の確定本文を`content`キーへ格納する。
+    呼び出し元が保存本文との一致判定へ用いる。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
         _push_pending_commits(private_notes)
@@ -226,6 +229,8 @@ def edit_entry(
             content = content_transformer(previous, content)
         if content_validator is not None:
             content_validator(previous, content)
+        if finalized_content is not None:
+            finalized_content["content"] = content
         if previous == content:
             return False
         previous_type = _require_type(path, previous)
@@ -252,8 +257,12 @@ def append_entry(
     expected_content: bytes | None,
     commit_message: str,
     content_validator: typing.Callable[[str, str], None] | None = None,
+    finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """フィードバック本文をraw bytesのまま追記し、競合を検出してcommitまで行う。"""
+    """フィードバック本文をraw bytesのまま追記し、競合を検出してcommitまで行う。
+
+    `finalized_content`を渡した場合は、追記後の確定本文を`content`キーへ格納する。
+    """
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
         path = _validate_filename(filename, directory)
@@ -268,6 +277,8 @@ def append_entry(
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         if content_validator is not None:
             content_validator(previous, updated)
+        if finalized_content is not None:
+            finalized_content["content"] = updated
         if previous_bytes == content:
             return False
         previous_type = _require_type(path, previous)

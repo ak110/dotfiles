@@ -23,6 +23,12 @@ def _isolate_state_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("LOCALAPPDATA", str(state_root))
     monkeypatch.setenv("APPDATA", str(state_root))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", _OWNER_SESSION)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+
+
+_OWNER_SESSION = "plans-test-session"
+"""テスト中に所有記録へ書かれるセッション識別子。"""
 
 
 def _git(root: pathlib.Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -1194,3 +1200,101 @@ def test_rewrite_references_commits_and_pushes(tmp_path: pathlib.Path) -> None:
     assert result["commit"] != head
     assert _git(notes, "status", "--porcelain").stdout == ""
     assert _git(notes, "rev-parse", "origin/main").stdout.strip() == _git(notes, "rev-parse", "HEAD").stdout.strip()
+
+
+def test_checkout_records_owning_session_without_saving_it(tmp_path: pathlib.Path) -> None:
+    """取得は所有記録を作業rootへ作成し、保存rootへは含めない。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-所有記録-d4f9.md")
+    main, _detail = _create_saved_plan(notes, relative)
+
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    working_main = _plan_file.working_plans_root(home) / main.name
+    assert _plan_file.read_owner_session_id(working_main) == _OWNER_SESSION
+    assert not _plan_file.owner_record_path(main).exists()
+
+
+def test_commit_excludes_owner_record_and_removes_it_after_collection(tmp_path: pathlib.Path) -> None:
+    """保存は所有記録をprivate-notesへ含めず、作業バンドルの回収時に記録も回収する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-所有記録回収-d4f9.md")
+    main, _detail = _create_saved_plan(notes, relative)
+    copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / main.name
+    working_main.write_text("# updated main\n", encoding="utf-8")
+
+    result = _atk_plans.commit_plan(notes, main.name, home=home)
+
+    assert not _plan_file.owner_record_path(working_main).exists()
+    assert all(not path.exists() for path in copied)
+    committed_paths = result["paths"]
+    assert isinstance(committed_paths, tuple)
+    assert not any(str(path).endswith(_plan_file.OWNER_RECORD_SUFFIX) for path in committed_paths)
+    assert not _plan_file.owner_record_path(notes / "plans" / relative).exists()
+
+
+def test_commit_removes_owner_record_of_direct_working_plan(tmp_path: pathlib.Path) -> None:
+    """取得を伴わない直下計画の保存でも所有記録を回収する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("30-直下所有記録-d4f9.md")
+    main = _plan_file.working_plans_root(home) / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    _plan_file.record_plan_owner(main)
+
+    result = _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert not _plan_file.owner_record_path(main).exists()
+    assert (notes / "plans" / str(result["plan_file"])).read_text(encoding="utf-8") == "# main\n"
+
+
+def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pathlib.Path) -> None:
+    """一覧は所有記録の有無にかかわらず全ての計画ファイル（メイン）を出力する。"""
+    home = tmp_path / "home"
+    working_root = _plan_file.working_plans_root(home)
+    working_root.mkdir(parents=True)
+    owned = working_root / "30-自分の計画-a1b2.md"
+    owned.write_text("# owned\n", encoding="utf-8")
+    owned_detail = working_root / "30-自分の計画-a1b2.detail.md"
+    owned_detail.write_text("# detail\n", encoding="utf-8")
+    _plan_file.record_plan_owner(owned)
+    unowned = working_root / "30-記録なしの計画-c3d4.md"
+    unowned.write_text("# unowned\n", encoding="utf-8")
+    os.utime(owned, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    os.utime(owned_detail, ns=(1_700_000_500_000_000_000, 1_700_000_500_000_000_000))
+
+    entries = _atk_plans.list_working_plans(home)
+
+    assert [entry["path"] for entry in entries] == sorted((str(owned), str(unowned)))
+    owner_by_path = {entry["path"]: entry["owner_session"] for entry in entries}
+    assert owner_by_path == {str(owned): _OWNER_SESSION, str(unowned): None}
+    updated_by_path = {entry["path"]: entry["updated_at"] for entry in entries}
+    assert updated_by_path[str(owned)] == datetime.datetime.fromtimestamp(1_700_000_500).astimezone().isoformat()
+
+
+def test_dispatch_list_prints_owner_and_update_time_per_plan(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """一覧の各行はメイン計画の絶対パス、所有セッション、最終更新時刻をタブ区切りで並べる。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    working_root = _plan_file.working_plans_root(home)
+    working_root.mkdir(parents=True)
+    plan = working_root / "30-一覧出力-a1b2.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    args = types.SimpleNamespace(plans_subcommand="list")
+
+    result = _atk_plans.dispatch(args, notes, home)
+
+    assert result == 0
+    entries = _atk_plans.list_working_plans(home)
+    assert capsys.readouterr().out == f"{plan}\tなし\t{entries[0]['updated_at']}\n"

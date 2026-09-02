@@ -6,6 +6,7 @@ import pathlib
 import subprocess
 
 import _fork_runner
+import _plan_file
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
@@ -39,6 +40,8 @@ def _run(
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
         "DOTFILES_AUTONOMOUS_EXIT_REQUIRED",
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
     ):
         env.pop(name, None)
     env.update(extra_env or {})
@@ -65,6 +68,8 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     second.write_text("# second\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, [])
     session_id = "block-once"
+    for plan in (first, second):
+        _plan_file.write_owner_record(plan, session_id=session_id)
 
     first_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
     second_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
@@ -72,7 +77,7 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     assert first_result["decision"] == "block"
     assert str(first) in first_result["reason"]
     assert str(second) in first_result["reason"]
-    assert "Leave bundles owned by other sessions in place" in first_result["reason"]
+    assert "Leave the remaining bundles in place" in first_result["reason"]
     assert "atk plans commit <relative main plan path>" in first_result["reason"]
     assert not second_result
 
@@ -84,6 +89,7 @@ def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
     nested.mkdir(parents=True)
     plan = nested / "01-nested-a1b2.md"
     plan.write_text("# nested\n", encoding="utf-8")
+    _plan_file.write_owner_record(plan, session_id="nested")
     transcript = _write_transcript(tmp_path, [])
 
     result = _decision(_run(_payload("nested", transcript), state_dir=tmp_path, home=home))
@@ -125,6 +131,7 @@ def test_suppression_conditions_approve(
     plan.write_text("# plan\n", encoding="utf-8")
     transcript = _write_transcript(tmp_path, [])
     session_id = "suppressed"
+    _plan_file.write_owner_record(plan, session_id=session_id)
     _write_state(tmp_path, session_id, state)
 
     result = _run(
@@ -146,6 +153,7 @@ def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
     private_plan = tmp_path / "private-notes" / "plans" / "2026" / "09" / "01-saved-a1b2.md"
     private_plan.parent.mkdir(parents=True)
     private_plan.write_text("# saved\n", encoding="utf-8")
+    _plan_file.write_owner_record(private_plan, session_id="outside-working-root")
     transcript = _write_transcript(tmp_path, [])
 
     result = _run(_payload("outside-working-root", transcript), state_dir=tmp_path, home=home)
@@ -156,4 +164,57 @@ def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize("payload", ["not json", {}, {"session_id": ""}])
 def test_invalid_payload_approves(tmp_path: pathlib.Path, payload: object) -> None:
     result = _run(payload, state_dir=tmp_path, home=tmp_path / "home")
+    assert not _decision(result)
+
+
+@pytest.mark.parametrize(
+    ("owner_records", "expected_blocked"),
+    [
+        pytest.param({}, (), id="所有記録なし"),
+        pytest.param({"own.md": "current"}, ("own.md",), id="自セッションの所有記録"),
+        pytest.param({"other.md": "another"}, (), id="他セッションの所有記録"),
+        pytest.param({"own.md": "current", "other.md": "another"}, ("own.md",), id="自他の混在"),
+    ],
+)
+def test_notified_plans_are_limited_to_the_current_session(
+    tmp_path: pathlib.Path,
+    owner_records: dict[str, str],
+    expected_blocked: tuple[str, ...],
+) -> None:
+    """所有記録が当該セッションを示す計画だけを通知し、他は承認する。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    for name in ("own.md", "other.md"):
+        (plans / name).write_text(f"# {name}\n", encoding="utf-8")
+    for name, session in owner_records.items():
+        _plan_file.write_owner_record(plans / name, session_id=session)
+    transcript = _write_transcript(tmp_path, [])
+
+    result = _decision(_run(_payload("current", transcript), state_dir=tmp_path, home=home))
+
+    if not expected_blocked:
+        assert not result
+        return
+    assert result["decision"] == "block"
+    for name in expected_blocked:
+        assert str(plans / name) in result["reason"]
+    for name in ("own.md", "other.md"):
+        if name not in expected_blocked:
+            assert str(plans / name) not in result["reason"]
+
+
+@pytest.mark.parametrize("record", ["{不正なJSON", '{"recorded_at": "2026-09-03T00:00:00+09:00"}'])
+def test_unreadable_owner_record_approves(tmp_path: pathlib.Path, record: str) -> None:
+    """所有記録をJSONとして解釈できない場合と`session_id`が無い場合は通知しない。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "broken.md"
+    plan.write_text("# broken\n", encoding="utf-8")
+    _plan_file.owner_record_path(plan).write_text(record, encoding="utf-8")
+    transcript = _write_transcript(tmp_path, [])
+
+    result = _run(_payload("current", transcript), state_dir=tmp_path, home=home)
+
     assert not _decision(result)

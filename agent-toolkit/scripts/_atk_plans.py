@@ -7,6 +7,7 @@ checkout記録は取得からcommit成功まで保持し、取得元と取得時
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
@@ -66,13 +67,17 @@ def build_parser(parser) -> None:
         metavar="PLAN_FILE",
         help="plans rootからの相対メイン計画パス。",
     )
+    _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
     _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 
 def _excluded_path(path: pathlib.Path) -> bool:
-    """計画バンドルから一時ファイルを除外する。"""
-    return path.name.endswith((".lock", ".bak", ".tmp"))
+    """計画バンドルから一時ファイルと所有記録を除外する。
+
+    所有記録は計画作業rootの局所状態であり、private-notesへ保存しない。
+    """
+    return path.name.endswith((".lock", ".bak", ".tmp", _plan_file.OWNER_RECORD_SUFFIX))
 
 
 def _as_relative_notes_path(path: pathlib.Path, private_notes: pathlib.Path) -> str:
@@ -300,7 +305,7 @@ def checkout_plan(
     *,
     home: pathlib.Path | str | None = None,
 ) -> tuple[pathlib.Path, ...]:
-    """保存済み計画バンドルを作業rootへ取得し、取得時点を記録する。"""
+    """保存済み計画バンドルを作業rootへ取得し、取得時点と所有セッションを記録する。"""
     relative_main = _validate_saved_plan_relative_path(plan_file)
     if _checkout_record_root(relative_main).exists():
         raise _common.WebInputError(f"同じ計画を取得済みです: {relative_main}")
@@ -326,6 +331,7 @@ def checkout_plan(
         for path in copied:
             path.unlink(missing_ok=True)
         raise
+    _plan_file.record_plan_owner(working_root / relative_main.name)
     return destinations
 
 
@@ -534,7 +540,10 @@ def commit_plan(
     lock_timeout: float = -1,
     skip_push: bool = False,
 ) -> dict[str, object]:
-    """指定計画bundleを保存rootへ移し、対象限定commitを作成する。"""
+    """指定計画bundleを保存rootへ移し、対象限定commitを作成する。
+
+    作業バンドルを回収する時点で当該計画の所有記録も回収し、計画作業rootへ記録だけが残らないようにする。
+    """
     working_relative: pathlib.Path | None = None
     try:
         working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
@@ -556,9 +565,11 @@ def commit_plan(
     else:
         working_lookup_relative = requested_relative
     working_bundle = _working_plan_bundle(home, working_lookup_relative)
+    working_main = _plan_file.working_plans_root(home) / working_lookup_relative
     if checkout_record is not None:
         if not working_bundle:
             _remove_checkout_record(requested_relative)
+            _plan_file.remove_owner_record(working_main)
             return {"plan_file": relative_main.as_posix(), "paths": (), "message": ""}
     elif working_relative is not None and not working_bundle:
         raise _common.WebInputError(f"指定した作業中の計画バンドルが見つかりません: {working_relative}")
@@ -608,9 +619,36 @@ def commit_plan(
         if checkout_record is not None:
             _remove_checked_out_working_bundle(working_bundle, snapshots, requested_relative)
             _remove_checkout_record(requested_relative)
+            _plan_file.remove_owner_record(working_main)
         elif working_bundle:
             _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
+            _plan_file.remove_owner_record(working_main)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
+
+
+def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str, object], ...]:
+    """計画作業rootの計画ファイル（メイン）を所有セッションと最終更新時刻とともに返す。
+
+    所有の有無で対象を絞らないため、他のセッションが取得した計画と所有記録を持たない計画も返す。
+    最終更新時刻は当該計画バンドルの構成ファイルの更新時刻の最大値とする。
+    """
+    root = _plan_file.working_plans_root(home).resolve(strict=False)
+    if not root.is_dir():
+        return ()
+    entries: list[dict[str, object]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file() or not _plan_file.is_plan_main_file(str(path)):
+            continue
+        bundle = _working_plan_bundle(home, path.relative_to(root)) or (path,)
+        updated = max(member.stat(follow_symlinks=False).st_mtime for member in bundle)
+        entries.append(
+            {
+                "path": str(path),
+                "owner_session": _plan_file.read_owner_session_id(path),
+                "updated_at": datetime.datetime.fromtimestamp(updated).astimezone().isoformat(),
+            }
+        )
+    return tuple(entries)
 
 
 def _birth_date(path: pathlib.Path) -> str:
@@ -1127,6 +1165,11 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
         action = "commitしました" if args.skip_push else "commit・pushしました"
         print(f"計画bundleを保存rootへ移動して{action}: {result['plan_file']}")
+        return 0
+    if args.plans_subcommand == "list":
+        for entry in list_working_plans(home):
+            owner = entry["owner_session"] or "なし"
+            print(f"{entry['path']}\t{owner}\t{entry['updated_at']}")
         return 0
     if args.plans_subcommand == "migrate":
         result = migrate_plans(private_notes, home)

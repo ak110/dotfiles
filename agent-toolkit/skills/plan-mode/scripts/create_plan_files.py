@@ -221,7 +221,11 @@ def _finalize_candidate(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> tuple[pathlib.Path, ...]:
-    """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。"""
+    """同じstemの全ファイルを排他的に確定し、途中失敗時に部分成果を残さず返す。
+
+    確定と検査に成功した後、当該計画バンドルの所有セッションを記録する。
+    所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
+    """
     main_path = directory / f"{stem}.md"
     detail_path = directory / f"{stem}.detail.md"
     targets = [(main_path, main_content, ".md.tmp"), (detail_path, detail_content, ".detail.md.tmp")]
@@ -249,6 +253,7 @@ def _finalize_candidate(
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}")
         _check_plan_references(tuple(content for _path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
+        _plan_file.record_plan_owner(main_path)
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
         for path, identity, content in reversed(owned):

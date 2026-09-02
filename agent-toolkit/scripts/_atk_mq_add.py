@@ -38,8 +38,31 @@ from _atk_mq_formatters import _shorten_home
 from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
 
 
-def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
-    """保存済みエントリを再読込し、ユーザーが照合するメタデータを返す。"""
+def _normalized_for_body_match(text: str) -> str:
+    """末尾改行の有無だけをそろえた比較用の本文を返す。"""
+    return text[:-1] if text.endswith("\n") else text
+
+
+def _body_match_verdict(expected_body: str, saved_body: str) -> str:
+    """書き込み前に確定した本文と保存本文の一致判定を固定の文言で返す。
+
+    比較は末尾改行の有無だけをそろえた全文比較とし、一致しない場合は最初に差異が現れた位置を併記する。
+    """
+    expected = _normalized_for_body_match(expected_body)
+    saved = _normalized_for_body_match(saved_body)
+    if expected == saved:
+        return "一致"
+    limit = min(len(expected), len(saved))
+    position = next((index for index in range(limit) if expected[index] != saved[index]), limit)
+    return f"不一致（最初の差異: {position + 1}文字目）"
+
+
+def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+    """保存済みエントリを再読込し、一致判定とユーザーが照合するメタデータを返す。
+
+    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落又は改変されて
+    いないことを、呼び出し元が終了コードと出力だけで確定できるようにする。
+    """
     saved_body = path.read_text(encoding="utf-8")
     parsed = _frontmatter.parse_frontmatter(saved_body)
     if parsed is None:
@@ -48,6 +71,7 @@ def _read_saved_entry_details(path: pathlib.Path) -> dict[str, object | None]:
     raw_dependencies = data.get("depends_on")
     depends_on = [value for value in raw_dependencies if isinstance(value, str)] if isinstance(raw_dependencies, list) else []
     return {
+        "body_match": _body_match_verdict(expected_body, saved_body),
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
@@ -66,6 +90,7 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
         "、".join(str(value) for value in depends_on) if isinstance(depends_on, (list, tuple)) and depends_on else "なし"
     )
     print(f"    depends_on: {rendered_dependencies}")
+    print(f"    body_match: {details['body_match']}")
     print("    saved_body:")
     print(details["saved_body"])
 
@@ -218,8 +243,8 @@ def _add_entries_locked(
     repair_targets: list[str | None] | None = None,
     repair_kinds: list[str | None] | None = None,
     depends_on: tuple[str, ...] = (),
-) -> list[str]:
-    """取得済みrepoロック内でエントリを書き込み、生成ファイル名を返す。
+) -> list[tuple[str, str]]:
+    """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
     `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`だけを採用する
     （呼び出し元の`add_entries`が全件の存在と解決可否を検証済みとする）。
@@ -238,7 +263,7 @@ def _add_entries_locked(
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     inbox_dir = _subdir(private_notes, MQ_STATE_INBOX)
     counter = _max_existing_seq(private_notes, timestamp) + 1
-    generated: list[str] = []
+    generated: list[tuple[str, str]] = []
     for (frontmatter, body), repair_target, repair_kind in zip(
         parsed_messages,
         effective_repair_targets,
@@ -282,7 +307,7 @@ def _add_entries_locked(
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         if entry_type != MQ_TYPE_FEEDBACK:
             _tbd.warn_question_quality(filename, body, question_type)
-        generated.append(filename)
+        generated.append((filename, content))
         counter += 1
     return generated
 
@@ -351,7 +376,7 @@ def add_entries(
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
-        generated = _add_entries_locked(
+        written = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
             target_repo=normalized_target_repo,
@@ -365,6 +390,7 @@ def add_entries(
             plan_file=stored_plan_file,
             depends_on=depends_on,
         )
+        generated = [filename for filename, _content in written]
         count = len(generated)
         _commit_and_push(
             private_notes,
@@ -373,7 +399,11 @@ def add_entries(
         )
         if saved_details is not None:
             saved_details.update(
-                (filename, _read_saved_entry_details(private_notes / MQ_STATE_INBOX / filename)) for filename in generated
+                (
+                    filename,
+                    _read_saved_entry_details(private_notes / MQ_STATE_INBOX / filename, expected_body=content),
+                )
+                for filename, content in written
             )
     return generated
 
