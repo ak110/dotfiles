@@ -30,7 +30,7 @@
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
 - 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
   OSパッケージの導入には権限が必要となる場合がある
-- `atk serve`又は`claude-plans-viewer`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
+- `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、
   実ブラウザーテストを変更した場合は`make test-browser`を実行する
 - コミットメッセージtypeの判定例: [docs/development/commit-types.md](docs/development/commit-types.md)
 

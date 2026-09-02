@@ -1,6 +1,14 @@
 # session-records.md: セッション記録の構造と集計
 
-Claude Codeのセッション記録（`~/.claude/projects`配下）を集計・分析する場合の構造知識を扱う。
+Claude CodeとCodexのセッション記録を集計・分析する場合の構造知識を扱う。
+
+Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウトは
+`<CODEX_HOME>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`に置かれる
+（`CODEX_HOME`が空の場合は`~/.codex`）。
+ファイル名の`<thread-id>`はUUIDであり、末尾5区画がthread IDに当たる。
+いずれの記録もJSON Linesであり、各レコードの時刻フィールドはどちらも`timestamp`である。
+
+## Claude Codeの記録
 
 - 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、セッション本体）と
   深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）の2値のみである。

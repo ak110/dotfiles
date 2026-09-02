@@ -160,17 +160,17 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 
 ## 特定ホストでの常駐サービス自動起動
 
-`euryale`でのみ、`chezmoi apply`後処理が2つのsystemd user serviceを配置して有効化する。
-対象は`atk-serve.service`（フィードバック管理Web UI）と`claude-plans-viewer.service`（計画ビューアー）である。
+`euryale`でのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
+`atk serve`は「フィードバック」「計画ファイル」「セッション」の3画面を同じナビゲーションから提供する。
 
-- 待受はいずれもローカルのみで、Web UIはポート28766、計画ビューアーはポート28765を使う
+- 待受はローカルのみで、ポート28766を使う
   - ホスト上のブラウザーかSSHポート転送経由に加え、Apacheリバースプロキシ
     （`/etc/apache2/sites-enabled/mysettings-443.conf`、本リポジトリの管理対象外）を使用する。
-    Basic Auth付きで`https://tqzh.tk/atk/`・`https://tqzh.tk/cpv/`へ公開する
+    Basic Auth付きで`https://tqzh.tk/atk/`へ公開する
   - サブパス公開時は`X-Forwarded-Prefix`ヘッダー付与かつプレフィクスを保持したまま
     転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
-  - ホスト固有の待受設定はunitへ書かず`~/.config/agent-toolkit/serve.toml`・
-    `~/.config/pytools/claude-plans-viewer.toml`で与える
+  - ホスト固有の待受設定と、計画ファイル・セッションの参照元はunitへ書かず
+    `~/.config/agent-toolkit/serve.toml`で与える
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
   - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
   - ランチャーが最新バージョンの`scripts/atk.py`を実行時に解決する
@@ -179,11 +179,22 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
       いずれも得られない場合は設定を見送る
     - miseのshimはサービス実行環境でバージョン未解決となり起動しないため優先しない
   - `~/.local/bin/atk`は`install-claude.sh`が生成する別系統のラッパーで、本経路とは無関係
-- 計画ビューアーは`uv tool install`が生成する`~/.local/bin/claude-plans-viewer`を直接起動する
-  - shebangが絶対パスのためPATHに依存しない
 - 導入処理はrestart後に常駐を確認し、起動しない場合は失敗として`update-dotfiles`の出力へ表示する
+- 旧計画ビューアーの`claude-plans-viewer.service`は、導入処理が停止と無効化に成功した場合だけunitファイルを削除する
+  - 停止できない場合はunitファイルを残して警告を記録し、後続の配置は続行する
 - lingerが無効な場合はログアウトで停止する
   - 常駐させるには`sudo loginctl enable-linger <user>`を手動実行する
+
+計画ビューアーの統合に伴い、リバースプロキシーの`/cpv/`は一度限りの手動移行を要する
+（Apacheの設定は本リポジトリの管理対象外のため、`chezmoi apply`では変更されない）。
+
+1. `/cpv/`の`ProxyPass`・`ProxyPassReverse`をポート28765からポート28766へ向け直し、
+   `RequestHeader set X-Forwarded-Prefix /cpv`を維持したまま`/cpv/`を残すか、当該ブロックを削除する
+2. `/cpv/`を残す場合、`https://tqzh.tk/cpv/`は`atk serve`のフィードバック画面を表示する。
+   計画ファイル画面は同じベースパス配下の`/cpv/plans`となる
+3. `/cpv/`を削除する場合、利用者は`https://tqzh.tk/atk/plans`へ移動する。
+   既存の`/atk/`利用者の経路と表示は変わらない
+4. `sudo apachectl configtest`で構文を確認してから`sudo systemctl reload apache2`を実行する
 
 ## euryaleでの上流更新の自動反映
 

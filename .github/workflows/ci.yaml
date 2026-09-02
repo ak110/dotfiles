@@ -257,12 +257,10 @@ jobs:
       - name: Python 3.14 E2E
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
         env:
-          CLAUDE_PLANS_VIEWER_BROWSER_TESTS: "1"
           AGENT_TOOLKIT_SERVE_BROWSER_TESTS: "1"
         run: >-
           uv run pytest
           agent-toolkit/scripts/_atk_serve_browser_test.py
-          pytools/claude_plans_viewer_browser_test.py
           -o addopts='' -p no:cacheprovider
 
       - name: Prune uv cache for CI

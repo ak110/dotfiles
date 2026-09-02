@@ -30,7 +30,6 @@ from pytools._internal import (
     setup_media_remote,
     setup_mise,
     setup_msys_env,
-    setup_plans_viewer_linux,
     setup_registry,
     setup_sendto_shortcuts,
     setup_statusline_binary,
@@ -149,6 +148,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため
         # dotfiles配布のカスタムコマンド定義（旧`config.toml`）を配布先から除去する。
         Path("pyfltr/config.toml"),
+        # 計画ファイル閲覧は atk serve へ統合した。設定は ~/.config/agent-toolkit/serve.toml へ移した。
+        Path("pytools/claude-plans-viewer.toml"),
     ],
     Path.home() / ".ipython": [
         Path("profile_default/startup/README"),
@@ -190,6 +191,11 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("update-ssh-config"),
         Path("update-ssh-config.cmd"),
         Path("update-ssh-config.py"),
+    ],
+    Path.home() / ".local" / "bin": [
+        # 計画ファイル閲覧は atk serve へ統合したため、旧 CLI の配布先を除去する。
+        Path("claude-plans-viewer"),
+        Path("claude-plans-viewer.exe"),
     ],
 }
 
@@ -274,7 +280,6 @@ _DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
     ("Claude 設定", update_claude_settings.run),
     ("libarchive (Windows)", install_libarchive_windows.run),
     ("claude-statusline バイナリの取得", setup_statusline_binary.run),
-    ("claude-plans-viewer 自動起動セットアップ (Linux)", setup_plans_viewer_linux.run),
     ("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
     ("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
     ("Windowsレジストリ設定", setup_registry.run),

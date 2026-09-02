@@ -455,7 +455,7 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
     確定前の失敗では複製から移し元を復元し、復元自体が失敗した場合は実在するパスと手作業を
     報告する。確定後の複製削除だけが失敗した場合は、移行結果へ影響しない警告として扱う。
 
-    claude-plans-viewerは作成日時を計画の並び順へ使う。Linuxには作成日時を設定するAPIが
+    `atk serve`の計画ファイル画面は作成日時を計画の並び順へ使う。Linuxには作成日時を設定するAPIが
     無いため、新規ファイルによる確定ではなく移し元のinodeを`os.replace`で移す。
     """
     original = source.read_bytes()

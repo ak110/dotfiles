@@ -7,6 +7,7 @@
 
 import pathlib
 import stat
+import subprocess
 import typing
 
 import pytest
@@ -204,3 +205,83 @@ def test_run_propagates_setup_error(
     monkeypatch.setattr(systemd_user_unit, "setup", fail)
     with pytest.raises(systemd_user_unit.SetupError):
         setup_atk_serve_linux.run()
+
+
+class TestLegacyPlansViewerUnit:
+    """旧計画ビューアーのsystemd unitの停止・無効化と削除。"""
+
+    @staticmethod
+    def _place_legacy_unit(tmp_path: pathlib.Path) -> pathlib.Path:
+        """旧unitファイルを配置し、そのパスを返す。"""
+        path = tmp_path / ".config" / "systemd" / "user" / "claude-plans-viewer.service"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("[Unit]\n", encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _record_subprocess(
+        monkeypatch: pytest.MonkeyPatch,
+        returncode: int,
+    ) -> list[list[str]]:
+        """`systemctl`呼び出しを記録し、指定した終了コードを返すよう差し替える。"""
+        calls: list[list[str]] = []
+
+        def run_subprocess(cmd: list[str], **kwargs: typing.Any) -> typing.Any:
+            del kwargs
+            calls.append(cmd)
+            if cmd[2] == "daemon-reload":
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, returncode, "", "")
+
+        monkeypatch.setattr(claude_common, "run_subprocess", run_subprocess)
+        return calls
+
+    def test_disables_legacy_unit_before_removing_it(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """停止と無効化に成功した場合だけunitファイルを削除し、設定を再読み込みする。"""
+        _run_linux_euryale(monkeypatch, tmp_path)
+        legacy = self._place_legacy_unit(tmp_path)
+        calls = self._record_subprocess(monkeypatch, returncode=0)
+        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
+
+        assert setup_atk_serve_linux.run() is True
+
+        assert calls[0] == ["systemctl", "--user", "disable", "--now", "claude-plans-viewer.service"]
+        assert ["systemctl", "--user", "daemon-reload"] in calls
+        assert not legacy.exists()
+
+    def test_keeps_legacy_unit_when_disable_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """停止と無効化に失敗した場合はunitファイルを残し、後続の配置を止めない。"""
+        _run_linux_euryale(monkeypatch, tmp_path)
+        legacy = self._place_legacy_unit(tmp_path)
+        calls = self._record_subprocess(monkeypatch, returncode=1)
+        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
+
+        with caplog.at_level("WARNING"):
+            assert setup_atk_serve_linux.run() is True
+
+        assert legacy.exists()
+        assert ["systemctl", "--user", "daemon-reload"] not in calls
+        assert "claude-plans-viewer.service" in caplog.text
+
+    def test_absent_legacy_unit_does_not_invoke_systemctl(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """旧unitが存在しない環境では移行処理を行わず、後続の配置を止めない。"""
+        _run_linux_euryale(monkeypatch, tmp_path)
+        calls = self._record_subprocess(monkeypatch, returncode=1)
+        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
+
+        assert setup_atk_serve_linux.run() is True
+
+        assert not calls

@@ -28,6 +28,19 @@ def test_session_review_reference_is_not_cleanup_target() -> None:
         assert Path("references/session-review-dotfiles.md") not in paths
 
 
+def test_removes_legacy_plans_viewer_config_and_shim() -> None:
+    """旧計画ビューアーの設定・CLI・Windowsスタートアップ用shimを配布先から除去する。"""
+    assert Path("pytools/claude-plans-viewer.toml") in post_apply._REMOVED_PATHS[Path.home() / ".config"]  # noqa: SLF001
+    local_bin = post_apply._REMOVED_PATHS[Path.home() / ".local" / "bin"]  # noqa: SLF001
+    assert Path("claude-plans-viewer") in local_bin
+    assert Path("claude-plans-viewer.exe") in local_bin
+    startup = Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    assert Path("claude-plans-viewer.cmd") in post_apply._REMOVED_PATHS_IF_CONTENT[startup]  # noqa: SLF001
+    # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
+    for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001
+        assert not [path for path in paths if "claude-plans-viewer.service" in path.name]
+
+
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
     """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
     paths = post_apply._REMOVED_PATHS[Path.home() / ".ipython"]  # noqa: SLF001
@@ -201,7 +214,7 @@ class TestRun:
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
             ("旧Codex User scope MCP登録の移行", _make_step("codex-migration", calls)),
             ("libarchive (Windows)", _make_step("libarchive", calls)),
-            ("claude-plans-viewer 再起動 (Linux)", _make_step("plans-viewer-restart-linux", calls)),
+            ("atk serve 再起動 (Linux)", _make_step("atk-serve-restart-linux", calls)),
         ]
 
         results, recommendations = post_apply.run(steps=steps)
@@ -216,7 +229,7 @@ class TestRun:
             "plugins",
             "codex-migration",
             "libarchive",
-            "plans-viewer-restart-linux",
+            "atk-serve-restart-linux",
         ]
         assert all(r.ok for r in results)
         assert [r.changed for r in results] == [
@@ -246,7 +259,7 @@ class TestRun:
             ("Claude Code plugin のインストール", _make_step("plugins", calls)),
             ("旧Codex User scope MCP登録の移行", _make_step("codex-migration", calls)),
             ("libarchive (Windows)", _make_step("libarchive", calls)),
-            ("claude-plans-viewer 再起動 (Linux)", _make_step("plans-viewer-restart-linux", calls)),
+            ("atk serve 再起動 (Linux)", _make_step("atk-serve-restart-linux", calls)),
         ]
 
         results, _ = post_apply.run(steps=steps)
@@ -261,7 +274,7 @@ class TestRun:
             "plugins",
             "codex-migration",
             "libarchive",
-            "plans-viewer-restart-linux",
+            "atk-serve-restart-linux",
         ]
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
@@ -474,14 +487,15 @@ class TestDefaultSteps:
         assert names.count(warmup_name) == 1
         assert names.index(warmup_name) == names.index("Codex plugin のインストール") + 1
 
-    def test_atk_serve_follows_plans_viewer_before_windows_steps(self) -> None:
-        """atk serveセットアップをplans viewer直後かつWindows固有処理前に1回登録する。"""
+    def test_atk_serve_follows_statusline_before_windows_steps(self) -> None:
+        """atk serveセットアップをstatusline取得直後かつWindows固有処理前に1回登録する。"""
         names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         serve_name = "atk serve 自動起動セットアップ (Linux)"
-        plans_name = "claude-plans-viewer 自動起動セットアップ (Linux)"
         assert names.count(serve_name) == 1
-        assert names.index(serve_name) == names.index(plans_name) + 1
+        assert names.index(serve_name) == names.index("claude-statusline バイナリの取得") + 1
         assert names.index(serve_name) < names.index("Windowsレジストリ設定")
+        # 計画ファイル閲覧を統合したため、旧計画ビューアーの自動起動ステップは登録しない。
+        assert not [name for name in names if "claude-plans-viewer" in name]
 
     def test_dotfiles_autoupdate_follows_atk_serve_before_windows_steps(self) -> None:
         """dotfiles自動更新timerをatk serve直後かつWindows固有処理前に1回登録する。"""

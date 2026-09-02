@@ -30,14 +30,12 @@ dependencies = [
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
-    "watchdog>=6.0.0",
     "zstandard",
 ]
 
 [project.scripts]
 check-image-sizes = "pytools.check_image_sizes:main"
 ccommit = "pytools.claude_commit:main"
-claude-plans-viewer = "pytools.claude_plans_viewer:main"
 claude-session-export = "pytools.claude_session_export:main"
 claudize = "pytools.claudize:main"
 clonedir = "pytools.clonedir:main"
