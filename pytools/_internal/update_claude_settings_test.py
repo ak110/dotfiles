@@ -1305,10 +1305,10 @@ class TestStripRemovedHooks:
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py; exit 0'",
                 True,
             ),
-            # 共通エントリポイント形式の現行サブコマンドは保持する
+            # 共通エントリポイント形式でも、スクリプト実在検査を持たない旧pretooluseコマンドは除去する
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; exit 0'",
-                False,
+                True,
             ),
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py stop; exit 0'",
