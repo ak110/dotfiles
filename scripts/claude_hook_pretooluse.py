@@ -12,6 +12,7 @@
 4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. コーディングエージェント向け文書の編集前における参照文書の未読警告（warn、非ブロック）
+7. 本リポジトリが配布するコマンドを解決できない起動形で書く記述の検出（block）
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
@@ -91,6 +92,16 @@ def main(payload_text: str) -> int:
             _block_notice(
                 dotfiles_block,
                 fix="Replace the identifiers with generalized wording before editing the distribution file again.",
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    launch_form_block = _check_pytools_command_launch_form(tool_name, fields, file_path, dotfiles_root)
+    if launch_form_block is not None:
+        print(
+            _block_notice(
+                launch_form_block,
+                fix="Drop the runner prefix and call the installed command name directly.",
             ),
             file=sys.stderr,
         )
@@ -401,6 +412,53 @@ def _check_dotfiles_specific_names(
             f" Target: {file_path}"
         )
     return block_msg, warn_msg
+
+
+# --- 配布コマンドの起動形 check (block) ---
+
+# `uv tool run` と `uvx` に後続するオプションを除外し、その次に現れる名前を取得する。
+# オプションの値（`--from pkg` の `pkg` 等）も名前として取得するが、配布コマンド名と一致しないため検出しない。
+_UV_TOOL_LAUNCH_RE = re.compile(
+    r"\b(?:uvx|uv[ \t]+tool[ \t]+run)(?:[ \t]+-{1,2}[^\s]+)*[ \t]+(?P<name>[A-Za-z][A-Za-z0-9._-]*)"
+)
+
+
+def _check_pytools_command_launch_form(
+    tool_name: str,
+    fields: list[tuple[str, str]],
+    file_path: str,
+    dotfiles_root: pathlib.Path,
+) -> str | None:
+    """本リポジトリが配布するコマンドを解決できない起動形で書く記述を検出する。
+
+    `uv tool run <name>` と `uvx <name>` は `<name>` を同名パッケージとしてレジストリから
+    解決する。本リポジトリの `[project.scripts]` が提供するコマンドは `uv tool install` で
+    導入したエントリポイント名であり、同名パッケージが存在しないためこれらの起動形は失敗する。
+    判定対象の名前は `[project.scripts]` から取得し、検査側では列挙しない。
+    検出範囲は本リポジトリのチェックアウト内のファイルへの書き込みに限る。
+    フックを無効化した環境と、フックを経由しない書き込み（`git` による取り込み、
+    外部エディターでの編集）は検出しない。
+    """
+    if not file_path:
+        return None
+    checkout_root = _find_git_checkout_root(file_path)
+    if checkout_root is None or not _is_dotfiles_checkout(checkout_root, dotfiles_root):
+        return None
+    commands = _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
+    if not commands:
+        return None
+    for field, value in fields:
+        for match in _UV_TOOL_LAUNCH_RE.finditer(value):
+            name = match.group("name")
+            if name not in commands:
+                continue
+            return (
+                f"{tool_name}.{field}: `{match.group()}` resolves '{name}' as a registry package,"
+                " but this repository ships it as an entry point installed via `uv tool install`,"
+                " so the launch form fails at run time."
+                f" Target: {file_path}"
+            )
+    return None
 
 
 # --- agent-toolkit-edit スキル未起動警告 check (warn) ---

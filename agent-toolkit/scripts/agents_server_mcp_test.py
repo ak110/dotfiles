@@ -1374,6 +1374,12 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
     assert turn_start["effort"] == "high"
 
 
+def test_explore_system_prompt_contains_delegate_notice() -> None:
+    """通常起動と探索起動のいずれの指示も委譲先宣言から始まる。"""
+    assert state.DELEGATE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+    assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+
+
 @pytest.mark.asyncio
 async def test_codex_explore_changes_thread_start_only(
     monkeypatch: pytest.MonkeyPatch,
@@ -1401,10 +1407,27 @@ async def test_codex_explore_changes_thread_start_only(
     normal_thread = normal_client.requests[0][1]
     explore_thread = explore_client.requests[0][1]
     assert "config" not in normal_thread
-    assert "developerInstructions" not in normal_thread
+    assert normal_thread["developerInstructions"] == state.DELEGATE_SYSTEM_PROMPT
     assert explore_thread["config"] == {"project_doc_max_bytes": 0}
     assert explore_thread["developerInstructions"] == state.EXPLORE_SYSTEM_PROMPT
     assert normal_client.requests[1][1] == explore_client.requests[1][1]
+
+
+@pytest.mark.asyncio
+async def test_codex_resume_passes_delegate_instructions(tmp_path: pathlib.Path) -> None:
+    """Codexの再開は起動種別に応じた委譲先宣言をthread/resumeへ渡す。"""
+    client = FakeCodexClient()
+    normal_session = subject.SessionState("thread-normal", str(tmp_path), engine="codex")
+    explore_session = subject.SessionState("thread-explore", str(tmp_path), engine="codex", explore=True)
+
+    await codex_backend.AppServerManager._resume_thread(normal_session, client)
+    await codex_backend.AppServerManager._resume_thread(explore_session, client)
+
+    normal_resume = client.requests[0][1]
+    explore_resume = client.requests[1][1]
+    assert normal_resume["developerInstructions"] == state.DELEGATE_SYSTEM_PROMPT
+    assert "config" not in normal_resume
+    assert explore_resume["developerInstructions"] == state.EXPLORE_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
@@ -1532,7 +1555,7 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
         "stdout": asyncio.subprocess.PIPE,
         "stderr": asyncio.subprocess.PIPE,
         "limit": codex_backend.APP_SERVER_STREAM_LIMIT_BYTES,
-        "cwd": str(pathlib.Path.home()),
+        "cwd": codex_backend.APP_SERVER_WORKING_DIRECTORY,
     }
     assert observed["limit"] > 64 * 1024
 
@@ -1699,6 +1722,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
             "model": "gpt-test",
+            "developerInstructions": state.DELEGATE_SYSTEM_PROMPT,
         },
     )
     assert client.requests[1][0] == "turn/start"
@@ -2167,7 +2191,7 @@ async def test_send_message_timeout_reports_undetermined_delivery(
         expire_session=manager._expire_session,
     )
     manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     try:
         session = await backend.start("調査", str(tmp_path))
         await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
@@ -2193,7 +2217,7 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
         expire_session=manager._expire_session,
     )
     manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     session_id = "claude-pending"
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
@@ -2245,7 +2269,7 @@ async def test_claude_kill_cleans_owned_pending_resume(
         expire_session=manager._expire_session,
     )
     manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     session_id = "claude-pending"
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
@@ -2286,7 +2310,7 @@ async def test_claude_pending_resume_discards_previous_result_after_retention_de
         expire_session=manager._expire_session,
     )
     manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     session_id = "claude-pending"
     session = state.SessionState(session_id, str(tmp_path), engine="claude")
     session.status = "completed"
@@ -2338,7 +2362,11 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
 async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> None:
     """Claude Agent SDKへClaude Code presetと設定読込元を渡す。"""
     options = claude_backend._build_options(str(tmp_path), "model", "high")
-    assert options.system_prompt == {"type": "preset", "preset": "claude_code"}
+    assert options.system_prompt == {
+        "type": "preset",
+        "preset": "claude_code",
+        "append": state.DELEGATE_SYSTEM_PROMPT,
+    }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
     assert options.env == {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
@@ -2373,7 +2401,7 @@ async def test_claude_resume_owns_saved_session(
     client = FakeClaudeClient([[SystemMessage("claude-saved"), ResultMessage("再開結果")]])
     captured: dict[str, str | None] = {}
 
-    def build_options(_cwd: str, _model: str | None, _effort: str | None, session_id: str | None = None) -> Any:
+    def build_options(_cwd: str, _model: str | None, _effort: str | None, session_id: str | None = None, **_kwargs: Any) -> Any:
         captured["session_id"] = session_id
         return SimpleNamespace()
 
@@ -2456,7 +2484,7 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
     )
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: options)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: options)
     try:
         session = await manager.start("調査", str(tmp_path), "model", "high")
         for _ in range(20):
@@ -2492,7 +2520,7 @@ async def test_claude_resources_remain_identical_when_init_is_resent_per_turn(
         ]
     )
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     try:
         session = await manager.start("調査", str(tmp_path))
         channel = manager._channels[session.session_id]
@@ -2544,7 +2572,7 @@ async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_run
     session_id = "claude-retained"
     client = BlockingResultClaudeClient(session_id)
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     retained = subject.SessionState(session_id, str(tmp_path), engine="claude")
     _complete(retained, message="前turnの結果")
     manager.sessions[session_id] = retained
@@ -2573,7 +2601,7 @@ async def test_claude_reply_repeats_when_init_is_resent_per_turn(
         ]
     )
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     try:
         session = await manager.start("調査", str(tmp_path), None, None)
         for prompt, expected in (("続行1", "1回目のreply結果"), ("続行2", "2回目のreply結果")):
@@ -2605,7 +2633,7 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
     manager = subject.AgentsServerManager()
     backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
     manager._claude = backend
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
 
     try:
         monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("claude", "model", "high")])
@@ -2624,7 +2652,7 @@ async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.Mon
     """通常のメッセージ間隔が旧poll間隔を超えてもstreamを失敗扱いにしない。"""
     client = DelayedClaudeClient([[SystemMessage("claude-delayed"), AssistantMessage("途中"), ResultMessage("完了")]])
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     try:
         session = await manager.start("調査", str(tmp_path))
         for _ in range(40):
@@ -2646,7 +2674,7 @@ async def test_claude_concatenates_multiple_text_blocks(monkeypatch: pytest.Monk
     assistant_message.content = MultipleBlockAssistantMessage("一", "二").content
     client = FakeClaudeClient([[SystemMessage("claude-blocks"), assistant_message, ResultMessage("完了")]])
     manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     try:
         session = await manager.start("調査", str(tmp_path))
         for _ in range(20):
@@ -2667,7 +2695,7 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     client = FailingClaudeClient([])
     sessions: dict[str, subject.SessionState] = {}
     manager = claude_backend.ClaudeServerManager(sessions, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     session = await manager.start("調査", str(tmp_path))
     for _ in range(20):
         if client.disconnected:
@@ -2696,7 +2724,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
         client_factory=lambda _options: client,
         expire_session=manager._expire_session,
     )
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     session = await backend.start("調査", str(tmp_path))
     for _ in range(20):
         if client.disconnected and session.session_id not in sessions:
@@ -2726,7 +2754,7 @@ async def test_claude_server_close_disconnects_and_retains_result(
     client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
     backend = claude_backend.ClaudeServerManager(sessions, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args: SimpleNamespace())
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     session = await backend.start("調査", str(tmp_path))
     for _ in range(20):
         if session.result_available:

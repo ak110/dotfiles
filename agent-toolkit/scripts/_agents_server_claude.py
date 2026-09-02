@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from _agents_server_state import (
+    DELEGATE_SYSTEM_PROMPT,
     EXPLORE_SYSTEM_PROMPT,
     ModelCandidate,
     ResumePrompt,
@@ -92,7 +93,9 @@ def _build_options(
         "permission_mode": "bypassPermissions",
         "env": env,
         "setting_sources": [] if explore else ["user", "project"],
-        "system_prompt": EXPLORE_SYSTEM_PROMPT if explore else {"type": "preset", "preset": "claude_code"},
+        "system_prompt": (
+            EXPLORE_SYSTEM_PROMPT if explore else {"type": "preset", "preset": "claude_code", "append": DELEGATE_SYSTEM_PROMPT}
+        ),
     }
     if explore:
         options.update(
@@ -213,11 +216,7 @@ class ClaudeServerManager:
         excluded_candidates: frozenset[ModelCandidate],
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
-        options = (
-            _build_options(cwd, model, effort, session_id, explore=True)
-            if explore
-            else _build_options(cwd, model, effort, session_id)
-        )
+        options = _build_options(cwd, model, effort, session_id, explore=explore)
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
         task: asyncio.Task[Any] = asyncio.create_task(

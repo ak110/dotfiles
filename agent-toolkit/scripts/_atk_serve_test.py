@@ -8,6 +8,7 @@ import contextlib
 import json
 import logging
 import math
+import os
 import pathlib
 import re
 import signal
@@ -31,6 +32,11 @@ import _atk_serve_state as state
 import filelock
 import pytest
 import watchdog.events
+
+# UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
+# 実行環境のホーム・設定ディレクトリを参照する。conftestの`_isolated_home`が差し替えた環境を
+# そのまま渡すとこの解決が失敗するため、取り込み時点の環境変数を控えてNodeへ渡す。
+_HOST_ENVIRON = dict(os.environ)
 
 
 def test_config_precedence_and_platform_ports(tmp_path: pathlib.Path) -> None:
@@ -467,6 +473,7 @@ eval({json.dumps(executable)});
         text=True,
         capture_output=True,
         check=True,
+        env=_HOST_ENVIRON,
     )
     return typing.cast(dict[str, typing.Any], json.loads(completed.stdout))
 

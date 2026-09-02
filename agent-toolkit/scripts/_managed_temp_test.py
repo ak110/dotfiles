@@ -343,6 +343,15 @@ def _interrupt_cleanup(target: pathlib.Path, *, quarantine: bool = False) -> tup
     return consuming, quarantine_path
 
 
+def _registry_recovery_is_accepted(target: pathlib.Path) -> bool:
+    """`--recover-registry`が当該管理対象の後始末を受理したかを返す。"""
+    try:
+        subject.cleanup_managed_temp(target, recover_registry=True)
+    except subject.ManagedTempError:
+        return False
+    return True
+
+
 def _set_tree_mtime(path: pathlib.Path, timestamp_ns: int) -> None:
     """対象ツリー全体の最終更新日時を同じ値へ固定する。"""
     for entry in path.rglob("*"):
@@ -1121,6 +1130,63 @@ class TestManagedTempPosix:
         subject.cleanup_managed_temp(target, recover_registry=True)
         assert not target.exists()
         assert not registry.exists()
+
+    @pytest.mark.parametrize("marker_state", ["intact", "unmatched", "unreadable"])
+    def test_recovery_guidance_matches_registry_recovery_acceptance(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        marker_state: str,
+    ) -> None:
+        """`list`が`--recover-registry`を案内する管理対象と、同引数が受理する管理対象を一致させる。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp(f"recovery-{marker_state}")
+        subject._registry_path(target).unlink()
+        marker = target / _MARKER_NAME
+        if marker_state == "unmatched":
+            record = json.loads(marker.read_text(encoding="utf-8"))
+            del record["identity"]
+            del record["nonce"]
+            marker.write_text(json.dumps(record), encoding="utf-8")
+            marker.chmod(0o600)
+        elif marker_state == "unreadable":
+            marker.unlink()
+            marker.symlink_to(tmp_path / "missing-marker")
+
+        assert subject.list_managed_temp(report_recovery_candidates=True) == []
+        offered = f"atk managed-temp cleanup --path {target} --recover-registry" in capsys.readouterr().err
+
+        assert offered is _registry_recovery_is_accepted(target)
+
+    def test_list_and_cleanup_guide_direct_removal_for_an_unmatched_marker(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """復元できないマーカーには、復元不能の理由と実体の直接削除を案内する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("unmatched-marker")
+        subject._registry_path(target).unlink()
+        marker = target / _MARKER_NAME
+        record = json.loads(marker.read_text(encoding="utf-8"))
+        del record["identity"]
+        del record["nonce"]
+        marker.write_text(json.dumps(record), encoding="utf-8")
+        marker.chmod(0o600)
+
+        assert subject.list_managed_temp(report_recovery_candidates=True) == []
+        error = capsys.readouterr().err
+        assert f"warning: マーカーから登録を復元できない管理対象があります: {target}" in error
+        assert "実体を直接削除してください" in error
+        assert f"atk managed-temp cleanup --path {target} --recover-registry" not in error
+
+        with pytest.raises(subject.ManagedTempError) as captured:
+            subject.cleanup_managed_temp(target, recover_registry=True)
+        assert "登録が無いためマーカーから復元しようとしたが" in str(captured.value)
+        assert "実体を直接削除する" in str(captured.value)
+        assert target.exists()
 
     def test_cleanup_recovers_a_confirmed_absent_registry_via_cli(
         self,

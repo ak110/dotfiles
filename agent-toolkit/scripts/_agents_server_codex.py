@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from _agents_server_state import (
+    DELEGATE_SYSTEM_PROMPT,
     EXPLORE_SYSTEM_PROMPT,
     TERMINAL_STATUSES,
     ModelCandidate,
@@ -402,7 +403,7 @@ class AppServerManager:
             params["model"] = model
         if explore:
             params["config"] = {"project_doc_max_bytes": 0}
-            params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT
+        params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT if explore else DELEGATE_SYSTEM_PROMPT
         thread_response = await client.request("thread/start", params)
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
@@ -605,7 +606,7 @@ class AppServerManager:
             resume_params["model"] = session.model
         if session.explore:
             resume_params["config"] = {"project_doc_max_bytes": 0}
-            resume_params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT
+        resume_params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT if session.explore else DELEGATE_SYSTEM_PROMPT
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:

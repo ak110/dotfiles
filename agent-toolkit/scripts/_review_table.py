@@ -34,6 +34,10 @@ _RECOVERY_GUIDANCE = (
     f"trackの正規値集合は{', '.join(TRACK_VALUES)}。"
     "保存済み7列形式はlevelを空として読み込み、更新時に8列形式へ書き戻す"
 )
+_INPUT_GUIDANCE = (
+    "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
+    "標準入力、パイプ及びプロセス置換は受理しない"
+)
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -78,13 +82,27 @@ def _parse_text(text: str) -> list[tuple[str, list[str]]]:
     return rows
 
 
+def _read_table_text(path: Path) -> str:
+    """レビュー表の本文をUTF-8で読む。
+
+    通常ファイル以外は読み込みを試みずに拒否する。標準入力とプロセス置換は`/dev/fd`配下の
+    パイプとして渡り、読み込むと書き込み側を待って停止するためである。
+    存在しない場合と通常ファイルでない場合を別の文面にするのは、パイプを`/dev/stdin`として
+    渡すと`_path`の解決が存在しないパスへ至り、同じ文面では原因を判別できないためである。
+    """
+    if not path.exists():
+        raise ValueError(f"レビュー表を読み込めない: {path}: 存在しない。{_INPUT_GUIDANCE}")
+    if not path.is_file():
+        raise ValueError(f"レビュー表を読み込めない: {path}: 通常ファイルではない。{_INPUT_GUIDANCE}")
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"レビュー表を読み込めない: {path}: {error}。{_INPUT_GUIDANCE}") from error
+
+
 def _read(path: Path) -> list[list[str]]:
     """TSVを読み、JSON復号済みの行一覧を返す。"""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ValueError(f"レビュー表を解釈できない: {path}: {error}") from error
-    return [row for _, row in _parse_text(text)]
+    return [row for _, row in _parse_text(_read_table_text(path))]
 
 
 def _normalized(value: str) -> str:
@@ -284,10 +302,7 @@ def respond(
 def show(path: str | Path, track: str | None = None) -> int:
     """表のraw TSVを保存順のまま表示し、指定時はtrackで限定する。"""
     target = _path(str(path))
-    try:
-        text = target.read_text(encoding="utf-8")
-    except OSError as error:
-        raise ValueError(f"レビュー表を解釈できない: {target}: {error}") from error
+    text = _read_table_text(target)
     rows = _parse_text(text)
     if track is None:
         print(text, end="")

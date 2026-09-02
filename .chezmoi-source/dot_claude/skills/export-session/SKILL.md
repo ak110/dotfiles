@@ -19,17 +19,17 @@ description: >
 最小（現在のセッションをstdoutへ出力）:
 
 ```bash
-uv tool run claude-session-export --current
+claude-session-export --current
 ```
 
 標準（現在のプロジェクトの直近3件をディレクトリに保存）:
 
 ```bash
-uv tool run claude-session-export --project-dir=/path/to/project --latest=3 --output-dir=./exports
+claude-session-export --project-dir=/path/to/project --latest=3 --output-dir=./exports
 ```
 
 詳細（thinkingブロック・サブエージェント含む全セッション一括変換）:
 
 ```bash
-uv tool run claude-session-export --all --include-thinking --include-subagents --output-dir=~/claude-sessions
+claude-session-export --all --include-thinking --include-subagents --output-dir=~/claude-sessions
 ```

@@ -95,6 +95,7 @@ description: >
 
 レビュー表が指定された場合は、渡された修正対象の`track`集合だけを扱う。
 渡された集合の外に属する`track`の行を採否判断と更新の対象にせず、`atk review-table`の公開CLI契約に従って応答と検証を完了する。
+検証は表全体を対象とし、扱う`track`集合による限定は採否判断と更新にだけ適用する。
 実装レビューでは、修正対象を`implementation-review`の単一trackに限定する。
 実装レビュー担当へ渡す情報は、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の生成契約に従って調整主体が渡した`review_contract`と直接影響範囲を超えて自ら拡張しない。
 

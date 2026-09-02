@@ -231,6 +231,12 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert data["askUserQuestionTimeout"] == "never"
 
+    def test_prompt_cache_ttl_in_production_file(self):
+        """配布設定はメイン会話とそれ以外の要求の保持期間をいずれも1時間にする。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        assert data["promptCacheTtl"] == "1h"
+        assert data["subagentPromptCacheTtl"] == "1h"
+
     def test_env_has_no_flicker(self):
         """Claude Code のちらつき抑制フラグが env に設定されている。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))

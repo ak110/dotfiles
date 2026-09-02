@@ -35,6 +35,8 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
+- 検証コマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
+- 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
@@ -379,9 +381,12 @@ def _handle_bash_tool(
         or _check_bash_process_kill_by_pattern(command)
     ):
         return 2
+    truncation_result = _check_bash_output_truncation(command, session_id)
+    if truncation_result == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
-        _check_bash_output_truncation(command),
+        truncation_result,
         _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
@@ -2474,6 +2479,26 @@ def _has_foreground_sleep_wait(segments: list[str]) -> bool:
     )
 
 
+def _record_repeat_detection(session_id: str, key: str) -> bool:
+    """検出をセッション状態へ一度だけ記録し、記録済みだったかを返す。
+
+    排他ロック下で現在値を読み、未記録なら記録して偽を、記録済みなら真を返す。
+    `session_id`が空の場合は記録できないため常に偽を返し、初回と同じ扱いになる。
+    """
+    already_detected = False
+
+    def _record(state: dict) -> dict | None:
+        nonlocal already_detected
+        already_detected = bool(state.get(key))
+        if already_detected:
+            return None
+        state[key] = True
+        return state
+
+    update_state(session_id, _record)
+    return already_detected
+
+
 def _check_bash_sleep_poll_pattern(
     command: str,
     session_id: str,
@@ -2498,17 +2523,7 @@ def _check_bash_sleep_poll_pattern(
     if not _has_foreground_sleep_wait(_split_serial_shell_commands(command)):
         return None
 
-    already_detected = False
-
-    def _record_detection(state: dict) -> dict | None:
-        nonlocal already_detected
-        already_detected = bool(state.get("sleep_poll_detected"))
-        if already_detected:
-            return None
-        state["sleep_poll_detected"] = True
-        return state
-
-    update_state(session_id, _record_detection)
+    already_detected = _record_repeat_detection(session_id, "sleep_poll_detected")
     guidance = (
         "Receive the completion notification, use a background job's machine-readable completion marker,\n"
         "or observe delegated work with `atk watch`, then end the turn with a waiting status."
@@ -2760,12 +2775,16 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
     return False
 
 
-def _check_bash_output_truncation(command: str) -> str | None:
-    """検証コマンドの出力を`tail`・`head`で切り詰める指定を検出し、全量保存を促す警告を返す。
+def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
+    """検証コマンドの出力を`tail`・`head`で切り詰める指定を初回warn、同一セッション内再検出でblockする。
 
-    実行自体は止めない。全量をファイルへ保存してから必要部分を抽出する形、または
-    構造化出力をレコード種別で抽出する形を促す。
-    全パイプラインの全検証コマンド区間を対象とし、1件でも切り詰めに該当すれば1回だけ警告する。
+    初回は全量をファイルへ保存してから必要部分を抽出する形、または構造化出力をレコード種別で
+    抽出する形を促す警告だけを返し、実行は止めない。同じセッションで再び検出した場合は、
+    実行主体が是正するまで当該操作を継続できないよう遮断する。
+    警告だけを返す検査を遮断へ昇格させる対象は、検査が実行位置と対象コマンドで限定済みであり、
+    かつ警告本文が同じ目的を達成する代替手段を示しているものに限る。本検査は実行位置で判定し、
+    全量保存と分離実行の代替手段を本文が示すため当該基準を満たす。
+    全パイプラインの全検証コマンド区間を対象とし、1件でも切り詰めに該当すれば1回だけ通知する。
     `;`・`&&`・`||`・`&`で連結した後続コマンドは検証コマンドの出力を受け取らないため対象外とする。
     判定は`_extract_execution_pipelines`が返す実行位置で行うため、検証ツール名を検索語・引数として
     含むだけの読み取り操作は検出しない。実行位置を確定できない区間と、実行位置以外で起動される
@@ -2773,11 +2792,23 @@ def _check_bash_output_truncation(command: str) -> str | None:
     """
     if not any(_pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
         return None
+    guidance = (
+        "Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved file,"
+        " select the required record type from structured output, or run the command in a"
+        " separated context with the `agent-toolkit:shell-exec` skill."
+    )
+    if _record_repeat_detection(session_id, "output_truncation_detected"):
+        print(
+            _block_notice(
+                "block: verification command output truncation was detected again in this session.",
+                fix=guidance,
+            ),
+            file=sys.stderr,
+        )
+        return "block"
     return _llm_notice(
-        "warn: verification command output is piped through `tail`/`head`, truncating it."
-        " Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved"
-        " file, select the required record type from structured output, or run the command in a"
-        " separated context with the `agent-toolkit:shell-exec` skill, instead of truncating the live output.",
+        f"warn: verification command output is piped through `tail`/`head`, truncating it. {guidance}"
+        " Do not truncate the live output.",
         tag="warn",
     )
 

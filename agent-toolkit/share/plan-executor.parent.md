@@ -36,7 +36,7 @@
 
 - `git -C <マージ先worktreeの絶対パス> rev-parse <マージ先branch名>`の出力が`merged_head`と一致する
 - `adopted`が挙げるファイル名の集合が、当該レーンへ渡したフィードバックのうち固有の延期指示を受領したものと`upstream_submission`が`混在`のものを除いた集合と、過不足なく一致する。一致を確認した各ファイル名が、`atk mq list --target-repo=<対象リポジトリ> --status=adopted --skip-pull --json`の出力へ`filename`として現れる
-- `released`が挙げる資源の集合が、起動時に当該レーンへ記録した所有worktree、所有branch及びレーンmanaged-tempの集合と、過不足なく一致する。一致を確認した各資源が、`git -C <マージ先worktreeの絶対パス> worktree list`、`git -C <マージ先worktreeの絶対パス> branch --list <所有branch名>`、当該managed-tempの絶対パスへの`ls`の3つの出力に現れない
+- `released`が挙げる資源の集合が、起動時に当該レーンへ記録した所有worktree、所有branch及びレーンmanaged-tempの集合と、過不足なく一致する。一致を確認した所有worktreeと所有branchが、`git -C <マージ先worktreeの絶対パス> worktree list`と`git -C <マージ先worktreeの絶対パス> branch --list <所有branch名>`の出力へ現れない。一致を確認したレーンmanaged-tempについて、`test ! -e <当該managed-tempの絶対パス>`が終了コード0を返す
 
 件数の一致だけでは、別の項目を終端した報告と所有資源を列挙から省いた報告を区別できないため、集合の一致を先に確認してから各要素の実状態を照合する。各要素の照合は、当該操作の公開契約が定める終了状態を直接観測して行う。`adopted`は`atk mq adopt`の終了状態が`adopted`への移動であるため当該状態への存在を観測し、`released`は資源回収の終了状態が資源の消失であるため当該消失を観測する。`processing`に現れないことは、`inbox`・`planning`・`editing`・`hold`・`rejected`への移動と未終端を区別しないため用いない。
 

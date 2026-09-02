@@ -925,6 +925,17 @@ def _records_match(
     )
 
 
+def _record_mismatch_error(marker_path: pathlib.Path, *, recovered_from_marker: bool) -> ManagedTempError:
+    """管理情報の不一致を、登録をマーカーで代替したかに応じた対処付きで返す。"""
+    if not recovered_from_marker:
+        return ManagedTempError(f"管理情報の内容が一致しない: {marker_path}")
+    return ManagedTempError(
+        f"管理情報の内容が一致しない: {marker_path}。"
+        "登録が無いためマーカーから復元しようとしたが、マーカーが現在の管理情報として成立しない。"
+        "内容を確認して実体を直接削除する"
+    )
+
+
 def _write_marker(
     path: pathlib.Path,
     record: dict[str, typing.Any],
@@ -1212,9 +1223,10 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
         if root_descriptor is not None:
             os.close(root_descriptor)
     registry_path = _registry_path(path)
-    registry = marker if registry_fallback and not os.path.lexists(registry_path) else _load_private_json(registry_path)
+    recovered_from_marker = registry_fallback and not os.path.lexists(registry_path)
+    registry = marker if recovered_from_marker else _load_private_json(registry_path)
     if not _records_match(path, marker, registry, identity=(opened.st_dev, opened.st_ino)):
-        raise ManagedTempError(f"管理情報の内容が一致しない: {path / _MARKER_NAME}")
+        raise _record_mismatch_error(path / _MARKER_NAME, recovered_from_marker=recovered_from_marker)
     _validate_root(root, expected=root_state)
     return _ValidatedTemp(
         path,
@@ -1243,9 +1255,10 @@ def _validate_windows(path_arg: pathlib.Path | str, *, registry_fallback: bool =
     identity = _windows_identity(path)
     marker = _load_private_json(path / _MARKER_NAME)
     registry_path = _registry_path(path)
-    registry = marker if registry_fallback and not os.path.lexists(registry_path) else _load_private_json(registry_path)
+    recovered_from_marker = registry_fallback and not os.path.lexists(registry_path)
+    registry = marker if recovered_from_marker else _load_private_json(registry_path)
     if not _records_match(path, marker, registry, identity=identity):
-        raise ManagedTempError(f"管理情報の内容が一致しない: {path / _MARKER_NAME}")
+        raise _record_mismatch_error(path / _MARKER_NAME, recovered_from_marker=recovered_from_marker)
     _validate_root(root, expected=root_state)
     if _windows_identity(path) != identity:
         raise ManagedTempError(f"管理対象が検証中に置換された: {path}")
@@ -1464,6 +1477,30 @@ def count_unregistered_candidates(prefix: str | None = None) -> int:
     return len(_unregistered_candidates(prefix))
 
 
+def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
+    """実体側マーカーだけから登録を復元できる管理対象かを返す。
+
+    `atk managed-temp list`が`--recover-registry`を案内する条件と、
+    `atk managed-temp cleanup --recover-registry`がマーカーを登録として受理する条件を
+    同じ判定へ依存させる。案内した回収手段が同じ管理対象で失敗する事態を防ぐためである。
+    マーカーを取得できない場合と記録が一致しない場合は、いずれも復元できないものとして扱う。
+    """
+    _, path = _validate_path_shape(pathlib.Path(path_arg))
+    try:
+        identity = _path_identity(path)
+        if os.name == "posix":
+            directory_descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                marker = _load_marker(directory_descriptor, path)
+            finally:
+                os.close(directory_descriptor)
+        else:
+            marker = _load_private_json(path / _MARKER_NAME)
+    except (OSError, ManagedTempError):
+        return False
+    return _records_match(path, marker, marker, identity=identity)
+
+
 def _report_unregistered_candidates(prefix: str | None) -> None:
     """既定の一時root直下で、マーカーだけが残る管理対象を報告する。"""
     try:
@@ -1477,6 +1514,13 @@ def _report_unregistered_candidates(prefix: str | None) -> None:
             print(
                 f"warning: 後始末が中断した可能性がある管理対象があります: {child}"
                 f"（回収する場合は atk managed-temp cleanup --path {child}）",
+                file=sys.stderr,
+            )
+            continue
+        if not _marker_recovery_is_accepted(child):
+            print(
+                f"warning: マーカーから登録を復元できない管理対象があります: {child}"
+                "（`--recover-registry`では回収できません。内容を確認して実体を直接削除してください）",
                 file=sys.stderr,
             )
             continue
