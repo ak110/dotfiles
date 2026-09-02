@@ -14,6 +14,17 @@ allowed-tools: Bash, Read
 
 本スキルは、委譲されたコマンドをBashで実行して結果を報告する手順を提供する。
 メインのコンテキストから分離したfork実行であり、実行するコマンドと結果の要約方針を引数で受け取る。
+
+## 起動
+
+呼び出し元は本スキルを`Skill`ツールで起動し、実行するコマンドと結果の要約方針を引数へ渡す。`context: fork`を解釈する実行環境では、この起動だけで分離が成立する。
+
+`context: fork`を解釈しない実行環境では、`agents_server`の`start`へ`model_type`として`explore_fast`、`cwd`として作業ディレクトリの絶対パス、`prompt`として本スキルの実行ルールと同じ内容の指示を渡し、同じ応答で`wait`を発行する。この経路では、実行するコマンド、結果の要約方針、及び生出力を委譲元へ転記しない条件を`prompt`へ書く。
+
+`model_type`へ`explore_fast`を用いるのは、`agent-toolkit/scripts/_atk_config.py`が定める設定キーのうち軽量な区分が`explore_fast_model`であり、frontmatterの`model: haiku`と同じ意図に対応するためである。分離実行のために新しい設定キーを追加しない。
+
+## 指示
+
 以下の指示に従う。
 
 $ARGUMENTS

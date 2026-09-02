@@ -3918,7 +3918,12 @@ class TestBashOutputTruncationWarning:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         output = json.loads(result.stdout)
-        assert "warn" in output["hookSpecificOutput"]["additionalContext"]
+        context = output["hookSpecificOutput"]["additionalContext"]
+        assert "warn" in context
+        # 全量保存・構造化出力の抽出・分離実行の3つの代替手段を示す
+        assert "tee" in context
+        assert "structured output" in context
+        assert "agent-toolkit:shell-exec" in context
 
     @pytest.mark.parametrize(
         "command",

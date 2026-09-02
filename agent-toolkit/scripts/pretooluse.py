@@ -2776,7 +2776,8 @@ def _check_bash_output_truncation(command: str) -> str | None:
     return _llm_notice(
         "warn: verification command output is piped through `tail`/`head`, truncating it."
         " Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved"
-        " file, or select the required record type from structured output, instead of truncating the live output.",
+        " file, select the required record type from structured output, or run the command in a"
+        " separated context with the `agent-toolkit:shell-exec` skill, instead of truncating the live output.",
         tag="warn",
     )
 
