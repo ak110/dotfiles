@@ -408,10 +408,31 @@ class TestConfigSet:
         ]
 
     def test_resolve_model_candidates_maps_model_type_and_rejects_unknown(self) -> None:
-        """model_typeを対応設定の候補へ解決し、未知値は利用可能一覧付きで拒否する。"""
+        """model_typeを対応設定の候補へ解決し、未知値は両方の受理形式を示して拒否する。"""
         assert config_module.resolve_model_candidates("explore_fast") == [("codex", "gpt-5.6-terra", "medium")]
         with pytest.raises(ValueError, match=r"unknown model_type: no-such.*explore_fast.*plan"):
             config_module.resolve_model_candidates("no-such")
+        with pytest.raises(ValueError, match=r"or pass candidates like codex:gpt-5\.6-sol/medium"):
+            config_module.resolve_model_candidates("no-such")
+
+    def test_resolve_model_candidates_accepts_direct_candidates(self, tmp_path: pathlib.Path) -> None:
+        """設定値と同じ書式の候補列を直接受理し、設定を読まずに当該候補を返す。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(json.dumps({"plan_model": "claude:haiku/low"}), encoding="utf-8")
+
+        assert config_module.resolve_model_candidates("codex:gpt-5.6-sol/medium") == [("codex", "gpt-5.6-sol", "medium")]
+        assert config_module.resolve_model_candidates("claude:opus[1m]") == [("claude", "opus[1m]", "medium")]
+        assert config_module.resolve_model_candidates("codex:a/low,claude:opus/high") == [
+            ("codex", "a", "low"),
+            ("claude", "opus", "high"),
+        ]
+
+    @pytest.mark.parametrize("value", ["codex:", "nosuch:model", "codex:a/b/c"])
+    def test_resolve_model_candidates_rejects_malformed_direct_candidates(self, value: str) -> None:
+        """候補列としても種別としても成立しない値は`ValueError`で拒否する。"""
+        with pytest.raises(ValueError, match=r"unknown model_type"):
+            config_module.resolve_model_candidates(value)
 
     def test_set_unknown_model_warns_and_persists(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """参考一覧に無いモデル名は警告を表示したうえで受理し、永続化する。"""

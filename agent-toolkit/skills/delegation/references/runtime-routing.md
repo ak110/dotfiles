@@ -66,6 +66,10 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、当該キーの実効値を環境変数の値とする。
 環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
 
+`model_type`へは、上表のキー名から`_model`を除いた種別に加えて、設定値と同じ書式の候補列を直接渡せる。
+直接渡した場合、サーバーは工程別モデル設定を読まず、渡した候補列をそのまま候補として使う。
+実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
+
 1. `agents_server`経路では、表の`model_type`を`start`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
 2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合は当該工程を`needs_escalation`または未完了として返す。
 3. `agents_server`の応答は、採用した`model_type`、`engine`、`model`及び`effort`を含む。呼び出し側はこの応答値を保持し、実際に用いた組合せとして報告へ記録する。

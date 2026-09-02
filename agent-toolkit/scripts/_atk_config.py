@@ -204,11 +204,20 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
 
 
 def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
-    """model_typeに対応する工程別モデル設定を候補の3つ組として返す。"""
+    """model_typeに対応する工程別モデル設定を候補の3つ組として返す。
+
+    設定値と同じ書式の候補列を受け取った場合は設定を読まず、当該候補列をそのまま分解して返す。
+    """
     key = f"{model_type}_model"
     if key not in _MUTABLE_KEY_DEFAULTS:
-        available = sorted(item.removesuffix("_model") for item in _MUTABLE_KEY_DEFAULTS if item.endswith("_model"))
-        raise ValueError(f"unknown model_type: {model_type} (available: {', '.join(available)})")
+        try:
+            return parse_stage_model_candidates(model_type)
+        except ValueError as error:
+            available = sorted(item.removesuffix("_model") for item in _MUTABLE_KEY_DEFAULTS if item.endswith("_model"))
+            raise ValueError(
+                f"unknown model_type: {model_type} "
+                f"(available: {', '.join(available)}; or pass candidates like codex:gpt-5.6-sol/medium)"
+            ) from error
     return parse_stage_model_candidates(resolve_mutable_setting(key))
 
 

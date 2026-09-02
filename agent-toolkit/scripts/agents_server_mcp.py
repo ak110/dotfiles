@@ -738,7 +738,15 @@ with warnings.catch_warnings():
 
 @mcp.tool(name="start", structured_output=True)
 async def start(
-    model_type: str,
+    model_type: Annotated[
+        str,
+        Field(
+            description=(
+                "工程別モデル設定の種別、又は設定値と同じ書式の候補列。"
+                "候補列を直接渡した場合は設定を読まず、渡した候補をそのまま使う。"
+            )
+        ),
+    ],
     prompt: str,
     cwd: str,
     exclude_session_id: Annotated[
