@@ -1,5 +1,6 @@
 """pytools._internal.setup_cli_commonのテスト。"""
 
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -136,6 +137,77 @@ def test_migrate_excludes_canonical_prefix_and_launcher(monkeypatch, tmp_path: P
     )
 
     assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", launcher, prefix)
+
+
+@pytest.mark.parametrize("shim_location", ["data-dir", "default"])
+def test_migrate_skips_mise_shim_directory(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, shim_location: str
+) -> None:
+    """miseのshimは帰属判定へ掛けず、shim以外の非正規ランチャーは従来どおり対象にする。"""
+    home = tmp_path / "home"
+    if shim_location == "data-dir":
+        data_dir = tmp_path / "mise-data"
+        shims = data_dir / "shims"
+        monkeypatch.setenv("MISE_DATA_DIR", str(data_dir))
+    else:
+        shims = home / ".local" / "share" / "mise" / "shims"
+        monkeypatch.delenv("MISE_DATA_DIR", raising=False)
+    shims.mkdir(parents=True)
+    (shims / "codex").write_text("", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "codex").write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shims), str(other)]))
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not setup_cli_common.migrate_npm_launchers(
+            "codex", "@openai/codex", tmp_path / "canonical" / "bin" / "codex", tmp_path / "canonical"
+        )
+
+    assert not any(str(shims / "codex") in message for message in caplog.messages)
+    assert any(str(other / "codex") in message for message in caplog.messages)
+
+
+@pytest.mark.parametrize("scenario", ["package-missing", "not-symlink"])
+def test_migrate_reports_why_package_ownership_is_unconfirmed(
+    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, scenario: str
+) -> None:
+    """帰属を確認できず保持する場合は、確認が成立しなかった理由を条件ごとに示す。"""
+    monkeypatch.setenv("MISE_DATA_DIR", str(tmp_path / "mise-data"))
+    old_bin = tmp_path / "old"
+    old_bin.mkdir()
+    launcher = old_bin / "codex"
+    launcher.write_text("", encoding="utf-8")
+    (old_bin / "npm").write_text("", encoding="utf-8")
+    root = tmp_path / "prefix" / "lib" / "node_modules"
+    root.mkdir(parents=True)
+    package_dir = root.resolve() / "@openai" / "codex"
+    if scenario == "not-symlink":
+        package_dir.mkdir(parents=True)
+    monkeypatch.setenv("PATH", str(old_bin))
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        output = tmp_path / "prefix" if command[1] == "prefix" else root
+        return subprocess.CompletedProcess(command, 0, f"{output}\n", "")
+
+    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+
+    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
+        assert not setup_cli_common.migrate_npm_launchers(
+            "codex", "@openai/codex", tmp_path / "canonical" / "bin" / "codex", tmp_path / "canonical"
+        )
+
+    messages = [message for message in caplog.messages if str(launcher) in message]
+    assert len(messages) == 1
+    expected = (
+        f"packageのディレクトリが不在: {package_dir}"
+        if scenario == "package-missing"
+        else f"{package_dir}配下の実体ではない: 通常ファイル"
+    )
+    assert expected in messages[0]
 
 
 def test_migrate_keeps_launcher_without_adjacent_npm(monkeypatch, tmp_path: Path) -> None:

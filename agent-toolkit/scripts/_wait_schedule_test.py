@@ -380,9 +380,28 @@ def test_auth_command_unavailable_or_timed_out_uses_five_minute_schedule(
     _assert_ttl_and_schedule("main", "5m", _SCHEDULE_FOR_5M_TTL)
 
 
+@pytest.mark.parametrize(
+    ("value", "expected_timeout"),
+    [("5m", 270.0), ("1h", 1740.0)],
+)
+def test_wait_timeout_follows_prompt_cache_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+    expected_timeout: float,
+) -> None:
+    """保持期間の判定結果に対応する委譲待機の上限秒数を返す。"""
+    monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", value)
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    assert _wait_schedule.get_prompt_cache_ttl("main") == value
+    assert _wait_schedule.get_wait_timeout("main") == expected_timeout
+
+
 def test_rejects_unknown_request_bucket() -> None:
     """未対応のrequest bucketを拒否する。"""
     with pytest.raises(ValueError, match="未対応のrequest bucket"):
         _wait_schedule.get_prompt_cache_ttl("worker")
     with pytest.raises(ValueError, match="未対応のrequest bucket"):
         _wait_schedule.get_schedule("worker")
+    with pytest.raises(ValueError, match="未対応のrequest bucket"):
+        _wait_schedule.get_wait_timeout("worker")

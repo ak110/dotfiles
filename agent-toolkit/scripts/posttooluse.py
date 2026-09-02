@@ -49,22 +49,19 @@ import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,
 import _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    extract_execution_segments,
     extract_git_events,
 )
+from _hook_agent_id import resolve_hook_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    is_plan_adjunct_file,
     is_plan_component_file,
     is_plan_main_file,
-    working_plans_root,
 )
 from _plan_format import is_agent_facing_md  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
-from _transcript_agent_id import extract_transcript_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
@@ -75,10 +72,6 @@ _HOOK_ID = "agent-toolkit/posttooluse"
 # agent-toolkitプラグインに同梱するpyfltr MCPの検証実行ツール名。
 # hooks/hooks.jsonのPostToolUse matcherと同一値を保つ。
 _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
-
-_SESSION_PLAN_MAIN_PATHS_KEY = "session_plan_main_paths"
-_CREATE_PLAN_FILES_SCRIPT = "create_plan_files.py"
-
 
 _llm_notice = _notice_formatter(_HOOK_ID)
 
@@ -192,7 +185,6 @@ _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
-_MAIN_AGENT_ID = "main"
 
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
@@ -472,63 +464,6 @@ def _record_plan_file(session_id: str, file_path: str) -> None:
     update_state(session_id, _set_current_plan_file_path)
 
 
-def _record_session_plan_main_path(session_id: str, file_path: pathlib.Path) -> None:
-    """セッションが扱った計画ファイル（メイン）の絶対パスを重複なく記録する。"""
-    absolute_path = str(file_path.expanduser().resolve(strict=False))
-
-    def _append_plan_path(current_state: dict) -> dict | None:
-        paths = current_state.get(_SESSION_PLAN_MAIN_PATHS_KEY, [])
-        if not isinstance(paths, list):
-            paths = []
-        if absolute_path in paths:
-            return None
-        paths.append(absolute_path)
-        current_state[_SESSION_PLAN_MAIN_PATHS_KEY] = paths
-        return current_state
-
-    update_state(session_id, _append_plan_path)
-
-
-def _main_plan_path_from_edit(file_path: str) -> pathlib.Path | None:
-    """編集対象が計画バンドル要素なら対応するメイン計画の絶対パスを返す。"""
-    absolute_path = pathlib.Path(file_path).expanduser().resolve(strict=False)
-    path_text = str(absolute_path)
-    if is_plan_main_file(path_text):
-        return absolute_path
-    if is_plan_component_file(path_text) and path_text.endswith(".detail.md"):
-        return pathlib.Path(path_text[: -len(".detail.md")] + ".md")
-    if is_plan_adjunct_file(path_text) and path_text.endswith(".bugs.md"):
-        return pathlib.Path(path_text[: -len(".bugs.md")] + ".md")
-    return None
-
-
-def _command_runs_create_plan_files(command: str) -> bool:
-    """実行位置に`create_plan_files.py`があるBashコマンドなら真を返す。"""
-    return any(
-        segment.resolved
-        and bool(segment.tokens)
-        and pathlib.PurePath(segment.tokens[0].replace("\\", "/")).name == _CREATE_PLAN_FILES_SCRIPT
-        for segment in extract_execution_segments(command)
-    )
-
-
-def _record_created_plan_paths(session_id: str, command: str, tool_response: object) -> None:
-    """計画作成処理の標準出力から作業root直下のメイン計画を記録する。"""
-    if not _command_runs_create_plan_files(command) or not isinstance(tool_response, dict):
-        return
-    stdout = tool_response.get("stdout")
-    if not isinstance(stdout, str):
-        return
-    root = working_plans_root().expanduser().resolve(strict=False)
-    for line in stdout.splitlines():
-        candidate = pathlib.Path(line.strip())
-        if not candidate.is_absolute():
-            continue
-        candidate = candidate.resolve(strict=False)
-        if candidate.is_relative_to(root) and candidate != root and is_plan_main_file(str(candidate)):
-            _record_session_plan_main_path(session_id, candidate)
-
-
 def _handle_edit_tool(
     session_id: str,
     tool_name: str,
@@ -557,9 +492,6 @@ def _handle_edit_tool(
         if not operation.exists_after_apply:
             continue
         display_path = operation.display_path
-        main_plan_path = _main_plan_path_from_edit(operation.path)
-        if main_plan_path is not None:
-            _record_session_plan_main_path(session_id, main_plan_path)
         if is_plan_main_file(display_path):
             _record_plan_file(session_id, display_path)
         if is_agent_facing_md(display_path):
@@ -624,10 +556,9 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     )
 
 
-def _handle_bash_tool(session_id: str, command: str, cwd: str, tool_response: object) -> None:
+def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
-    _record_created_plan_paths(session_id, command, tool_response)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
@@ -685,7 +616,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
     if cwd:
-        tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))
+        tbd_notice = _tbd_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if tbd_notice is not None:
             notices.append(_llm_notice(tbd_notice, tag="notice"))
 
@@ -723,7 +654,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
-        owner_agent_id = extract_transcript_agent_id(payload.get("transcript_path")) or _MAIN_AGENT_ID
+        owner_agent_id = resolve_hook_agent_id(payload)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
             _record_agents_server_session_state(
                 session_id,
@@ -757,7 +688,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if not isinstance(command, str) or not command:
         return 0
 
-    _handle_bash_tool(session_id, command, cwd, payload.get("tool_response"))
+    _handle_bash_tool(session_id, command, cwd)
     return 0
 
 

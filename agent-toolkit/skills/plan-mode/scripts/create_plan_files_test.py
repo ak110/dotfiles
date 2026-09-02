@@ -4,10 +4,13 @@ import concurrent.futures
 import datetime
 import pathlib
 import subprocess
+import sys
 
-import check_plan_file_test
 import create_plan_files
 import pytest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -33,24 +36,19 @@ def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 
 def _sources(repo: pathlib.Path, directory: pathlib.Path, *, bug: bool = False) -> tuple[pathlib.Path, ...]:
     """検査を通過する計画本文を一時入力へ保存する。"""
-    main, detail = check_plan_file_test.human_new_format_plan(repo)
+    main = _plan_fixture.human_main(repo=repo.resolve())
+    detail = _plan_fixture.human_detail()
     main_source = directory / "main.md"
     detail_source = directory / "detail.md"
     if bug:
         main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
-        bug_reference = (
-            f"{create_plan_files.PORTABLE_PLAN_PREFIX}plans/2026/08/{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
-        )
+        bug_reference = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
         detail = f"## バグ調査結果\n\n- 計画ファイル（バグ）: {bug_reference}\n\n{detail}"
     main_source.write_text(main, encoding="utf-8")
     detail_source.write_text(detail, encoding="utf-8")
     if bug:
         bug_source = directory / "bug.md"
-        bug_content = check_plan_file_test._bug_file_content().replace(  # pylint: disable=protected-access
-            "# 計画の主題",
-            f"# 計画の主題 {create_plan_files.PLAN_STEM_PLACEHOLDER}",
-            1,
-        )
+        bug_content = _plan_fixture.bug_file(title=f"計画の主題 {create_plan_files.PLAN_STEM_PLACEHOLDER}")
         bug_source.write_text(
             bug_content,
             encoding="utf-8",
@@ -136,10 +134,7 @@ def test_rejects_work_type_and_bug_input_mismatch(
     bug_source = sources[2] if include_bug and len(sources) == 3 else None
     if include_bug and bug_source is None:
         bug_source = tmp_path / "bug.md"
-        bug_source.write_text(
-            check_plan_file_test._bug_file_content(),  # pylint: disable=protected-access
-            encoding="utf-8",
-        )
+        bug_source.write_text(_plan_fixture.bug_file(), encoding="utf-8")
 
     with pytest.raises(create_plan_files.PlanCreationError, match="作業種別"):
         create_plan_files.create_plan_files(
@@ -251,10 +246,8 @@ def test_rejects_legacy_two_file_plan_and_removes_created_files(
     """旧二ファイル形式は拒否し、確定した計画ファイルを回収する。"""
     main_source = tmp_path / "legacy-main.md"
     detail_source = tmp_path / "legacy-detail.md"
-    main_content, detail_content = check_plan_file_test._new_format_plan(  # pylint: disable=protected-access
-        repo,
-        _git(repo, "rev-parse", "HEAD"),
-    )
+    main_content = _plan_fixture.two_file_main(repo=repo.resolve(), base=_git(repo, "rev-parse", "HEAD"))
+    detail_content = _plan_fixture.two_file_detail()
     main_source.write_text(main_content, encoding="utf-8")
     detail_source.write_text(detail_content, encoding="utf-8")
     monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")

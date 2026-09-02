@@ -1,28 +1,5 @@
-:root {
-  --color-background: #f3f6fa;
-  --color-surface: #ffffff;
-  --color-text: #172033;
-  --color-secondary-text: #5d6678;
-  --color-border: #d9dfe8;
-  --color-primary: #3157d5;
-  --color-primary-hover: #2444ae;
-  --color-normal: #eef2f8;
-  --color-normal-hover: #e0e6ef;
-  --color-danger: #b42318;
-  --color-danger-hover: #8f1c13;
-  --color-success: #18794e;
-  --color-warning: #9a6700;
-  --color-focus: #2563eb;
-  --space-1: 0.375rem;
-  --space-2: 0.625rem;
-  --space-3: 1rem;
-  --space-4: 1.5rem;
-  --space-5: 2rem;
-  --radius-small: 0.5rem;
-  --radius-medium: 0.875rem;
-  --shadow-card: 0 0.5rem 1.5rem rgb(30 45 75 / 0.09);
-  --font-size-secondary: 0.875rem;
-}
+/* カスタムプロパティー・ボタン・ナビゲーションの共通定義は`shell.css`が持つ。
+   本ファイルはフィードバック画面固有のレイアウトと部品だけを定義する。 */
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -34,28 +11,17 @@ body {
   font-size: 1rem;
   line-height: 1.55;
 }
-button, input, select, textarea {
-  max-width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-small);
-  font: inherit;
-}
 input, select, textarea {
   width: 100%;
+  max-width: 100%;
   padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
   color: var(--color-text);
   background: var(--color-surface);
+  font: inherit;
 }
 textarea { resize: vertical; }
-button {
-  padding: 0.65rem 1rem;
-  color: var(--color-text);
-  background: var(--color-normal);
-  cursor: pointer;
-}
-button:hover { background: var(--color-normal-hover); }
-button:disabled { cursor: not-allowed; opacity: 0.55; }
-:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
 [hidden] { display: none !important; }
 
 .visually-hidden {
@@ -68,16 +34,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   white-space: nowrap;
 }
 .app-header {
-  position: sticky;
-  z-index: 10;
-  top: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
   padding: var(--space-2) max(var(--space-3), calc((100vw - 1800px) / 2));
-  border-bottom: 1px solid var(--color-border);
-  background: rgb(255 255 255 / 0.96);
   box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
 }
 .header-title, .header-actions, .pane-heading, .detail-title-row, .dialog-footer {
@@ -94,20 +52,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   color: var(--color-secondary-text);
   font-size: var(--font-size-secondary);
 }
-.button-primary {
-  border-color: var(--color-primary);
-  color: #fff;
-  background: var(--color-primary);
-}
-.button-primary:hover { background: var(--color-primary-hover); }
-.button-secondary { background: var(--color-normal); }
-.button-text { border-color: transparent; background: transparent; }
-.button-danger {
-  border-color: var(--color-danger);
-  color: #fff;
-  background: var(--color-danger);
-}
-.button-danger:hover { background: var(--color-danger-hover); }
 .is-pending::before {
   display: inline-block;
   width: 0.85rem;
@@ -487,13 +431,14 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
   }
 }
 @media (max-width: 700px) {
-  .app-header { align-items: flex-start; flex-wrap: wrap; }
-  .header-title { min-width: 100%; justify-content: space-between; }
+  /* 横方向の余地が無いため、タイトル・ナビゲーション・操作群を1列で縦に並べる。 */
+  .app-header { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .app-header .header-title, .app-header .app-nav, .app-header .header-actions { grid-column: 1; }
+  .header-title { justify-content: space-between; }
   .header-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     width: 100%;
-    margin-left: auto;
   }
   #sync-result { font-size: 0.75rem; line-height: 1.25; }
   .app-layout { grid-template-columns: 1fr; padding: var(--space-2); }

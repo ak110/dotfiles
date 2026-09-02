@@ -17,15 +17,12 @@ const KIND_LABELS = {
 let sessions = [];
 let selected = null;
 let queryText = "";
-let enabledEngines = new Set(["claude", "codex"]);
 
 const listEl = document.getElementById("sessions");
 const warningsEl = document.getElementById("warnings");
-const listStatusEl = document.getElementById("list-status");
 const detailEl = document.getElementById("detail");
 const detailTitleEl = document.getElementById("detail-title");
 const detailUsageEl = document.getElementById("detail-usage");
-const hostStatusEl = document.getElementById("host-status");
 const filterEl = document.getElementById("filter");
 
 function formatTime(value) {
@@ -37,7 +34,6 @@ function formatTime(value) {
 }
 
 function matchesFilter(entry) {
-  if (!enabledEngines.has(entry.engine)) return false;
   if (!queryText) return true;
   const haystack = [entry.host, entry.project, entry.session_id, entry.path]
     .filter((value) => typeof value === "string")
@@ -62,13 +58,10 @@ function renderList() {
 
     const line = document.createElement("div");
     line.className = "session-line";
-    const badge = document.createElement("span");
-    badge.className = `engine-badge ${entry.engine}`;
-    badge.textContent = ENGINE_LABELS[entry.engine] || entry.engine;
     const project = document.createElement("span");
     project.className = "session-project";
     project.textContent = entry.project || "(プロジェクト不明)";
-    line.append(badge, project);
+    line.append(project);
 
     const meta = document.createElement("div");
     meta.className = "session-meta";
@@ -83,22 +76,20 @@ function renderList() {
     }
     listEl.append(item);
   }
-  listStatusEl.textContent = `${visible.length}件 / 全${sessions.length}件`;
+}
+
+function showWarnings(lines) {
+  warningsEl.hidden = lines.length === 0;
+  warningsEl.replaceChildren();
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.textContent = line;
+    warningsEl.append(row);
+  }
 }
 
 function renderWarnings(warnings) {
-  if (!warnings || warnings.length === 0) {
-    warningsEl.hidden = true;
-    warningsEl.replaceChildren();
-    return;
-  }
-  warningsEl.hidden = false;
-  warningsEl.replaceChildren();
-  for (const warning of warnings) {
-    const line = document.createElement("div");
-    line.textContent = `${warning.host}: ${warning.reason}`;
-    warningsEl.append(line);
-  }
+  showWarnings((warnings || []).map((warning) => `${warning.host}: ${warning.reason}`));
 }
 
 async function loadList() {
@@ -110,19 +101,7 @@ async function loadList() {
     renderWarnings(payload.warnings);
     renderList();
   } catch (error) {
-    listStatusEl.textContent = String(error);
-  }
-}
-
-async function loadHostStatus() {
-  try {
-    const response = await fetch(BASE_PATH + "/api/sessions/host-status");
-    if (!response.ok) return;
-    const payload = await response.json();
-    const parts = Object.entries(payload.hosts || {}).map(([host, status]) => `${host}: ${status}`);
-    hostStatusEl.textContent = parts.join(" / ");
-  } catch (error) {
-    hostStatusEl.textContent = String(error);
+    showWarnings([String(error)]);
   }
 }
 
@@ -175,6 +154,37 @@ function renderEvent(event) {
   return block;
 }
 
+function renderSubagents(detail) {
+  const container = document.createElement("div");
+  container.className = "subagents";
+  const heading = document.createElement("h2");
+  heading.textContent = "サブエージェント";
+  container.append(heading);
+  for (const subagent of detail.subagents) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "subagent-item";
+    // 起動の深さを字下げで表す。`parent_agent_id`は深さ2以上の記録にしか現れないため使わない。
+    const depth = Number.isInteger(subagent.spawn_depth) ? subagent.spawn_depth : 0;
+    item.style.paddingLeft = `${10 + depth * 14}px`;
+    const type = document.createElement("span");
+    type.className = "subagent-type";
+    type.textContent = subagent.agent_type || "(種別不明)";
+    const description = document.createElement("span");
+    description.className = "subagent-description";
+    description.textContent = subagent.description || "";
+    item.append(type, description);
+    if (subagent.path) {
+      item.addEventListener("click", () => openSession(detail.host, "claude", subagent.path));
+    } else {
+      // 記録本体が残っていない項目は開けないため、選択できない表示とする。
+      item.disabled = true;
+    }
+    container.append(item);
+  }
+  return container;
+}
+
 function renderDetail(detail) {
   detailTitleEl.textContent = `${ENGINE_LABELS[detail.engine] || detail.engine} / ${detail.host} / ${detail.project || "(プロジェクト不明)"}`;
   detailUsageEl.textContent = usageText(detail.usage);
@@ -186,18 +196,12 @@ function renderDetail(detail) {
   detailEl.append(meta);
 
   if (Array.isArray(detail.subagents) && detail.subagents.length > 0) {
-    const subagents = document.createElement("details");
-    subagents.className = "event kind-subagent";
-    const summary = document.createElement("summary");
-    summary.textContent = `サブエージェント ${detail.subagents.length}件`;
-    const body = document.createElement("pre");
-    body.textContent = JSON.stringify(detail.subagents, null, 2);
-    subagents.append(summary, body);
-    detailEl.append(subagents);
-  } else if (detail.subagents === null) {
+    detailEl.append(renderSubagents(detail));
+  } else if (detail.subagents_unavailable) {
+    // サブエージェントが無い場合は何も表示しないため、有無を判定できなかったことは明示して区別する。
     const note = document.createElement("div");
     note.className = "secondary-text";
-    appendUnavailable(note, "サブエージェントの親子関係は記録に含まれていません");
+    appendUnavailable(note, "サブエージェントの一覧を取得できません（リモートホストのdotfilesを更新すると表示されます）");
     detailEl.append(note);
   }
 
@@ -252,16 +256,6 @@ function main() {
     queryText = filterEl.value.trim().toLowerCase();
     renderList();
   });
-  for (const checkbox of document.querySelectorAll(".engine-filter")) {
-    checkbox.addEventListener("change", () => {
-      enabledEngines = new Set(
-        Array.from(document.querySelectorAll(".engine-filter"))
-          .filter((element) => element.checked)
-          .map((element) => element.value)
-      );
-      renderList();
-    });
-  }
   listEl.addEventListener("click", (event) => {
     const item = event.target.closest(".session-item");
     if (!item) return;
@@ -274,7 +268,6 @@ function main() {
     document.body.classList.remove("drawer-open");
   });
   loadList();
-  loadHostStatus();
   subscribeEvents();
 }
 

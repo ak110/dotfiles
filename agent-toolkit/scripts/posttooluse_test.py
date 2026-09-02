@@ -446,109 +446,6 @@ class TestCurrentPlanFilePathTracking:
         assert "current_plan_file_path" not in state
 
 
-class TestSessionPlanMainPathTracking:
-    """保存確認Stopフックへ渡すメイン計画パスの蓄積。"""
-
-    def test_editing_main_detail_and_bugs_records_main_once(self, tmp_path: pathlib.Path) -> None:
-        home = tmp_path / "home"
-        plans_dir = home / ".claude" / "plans"
-        plans_dir.mkdir(parents=True)
-        main_path = plans_dir / "sample.md"
-        for suffix in (".md", ".detail.md", ".bugs.md"):
-            _run(
-                {
-                    "session_id": "plan-bundle-edits",
-                    "tool_name": "Write",
-                    "tool_input": {"file_path": str(plans_dir / f"sample{suffix}"), "content": "# x\n"},
-                },
-                state_dir=tmp_path,
-                home_dir=home,
-            )
-        state = _read_state(tmp_path, "plan-bundle-edits")
-        assert state["session_plan_main_paths"] == [str(main_path.resolve())]
-
-    def test_create_script_stdout_records_absolute_working_plans(self, tmp_path: pathlib.Path) -> None:
-        home = tmp_path / "home"
-        plans_dir = home / ".claude" / "plans"
-        plans_dir.mkdir(parents=True)
-        first = plans_dir / "first.md"
-        second = plans_dir / "second.md"
-        outside = tmp_path / "outside.md"
-        commands = (
-            "/repo/create_plan_files.py main detail name",
-            "uv run --no-project --script /repo/create_plan_files.py main detail name",
-        )
-        for command, path in zip(commands, (first, second), strict=True):
-            _run(
-                {
-                    "session_id": "created-plans",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": command},
-                    "tool_response": {"stdout": f"{path}\n{outside}\nrelative.md\n"},
-                },
-                state_dir=tmp_path,
-                home_dir=home,
-            )
-        state = _read_state(tmp_path, "created-plans")
-        assert state["session_plan_main_paths"] == [str(first.resolve()), str(second.resolve())]
-
-    def test_relative_edit_path_is_recorded_absolutely(self, tmp_path: pathlib.Path) -> None:
-        home = tmp_path / "home"
-        plans_dir = home / ".claude" / "plans"
-        plans_dir.mkdir(parents=True)
-        _run(
-            {
-                "session_id": "relative-plan-edit",
-                "tool_name": "Write",
-                "tool_input": {"file_path": "relative.md", "content": "# x\n"},
-                "cwd": str(plans_dir),
-            },
-            state_dir=tmp_path,
-            home_dir=home,
-        )
-        _run(
-            {
-                "session_id": "relative-plan-edit",
-                "tool_name": "Bash",
-                "tool_input": {"command": "pwd"},
-                "cwd": str(tmp_path),
-            },
-            state_dir=tmp_path,
-            home_dir=home,
-        )
-        state = _read_state(tmp_path, "relative-plan-edit")
-        assert state["session_plan_main_paths"] == [str((plans_dir / "relative.md").resolve())]
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "echo create_plan_files.py",
-            "rg create_plan_files.py /repo",
-            "printf '%s' create_plan_files.py",
-        ],
-    )
-    def test_script_name_outside_execution_position_does_not_record(
-        self,
-        tmp_path: pathlib.Path,
-        command: str,
-    ) -> None:
-        home = tmp_path / "home"
-        plans_dir = home / ".claude" / "plans"
-        plans_dir.mkdir(parents=True)
-        _run(
-            {
-                "session_id": f"not-executed-{command.split()[0]}",
-                "tool_name": "Bash",
-                "tool_input": {"command": command},
-                "tool_response": {"stdout": str(plans_dir / "fake.md")},
-            },
-            state_dir=tmp_path,
-            home_dir=home,
-        )
-        state = _read_state(tmp_path, f"not-executed-{command.split()[0]}")
-        assert "session_plan_main_paths" not in state
-
-
 class TestDetailCurrentPlanPathTracking:
     """詳細計画の編集が既存の現在計画パス契約を変えないことを検証する。"""
 
@@ -1558,11 +1455,10 @@ class TestAgentsServerSessionState:
         """startと配送成立send_messageは、各作業を発生させた主体を観測責任者として記録する。"""
         sid = "pending-owner"
         remote_session_id = "remote-owner"
-        child_transcript = str(tmp_path / "agent-child-1.jsonl")
         _run(
             {
                 "session_id": sid,
-                "transcript_path": child_transcript,
+                "agent_id": "child-1",
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"cwd": str(tmp_path), "prompt": "委譲する"},
                 "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "running"}},

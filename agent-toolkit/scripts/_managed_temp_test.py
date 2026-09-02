@@ -1038,6 +1038,43 @@ class TestManagedTempPosix:
 
         assert subject.count_unregistered_candidates() == count
 
+    def test_unregistered_candidate_scan_resolves_state_only_for_marked_entries(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """未登録候補の探索は、マーカーを持つ項目だけへ外部状態の解決を限定する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        orphans = [subject.create_managed_temp(f"orphan-{index}") for index in range(2)]
+        for orphan in orphans:
+            subject._registry_path(orphan).unlink()
+        registered = subject.create_managed_temp("registered")
+        unmarked = [tmp_path / f"unmarked-{index}" for index in range(20)]
+        for directory in unmarked:
+            directory.mkdir()
+        (tmp_path / "unmarked-file").write_text("管理対象ではない通常ファイル", encoding="utf-8")
+        marked_count = len(orphans) + 1
+
+        listed = subject.list_managed_temp(report_recovery_candidates=True)
+        assert [entry["path"] for entry in listed] == [str(registered)]
+        error = capsys.readouterr().err
+        assert all(f"warning: 登録を持たない管理対象があります: {orphan}" in error for orphan in orphans)
+        assert all(str(directory) not in error for directory in unmarked)
+
+        resolutions = 0
+        original_state_root = subject._state_root
+
+        def counting_state_root() -> pathlib.Path:
+            nonlocal resolutions
+            resolutions += 1
+            return original_state_root()
+
+        monkeypatch.setattr(subject, "_state_root", counting_state_root)
+
+        assert subject.count_unregistered_candidates() == len(orphans)
+        assert resolutions <= marked_count
+
     def test_list_with_prefix_ignores_other_prefix_records(
         self,
         monkeypatch: pytest.MonkeyPatch,

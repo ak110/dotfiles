@@ -67,6 +67,7 @@ def build_parser(parser) -> None:
         help="plans rootからの相対メイン計画パス。",
     )
     _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
+    _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 
 def _excluded_path(path: pathlib.Path) -> bool:
@@ -1004,6 +1005,104 @@ def migrate_plans(
         }
 
 
+# 計画のファイル名は空白を含み得るため、参照の終端は空白ではなく付属ファイルの拡張子で判定する。
+_PORTABLE_REFERENCE_RE = re.compile(
+    re.escape(_plan_file.PORTABLE_PLAN_PREFIX) + r"plans/\d{4}/\d{2}/[^\n`<>\"'|]+?\.(?:md|tsv)"
+)
+
+
+_DETAIL_SUFFIX = ".detail.md"
+_NON_COMPONENT_SUFFIXES = (".bugs.md", ".review.md", "-workaround-check.md")
+
+
+def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
+    """保存rootの計画ファイル（メイン）と計画ファイル（詳細）の本文を返す。"""
+    root = _plan_file.new_plans_root(private_notes)
+    texts: dict[pathlib.Path, str] = {}
+    if not root.is_dir():
+        return texts
+    for path in sorted(root.rglob("*.md")):
+        if not path.is_file() or path.is_symlink() or path.name.endswith(_NON_COMPONENT_SUFFIXES):
+            continue
+        try:
+            texts[path] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return texts
+
+
+def _plan_stem(path: pathlib.Path) -> str:
+    """計画ファイル（メイン）又は計画ファイル（詳細）のパスから計画stemを返す。"""
+    name = path.name
+    suffix = _DETAIL_SUFFIX if name.endswith(_DETAIL_SUFFIX) else ".md"
+    return name[: -len(suffix)]
+
+
+def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
+    """当該計画のstemで始まる可搬参照を新しい参照値へ書き換えた本文と件数を返す。"""
+    count = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal count
+        name = match.group(0).rsplit("/", 1)[-1]
+        if not name.startswith(stem):
+            return match.group(0)
+        count += 1
+        return f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{name}"
+
+    return _PORTABLE_REFERENCE_RE.sub(_replace, text), count
+
+
+def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> dict[str, object]:
+    """保存済み計画の可搬表記の付属ファイル参照を計画ファイル基準の表記へそろえる。
+
+    書き換えるのは、ファイル名が当該計画のstemで始まる参照だけとする。
+    stemが一致しない参照とキュー項目の本文は、参照先の計画が別であるため書き換えない。
+    """
+    with _common.repo_lock(private_notes, timeout=lock_timeout):
+        try:
+            _atk_git_sync.ensure_not_rebasing(private_notes)
+            if not _atk_git_sync.has_remote(private_notes):
+                raise _common.WebInputError("remoteなしのprivate-notesでは参照表記の書き換えを実行できません")
+            if _atk_git_sync.is_worktree_dirty(private_notes):
+                raise _common.WebInputError("private-notesのindex・worktreeがcleanでないため書き換えを開始できません")
+            _atk_git_sync.require_upstream(private_notes)
+            _atk_git_sync.pull(private_notes)
+            if _atk_git_sync.is_worktree_dirty(private_notes):
+                raise _common.WebInputError("remote同期後のprivate-notesがcleanでないため書き換えを開始できません")
+        except (_atk_git_sync.RebaseInProgressError, _atk_git_sync.GitSyncError) as error:
+            raise _common.WebInputError(str(error)) from error
+
+        changes: dict[pathlib.Path, str] = {}
+        reference_count = 0
+        for path, text in _saved_plan_texts(private_notes).items():
+            rewritten, count = _rewritten_plan_text(text, _plan_stem(path))
+            if count:
+                changes[path] = rewritten
+                reference_count += count
+        if not changes:
+            return {"plans": 0, "references": 0, "commit": None}
+
+        start_head = _git_head(private_notes)
+        snapshot = _snapshot(changes)
+        try:
+            for path, content in changes.items():
+                path.write_text(content, encoding="utf-8")
+            relative_paths = tuple(_as_relative_notes_path(path, private_notes) for path in sorted(changes))
+            _atk_git_sync.commit_and_push(
+                private_notes,
+                "chore: rewrite plan attachment references",
+                relative_paths,
+            )
+            if not _atk_git_sync.remote_contains_head(private_notes):
+                raise _common.WebInputError("書き換えcommitがremote branchへ到達したことを確認できません")
+        except (OSError, subprocess.SubprocessError, _common.WebInputError):
+            if start_head == _git_head(private_notes):
+                _restore_files(snapshot)
+            raise
+        return {"plans": len(changes), "references": reference_count, "commit": _git_head(private_notes)}
+
+
 def _git_head(private_notes: pathlib.Path) -> str:
     """現在のHEADを返す。"""
     result = _git_command.run(
@@ -1033,6 +1132,10 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
         result = migrate_plans(private_notes, home)
         print(f"計画ファイルを移行しました: {result['migrated']}件（旧ファイル削除: {result['deleted']}件）")
         return 0
+    if args.plans_subcommand == "rewrite-references":
+        result = rewrite_plan_references(private_notes)
+        print(f"付属ファイル参照を書き換えました: {result['plans']}件（参照: {result['references']}件）")
+        return 0
     raise _common.WebInputError(f"未知のplansサブコマンド: {args.plans_subcommand}")
 
 
@@ -1040,3 +1143,4 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
 commit = commit_plan
 checkout = checkout_plan
 migrate = migrate_plans
+rewrite_references = rewrite_plan_references

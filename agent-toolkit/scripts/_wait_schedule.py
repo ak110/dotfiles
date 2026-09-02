@@ -1,6 +1,6 @@
 """公開情報からプロンプトキャッシュTTLを判定する。
 
-TTL判定は、委譲待機用cron式と質問自動継続タイムアウトが共有する正本である。
+TTL判定は、委譲待機用cron式、質問自動継続タイムアウト及び`agents_server`の`wait`の既定timeoutが共有する正本である。
 
 Claude Codeはプロンプトキャッシュ保持期間を、`FORCE_PROMPT_CACHING_5M`、bucket別の環境変数、
 bucket別の設定、サブエージェント定義のfrontmatterの`cacheTtl`、`ENABLE_PROMPT_CACHING_1H`、
@@ -24,6 +24,10 @@ import pytilpack.jsonc
 # キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
+# キャッシュTTLごとの委譲先の終端を待つ上限。TTLが満了する前に呼び出し元のターンが再開するよう、上限はTTLより短く取る。
+# 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、当該上限より60秒短い値とする。
+_WAIT_TIMEOUT_FOR_5M_TTL = 270.0
+_WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 _BUCKET_TTL_ENV = {
     "main": "CLAUDE_CODE_PROMPT_CACHE_TTL",
     "subagent": "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
@@ -129,3 +133,10 @@ def get_schedule(request_bucket: str) -> str:
     if get_prompt_cache_ttl(request_bucket) == "1h":
         return _SCHEDULE_FOR_1H_TTL
     return _SCHEDULE_FOR_5M_TTL
+
+
+def get_wait_timeout(request_bucket: str) -> float:
+    """プロンプトキャッシュTTLを委譲先の終端を待つ上限秒数へ変換する。"""
+    if get_prompt_cache_ttl(request_bucket) == "1h":
+        return _WAIT_TIMEOUT_FOR_1H_TTL
+    return _WAIT_TIMEOUT_FOR_5M_TTL

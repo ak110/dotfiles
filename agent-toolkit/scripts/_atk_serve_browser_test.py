@@ -1,6 +1,7 @@
 """`atk serve`の実ブラウザー統合テスト。"""
 
 import asyncio
+import base64
 import contextlib
 import dataclasses
 import json
@@ -1729,6 +1730,13 @@ class _ScreenHarness:
 
 
 @dataclasses.dataclass
+class _RemoteSessionsHarness:
+    page: playwright.async_api.Page
+    context: playwright.async_api.BrowserContext
+    base_url: str
+
+
+@dataclasses.dataclass
 class _MultiRootHarness:
     page: playwright.async_api.Page
     context: playwright.async_api.BrowserContext
@@ -1815,6 +1823,89 @@ async def _screen_harness_fixture(
         )
 
 
+_NEW_REMOTE_HOST = "new-host"
+_LEGACY_REMOTE_HOST = "legacy-host"
+_REMOTE_RECORD_PATH = "/home/remote/.claude/projects/-home-remote-proj/33333333-4444-5555-6666-777777777777.jsonl"
+
+
+async def _remote_sessions_runner(host: str, op: str, _args: list[str]) -> str:
+    """リモートヘルパーの応答を模す。旧版のホストは`read`応答へサブエージェント一覧を含めない。
+
+    `read`の対象は1件だけであり、渡されたパスを見分ける必要が無いため引数を使わない。
+    """
+    if op == "list":
+        return json.dumps(
+            {
+                "ok": True,
+                "host": host,
+                "entries": [
+                    {
+                        "engine": "claude",
+                        "project": "-home-remote-proj",
+                        "session_id": f"{host}-session",
+                        "path": _REMOTE_RECORD_PATH,
+                        "updated_at": 1_800_000_000,
+                        "size": 120,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+    text = (
+        json.dumps(
+            {"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": f"{host}の発話"}},
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
+    payload: dict[str, Any] = {"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")}
+    if host == _NEW_REMOTE_HOST:
+        payload["subagents"] = [
+            {
+                "agent_id": "agent-remote",
+                "agent_type": "Explore",
+                "description": "リモートの調査",
+                "spawn_depth": 1,
+                "parent_agent_id": None,
+                "model": "opus",
+                "path": None,
+            }
+        ]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+@pytest_asyncio.fixture(name="remote_sessions_harness")
+async def _remote_sessions_harness_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    browser: playwright.async_api.Browser,
+) -> AsyncGenerator[_RemoteSessionsHarness]:
+    """サブエージェント一覧を返すリモートホストと、返さない旧版のリモートホストを登録した画面を用意する。"""
+    _isolate_creation_time_index(tmp_path, monkeypatch)
+    _write_entries(tmp_path)
+    plans_root = tmp_path / "plans"
+    plans_root.mkdir()
+    (plans_root / "plan.md").write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
+    # 常駐接続は実際のsshを起動するため開始させず、単発SSHの差し替えだけでリモートの応答を与える。
+    monkeypatch.setattr(serve_sessions, "start_remote_clients", lambda context: None)
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        serve_state.ServeState(tmp_path),
+        operations=_BrowserOperations(tmp_path),
+        plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
+        sessions_context=serve_sessions.create_context(
+            hostname="browser-test",
+            claude_home=tmp_path / "claude",
+            codex_home=tmp_path / "codex",
+            remote_hosts=[_NEW_REMOTE_HOST, _LEGACY_REMOTE_HOST],
+            ssh_runner=_remote_sessions_runner,
+        ),
+    )
+    async with _serve(app, browser) as (context, page, port):
+        yield _RemoteSessionsHarness(page=page, context=context, base_url=f"http://127.0.0.1:{port}")
+
+
 @pytest_asyncio.fixture(name="multi_root_harness")
 async def _multi_root_harness_fixture(
     tmp_path: Path,
@@ -1896,6 +1987,25 @@ def _write_session_records(root: Path) -> None:
         + '{"type":"user","message":{"content":"途中で途絶\n',
         encoding="utf-8",
     )
+    # 記録本体を持つサブエージェントと、meta情報だけが残るより深いサブエージェントを1件ずつ用意する。
+    subagents = claude_path.with_suffix("") / "subagents"
+    subagents.mkdir(parents=True, exist_ok=True)
+    (subagents / "agent-first.meta.json").write_text(
+        json.dumps({"agentType": "Explore", "description": "所在の調査", "spawnDepth": 1}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (subagents / "agent-first.jsonl").write_text(
+        json.dumps(
+            {"type": "user", "timestamp": "2026-09-01T00:10:00Z", "message": {"content": "サブエージェントの発話"}},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (subagents / "agent-second.meta.json").write_text(
+        json.dumps({"agentType": "Plan", "description": "設計の検討", "spawnDepth": 2}, ensure_ascii=False),
+        encoding="utf-8",
+    )
     codex_path = (
         root
         / "codex"
@@ -1956,8 +2066,57 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
 
 
 @pytest.mark.asyncio
+async def test_header_navigation_is_centered_on_three_screens(screen_harness: _ScreenHarness) -> None:
+    """ヘッダーの子要素の数が画面ごとに異なっても、3画面ともナビゲーションを画面中央へ置く。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 1280, "height": 800})
+
+    for path in ("/", "/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        navigation = harness.page.locator("nav.app-nav")
+        await navigation.wait_for(state="visible")
+        box = await navigation.bounding_box()
+        assert box is not None
+        viewport_width = await harness.page.evaluate("document.documentElement.clientWidth")
+        # 小数の丸めだけを許容し、片側へ寄る配置を検出する。
+        assert abs((box["x"] + box["width"] / 2) - viewport_width / 2) <= 1, path
+
+
+@pytest.mark.asyncio
+async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _ScreenHarness) -> None:
+    """3画面のボタンを共通の配色・境界・角丸で表示し、無効なボタンは不透明度を下げる。"""
+    harness = screen_harness
+    properties = ["backgroundColor", "color", "borderTopColor", "borderTopWidth", "borderRadius"]
+    # 一覧を開くボタンは狭い画面でだけ表示するため、3画面とも同じ幅で比較する。
+    await harness.page.set_viewport_size({"width": 600, "height": 800})
+    styles: dict[str, dict[str, str]] = {}
+
+    for path, selector in (("/", "#refresh-button"), ("/plans", "#menu-btn"), ("/sessions", "#menu-btn")):
+        await harness.page.goto(harness.base_url + path)
+        button = harness.page.locator(selector)
+        await button.wait_for(state="visible")
+        styles[path] = await button.evaluate(
+            "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))",
+            properties,
+        )
+
+    assert styles["/plans"] == styles["/"]
+    assert styles["/sessions"] == styles["/"]
+
+    await harness.page.goto(harness.base_url + "/plans")
+    # 計画ファイルが1件だけの構成では、前のファイルへ移動するボタンが無効のまま表示される。
+    previous_button = harness.page.locator("#prev-btn")
+    await previous_button.wait_for(state="visible")
+    assert await previous_button.is_disabled()
+    enabled = await harness.page.locator("#menu-btn").evaluate("(element) => getComputedStyle(element).opacity")
+    disabled = await previous_button.evaluate("(element) => getComputedStyle(element).opacity")
+    assert float(enabled) == 1
+    assert float(disabled) < 1
+
+
+@pytest.mark.asyncio
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
-    """左ペインで実行系・ホスト・プロジェクト・日時により一覧を限定し、右ペインへ発話を時系列に表示する。"""
+    """左ペインでホスト・プロジェクト・識別子により一覧を限定し、右ペインへ発話を時系列に表示する。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
 
@@ -1965,21 +2124,16 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     await items.nth(1).wait_for(state="visible")
     assert await items.count() == 2
     listing = await harness.page.locator("#sessions").inner_text()
-    assert "Claude Code" in listing
-    assert "Codex" in listing
     assert "browser-test" in listing
     assert "-home-aki-proj" in listing
-
-    # 実行系による限定。
-    await harness.page.locator('.engine-filter[value="codex"]').uncheck()
-    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
-    assert await harness.page.locator("#sessions .engine-badge").inner_text() == "Claude Code"
+    # 実行系による限定の操作、実行系のバッジ、ホストの接続状態及び件数の表示は画面へ現れない。
+    for selector in ("#sessions .engine-badge", ".engine-filter", "#host-status", "#list-status"):
+        assert await harness.page.locator(selector).count() == 0, selector
 
     # 文字列による限定。
-    await harness.page.locator('.engine-filter[value="codex"]').check()
     await harness.page.locator("#filter").fill("aaaaaaaa")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
-    assert await harness.page.locator("#sessions .engine-badge").inner_text() == "Codex"
+    assert await harness.page.locator('#sessions .session-item[data-engine="codex"]').count() == 1
 
     await harness.page.locator("#sessions .session-item").first.click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
@@ -1999,6 +2153,53 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "入力: 12" in await harness.page.locator("#detail-usage").inner_text()
     # 破損した行は該当セッションの警告として示し、他の発話を失わせない。
     assert "解析できない行が1件あります" in detail_text
+
+
+@pytest.mark.asyncio
+async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
+    """親セッションの詳細からサブエージェント記録を開き、記録本体が無い項目は選択できない表示とする。"""
+    harness = screen_harness
+    await harness.page.goto(harness.base_url + "/sessions")
+    await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
+
+    items = harness.page.locator(".subagent-item")
+    await items.first.wait_for(state="visible")
+    assert await items.count() == 2
+    assert "所在の調査" in await items.nth(0).inner_text()
+    assert "設計の検討" in await items.nth(1).inner_text()
+    # 記録本体が残っていない項目は開けないため選択できない。
+    assert not await items.nth(0).is_disabled()
+    assert await items.nth(1).is_disabled()
+    # 起動の深さを字下げで表す。
+    offsets = [
+        await items.nth(index).evaluate("(element) => parseFloat(getComputedStyle(element).paddingLeft)") for index in (0, 1)
+    ]
+    assert offsets[1] > offsets[0]
+
+    await items.nth(0).click()
+    await harness.page.locator("#detail .event").first.wait_for(state="visible")
+    assert "サブエージェントの発話" in await harness.page.locator("#detail").inner_text()
+
+
+@pytest.mark.asyncio
+async def test_remote_subagents_are_shown_or_reported_as_unavailable(
+    remote_sessions_harness: _RemoteSessionsHarness,
+) -> None:
+    """リモートホストのセッションでもサブエージェントを表示し、一覧を返さないホストでは取得不能を示す。"""
+    harness = remote_sessions_harness
+    await harness.page.goto(harness.base_url + "/sessions")
+    await harness.page.locator("#sessions .session-item").nth(1).wait_for(state="visible")
+
+    await harness.page.locator(f'#sessions .session-item[data-host="{_NEW_REMOTE_HOST}"]').click()
+    await harness.page.locator(".subagent-item").first.wait_for(state="visible")
+    assert "リモートの調査" in await harness.page.locator("#detail").inner_text()
+    assert await harness.page.locator("#detail .unavailable").count() == 0
+
+    # 一覧を返さない版のヘルパーが動くホストでは、サブエージェントが無い場合と区別して取得不能を示す。
+    await harness.page.locator(f'#sessions .session-item[data-host="{_LEGACY_REMOTE_HOST}"]').click()
+    await harness.page.locator("#detail .unavailable").first.wait_for(state="visible")
+    assert "サブエージェントの一覧を取得できません" in await harness.page.locator("#detail").inner_text()
+    assert await harness.page.locator(".subagent-item").count() == 0
 
 
 @pytest.mark.asyncio

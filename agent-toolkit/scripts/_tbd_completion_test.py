@@ -190,12 +190,11 @@ class TestBuildNotice:
         メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
         差分の判定をエージェント識別子で分けないと先に観測した側だけが通知を受け取る。
         """
-        subagent_transcript = str(tmp_path / "agent-abc123.jsonl")
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
         assert _tbd_completion.build_notice("shared", "/dummy") is None
-        assert _tbd_completion.build_notice("shared", "/dummy", subagent_transcript) is None
+        assert _tbd_completion.build_notice("shared", "/dummy", "abc123") is None
         _answer_all(root)
-        assert _tbd_completion.build_notice("shared", "/dummy", subagent_transcript) is not None
+        assert _tbd_completion.build_notice("shared", "/dummy", "abc123") is not None
         assert _tbd_completion.build_notice("shared", "/dummy") is not None
 
 

@@ -57,6 +57,17 @@ def test_run_git_pull_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch
     assert environments[0]["MISE_AUTO_INSTALL"] == "0"
 
 
+def test_run_git_pull_disables_submodule_recursion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """工程1がgitのサブコマンドより前に`-c submodule.recurse=false`を渡す。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+
+    assert update_dotfiles._run_git_pull(1, 4) == 0  # pylint: disable=protected-access
+    argv = calls[0]
+    assert argv[argv.index("-c") + 1] == "submodule.recurse=false"
+    assert argv.index("-c") < argv.index("pull")
+
+
 def test_run_git_pull_decodes_output_as_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
     """工程1の取得出力をUTF-8で復号する。"""
     calls: list[list[str]] = []

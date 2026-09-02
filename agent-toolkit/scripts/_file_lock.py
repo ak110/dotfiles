@@ -16,52 +16,61 @@ PLAN_LOCK_IGNORE_PATTERN = "/plans/**/*.lock"
 """計画保存先リポジトリでagent-toolkitの管理ロックを除外するパターン。
 
 `ensure_plan_lock_ignored`が受理するロックはリポジトリroot直下の`plans/`配下に限るため、
-除外範囲も同じ範囲へ合わせる。
+除外範囲も同じ範囲へ合わせる。書き込み先はGit common directory配下の`info/exclude`であり、
+Gitの版管理の対象外にある。除外設定は利用者のcloneごとに閉じ、他のcloneとは共有されない。
 """
 
 _GITIGNORE_UPDATE_LOCK = "agent-toolkit-plan-lock-gitignore.lock"
 
 
-def plan_lock_gitignore_content(content: bytes) -> bytes:
-    """既存内容を保持し、計画ロックの除外行を1回だけ含む内容を返す。
-
-    旧版が追記したリポジトリ全体を対象とする`*.lock`行は削除せず残す。
-    旧版を含む複数の配布版が同じリポジトリの`.gitignore`へ並行して書き込む間は、
-    旧行の削除と旧版による再追記が交互に発生し、同じ内容の差分がcommitされ続けるためである。
-    全ての配布版が本パターンを追記する版へ更新された後は、旧行の削除へ移行できる。
-    """
-    pattern = PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
-    lines = content.splitlines()
-    if pattern in lines:
-        return content
-    separator = b"" if not content or content.endswith((b"\n", b"\r")) else b"\n"
-    return content + separator + pattern + b"\n"
-
-
 def ensure_plan_lock_ignored(lock_path: Path) -> bool:
-    """`plans/`配下の管理ロックをリポジトリの`.gitignore`へ追加する。
+    """`plans/`配下の管理ロックをリポジトリの`info/exclude`へ追加する。
 
     Gitリポジトリ外または`plans/`外のロックは変更しない。
     変更した場合だけ真を返す。
+    版管理の対象である`.gitignore`ではなく`info/exclude`へ書くため、除外の保証が
+    commitとpushを伴わない。既に`.gitignore`へ同じパターンを持つcloneでも、
+    当該行は除去せずそのまま残す。
     """
     resolved_lock = lock_path.expanduser().resolve(strict=False)
     repository = _repository_for_plan_lock(resolved_lock)
     if repository is None:
         return False
-    root, git_directory = repository
-    gitignore = root / ".gitignore"
+    _, git_directory = repository
+    exclude_path = _git_common_directory(git_directory) / "info" / "exclude"
+    pattern = PLAN_LOCK_IGNORE_PATTERN.encode("utf-8")
     update_lock = git_directory / _GITIGNORE_UPDATE_LOCK
     with update_lock.open("a+", encoding="utf-8") as lock_file:
         acquire_lock(lock_file)
         try:
-            current = gitignore.read_bytes() if gitignore.exists() else b""
-            updated = plan_lock_gitignore_content(current)
-            if updated == current:
+            current = exclude_path.read_bytes() if exclude_path.exists() else b""
+            if pattern in current.splitlines():
                 return False
-            gitignore.write_bytes(updated)
+            separator = b"" if not current or current.endswith((b"\n", b"\r")) else b"\n"
+            exclude_path.parent.mkdir(parents=True, exist_ok=True)
+            exclude_path.write_bytes(current + separator + pattern + b"\n")
             return True
         finally:
             release_lock(lock_file)
+
+
+def _git_common_directory(git_directory: Path) -> Path:
+    """worktreeのGitディレクトリから、同じリポジトリで共有されるGitディレクトリを返す。
+
+    Gitは`info/exclude`を共有側のGitディレクトリから読むため、worktreeでは
+    `commondir`が指す先へ書く必要がある。`commondir`を持たない通常のcloneでは
+    引数のGitディレクトリ自身が共有側となる。
+    """
+    try:
+        raw = (git_directory / "commondir").read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return git_directory
+    if not raw:
+        return git_directory
+    common = Path(raw)
+    if not common.is_absolute():
+        common = git_directory / common
+    return common.resolve(strict=False)
 
 
 def _repository_for_plan_lock(lock_path: Path) -> tuple[Path, Path] | None:

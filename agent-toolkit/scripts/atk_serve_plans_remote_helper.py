@@ -128,19 +128,43 @@ def _atk_env() -> dict[str, str]:
     return env
 
 
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、警告欄を占有させない。
+_STDERR_EXCERPT_MAX_CHARS = 500
+
+
+def _stderr_excerpt(stderr: str) -> str:
+    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
+
+    末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    """
+    text = " ".join(stderr.split())
+    if not text:
+        return "標準エラー出力はありません"
+    if len(text) > _STDERR_EXCERPT_MAX_CHARS:
+        return f"...{text[-_STDERR_EXCERPT_MAX_CHARS:]}"
+    return text
+
+
 def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
-    """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。"""
+    """対象ホスト上の`atk config get private_notes`を実行し、失敗理由も返す。
+
+    失敗理由は利用者へ渡る警告本文となるため、失敗元の標準エラー出力を引き継ぐ。
+    """
     try:
         completed = subprocess.run(
             [_atk_executable(), "config", "get", "private_notes"],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
             timeout=5,
             env=_atk_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:
         warning = f"private_notesの取得に失敗しました: {error}"
+        sys.stderr.write(f"warn: {warning}\n")
+        return None, warning
+    if completed.returncode != 0:
+        warning = f"private_notesの取得が終了コード{completed.returncode}で失敗しました: {_stderr_excerpt(completed.stderr)}"
         sys.stderr.write(f"warn: {warning}\n")
         return None, warning
     value = completed.stdout.strip()
@@ -502,7 +526,12 @@ def _root_status(warning: str | None) -> dict[str, str]:
 
 
 def _scan_snapshot() -> tuple[list[dict[str, typing.Any]], dict[str, dict[str, typing.Any]], dict[str, dict[str, str]]]:
-    """全rootを独立して走査し、一覧・root情報・root状態を返す。"""
+    """全rootを独立して走査し、一覧・root情報・root状態を返す。
+
+    rootの不在は計画をまだ保存していない通常の状態として警告せず、走査もしない。
+    不在のrootに対する`rglob`は空を返して成功するため、走査へ進むと空の観測結果で
+    インデックスを更新し、同じ`(host, root)`に記録済みの作成日時を回収してしまう。
+    """
     entries: list[dict[str, typing.Any]] = []
     root_info: dict[str, dict[str, typing.Any]] = {}
     root_status: dict[str, dict[str, str]] = {}
@@ -511,11 +540,9 @@ def _scan_snapshot() -> tuple[list[dict[str, typing.Any]], dict[str, dict[str, t
         root_info[spec.source_id] = _root_info(spec)
         warning: str | None = spec.warning
         spec_entries: list[dict[str, typing.Any]] = []
-        if warning is None and not spec.path.exists():
-            warning = "rootが存在しません"
-        elif warning is None and not spec.path.is_dir():
+        if warning is None and spec.path.exists() and not spec.path.is_dir():
             warning = "rootがディレクトリではありません"
-        elif warning is None:
+        elif warning is None and spec.path.is_dir():
             observed: dict[str, float] = {}
             try:
                 paths = spec.path.rglob("*")

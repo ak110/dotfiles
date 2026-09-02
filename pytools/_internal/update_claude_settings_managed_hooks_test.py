@@ -1,6 +1,6 @@
 """update_claude_settings: 管理対象フック検証テスト。
 
-TestWarnOrphanDotfilesHookCommands、TestNormalizeManagedHooks を含む。
+TestRemovedHookCommands、TestWarnOrphanDotfilesHookCommands、TestNormalizeManagedHooks を含む。
 テストは update_claude_settings_test.py から分割。
 """
 
@@ -23,13 +23,65 @@ def _run(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
     return run_update_claude_settings(tmp_path, managed, existing)
 
 
+class TestRemovedHookCommands:
+    """配布原本から削除したフックコマンドの除去を検証する。"""
+
+    _POSIX_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.posix.json"
+    _LEGACY_PRETOOLUSE_COMMAND = (
+        "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; "
+        "code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
+    )
+
+    @staticmethod
+    def _pretooluse_commands(data: dict) -> list[str]:
+        """`PreToolUse`のフックコマンドを列挙する。"""
+        entries = data.get("hooks", {}).get("PreToolUse", [])
+        return [hook["command"] for entry in entries for hook in entry.get("hooks", [])]
+
+    def test_removes_legacy_pretooluse_command_and_keeps_the_current_one(self, tmp_path: Path) -> None:
+        """スクリプト実在検査を持たない旧コマンドだけを除き、配布原本の現行コマンドは残す。"""
+        override = typing.cast(
+            "dict",
+            _substitute_home_placeholder(json.loads(self._POSIX_MANAGED_SETTINGS.read_text(encoding="utf-8"))),
+        )
+        current_commands = self._pretooluse_commands(override)
+        assert current_commands
+        target_path = tmp_path / "target.json"
+        target_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": command}
+                                    for command in (self._LEGACY_PRETOOLUSE_COMMAND, *current_commands)
+                                ],
+                            }
+                        ]
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        update_claude_settings(_PROD_MANAGED_SETTINGS, target_path, overrides=[self._POSIX_MANAGED_SETTINGS])
+
+        merged = self._pretooluse_commands(json.loads(target_path.read_text(encoding="utf-8")))
+        assert self._LEGACY_PRETOOLUSE_COMMAND not in merged
+        assert all(command in merged for command in current_commands)
+
+
 class TestWarnOrphanDotfilesHookCommands:
     """`_warn_orphan_dotfiles_hook_commands`の警告機能テスト。"""
 
     def test_warns_orphan_dotfiles_hook_command(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """配布原本に存在しない`dotfiles/scripts/`参照のフックコマンドを警告する。"""
+        """配布原本に存在しない`dotfiles/scripts/`参照のフックコマンドを確定文面で警告する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
+        orphan_command = "sh -c 'uv run --script ~/dotfiles/scripts/orphan_hook.py'"
         target_path = tmp_path / "target.json"
         target_path.write_text(
             json.dumps(
@@ -41,7 +93,7 @@ class TestWarnOrphanDotfilesHookCommands:
                                 "hooks": [
                                     {
                                         "type": "command",
-                                        "command": "sh -c 'uv run --script ~/dotfiles/scripts/orphan_hook.py'",
+                                        "command": orphan_command,
                                     }
                                 ],
                             }
@@ -56,7 +108,7 @@ class TestWarnOrphanDotfilesHookCommands:
         with caplog.at_level(logging.INFO, logger="pytools._internal.update_claude_settings"):
             update_claude_settings(managed_path, target_path)
 
-        assert any("orphan_hook.py" in message for message in caplog.messages)
+        assert f"配布原本に存在しないフックコマンド（settings.json）: {orphan_command}" in caplog.messages
 
     def test_does_not_warn_for_commands_present_in_either_platform_source(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

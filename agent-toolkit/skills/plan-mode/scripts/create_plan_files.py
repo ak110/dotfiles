@@ -32,10 +32,13 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 PLAN_STEM_PLACEHOLDER = "__PLAN_STEM__"
 """本文中で最終計画stemが未確定であることを示す固定プレースホルダー。"""
 PORTABLE_PLAN_PREFIX = _plan_file.PORTABLE_PLAN_PREFIX
-"""計画本文で受理する可搬参照の固定接頭辞。"""
+"""計画本文の既存参照とキューmetadataで受理する可搬参照の固定接頭辞。"""
+PLAN_ADJUNCT_REFERENCE_PREFIX = _plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX
+"""計画本文が同じ計画に属する付属ファイルを参照する固定接頭辞。"""
 
 _TOKEN_RE = re.compile(r"[0-9a-f]{4}\Z")
 _PORTABLE_REFERENCE_RE = re.compile(re.escape(PORTABLE_PLAN_PREFIX) + r"[^\s`<>\"']+")
+_ADJUNCT_REFERENCE_RE = re.compile(re.escape(PLAN_ADJUNCT_REFERENCE_PREFIX) + r"[^\s`<>\"']*")
 _FORBIDDEN_NAME_CHARACTERS = frozenset('/\\:*?"<>|')
 _DEFAULT_MAX_ATTEMPTS = 100
 
@@ -152,12 +155,23 @@ def _portable_reference_values(text: str) -> Iterator[str]:
             yield value
 
 
-def _check_portable_references(
+def _adjunct_reference_values(text: str) -> Iterator[str]:
+    """本文から付属ファイル参照の固定接頭辞を持つ参照値を抽出する。"""
+    for match in _ADJUNCT_REFERENCE_RE.finditer(text):
+        yield match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
+
+
+def _check_plan_references(
     contents: tuple[bytes, ...],
+    main_path: pathlib.Path,
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """固定portable参照を安全な共通resolverで検査する。"""
+    """計画本文の参照値を安全な共通resolverで検査する。
+
+    付属ファイル参照は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
+    既存の可搬参照は従来どおりprivate-notes基準で解決する。
+    """
     for content in contents:
         text = content.decode("utf-8")
         if PLAN_STEM_PLACEHOLDER in text:
@@ -167,6 +181,11 @@ def _check_portable_references(
                 _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
             except (OSError, ValueError) as error:
                 raise PlanCreationError(f"計画本文の可搬参照が不正です: {reference}: {error}") from error
+        for reference in _adjunct_reference_values(text):
+            try:
+                _plan_file.resolve_plan_adjunct_reference(reference, plan_path=main_path)
+            except (OSError, ValueError) as error:
+                raise PlanCreationError(f"計画本文の参照値が不正です: {reference}: {error}") from error
 
 
 def _check_structure(
@@ -228,7 +247,7 @@ def _finalize_candidate(
             _require_plans_root_path(path, plans_root)
             if path.read_bytes() != content:
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}")
-        _check_portable_references(tuple(content for _path, content, _suffix in targets), private_notes, home)
+        _check_plan_references(tuple(content for _path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
         return tuple(path for path, _content, _suffix in targets)
     except BaseException:
@@ -256,7 +275,7 @@ def create_plan_files(
     """入力本文を計画作業rootへ作成し、確定済みパスを返す。
 
     ``main_source``、``detail_source``及び任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
-    private-notesはportable参照の検査にだけ使い、計画本文は作業rootへ保存する。
+    private-notesは既存の可搬参照の検査にだけ使い、計画本文は作業rootへ保存する。
     """
     if max_attempts <= 0:
         raise ValueError("max_attemptsは1以上にしてください")

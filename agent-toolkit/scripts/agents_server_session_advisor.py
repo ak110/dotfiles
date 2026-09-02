@@ -18,14 +18,13 @@
 
 import json
 
+from _hook_agent_id import resolve_hook_agent_id
 from _hook_notice import formatter as _notice_formatter
 from _session_state import read_state
 from _stop_gate import parse_stop_session
-from _transcript_agent_id import extract_transcript_agent_id
 
 _HOOK_ID = "agent-toolkit/agents_server_session_advisor"
 _SESSION_STATE_KEY = "agents_server_sessions"
-_MAIN_AGENT_ID = "main"
 _WARNING_BODY = (
     "agents_serverのsessionに、観測を試みていない作業が残っている。"
     "wait(session_id)で観測するか、結果が不要ならkill(session_id)で破棄してから終了する。"
@@ -64,7 +63,7 @@ def main(payload_text: str) -> int:
     if payload.get("stop_hook_active") is True:
         return 0
 
-    owner_agent_id = extract_transcript_agent_id(payload.get("transcript_path")) or _MAIN_AGENT_ID
+    owner_agent_id = resolve_hook_agent_id(payload)
     pending_session_ids = _pending_session_ids(read_state(session_id), owner_agent_id)
     if not pending_session_ids:
         return 0

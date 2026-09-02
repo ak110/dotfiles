@@ -76,10 +76,17 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
 
 
 def _run_git_pull(step_no: int, total: int) -> int:
-    """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。"""
+    """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
+
+    `submodule.recurse=false`は、dotfilesリポジトリがsubmoduleを持たないため不要な再帰を無効化する。
+    利用者設定で当該再帰が有効な場合、`git pull`が`git-submodule`を起動する。`git-submodule`は
+    POSIX shで実行され、PATH上の`gettext.sh`を読み込むため、当該ファイルがbash専用構文を含むと
+    構文エラーで終了し、更新処理が最初の工程で止まる。
+    `_child_env`の`MISE_AUTO_INSTALL=0`と同じく、工程が利用者環境の設定を引き継いで停止する経路を抑止する。
+    """
     print(f"=== [{step_no}/{total}] git pull ===")
     result = subprocess.run(
-        ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "pull", "--rebase", "--quiet"],
+        ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "-c", "submodule.recurse=false", "pull", "--rebase", "--quiet"],
         cwd=_DOTFILES_ROOT,
         check=False,
         capture_output=True,

@@ -1234,7 +1234,9 @@ class TestPrivateNotesAutoCreate:
         )
         for name in expected_state_dirs:
             assert (root / name).is_dir()
-        assert (root / ".gitignore").read_text(encoding="utf-8") == f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n"
+        exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        assert exclude.splitlines().count(_file_lock.PLAN_LOCK_IGNORE_PATTERN) == 1
+        assert not (root / ".gitignore").exists()
         assert not _git_stdout(root, "status", "--porcelain")
 
     def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
@@ -1248,8 +1250,8 @@ class TestPrivateNotesAutoCreate:
         assert second == first
         assert marker.read_text(encoding="utf-8") == "kept"
 
-    def test_ensure_environment_commits_pending_managed_gitignore(self, tmp_path: pathlib.Path) -> None:
-        """直接ロック生成が残した管理対象差分だけを次の環境初期化でcommitする。"""
+    def test_ensure_environment_excludes_plan_lock_without_commit(self, tmp_path: pathlib.Path) -> None:
+        """計画ロックの除外を版管理の対象外へ記録し、commitも作業ツリーの差分も生じない。"""
         home = tmp_path / "home"
         root = home / "private-notes"
         root.mkdir(parents=True)
@@ -1260,14 +1262,20 @@ class TestPrivateNotesAutoCreate:
         (root / "README.md").write_text("base\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
-        _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
+        original_head = _git_stdout(root, "rev-parse", "HEAD")
+        lock = root / "plans" / ".agent-toolkit-plan-create.lock"
+        lock.parent.mkdir(parents=True)
+        lock.touch()
 
         assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
-        assert _git_stdout(root, "show", "HEAD:.gitignore") == f"{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n"
+        exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+        assert exclude.splitlines().count(_file_lock.PLAN_LOCK_IGNORE_PATTERN) == 1
+        assert not (root / ".gitignore").exists()
+        assert _git_stdout(root, "rev-parse", "HEAD") == original_head
         assert not _git_stdout(root, "status", "--porcelain")
 
-    def test_ensure_environment_does_not_commit_user_gitignore_change(self, tmp_path: pathlib.Path) -> None:
-        """利用者の既存差分が混在する`.gitignore`は自動commitしない。"""
+    def test_ensure_environment_keeps_recorded_gitignore_pattern(self, tmp_path: pathlib.Path) -> None:
+        """`.gitignore`へ記録済みの管理パターンと利用者の変更を、commitも削除もしない。"""
         home = tmp_path / "home"
         root = home / "private-notes"
         root.mkdir(parents=True)
@@ -1275,11 +1283,14 @@ class TestPrivateNotesAutoCreate:
         subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.name", "test"], cwd=root, check=True)
         (root / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
-        (root / ".gitignore").write_text("tracked\n", encoding="utf-8")
+        (root / ".gitignore").write_text(f"tracked\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n", encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
         original_head = _git_stdout(root, "rev-parse", "HEAD")
-        (root / ".gitignore").write_text("tracked\nuser-change\n", encoding="utf-8")
+        (root / ".gitignore").write_text(
+            f"tracked\nuser-change\n{_file_lock.PLAN_LOCK_IGNORE_PATTERN}\n",
+            encoding="utf-8",
+        )
 
         assert _common._ensure_environment(home) == root  # pylint: disable=protected-access  # noqa: SLF001
         assert _git_stdout(root, "rev-parse", "HEAD") == original_head

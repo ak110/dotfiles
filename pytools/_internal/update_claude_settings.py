@@ -64,6 +64,8 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
     # 2026-08: 振り返り入口をagent-toolkit側へ統合したため個人Stop hookを除去
     "claude_hook.py stop;",
+    # 2026-09: pretooluseフックへスクリプト実在検査を追加したため、検査を持たない旧形式エントリを除去
+    "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse;",
 )
 
 # settings.json の env 配下から除去するキー。
@@ -618,7 +620,7 @@ def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> N
                     continue
                 # 配布原本に存在しないか確認
                 if command not in managed_commands:
-                    logger.warning(f"配布原本に存在しないfookコマンド（settings.json）: {command}")
+                    logger.warning(f"配布原本に存在しないフックコマンド（settings.json）: {command}")
 
 
 def _collect_hook_commands(data: dict, commands: set[str]) -> None:

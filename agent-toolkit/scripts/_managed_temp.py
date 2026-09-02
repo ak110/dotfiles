@@ -1460,13 +1460,22 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
 
 
 def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
-    """既定の一時root直下で、マーカーだけが残る管理対象の絶対パスを返す。"""
+    """既定の一時root直下で、マーカーだけが残る管理対象の絶対パスを返す。
+
+    本関数は`atk`の`managed-temp`以外の全サブコマンドの前段から呼ばれ、対話シェルの起動ごとに
+    発火する経路を持つ。一時ディレクトリ直下の項目ごとに外部状態ディレクトリを解決すると、
+    当該項目数に比例した待ち時間が対話シェルの起動へ生じる。判定を追加する場合も、
+    項目の種別とマーカーの有無で候補を限定した後に外部状態を解決する評価順序を維持する。
+    """
+    root = _temp_root()
+    with os.scandir(root) as entries:
+        names = sorted(entry.name for entry in entries if entry.is_dir(follow_symlinks=False))
     candidates: list[pathlib.Path] = []
-    for child in sorted(_temp_root().iterdir()):
-        if prefix is not None and not child.name.startswith(f"{prefix}-"):
+    for name in names:
+        if prefix is not None and not name.startswith(f"{prefix}-"):
             continue
-        registry_path = _registry_path(child)
-        if not os.path.lexists(child / _MARKER_NAME) or os.path.lexists(registry_path):
+        child = root / name
+        if not os.path.lexists(child / _MARKER_NAME) or os.path.lexists(_registry_path(child)):
             continue
         candidates.append(child.absolute())
     return candidates

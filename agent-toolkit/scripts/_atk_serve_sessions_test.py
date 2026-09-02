@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import pathlib
+import subprocess
 import typing
 
 import _atk_serve_sessions as sessions
@@ -135,7 +136,7 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     meta = path.with_suffix("") / "subagents" / "agent-1.meta.json"
     meta.parent.mkdir(parents=True, exist_ok=True)
     meta.write_text(
-        json.dumps({"agentType": "Explore", "spawnDepth": 1, "parentAgentId": None, "model": "opus"}),
+        json.dumps({"agentType": "Explore", "description": "探索", "spawnDepth": 1, "parentAgentId": None, "model": "opus"}),
         encoding="utf-8",
     )
 
@@ -152,11 +153,48 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     assert detail["events"][2]["name"] == "Bash"
     assert detail["events"][5]["detail"] == {"trigger": "auto"}
     assert detail["usage"] == {"input_tokens": 10, "output_tokens": 3}
+    # 記録本体が残っていないサブエージェントは、開く対象が無いことを`path`のnullで表す。
     assert detail["subagents"] == [
-        {"agent_id": "agent-1", "agent_type": "Explore", "spawn_depth": 1, "parent_agent_id": None, "model": "opus"}
+        {
+            "agent_id": "agent-1",
+            "agent_type": "Explore",
+            "description": "探索",
+            "spawn_depth": 1,
+            "parent_agent_id": None,
+            "model": "opus",
+            "path": None,
+        }
     ]
     assert detail["project"] == "/home/aki/proj"
     assert detail["started_at"] == "2026-09-01T00:00:00Z"
+
+
+def test_subagent_records_are_reachable_from_the_parent_detail(tmp_path: pathlib.Path) -> None:
+    """記録本体があるサブエージェントは絶対パスを返し、その詳細から下位の階層も辿れる。"""
+    path = _claude_record(tmp_path)
+    subagents = path.with_suffix("") / "subagents"
+    for agent_id, depth in (("agent-parent", 1), ("agent-child", 2)):
+        meta = subagents / f"{agent_id}.meta.json"
+        meta.parent.mkdir(parents=True, exist_ok=True)
+        meta.write_text(json.dumps({"agentType": "Explore", "spawnDepth": depth}), encoding="utf-8")
+    parent_record = _write(subagents / "agent-parent.jsonl", [{"type": "user", "message": {"content": "親の発話"}}])
+    nested = parent_record.with_suffix("") / "subagents" / "agent-nested.meta.json"
+    nested.parent.mkdir(parents=True, exist_ok=True)
+    nested.write_text(json.dumps({"agentType": "Plan", "spawnDepth": 2}), encoding="utf-8")
+    context = _context(tmp_path)
+
+    detail = sessions.read_local_detail(context, "claude", str(path))
+
+    by_id = {item["agent_id"]: item for item in detail["subagents"]}
+    assert by_id["agent-parent"]["path"] == str(parent_record)
+    # 記録本体が無い項目は開けないため、深さだけを返す。
+    assert by_id["agent-child"]["path"] is None
+    assert by_id["agent-child"]["spawn_depth"] == 2
+
+    nested_detail = sessions.read_local_detail(context, "claude", by_id["agent-parent"]["path"])
+
+    assert [event["text"] for event in nested_detail["events"]] == ["親の発話"]
+    assert [item["agent_id"] for item in nested_detail["subagents"]] == ["agent-nested"]
 
 
 def test_detail_renders_codex_records_in_order(tmp_path: pathlib.Path) -> None:
@@ -185,6 +223,8 @@ def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> No
     assert detail["usage"] == {"input_tokens": None, "output_tokens": None}
     # サブエージェント記録が無い場合は空配列ではなくnullとし、「0件」と区別する。
     assert detail["subagents"] is None
+    # ローカルの記録は保存先を直接読むため、有無の判定自体は常に成立する。
+    assert detail["subagents_unavailable"] is False
     assert detail["events"][0]["timestamp"] is None
     assert detail["events"][0]["name"] is None
     assert detail["events"][0]["usage"] is None
@@ -320,7 +360,62 @@ async def test_unreachable_host_is_reported_and_others_are_returned(tmp_path: pa
 
     assert [entry.host for entry in entries] == ["local-host"]
     assert [warning["host"] for warning in warnings] == ["down-host"]
+    assert warnings[0]["reason"].startswith("記録を取得できません: ")
     assert "接続できません" in warnings[0]["reason"]
+
+
+def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., subprocess.CompletedProcess[bytes]]:
+    """指定した終了コードと標準エラー出力を返す`subprocess.run`の代用を組み立てる。"""
+
+    def run(*args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
+        del args, kwargs
+        return subprocess.CompletedProcess(args=["ssh"], returncode=returncode, stdout=b"", stderr=stderr)
+
+    return run
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        (b"helper not found\n", "helper not found"),
+        (b"  \n ", "標準エラー出力はありません"),
+        (b"\xff\xfe helper failed", "helper failed"),
+    ],
+    ids=["message", "empty", "undecodable"],
+)
+async def test_remote_failure_warning_carries_stderr(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stderr: bytes,
+    expected: str,
+) -> None:
+    """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を警告本文へ引き継ぐ。"""
+    monkeypatch.setattr(sessions.subprocess, "run", _failed_ssh(2, stderr))
+    context = _context(tmp_path, remote_hosts=["down-host"])
+
+    _, warnings = await sessions.list_sessions(context)
+
+    reason = warnings[0]["reason"]
+    assert reason.startswith("記録を取得できません: ")
+    assert "終了コード2" in reason
+    assert expected in reason
+
+
+@pytest.mark.asyncio
+async def test_long_stderr_keeps_the_tail_in_the_warning(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
+    head = "先頭の行" * sessions.STDERR_EXCERPT_MAX_CHARS
+    stderr = f"{head}\n末尾の理由\n".encode()
+    monkeypatch.setattr(sessions.subprocess, "run", _failed_ssh(2, stderr))
+    context = _context(tmp_path, remote_hosts=["down-host"])
+
+    _, warnings = await sessions.list_sessions(context)
+
+    reason = warnings[0]["reason"]
+    assert "末尾の理由" in reason
+    assert head not in reason
+    assert len(reason) < len(head)
 
 
 @pytest.mark.asyncio
@@ -385,6 +480,41 @@ async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path) ->
     assert detail["session_id"] == "abc"
     assert [event["text"] for event in detail["events"]] == ["やあ"]
     assert calls[0][1] == "read"
+
+
+@pytest.mark.asyncio
+async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
+    """リモートの記録もサブエージェント一覧を返し、当該欄を持たない応答は判定不能として区別する。"""
+    text = json.dumps({"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}) + "\n"
+    data = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    subagent = {
+        "agent_id": "agent-1",
+        "agent_type": "Explore",
+        "description": "探索",
+        "spawn_depth": 1,
+        "parent_agent_id": None,
+        "model": "opus",
+        "path": "/home/aki/.claude/projects/p/abc/subagents/agent-1.jsonl",
+    }
+
+    async def detail_for(payload: dict[str, typing.Any]) -> dict[str, typing.Any]:
+        runner, _ = _runner_returning(payload)
+        context = _context(tmp_path, remote_hosts=["circe"], ssh_runner=runner)
+        return await sessions.session_detail(context, "claude", "circe", "/home/aki/.claude/projects/p/abc.jsonl")
+
+    listed = await detail_for({"ok": True, "data": data, "subagents": [subagent]})
+    assert listed["subagents"] == [subagent]
+    assert listed["subagents_unavailable"] is False
+
+    # サブエージェント一覧を返さない版のヘルパーが動くホストでは、読み取り自体は成功するため欄の欠落で判別する。
+    legacy = await detail_for({"ok": True, "data": data})
+    assert legacy["subagents"] is None
+    assert legacy["subagents_unavailable"] is True
+
+    # 空配列を返すホストはサブエージェントが無いことを示すため、判定不能としない。
+    empty = await detail_for({"ok": True, "data": data, "subagents": []})
+    assert empty["subagents"] is None
+    assert empty["subagents_unavailable"] is False
 
 
 @pytest.mark.asyncio

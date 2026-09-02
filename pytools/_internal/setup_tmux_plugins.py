@@ -144,14 +144,16 @@ def _update_to_tag(plugin: _Plugin) -> bool:
         tag=_TAG,
     )
     if fetch is None or fetch.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"fetch失敗: {plugin.dest}"))
+        logger.warning(log_format.format_status(_TAG, f"fetch失敗: {plugin.dest}: {claude_common.format_cli_error(fetch)}"))
         return False
     checkout = claude_common.run_subprocess(
         ["git", "-C", str(plugin.dest), "checkout", "FETCH_HEAD"],
         tag=_TAG,
     )
     if checkout is None or checkout.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"checkout失敗: {plugin.dest}"))
+        logger.warning(
+            log_format.format_status(_TAG, f"checkout失敗: {plugin.dest}: {claude_common.format_cli_error(checkout)}")
+        )
         return False
     logger.info(log_format.format_status(_TAG, f"更新: {plugin.dest} ({plugin.pin})"))
     return True
@@ -163,7 +165,7 @@ def _update_to_branch(plugin: _Plugin) -> bool:
         tag=_TAG,
     )
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"pull失敗: {plugin.dest}"))
+        logger.warning(log_format.format_status(_TAG, f"pull失敗: {plugin.dest}: {claude_common.format_cli_error(result)}"))
         return False
     logger.info(log_format.format_status(_TAG, f"更新: {plugin.dest} ({plugin.pin})"))
     return True

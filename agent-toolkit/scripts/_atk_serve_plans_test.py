@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import pathlib
+import subprocess
 import typing
 
 import _atk_serve_plans as plans
@@ -140,6 +141,23 @@ def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Pa
         ("first", "keep.md"),
         ("second", "other.md"),
     ]
+
+
+def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """rootへ一時的に到達できない間は、記録済みの作成日時を回収しない。"""
+    root = tmp_path / "plans"
+    root.mkdir()
+    _plan(root, "plan.md", mtime=1_000.0)
+    plans.list_files(root, "local-host")
+    stored = json.loads(index_path.read_text(encoding="utf-8"))
+    (root / "plan.md").unlink()
+    root.rmdir()
+
+    entries, warning = plans.scan_files(root, "local-host")
+
+    assert not entries
+    assert warning is None
+    assert json.loads(index_path.read_text(encoding="utf-8")) == stored
 
 
 def test_migrates_matching_legacy_entry(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
@@ -377,6 +395,28 @@ def test_attached_files_are_excluded_from_the_listing(tmp_path: pathlib.Path, in
     assert plans.resolve_under_root(root, "note.txt") is None
 
 
+def test_absent_root_is_listed_without_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """計画を1件も保存していないrootは通常の状態として扱い、警告を返さず一覧を空とする。"""
+    del index_path
+
+    entries, warning = plans.scan_files(tmp_path / "missing", "local-host")
+
+    assert not entries
+    assert warning is None
+
+
+def test_non_directory_root_is_reported_as_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """rootが通常ファイルの場合は、利用できない理由を警告として返す。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.write_text("x", encoding="utf-8")
+
+    entries, warning = plans.scan_files(root, "local-host")
+
+    assert not entries
+    assert warning == "rootがディレクトリではありません"
+
+
 @pytest.mark.parametrize("rel", ["../outside.md", "a/../../outside.md", "/etc/passwd.md"])
 def test_resolve_under_root_rejects_traversal(tmp_path: pathlib.Path, rel: str) -> None:
     """root外を指す相対パスは解決しない。"""
@@ -579,6 +619,52 @@ async def test_remote_read_passes_source_id_before_the_path() -> None:
     await plans.fetch_remote_file("circe", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
 
     assert len(calls[0][2]) == 2
+
+
+def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., subprocess.CompletedProcess[bytes]]:
+    """指定した終了コードと標準エラー出力を返す`subprocess.run`の代用を組み立てる。"""
+
+    def run(*args: typing.Any, **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
+        del args, kwargs
+        return subprocess.CompletedProcess(args=["ssh"], returncode=returncode, stdout=b"", stderr=stderr)
+
+    return run
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        (b"helper not found\n", "helper not found"),
+        (b"  \n ", "標準エラー出力はありません"),
+        (b"\xff\xfe helper failed", "helper failed"),
+    ],
+    ids=["message", "empty", "undecodable"],
+)
+async def test_remote_read_failure_reports_stderr(monkeypatch: pytest.MonkeyPatch, stderr: bytes, expected: str) -> None:
+    """リモート実行が非0で終了した場合、終了コードと失敗元の標準エラー出力を例外本文へ引き継ぐ。"""
+    monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, stderr))
+
+    with pytest.raises(plans.RemoteHelperError) as error:
+        await plans.fetch_remote_file("circe", "p.md", plans.default_ssh_runner, None)
+
+    assert "終了コード3" in str(error.value)
+    assert expected in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """標準エラー出力が上限を超える場合、失敗の直接原因が現れる末尾側を残して切り詰める。"""
+    head = "先頭の行" * plans.STDERR_EXCERPT_MAX_CHARS
+    monkeypatch.setattr(plans.subprocess, "run", _failed_ssh(3, f"{head}\n末尾の理由\n".encode()))
+
+    with pytest.raises(plans.RemoteHelperError) as error:
+        await plans.fetch_remote_file("circe", "p.md", plans.default_ssh_runner, None)
+
+    message = str(error.value)
+    assert "末尾の理由" in message
+    assert head not in message
+    assert len(message) < len(head)
 
 
 @pytest.mark.asyncio

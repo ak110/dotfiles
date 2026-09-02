@@ -9,6 +9,11 @@
 remote同期とファイル操作・commitの交錯によるfast-forward失敗を招く。
 `_repo_lock`はロックファイル名を対象パスから導出するため、フィードバック保存リポジトリ以外の
 git作業コピー（`atk mq process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
+計画ロックの除外設定はGitの版管理の対象外へ書くため、当該不変条件の対象に当たらない。
+
+不変条件: `list`のような読み取り専用のサブコマンドは、フィードバック保存リポジトリの版管理を
+書き換えない。前段の環境準備は対話シェルの起動ごとにも実行されるため、当該不変条件を破ると
+利用者の操作と無関係なcommitとpushが起動のたびに発生し、他cloneとの競合を招く。
 
 TBDの回答判定`_is_tbd_answered`は`_tbd_scan`が実体を持つ。PostToolUseフックが
 依存パッケージなしで同じ判定を利用するため、本モジュールは再エクスポートのみを行う。
@@ -257,46 +262,9 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
             print(f"フィードバック保存ディレクトリが見つかりません: {root}", file=sys.stderr)
             sys.exit(1)
         _init_local_private_notes_repo(root)
-    with _repo_lock(root):
-        _ensure_plan_lock_gitignore(root)
+    _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
     _migrate_legacy_layout(root)
     return root
-
-
-def _ensure_plan_lock_gitignore(private_notes: pathlib.Path) -> None:
-    """計画ロックの除外設定を保証し、安全に帰属できる差分だけをcommitする。"""
-    _assert_repo_lock_held(private_notes)
-    lock_path = private_notes / "plans" / ".agent-toolkit-plan-create.lock"
-    _file_lock.ensure_plan_lock_ignored(lock_path)
-    if not _gitignore_is_managed_change(private_notes):
-        return
-    _commit_and_push(
-        private_notes,
-        "chore: ignore agent-toolkit plan locks",
-        [".gitignore"],
-    )
-
-
-def _gitignore_is_managed_change(private_notes: pathlib.Path) -> bool:
-    """worktreeの`.gitignore`差分が管理パターンの追加だけなら真を返す。"""
-    gitignore = private_notes / ".gitignore"
-    if not gitignore.exists():
-        return False
-    result = _git_command.run(
-        ["show", "HEAD:.gitignore"],
-        private_notes,
-        check=False,
-        capture_output=True,
-    )
-    if result.returncode == 0:
-        assert isinstance(result.stdout, bytes)
-        base = result.stdout
-    elif result.returncode == 128:
-        base = b""
-    else:
-        raise subprocess.CalledProcessError(result.returncode, ["git", "show", "HEAD:.gitignore"])
-    expected = _file_lock.plan_lock_gitignore_content(base)
-    return expected != base and gitignore.read_bytes() == expected
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:

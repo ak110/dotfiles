@@ -47,6 +47,8 @@ SSH_WATCH_OPTIONS = (
 )
 # 単発SSH呼び出しのタイムアウト秒。
 SSH_TIMEOUT_SEC = 30.0
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、画面の警告欄を占有させない。
+STDERR_EXCERPT_MAX_CHARS = 500
 # RPCリクエスト1件あたりのタイムアウト秒。超過時は単発SSHへ切り替える。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
 # 常駐SSH接続のstdout用StreamReader上限（バイト）。一覧・本文は1行JSONで届くため大きく取る。
@@ -207,6 +209,8 @@ def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] 
     """セッション本体に属するサブエージェント記録の親子関係を返す。
 
     記録が無い場合は`None`を返し、取得不能であることを表す。
+    `path`は当該サブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
+    `parent_agent_id`は深さが2以上の記録にだけ現れるため、階層の復元は`spawn_depth`を典拠とする。
     """
     directory = record_path.with_suffix("") / "subagents"
     if not directory.is_dir():
@@ -219,13 +223,18 @@ def _claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] 
             continue
         if not isinstance(metadata, dict):
             continue
+        # `agent_id`は`agent-<16進数>`の形であり接頭辞を含むため、記録本体の名前へ重ねて付けない。
+        agent_id = meta_path.name.removesuffix(".meta.json")
+        agent_record = meta_path.with_name(f"{agent_id}{RECORD_SUFFIX}")
         found.append(
             {
-                "agent_id": meta_path.name.removesuffix(".meta.json"),
+                "agent_id": agent_id,
                 "agent_type": metadata.get("agentType"),
+                "description": metadata.get("description"),
                 "spawn_depth": metadata.get("spawnDepth"),
                 "parent_agent_id": metadata.get("parentAgentId"),
                 "model": metadata.get("model"),
+                "path": str(agent_record) if agent_record.is_file() else None,
             }
         )
     return found or None
@@ -358,8 +367,13 @@ def build_detail(
     *,
     broken_lines: int,
     subagents: list[dict[str, typing.Any]] | None,
+    subagents_unavailable: bool,
 ) -> dict[str, typing.Any]:
-    """解析済みの記録から詳細応答を組み立てる。"""
+    """解析済みの記録から詳細応答を組み立てる。
+
+    `subagents_unavailable`は、サブエージェント記録の有無そのものを判定できなかったことを表す。
+    サブエージェントが無いこと（`subagents`が`null`）と区別して画面へ示すために持たせる。
+    """
     events, totals = _claude_events(records) if engine == "claude" else _codex_events(records)
     truncated = max(0, len(events) - MAX_DETAIL_EVENTS)
     return {
@@ -368,6 +382,7 @@ def build_detail(
         "truncated_events": truncated,
         "usage": totals,
         "subagents": subagents,
+        "subagents_unavailable": subagents_unavailable,
         "broken_lines": broken_lines,
     }
 
@@ -541,7 +556,8 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
         raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
     records, broken = parse_records(data.decode("utf-8", errors="replace"))
     subagents = _claude_subagents(path) if engine == "claude" else None
-    detail = build_detail(engine, records, broken_lines=broken, subagents=subagents)
+    # ローカルの記録は保存先を直接読むため、サブエージェント記録の有無を常に判定できる。
+    detail = build_detail(engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=False)
     detail["session_id"] = path.stem if engine == "claude" else codex_session_id(path)
     detail["host"] = context.hostname
     detail["path"] = raw_path
@@ -585,17 +601,48 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     ]
 
 
+class RemoteHelperError(Exception):
+    """リモートヘルパーの実行が非0で終了したことを、失敗元の標準エラー出力とともに示す。
+
+    本例外の文字列表現は利用者向けの警告本文へそのまま引き継がれるため、失敗元の標準エラー出力を含める。
+    SSHの接続が成立したうえでリモート側の実行が失敗する場合も本例外となるため、
+    到達可否を判別していない語で原因を断定しない。
+    """
+
+    def __init__(self, returncode: int, stderr: bytes) -> None:
+        super().__init__(f"リモートヘルパーの実行が終了コード{returncode}で失敗しました: {_stderr_excerpt(stderr)}")
+
+
+def _stderr_excerpt(stderr: bytes) -> str:
+    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
+
+    復号できない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    """
+    text = " ".join(stderr.decode("utf-8", errors="replace").split())
+    if not text:
+        return "標準エラー出力はありません"
+    if len(text) > STDERR_EXCERPT_MAX_CHARS:
+        return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
+    return text
+
+
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
-    """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。"""
+    """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
+
+    非0終了は`RemoteHelperError`として送出し、失敗元の標準エラー出力を呼び出し元へ渡す。
+    """
     cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
     proc = await asyncio.to_thread(
         subprocess.run,
         cmd,
         capture_output=True,
         timeout=SSH_TIMEOUT_SEC,
-        check=True,
+        check=False,
     )
     assert isinstance(proc.stdout, bytes)
+    assert isinstance(proc.stderr, bytes)
+    if proc.returncode != 0:
+        raise RemoteHelperError(proc.returncode, proc.stderr)
     return proc.stdout.decode("utf-8")
 
 
@@ -827,12 +874,12 @@ async def _remote_call(context: SessionsContext, host: str, op: str, args: dict[
 
 
 async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[SessionSummary], dict[str, str] | None]:
-    """1台のリモートホストの一覧を取得する。到達できない場合は警告を返す。"""
+    """1台のリモートホストの一覧を取得する。取得できない場合は失敗の内容を警告として返す。"""
     try:
         payload = await _remote_call(context, host, "list", {})
     except Exception as error:  # noqa: BLE001
         logger.warning("リモートのセッション一覧を取得できません host=%s: %s", host, error)
-        return [], {"host": host, "reason": f"到達できません: {error}"}
+        return [], {"host": host, "reason": f"記録を取得できません: {error}"}
     entries: list[SessionSummary] = []
     for item in payload.get("entries", []):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):
@@ -872,6 +919,22 @@ async def list_sessions(context: SessionsContext) -> tuple[list[SessionSummary],
     return entries[:MAX_LIST_ENTRIES], warnings
 
 
+def _remote_subagents(engine: str, payload: dict[str, typing.Any]) -> tuple[list[dict[str, typing.Any]] | None, bool]:
+    """リモートの読み取り応答から、サブエージェント一覧と判定不能かどうかを返す。
+
+    リモートホストのdotfilesが古く、サブエージェント一覧を返さない版のヘルパーが動いている場合は、
+    読み取り自体が成功したまま当該欄だけが欠ける。サブエージェントが無い場合と区別するため、
+    欄が無い応答は判定不能として扱う。Codexの記録はサブエージェントを持たないため判定不能としない。
+    """
+    if engine != "claude":
+        return None, False
+    found = payload.get("subagents")
+    if not isinstance(found, list):
+        return None, True
+    # ローカルと同じく、0件は`None`で表して「サブエージェントが無い」ことを示す。
+    return found or None, False
+
+
 async def session_detail(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
     """指定ホストの記録1件を共通の表示モデルへ正規化して返す。"""
     if engine not in {"claude", "codex"}:
@@ -890,7 +953,10 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
         raise SessionNotFoundError(path) from error
     text = base64.b64decode(str(payload["data"])).decode("utf-8", errors="replace")
     records, broken = parse_records(text)
-    detail = build_detail(engine, records, broken_lines=broken, subagents=None)
+    subagents, subagents_unavailable = _remote_subagents(engine, payload)
+    detail = build_detail(
+        engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=subagents_unavailable
+    )
     detail["session_id"] = pathlib.PurePosixPath(path).stem
     detail["host"] = host
     detail["path"] = path

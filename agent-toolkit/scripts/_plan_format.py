@@ -26,6 +26,7 @@ SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の「�
 import functools
 import pathlib
 import re
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -34,9 +35,12 @@ import markdown_it.common.html_re
 import markdown_it.rules_inline
 import markdown_it.token
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
 PLAN_H2_OVERVIEW: str = "概要"
 PLAN_H2_ACTION: str = "実施内容"
-PLAN_H2_AGENT_JUDGMENT: str = "エージェント判断"
+PLAN_H2_AGENT_JUDGMENT: str = "エージェント提案詳細"
 PLAN_H2_MATERIALS: str = "提示素材"
 PLAN_H2_HISTORY: str = "変更履歴（計画時）"
 PLAN_H2_VERIFICATION: str = "検証区分"
@@ -49,8 +53,10 @@ PLAN_H2_PROGRESS: str = "進捗ログ（実行時）"
 
 PLAN_H2_LEGACY_HISTORY: str = "変更履歴"
 PLAN_H2_LEGACY_PROGRESS: str = "進捗ログ"
+PLAN_H2_LEGACY_AGENT_JUDGMENT: str = "エージェント判断"
 
 PLAN_H2_ALIASES: dict[str, tuple[str, ...]] = {
+    PLAN_H2_AGENT_JUDGMENT: (PLAN_H2_AGENT_JUDGMENT, PLAN_H2_LEGACY_AGENT_JUDGMENT),
     PLAN_H2_HISTORY: (PLAN_H2_HISTORY, PLAN_H2_LEGACY_HISTORY),
     PLAN_H2_PROGRESS: (PLAN_H2_PROGRESS, PLAN_H2_LEGACY_PROGRESS),
 }
@@ -100,8 +106,11 @@ PLAN_DETAIL_H2_ORDER: tuple[str, ...] = (PLAN_H2_PERMANENCE, PLAN_H2_IMPLEMENTAT
 PLAN_DETAIL_SUFFIX: str = ".detail.md"
 """計画ファイル（詳細）の固定サフィックス。計画ファイル（メイン）と対応する。"""
 
-PLAN_PERMANENCE_H3: tuple[str, ...] = ("恒久化", "リファクタリング", "類似見直し")
+PLAN_PERMANENCE_H3: tuple[str, ...] = ("恒久化", "リファクタリング")
 """`## 恒久化・リファクタリング内容`直下に固定順で置くH3。"""
+
+PLAN_LEGACY_PERMANENCE_H3: tuple[str, ...] = ("類似見直し",)
+"""廃止済みのH3。既存計画の読み取りでだけ受理し、新規作成では置かない。"""
 
 PLAN_METADATA_H3: str = "計画メタ情報"
 PLAN_EXCLUSION_H3: str = "合意済みの除外・保持"
@@ -141,6 +150,13 @@ PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
 PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("目的", "実装契約", "背景")
 """正規配置を持たない既存計画で計画メタ情報を読み取る旧配置。読み取り専用の互換経路とする。"""
 
+PLAN_HISTORY_USER_EVENT_PREFIX: str = "ユーザー発言"
+"""`## 変更履歴（計画時）`でユーザー発言の逐語記録を置くH3見出しの接頭辞。"""
+PLAN_HISTORY_USER_EVENT_PATTERN = re.compile(rf"^{PLAN_HISTORY_USER_EVENT_PREFIX}(?P<sequence>[1-9][0-9]*)$")
+"""ユーザー発言見出しの書式。接頭辞に1から始まる連番だけを続ける。"""
+PLAN_LEGACY_HISTORY_USER_EVENT_PATTERN = re.compile(rf"^{PLAN_HISTORY_USER_EVENT_PREFIX}: .+$")
+"""要旨を見出しへ書く旧書式。既存計画の読み取りでだけ受理する。"""
+
 PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "指摘内容", "採否・現在の結論", "同期先")
 PLAN_HISTORY_ORIGINS: tuple[str, ...] = ("ユーザー発言", "レビュー指摘", "方針転換")
 PLAN_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^R(?P<round>[0-9]+)-(?P<track>[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$")
@@ -165,6 +181,26 @@ PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
     "エージェント提案",
 )
 PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")
+PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN = re.compile(
+    r"(?P<kind>人間由来のフィードバック|エージェント由来のフィードバック) "
+    r"\((?P<name>[^/\\()\s]+\.md)\)(?P<note> \[対話由来\])?"
+)
+"""フィードバック由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
+
+PLAN_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
+"""正本の`source`と機械判定できる明示由来から照合する由来の区分。"""
+
+PLAN_FEEDBACK_SOURCE_KEY: str = "source"
+"""フィードバック正本のfrontmatterで投入元スキルを表すキー。"""
+
+PLAN_FEEDBACK_USER_COMMENT_HEADING: str = "ユーザーコメント"
+"""フィードバック正本の末尾に置く、ユーザー専用の記入欄の見出し。"""
+
+PLAN_FEEDBACK_ANSWER_HEADING: str = "回答"
+"""TBDの正本でユーザーの回答を記録する見出し。"""
+
+_FRONTMATTER_DELIMITER: str = "---"
+_FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_FEEDBACK_SOURCE_KEY}:[ \t]*\S")
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
 """計画ファイル（メイン）の実施内容表が受理する採否値。"""
@@ -235,6 +271,22 @@ PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し�
 """バグ単位の原因分析表の固定5列2行。`agent-toolkit:bugfix`の原因分析の段階と対応させる。"""
 
 PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+    "現象",
+    "期待する契約",
+    "直接的原因",
+    "原因分析の根拠",
+    "対策",
+    "類似見直し観点",
+    "類似見直し結果",
+    "再発防止策",
+)
+"""バグ調査表の固定行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。
+
+根本原因は原因分析表の到達した最深段のセルへ、原因分析の品質確認は原因分析の工程へ、
+設計意図の記録は`再発防止策`の記載内容へ統合したため、いずれも独立した行を持たない。
+"""
+
+PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
     "観測事象",
     "期待する契約",
     "直接的原因",
@@ -248,9 +300,9 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
     "再発防止処置",
     "設計意図の記録",
 )
-"""バグ調査表の固定12行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。"""
+"""統廃合前のバグ調査表の固定行。原因分析表を伴う既存計画の読み取り互換にだけ用いる。"""
 
-PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
+PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS: tuple[str, ...] = (
     "観測事象",
     "期待する契約",
     "直接的原因",
@@ -266,17 +318,13 @@ PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
     "再発防止処置",
     "設計意図の記録",
 )
-"""原因分析表を持たない旧バグ調査表の固定14行。既存計画の読み取り互換にだけ用いる。"""
+"""原因分析表を持たない旧バグ調査表の固定行。既存計画の読み取り互換にだけ用いる。"""
 
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
-"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表の12行を正本とする。"""
+"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表を正本とする。"""
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
-PLAN_SIMILAR_REVIEW_TABLE_ROWS: tuple[str, ...] = ("母集団", "点検観点", "該当箇所")
-"""構造検査が通常変更だけに要求する類似見直し表の固定3行。
-
-バグ対応は計画担当の規定に基づき、バグ調査表との意味上の対応をレビュー担当が照合する。
-"""
+"""`### リファクタリング`が対象ごとに置く固定4行。対象が無い場合は表を置かず地の文とする。"""
 
 PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
 """検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""
@@ -909,8 +957,12 @@ def _check_child_heading_sequence(
     level: int,
     expected: tuple[str, ...],
     parent_label: str,
+    optional: tuple[str, ...] = (),
 ) -> list[str]:
-    """指定見出しの直下にある固定見出しの有無、一意性、順序を検査する。"""
+    """指定見出しの直下にある固定見出しの有無、一意性、順序を検査する。
+
+    ``optional``は廃止済みの見出しなど、置かなくてよく、置いても違反としない見出しを指す。
+    """
     errors: list[str] = []
     children = [heading.text for _position, heading in child_headings(headings, index, level)]
     positions: list[int] = []
@@ -922,7 +974,7 @@ def _check_child_heading_sequence(
             positions.append(children.index(name))
     if len(positions) == len(expected) and positions != sorted(positions):
         errors.append(f"{parent_label}直下の固定見出しは{list(expected)}の順序で置く: 実際={children}")
-    unexpected = [name for name in children if name not in expected]
+    unexpected = [name for name in children if name not in expected and name not in optional]
     if unexpected:
         errors.append(f"{parent_label}直下に固定見出し以外のH{level}は置かない: 実際={unexpected}")
     return errors
@@ -1430,29 +1482,39 @@ def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
 def _check_bug_unit_sections(
     body: list[tuple[int, str]], headings: list[PlanHeading], children: list[tuple[int, PlanHeading]]
 ) -> list[str]:
-    """バグ単位H3ごとに原因分析表と固定12行の2列表を検査する。"""
+    """バグ単位H3ごとに原因分析表と固定行の2列表を検査する。
+
+    統廃合前の調査表は原因分析表を伴う形と伴わない形の2種があり、前者は現行と同じ2表構成で受理する。
+    行数はいずれも構造定数から導出し、メッセージへリテラルで持たない。
+    """
     errors: list[str] = []
     for position, heading in children:
         start, end = heading_subtree_range(headings, position)
         tables = extract_tables(lines_within(body, start, end))
-        legacy_tables = [
+        standalone_tables = [
             table
             for table in tables
-            if table.row_labels() == PLAN_LEGACY_BUG_TABLE_ROWS and table.header == PLAN_BUG_TABLE_HEADER
+            if table.row_labels() == PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS and table.header == PLAN_BUG_TABLE_HEADER
         ]
-        if legacy_tables:
-            if len(legacy_tables) != 1 or len(tables) != 1:
-                errors.append(f"`### {heading.text}`の旧形式は固定14行の調査表1件だけにする")
+        if standalone_tables:
+            if len(standalone_tables) != 1 or len(tables) != 1:
+                errors.append(
+                    f"`### {heading.text}`の旧形式は固定{len(PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS)}行の調査表1件だけにする"
+                )
                 continue
-            legacy_table = legacy_tables[0]
-            for row in legacy_table.rows:
+            standalone_table = standalone_tables[0]
+            for row in standalone_table.rows:
                 if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
                     errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
             continue
 
-        investigation_tables = [table for table in tables if table.row_labels() == PLAN_BUG_TABLE_ROWS]
+        investigation_tables = [
+            table for table in tables if table.row_labels() in (PLAN_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+        ]
         if len(investigation_tables) != 1 or investigation_tables[0].header != PLAN_BUG_TABLE_HEADER:
-            errors.append(f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定12行の調査表にする")
+            errors.append(
+                f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定{len(PLAN_BUG_TABLE_ROWS)}行の調査表にする"
+            )
             continue
         table = investigation_tables[0]
         cause_tables = [table for table in tables if table.row_labels() == PLAN_BUG_CAUSE_TABLE_ROWS]
@@ -1464,7 +1526,7 @@ def _check_bug_unit_sections(
         ):
             errors.append(
                 f"`### {heading.text}`は{list(PLAN_BUG_CAUSE_TABLE_HEADER)}の5列2行の原因分析表1件と"
-                "固定12行の調査表1件だけを置き、原因分析表を調査表より前に置く"
+                f"固定{len(PLAN_BUG_TABLE_ROWS)}行の調査表1件だけを置き、原因分析表を調査表より前に置く"
             )
             continue
         cause_table = cause_tables[0]
@@ -1526,8 +1588,14 @@ def has_legacy_bug_table(content: str) -> bool:
     return bool(children) and not _check_bug_unit_sections(body, headings, children)
 
 
+def has_legacy_bug_investigation_table(content: str) -> bool:
+    """統廃合前の行構成を持つ調査表を含む場合に真を返す。既存計画の移行案内にだけ用いる。"""
+    tables = extract_tables(list(iter_markdown_body_lines(content)))
+    return any(table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_BUG_TABLE_ROWS for table in tables)
+
+
 def check_bug_file_structure(content: str) -> list[str]:
-    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定12行の調査表を検査する。"""
+    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定行の調査表を検査する。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -1553,38 +1621,39 @@ def _check_permanence_sections(
     index: int,
     work_type: str | None,
 ) -> list[str]:
-    """恒久化、リファクタリング、類似見直しの検討実体を検査する。"""
-    errors = _check_child_heading_sequence(headings, index, 3, PLAN_PERMANENCE_H3, "`## 恒久化・リファクタリング内容`")
+    """恒久化とリファクタリングの検討実体を検査する。
+
+    該当が無い場合に固定表の代わりへ置く地の文を受理し、表を置いた場合だけ固定の列名と行名を検査する。
+    廃止済みの`### 類似見直し`は、既存計画の読み取りのため見出しの存在だけを受理する。
+    """
+    errors = _check_child_heading_sequence(
+        headings,
+        index,
+        3,
+        PLAN_PERMANENCE_H3,
+        "`## 恒久化・リファクタリング内容`",
+        optional=PLAN_LEGACY_PERMANENCE_H3,
+    )
     for position, heading in child_headings(headings, index, 3):
-        if heading.text not in PLAN_PERMANENCE_H3:
+        if heading.text not in (*PLAN_PERMANENCE_H3, *PLAN_LEGACY_PERMANENCE_H3):
             continue
         start, end = heading_subtree_range(headings, position)
         section = lines_within(body, start, end)
         if _is_placeholder_only(section):
             errors.append(f"`### {heading.text}`は対象、比較、確認結果、理由を記載する（結論語だけの記載は成立しない）")
             continue
+        # 表記法の有無で地の文と表を分ける。抽出できない崩れた表を地の文として通さない。
+        if not any(line.strip().startswith("|") for _lineno, line in section):
+            continue
+        tables = extract_tables(section)
         if heading.text == "恒久化" and work_type == "通常変更":
-            table, table_errors = _check_fixed_table(
-                section,
-                PLAN_PERMANENCE_TABLE_HEADER,
-                "通常変更の`### 恒久化`",
-            )
+            table, table_errors = _check_fixed_table(section, PLAN_PERMANENCE_TABLE_HEADER, "通常変更の`### 恒久化`")
             if table is None:
                 errors.append(f"通常変更の`### 恒久化`は{list(PLAN_PERMANENCE_TABLE_HEADER)}の4列表を置く")
             else:
                 errors.extend(table_errors)
-                if len(table.rows) != 1 and any(row and row[0] == "候補なし" for row in table.rows):
-                    errors.append("通常変更の`### 恒久化`で`候補なし`を記載する場合は、`候補なし`の行だけを置く")
-        elif heading.text == "リファクタリング":
-            tables = extract_tables(section)
-            if _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
-                errors.append(f"`### リファクタリング`は対象ごとに{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く")
-        elif (
-            heading.text == "類似見直し"
-            and work_type == "通常変更"
-            and _find_table_with_rows(extract_tables(section), PLAN_SIMILAR_REVIEW_TABLE_ROWS) is None
-        ):
-            errors.append(f"通常変更の`### 類似見直し`は{list(PLAN_SIMILAR_REVIEW_TABLE_ROWS)}の3行表を置く")
+        elif heading.text == "リファクタリング" and _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
+            errors.append(f"`### リファクタリング`は対象ごとに{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く")
     return errors
 
 
@@ -1671,8 +1740,17 @@ def _check_action_section(
     adopted_requirement_ids: set[str],
     identifiers: set[str],
     related_feedback: frozenset[str] = frozenset(),
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """`## 実施内容`の固定表と新旧の除外・保持表を検査する。"""
+    """`## 実施内容`の固定表と新旧の除外・保持表を検査する。
+
+    `origin_notices`と`origin_skips`を渡した場合だけ、フィードバック由来行を正本へ照合する。
+    照合の結果はエラーではなく呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
+    """
     if action_index is None:
         return []
     errors: list[str] = []
@@ -1681,7 +1759,17 @@ def _check_action_section(
     table, table_errors = _check_action_table(extract_tables(section))
     errors.extend(table_errors)
     if table is not None and table.header == PLAN_HUMAN_ACTION_TABLE_HEADER:
-        errors.extend(_check_human_action_table(table, materials, related_feedback))
+        errors.extend(
+            _check_human_action_table(
+                table,
+                materials,
+                related_feedback,
+                origin_notices=origin_notices,
+                origin_skips=origin_skips,
+                private_notes=private_notes,
+                home=home,
+            )
+        )
         if any(heading.level == 3 for _position, heading in child_headings(headings, action_index, 3)):
             errors.append(f"`## {PLAN_H2_ACTION}`直下に独立した除外・保持表を置かない")
         return errors
@@ -1716,10 +1804,95 @@ def _check_action_section(
     return errors
 
 
-def _check_human_action_table(
-    table: MarkdownTable, materials: PlanMaterials | None, related_feedback: frozenset[str]
+def _has_frontmatter_source(content: str) -> bool:
+    """フィードバック正本のfrontmatterが値を伴う第1階層の`source`を持つかを返す。
+
+    キーの有無だけを判定するため、YAMLパーサーへ依存せず行頭一致で確定する。
+    本モジュールはhookとPEP 723スクリプトから読み込まれるため、依存を広げない選択とする。
+    """
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
+        return False
+    for line in lines[1:]:
+        if line.strip() == _FRONTMATTER_DELIMITER:
+            return False
+        if _FRONTMATTER_SOURCE_PATTERN.match(line):
+            return True
+    return False
+
+
+def _has_machine_detectable_human_origin(content: str) -> bool:
+    """機械判定できる明示由来を持つかを返す。
+
+    末尾の厳密なH2`## ユーザーコメント`と、TBDの`## 回答`を対象とする。
+    """
+    h2_headings = [heading for heading in extract_headings(content) if heading.level == 2]
+    if any(heading.text == PLAN_FEEDBACK_ANSWER_HEADING for heading in h2_headings):
+        return True
+    return bool(h2_headings) and h2_headings[-1].text == PLAN_FEEDBACK_USER_COMMENT_HEADING
+
+
+def _find_feedback_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
+    """キュー管理リポジトリのルート配下から正本ファイルを探す。
+
+    状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
+    """
+    for candidate in sorted(root.iterdir()):
+        source = candidate / name
+        if candidate.is_dir() and source.is_file():
+            return source
+    return None
+
+
+def _collect_origin_notices(
+    name: str,
+    origin_notices: list[str],
+    origin_skips: list[str],
+    private_notes: pathlib.Path | str | None,
+    home: pathlib.Path | str | None,
+) -> None:
+    """`人間由来のフィードバック`行を正本へ照合し、移行の指摘と省略の事実を積む。
+
+    正本を解決できない場合とキュー管理リポジトリのルートが実在しない場合は当該行の照合だけを省略し、
+    他の検査の結果を変えない。
+    """
+    root = _plan_file.private_notes_root(private_notes, home=home)
+    try:
+        if not root.is_dir():
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。キュー管理リポジトリが実在しない: {root}")
+            return
+        source = _find_feedback_source(name, root)
+        if source is None:
+            origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を解決できない: {name}")
+            return
+        content = source.read_text(encoding="utf-8")
+    except OSError as error:
+        origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を取得できない: {name}: {error}")
+        return
+    if _has_frontmatter_source(content) and not _has_machine_detectable_human_origin(content):
+        origin_notices.append(
+            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_FEEDBACK_ORIGIN}`が正本の由来と一致しない: {name}。"
+            f"正本は`{PLAN_FEEDBACK_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
+            "`エージェント由来のフィードバック`とするか、機械判定できない明示由来を根拠とする場合は`[対話由来]`注記を付ける"
+        )
+
+
+def _check_human_action_table(  # pylint: disable=too-many-arguments
+    table: MarkdownTable,
+    materials: PlanMaterials | None,
+    related_feedback: frozenset[str],
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """新規書式の実施内容4列表を検査する。"""
+    """新規書式の実施内容4列表を検査する。
+
+    `人間由来のフィードバック`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
+    正本のfrontmatterと本文へ照合する。`[対話由来]`注記のある行は機械判定できない明示由来を
+    根拠とするため照合の対象から除く。
+    """
     errors: list[str] = []
     if not table.rows:
         return [f"`## {PLAN_H2_ACTION}`の表に1行以上の内容が必要"]
@@ -1735,17 +1908,21 @@ def _check_human_action_table(
         if origin in PLAN_HUMAN_ORIGINS:
             if origin.endswith("フィードバック"):
                 errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来には正本ファイル名を括弧内へ記載する: {origin}")
-        elif origin.startswith("人間由来のフィードバック (") or origin.startswith("エージェント由来のフィードバック ("):
-            match = re.fullmatch(
-                r"(?:人間由来のフィードバック|エージェント由来のフィードバック) \(([^/\\()\s]+\.md)\)",
-                origin,
-            )
+        elif origin.startswith(f"{PLAN_HUMAN_FEEDBACK_ORIGIN} (") or origin.startswith("エージェント由来のフィードバック ("):
+            match = PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN.fullmatch(origin)
             if match is None:
                 errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
-            elif match.group(1) not in related_feedback and (
-                materials is None or match.group(1) not in materials.material_paths
+            elif match.group("name") not in related_feedback and (
+                materials is None or match.group("name") not in materials.material_paths
             ):
-                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が関連フィードバックに無い: {match.group(1)}")
+                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が関連フィードバックに無い: {match.group('name')}")
+            elif (
+                origin_notices is not None
+                and origin_skips is not None
+                and match.group("kind") == PLAN_HUMAN_FEEDBACK_ORIGIN
+                and match.group("note") is None
+            ):
+                _collect_origin_notices(match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}又は計画レビュー第nラウンド、"
@@ -1772,10 +1949,10 @@ def _check_human_action_table(
 
 
 def is_canonical_main_format(content_or_headings: str | list[PlanHeading]) -> bool:
-    """新しいメイン計画書式（`エージェント判断`を含む）かを返す。"""
+    """新しいメイン計画書式（`エージェント提案詳細`を含む）かを返す。"""
     headings = extract_headings(content_or_headings) if isinstance(content_or_headings, str) else content_or_headings
     h2_names = {heading.text for heading in headings if heading.level == 2}
-    return PLAN_H2_AGENT_JUDGMENT in h2_names or PLAN_H2_HISTORY in h2_names or PLAN_H2_PROGRESS in h2_names
+    return bool(h2_names & {PLAN_H2_AGENT_JUDGMENT, PLAN_H2_LEGACY_AGENT_JUDGMENT, PLAN_H2_HISTORY, PLAN_H2_PROGRESS})
 
 
 def _check_agent_judgment_section(
@@ -1784,9 +1961,9 @@ def _check_agent_judgment_section(
     action_index: int | None,
     judgment_index: int | None,
 ) -> list[str]:
-    """新書式の`## エージェント判断`を実施内容の提案行と照合する。"""
+    """新書式の`## エージェント提案詳細`を実施内容の提案行と照合する。"""
     if judgment_index is None:
-        return [f"`## {PLAN_H2_AGENT_JUDGMENT}`が無いためエージェント判断を検査できない"]
+        return [f"`## {PLAN_H2_AGENT_JUDGMENT}`が無いためエージェント提案の詳細を検査できない"]
 
     proposal_names: list[str] = []
     if action_index is not None:
@@ -1906,6 +2083,7 @@ def _check_human_history_section(
     if not children and not [line for _lineno, line in section if line.strip()]:
         errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`に変更内容を判別できる記録が必要")
     user_event_count = 0
+    user_event_sequences: list[int] = []
     for position, heading in children:
         child_start, child_end = heading_subtree_range(headings, position)
         child_upper = len(raw_lines) + 1 if child_end is None else child_end
@@ -1914,7 +2092,16 @@ def _check_human_history_section(
         ]
         if _INTERNAL_PLAN_ID_PATTERN.search(heading.text):
             errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`の見出しへ履歴・要求・実装単位の合成IDを記載しない: {heading.text}")
-        if not heading.text.startswith("ユーザー発言:"):
+        if not heading.text.startswith(PLAN_HISTORY_USER_EVENT_PREFIX):
+            continue
+        numbered = PLAN_HISTORY_USER_EVENT_PATTERN.fullmatch(heading.text)
+        if numbered is not None:
+            user_event_sequences.append(int(numbered.group("sequence")))
+        elif PLAN_LEGACY_HISTORY_USER_EVENT_PATTERN.fullmatch(heading.text) is None:
+            errors.append(
+                f"`## {PLAN_H2_LEGACY_HISTORY}`のユーザー発言の見出しは"
+                f"`### {PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`にする: {heading.text}"
+            )
             continue
         user_event_count += 1
         fence_positions = [
@@ -1935,8 +2122,14 @@ def _check_human_history_section(
             errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`のユーザー発言の`text`コードブロックを閉じる: {heading.text}")
         elif not any(line.strip() for _lineno, line in child_lines[fence_positions[0] + 1 : closing_index]):
             errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`のユーザー発言の`text`コードブロックを空にしない: {heading.text}")
+    if user_event_sequences != list(range(1, len(user_event_sequences) + 1)):
+        errors.append(
+            f"`## {PLAN_H2_LEGACY_HISTORY}`のユーザー発言の連番は1から欠番なく昇順に置く: 実際={user_event_sequences}"
+        )
     if require_user_event and user_event_count == 0:
-        errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`に`### ユーザー発言:`見出しと空でない`text`コードブロックが必要")
+        errors.append(
+            f"`## {PLAN_H2_LEGACY_HISTORY}`に`### {PLAN_HISTORY_USER_EVENT_PREFIX}1`見出しと空でない`text`コードブロックが必要"
+        )
     return errors
 
 
@@ -1975,6 +2168,33 @@ def has_adopted_human_user_instruction(content: str) -> bool:
         row[origin_index] == "ユーザー指示" and row[decision_index] in ("採用", "部分採用")
         for row in table.rows
         if len(row) == len(table.header)
+    )
+
+
+def has_legacy_history_user_event(content: str) -> bool:
+    """`## 変更履歴`に要旨を書く旧書式のユーザー発言見出しがある場合に真を返す。"""
+    headings = extract_headings(content)
+    history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
+    if history_index is None:
+        return False
+    return any(
+        PLAN_LEGACY_HISTORY_USER_EVENT_PATTERN.fullmatch(heading.text) is not None
+        for _position, heading in child_headings(headings, history_index, 3)
+    )
+
+
+def has_progress_log_rows(content: str) -> bool:
+    """`## 進捗ログ`の固定表に内容行がある場合に真を返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
+    if progress_index is None:
+        return False
+    start, end = heading_subtree_range(headings, progress_index)
+    return any(
+        bool(table.rows)
+        for table in extract_tables(lines_within(body, start, end))
+        if table.header == PLAN_PROGRESS_TABLE_HEADER
     )
 
 
@@ -2109,11 +2329,20 @@ def check_plan_structure(content: str) -> list[str]:
     return errors
 
 
-def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
+def check_plan_main_structure(
+    content: str,
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[str | None, list[str]]:
     """新書式の計画ファイル（メイン）`<計画名>.md`を検査して(作業種別, 違反一覧)を返す。
 
     固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は関連フィードバックを含む5項目とする。
     改訂前の二ファイル形式は提示素材と計画ファイル（詳細）参照を読み取り互換で受理する。
+    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のフィードバック由来行を正本へ照合し、
+    移行を促す指摘と照合を省略した事実をそれぞれへ積む。照合の結果は違反一覧へ含めない。
     """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
@@ -2163,6 +2392,10 @@ def check_plan_main_structure(content: str) -> tuple[str | None, list[str]]:
             adopted_requirement_ids,
             identifiers,
             frozenset(filename for filename, _summary in metadata.related_feedback) if metadata is not None else frozenset(),
+            origin_notices=origin_notices,
+            origin_skips=origin_skips,
+            private_notes=private_notes,
+            home=home,
         )
     )
 

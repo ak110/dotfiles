@@ -20,3 +20,4 @@ Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウト�
   適用条件を明示せず用いない
 - サブエージェントの起動を1件ずつ数える用途では`subagents/*.meta.json`の
   `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`を典拠とする
+- `parentAgentId`は`spawnDepth`が2以上の記録にだけ現れる。深さ1のサブエージェントは親がセッション本体であり当該欄を持たないため、階層を復元する用途では`spawnDepth`を併用する

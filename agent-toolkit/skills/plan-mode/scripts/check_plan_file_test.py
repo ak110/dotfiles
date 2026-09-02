@@ -9,6 +9,8 @@ import check_plan_file
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
@@ -35,354 +37,150 @@ def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
     return tmp_path, _git(tmp_path, "rev-parse", "HEAD")
 
 
-def _rows_table(rows: tuple[str, ...], filler: str) -> str:
-    """行名を固定した2列表を組み立てる。"""
-    return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *(f"| {row} | {filler} |" for row in rows)])
-
-
-def _cause_rows_table() -> str:
-    """原因分析表の固定列と行を組み立てる。"""
-    header = _plan_format.PLAN_BUG_CAUSE_TABLE_HEADER
-    contents = " | ".join("原因分析を記録する。" for _column in header[1:])
-    return "\n".join(
-        [
-            f"| {' | '.join(header)} |",
-            f"| {' | '.join('---' for _column in header)} |",
-            *(f"| {row} | {contents} |" for row in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS),
-        ]
-    )
-
-
-def _bug_file_content() -> str:
-    """計画ファイル（バグ）の正規内容を組み立てる。"""
-    return (
-        "# 計画の主題\n\n### 対象の不整合\n\n"
-        + _cause_rows_table()
-        + "\n\n"
-        + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
-        + "\n"
-    )
-
-
-def _permanence_table() -> str:
-    """恒久化表の固定列を持つ横持ち表を組み立てる。"""
-    header = _plan_format.PLAN_PERMANENCE_TABLE_HEADER
-    return "\n".join(
-        [
-            f"| {' | '.join(header)} |",
-            f"| {' | '.join('---' for _column in header)} |",
-            "| 知見 | エージェント判断 | 反映先 | 検討結果を記載する。 |",
-        ]
-    )
-
-
 def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool = True) -> str:
-    """共有構造モジュールの定数から正規計画を組み立てる。"""
-    work_type = "バグ対応" if bug else "通常変更"
-    exclusion = ""
-    if exclusions:
-        exclusion = """
-### 合意済みの除外・保持
-
-| 合意内容 | 対象と箇所 | 素材・要求参照 | 確認方法 |
-| --- | --- | --- | --- |
-| 公開契約を維持する | 公開API | P-001, R-P-001-001 | 差分を確認する |
-| 対象外の挙動を変更しない | 対象外の入力処理 | P-001, R-P-001-001 | 回帰テストを実行する |
-"""
-    bug_section = ""
-    if bug:
-        bug_section = (
-            "## バグ調査結果\n\n### 対象の不整合\n\n"
-            + _cause_rows_table()
-            + "\n\n"
-            + _rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
-            + "\n\n"
-        )
-    permanence = "調査表の処置を正本として参照する。" if bug else _permanence_table()
-    return f"""# 計画の主題
-
-## 概要
-
-成果を得る。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `{repo.resolve()}`
-- 作業種別: {work_type}
-- ベースコミット: `{base}`
-
-## 実施内容
-
-| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
-{exclusion}
-## 提示素材
-
-| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
-| --- | --- | --- | --- | --- |
-| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
-| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |
-
-| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
-| --- | --- | --- | --- | --- | --- | --- |
-| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示と合意を反映するため。 |
-| R-P-001-002 | P-001 | 対象外の検査を追加しない。 | 不採用 | 非該当 | 対象外の検査 | 実装上不要であるため。 |
-
-## 変更履歴
-
-| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
-| --- | --- | --- | --- | --- |
-| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
-
-{bug_section}## 恒久化・リファクタリング内容
-
-### 恒久化
-
-{permanence}
-
-### リファクタリング
-
-{_rows_table(_plan_format.PLAN_REFACTORING_TABLE_ROWS, "検討結果を記載する。")}
-
-### 類似見直し
-
-{_rows_table(_plan_format.PLAN_SIMILAR_REVIEW_TABLE_ROWS, "検討結果を記載する。")}
-
-## 実装資料
-
-### 変更説明
-
-対象の構造を更新する。
-
-## 完了条件
-
-基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
-
-## 進捗ログ
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
+    """旧単一ファイル形式の正規計画を組み立てる。"""
+    return _plan_fixture.single_file_plan(repo=repo.resolve(), base=base, bug=bug, exclusions=exclusions)
 
 
 def _new_format_plan(
     repo: pathlib.Path, base: str, *, bug: bool = False, detail_name: str = "plan.detail.md"
 ) -> tuple[str, str]:
-    """新書式（計画ファイル（メイン）・計画ファイル（詳細））の正規計画を組み立てて返す。"""
+    """旧二ファイル形式（計画ファイル（メイン）・計画ファイル（詳細））の正規計画を組み立てて返す。"""
     work_type = "バグ対応" if bug else "通常変更"
-    main = f"""# 計画の主題
-
-## 概要
-
-成果を得る。
-
-### 計画メタ情報
-
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `{repo.resolve()}`
-- 作業種別: {work_type}
-- ベースコミット: `{base}`
-- 計画ファイル（詳細）: `{detail_name}`
-
-## 実施内容
-
-| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |
-
-## 提示素材
-
-| 素材ID | 種別 | キューID | 投入元 | 引用範囲 |
-| --- | --- | --- | --- | --- |
-| P-001 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |
-
-| 要求ID | 素材参照 | 実装に必要な要件 | 採否 | 採用範囲 | 除外範囲 | 根拠 |
-| --- | --- | --- | --- | --- | --- | --- |
-| R-P-001-001 | P-001 | 診断件数を2件から1件へ減らす。 | 採用 | 診断件数の更新 | 非該当 | 指示を反映するため。 |
-
-## 変更履歴
-
-| ID | 起点 | 指摘内容 | 採否・現在の結論 | 同期先 |
-| --- | --- | --- | --- | --- |
-| H-001 | ユーザー発言 | P-001 | 採用した。 | `## 実施内容` |
-
-## 検証区分
-
-| 区分 | 検証コマンド |
-| --- | --- |
-| レーン内検証 | `pytest check_plan_file_test.py` |
-| 統合後検証 | `make test` |
-
-## 終端工程
-
-なし
-
-## 進捗ログ
-
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
+    main = _plan_fixture.two_file_main(
+        repo=repo.resolve(),
+        base=base,
+        detail_name=detail_name,
+        work_type=work_type,
+    )
     bug_section = ""
     if bug:
         bug_stem = detail_name.removesuffix(_plan_format.PLAN_DETAIL_SUFFIX)
-        bug_path = (repo / f"{bug_stem}.bugs.md").resolve()
-        bug_section = f"## バグ調査結果\n\n- 計画ファイル（バグ）: {bug_path}\n\n"
-    permanence = "調査表の処置を正本として参照する。" if bug else _permanence_table()
-    detail = f"""{bug_section}## 恒久化・リファクタリング内容
-
-### 恒久化
-
-{permanence}
-
-### リファクタリング
-
-{_rows_table(_plan_format.PLAN_REFACTORING_TABLE_ROWS, "検討結果を記載する。")}
-
-### 類似見直し
-
-{_rows_table(_plan_format.PLAN_SIMILAR_REVIEW_TABLE_ROWS, "検討結果を記載する。")}
-
-## 実装資料
-
-### 実装単位
-
-| 単位ID | 目的 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- |
-| U-001 | 診断件数を更新する | なし | 1 | `pytest check_plan_file_test.py` |
-
-### 変更説明
-
-対象の構造を更新する。
-
-## 完了条件
-
-基準値は診断2件、目標は1件とし、CLIを再実行して標準エラーの行数を測定する。
-"""
-    return main, detail
-
-
-def _canonical_main_format(content: str) -> str:
-    """旧見出しfixtureを新規計画の固定H2へ変換する。"""
-    return (
-        content.replace(
-            "\n## 提示素材\n",
-            "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
-            1,
-        )
-        .replace("## 変更履歴", "## 変更履歴（計画時）", 1)
-        .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
-    )
+        bug_section = _plan_fixture.bug_reference_section((repo / f"{bug_stem}.bugs.md").resolve())
+    return main, _plan_fixture.two_file_detail(bug_section=bug_section)
 
 
 def human_new_format_plan(repo: pathlib.Path) -> tuple[str, str]:
     """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
-    main = f"""# 計画の主題
+    return _plan_fixture.human_main(repo=repo.resolve()), _plan_fixture.human_detail()
 
-## 概要
 
-対象の公開契約を更新する。
+def _migration_legacy_action_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧3列表だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    new_table = "\n".join(
+        [
+            f"| {' | '.join(_plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)} |",
+            "| --- | --- | --- |",
+            f"| {_plan_fixture.USER_ACTION_SUBJECT} | 指示どおり | - |",
+        ]
+    )
+    return main.replace(_plan_fixture.human_action_table(feedback=False), new_table, 1), detail
 
-### 計画メタ情報
 
-- 起動経路: `agent-toolkit:plan-mode`
-- 対象リポジトリ: `{repo.resolve()}`
-- 関連フィードバック: なし
-- 作業種別: 通常変更
-- ベースコミット: `作成時点の参照値`
+def _migration_legacy_bug_table_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の本文内バグ調査表だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
+    return main, _plan_fixture.inline_bug_section(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE) + detail
 
-## 実施内容
 
-| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 公開契約の境界を更新する | ユーザー指示 | 採用 | - |
-| 影響のない類似箇所は変更しない | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |
+def _migration_legacy_history_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の変更履歴見出しだけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return (
+        main.replace(f"## {_plan_format.PLAN_H2_HISTORY}", f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", 1),
+        detail,
+    )
 
-## エージェント判断
 
-| 実施内容 | 観測事象 | ユーザー要求との関係 | 具体化した内容 | 根拠 |
-| --- | --- | --- | --- | --- |
-| 影響のない類似箇所は変更しない | 影響なし。 | 対象外。 | 維持する。 | 調査済み。 |
+def _migration_legacy_progress_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の進捗ログ見出しだけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return (
+        main.replace(f"## {_plan_format.PLAN_H2_PROGRESS}", f"## {_plan_format.PLAN_H2_LEGACY_PROGRESS}", 1),
+        detail,
+    )
 
-## 変更履歴（計画時）
 
-### ユーザー発言: 本セッションの直接指示
+def _migration_legacy_agent_judgment_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式のエージェント提案詳細の見出しだけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return (
+        main.replace(
+            f"## {_plan_format.PLAN_H2_AGENT_JUDGMENT}",
+            f"## {_plan_format.PLAN_H2_LEGACY_AGENT_JUDGMENT}",
+            1,
+        ),
+        detail,
+    )
 
-```text
-公開契約の境界だけを更新する。
-```
 
-### レビューで確定した変更
+def _migration_legacy_user_event_heading_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式のユーザー発言見出しだけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace(_plan_fixture.USER_EVENT_HEADING, _plan_fixture.LEGACY_USER_EVENT_HEADING, 1), detail
 
-対象範囲を確認して反映した。
 
-## 検証区分
+def _migration_legacy_metadata_name_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の計画メタ情報項目名だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("- 作業種別:", "- 実装詳細: `legacy.detail.md`\n- 作業種別:", 1), detail
 
-| 区分 | 検証コマンド |
-| --- | --- |
-| レーン内検証 | `pytest` |
-| 統合後検証 | `make test` |
 
-## 終端工程
+def _migration_legacy_detail_reference_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の計画ファイル（詳細）参照だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("- 作業種別:", "- 計画ファイル（詳細）: `legacy.detail.md`\n- 作業種別:", 1), detail
 
-なし
 
-## 進捗ログ（実行時）
+def _migration_legacy_materials_heading_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の提示素材見出しだけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    history = f"## {_plan_format.PLAN_H2_HISTORY}"
+    return main.replace(history, f"## {_plan_format.PLAN_H2_MATERIALS}\n\n旧形式の素材。\n\n{history}", 1), detail
 
-| 日時 | 完了した工程 | 結果・特記事項 |
-| --- | --- | --- |
-"""
-    detail = """## 恒久化・リファクタリング内容
 
-### 恒久化
+def _migration_legacy_bug_reference_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式のバグ調査ファイル参照だけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
+    bug_path = (repo / "migration.bugs.md").resolve()
+    legacy_reference = _plan_fixture.bug_reference_section(bug_path).replace(
+        _plan_format.PLAN_BUG_FILE_REFERENCE_PREFIX,
+        _plan_format.PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX,
+        1,
+    )
+    return main, legacy_reference + detail
 
-| 知見 | 出所 | 反映先 | 根拠 |
-| --- | --- | --- | --- |
-| 公開契約の境界を維持する | 実装時調査 | 対象モジュール | 更新後も契約を確認するため。 |
 
-### リファクタリング
+def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧ID形式だけを残した二ファイル計画を返す。"""
+    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
+    start = main.index(f"## {_plan_format.PLAN_H2_MATERIALS}")
+    end = main.index(f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", start)
+    main = main[:start] + main[end:]
+    detail_field = f"- {_plan_format.PLAN_METADATA_DETAIL_FIELD}: `plan.detail.md`"
+    related_field = f"- {_plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD}: なし"
+    return main.replace(detail_field, related_field, 1), detail
 
-| 項目 | 内容 |
-| --- | --- |
-| 対象 | 対象モジュール。 |
-| 現状の問題 | 判定が分散している。 |
-| 対応 | 判定を統合する。 |
-| 本計画に含めるか | 含める。 |
 
-### 類似見直し
+def _migration_legacy_materials_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の提示素材表を持つ二ファイル計画を返す。"""
+    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
+    main = main.replace(
+        _plan_fixture.TWO_FILE_ACTION_TABLE,
+        _plan_fixture.human_action_table(feedback=False),
+        1,
+    )
+    start = main.index(f"## {_plan_format.PLAN_H2_MATERIALS}")
+    end = main.index(f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", start)
+    return main[:start] + _plan_fixture.LEGACY_MATERIALS_SECTION + main[end:], detail
 
-| 項目 | 内容 |
-| --- | --- |
-| 母集団 | 対象モジュール。 |
-| 点検観点 | 公開契約への影響。 |
-| 該当箇所 | 該当なし。 |
 
-## 実装資料
-
-### 実装単位
-
-| 実装単位 | 目的 | 先行依存 | 統合順 | 近接検証 |
-| --- | --- | --- | --- | --- |
-| 公開契約の境界更新 | 公開契約の判定を更新する | なし | 1 | `pytest` |
-
-### 調査結果
-
-検索母集団は対象モジュールと関連テストである。
-検索コマンド: `rg -n "公開契約|境界" agent-toolkit`
-検索結果: 一致は2箇所で、対象外の接続面は不一致として除外した。
-
-### 確定文面
-
-```markdown
-公開契約の判定は対象境界に限定する。
-```
-
-## 完了条件
-
-近接検証と統合後検証が成功し、確定文面を対象ファイルへ反映する。
-"""
-    return main, detail
+def _legacy_plan(repo: pathlib.Path, base: str) -> str:
+    """旧形式の素材と合意表を持つ計画fixtureを返す。"""
+    return _plan_fixture.legacy_materials_single_file_plan(repo=repo.resolve(), base=base)
 
 
 def _check_new(
@@ -402,7 +200,11 @@ def _check_new(
     detail_path.write_text(detail_content, encoding="utf-8")
     reference = _plan_format.extract_bug_file_reference(detail_content)
     if create_bug_file and reference is not None:
-        pathlib.Path(reference).write_text(bug_file_content or _bug_file_content(), encoding="utf-8")
+        if _plan_file.is_plan_adjunct_reference(reference):
+            bug_path = _plan_file.resolve_plan_adjunct_reference(reference, plan_path=path)
+        else:
+            bug_path = pathlib.Path(reference)
+        bug_path.write_text(bug_file_content or _plan_fixture.bug_file(), encoding="utf-8")
     return check_plan_file.check(path, repo, reject_legacy_format=reject_legacy_format)
 
 
@@ -416,140 +218,15 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
     """fixtureの現行列構成に依存せず、実施内容表を指定した新旧形式へ置き換える。"""
     header = (
-        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n| --- | --- | --- |"
+        f"| {' | '.join(_plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)} |\n| --- | --- | --- |"
         if legacy
-        else "| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |\n| --- | --- | --- | --- |"
+        else f"| {' | '.join(_plan_format.PLAN_ACTION_TABLE_HEADER)} |\n| --- | --- | --- | --- |"
     )
-    start = content.index("## 実施内容")
-    end = content.index("\n## 提示素材", start)
+    start = content.index(f"## {_plan_format.PLAN_H2_ACTION}")
+    end = content.index(f"\n## {_plan_format.PLAN_H2_MATERIALS}", start)
     rows_text = "\n".join(rows)
-    section = f"## 実施内容\n\n{header}\n{rows_text}\n"
+    section = f"## {_plan_format.PLAN_H2_ACTION}\n\n{header}\n{rows_text}\n"
     return content[:start] + section + content[end:]
-
-
-def _migration_legacy_action_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧3列表だけを加えた現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    old = """| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 公開契約の境界を更新する | ユーザー指示 | 採用 | - |
-| 影響のない類似箇所は変更しない | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |"""
-    new = """| 実施内容 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- |
-| 公開契約の境界を更新する | 指示どおり | - |"""
-    return main.replace(old, new, 1), detail
-
-
-def _migration_legacy_bug_table_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の本文内バグ調査表だけを加えた現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
-    legacy_bug_section = (
-        "## バグ調査結果\n\n### 対象の不整合\n\n"
-        + _rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
-        + "\n\n"
-    )
-    return main, legacy_bug_section + detail
-
-
-def _migration_legacy_history_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の変更履歴見出しだけを持つ現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    return main.replace("## 変更履歴（計画時）", "## 変更履歴", 1), detail
-
-
-def _migration_legacy_progress_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の進捗ログ見出しだけを持つ現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    return main.replace("## 進捗ログ（実行時）", "## 進捗ログ", 1), detail
-
-
-def _migration_legacy_metadata_name_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の計画メタ情報項目名だけを加えた現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    return main.replace("- 作業種別:", "- 実装詳細: `legacy.detail.md`\n- 作業種別:", 1), detail
-
-
-def _migration_legacy_detail_reference_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の計画ファイル（詳細）参照だけを加えた現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    return main.replace("- 作業種別:", "- 計画ファイル（詳細）: `legacy.detail.md`\n- 作業種別:", 1), detail
-
-
-def _migration_legacy_materials_heading_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の提示素材見出しだけを加えた現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    return main.replace("## 変更履歴（計画時）", "## 提示素材\n\n旧形式の素材。\n\n## 変更履歴（計画時）", 1), detail
-
-
-def _migration_legacy_bug_reference_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式のバグ調査ファイル参照だけを持つ現行形式の計画を返す。"""
-    main, detail = human_new_format_plan(repo)
-    main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
-    bug_path = (repo / "migration.bugs.md").resolve()
-    return main, f"## バグ調査結果\n\n- バグ調査ファイル: {bug_path}\n\n{detail}"
-
-
-def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧ID形式だけを残した二ファイル計画を返す。"""
-    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
-    start = main.index("## 提示素材")
-    end = main.index("## 変更履歴", start)
-    main = main[:start] + main[end:]
-    main = main.replace("- 計画ファイル（詳細）: `plan.detail.md`", "- 関連フィードバック: なし", 1)
-    return main, detail
-
-
-def _migration_legacy_materials_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の提示素材表を持つ二ファイル計画を返す。"""
-    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
-    old = """| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
-| --- | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |"""
-    new = """| 実施内容 | 由来 | 採否 | 根拠 |
-| --- | --- | --- | --- |
-| 診断件数を2件から1件へ減らす | ユーザー指示 | 採用 | - |"""
-    main = main.replace(old, new, 1)
-    start = main.index("## 提示素材")
-    end = main.index("## 変更履歴", start)
-    legacy = """## 提示素材
-
-P-001:
-
-```text
-公開契約の境界を更新する。
-```
-
-"""
-    return main[:start] + legacy + main[end:], detail
-
-
-def _legacy_plan(repo: pathlib.Path, base: str) -> str:
-    """旧形式の素材と合意表を持つ計画fixtureを返す。"""
-    content = _plan(repo, base)
-    start = content.index("## 提示素材")
-    end = content.index("## 変更履歴")
-    legacy = """## 提示素材
-
-P-001:
-
-```text
-診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。
-```
-
-"""
-    content = content[:start] + legacy + content[end:]
-    content = content.replace(
-        "| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |\n"
-        "| --- | --- | --- | --- |\n"
-        "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |",
-        "| 実施内容 | ユーザー指示との関係 | 根拠 |\n"
-        "| --- | --- | --- |\n"
-        "| 診断件数を2件から1件へ減らす | 指示どおり | P-001 |",
-    )
-    content = content.replace("素材・要求参照", "原文参照")
-    content = content.replace("P-001, R-P-001-001", "P-001")
-    return content
 
 
 @pytest.mark.parametrize(("bug", "exclusions"), [(False, True), (False, False), (True, True)])
@@ -820,7 +497,11 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
-    expected = [
+    # 旧二ファイル形式の検体は付属ファイル参照を絶対パスで持つため、バグ対応でだけ当該移行警告が加わる。
+    expected = (
+        ["計画本文の付属ファイル参照が旧表記である。新規作成・改訂では`~/.claude/plans/<ファイル名>`へ移行する"] if bug else []
+    )
+    expected += [
         "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
         "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
         "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
@@ -887,6 +568,14 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
             "進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する",
         ),
         (
+            _migration_legacy_agent_judgment_input,
+            "エージェント提案の詳細の見出しが旧形式である。新規作成・改訂では`## エージェント提案詳細`へ移行する",
+        ),
+        (
+            _migration_legacy_user_event_heading_input,
+            "変更履歴のユーザー発言見出しが旧形式である。新規作成・改訂では`### ユーザー発言<1から始まる連番>`へ移行する",
+        ),
+        (
             _migration_legacy_metadata_name_input,
             "計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する",
         ),
@@ -931,6 +620,28 @@ def test_rejects_each_migration_warning_for_new_creation(
 
     assert message in errors
     assert message not in warnings
+
+
+def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Path, str]) -> None:
+    """進捗ログの内容行を持つ本文は新規作成で失敗し、既存計画の読み取りでは成功する。"""
+    work_dir, _base = repo
+    main_content, detail_content = human_new_format_plan(work_dir)
+    main_content = main_content.replace(
+        _plan_fixture.PROGRESS_TABLE, _plan_fixture.PROGRESS_TABLE + _plan_fixture.PROGRESS_ROW, 1
+    )
+
+    read_errors, read_warnings = _check_new(work_dir, main_content, detail_content, plan_name="progress-read.md")
+    create_errors, _create_warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        plan_name="progress-create.md",
+        reject_legacy_format=True,
+    )
+
+    assert not read_errors, read_errors
+    assert not read_warnings, read_warnings
+    assert any("起草時に内容行を置かない" in error for error in create_errors), create_errors
 
 
 def test_keeps_plan_size_advisory_when_rejecting_legacy_format(repo: tuple[pathlib.Path, str]) -> None:
@@ -1049,11 +760,7 @@ def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Pat
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
-        "## 検証区分\n\n"
-        "| 区分 | 検証コマンド |\n"
-        "| --- | --- |\n"
-        "| レーン内検証 | `pytest check_plan_file_test.py` |\n"
-        "| 統合後検証 | `make test` |\n\n",
+        f"## {_plan_format.PLAN_H2_VERIFICATION}\n\n{_plan_fixture.VERIFICATION_TABLE}\n",
         "",
     )
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
@@ -1090,20 +797,45 @@ def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（バグ）の固定12行表欠落を拒否する。"""
+    """計画ファイル（バグ）の固定行の調査表欠落を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    invalid_bug_file = _bug_file_content().replace("| 根本原因 | 発生条件と実際値を記載する。 |\n", "")
+    invalid_bug_file = _plan_fixture.bug_file().replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
-    assert any("固定12行" in error for error in errors), errors
+    assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" in error for error in errors), errors
+
+
+def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str]) -> None:
+    """統廃合前の行構成を持つ調査表を読み取りで受理し、移行warningを返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    legacy_bug_file = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
+    errors, warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=legacy_bug_file)
+    assert not errors, errors
+    assert any("統廃合前の行構成" in warning for warning in warnings), warnings
+
+
+def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str]) -> None:
+    """新規作成では統廃合前の行構成を持つ調査表をエラーにする。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    legacy_bug_file = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
+    errors, _warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        bug_file_content=legacy_bug_file,
+        reject_legacy_format=True,
+    )
+    assert any("統廃合前の行構成" in error for error in errors), errors
 
 
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
     """計画ファイル（バグ）の`内容`空欄を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
-    invalid_bug_file = _bug_file_content().replace(
-        "| 直接的原因 | 発生条件と実際値を記載する。 |",
+    invalid_bug_file = _plan_fixture.bug_file().replace(
+        _plan_fixture.bug_row("直接的原因"),
         "| 直接的原因 |  |",
     )
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
@@ -1142,14 +874,9 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     reference = _plan_format.extract_bug_file_reference(detail_content)
     if reference is not None:
-        inline_section = (
-            "## バグ調査結果\n\n### 対象の不整合\n\n"
-            + _rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
-            + "\n\n"
-        )
         detail_content = detail_content.replace(
-            f"## バグ調査結果\n\n- 計画ファイル（バグ）: {reference}\n\n",
-            inline_section,
+            _plan_fixture.bug_reference_section(reference),
+            _plan_fixture.inline_bug_section(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE),
         )
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
@@ -1164,6 +891,60 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     )
     expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
+
+
+def _adjunct_reference_plan(repo: pathlib.Path, base: str, *, stem: str = "plan") -> tuple[str, str]:
+    """計画ファイル（バグ）を新しい参照値で指す計画を組み立てて返す。"""
+    main, detail = _new_format_plan(repo, base, bug=True, detail_name=f"{stem}.detail.md")
+    absolute = str((repo / f"{stem}.bugs.md").resolve())
+    reference = f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{stem}.bugs.md"
+    return main, detail.replace(absolute, reference)
+
+
+def test_new_format_accepts_adjunct_bug_file_reference(repo: tuple[pathlib.Path, str]) -> None:
+    """計画ファイルと同じディレクトリを基準に新しい参照値を解決する。"""
+    work_dir, base = repo
+    main_content, detail_content = _adjunct_reference_plan(work_dir, base)
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert not any("付属ファイル参照が旧表記" in warning for warning in warnings), warnings
+
+
+def test_adjunct_bug_file_reference_resolves_from_any_plan_directory(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
+) -> None:
+    """同じ参照値が、計画を置いたどちらのディレクトリでも同じ計画の実体を指す。"""
+    work_dir, base = repo
+    main_content, detail_content = _adjunct_reference_plan(work_dir, base)
+    saved_directory = tmp_path / "saved" / "2026" / "09"
+    saved_directory.mkdir(parents=True)
+    main_path = saved_directory / "plan.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (saved_directory / "plan.detail.md").write_text(detail_content, encoding="utf-8")
+    (saved_directory / "plan.bugs.md").write_text(_plan_fixture.bug_file(), encoding="utf-8")
+    errors, _warnings = check_plan_file.check(main_path, work_dir)
+    assert not errors, errors
+
+
+def test_new_format_rejects_adjunct_reference_with_path_separator(repo: tuple[pathlib.Path, str]) -> None:
+    """新しい参照値にパス区切り文字を含む場合を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _adjunct_reference_plan(work_dir, base)
+    detail_content = detail_content.replace(
+        f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}plan.bugs.md",
+        f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}2026/09/plan.bugs.md",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
+    assert any("参照値が不正です" in error for error in errors), errors
+
+
+def test_new_format_warns_for_legacy_adjunct_reference_notation(repo: tuple[pathlib.Path, str]) -> None:
+    """絶対パスの参照は読み取りで受理し、新しい参照値への移行warningを返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert any("付属ファイル参照が旧表記" in warning for warning in warnings), warnings
 
 
 def test_new_format_accepts_portable_bug_file_reference(
@@ -1184,7 +965,7 @@ def test_new_format_accepts_portable_bug_file_reference(
     main_path = plan_directory / f"{stem}.md"
     main_path.write_text(main_content, encoding="utf-8")
     (plan_directory / detail_name).write_text(detail_content, encoding="utf-8")
-    (plan_directory / f"{stem}.bugs.md").write_text(_bug_file_content(), encoding="utf-8")
+    (plan_directory / f"{stem}.bugs.md").write_text(_plan_fixture.bug_file(), encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
 
     errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
@@ -1239,15 +1020,7 @@ def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path
     """新しい固定H2と旧ID表を混在させたcanonical形式を拒否する。"""
     work_dir, base = repo
     legacy_main_content, detail_content = _new_format_plan(work_dir, base, detail_name="canonical-plan.detail.md")
-    main_content = (
-        legacy_main_content.replace(
-            "\n## 提示素材\n",
-            "\n## エージェント判断\n\nなし\n\n## 提示素材\n",
-            1,
-        )
-        .replace("## 変更履歴", "## 変更履歴（計画時）", 1)
-        .replace("## 進捗ログ", "## 進捗ログ（実行時）", 1)
-    )
+    main_content = _plan_fixture.to_canonical_main(legacy_main_content)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="canonical-plan.md")
     assert any("canonical形式の`## 実施内容`" in error for error in errors), errors
     assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" not in warnings
@@ -1256,3 +1029,53 @@ def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path
     errors, warnings = _check_new(work_dir, mixed, detail_content, plan_name="mixed-plan.md")
     assert not errors, errors
     assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in warnings, warnings
+
+
+def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
+    """由来照合の対象となる計画一式と正本を配置し、計画ファイル（メイン）のパスを返す。"""
+    main_content = _plan_fixture.human_main(repo=repo.resolve(), related_feedback=_plan_fixture.FEEDBACK_FILES)
+    main_path = repo / "plan.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (repo / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
+    frontmatter = ["---", "status: inbox"]
+    if source:
+        frontmatter.append(f"{_plan_format.PLAN_FEEDBACK_SOURCE_KEY}: agent-toolkit:session-review")
+    frontmatter.append("---")
+    inbox = private_notes / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / _plan_fixture.FEEDBACK_FILES[0][0]).write_text(
+        "\n".join([*frontmatter, "", "# 要求", "", "本文。", ""]), encoding="utf-8"
+    )
+    return main_path
+
+
+def test_origin_mismatch_is_warning_on_read(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """保存済み計画の読み取りでは由来の不一致を移行warningに留める。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    main_path = _origin_plan(work_dir, private_notes, source=True)
+    errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes)
+    assert not errors, errors
+    assert any("正本の由来と一致しない" in warning for warning in warnings), warnings
+
+
+def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """新規作成では同じ不一致をエラーとして報告する。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "private-notes"
+    main_path = _origin_plan(work_dir, private_notes, source=True)
+    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, reject_legacy_format=True)
+    assert any("正本の由来と一致しない" in error for error in errors), errors
+
+
+def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
+    """照合を省略した事実は助言に留め、新規作成を遮断しない。"""
+    work_dir, _base = repo
+    private_notes = tmp_path / "absent"
+    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_feedback=_plan_fixture.FEEDBACK_FILES)
+    main_path = work_dir / "plan.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (work_dir / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
+    errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, reject_legacy_format=True)
+    assert not errors, errors
+    assert any("由来照合を省略した" in warning for warning in warnings), warnings

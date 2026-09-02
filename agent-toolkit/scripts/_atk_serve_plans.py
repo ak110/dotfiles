@@ -101,6 +101,8 @@ _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
 SSH_BASE_OPTIONS = ("-o", "BatchMode=yes")
 # 単発SSH呼び出し（fallback用`read`）のタイムアウト秒。
 SSH_TIMEOUT_SEC = 30.0
+# 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、記録を占有させない。
+STDERR_EXCERPT_MAX_CHARS = 500
 # RPCリクエスト1件あたりのタイムアウト秒。
 RPC_REQUEST_TIMEOUT_SEC = 30.0
 # SSHフォールバック経路の検索を同時に実行する上限（全ホスト合計）。
@@ -822,10 +824,12 @@ def root_info(spec: RootSpec) -> dict[str, typing.Any]:
 
 
 def root_warning(root: pathlib.Path) -> str | None:
-    """rootを利用できない理由を返す。不在・非ディレクトリ以外は走査時に判定する。"""
-    if not root.exists():
-        return "rootが存在しません"
-    if not root.is_dir():
+    """rootを利用できない理由を返す。
+
+    rootの不在は計画をまだ保存していない通常の状態であるため警告しない。
+    非ディレクトリ以外の障害は走査時に判定する。
+    """
+    if root.exists() and not root.is_dir():
         return "rootがディレクトリではありません"
     return None
 
@@ -846,12 +850,17 @@ def scan_files(
 ) -> tuple[list[FileEntry], str | None]:
     """`root`を走査し、一覧とroot単位の警告を返す。
 
-    rootの不在・非ディレクトリ・権限不足は呼び出し元が他rootの処理を継続できるよう、
-    例外ではなく警告本文として返す。rootは自動作成しない。
+    rootの非ディレクトリ・権限不足は呼び出し元が他rootの処理を継続できるよう、
+    例外ではなく警告本文として返す。rootの不在は通常の状態として空の一覧だけを返す。
+    rootは自動作成しない。
     """
     warning = root_warning(root)
     if warning is not None:
         return [], warning
+    # 不在のrootに対する`rglob`は空を返して成功するため、走査へ進むと空の観測結果で
+    # インデックスを更新し、同じ`(host, root)`に記録済みの作成日時を回収してしまう。
+    if not root.is_dir():
+        return [], None
 
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}
@@ -997,11 +1006,37 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     ]
 
 
+class RemoteHelperError(Exception):
+    """リモートヘルパーの実行が非0で終了したことを、失敗元の標準エラー出力とともに示す。
+
+    本例外の文字列表現は利用者へ渡る警告本文と記録へそのまま引き継がれるため、失敗元の標準エラー出力を含める。
+    SSHの接続が成立したうえでリモート側の実行が失敗する場合も本例外となるため、
+    到達可否を判別していない語で原因を断定しない。
+    """
+
+    def __init__(self, returncode: int, stderr: bytes) -> None:
+        super().__init__(f"リモートヘルパーの実行が終了コード{returncode}で失敗しました: {_stderr_excerpt(stderr)}")
+
+
+def _stderr_excerpt(stderr: bytes) -> str:
+    """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
+
+    復号できない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    """
+    text = " ".join(stderr.decode("utf-8", errors="replace").split())
+    if not text:
+        return "標準エラー出力はありません"
+    if len(text) > STDERR_EXCERPT_MAX_CHARS:
+        return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
+    return text
+
+
 async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     """SSH経由でリモートヘルパーを単発実行し、stdoutをUTF-8文字列で返す。
 
     fallback経路（常駐watch経由RPCが利用できない場合）でのみ使う。
     `subprocess.run`はブロッキングのため`asyncio.to_thread`でラップする。
+    非0終了は`RemoteHelperError`として送出し、失敗元の標準エラー出力を呼び出し元へ渡す。
     """
     cmd = ["ssh", *SSH_BASE_OPTIONS, host, *_build_remote_command_argv(op, args)]
     proc = await asyncio.to_thread(
@@ -1009,10 +1044,13 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
         cmd,
         capture_output=True,
         timeout=SSH_TIMEOUT_SEC,
-        check=True,
+        check=False,
     )
-    # capture_output=Trueかつtext未指定のため`stdout`は実行時bytes固定。型注釈はAnyのため明示する。
+    # capture_output=Trueかつtext未指定のため`stdout`・`stderr`は実行時bytes固定。型注釈はAnyのため明示する。
     assert isinstance(proc.stdout, bytes)
+    assert isinstance(proc.stderr, bytes)
+    if proc.returncode != 0:
+        raise RemoteHelperError(proc.returncode, proc.stderr)
     return proc.stdout.decode("utf-8")
 
 

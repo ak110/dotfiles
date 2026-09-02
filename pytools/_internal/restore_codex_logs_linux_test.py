@@ -137,6 +137,48 @@ def test_unrelated_symlink_defers_entire_set(
     assert all(target_path.exists() for _, target_path in pairs)
 
 
+def test_unrelated_symlink_warning_includes_link_destinations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """管理対象外symlinkによる延期の警告は、実際の参照先と管理対象のパスを示す。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
+    _write_targets(pairs)
+    _link_all(pairs)
+    other_destination = tmp_path / "unrelated"
+    pairs[1][0].unlink()
+    pairs[1][0].symlink_to(other_destination)
+
+    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
+        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+
+    warning = "\n".join(record.getMessage() for record in caplog.records)
+    assert str(pairs[1][0]) in warning
+    assert str(other_destination) in warning
+    assert str(pairs[1][1]) in warning
+
+
+def test_unrelated_directory_warning_includes_entry_kind(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """通常ファイルでもsymlinkでもない実体による延期の警告は、当該実体の種別を示す。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
+    _write_targets(pairs)
+    _link_all(pairs)
+    pairs[1][0].unlink()
+    pairs[1][0].mkdir()
+
+    with caplog.at_level("WARNING", logger=restore_codex_logs_linux.logger.name):
+        assert restore_codex_logs_linux.run(home_dir=home, shm_root=shm_root) is False
+
+    warning = "\n".join(record.getMessage() for record in caplog.records)
+    assert str(pairs[1][0]) in warning
+    assert "ディレクトリ" in warning
+
+
 def test_insufficient_capacity_preserves_links_and_targets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -38,9 +39,14 @@ def migrate_npm_launchers(
         if npm is None:
             logger.warning(log_format.format_status(cli_name, f"同じディレクトリにnpmがないため保持: {launcher}"))
             continue
-        package_dir = _npm_package_dir(npm, package_name)
-        if package_dir is None or not _launcher_belongs_to_package(launcher, package_dir, package_name):
-            logger.warning(log_format.format_status(cli_name, f"npm packageへの帰属を確認できないため保持: {launcher}"))
+        unresolved: list[str] = []
+        package_dir = _npm_package_dir(npm, package_name, unresolved)
+        if package_dir is None:
+            assert unresolved
+            _warn_unconfirmed_launcher(cli_name, launcher, unresolved[0])
+            continue
+        if not _launcher_belongs_to_package(launcher, package_dir, package_name):
+            _warn_unconfirmed_launcher(cli_name, launcher, f"{package_dir}配下の実体ではない: {_launcher_kind(launcher)}")
             continue
         result = claude_common.run_subprocess(
             [str(npm), "uninstall", "--global", package_name],
@@ -90,19 +96,44 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
     return False
 
 
+def _warn_unconfirmed_launcher(cli_name: str, launcher: Path, reason: str) -> None:
+    """帰属を確認できず保持した対象と、確認が成立しなかった理由を警告する。"""
+    logger.warning(log_format.format_status(cli_name, f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）"))
+
+
+def _launcher_kind(launcher: Path) -> str:
+    """帰属判定に用いたランチャーの実体の種別を返す。"""
+    if launcher.is_symlink():
+        return f"symlink（参照先: {_safe_resolve(launcher)}）"
+    if launcher.is_dir():
+        return "ディレクトリ"
+    if launcher.is_file():
+        return "通常ファイル"
+    return "実体を取得できないパス"
+
+
 def _iter_noncanonical_launchers(
     cli_name: str,
     canonical_launcher: Path,
     canonical_prefix: Path,
 ) -> Iterable[Path]:
+    """PATH上の非正規ランチャーのうち、npmが導入しうるものを列挙する。
+
+    miseのshimディレクトリにある実行ファイルは除外する。shimはnpmのグローバル導入物では
+    ないため帰属判定が成立せず、対象へ含めると保持の警告だけが毎回出力される。
+    mise管理版の移行は`setup_codex_cli.py`の`_remove_mise_versions`と`_reshim_mise`が担う。
+    """
     seen: set[str] = set()
     names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
     canonical_real = _safe_resolve(canonical_launcher)
     prefix_real = _safe_resolve(canonical_prefix)
+    shim_directories = _mise_shim_directories()
     for entry in os.environ.get("PATH", "").split(os.pathsep):
         if not entry:
             continue
         directory = Path(entry)
+        if _safe_resolve(directory) in shim_directories:
+            continue
         for name in names:
             launcher = directory / name
             if not launcher.exists():
@@ -117,12 +148,28 @@ def _iter_noncanonical_launchers(
             yield launcher
 
 
+def _mise_shim_directories() -> set[Path]:
+    """miseがshimを配置するディレクトリのうち、実在するものの解決済みパスを返す。"""
+    data_dir = os.environ.get("MISE_DATA_DIR")
+    candidates = [Path(data_dir) / "shims" if data_dir else Path.home() / ".local" / "share" / "mise" / "shims"]
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            candidates.append(Path(local_app_data) / "mise" / "shims")
+    return {_safe_resolve(candidate) for candidate in candidates if candidate.is_dir()}
+
+
 def _adjacent_npm(directory: Path) -> Path | None:
     names = ("npm.cmd", "npm") if sys.platform == "win32" else ("npm",)
     return next((candidate for name in names if (candidate := directory / name).is_file()), None)
 
 
-def _npm_package_dir(npm: Path, package_name: str) -> Path | None:
+def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None = None) -> Path | None:
+    """npmのグローバルパッケージのディレクトリを返す。
+
+    解決できない場合は`None`を返す。`unresolved`を渡した場合は、解決できなかった対象を
+    当該リストへ1件追記する（呼び出し元が保持の理由として利用者へ示す）。
+    """
     prefix_result = claude_common.run_subprocess(
         [str(npm), "prefix", "--global"], timeout=claude_common.CLAUDE_TIMEOUT, tag=npm.name
     )
@@ -137,13 +184,36 @@ def _npm_package_dir(npm: Path, package_name: str) -> Path | None:
         or root_result.returncode != 0
         or not (root_result.stdout or "").strip()
     ):
+        _record_unresolved(
+            unresolved,
+            f"npmの導入先を取得できない: prefix={_command_output(prefix_result)} root={_command_output(root_result)}",
+        )
         return None
     prefix = _safe_resolve(Path(prefix_result.stdout.strip()))
     root = _safe_resolve(Path(root_result.stdout.strip()))
     if not _is_relative_to(root, prefix):
+        _record_unresolved(unresolved, f"npmのroot（{root}）がprefix（{prefix}）の配下ではない")
         return None
     package_dir = root.joinpath(*package_name.split("/"))
-    return package_dir if package_dir.is_dir() else None
+    if not package_dir.is_dir():
+        _record_unresolved(unresolved, f"packageのディレクトリが不在: {package_dir}")
+        return None
+    return package_dir
+
+
+def _record_unresolved(unresolved: list[str] | None, reason: str) -> None:
+    """解決できなかった対象を、収集先が渡されている場合だけ記録する。"""
+    if unresolved is not None:
+        unresolved.append(reason)
+
+
+def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
+    """npmの出力を、実行できなかった場合と非ゼロ終了の場合も含めて1つの文字列で表す。"""
+    if result is None:
+        return "実行できない"
+    if result.returncode != 0:
+        return f"終了コード{result.returncode}"
+    return (result.stdout or "").strip() or "出力なし"
 
 
 def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name: str) -> bool:
