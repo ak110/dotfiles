@@ -178,36 +178,48 @@ def _check_bug_file_reference(
     work_type: str | None,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
-) -> list[str]:
-    """バグ対応計画の分離先参照について実在、stem、構造を検査する。"""
+) -> tuple[list[str], list[_ClassifiedWarning]]:
+    """バグ対応計画の分離先参照について実在、stem、構造を検査する。
+
+    統廃合前の行構成を持つ調査表は読み取りで受理し、新規作成・改訂では移行warningをエラーへ変える。
+    """
     if work_type != "バグ対応":
-        return []
+        return [], []
     reference = _plan_format.extract_bug_file_reference(text)
     if reference is None:
-        return []
+        return [], []
 
     if reference.startswith(_plan_file.PORTABLE_PLAN_PREFIX):
         try:
             reference_path = _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
         except (OSError, ValueError) as error:
-            return [f"バグ調査ファイルの可搬参照パスが不正です: {reference}: {error}"]
+            return [f"バグ調査ファイルの可搬参照パスが不正です: {reference}: {error}"], []
     else:
         reference_path = pathlib.Path(reference)
         if not reference_path.is_absolute():
-            return [f"バグ調査ファイルの参照パスは可搬表記または絶対パスにする: {reference}"]
+            return [f"バグ調査ファイルの参照パスは可搬表記または絶対パスにする: {reference}"], []
         try:
             reference_path = _plan_file.resolve_plan_file(reference_path)
         except (OSError, ValueError) as error:
-            return [f"バグ調査ファイルの参照パスが不正です: {reference}: {error}"]
+            return [f"バグ調査ファイルの参照パスが不正です: {reference}: {error}"], []
 
     expected_path = plan_path.with_name(f"{plan_path.stem}.bugs.md")
     if reference_path.resolve() != expected_path.resolve():
-        return [f"バグ調査ファイルの参照パスが計画stemと一致しない: 計画={reference_path}, 期待={expected_path}"]
+        return [f"バグ調査ファイルの参照パスが計画stemと一致しない: 計画={reference_path}, 期待={expected_path}"], []
     if not reference_path.is_file():
-        return [f"バグ調査ファイルが実在しない: {reference_path}"]
+        return [f"バグ調査ファイルが実在しない: {reference_path}"], []
 
     bug_text = reference_path.read_text(encoding="utf-8")
-    return _plan_format.check_bug_file_structure(bug_text)
+    warnings: list[_ClassifiedWarning] = []
+    if _plan_format.has_legacy_bug_investigation_table(bug_text):
+        warnings.append(
+            (
+                "migration",
+                "バグ調査ファイルの調査表が統廃合前の行構成である。新規作成・改訂では"
+                f"{list(_plan_format.PLAN_BUG_TABLE_ROWS)}の行へ移行する",
+            )
+        )
+    return _plan_format.check_bug_file_structure(bug_text), warnings
 
 
 def _legacy_action_warnings(text: str) -> list[_ClassifiedWarning]:
@@ -313,7 +325,11 @@ def _check_new_format(
     _outside_detail, detail_fence_errors = _outside_fences(detail_structure_lines)
     errors.extend(detail_fence_errors)
     errors.extend(_plan_format.check_plan_detail_structure(detail_text, work_type))
-    errors.extend(_check_bug_file_reference(_main_path_for_detail(detail_path), detail_text, work_type, private_notes, home))
+    bug_errors, bug_warnings = _check_bug_file_reference(
+        _main_path_for_detail(detail_path), detail_text, work_type, private_notes, home
+    )
+    errors.extend(bug_errors)
+    warnings.extend(bug_warnings)
     errors.extend(_check_references(detail_text, work_dir))
     warnings.extend(_check_plan_size(detail_lines))
     warnings.extend(_legacy_bug_warnings(detail_text))
@@ -360,7 +376,9 @@ def _check_legacy_format(
     parsed, _ambiguity_errors = _plan_format.parse_plan_metadata(text)
     metadata = parsed.values if parsed is not None else {}
     errors.extend(_check_target_repo(metadata.get("対象リポジトリ"), work_dir))
-    errors.extend(_check_bug_file_reference(plan_path, text, metadata.get("作業種別"), private_notes, home))
+    bug_errors, bug_warnings = _check_bug_file_reference(plan_path, text, metadata.get("作業種別"), private_notes, home)
+    errors.extend(bug_errors)
+    warnings.extend(bug_warnings)
     errors.extend(_check_references(text, work_dir))
     warnings.extend(_check_plan_size(lines))
     return errors, warnings

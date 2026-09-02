@@ -20,7 +20,8 @@ _BUG_SECTION = _plan_fixture.inline_bug_section()
 _BUG_CAUSE_TABLE = _plan_fixture.bug_cause_table()
 _BUG_INVESTIGATION_TABLE = _plan_fixture.bug_investigation_table()
 _BUG_FILE_CONTENT = _plan_fixture.bug_file()
-_LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(legacy=True)
+_LEGACY_ROWS_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
+_LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE)
 
 _HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_feedback=_plan_fixture.FEEDBACK_FILES)
 _HUMAN_DETAIL_CONTENT = _plan_fixture.human_detail()
@@ -361,7 +362,7 @@ def test_human_readable_units_reject_ambiguous_exact_id() -> None:
 
 
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
-    """H1直下のバグ単位と原因分析表・固定12行表を持つ付属ファイルを受理する。"""
+    """H1直下のバグ単位と原因分析表・固定行の調査表を持つ付属ファイルを受理する。"""
     assert not _plan_format.check_bug_file_structure(_BUG_FILE_CONTENT)
 
 
@@ -376,10 +377,10 @@ def test_bug_cause_table_rows_pass_colloquial_check() -> None:
 
 
 def test_bug_file_structure_rejects_missing_fixed_row() -> None:
-    """付属ファイルの固定12行表から行が欠けた場合を拒否する。"""
-    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.bug_row('根本原因')}\n", "")
+    """付属ファイルの固定行の調査表から行が欠けた場合を拒否する。"""
+    content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
     errors = _plan_format.check_bug_file_structure(content)
-    assert any("固定12行" in error for error in errors), errors
+    assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" in error for error in errors), errors
 
 
 def test_bug_file_structure_rejects_empty_content_cell() -> None:
@@ -434,9 +435,16 @@ def test_bug_file_structure_rejects_additional_table() -> None:
     assert _plan_format.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{extra_table}")
 
 
-def test_bug_file_structure_accepts_legacy_fourteen_row_table() -> None:
-    """原因分析表を持たない固定14行の旧調査表を読み取り互換で受理する。"""
+def test_bug_file_structure_accepts_legacy_standalone_table() -> None:
+    """原因分析表を持たない旧調査表を読み取り互換で受理する。"""
     assert not _plan_format.check_bug_file_structure(_LEGACY_BUG_FILE_CONTENT)
+
+
+def test_bug_file_structure_accepts_legacy_row_layout() -> None:
+    """統廃合前の行構成を持つ調査表を読み取り互換で受理する。"""
+    assert not _plan_format.check_bug_file_structure(_LEGACY_ROWS_BUG_FILE_CONTENT)
+    assert _plan_format.has_legacy_bug_investigation_table(_LEGACY_ROWS_BUG_FILE_CONTENT)
+    assert not _plan_format.has_legacy_bug_investigation_table(_BUG_FILE_CONTENT)
 
 
 def test_optional_exclusion_section_may_be_absent() -> None:
@@ -528,10 +536,10 @@ def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
 
 
 def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
-    """バグ調査表は固定12行表を満たす場合だけ検出する。"""
+    """バグ調査表は固定行の調査表を満たす場合だけ検出する。"""
     content = _BUG_CONTENT
     assert _plan_format.has_legacy_bug_table(content)
-    invalid = content.replace(f"{_plan_fixture.bug_row('根本原因')}\n", "")
+    invalid = content.replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
     assert not _plan_format.has_legacy_bug_table(invalid)
 
 
@@ -1132,9 +1140,9 @@ def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> N
 
 def test_bug_section_requires_fixed_twelve_rows() -> None:
     """バグ調査表の12行から1行を削除した計画を拒否する。"""
-    content = _BUG_CONTENT.replace(f"{_plan_fixture.bug_row('根本原因')}\n", "")
+    content = _BUG_CONTENT.replace(f"{_plan_fixture.bug_row(_plan_format.PLAN_BUG_TABLE_ROWS[0])}\n", "")
     errors = _plan_format.check_plan_structure(content)
-    assert any("固定12行の調査表" in error for error in errors)
+    assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行の調査表" in error for error in errors)
 
 
 def test_bug_section_is_required_only_for_bug_work_type() -> None:
@@ -1277,6 +1285,20 @@ def test_plan_file_standards_states_every_structure_constant(expected: str) -> N
     実装だけが要件を持つ状態を避け、構造定数を改訂した場合に正本の追随漏れを検出する。
     """
     assert expected in _PLAN_FILE_STANDARDS.read_text(encoding="utf-8")
+
+
+_ROOT_CAUSE_ANALYSIS = (
+    pathlib.Path(__file__).resolve().parents[1] / "skills" / "bugfix" / "references" / "root-cause-analysis.md"
+)
+
+
+@pytest.mark.parametrize("row_name", _plan_format.PLAN_BUG_TABLE_ROWS)
+def test_root_cause_analysis_states_every_bug_table_row(row_name: str) -> None:
+    """調査表の固定行名を原因分析契約の集約表が明記する。
+
+    行名の正本を構造定数に置くため、集約表の追随漏れをここで検出する。
+    """
+    assert f"| {row_name} | " in _ROOT_CAUSE_ANALYSIS.read_text(encoding="utf-8")
 
 
 def test_agent_document_target_paths() -> None:

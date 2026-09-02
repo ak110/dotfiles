@@ -247,6 +247,22 @@ PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し�
 """バグ単位の原因分析表の固定5列2行。`agent-toolkit:bugfix`の原因分析の段階と対応させる。"""
 
 PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+    "現象",
+    "期待する契約",
+    "直接的原因",
+    "原因分析の根拠",
+    "対策",
+    "類似見直し観点",
+    "類似見直し結果",
+    "再発防止策",
+)
+"""バグ調査表の固定行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。
+
+根本原因は原因分析表の到達した最深段のセルへ、原因分析の品質確認は原因分析の工程へ、
+設計意図の記録は`再発防止策`の記載内容へ統合したため、いずれも独立した行を持たない。
+"""
+
+PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
     "観測事象",
     "期待する契約",
     "直接的原因",
@@ -260,9 +276,9 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
     "再発防止処置",
     "設計意図の記録",
 )
-"""バグ調査表の固定12行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。"""
+"""統廃合前のバグ調査表の固定行。原因分析表を伴う既存計画の読み取り互換にだけ用いる。"""
 
-PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
+PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS: tuple[str, ...] = (
     "観測事象",
     "期待する契約",
     "直接的原因",
@@ -278,10 +294,10 @@ PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
     "再発防止処置",
     "設計意図の記録",
 )
-"""原因分析表を持たない旧バグ調査表の固定14行。既存計画の読み取り互換にだけ用いる。"""
+"""原因分析表を持たない旧バグ調査表の固定行。既存計画の読み取り互換にだけ用いる。"""
 
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
-"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表の12行を正本とする。"""
+"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表を正本とする。"""
 
 PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
 """`### リファクタリング`が対象ごとに置く固定4行。対象が無い場合は表を置かず地の文とする。"""
@@ -1442,29 +1458,39 @@ def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
 def _check_bug_unit_sections(
     body: list[tuple[int, str]], headings: list[PlanHeading], children: list[tuple[int, PlanHeading]]
 ) -> list[str]:
-    """バグ単位H3ごとに原因分析表と固定12行の2列表を検査する。"""
+    """バグ単位H3ごとに原因分析表と固定行の2列表を検査する。
+
+    統廃合前の調査表は原因分析表を伴う形と伴わない形の2種があり、前者は現行と同じ2表構成で受理する。
+    行数はいずれも構造定数から導出し、メッセージへリテラルで持たない。
+    """
     errors: list[str] = []
     for position, heading in children:
         start, end = heading_subtree_range(headings, position)
         tables = extract_tables(lines_within(body, start, end))
-        legacy_tables = [
+        standalone_tables = [
             table
             for table in tables
-            if table.row_labels() == PLAN_LEGACY_BUG_TABLE_ROWS and table.header == PLAN_BUG_TABLE_HEADER
+            if table.row_labels() == PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS and table.header == PLAN_BUG_TABLE_HEADER
         ]
-        if legacy_tables:
-            if len(legacy_tables) != 1 or len(tables) != 1:
-                errors.append(f"`### {heading.text}`の旧形式は固定14行の調査表1件だけにする")
+        if standalone_tables:
+            if len(standalone_tables) != 1 or len(tables) != 1:
+                errors.append(
+                    f"`### {heading.text}`の旧形式は固定{len(PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS)}行の調査表1件だけにする"
+                )
                 continue
-            legacy_table = legacy_tables[0]
-            for row in legacy_table.rows:
+            standalone_table = standalone_tables[0]
+            for row in standalone_table.rows:
                 if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
                     errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
             continue
 
-        investigation_tables = [table for table in tables if table.row_labels() == PLAN_BUG_TABLE_ROWS]
+        investigation_tables = [
+            table for table in tables if table.row_labels() in (PLAN_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+        ]
         if len(investigation_tables) != 1 or investigation_tables[0].header != PLAN_BUG_TABLE_HEADER:
-            errors.append(f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定12行の調査表にする")
+            errors.append(
+                f"`### {heading.text}`は{list(PLAN_BUG_TABLE_HEADER)}の2列と固定{len(PLAN_BUG_TABLE_ROWS)}行の調査表にする"
+            )
             continue
         table = investigation_tables[0]
         cause_tables = [table for table in tables if table.row_labels() == PLAN_BUG_CAUSE_TABLE_ROWS]
@@ -1476,7 +1502,7 @@ def _check_bug_unit_sections(
         ):
             errors.append(
                 f"`### {heading.text}`は{list(PLAN_BUG_CAUSE_TABLE_HEADER)}の5列2行の原因分析表1件と"
-                "固定12行の調査表1件だけを置き、原因分析表を調査表より前に置く"
+                f"固定{len(PLAN_BUG_TABLE_ROWS)}行の調査表1件だけを置き、原因分析表を調査表より前に置く"
             )
             continue
         cause_table = cause_tables[0]
@@ -1538,8 +1564,14 @@ def has_legacy_bug_table(content: str) -> bool:
     return bool(children) and not _check_bug_unit_sections(body, headings, children)
 
 
+def has_legacy_bug_investigation_table(content: str) -> bool:
+    """統廃合前の行構成を持つ調査表を含む場合に真を返す。既存計画の移行案内にだけ用いる。"""
+    tables = extract_tables(list(iter_markdown_body_lines(content)))
+    return any(table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_LEGACY_BUG_TABLE_ROWS for table in tables)
+
+
 def check_bug_file_structure(content: str) -> list[str]:
-    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定12行の調査表を検査する。"""
+    """計画ファイル（バグ）のH1、バグ単位H3、原因分析表と固定行の調査表を検査する。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)

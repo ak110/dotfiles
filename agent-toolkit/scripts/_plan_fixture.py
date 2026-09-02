@@ -59,26 +59,42 @@ def bug_cause_table(filler: str = CAUSE_FILLER) -> str:
     return "\n".join([_header_row(header), *(f"| {row} | {contents} |" for row in _plan_format.PLAN_BUG_CAUSE_TABLE_ROWS)])
 
 
+BUG_VARIANT_CURRENT: str = "current"
+"""現行の調査表。原因分析表と固定行の調査表を置く。"""
+BUG_VARIANT_LEGACY_ROWS: str = "legacy_rows"
+"""統廃合前の調査表。原因分析表を伴い、行構成だけが旧い。"""
+BUG_VARIANT_LEGACY_STANDALONE: str = "legacy_standalone"
+"""原因分析表を持たない旧調査表。"""
+
+
 def bug_investigation_table(filler: str = BUG_FILLER) -> str:
-    """バグ単位の固定12行の調査表を組み立てる。"""
+    """バグ単位の固定行の調査表を組み立てる。"""
     return rows_table(_plan_format.PLAN_BUG_TABLE_ROWS, filler)
 
 
-def bug_file(*, title: str = "計画の主題", legacy: bool = False) -> str:
+def legacy_bug_investigation_table(filler: str = BUG_FILLER) -> str:
+    """統廃合前の行構成を持つ調査表を組み立てる。"""
+    return rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, filler)
+
+
+def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRENT) -> str:
     """計画ファイル（バグ）の正常系本文を返す。
 
-    ``legacy``が真の場合は原因分析表を持たない旧14行の調査表だけを置く。
+    ``variant``は``BUG_VARIANT_CURRENT``、``BUG_VARIANT_LEGACY_ROWS``、
+    ``BUG_VARIANT_LEGACY_STANDALONE``のいずれかを受理する。
     """
-    if legacy:
-        body = rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, BUG_FILLER)
+    if variant == BUG_VARIANT_LEGACY_STANDALONE:
+        body = rows_table(_plan_format.PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS, BUG_FILLER)
+    elif variant == BUG_VARIANT_LEGACY_ROWS:
+        body = f"{bug_cause_table()}\n\n{legacy_bug_investigation_table()}"
     else:
         body = f"{bug_cause_table()}\n\n{bug_investigation_table()}"
     return f"# {title}\n\n### {BUG_UNIT_H3}\n\n{body}\n"
 
 
-def inline_bug_section(*, legacy: bool = False) -> str:
+def inline_bug_section(*, variant: str = BUG_VARIANT_CURRENT) -> str:
     """計画本文へ直接置く旧形式の`## バグ調査結果`節を返す。"""
-    body = bug_file(legacy=legacy).split(f"### {BUG_UNIT_H3}\n\n", 1)[1]
+    body = bug_file(variant=variant).split(f"### {BUG_UNIT_H3}\n\n", 1)[1]
     return f"## {_plan_format.PLAN_H2_BUG}\n\n### {BUG_UNIT_H3}\n\n{body}\n"
 
 
