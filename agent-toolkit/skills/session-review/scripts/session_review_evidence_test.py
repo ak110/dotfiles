@@ -394,6 +394,155 @@ def test_main_requires_exactly_one_transcript_source(
     assert _read_jsonl(capsys) == [{"kind": "error", "text": "transcript_pathと--codex-thread-idはいずれか一方だけを指定する"}]
 
 
+def _timestamped_entry(timestamp: str | None, text: str) -> dict:
+    """任意の時刻を持つClaude利用者エントリを作成する。"""
+    entry: dict = {"type": "user", "message": {"role": "user", "content": text}}
+    if timestamp is not None:
+        entry["timestamp"] = timestamp
+    return entry
+
+
+def test_observation_boundary_excludes_later_main_records_in_all_modes(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """観測境界より後の親記録を全照会モードから除外する。"""
+    before_notice = "[auto-generated: test/before][warn] warning: before needle"
+    after_notice = "[auto-generated: test/after][warn] warning: after needle"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry(None, "時刻なしの管理相当レコード"),
+            _timestamped_entry("2026-09-01T00:00:00Z", "before needle"),
+            _hook_attachment(
+                {
+                    "type": "hook_system_message",
+                    "hookName": "Before",
+                    "toolUseID": "before",
+                    "content": before_notice,
+                }
+            )
+            | {"timestamp": "2026-09-01T00:00:01Z"},
+            _timestamped_entry("2026-09-01T00:00:02Z", "boundary needle"),
+            _timestamped_entry("2026-09-01T00:00:03Z", "after needle"),
+            _hook_attachment(
+                {
+                    "type": "hook_system_message",
+                    "hookName": "After",
+                    "toolUseID": "after",
+                    "content": after_notice,
+                }
+            )
+            | {"timestamp": "2026-09-01T00:00:04Z"},
+        ],
+    )
+    base = [str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z"]
+
+    assert evidence.main(base) == 0
+    default_events = _read_jsonl(capsys)
+    assert "時刻なしの管理相当レコード" in json.dumps(default_events, ensure_ascii=False)
+    assert "boundary needle" in json.dumps(default_events, ensure_ascii=False)
+    assert "after needle" not in json.dumps(default_events, ensure_ascii=False)
+
+    assert evidence.main([*base, "--warn"]) == 0
+    assert [event["text"] for event in _read_jsonl(capsys)] == [before_notice]
+
+    assert evidence.main([*base, "--grep", "needle"]) == 0
+    grep_events = _read_jsonl(capsys)
+    assert [event["line"] for event in grep_events if event["kind"] == "match"] == [2, 3, 4]
+    assert grep_events[-1] == {"kind": "summary", "count": 3}
+
+    assert evidence.main([*base, "--detail", "5"]) == 2
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "行番号5は範囲外"}]
+
+    assert evidence.main([*base, "--stats"]) == 0
+    summary = _events_by_kind(_read_jsonl(capsys), "stats-summary")[0]
+    assert summary["end"] == "2026-09-01T00:00:02Z"
+
+    assert evidence.main([*base, "--hook-notices"]) == 0
+    hook_events = _read_jsonl(capsys)
+    assert [event["hook"] for event in hook_events if event["kind"] == "hook-notice"] == ["test/before"]
+
+
+def test_observation_boundary_keeps_original_line_numbers(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """境界適用後も詳細位置は元ファイルの行番号を指す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:03Z", "除外する先頭行"),
+            _timestamped_entry("2026-09-01T00:00:01Z", "保持する元の2行目"),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z", "--detail", "2"]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "detail",
+            "line": 2,
+            "text": json.dumps(
+                _timestamped_entry("2026-09-01T00:00:01Z", "保持する元の2行目"),
+                ensure_ascii=False,
+                indent=2,
+            ),
+        }
+    ]
+
+
+def test_observation_boundary_does_not_apply_to_delegate_records(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """親記録の境界より後に終端した委譲先記録を除外しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [_timestamped_entry("2026-09-01T00:00:01Z", "親記録")],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_timestamped_entry("2026-09-01T00:00:03Z", "境界後の委譲先記録")],
+    )
+
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z"]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert next(event for event in events if event["record"] == "agent-child")["text"] == "境界後の委譲先記録"
+
+
+def test_without_observation_boundary_output_is_unchanged(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """観測境界を指定しない呼び出しは境界後相当の記録も従来どおり返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:01Z", "先行記録"),
+            _timestamped_entry("2026-09-01T00:00:03Z", "後続記録"),
+        ],
+    )
+
+    assert evidence.main([str(transcript)]) == 0
+
+    assert [event["text"] for event in _read_jsonl(capsys)] == ["先行記録", "後続記録"]
+
+
+def test_invalid_observation_boundary_returns_exit_code_two(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """解析できない観測境界はエラーイベントと終了コード2を返す。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", "記録")])
+
+    assert evidence.main([str(transcript), "--observation-boundary", "not-a-timestamp"]) == 2
+
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界が不正: not-a-timestamp"}]
+
+
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

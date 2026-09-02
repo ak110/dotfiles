@@ -712,15 +712,25 @@ _AGENTS_SERVER_TOOL_NAMES = frozenset(
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
 
 
+def _parse_timestamp(value: str) -> datetime.datetime:
+    """ISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。"""
+    parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
 def _record_timestamp(record: _Record) -> datetime.datetime | None:
     value = record.entry.get("timestamp")
     if not isinstance(value, str):
         return None
     try:
-        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return _parse_timestamp(value)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
+def _apply_observation_boundary(records: list[_Record], boundary: datetime.datetime) -> list[_Record]:
+    """時刻無しと境界以前の親記録を、元の行番号を保って返す。"""
+    return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
 def _token_value(value: Any) -> int:
@@ -2220,6 +2230,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
     )
     parser.add_argument(
+        "--observation-boundary",
+        metavar="TIMESTAMP",
+        help="ISO 8601の時刻を観測境界とし、親記録のうち当該時刻より後の`timestamp`を持つレコードを"
+        "全モードの対象外にする。委譲先の記録へは適用しない。`--detail`の行番号は元ファイルの行番号を維持する。"
+        "解析できない値はエラーイベントを出力して終了コード2を返す。",
+    )
+    parser.add_argument(
         "--warn",
         action="store_true",
         help="セッション全体のエントリから、行頭の警告マーカーまたは"
@@ -2279,6 +2296,12 @@ def main(argv: list[str] | None = None) -> int:
     records = _load_records(transcript_path)
     if records is None:
         return _print_error(f"対象記録を読み込めない: {transcript_path}")
+    if args.observation_boundary is not None:
+        try:
+            boundary = _parse_timestamp(args.observation_boundary)
+        except ValueError:
+            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+        records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
     collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
 
