@@ -66,7 +66,7 @@ class TestEnsurePlanLockIgnored:
         assert _file_lock.ensure_plan_lock_ignored(root_lock)
         assert not _file_lock.ensure_plan_lock_ignored(nested_lock)
 
-        assert gitignore.read_bytes() == b"existing-pattern\n*.lock\n"
+        assert gitignore.read_bytes() == b"existing-pattern\n/plans/**/*.lock\n"
         root_lock.parent.mkdir(parents=True)
         nested_lock.parent.mkdir(parents=True)
         root_lock.touch()
@@ -77,6 +77,26 @@ class TestEnsurePlanLockIgnored:
         assert _git(tmp_path, "check-ignore", str(nested_lock.relative_to(tmp_path))).strip() == str(
             nested_lock.relative_to(tmp_path)
         )
+
+    def test_replaces_legacy_repository_wide_pattern(self, tmp_path: pathlib.Path) -> None:
+        """旧版が追記したリポジトリ全体の除外行を`plans/`配下限定の行へ置き換える。"""
+        _git(tmp_path, "init", "-q")
+        gitignore = tmp_path / ".gitignore"
+        gitignore.write_bytes(b"existing-pattern\n*.lock\n")
+
+        assert _file_lock.ensure_plan_lock_ignored(tmp_path / "plans" / ".agent-toolkit-plan-create.lock")
+
+        assert gitignore.read_bytes() == b"existing-pattern\n/plans/**/*.lock\n"
+        outside_lock = tmp_path / "state" / "session.lock"
+        outside_lock.parent.mkdir(parents=True)
+        outside_lock.touch()
+        ignored = subprocess.run(
+            ["git", "-C", str(tmp_path), "check-ignore", str(outside_lock.relative_to(tmp_path))],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert ignored.returncode == 1
 
     def test_does_not_modify_repository_for_lock_outside_plans(self, tmp_path: pathlib.Path) -> None:
         """`plans/`外の一般ロックでは`.gitignore`を作成しない。"""
