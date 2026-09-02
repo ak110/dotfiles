@@ -369,3 +369,48 @@ def test_migrated_plan_predicates_and_commit_path_accept_preserved_name(tmp_path
     relative = _plan_file.validate_migrated_plan_relative_path("2026/08/30-legacy-name.md")
 
     assert relative == pathlib.Path("2026/08/30-legacy-name.md")
+
+
+def test_adjunct_reference_resolves_against_plan_directory(tmp_path: pathlib.Path) -> None:
+    """付属ファイル参照を、接頭辞を展開せず計画ファイルのディレクトリで解決する。"""
+    working = tmp_path / "working" / "02-計画-1a2b.md"
+    saved = tmp_path / "saved" / "2026" / "09" / "02-計画-1a2b.md"
+    working.parent.mkdir(parents=True)
+    saved.parent.mkdir(parents=True)
+    reference = f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}02-計画-1a2b.bugs.md"
+
+    assert _plan_file.is_plan_adjunct_reference(reference) is True
+    assert _plan_file.resolve_plan_adjunct_reference(reference, plan_path=working) == (working.parent / "02-計画-1a2b.bugs.md")
+    assert _plan_file.resolve_plan_adjunct_reference(reference, plan_path=saved) == (saved.parent / "02-計画-1a2b.bugs.md")
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["", "2026/09/plan.bugs.md", "..", "../plan.bugs.md", "$(atk config get private_notes)", "sub\\plan.bugs.md"],
+)
+def test_adjunct_reference_rejects_unsafe_name(tmp_path: pathlib.Path, name: str) -> None:
+    """ファイル名1件以外の参照値を拒否する。"""
+    plan_path = tmp_path / "02-計画-1a2b.md"
+    with pytest.raises(ValueError):
+        _plan_file.resolve_plan_adjunct_reference(f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{name}", plan_path=plan_path)
+
+
+def test_adjunct_reference_requires_fixed_prefix(tmp_path: pathlib.Path) -> None:
+    """固定接頭辞を持たない値を付属ファイル参照として解決しない。"""
+    plan_path = tmp_path / "02-計画-1a2b.md"
+    assert _plan_file.is_plan_adjunct_reference("/absolute/02-計画-1a2b.bugs.md") is False
+    with pytest.raises(ValueError):
+        _plan_file.resolve_plan_adjunct_reference("/absolute/02-計画-1a2b.bugs.md", plan_path=plan_path)
+
+
+def test_portable_reference_resolution_is_unchanged(tmp_path: pathlib.Path) -> None:
+    """既存の可搬表記はprivate-notes基準の解決を維持する。"""
+    private_notes = tmp_path / "private-notes"
+    saved = private_notes / "plans/2026/09/02-計画-1a2b.bugs.md"
+    saved.parent.mkdir(parents=True)
+    saved.write_text("# バグ\n", encoding="utf-8")
+    reference = f"{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/02-計画-1a2b.bugs.md"
+
+    resolved = _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=tmp_path / "home")
+
+    assert resolved == saved.resolve()

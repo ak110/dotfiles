@@ -181,6 +181,8 @@ def _check_bug_file_reference(
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
     """バグ対応計画の分離先参照について実在、stem、構造を検査する。
 
+    新しい参照値は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
+    既存の可搬表記と絶対パスは読み取り互換として従来の経路で解決する。
     統廃合前の行構成を持つ調査表は読み取りで受理し、新規作成・改訂では移行warningをエラーへ変える。
     """
     if work_type != "バグ対応":
@@ -189,7 +191,12 @@ def _check_bug_file_reference(
     if reference is None:
         return [], []
 
-    if reference.startswith(_plan_file.PORTABLE_PLAN_PREFIX):
+    if _plan_file.is_plan_adjunct_reference(reference):
+        try:
+            reference_path = _plan_file.resolve_plan_adjunct_reference(reference, plan_path=plan_path)
+        except (OSError, ValueError) as error:
+            return [f"バグ調査ファイルの参照値が不正です: {reference}: {error}"], []
+    elif reference.startswith(_plan_file.PORTABLE_PLAN_PREFIX):
         try:
             reference_path = _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
         except (OSError, ValueError) as error:
@@ -197,7 +204,10 @@ def _check_bug_file_reference(
     else:
         reference_path = pathlib.Path(reference)
         if not reference_path.is_absolute():
-            return [f"バグ調査ファイルの参照パスは可搬表記または絶対パスにする: {reference}"], []
+            return [
+                "バグ調査ファイルの参照は"
+                f"`{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}<ファイル名>`、可搬表記または絶対パスにする: {reference}"
+            ], []
         try:
             reference_path = _plan_file.resolve_plan_file(reference_path)
         except (OSError, ValueError) as error:
@@ -293,6 +303,15 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
             (
                 "migration",
                 "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する",
+            )
+        )
+    reference = _plan_format.extract_bug_file_reference(text)
+    if reference is not None and not _plan_file.is_plan_adjunct_reference(reference):
+        warnings.append(
+            (
+                "migration",
+                "計画本文の付属ファイル参照が旧表記である。新規作成・改訂では"
+                f"`{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}<ファイル名>`へ移行する",
             )
         )
     return warnings

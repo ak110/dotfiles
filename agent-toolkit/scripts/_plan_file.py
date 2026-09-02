@@ -1,10 +1,14 @@
-"""計画ファイルの保存root・可搬表記・種別判定を扱う共通モジュール。
+"""計画ファイルの保存root・参照表記・種別判定を扱う共通モジュール。
 
-新規計画は`~/.claude/plans/`直下で作業し、永続参照には移動後の
-`$(atk config get private_notes)/`を固定接頭辞として用いる。実装レビュー完了後は
-作成日の年月階層を付けてprivate-notesへ移す。既存の日付階層の作業ファイルと、
+新規計画は`~/.claude/plans/`直下で作業し、実装レビュー完了後は作成日の年月階層を付けて
+private-notesへ移す。計画本文が同じ計画に属する付属ファイルを参照する場合は、固定接頭辞
+`~/.claude/plans/`とファイル名を用い、接頭辞を展開せず当該参照を含む計画ファイルの
+ディレクトリを基準に解決する。これにより計画が作業rootと保存rootのどちらにあっても
+同じ参照値が同じ実体を指す。計画の外にあるキューmetadataの`plan_file`は基準となる
+計画ファイルを持たないため、移動後の位置を表す`$(atk config get private_notes)/`を
+固定接頭辞として用いる。既存の日付階層の作業ファイル、計画本文に残る可搬表記及び
 過去に保存された絶対パスは読み取り互換として受理する。
-本モジュールはシェルを起動せず、portable値を通常の相対パスとして検証する。
+本モジュールはシェルを起動せず、参照値を通常の相対パスとして検証する。
 """
 
 from __future__ import annotations
@@ -18,7 +22,10 @@ import subprocess
 import platformdirs
 
 PORTABLE_PLAN_PREFIX = "$(atk config get private_notes)/"
-"""永続する計画参照に使う固定可搬接頭辞。"""
+"""キューmetadataの`plan_file`と、計画本文に残る既存参照で受理する固定可搬接頭辞。"""
+
+PLAN_ADJUNCT_REFERENCE_PREFIX = "~/.claude/plans/"
+"""計画本文が同じ計画に属する付属ファイルを参照する固定接頭辞。"""
 
 NEW_PLANS_DIRECTORY = "plans"
 """private-notes直下の新しい計画root名。"""
@@ -336,6 +343,35 @@ def resolve_plan_file(
     if allow_legacy_absolute:
         return resolved
     raise ValueError("plan_fileが許可された保存root外を指しています")
+
+
+def is_plan_adjunct_reference(value: pathlib.Path | str) -> bool:
+    """計画本文の付属ファイル参照の固定接頭辞を持つ値かを返す。"""
+    return os.fspath(value).startswith(PLAN_ADJUNCT_REFERENCE_PREFIX)
+
+
+def validate_adjunct_reference_name(name: str) -> str:
+    """付属ファイル参照の接頭辞に続くファイル名を検証して返す。"""
+    if not name or "$(" in name or "\x00" in name:
+        raise ValueError("計画本文の参照値が空、またはシェル式を含んでいます")
+    if "\\" in name:
+        raise ValueError("計画本文の参照値にWindows区切り文字を指定できません")
+    if "/" in name or name in (".", ".."):
+        raise ValueError("計画本文の参照値は計画ファイルと同じディレクトリのファイル名1件で指定してください")
+    return name
+
+
+def resolve_plan_adjunct_reference(value: pathlib.Path | str, *, plan_path: pathlib.Path | str) -> pathlib.Path:
+    """計画本文の付属ファイル参照を実ファイルパスへ解決する。
+
+    接頭辞は展開せず、当該参照を含む計画ファイルのディレクトリへファイル名を結合する。
+    計画が作業rootと保存rootのどちらにあっても同じ参照値が同じ計画の実体を指す。
+    """
+    raw = os.fspath(value)
+    if not is_plan_adjunct_reference(raw):
+        raise ValueError(f"計画本文の参照値は`{PLAN_ADJUNCT_REFERENCE_PREFIX}`から始めてください")
+    name = validate_adjunct_reference_name(raw[len(PLAN_ADJUNCT_REFERENCE_PREFIX) :])
+    return _resolve(pathlib.Path(plan_path)).parent / name
 
 
 def to_portable_plan_file(

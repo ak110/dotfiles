@@ -42,9 +42,7 @@ def _sources(repo: pathlib.Path, directory: pathlib.Path, *, bug: bool = False) 
     detail_source = directory / "detail.md"
     if bug:
         main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
-        bug_reference = (
-            f"{create_plan_files.PORTABLE_PLAN_PREFIX}plans/2026/08/{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
-        )
+        bug_reference = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.bugs.md"
         detail = f"## バグ調査結果\n\n- 計画ファイル（バグ）: {bug_reference}\n\n{detail}"
     main_source.write_text(main, encoding="utf-8")
     detail_source.write_text(detail, encoding="utf-8")

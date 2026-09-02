@@ -9,6 +9,7 @@ import check_plan_file
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -199,7 +200,11 @@ def _check_new(
     detail_path.write_text(detail_content, encoding="utf-8")
     reference = _plan_format.extract_bug_file_reference(detail_content)
     if create_bug_file and reference is not None:
-        pathlib.Path(reference).write_text(bug_file_content or _plan_fixture.bug_file(), encoding="utf-8")
+        if _plan_file.is_plan_adjunct_reference(reference):
+            bug_path = _plan_file.resolve_plan_adjunct_reference(reference, plan_path=path)
+        else:
+            bug_path = pathlib.Path(reference)
+        bug_path.write_text(bug_file_content or _plan_fixture.bug_file(), encoding="utf-8")
     return check_plan_file.check(path, repo, reject_legacy_format=reject_legacy_format)
 
 
@@ -492,7 +497,11 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     main_content, detail_content = _new_format_plan(work_dir, base, bug=bug)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
     assert not errors, errors
-    expected = [
+    # 旧二ファイル形式の検体は付属ファイル参照を絶対パスで持つため、バグ対応でだけ当該移行警告が加わる。
+    expected = (
+        ["計画本文の付属ファイル参照が旧表記である。新規作成・改訂では`~/.claude/plans/<ファイル名>`へ移行する"] if bug else []
+    )
+    expected += [
         "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
         "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
         "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
@@ -882,6 +891,60 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     )
     expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
     assert warnings == expected
+
+
+def _adjunct_reference_plan(repo: pathlib.Path, base: str, *, stem: str = "plan") -> tuple[str, str]:
+    """計画ファイル（バグ）を新しい参照値で指す計画を組み立てて返す。"""
+    main, detail = _new_format_plan(repo, base, bug=True, detail_name=f"{stem}.detail.md")
+    absolute = str((repo / f"{stem}.bugs.md").resolve())
+    reference = f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{stem}.bugs.md"
+    return main, detail.replace(absolute, reference)
+
+
+def test_new_format_accepts_adjunct_bug_file_reference(repo: tuple[pathlib.Path, str]) -> None:
+    """計画ファイルと同じディレクトリを基準に新しい参照値を解決する。"""
+    work_dir, base = repo
+    main_content, detail_content = _adjunct_reference_plan(work_dir, base)
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert not any("付属ファイル参照が旧表記" in warning for warning in warnings), warnings
+
+
+def test_adjunct_bug_file_reference_resolves_from_any_plan_directory(
+    repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
+) -> None:
+    """同じ参照値が、計画を置いたどちらのディレクトリでも同じ計画の実体を指す。"""
+    work_dir, base = repo
+    main_content, detail_content = _adjunct_reference_plan(work_dir, base)
+    saved_directory = tmp_path / "saved" / "2026" / "09"
+    saved_directory.mkdir(parents=True)
+    main_path = saved_directory / "plan.md"
+    main_path.write_text(main_content, encoding="utf-8")
+    (saved_directory / "plan.detail.md").write_text(detail_content, encoding="utf-8")
+    (saved_directory / "plan.bugs.md").write_text(_plan_fixture.bug_file(), encoding="utf-8")
+    errors, _warnings = check_plan_file.check(main_path, work_dir)
+    assert not errors, errors
+
+
+def test_new_format_rejects_adjunct_reference_with_path_separator(repo: tuple[pathlib.Path, str]) -> None:
+    """新しい参照値にパス区切り文字を含む場合を拒否する。"""
+    work_dir, base = repo
+    main_content, detail_content = _adjunct_reference_plan(work_dir, base)
+    detail_content = detail_content.replace(
+        f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}plan.bugs.md",
+        f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}2026/09/plan.bugs.md",
+    )
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
+    assert any("参照値が不正です" in error for error in errors), errors
+
+
+def test_new_format_warns_for_legacy_adjunct_reference_notation(repo: tuple[pathlib.Path, str]) -> None:
+    """絶対パスの参照は読み取りで受理し、新しい参照値への移行warningを返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert any("付属ファイル参照が旧表記" in warning for warning in warnings), warnings
 
 
 def test_new_format_accepts_portable_bug_file_reference(
