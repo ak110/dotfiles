@@ -1676,6 +1676,37 @@ class TestLanguageEscalation:
         assert r3.returncode == 2
         assert "2ターン連続" in r3.stderr
 
+    @pytest.mark.parametrize(
+        ("text", "expected_count", "expected_returncode"),
+        [
+            ("A" * 100, 1, 2),
+            ("これは日本語の応答です。" * 5, 0, 0),
+            ("了解した。", 0, 0),
+        ],
+        ids=["warn", "pass", "skip"],
+    )
+    def test_english_warning_count_transitions_for_each_outcome(
+        self,
+        tmp_path: pathlib.Path,
+        text: str,
+        expected_count: int,
+        expected_returncode: int,
+    ) -> None:
+        """判定結果の3値それぞれについて連続検出カウンタの遷移を検証する。
+
+        直前の検出が1回記録された状態から始める。英語主体と判定した回は前回と異なる
+        message IDでカウンタが2へ達してブロックし、ブロック後のカウンタは1になる。
+        英語主体でないと判定した回は、警告本文を返さない結果でもカウンタを0へ戻す。
+        """
+        env = self._state_env(tmp_path)
+        sid = "esc-transition"
+        _write_session_state(tmp_path, sid, {"english_warning_count": 1, "english_warning_msg_id": "m0"})
+
+        result = self._invoke(tmp_path, env, sid, text, msg_id="m1")
+
+        assert result.returncode == expected_returncode
+        assert _read_session_state(tmp_path, sid)["english_warning_count"] == expected_count
+
     def test_warn_no_suffix(self, tmp_path: pathlib.Path):
         """warn時のadditionalContextに共通サフィックスが含まれないことを検証する。"""
         env = self._state_env(tmp_path)

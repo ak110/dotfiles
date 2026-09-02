@@ -587,8 +587,8 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
 
     エスカレーションロジック:
     - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2でブロック
-    - PASS: カウンタを0にリセット
-    - SKIP: カウンタ変更なし
+    - PASS・SKIP: カウンタを0にリセットする。ブロック本文が「2ターン連続」と宣言するため、
+      英語主体でないと判定した回を経た後は、1回の検出だけではブロックしない
     - ブロック後はカウンタを1に設定する（日本語に切り替わるまで毎ターンブロックを継続）
     """
     transcript_path = payload.get("transcript_path", "")
@@ -599,10 +599,10 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
 
     outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)
 
-    if outcome is _response_language_check.CheckOutcome.SKIP:
-        return (None, None)
-
-    if outcome is _response_language_check.CheckOutcome.PASS:
+    if outcome in (
+        _response_language_check.CheckOutcome.PASS,
+        _response_language_check.CheckOutcome.SKIP,
+    ):
         if session_id:
 
             def _reset_count(current: dict) -> dict | None:
