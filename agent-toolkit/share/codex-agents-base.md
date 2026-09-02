@@ -58,10 +58,15 @@
 ## Codex互換レイヤー
 
 - 該当作業に対応するスキルが`~/.codex/skills/`に存在する場合は、その`SKILL.md`を読む
+- agent-toolkitのスキルは`~/.codex/skills/`へ配置しない。読む対象はplugin marketplaceが導入した実体の`<plugin root>/skills/<スキル名>/SKILL.md`とする
+- `<plugin root>`は`codex plugin list --json`が返す`installed`配列から`name`が`agent-toolkit`である要素を選んで確定する。Codexのホームディレクトリは環境変数`CODEX_HOME`が設定されていればその値とし、設定されていなければ`~/.codex`とする。当該ホームディレクトリと、選んだ要素の`marketplaceName`・`name`・`version`から`<Codexのホームディレクトリ>/plugins/cache/<marketplaceName>/<name>/<version>/`を組み立てる。組み立てたパスは値を解決した絶対パスとして確定し、未設定になり得る変数を含む文字列のままコマンドへ渡さない
+- `<plugin root>`の組み立て手順はCodex CLI 0.152.1で確認した。同コマンドの出力は導入先の絶対パスを直接示す欄を持たず、`installed`配列の各要素が`name`・`marketplaceName`・`version`を持つ。`CODEX_HOME`を設定して実行すると当該ディレクトリを基準に導入情報を解決し、設定せずに実行すると`~/.codex`配下の導入情報を返す。再検証は設定した場合と設定しない場合で同じコマンドを実行して結果の差を確認し、組み立てたパスの配下の`skills/`の実在を確認する
+- 起点となる`<plugin root>`の確定はホストのplugin導入情報だけを入力とし、`SKILL.md`を読む前に1回行う。読み込み済みの`SKILL.md`の絶対パスからplugin資源のrootを導出する手順は、当該`SKILL.md`だけを入力とする再解決であり、起点の確定へ用いない。両者は入力が異なるため互いを参照しない
+- `codex plugin list --json`が非0で終了した場合、`installed`配列に`agent-toolkit`の要素が無い場合、又は組み立てた`<plugin root>`が実在しない場合は、固定パスの推測へ退避せず、実行したコマンドと観測結果を添えて呼び出し元へ差し戻す
 - プロジェクト直下に`.agents/skills/`が存在する場合は、作業内容に該当する`SKILL.md`を読む
 - プロジェクト直下に`AGENTS.md`が存在せず`CLAUDE.md`が存在する場合は、作業前に`CLAUDE.md`を読む
 - プロジェクト直下に`.claude/rules/`が存在する場合は、作業内容に該当するルールファイルを読む
-- `~/.codex/agent-toolkit/rules/`と`~/.codex/skills/`のdotfiles配布物は、Claude Code側の原本へのシンボリックリンクとして扱う
+- `~/.codex/agent-toolkit/rules/`と、`~/.codex/skills/`のdotfiles固有スキルは、Claude Code側の原本へのシンボリックリンクとして扱う
 
 ### Codexホスト契約の適用
 
