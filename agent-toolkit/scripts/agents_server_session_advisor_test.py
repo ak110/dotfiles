@@ -29,7 +29,7 @@ def _record_operation(
     operation: str,
     response: dict[str, object],
     *,
-    transcript_path: str | None = None,
+    agent_id: str | None = None,
 ) -> None:
     """PostToolUseを通してagents_serverの公開操作応答を記録する。"""
     remote_session_id = str(response["session_id"])
@@ -45,8 +45,8 @@ def _record_operation(
         "tool_input": tool_input,
         "tool_response": {"structuredContent": response},
     }
-    if transcript_path is not None:
-        payload["transcript_path"] = transcript_path
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
     result = _fork_runner.run_script(
         _HOOK,
         argv=("posttooluse",),
@@ -61,12 +61,12 @@ def _run_stop(
     local_session_id: str,
     *,
     stop_hook_active: bool = False,
-    transcript_path: str | None = None,
+    agent_id: str | None = None,
 ) -> str:
     """指定セッションでStopフックを実行しstdoutを返す。"""
     payload: dict[str, object] = {"session_id": local_session_id, "stop_hook_active": stop_hook_active}
-    if transcript_path is not None:
-        payload["transcript_path"] = transcript_path
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
     result = _fork_runner.run_script(
         _HOOK,
         argv=("agents_server_session_advisor",),
@@ -138,13 +138,12 @@ def test_start_only_record_emits_warning(tmp_path: pathlib.Path) -> None:
 def test_main_stop_warns_only_sessions_started_by_main(tmp_path: pathlib.Path) -> None:
     """同じローカルsessionのサブエージェントが起動した作業をメインへ警告しない。"""
     local_session_id = "owner-filter"
-    child_transcript = str(tmp_path / "agent-child-1.jsonl")
     _record_operation(
         tmp_path,
         local_session_id,
         "start",
         {"session_id": "remote-child", "status": "running"},
-        transcript_path=child_transcript,
+        agent_id="child-1",
     )
     _record_start(tmp_path, local_session_id, "remote-main")
 
@@ -152,9 +151,38 @@ def test_main_stop_warns_only_sessions_started_by_main(tmp_path: pathlib.Path) -
     assert "remote-main" in main_output
     assert "remote-child" not in main_output
 
-    child_output = _run_stop(tmp_path, local_session_id, transcript_path=child_transcript)
+    child_output = _run_stop(tmp_path, local_session_id, agent_id="child-1")
     assert "remote-child" in child_output
     assert "remote-main" not in child_output
+
+
+def test_subagent_transcript_path_does_not_identify_the_caller(tmp_path: pathlib.Path) -> None:
+    """サブエージェント名を含む`transcript_path`だけでは呼出主体を分けない。
+
+    Claude Codeはサブエージェント内で発火したフックでも`transcript_path`へ
+    セッション本体の記録を渡すため、判別に使うと全ての記録がメインへ倒れる。
+    """
+    local_session_id = "transcript-not-owner"
+    _record_operation(
+        tmp_path,
+        local_session_id,
+        "start",
+        {"session_id": "remote-child", "status": "running"},
+        agent_id="child-1",
+    )
+    payload = {
+        "session_id": local_session_id,
+        "stop_hook_active": False,
+        "transcript_path": str(tmp_path / "agent-child-1.jsonl"),
+    }
+    result = _fork_runner.run_script(
+        _HOOK,
+        argv=("agents_server_session_advisor",),
+        input=json.dumps(payload),
+        env=_environment(tmp_path),
+    )
+    assert result.returncode == 0
+    assert result.stdout == ""
 
 
 def test_running_wait_satisfies_observation(tmp_path: pathlib.Path) -> None:

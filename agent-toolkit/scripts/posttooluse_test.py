@@ -1455,11 +1455,10 @@ class TestAgentsServerSessionState:
         """startと配送成立send_messageは、各作業を発生させた主体を観測責任者として記録する。"""
         sid = "pending-owner"
         remote_session_id = "remote-owner"
-        child_transcript = str(tmp_path / "agent-child-1.jsonl")
         _run(
             {
                 "session_id": sid,
-                "transcript_path": child_transcript,
+                "agent_id": "child-1",
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"cwd": str(tmp_path), "prompt": "委譲する"},
                 "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "running"}},

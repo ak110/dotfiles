@@ -14,8 +14,8 @@ import subprocess
 
 import _git_remote
 import _tbd_scan
+from _hook_agent_id import MAIN_AGENT_ID
 from _session_state import update_state
-from _transcript_agent_id import extract_transcript_agent_id
 
 STATE_KEY_ANSWERED = "tbd_answered_by_repo"
 """エージェント別・対象リポジトリID別の回答済みTBDファイル名を保持する状態キー。
@@ -33,9 +33,6 @@ STATE_KEY_FINGERPRINT = "tbd_fingerprint_by_repo"
 指紋が前回観測から変化していない間はTBDの回答状態も変化しないため、
 走査と`git remote get-url origin`をいずれも実行しない。
 """
-
-_MAIN_AGENT_ID = "main"
-"""`transcript_path`からエージェント識別子を抽出できない場合に用いるメイン会話の識別子。"""
 
 _GIT_TIMEOUT_SEC = 5.0
 """`git remote get-url origin`の実行上限。フックの滞留を防ぐ。"""
@@ -101,7 +98,7 @@ def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint
     return previous == fingerprint
 
 
-def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | None:
+def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> str | None:
     """前回観測後に回答されたTBDがあれば通知本文を返す。それ以外はNoneを返す。"""
     if not cwd:
         return None
@@ -110,7 +107,6 @@ def build_notice(session_id: str, cwd: str, transcript_path: str = "") -> str | 
     if root is None:
         return None
 
-    agent_id = extract_transcript_agent_id(transcript_path) or _MAIN_AGENT_ID
     fingerprint = _tbd_scan.active_fingerprint(root)
     if fingerprint is not None and _fingerprint_unchanged(session_id, agent_id, cwd, fingerprint):
         return None

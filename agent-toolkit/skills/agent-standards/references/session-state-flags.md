@@ -52,13 +52,13 @@
 ## agents_server連携系
 
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の検査及び各ツールのPostToolUse状態更新に使う
-- `agents_server_sessions`: `session_id`ごとに公開状態の`status`、`kill_requested`、観測を試みていない作業の有無を示す`pending_observation`、当該作業を発生させた主体を示す`owner_agent_id`及び内部の`turn_id`を記録する。記録は`start`・`start_explore`の成功応答で生成し、`wait`・`send_message`・`kill`の応答境界で更新する。`pending_observation`は`start`・`start_explore`の成功応答と、配送が成立した`send_message`の応答で真になり、その呼出主体を`transcript_path`から`owner_agent_id`へ記録する。メインは`main`とする。`wait`の応答と`kill`の成功応答では`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。`wait`は`status`を問わず偽にする。委譲先が稼働中のまま待機表明でターンを終える正常終端を警告しないためである。`wait`又は`kill`の呼び出しが実行環境により背景タスクへ移り、構造化応答を伴わない移行通知だけが返った場合も、当該通知の受領時に`pending_observation`を偽にする。対象sessionは当該呼び出しの入力の`session_id`で解決し、既存の記録が無い場合は新規に作成しない。呼び出しの受理をもって観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。責任主体を記録していない旧形式の記録は警告対象にしない。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
+- `agents_server_sessions`: `session_id`ごとに公開状態の`status`、`kill_requested`、観測を試みていない作業の有無を示す`pending_observation`、当該作業を発生させた主体を示す`owner_agent_id`及び内部の`turn_id`を記録する。記録は`start`・`start_explore`の成功応答で生成し、`wait`・`send_message`・`kill`の応答境界で更新する。`pending_observation`は`start`・`start_explore`の成功応答と、配送が成立した`send_message`の応答で真になり、その呼出主体をhook payloadの`agent_id`から`owner_agent_id`へ記録する。`agent_id`を持たないメイン会話は`main`とする。`transcript_path`はサブエージェント内で発火したフックでもセッション本体の記録を指すため、呼出主体の判別に使わない。`wait`の応答と`kill`の成功応答では`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。`wait`は`status`を問わず偽にする。委譲先が稼働中のまま待機表明でターンを終える正常終端を警告しないためである。`wait`又は`kill`の呼び出しが実行環境により背景タスクへ移り、構造化応答を伴わない移行通知だけが返った場合も、当該通知の受領時に`pending_observation`を偽にする。対象sessionは当該呼び出しの入力の`session_id`で解決し、既存の記録が無い場合は新規に作成しない。呼び出しの受理をもって観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。責任主体を記録していない旧形式の記録は警告対象にしない。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
 
 ## TBD系
 
 - `tbd_answered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの回答済みTBDファイル名を
   PostToolUseが記録する。値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とし、
-  `transcript_path`から抽出できないメイン会話は`main`をキーとする。
+  hook payloadの`agent_id`を持たないメイン会話は`main`をキーとする。
   cwdが空・保存先未解決・後述の指紋が前回と同一・リポジトリID未解決・走査不完全のいずれかの場合は
   記録を更新しない。前回の一覧にない回答済みファイル名の通知判定に使い、セッション終了まで保持する。
   リセット経路は設けず、一覧の記録更新のみで状態を進める。

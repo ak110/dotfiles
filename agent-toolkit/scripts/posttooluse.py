@@ -51,6 +51,7 @@ import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,im
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_git_events,
 )
+from _hook_agent_id import resolve_hook_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_component_file,
@@ -61,7 +62,6 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
-from _transcript_agent_id import extract_transcript_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
@@ -185,7 +185,6 @@ _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
-_MAIN_AGENT_ID = "main"
 
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
@@ -617,7 +616,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
     if cwd:
-        tbd_notice = _tbd_completion.build_notice(session_id, cwd, payload.get("transcript_path", ""))
+        tbd_notice = _tbd_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if tbd_notice is not None:
             notices.append(_llm_notice(tbd_notice, tag="notice"))
 
@@ -655,7 +654,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
-        owner_agent_id = extract_transcript_agent_id(payload.get("transcript_path")) or _MAIN_AGENT_ID
+        owner_agent_id = resolve_hook_agent_id(payload)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
             _record_agents_server_session_state(
                 session_id,
