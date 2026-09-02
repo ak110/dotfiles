@@ -34,19 +34,14 @@ textarea { resize: vertical; }
   white-space: nowrap;
 }
 .app-header {
-  gap: var(--space-2);
-  padding: var(--space-2) max(var(--space-3), calc((100vw - 1800px) / 2));
-  box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
+  padding-inline: max(var(--space-3), calc((100vw - 1800px) / 2));
 }
 .header-title, .header-actions, .pane-heading, .detail-title-row, .dialog-footer {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.header-actions { justify-content: flex-end; flex-wrap: wrap; }
-.header-actions button { padding: var(--space-1) var(--space-2); }
 .app-header h1, .pane-heading h2, .dialog-header h2 { margin: 0; }
-.app-header h1 { font-size: 1.375rem; }
 .pane-heading { justify-content: space-between; }
 .connection-status, .secondary-text, .readonly-notice, .field-hint {
   color: var(--color-secondary-text);
@@ -431,10 +426,8 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
   }
 }
 @media (max-width: 700px) {
-  /* 横方向の余地が無いため、タイトル・ナビゲーション・操作群を1列で縦に並べる。 */
-  .app-header { grid-template-columns: minmax(0, 1fr); align-items: start; }
-  .app-header .header-title, .app-header .app-nav, .app-header .header-actions { grid-column: 1; }
-  .header-title { justify-content: space-between; }
+  /* 狭い画面では中央寄せの余地が無いため、水平方向の余白も`shell.css`の共通値へそろえる。 */
+  .app-header { padding-inline: var(--space-2); }
   .header-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;

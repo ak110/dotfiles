@@ -2112,10 +2112,99 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
 
 
 @pytest.mark.asyncio
+async def test_header_layout_matches_on_three_screens_at_narrow_width(screen_harness: _ScreenHarness) -> None:
+    """折り返しが起きる幅でも、3画面の見出しとナビゲーションの大きさ、及びナビゲーションの水平位置がそろう。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 600, "height": 800})
+    layouts: dict[str, dict[str, float | str]] = {}
+
+    for path in ("/", "/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        header = harness.page.locator(".app-header")
+        await header.wait_for(state="visible")
+        title = harness.page.locator(".app-header .header-title")
+        navigation = harness.page.locator("nav.app-nav")
+        await navigation.wait_for(state="visible")
+        header_box = await header.bounding_box()
+        title_box = await title.bounding_box()
+        navigation_box = await navigation.bounding_box()
+        assert header_box is not None and title_box is not None and navigation_box is not None, path
+        # フィードバック画面だけが同期操作の欄を持つため、ヘッダー全体の高さと絶対位置は画面ごとに異なる。
+        # 3画面が共通して持つ部品の大きさと、ヘッダー左端からの水平位置を比較する。
+        layouts[path] = {
+            "title_height": round(title_box["height"], 1),
+            "nav_height": round(navigation_box["height"], 1),
+            "nav_offset_x": round(navigation_box["x"] - header_box["x"], 1),
+            "title_font_size": await harness.page.locator(".app-header h1").evaluate(
+                "(element) => getComputedStyle(element).fontSize"
+            ),
+        }
+
+    assert layouts["/plans"] == layouts["/"]
+    assert layouts["/sessions"] == layouts["/"]
+
+
+@pytest.mark.asyncio
+async def test_panes_follow_header_height_on_narrow_width(screen_harness: _ScreenHarness) -> None:
+    """ヘッダーが折り返す幅でも、主要領域の上端がヘッダーの下端と、下端がビューポートの下端と一致する。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 600, "height": 800})
+
+    for path in ("/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        header = harness.page.locator(".app-header")
+        await header.wait_for(state="visible")
+        pane = harness.page.locator("#app")
+        await pane.wait_for(state="visible")
+        header_box = await header.bounding_box()
+        pane_box = await pane.bounding_box()
+        assert header_box is not None and pane_box is not None, path
+        viewport_height = await harness.page.evaluate("document.documentElement.clientHeight")
+        # 小数の丸めだけを許容し、固定値の見積もりによるずれを検出する。
+        assert abs(pane_box["y"] - (header_box["y"] + header_box["height"])) <= 1, path
+        assert abs((pane_box["y"] + pane_box["height"]) - viewport_height) <= 1, path
+
+
+@pytest.mark.asyncio
+async def test_session_detail_matches_plan_typography_and_gutters(screen_harness: _ScreenHarness) -> None:
+    """セッション画面の本文は、計画ファイル画面の本文と同じ文字サイズ、最大幅及び左右余白で表示する。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 1280, "height": 800})
+    properties = ["fontSize", "maxWidth", "paddingLeft", "paddingRight"]
+
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    plan_styles = await harness.page.locator("#preview").evaluate(
+        "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))",
+        properties,
+    )
+
+    await harness.page.goto(harness.base_url + "/sessions")
+    await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
+    session_styles = await harness.page.locator("#detail").evaluate(
+        "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))",
+        properties,
+    )
+
+    assert session_styles == plan_styles
+
+
+@pytest.mark.asyncio
 async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """3画面のボタンを共通の配色・境界・角丸で表示し、無効なボタンは不透明度を下げる。"""
     harness = screen_harness
-    properties = ["backgroundColor", "color", "borderTopColor", "borderTopWidth", "borderRadius"]
+    properties = [
+        "backgroundColor",
+        "color",
+        "borderTopColor",
+        "borderTopWidth",
+        "borderRadius",
+        "paddingTop",
+        "paddingRight",
+        "paddingBottom",
+        "paddingLeft",
+        "fontSize",
+    ]
     # 一覧を開くボタンは狭い画面でだけ表示するため、3画面とも同じ幅で比較する。
     await harness.page.set_viewport_size({"width": 600, "height": 800})
     styles: dict[str, dict[str, str]] = {}

@@ -274,9 +274,12 @@ def test_assets_style_markdown_and_inputs_by_purpose() -> None:
         assert rule is not None
         assert "clamp(" in rule.group(1)
     mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
-    assert ".app-header { grid-template-columns: minmax(0, 1fr); align-items: start; }" in mobile
+    # ヘッダーの1列化は`shell.css`が3画面共通で定め、画面固有のCSSは水平方向の余白だけを上書きする。
+    assert ".app-header { padding-inline: var(--space-2); }" in mobile
     assert ".dialog-footer button { width: auto; }" in mobile
     assert "button,\n  input,\n  select,\n  textarea" not in mobile
+    shell_mobile = assets.SHELL_CSS.partition("@media (max-width: 700px) {")[2]
+    assert "grid-template-columns: minmax(0, 1fr);" in shell_mobile
 
 
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
