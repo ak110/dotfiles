@@ -1,5 +1,6 @@
 """意味契約中心の計画検査を検証する。"""
 
+import collections.abc
 import pathlib
 import subprocess
 import sys
@@ -12,6 +13,8 @@ import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,impor
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
+
+type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str, str]]
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -390,6 +393,7 @@ def _check_new(
     plan_name: str = "plan.md",
     create_bug_file: bool = True,
     bug_file_content: str | None = None,
+    reject_legacy_format: bool = False,
 ) -> tuple[list[str], list[str]]:
     """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存して検査する。"""
     path = repo / plan_name
@@ -399,7 +403,7 @@ def _check_new(
     reference = _plan_format.extract_bug_file_reference(detail_content)
     if create_bug_file and reference is not None:
         pathlib.Path(reference).write_text(bug_file_content or _bug_file_content(), encoding="utf-8")
-    return check_plan_file.check(path, repo)
+    return check_plan_file.check(path, repo, reject_legacy_format=reject_legacy_format)
 
 
 def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
@@ -421,6 +425,103 @@ def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False
     rows_text = "\n".join(rows)
     section = f"## 実施内容\n\n{header}\n{rows_text}\n"
     return content[:start] + section + content[end:]
+
+
+def _migration_legacy_action_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧3列表だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    old = """| 実施内容 | 由来 | 採否 | 根拠 |
+| --- | --- | --- | --- |
+| 公開契約の境界を更新する | ユーザー指示 | 採用 | - |
+| 影響のない類似箇所は変更しない | エージェント提案 | 対象外 | 公開契約への影響が無いため。 |"""
+    new = """| 実施内容 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- |
+| 公開契約の境界を更新する | 指示どおり | - |"""
+    return main.replace(old, new, 1), detail
+
+
+def _migration_legacy_bug_table_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の本文内バグ調査表だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
+    legacy_bug_section = (
+        "## バグ調査結果\n\n### 対象の不整合\n\n"
+        + _rows_table(_plan_format.PLAN_LEGACY_BUG_TABLE_ROWS, "発生条件と実際値を記載する。")
+        + "\n\n"
+    )
+    return main, legacy_bug_section + detail
+
+
+def _migration_legacy_history_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の変更履歴見出しだけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("## 変更履歴（計画時）", "## 変更履歴", 1), detail
+
+
+def _migration_legacy_progress_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の進捗ログ見出しだけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("## 進捗ログ（実行時）", "## 進捗ログ", 1), detail
+
+
+def _migration_legacy_metadata_name_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の計画メタ情報項目名だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("- 作業種別:", "- 実装詳細: `legacy.detail.md`\n- 作業種別:", 1), detail
+
+
+def _migration_legacy_detail_reference_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の計画ファイル（詳細）参照だけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("- 作業種別:", "- 計画ファイル（詳細）: `legacy.detail.md`\n- 作業種別:", 1), detail
+
+
+def _migration_legacy_materials_heading_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の提示素材見出しだけを加えた現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    return main.replace("## 変更履歴（計画時）", "## 提示素材\n\n旧形式の素材。\n\n## 変更履歴（計画時）", 1), detail
+
+
+def _migration_legacy_bug_reference_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式のバグ調査ファイル参照だけを持つ現行形式の計画を返す。"""
+    main, detail = human_new_format_plan(repo)
+    main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
+    bug_path = (repo / "migration.bugs.md").resolve()
+    return main, f"## バグ調査結果\n\n- バグ調査ファイル: {bug_path}\n\n{detail}"
+
+
+def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧ID形式だけを残した二ファイル計画を返す。"""
+    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
+    start = main.index("## 提示素材")
+    end = main.index("## 変更履歴", start)
+    main = main[:start] + main[end:]
+    main = main.replace("- 計画ファイル（詳細）: `plan.detail.md`", "- 関連フィードバック: なし", 1)
+    return main, detail
+
+
+def _migration_legacy_materials_input(repo: pathlib.Path) -> tuple[str, str]:
+    """旧形式の提示素材表を持つ二ファイル計画を返す。"""
+    main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
+    old = """| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
+| --- | --- | --- | --- |
+| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |"""
+    new = """| 実施内容 | 由来 | 採否 | 根拠 |
+| --- | --- | --- | --- |
+| 診断件数を2件から1件へ減らす | ユーザー指示 | 採用 | - |"""
+    main = main.replace(old, new, 1)
+    start = main.index("## 提示素材")
+    end = main.index("## 変更履歴", start)
+    legacy = """## 提示素材
+
+P-001:
+
+```text
+公開契約の境界を更新する。
+```
+
+"""
+    return main[:start] + legacy + main[end:], detail
 
 
 def _legacy_plan(repo: pathlib.Path, base: str) -> str:
@@ -764,6 +865,114 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
     assert not errors, errors
     assert not warnings, warnings
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            _migration_legacy_action_input,
+            "実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する",
+        ),
+        (
+            _migration_legacy_bug_table_input,
+            "バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する",
+        ),
+        (
+            _migration_legacy_history_input,
+            "変更履歴の見出しが旧形式である。新規作成・改訂では`## 変更履歴（計画時）`へ移行する",
+        ),
+        (
+            _migration_legacy_progress_input,
+            "進捗ログの見出しが旧形式である。新規作成・改訂では`## 進捗ログ（実行時）`へ移行する",
+        ),
+        (
+            _migration_legacy_metadata_name_input,
+            "計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する",
+        ),
+        (
+            _migration_legacy_detail_reference_input,
+            "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
+        ),
+        (
+            _migration_legacy_materials_heading_input,
+            "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+        ),
+        (
+            _migration_legacy_bug_reference_input,
+            "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する",
+        ),
+        (
+            _migration_legacy_two_file_id_input,
+            "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
+        ),
+        (
+            _migration_legacy_materials_input,
+            "提示素材が旧形式である。新規作成・改訂では素材表と要求表へ移行する",
+        ),
+    ],
+)
+def test_rejects_each_migration_warning_for_new_creation(
+    repo: tuple[pathlib.Path, str],
+    factory: _MigrationInputFactory,
+    message: str,
+) -> None:
+    """移行警告を個別に新規作成用のエラーへ移す。"""
+    work_dir, _base = repo
+    main_content, detail_content = factory(work_dir)
+
+    errors, warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        plan_name="migration.md",
+        reject_legacy_format=True,
+    )
+
+    assert message in errors
+    assert message not in warnings
+
+
+def test_keeps_plan_size_advisory_when_rejecting_legacy_format(repo: tuple[pathlib.Path, str]) -> None:
+    """旧形式を拒否する場合も行数の助言を警告に残す。"""
+    work_dir, _base = repo
+    main_content, detail_content = human_new_format_plan(work_dir)
+    padding = 1201 - len(detail_content.splitlines())
+    detail_content = detail_content.rstrip("\n") + "\n" + "\n".join(["行数の助言を検証する。"] * padding) + "\n"
+    assert len(detail_content.splitlines()) == 1201
+
+    errors, warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        plan_name="advisory.md",
+        reject_legacy_format=True,
+    )
+
+    assert not errors, errors
+    assert len(warnings) == 1
+    assert warnings[0].startswith("計画の行数が閾値を超えている")
+
+
+def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[pathlib.Path, str]) -> None:
+    """旧二ファイル形式で同時に発生する移行警告を全てエラーへ移す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base)
+    expected = [
+        "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
+        "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+        "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
+    ]
+
+    errors, warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        reject_legacy_format=True,
+    )
+
+    assert errors == expected
+    assert not warnings
 
 
 @pytest.mark.parametrize(

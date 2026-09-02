@@ -52,6 +52,9 @@ def _isolate_agent_and_managed_temp_environment(
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    temp_root = tmp_path / "temp"
+    temp_root.mkdir()
+    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
     worktree_root = pathlib.Path(atk.__file__).resolve().parents[2]
     trusted_config_paths = [worktree_root]
     git_entry = worktree_root / ".git"
@@ -231,6 +234,87 @@ class TestWaitScheduleParser:
 
         assert exc_info.value.code == 0
         assert calls == [_FIXED_DT]
+
+    @pytest.mark.parametrize("count", [0, 1, 3])
+    def test_unregistered_managed_temp_warning_is_summarized_for_unrelated_subcommand(
+        self,
+        count: int,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """無関係なサブコマンドは未登録領域を件数だけの1行で報告する。"""
+
+        def fixed_schedule(request_bucket: str) -> str:
+            assert request_bucket == "main"
+            return "fixed-subcommand-output"
+
+        monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", lambda: count)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        warning_lines = [line for line in captured.err.splitlines() if "登録を持たない管理対象" in line]
+        if count == 0:
+            assert not warning_lines
+        else:
+            assert warning_lines == [
+                f"warning: 登録を持たない管理対象が{count}件あります（一覧と回収方法は atk managed-temp list で確認できます）"
+            ]
+            assert str(tmp_path) not in captured.err
+
+    def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """未登録領域の件数取得失敗は本来の出力と終了コードを変えない。"""
+
+        def fixed_schedule(request_bucket: str) -> str:
+            assert request_bucket == "main"
+            return "fixed-subcommand-output"
+
+        monkeypatch.setattr(_wait_schedule, "get_schedule", fixed_schedule)
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+
+        def fail_count() -> int:
+            raise _managed_temp.ManagedTempError("走査失敗")
+
+        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", fail_count)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        assert captured.err == "warning: 登録を持たない管理対象を探索できませんでした: 走査失敗\n"
+
+    def test_managed_temp_list_reports_unregistered_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """managed-temp listは未登録領域の絶対パスと回収方法を表示する。"""
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = _managed_temp.create_managed_temp("orphan")
+        _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["managed-temp", "list"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert str(target) in captured.err
+        assert f"atk managed-temp cleanup --path {target} --recover-registry" in captured.err
+        assert "登録を持たない管理対象が1件あります" not in captured.err
 
     def test_cleanup_failure_does_not_change_subcommand_exit_code(
         self,
@@ -764,7 +848,7 @@ def test_review_table_subcommands_are_public() -> None:
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
         if subcommand == "add":
-            argv.extend(["--round=1", "--track=implementation-review", "位置", "指摘"])
+            argv.extend(["--round=1", "--track=implementation-review", "--level=詳細", "位置", "指摘"])
         elif subcommand == "respond":
             argv.extend(
                 [
@@ -787,7 +871,10 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     """公開CLIは構造検証の明示指定を許容し、既定では未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", "implementation-review", "位置", "指摘", "", "", ""))
+        "\t".join(
+            json.dumps(value, ensure_ascii=False)
+            for value in ("1", "implementation-review", "位置", "指摘", "詳細", "", "", "")
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -811,7 +898,9 @@ def test_public_review_table_validate_rejects_whitespace_around_stored_track(
     """公開CLIは表示時に選択不能となる空白付きtrackを構造検証で拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
-        "\t".join(json.dumps(value, ensure_ascii=False) for value in ("1", " independent ", "位置", "指摘", "yes", "修正", ""))
+        "\t".join(
+            json.dumps(value, ensure_ascii=False) for value in ("1", " independent ", "位置", "指摘", "詳細", "yes", "修正", "")
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -829,7 +918,7 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     """公開CLIは追加時のtrack省略をusageと正規値集合付きで拒否する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["review-table", "add", "review.tsv", "--round=1", "位置", "指摘"])
+        parser.parse_args(["review-table", "add", "review.tsv", "--round=1", "--level=詳細", "位置", "指摘"])
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
     assert "--track" in error
@@ -839,7 +928,7 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     assert "independent" in error
 
 
-def test_public_review_table_old_column_count_error_explains_recovery(
+def test_public_review_table_invalid_column_count_error_explains_recovery(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -847,7 +936,8 @@ def test_public_review_table_old_column_count_error_explains_recovery(
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(
-            json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "重大", "位置", "指摘", "", "", "")
+            json.dumps(value, ensure_ascii=False)
+            for value in ("1", "plan-conformance", "旧重大度", "位置", "指摘", "詳細", "", "", "")
         )
         + "\n",
         encoding="utf-8",
@@ -856,8 +946,9 @@ def test_public_review_table_old_column_count_error_explains_recovery(
         atk.main(["review-table", "validate", "--allow-unanswered", str(path)])
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は7" in error
+    assert "期待列数は8" in error
     assert "trackの位置はroundの直後" in error
+    assert "levelの位置はissueの直後" in error
     assert "plan-review, implementation-review, plan-conformance, independent" in error
 
 
@@ -878,6 +969,7 @@ def test_public_review_table_old_column_count_error_explains_recovery(
             "add",
             "--round=2",
             "--track=independent",
+            "--level=詳細",
             "別位置",
             "別指摘",
         ],
@@ -892,7 +984,8 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(
-            json.dumps(value, ensure_ascii=False) for value in ("1", "plan-conformance", "重大", "位置", "指摘", "", "", "")
+            json.dumps(value, ensure_ascii=False)
+            for value in ("1", "plan-conformance", "旧重大度", "位置", "指摘", "詳細", "", "", "")
         )
         + "\n",
         encoding="utf-8",
@@ -903,8 +996,9 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "期待列数は7" in error
+    assert "期待列数は8" in error
     assert "trackの位置はroundの直後" in error
+    assert "levelの位置はissueの直後" in error
     assert "plan-review, implementation-review, plan-conformance, independent" in error
 
 

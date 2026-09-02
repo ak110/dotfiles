@@ -165,7 +165,7 @@ PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
     "エージェント提案",
 )
 PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")
-PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)$")
+PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
 """計画ファイル（メイン）の実施内容表が受理する採否値。"""
 PLAN_ACTION_NON_ADOPTED_DECISIONS: tuple[str, ...] = ("不採用", "充足済み", "保留", "対象外", "移管")
@@ -1755,13 +1755,14 @@ def _check_human_action_table(
         if decision not in PLAN_ACTION_DECISIONS:
             errors.append(f"`## {PLAN_H2_ACTION}`の`採否`は{list(PLAN_ACTION_DECISIONS)}のいずれかにする: {decision}")
         root = row[root_index]
-        if decision in ("採用", "部分採用"):
-            if origin == "エージェント提案" and (not root or root == "-"):
-                errors.append(f"`## {PLAN_H2_ACTION}`のエージェント提案の採用系行には観測可能な根拠を記載する: {root}")
-            elif review_origin is not None:
-                errors.extend(_check_human_review_root(root, review_origin.group("round")))
-            elif origin != "エージェント提案" and root != "-":
-                errors.append(f"`## {PLAN_H2_ACTION}`の採用系行の`根拠`は`-`にする: {root}")
+        if review_origin is not None:
+            errors.extend(_check_human_review_root(root, review_origin.group("round"), decision))
+        elif origin == "エージェント提案":
+            if not root or root == "-":
+                errors.append(f"`## {PLAN_H2_ACTION}`のエージェント提案行には観測可能な根拠を記載する: {root}")
+        elif decision == "採用":
+            if root != "-":
+                errors.append(f"`## {PLAN_H2_ACTION}`の採用行の`根拠`は`-`にする: {root}")
         elif not root or root == "-":
             errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")
         for value in row:
@@ -1825,8 +1826,8 @@ def _check_agent_judgment_section(
     return errors
 
 
-def _check_human_review_root(root: str, expected_round: str) -> list[str]:
-    """計画レビュー由来の採用行が絶対パスと同じラウンドを指すか検査する。"""
+def _check_human_review_root(root: str, expected_round: str, decision: str) -> list[str]:
+    """計画レビュー由来の行が絶対パスと同じラウンドを指すか検査する。"""
     match = PLAN_HUMAN_REVIEW_ROOT_PATTERN.fullmatch(root)
     if match is None:
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー由来の`根拠`は絶対パスのTSVと同じroundを指定する: {root}"]
@@ -1835,6 +1836,8 @@ def _check_human_review_root(root: str, expected_round: str) -> list[str]:
             f"`## {PLAN_H2_ACTION}`の計画レビュー由来の`根拠`は由来と同じroundを指定する: "
             f"由来={expected_round}, 根拠={match.group('round')}"
         ]
+    if decision != "採用" and not match.group("reason"):
+        return [f"`## {PLAN_H2_ACTION}`の計画レビュー由来の採用以外の`根拠`はTSV参照に続けて理由を記載する: {root}"]
     review_path = pathlib.Path(match.group("path"))
     if not review_path.is_file():
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー表が実在しない: {review_path}"]

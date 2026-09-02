@@ -139,7 +139,7 @@ frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Code
    `user-invocable`はユーザーが直接起動できるかという公開条件として維持し、frontmatterコメントは編集用メタ情報として実行時命令へ含めない。
 3. Markdown本文をメインエージェント自身の役割、制約、入力、出力及び完了契約として全文適用する。
 4. `skills`に列挙された各`SKILL.md`をメインエージェントが絶対パスから全文読み、内容を適用する。
-5. `tools`制約をCodexの公開能力へ写像し、構造的allowlistが無い制約はメインエージェント自身の操作制限として適用する。read-only要件は変更前後のGit状態で検収する。
+5. `tools`制約をCodexの公開能力へ写像し、構造的allowlistが無い制約はメインエージェント自身の操作制限として適用する。read-only要件の検収範囲と除外は`runtime-routing.md`「読み取り専用」節に従う。
 6. 未知のfrontmatterフィールド又は対応不能な必須制約は黙って破棄せず、公式仕様と公開ツールスキーマを確認し、写像不能なら`needs_escalation`として返す。
    frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、部分適用も別の実行経路への迂回もせず、失敗として返す。
 
@@ -179,7 +179,7 @@ Codexメインが名前付き定義を直接適用して役割を遂行すると
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
 
 Claude Code側の`agents_server`は、`start`・`start_explore`・`wait`・`send_message`・`kill`の5ツールでCodexまたはClaudeへ委譲する。
-`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`と`exclude_session_id`で次の候補を起動する。サーバーは可用性の失敗を自ら判定せず、候補を進めるのは`exclude_session_id`を伴う起動だけとする。`exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。
+`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。engineの可用性で起動できない候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ呼び出し側が再起動を重ねない。起動後の実行中に可用性の失敗を観測した場合だけ、同じ`model_type`と`exclude_session_id`で次の候補を起動する。`exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。
 `start_explore`は調査専用の軽量な起動条件でthreadを開始し、Codex backendではプロジェクト指示の読込を省く。
 Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
 

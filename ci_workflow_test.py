@@ -162,13 +162,9 @@ def test_python_versions_have_distinct_pytest_full_and_e2e_routes(
     assert _mapping(full_step["env"]) == {"SKIP": "cargo-fmt,cargo-clippy"}
 
     assert e2e_step["if"] == _PYTHON_314_CONDITION
-    assert _mapping(e2e_step["env"]) == {
-        "CLAUDE_PLANS_VIEWER_BROWSER_TESTS": "1",
-        "AGENT_TOOLKIT_SERVE_BROWSER_TESTS": "1",
-    }
+    assert _mapping(e2e_step["env"]) == {"AGENT_TOOLKIT_SERVE_BROWSER_TESTS": "1"}
     assert e2e_step["run"] == (
-        "uv run pytest agent-toolkit/scripts/_atk_serve_browser_test.py "
-        "pytools/claude_plans_viewer_browser_test.py -o addopts='' -p no:cacheprovider"
+        "uv run pytest agent-toolkit/scripts/_atk_serve_browser_test.py -o addopts='' -p no:cacheprovider"
     )
     assert playwright_step["if"] == e2e_step["if"]
     assert lock_step["if"] == _PYTHON_314_CONDITION

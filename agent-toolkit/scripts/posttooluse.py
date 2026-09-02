@@ -64,6 +64,7 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+from _transcript_agent_id import extract_transcript_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
@@ -191,6 +192,7 @@ _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
+_MAIN_AGENT_ID = "main"
 
 
 # 条件付き禁止形（「〜した状態で…しない/禁止」）検出パターン。
@@ -311,6 +313,7 @@ def _record_agents_server_session_state(
     structured: dict,
     *,
     operation: str,
+    owner_agent_id: str,
     cwd: str | None = None,
 ) -> None:
     """agents_serverの公開応答をhook側の状態へ記録する。"""
@@ -329,10 +332,12 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if operation in {"start", "start_explore"}:
             record["pending_observation"] = True
+            record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
             delivery = structured.get("delivery")
             if delivery in {"steered", "reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
+                record["owner_agent_id"] = owner_agent_id
         elif operation in {"wait", "kill"}:
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
@@ -686,15 +691,22 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 notices.append(_llm_notice(f"warn: {display_name} response is missing or invalid {', '.join(missing)}."))
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
         operation = tool_name.rsplit("__", 1)[-1]
+        owner_agent_id = extract_transcript_agent_id(payload.get("transcript_path")) or _MAIN_AGENT_ID
         if tool_name in _AGENTS_SERVER_START_TOOLS:
             _record_agents_server_session_state(
                 session_id,
                 structured,
                 operation=operation,
+                owner_agent_id=owner_agent_id,
                 cwd=cwd_value if isinstance(cwd_value, str) else None,
             )
         else:
-            _record_agents_server_session_state(session_id, structured, operation=operation)
+            _record_agents_server_session_state(
+                session_id,
+                structured,
+                operation=operation,
+                owner_agent_id=owner_agent_id,
+            )
         return 0
 
     # Readは本フックで状態更新を行わない。

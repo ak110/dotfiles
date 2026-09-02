@@ -1,254 +1,12 @@
-"""SPA・PWA等のインライン資産。"""
-
-# share/vscode/markdown.cssが見つからないときの最小フォールバック。
-# editable install前提では使われない想定だが、非editable配布や移動時に備えて持たせる。
-FALLBACK_CSS = """\
-body { font-family: system-ui, sans-serif; max-width: 860px; margin: 0 auto; padding: 2rem; color: #1a1a1a; }
-pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; overflow: auto; border-radius: 8px; }
-code { background: #f2f2f2; padding: 0.1em 0.3em; border-radius: 4px; }
-table { border-collapse: collapse; }
-th, td { border: 1px solid #d1d5db; padding: 6px 8px; }
-"""
-
-# タブ識別とPWAアイコンの双方でSSOTにするため、faviconはインラインSVGを単一定数で保持する。
-# 図柄はtabler iconsのclipboard-listに白い背景を追加したもの。
-# ベクターで配布するためPWAの192x192/512x512要件も1ファイルで満たせる。
-FAVICON_SVG = """\
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
-  class="icon icon-tabler icons-tabler-outline icon-tabler-clipboard-list">
-  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-  <!-- 白い縁取り（背景レイヤー） -->
-  <g stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="white">
-    <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
-    <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2"/>
-  </g>
-  <!-- 本来のストローク色 -->
-  <g stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2"/>
-    <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2"/>
-    <path d="M9 12l.01 0"/>
-    <path d="M13 12l2 0"/>
-    <path d="M9 16l.01 0"/>
-    <path d="M13 16l2 0"/>
-  </g>
-</svg>
-"""
-
-
-# PWAインストール可能性を満たすmanifest。iconsはSVG1件で192x192・512x512・anyを同時に宣言する
-# （Chrome 93以降のSVG対応によりraster PNGを別途生成しなくてよい）。
-# X-Forwarded-Prefixを尊重するため、URLは`base_path`を組み立てて返す関数として保持する
-# （静的JSONの文字列置換にすると`json.dumps`相当のエスケープ漏れを起こしやすいため）。
-def build_manifest(base_path: str) -> dict[str, object]:
-    """指定`base_path`に基づくPWA manifest辞書を返す。
-
-    `base_path`は`_app.safe_base_path`で正規化済みの安全な前置文字列を想定する
-    （空文字列または先頭スラッシュ＋連続スラッシュを含まない値）。
-    """
-    return {
-        "name": "Claude plans",
-        "short_name": "Plans",
-        "start_url": f"{base_path}/",
-        "display": "standalone",
-        "theme_color": "#4f46e5",
-        "background_color": "#ffffff",
-        "icons": [
-            {
-                "src": f"{base_path}/favicon.svg",
-                "sizes": "192x192 512x512 any",
-                "type": "image/svg+xml",
-                "purpose": "any maskable",
-            }
-        ],
-    }
-
-
-# PWAインストール可能性判定を満たす最小のservice worker。
-# Chrome 89以降はインストール可能性の必須要件からfetchハンドラが外れたうえ、
-# Chrome 93以降は本ファイルのようなno-opのfetchハンドラを「不要」と警告する仕様に変わった
-# （DevToolsコンソールに "no-op fetch handler" 系の警告が出る）。
-# オフライン動作は目標外のためfetchリスナー自体を登録せず、ネットワーク動作はブラウザ既定に委ねる。
-SERVICE_WORKER_JS = """\
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
-"""
-
-# 左ペインにファイル一覧・右ペインにMarkdownプレビューを表示するSPAのCSS部分。
-# 768px以下ではドロワー化し、ハンバーガーボタンとオーバーレイで開閉する。
-_INDEX_CSS = """\
-  html, body { height: 100%; }
-  body { margin: 0; max-width: none; padding: 0; }
-  #app { display: grid; grid-template-columns: 320px 1fr; height: 100svh; }
-  aside {
-    border-right: 1px solid #e6e6e6;
-    overflow: auto;
-    background: #f9fafb;
-    padding: 0;
-  }
-  aside .toolbar {
-    position: sticky;
-    top: 0;
-    background: #f9fafb;
-    padding: 10px;
-    border-bottom: 1px solid #e6e6e6;
-  }
-  aside input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 6px 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-  }
-  .file {
-    padding: 10px 12px;
-    border-bottom: 1px solid #e6e6e6;
-    cursor: pointer;
-  }
-  .file:hover, .file.active { background: #eef2ff; }
-  /* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
-      IntersectionObserverの可視化検出に使う。一覧の行高に影響を与えない。 */
-  #files-sentinel { height: 1px; margin: 0; padding: 0; }
-  .name { font-size: 13px; font-weight: 600; word-break: break-all; }
-  .meta {
-    margin-top: 4px;
-    font-size: 11px;
-    color: #6b7280;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .meta .host { word-break: break-all; }
-  .meta .ctime { white-space: nowrap; }
-  #root-warnings {
-    padding: 8px 12px;
-    color: #b91c1c;
-    background: #fef2f2;
-    border-bottom: 1px solid #fecaca;
-    font-size: 11px;
-  }
-  /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
-  .host-badge {
-    display: none;
-    margin-left: 4px;
-    padding: 0 4px;
-    font-size: 10px;
-    color: #4b5563;
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    vertical-align: baseline;
-  }
-  .host-badge.connecting, .host-badge.disconnected { display: inline-block; }
-  main { overflow: auto; box-sizing: border-box; }
-  main .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    justify-content: flex-end;
-    padding: 8px 16px;
-    background: #ffffff;
-    border-bottom: 1px solid #e6e6e6;
-  }
-  main .toolbar button {
-    padding: 6px 12px;
-    font-size: 13px;
-    background: #ffffff;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  main .toolbar button:hover:not(:disabled) { background: #f3f4f6; }
-  main .toolbar button:disabled { color: #9ca3af; cursor: default; }
-  main .toolbar .spacer { flex: 1; }
-  main .toolbar .nav-btn { min-width: 36px; padding: 6px 10px; }
-  /* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */
-  #menu-btn { display: none; }
-  #meta-mobile { display: none; }
-  #drawer-backdrop { display: none; }
-  main article { max-width: 860px; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
-  /* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
-     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
-  main article:has(> .review-table) { max-width: none; }
-  .review-table { width: 100%; }
-  .diagram {
-    margin: 1.5rem 0;
-    padding: 1rem;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    background: #ffffff;
-  }
-  .diagram-output { max-width: 100%; }
-  .mermaid-output { overflow-x: auto; text-align: center; }
-  .svg-output { display: block; height: auto; margin: 0 auto; }
-  .diagram-source { margin-top: 0.75rem; }
-  .diagram-source summary { color: #4b5563; cursor: pointer; font-size: 13px; }
-  .diagram-source pre { margin-bottom: 0; text-align: left; }
-  .diagram-error {
-    margin: 0.75rem 0 0;
-    color: #b91c1c;
-    font-weight: 600;
-  }
-  /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
-  @media (max-width: 768px) {
-    #app { grid-template-columns: 1fr; }
-    aside {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 280px;
-      max-width: 85vw;
-      height: 100svh;
-      z-index: 20;
-      transform: translateX(-100%);
-      transition: transform 0.2s ease-out;
-      box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
-    }
-    aside.open { transform: translateX(0); }
-    #drawer-backdrop {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100svh;
-      background: rgba(0, 0, 0, 0.4);
-      z-index: 10;
-    }
-    #drawer-backdrop.open { display: block; }
-    #menu-btn { display: inline-flex; align-items: center; justify-content: center; }
-    #meta-mobile {
-      display: block;
-      padding: 8px 16px;
-      font-size: 11px;
-      color: #6b7280;
-      background: #f9fafb;
-      border-bottom: 1px solid #e6e6e6;
-      word-break: break-all;
-    }
-    #meta-mobile .meta-host { font-weight: 600; color: #374151; }
-    #meta-mobile .meta-path { display: block; margin-top: 2px; }
-    #meta-mobile .meta-ctime { display: inline-block; margin-left: 8px; }
-    #meta-mobile.empty { display: none; }
-  }
-"""
-
-# クライアントサイドJS。
-# 主な責務:
-# - ファイル一覧の取得・描画・フィルタ
-# - 選択中ファイルのプレビュー表示・コピー
-# - SSE経由のリアルタイム更新（refresh/host-status/host_info_update）
-# - タブ復帰時の強制再同期（バックグラウンドthrottling対策。`visibilitychange`/`focus`の2系統）
-# - 大量件数時の段階展開描画（番兵要素を`IntersectionObserver`で監視し、表示上限を100件単位で拡張）
-# - モバイル時のドロワー開閉と上部メタ表示
-# - ↑↓ナビゲーションボタンによる前後ファイル移動
-_INDEX_JS = """\
-// `__BASE_PATH_JS__`は`_app.py`が`json.dumps`で文字列リテラルとして埋め込む。
+// ページロード時の初期値はサーバーが`plans.html`のJSONブロックへ埋め込む。
+// 資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけをHTML側から受け取る。
+const BOOTSTRAP = JSON.parse(document.getElementById("plans-bootstrap").textContent);
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
-const BASE_PATH = __BASE_PATH_JS__;
-const LOCAL_HOST_NAME = __LOCAL_HOST_NAME_JS__;
+const BASE_PATH = BOOTSTRAP.base_path;
+const LOCAL_HOST_NAME = BOOTSTRAP.local_host_name;
 // ホスト名 -> 保存元ID -> {portable_root, home, os_type, os_name}。旧単一root形式の
 // {root, home, os_type, os_name}も受理し、保存元IDは画面へ表示しない。
-const ROOT_DIRS = __ROOT_DIRS_JS__;
+const ROOT_DIRS = BOOTSTRAP.root_dirs;
 // `host_info_update`受信のたびに加算するカウンタ。`refreshHostInfo`がfetch中に発生した
 // SSE更新を検出し、古いスナップショットで新しい状態を上書きしないようにするために使う。
 let hostInfoEventCounter = 0;
@@ -548,7 +306,7 @@ function setupSentinelObserver() {
 }
 
 async function refreshFiles() {
-  const res = await fetch(BASE_PATH + "/api/files");
+  const res = await fetch(BASE_PATH + "/api/plans/files");
   files = await res.json();
   renderFiles();
 }
@@ -559,7 +317,7 @@ async function searchFullText(query, generation) {
   try {
     let res = null;
     for (let attempt = 0; ; attempt++) {
-      res = await fetch(BASE_PATH + "/api/search?q=" + encodeURIComponent(query));
+      res = await fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query));
       if (generation !== searchGeneration) return;
       if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
       await new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS));
@@ -596,7 +354,7 @@ function scheduleFullTextSearch() {
 
 async function refreshHostStatus() {
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await fetch(BASE_PATH + "/api/host-status");
+  const res = await fetch(BASE_PATH + "/api/plans/host-status");
   if (res.ok) {
     hostStatus = await res.json();
   }
@@ -614,8 +372,8 @@ async function refreshHostInfo() {
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    let res = await fetch(BASE_PATH + "/api/root-info");
-    if (!res.ok) res = await fetch(BASE_PATH + "/api/host-info");
+    let res = await fetch(BASE_PATH + "/api/plans/root-info");
+    if (!res.ok) res = await fetch(BASE_PATH + "/api/plans/host-info");
     if (!res.ok) return;
     const info = await res.json();
     if (hostInfoEventCounter !== counterBefore) continue;
@@ -629,7 +387,7 @@ async function refreshHostInfo() {
 }
 
 async function refreshRootStatus() {
-  const res = await fetch(BASE_PATH + "/api/root-status");
+  const res = await fetch(BASE_PATH + "/api/plans/root-status");
   if (res.ok) {
     rootStatus = await res.json();
     renderRootWarnings();
@@ -656,7 +414,7 @@ function loadMermaid() {
   if (mermaidLoadPromise) return mermaidLoadPromise;
   mermaidLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = BASE_PATH + "/static/mermaid.min.js";
+    script.src = BASE_PATH + "/static/vendor/mermaid.min.js";
     script.onload = () => {
       window.mermaid.initialize({
         startOnLoad: false,
@@ -740,7 +498,7 @@ async function updatePreview() {
   const main = document.querySelector("main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
+  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
   if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
@@ -772,7 +530,7 @@ async function openFile(host, path, source) {
   if (isMobileViewport()) setDrawerOpen(false);
   const main = document.querySelector("main");
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/file?" + fileQuery(host, path, selectedSource));
+  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
   if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
@@ -800,7 +558,7 @@ async function copySelectedRaw() {
   const originalLabel = btn.dataset.label || btn.textContent;
   btn.dataset.label = originalLabel;
   try {
-    const res = await fetch(BASE_PATH + "/api/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (!res.ok) throw new Error("status " + res.status);
     const text = await res.text();
     await navigator.clipboard.writeText(text);
@@ -893,7 +651,7 @@ async function handleSseMessage(event) {
 }
 
 function connectEvents() {
-  const es = new EventSource(BASE_PATH + "/api/events");
+  const es = new EventSource(BASE_PATH + "/api/plans/events");
   // EventSourceは接続断後にブラウザが自動再接続するが、再接続中に発生したSSEイベントは
   // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
   es.onopen = async () => {
@@ -975,66 +733,3 @@ document.getElementById("preview").addEventListener("click", (event) => {
   openFile(selectedHost, link.dataset.planPath, selectedSource);
 });
 main();
-
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(BASE_PATH + "/sw.js");
-}
-"""
-
-# Markdown→HTML変換はサーバー側で済ませて`/api/file`がHTMLを返すため、
-# クライアント側はfetchした文字列をそのまま`<article>`へ挿入する。
-# `__BASE_PATH_HTML__`は`create_app`が`html.escape(quote=True)`済みのbase_pathで置換する。
-INDEX_HTML = (
-    """<!doctype html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Claude plans</title>
-<link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
-<!-- Basic認証配下でもmanifestが取得できるようcrossorigin="use-credentials"を付与する。
-     未指定だとブラウザはmanifestをno-credentialsで取得し、Apache等の認証で401になり
-     PWAインストール条件を満たせない（W3C Web App Manifest仕様準拠）。 -->
-<link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
-<meta name="theme-color" content="#4f46e5">
-<link rel="stylesheet" href="__BASE_PATH_HTML__/static/markdown.css">
-<link rel="stylesheet" href="__BASE_PATH_HTML__/static/pygments.css">
-<style>
-"""
-    + _INDEX_CSS
-    + """</style>
-</head>
-<body>
-<div id="app">
-  <aside>
-    <div class="toolbar">
-      <input id="filter" placeholder="検索...">
-      <span id="search-status" role="status"></span>
-    </div>
-    <div id="root-warnings" role="status" hidden></div>
-    <div id="files"></div>
-    <!-- 段階展開トリガー。`hidden`属性は描画件数が未描画分を残すときだけ外れる。 -->
-    <div id="files-sentinel" hidden></div>
-  </aside>
-  <main>
-    <div class="toolbar">
-      <button id="menu-btn" type="button" aria-label="ファイル一覧を開く">&#9776;</button>
-      <span class="spacer"></span>
-      <button id="copy-btn" type="button" disabled>Markdownをコピー</button>
-      <button id="copy-path-btn" type="button" disabled>計画ファイルのパスをコピー</button>
-      <button id="prev-btn" class="nav-btn" type="button" aria-label="前のファイル" disabled>&uarr;</button>
-      <button id="next-btn" class="nav-btn" type="button" aria-label="次のファイル" disabled>&darr;</button>
-    </div>
-    <div id="meta-mobile" class="empty"></div>
-    <article id="preview">左の一覧からMarkdownを選択してください。</article>
-  </main>
-  <div id="drawer-backdrop"></div>
-</div>
-<script>
-"""
-    + _INDEX_JS
-    + """</script>
-</body>
-</html>
-"""
-)

@@ -15,8 +15,11 @@ assert claude_common  # 既存テストと外部monkeypatch契約を共通モジ
 logger = logging.getLogger(__name__)
 
 _SERVICE_UNIT = "atk-serve.service"
+# 計画ファイル閲覧を統合する前に配置していたサービス。移行時に停止・無効化して除去する。
+_LEGACY_SERVICE_UNIT = "claude-plans-viewer.service"
 _LAUNCHER_RELATIVE = pathlib.PurePath(".local") / "bin" / "atk-serve"
 _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVICE_UNIT
+_LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _LEGACY_SERVICE_UNIT
 
 # ランチャー本文のテンプレート。agent-toolkit プラグインはバージョン付きディレクトリへ
 # 展開されるため、最新バージョンの scripts/atk.py を起動時に解決する。
@@ -69,6 +72,8 @@ def run() -> bool:
         logger.info(log_format.format_status("atk-serve", "uvが見つからないため設定を見送る"))
         return False
 
+    _remove_legacy_unit()
+
     launcher = _launcher_path()
     content = _LAUNCHER_TEMPLATE.format(uv=uv)
     if _read_text(launcher) != content:
@@ -84,6 +89,31 @@ def run() -> bool:
     )
 
 
+def _remove_legacy_unit() -> None:
+    """旧計画ビューアーのsystemd unitを停止・無効化してから削除する。
+
+    停止と無効化に失敗した場合はunitファイルを残し、警告として記録して後続の配置を続ける。
+    削除より先にunitファイルを除去すると、稼働中のサービスを停止も無効化もできないまま残すため、
+    `post_apply`の一括削除ではなく本工程で扱う。
+    """
+    unit_path = _legacy_unit_path()
+    if not unit_path.exists():
+        return
+    result = claude_common.run_subprocess(
+        ["systemctl", "--user", "disable", "--now", _LEGACY_SERVICE_UNIT],
+        timeout=30.0,
+        tag="atk-serve",
+    )
+    if result is None or result.returncode != 0:
+        logger.warning(
+            log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止できないためunitを残す"),
+        )
+        return
+    unit_path.unlink()
+    claude_common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=30.0, tag="atk-serve")
+    logger.info(log_format.format_status("atk-serve", f"{_LEGACY_SERVICE_UNIT}を停止して削除した"))
+
+
 def _read_text(path: pathlib.Path) -> str | None:
     """ファイル内容を返す。存在しない場合は None を返す。"""
     try:
@@ -95,6 +125,11 @@ def _read_text(path: pathlib.Path) -> str | None:
 def _unit_path() -> pathlib.Path:
     """Unit ファイルの絶対パスを返す。"""
     return pathlib.Path.home() / _UNIT_PATH_RELATIVE
+
+
+def _legacy_unit_path() -> pathlib.Path:
+    """旧計画ビューアーのUnitファイルの絶対パスを返す。"""
+    return pathlib.Path.home() / _LEGACY_UNIT_PATH_RELATIVE
 
 
 def _launcher_path() -> pathlib.Path:

@@ -85,7 +85,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk mq edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。保存結果から読み直した本文を標準出力へ書く。\n前提: FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`はTBDを対象にしない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。保存結果から読み直した本文を標準出力へ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`はTBDを対象にしない。コーディングエージェントの実行環境から起動した場合、MESSAGEへ`## ユーザーコメント`節を含めると編集を拒否する。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": '実行例:\n\n  atk mq edit 20260901-072734-001.md "更新後の本文"',
     },
     "atk mq convert-to-plan": {
@@ -120,8 +120,13 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドルを保存rootへ移してcommit・pushする",
-        "description": "目的: 指定した計画のメイン、詳細、付属素材、レビュー指摘管理表を、作業rootからprivate-notesのplans配下へ移し、当該ファイルだけを対象とするcommitを作成する。\n利用場面: 実装レビューが収束し、当該計画を保存するとき。計画レビューの段階では実行しない。\n対象と出力: `~/.claude/plans`配下の同じstemのファイルをprivate-notesへ移し、当該ファイルだけを対象にcommitして既定でpushする。移した後のファイルは、移す前のファイルの作成日時と更新日時を維持する。\n前提: PLAN_FILEはplans rootからの相対メイン計画パス（yyyy/MM/dd-{名称}-{16進数4桁}.md）で指定する。\n復元・後始末: 保存先に内容の異なる同名ファイルがある場合は、何も変更せずに失敗する。commit又はpushに失敗した場合と、移動を確定する前に失敗した場合は、作業側のファイルを保持して失敗するため、同じコマンドで再開できる。",
+        "description": "目的: 指定した計画のメイン、詳細、付属素材、レビュー指摘管理表を、作業rootからprivate-notesのplans配下へ移し、当該ファイルだけを対象とするcommitを作成する。\n利用場面: 実装レビューが収束し、当該計画を保存するとき。計画レビューの段階では実行しない。\n対象と出力: `~/.claude/plans`配下の同じstemのファイルをprivate-notesへ移し、当該ファイルだけを対象にcommitして既定でpushする。移した後のファイルは、移す前のファイルの作成日時と更新日時を維持する。`atk plans checkout`の取得記録がある場合は、記録した保存先へ内容を書き込んで保存側の作成日時を維持し、成功後に記録を回収する。\n前提: PLAN_FILEはplans rootからの相対メイン計画パス（yyyy/MM/dd-{名称}-{16進数4桁}.md）で指定する。\n復元・後始末: 保存先に内容の異なる同名ファイルがある場合は、何も変更せずに失敗する。取得記録がある場合は、保存元が取得時点の内容とも作業側の内容とも異なるときに、保存先と作業側のいずれも変更せずに失敗する。取得記録があり作業root直下に対象が無い場合は、保存先を変更せずに取得の記録だけを回収する。commit又はpushに失敗した場合と、移動を確定する前に失敗した場合は、作業側のファイルを保持して失敗するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit 2026/09/01-example-1a2b.md",
+    },
+    "atk plans checkout": {
+        "summary": "保存済みの計画バンドルを作業rootへ取得する",
+        "description": "目的: private-notesのplans配下へ保存済みの計画のメイン、詳細、付属素材、レビュー指摘管理表を作業root直下へ取得し、取得時点の内容を保存の照合用に記録する。\n利用場面: 保存済みの計画を再び実装するとき。保存済みの計画へ実装時の進捗を追記するとき。\n対象と出力: private-notesのplans配下を読み取り、`~/.claude/plans`直下へ同じ名前でファイルを作成する。取得したファイルの一覧を標準出力へ書く。private-notesは変更しない。\n前提: PLAN_FILEはplans rootからの相対メイン計画パスで指定する。作業root直下に同じ名前のファイルがないこと。同じ計画を取得済みでないこと。\n復元・後始末: 取得した計画は`atk plans commit`で取得元と同じ保存先へ戻す。取得を取り消す場合は、内容を変えないまま同じ`atk plans commit`を実行する。作業root直下の取得分を削除した後に同じコマンドを実行すると、保存先を変更せずに取得の記録だけを回収する。",
+        "epilog": "実行例:\n\n  atk plans checkout 2026/09/01-example-1a2b.md",
     },
     "atk plans migrate": {
         "summary": "旧保存先の計画ファイルをprivate-notesへ移行する",
@@ -165,7 +170,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk managed-temp create": {
         "summary": "管理対象一時ディレクトリを作成する",
-        "description": "目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: `atk mq show`の出力の保存など、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は英小文字、数字、ハイフンで指定する。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 使い終えたら`atk managed-temp cleanup --path <絶対パス>`を実行する。最終更新から7日を超えた領域は`atk`の実行時に自動で削除する。",
+        "description": "目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: `atk mq show`の出力の保存など、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は必須とし、受理条件は当該オプションの説明に示す。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 使い終えたら`atk managed-temp cleanup --path <絶対パス>`を実行する。最終更新から7日を超えた領域は`atk`の実行時に自動で削除する。",
         "epilog": "実行例:\n\n  atk managed-temp create --prefix=mq-show",
     },
     "atk managed-temp cleanup": {
@@ -199,9 +204,9 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk watch --worktree=lane-05=/home/aki/dotfiles/.claude/worktrees/lane-05",
     },
     "atk review-table": {
-        "summary": "レビュー指摘管理表（7列TSV）を操作する",
-        "description": "目的: 計画レビューと実装レビューの指摘、採否、対応内容を7列のTSVへ排他的に記録する。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。\n対象と出力: 指定したTSVファイルを読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`response-needed`、`response`、`no-response-reason`の順とする。`track`は新規の経路では`plan-review`か`implementation-review`を指定し、`plan-conformance`と`independent`は保存済みの表の読み取り互換として扱う。",
+        "summary": "レビュー指摘管理表（8列TSV）を操作する",
+        "description": "目的: 計画レビューと実装レビューの指摘、指摘レベル、採否、対応内容を8列のTSVへ排他的に記録する。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。\n対象と出力: 指定したTSVファイルを読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
+        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response-needed`、`response`、`no-response-reason`の順とする。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。`track`は新規の経路では`plan-review`か`implementation-review`を指定し、`plan-conformance`と`independent`は保存済みの表の読み取り互換として扱う。保存済みの7列形式は`level`を空として読み込み、更新時に8列形式へ書き戻す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
@@ -210,8 +215,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存する。\n前提: `--round`と`--track`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
-        "epilog": '実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review "実装資料" "検索コマンドが未記載"',
+        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存する。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "epilog": '実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review --level=詳細 "実装資料" "検索コマンドが未記載"',
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
@@ -220,12 +225,13 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table show": {
         "summary": "レビュー表を表示する",
-        "description": "目的: レビュー指摘管理表の内容を復号して表示する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。ファイルは変更しない。\n前提: `--track`を指定すると、当該trackの行だけを表示する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順のまま表示する。各セルはJSON文字列として保存されており、復号せずに書き"
+        "\u51fa\u3059。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。ファイルは変更しない。\n前提: `--track`を指定すると、当該trackの行だけを表示する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
     "atk review-table validate": {
         "summary": "レビュー表を検証する",
-        "description": "目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。旧8列形式の表は、severity列を除いた7列形式で作成し直す。",
+        "description": "目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table validate /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
 }

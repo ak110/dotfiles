@@ -162,7 +162,9 @@ def _plan(*, base: str = _BASE, bug: bool = False) -> str:
 
 _VALID_CONTENT = _plan()
 
-_HUMAN_MAIN_CONTENT = """# 計画の主題
+_HUMAN_PARTIAL_REASON = "対象外の入力経路は変更しない。要求範囲に含まれないため。"
+
+_HUMAN_MAIN_CONTENT = f"""# 計画の主題
 
 ## 概要
 
@@ -184,7 +186,7 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 | --- | --- | --- | --- |
 | 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |
 | 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |
-| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |
+| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | {_HUMAN_PARTIAL_REASON} |
 
 ## エージェント判断
 
@@ -220,6 +222,10 @@ _HUMAN_MAIN_CONTENT = """# 計画の主題
 | 日時 | 完了した工程 | 結果・特記事項 |
 | --- | --- | --- |
 """
+
+_HUMAN_PARTIAL_ROW = (
+    f"| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | {_HUMAN_PARTIAL_REASON} |"
+)
 
 _HUMAN_DETAIL_CONTENT = """## 恒久化・リファクタリング内容
 
@@ -319,7 +325,7 @@ def test_human_readable_main_and_detail_pass_structure_check() -> None:
 
 def test_human_readable_main_accepts_satisfied_action() -> None:
     """新書式の実施内容表は裏付けを持つ`充足済み`を受理する。"""
-    source = "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |"
+    source = _HUMAN_PARTIAL_ROW
     replacement = (
         "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 充足済み | "
         "対象実装と要求を突合して充足を確認した。 |"
@@ -355,7 +361,7 @@ def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
         "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | - |",
     )
     _work_type, errors = _plan_format.check_plan_main_structure(content)
-    assert any("採用以外の`根拠`" in error for error in errors), errors
+    assert any("エージェント提案行" in error for error in errors), errors
 
 
 def test_human_readable_history_requires_canonical_user_heading() -> None:
@@ -380,7 +386,7 @@ def test_human_readable_action_accepts_review_origin_with_matching_round(tmp_pat
     review_path = tmp_path / "review.tsv"
     review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
     content = _HUMAN_MAIN_CONTENT.replace(
-        "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |",
+        _HUMAN_PARTIAL_ROW,
         f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | 採用 | {review_path.as_posix()}のround 2 |",
         1,
     )
@@ -402,12 +408,80 @@ def test_human_readable_action_rejects_invalid_review_origin_or_root(
     review_path = tmp_path / "review.tsv"
     review_path.write_text("1\tplan-review\t指摘\n", encoding="utf-8")
     content = _HUMAN_MAIN_CONTENT.replace(
-        "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 部分採用 | - |",
+        _HUMAN_PARTIAL_ROW,
         f"| 入力の境界を追加確認する | {origin} | 採用 | {root.format(path=review_path.as_posix())} |",
         1,
     )
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any(expected_error in error for error in errors), errors
+
+
+@pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
+def test_human_readable_review_origin_applies_root_rule_before_decision(tmp_path: pathlib.Path, decision: str) -> None:
+    """計画レビュー由来は採否より先に判定し、採用以外ではTSV参照に理由を続ける。"""
+    review_path = tmp_path / "review.tsv"
+    review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
+    root = f"{review_path.as_posix()}のround 2"
+    if decision != "採用":
+        root += "。実施しない範囲と理由を記録する。"
+    content = _HUMAN_MAIN_CONTENT.replace(
+        _HUMAN_PARTIAL_ROW,
+        f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | {decision} | {root} |",
+        1,
+    )
+    assert not _plan_format.check_plan_main_structure(content)[1]
+
+
+@pytest.mark.parametrize("decision", [value for value in _plan_format.PLAN_ACTION_DECISIONS if value != "採用"])
+def test_human_readable_review_origin_rejects_missing_non_adopted_reason(tmp_path: pathlib.Path, decision: str) -> None:
+    """計画レビュー由来の採用以外はTSV参照だけの根拠を拒否する。"""
+    review_path = tmp_path / "review.tsv"
+    review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
+    content = _HUMAN_MAIN_CONTENT.replace(
+        _HUMAN_PARTIAL_ROW,
+        f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | {decision} | {review_path.as_posix()}のround 2 |",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("TSV参照に続けて理由" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
+def test_human_readable_agent_proposal_requires_reason_for_every_decision(decision: str) -> None:
+    """エージェント提案は全採否で空でもハイフンでもない根拠を持つ。"""
+    original = "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |"
+    accepted = _HUMAN_MAIN_CONTENT.replace(
+        original,
+        f"| 類似するが対象外の記述は変更しない | エージェント提案 | {decision} | 観測可能な根拠。 |",
+        1,
+    )
+    assert not _plan_format.check_plan_main_structure(accepted)[1]
+
+    rejected = accepted.replace("| 観測可能な根拠。 |", "| - |", 1)
+    errors = _plan_format.check_plan_main_structure(rejected)[1]
+    assert any("エージェント提案行" in error for error in errors), errors
+
+
+@pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
+def test_human_readable_user_origin_applies_general_decision_rule(decision: str) -> None:
+    """一般由来は採用だけハイフンとし、ほかの採否では理由を要求する。"""
+    root = "-" if decision == "採用" else "実施しない範囲と理由。"
+    original = "| 公開契約に必要な変更を実装する | ユーザー指示 | 採用 | - |"
+    accepted = _HUMAN_MAIN_CONTENT.replace(
+        original,
+        f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {root} |",
+        1,
+    )
+    assert not _plan_format.check_plan_main_structure(accepted)[1]
+
+    invalid_root = "理由がある。" if decision == "採用" else "-"
+    rejected = _HUMAN_MAIN_CONTENT.replace(
+        original,
+        f"| 公開契約に必要な変更を実装する | ユーザー指示 | {decision} | {invalid_root} |",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(rejected)[1]
+    assert any("`根拠`" in error for error in errors), errors
 
 
 def test_human_readable_action_rejects_independent_exclusion_table() -> None:

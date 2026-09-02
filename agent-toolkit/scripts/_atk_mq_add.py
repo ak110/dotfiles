@@ -13,6 +13,7 @@ import sys
 
 import _atk_mq_frontmatter as _frontmatter
 import _atk_mq_tbd as _tbd
+import _atk_mq_user_comment as _user_comment
 import _plan_file
 from _atk_mq_common import (
     MQ_STATE_INBOX,
@@ -31,6 +32,7 @@ from _atk_mq_common import (
     _resolve_repo_path_override,
     _subdir,
     _validate_filename,
+    is_agent_environment,
 )
 from _atk_mq_formatters import _shorten_home
 from _atk_mq_repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
@@ -443,6 +445,12 @@ def _cmd_add(
         messages = [message]
     for message in messages:
         try:
+            if is_agent_environment() and _user_comment.has_reserved_heading(message):
+                raise WebInputError(
+                    "ユーザーコメントはユーザーだけが書き込みます。"
+                    "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
+                    "ユーザーの発言は本文中へ出所を示して引用してください。"
+                )
             reject_message_file_path(
                 message,
                 file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",

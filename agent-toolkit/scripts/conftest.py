@@ -3,6 +3,7 @@
 import os
 import pathlib
 import subprocess
+import tempfile
 from collections.abc import Callable
 
 import pytest
@@ -67,10 +68,28 @@ def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
 
 @pytest.fixture(autouse=True)
+def _managed_temp_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """管理対象一時領域のrootを実行環境から隔離する。"""
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(name, str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
 def _clear_wait_schedule_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """TTL判定用の環境変数を各テストの実行環境から除去する。"""
     for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """委譲先セッションの標識を各テストの実行環境から除去する。
+
+    process-loopが委譲先へ渡す環境を検証するテストは、実行元の環境に当該標識が無いことを前提とする。
+    委譲先のセッションから検査を実行すると標識が継承され、当該前提が崩れる。
+    """
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
 
 
 @pytest.fixture(autouse=True)

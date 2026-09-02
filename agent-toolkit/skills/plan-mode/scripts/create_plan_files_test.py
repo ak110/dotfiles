@@ -243,6 +243,64 @@ def test_removes_partial_files_when_structure_check_fails(repo: pathlib.Path, tm
     assert not list(directory.glob("30-計画保存先移行-a1b2.*"))
 
 
+def test_rejects_legacy_two_file_plan_and_removes_created_files(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """旧二ファイル形式は拒否し、確定した計画ファイルを回収する。"""
+    main_source = tmp_path / "legacy-main.md"
+    detail_source = tmp_path / "legacy-detail.md"
+    main_content, detail_content = check_plan_file_test._new_format_plan(  # pylint: disable=protected-access
+        repo,
+        _git(repo, "rev-parse", "HEAD"),
+    )
+    main_source.write_text(main_content, encoding="utf-8")
+    detail_source.write_text(detail_content, encoding="utf-8")
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    with pytest.raises(create_plan_files.PlanCreationError, match="計画構造検査"):
+        create_plan_files.create_plan_files(
+            main_source,
+            detail_source,
+            "旧形式遮断",
+            private_notes=tmp_path / "private-notes",
+            date=datetime.date(2026, 8, 30),
+            work_dir=repo,
+        )
+
+    directory = tmp_path / "home/.claude/plans"
+    assert not list(directory.glob("30-旧形式遮断-a1b2.*"))
+
+
+def test_creates_current_plan_with_plan_size_advisory(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """行数の助言だけを伴う現行形式の計画を確定する。"""
+    main_source, detail_source = _sources(repo, tmp_path)
+    detail_content = detail_source.read_text(encoding="utf-8")
+    padding = 1201 - len(detail_content.splitlines())
+    detail_source.write_text(
+        detail_content.rstrip("\n") + "\n" + "\n".join(["行数の助言を検証する。"] * padding) + "\n",
+        encoding="utf-8",
+    )
+    assert len(detail_source.read_text(encoding="utf-8").splitlines()) == 1201
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    paths = create_plan_files.create_plan_files(
+        main_source,
+        detail_source,
+        "助言警告",
+        private_notes=tmp_path / "private-notes",
+        date=datetime.date(2026, 8, 30),
+        work_dir=repo,
+    )
+
+    assert all(path.is_file() for path in paths)
+
+
 def test_removes_three_files_when_structure_check_fails(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
     """バグ対応の構造検査失敗時に自作した3ファイルを残さない。"""
     private_notes = tmp_path / "private-notes"

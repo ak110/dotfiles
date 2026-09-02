@@ -1,4 +1,4 @@
-"""レビュー指摘管理表の7列TSV操作を検証する。"""
+"""レビュー指摘管理表の8列TSV操作を検証する。"""
 
 import argparse
 import json
@@ -38,7 +38,7 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     output = capsys.readouterr().out
     assert "追加成功" in output
     lines = path.read_text(encoding="utf-8").splitlines()
-    assert all(len(line.split("\t")) == 7 for line in lines)
+    assert all(len(line.split("\t")) == 8 for line in lines)
     assert all(isinstance(json.loads(cell), str) for line in lines for cell in line.split("\t"))
     assert table.show(path) == 0
     assert capsys.readouterr().out == path.read_text(encoding="utf-8")
@@ -119,8 +119,8 @@ def test_same_issue_can_be_separated_by_track_and_responded_individually(tmp_pat
     table.respond(path, "1", "independent", *key, "no", "", "独立した根拠を維持")
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
-    assert [row for row in rows if row[1] == "plan-conformance"][0][5] == "準拠系で修正"
-    assert [row for row in rows if row[1] == "independent"][0][6] == "独立した根拠を維持"
+    assert [row for row in rows if row[1] == "plan-conformance"][0][6] == "準拠系で修正"
+    assert [row for row in rows if row[1] == "independent"][0][7] == "独立した根拠を維持"
 
 
 def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
@@ -148,7 +148,7 @@ def test_respond_updates_only_reviewee_columns(tmp_path: pathlib.Path) -> None:
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
     table.respond(path, "1", _TRACK, "module.py:10", "修正が必要", "yes", "条件を追加した", "")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "yes", "条件を追加した", ""]
+    assert row == ["1", _TRACK, "module.py:10", "修正が必要", "詳細", "yes", "条件を追加した", ""]
     table.validate(path)
 
 
@@ -166,7 +166,7 @@ def test_respond_no_requires_reason_and_clears_response(tmp_path: pathlib.Path) 
     table.add(path, "1", _TRACK, "hook", "対象外")
     table.respond(path, "1", _TRACK, "hook", "対象外", "対応不要", "", "以前の契約を保持")
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "hook", "対象外", "no", "", "以前の契約を保持"]
+    assert row == ["1", _TRACK, "hook", "対象外", "詳細", "no", "", "以前の契約を保持"]
     table.validate(path)
 
 
@@ -219,7 +219,7 @@ def test_add_requires_round(tmp_path: pathlib.Path) -> None:
 
 def test_validate_rejects_non_integer_round(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
-    cells = ("R1", _TRACK, "位置", "指摘", "yes", "内容", "")
+    cells = ("R1", _TRACK, "位置", "指摘", "詳細", "yes", "内容", "")
     path.write_text(
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
@@ -230,7 +230,7 @@ def test_validate_rejects_non_integer_round(tmp_path: pathlib.Path) -> None:
 
 def test_validate_rejects_invalid_track(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
-    cells = ("1", "invalid", "位置", "指摘", "yes", "内容", "")
+    cells = ("1", "invalid", "位置", "指摘", "詳細", "yes", "内容", "")
     path.write_text(
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
@@ -241,7 +241,7 @@ def test_validate_rejects_invalid_track(tmp_path: pathlib.Path) -> None:
 
 def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
-    cells = ("1", _TRACK, "位置", "指摘", "", "", "")
+    cells = ("1", _TRACK, "位置", "指摘", "詳細", "", "", "")
     path.write_text(
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
@@ -250,10 +250,10 @@ def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
         table.validate(path)
 
 
-def test_legacy_column_count_has_recovery_guidance_for_all_mutations(tmp_path: pathlib.Path) -> None:
-    """旧形式の表を検出したとき、修復に必要な列構造とtrack値を全操作で示す。"""
+def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: pathlib.Path) -> None:
+    """不正な列数の表を検出したとき、修復に必要な列構造と正規値を全操作で示す。"""
     path = tmp_path / "review.tsv"
-    cells = ("1", _TRACK, "重大", "位置", "指摘", "", "", "")
+    cells = ("1", _TRACK, "旧重大度", "位置", "指摘", "詳細", "", "", "")
     path.write_text(
         "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n",
         encoding="utf-8",
@@ -268,16 +268,97 @@ def test_legacy_column_count_has_recovery_guidance_for_all_mutations(tmp_path: p
             operation()
         message = str(exc_info.value)
         assert path.read_text(encoding="utf-8") == before
-        assert "期待列数は7" in message
+        assert "期待列数は8" in message
         assert "trackの位置はroundの直後" in message
+        assert "levelの正規値集合は要件, 仕様, 詳細, 実装" in message
         assert "plan-review, implementation-review, plan-conformance, independent" in message
-        assert "旧8列形式はseverity列を除いて7列形式で再作成する" in message
+        assert "levelの位置はissueの直後" in message
+        assert "保存済み7列形式はlevelを空として読み込み" in message
+
+
+def test_legacy_seven_columns_are_read_and_rewritten_as_eight_columns(tmp_path: pathlib.Path) -> None:
+    """保存済み7列行は空のlevelを補って読み、更新時に8列へ移行する。"""
+    path = tmp_path / "review.tsv"
+    legacy = ("1", _TRACK, "位置", "指摘", "", "", "")
+    path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in legacy) + "\n", encoding="utf-8")
+
+    assert table.validate(path, require_responses=False) == 0
+    table.respond(path, "1", _TRACK, "位置", "指摘", "yes", "修正した", "")
+
+    row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
+    assert row == ["1", _TRACK, "位置", "指摘", "", "yes", "修正した", ""]
+
+
+def test_show_preserves_legacy_seven_columns_with_and_without_track_filter(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """showは保存済み7列行を変換せず、track限定でもraw TSVを保持する。"""
+    path = tmp_path / "review.tsv"
+    rows = [
+        ("1", _TRACK, "位置", "指摘", "", "", ""),
+        ("1", "plan-review", "別位置", "別指摘", "", "", ""),
+    ]
+    raw = "".join("\t".join(json.dumps(value, ensure_ascii=False) for value in row) + "\n" for row in rows)
+    path.write_text(raw, encoding="utf-8")
+
+    assert table.show(path) == 0
+    assert capsys.readouterr().out == raw
+    assert table.show(path, track=_TRACK) == 0
+    assert capsys.readouterr().out == raw.splitlines(keepends=True)[0]
+    assert path.read_text(encoding="utf-8") == raw
+
+
+@pytest.mark.parametrize("track", (None, _TRACK))
+@pytest.mark.parametrize(
+    ("cells", "expected_error"),
+    (
+        (("1", _TRACK, "位置", "指摘", "", ""), "列数が8ではない"),
+        (("1", _TRACK, "位置", None, "仕様", "", "", ""), "4列がJSON文字列ではない"),
+    ),
+)
+def test_show_rejects_malformed_rows_before_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    track: str | None,
+    cells: tuple[str | None, ...],
+    expected_error: str,
+) -> None:
+    """showはtrack限定の有無にかかわらず、全行・全セルを出力前に検証する。"""
+    path = tmp_path / "review.tsv"
+    raw = "\t".join("broken" if value is None else json.dumps(value, ensure_ascii=False) for value in cells) + "\n"
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=expected_error):
+        table.show(path, track=track)
+
+    assert not capsys.readouterr().out
+    assert path.read_text(encoding="utf-8") == raw
+
+
+@pytest.mark.parametrize("level", table.LEVEL_VALUES)
+def test_add_accepts_all_level_values_and_respond_preserves_level(tmp_path: pathlib.Path, level: str) -> None:
+    """追加は全指摘レベルを受理し、応答更新はlevelを保持する。"""
+    path = tmp_path / f"{level}.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "位置", "指摘", level)
+    table.respond(path, "1", _TRACK, "位置", "指摘", "yes", "修正した", "")
+    row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
+    assert row[4] == level
+
+
+def test_validate_rejects_invalid_level(tmp_path: pathlib.Path) -> None:
+    """8列行のlevelは空又は正規値だけを受理する。"""
+    path = tmp_path / "review.tsv"
+    cells = ("1", _TRACK, "位置", "指摘", "重大", "yes", "修正", "")
+    path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="levelが正規値ではない"):
+        table.validate(path)
 
 
 @pytest.mark.parametrize(
     "argv",
     (
-        ["review-table", "add", "review.tsv", "--round=1", "--track=invalid", "位置", "指摘"],
+        ["review-table", "add", "review.tsv", "--round=1", "--track=invalid", "--level=詳細", "位置", "指摘"],
         ["review-table", "respond", "review.tsv", "--track=invalid", "位置", "指摘", "--response-needed=yes"],
         ["review-table", "show", "review.tsv", "--track=invalid"],
     ),
@@ -289,6 +370,20 @@ def test_parser_rejects_invalid_track(argv: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
+    "arguments",
+    (
+        ["review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘"],
+        ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=重大", "位置", "指摘"],
+    ),
+)
+def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
+    """addはlevelの省略と正規値以外の指定を拒否する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", "add", *arguments])
+    assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(
     ("subcommand", "arguments", "accepted_options"),
     (
         ("show", ["review.tsv", "--round", "1"], ("--track",)),
@@ -296,14 +391,31 @@ def test_parser_rejects_invalid_track(argv: list[str]) -> None:
         ("init", ["review.tsv", "--track", "plan-review"], ()),
         (
             "add",
-            ["review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘", "--file", "本文.txt"],
-            ("--issue", "--issue-file", "--location", "--location-file", "--round", "--track"),
+            ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "--file", "本文.txt"],
+            ("--issue", "--issue-file", "--level", "--location", "--location-file", "--round", "--track"),
+        ),
+        (
+            "respond",
+            ["review.tsv", "--file", "response.txt", "--response-needed=yes", "位置", "指摘"],
+            (
+                "--issue",
+                "--issue-file",
+                "--location",
+                "--location-file",
+                "--no-response-reason",
+                "--no-response-reason-file",
+                "--response",
+                "--response-file",
+                "--response-needed",
+                "--round",
+                "--track",
+            ),
         ),
         ("show", ["review.tsv", "--all"], ("--track",)),
         (
             "add",
-            ["review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘", "余分"],
-            ("--issue", "--issue-file", "--location", "--location-file", "--round", "--track"),
+            ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
+            ("--issue", "--issue-file", "--level", "--location", "--location-file", "--round", "--track"),
         ),
     ),
 )
@@ -344,6 +456,53 @@ def test_cell_file_options_are_shown_in_help(
         assert option in help_text
 
 
+@pytest.mark.parametrize(
+    ("subcommand", "expected_descriptions"),
+    (
+        ("add", ("指摘を登録するレビューの区分", "追加する指摘箇所", "追加する指摘内容")),
+        (
+            "respond",
+            (
+                "更新する行を特定する指摘箇所",
+                "更新する行を特定する指摘内容",
+                "対応要とした指摘へ記録する対応内容",
+                "対応不要とした指摘へ記録する理由",
+            ),
+        ),
+        ("show", ("表示対象を指定したレビュー区分の行だけに限定する",)),
+        ("validate", ("未応答行を許容し、8列と複合キーなどの構造だけを検証する",)),
+    ),
+)
+def test_option_help_describes_each_subcommand_role(
+    subcommand: str,
+    expected_descriptions: tuple[str, ...],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """各オプションの説明だけで、当該サブコマンドにおける役割を判断できる。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", subcommand, "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    for description in expected_descriptions:
+        assert description in help_text
+    assert "保存済み7列形式はlevelを空として読み込み" not in help_text
+
+
+def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:
+    """サブコマンド共通の列構成と旧形式の復旧案内は親コマンドに集約する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["review-table", "--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert (
+        "列は`round`、`track`、`location`、`issue`、`level`、`response-needed`、`response`、`no-response-reason`の順"
+        in help_text
+    )
+    assert "保存済みの7列形式は`level`を空として読み込み" in help_text
+
+
 def test_cell_files_preserve_issue_and_supply_responses(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -370,6 +529,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
             str(path),
             "--round=1",
             f"--track={_TRACK}",
+            "--level=詳細",
             "--location-file",
             str(location_file),
             "--issue-file",
@@ -410,8 +570,8 @@ def test_cell_files_preserve_issue_and_supply_responses(
     )
     assert table.dispatch(no_response_args) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
-    assert rows[0] == ["1", _TRACK, location, issue, "yes", response.strip(), ""]
-    assert rows[1] == ["2", _TRACK, "README.md", "対象外", "no", "", reason.strip()]
+    assert rows[0] == ["1", _TRACK, location, issue, "詳細", "yes", response.strip(), ""]
+    assert rows[1] == ["2", _TRACK, "README.md", "対象外", "詳細", "no", "", reason.strip()]
 
 
 def test_add_rejects_empty_issue_file_instead_of_using_positional_issue(tmp_path: pathlib.Path) -> None:
@@ -429,6 +589,7 @@ def test_add_rejects_empty_issue_file_instead_of_using_positional_issue(tmp_path
             "位置引数の指摘",
             "--round=1",
             f"--track={_TRACK}",
+            "--level=詳細",
             "--issue-file",
             str(issue_file),
         ]
@@ -496,6 +657,7 @@ def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> N
             str(path),
             "--round=1",
             f"--track={_TRACK}",
+            "--level=詳細",
             "位置",
             "--issue-file",
             str(tmp_path / "missing.txt"),
@@ -515,7 +677,7 @@ def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
     table.add(path, "2", _TRACK, "README.md", "指摘B")
     assert table.respond(path, "1", _TRACK, "", "", "yes", "対応した", "") == 0
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "指摘A", "yes", "対応した", ""]
+    assert row == ["1", _TRACK, "module.py:10", "指摘A", "詳細", "yes", "対応した", ""]
 
 
 def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pathlib.Path) -> None:
@@ -577,4 +739,4 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     matching = [row for row in rows if row[:4] == list(target)]
-    assert matching == [[*target, "yes", "再現経路を追加", ""]]
+    assert matching == [[*target, "詳細", "yes", "再現経路を追加", ""]]

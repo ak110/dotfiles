@@ -45,6 +45,15 @@ DEFAULT_KILL_TIMEOUT = 270.0
 DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
 SUPPORTED_ENGINES = frozenset({"claude", "codex"})
 REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"})
+# 起動直後の可用性失敗を確定するために`start`が終端を待つ上限秒数。
+# Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
+# `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
+# 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
+START_AVAILABILITY_TIMEOUT = 15.0
+# engineの可用性に起因し、別候補なら結果が変わり得る失敗の識別子。
+# `codex app-server generate-json-schema`が出力する`CodexErrorInfo`列挙のうち、
+# 利用枠超過、流量制限及びサーバー側過負荷に該当する区分へ限定する。
+ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExceeded", "serverOverloaded"})
 
 
 @dataclasses.dataclass
@@ -78,6 +87,13 @@ class _PendingResume:
         result = self.previous_result
         self.discard_previous_result()
         return result
+
+
+def _engine_unavailable(session: SessionState) -> bool:
+    """終端したsessionが、engineの可用性を理由に失敗したかを返す。"""
+    if session.status != "failed" or not isinstance(session.error, dict):
+        return False
+    return session.error.get("codexErrorInfo") in ENGINE_UNAVAILABLE_ERROR_INFO
 
 
 class AgentsServerManager:
@@ -166,14 +182,14 @@ class AgentsServerManager:
             "start a new session with the verified state"
         )
 
-    def _resolve_start_candidate(
+    def _resolve_start_candidates(
         self,
         model_type: str,
         *,
         explore: bool,
         exclude_session_id: str | None,
-    ) -> tuple[ModelCandidate, frozenset[ModelCandidate]]:
-        """起動条件を検証し、除外後の先頭候補と除外集合を返す。"""
+    ) -> tuple[list[ModelCandidate], frozenset[ModelCandidate]]:
+        """起動条件を検証し、除外後の候補列を設定順で返す。"""
         candidates = _atk_config.resolve_model_candidates(model_type)
         excluded: frozenset[ModelCandidate] = frozenset()
         if exclude_session_id is not None:
@@ -187,10 +203,10 @@ class AgentsServerManager:
             if source.model is None or source.effort is None:
                 raise ValueError(f"exclude_session_id has no selected candidate: {exclude_session_id}")
             excluded = source.excluded_candidates | frozenset({(source.engine, source.model, source.effort)})
-        candidate = next((item for item in candidates if item not in excluded), None)
-        if candidate is None:
+        remaining = [item for item in candidates if item not in excluded]
+        if not remaining:
             raise ValueError(f"no model candidates remain for model_type: {model_type}")
-        return candidate, excluded
+        return remaining, excluded
 
     async def start(
         self,
@@ -201,35 +217,72 @@ class AgentsServerManager:
         *,
         explore: bool = False,
     ) -> dict[str, Any]:
-        """工程別モデル設定の先頭候補でturnを開始する。"""
-        candidate, excluded = self._resolve_start_candidate(
+        """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
+
+        engineが起動できない候補は除外集合へ加えて次候補へ進む。
+        該当するのは、backendの起動が例外で失敗した候補と、
+        起動直後にengineの可用性を理由として終端した候補である。
+        候補を変えても結果が変わらない失敗では候補を進めず、そのまま呼び出し元へ返す。
+        """
+        candidates, excluded = self._resolve_start_candidates(
             model_type,
             explore=explore,
             exclude_session_id=exclude_session_id,
         )
-        engine, model, effort = candidate
-        if engine not in SUPPORTED_ENGINES:
-            raise ValueError(f"unsupported engine: {engine}")
         _validate_prompt(prompt)
         _validate_cwd(cwd)
-        _validate_model_effort(model, effort)
-        backend = self._backend(engine)
-        session = await backend.start(
-            prompt,
-            cwd,
-            model,
-            effort,
-            model_type=model_type,
-            explore=explore,
-            excluded_candidates=excluded,
-        )
-        session.engine = engine
-        return {
-            **session.public_status(),
-            "model_type": model_type,
-            "model": model,
-            "effort": effort,
-        }
+        unavailable_response: dict[str, Any] | None = None
+        unavailable_error: Exception | None = None
+        for candidate in candidates:
+            engine, model, effort = candidate
+            if engine not in SUPPORTED_ENGINES:
+                raise ValueError(f"unsupported engine: {engine}")
+            _validate_model_effort(model, effort)
+            try:
+                session = await self._backend(engine).start(
+                    prompt,
+                    cwd,
+                    model,
+                    effort,
+                    model_type=model_type,
+                    explore=explore,
+                    excluded_candidates=excluded,
+                )
+            except Exception as exc:
+                # backendの起動自体が失敗した場合、成否は選んだ候補に依存する。
+                unavailable_response, unavailable_error = None, exc
+                excluded |= {candidate}
+                continue
+            session.engine = engine
+            await self._await_start_outcome(session)
+            response = {
+                **session.public_status(),
+                "model_type": model_type,
+                "model": model,
+                "effort": effort,
+            }
+            if not _engine_unavailable(session):
+                return response
+            unavailable_response, unavailable_error = response, None
+            excluded |= {candidate}
+        if unavailable_response is not None:
+            return unavailable_response
+        assert unavailable_error is not None
+        raise unavailable_error
+
+    async def _await_start_outcome(self, session: SessionState) -> None:
+        """起動直後の可用性失敗を確定するため、上限付きで終端を待つ。
+
+        上限内に終端しないsessionは通常の実行中として扱い、以降は`wait`が観測する。
+        """
+        if session.result_available:
+            return
+        with contextlib.suppress(TimeoutError):
+            async with self._condition:
+                await asyncio.wait_for(
+                    self._condition.wait_for(lambda: session.result_available),
+                    timeout=START_AVAILABILITY_TIMEOUT,
+                )
 
     async def start_explore(
         self,
@@ -670,10 +723,19 @@ async def start(
     model_type: str,
     prompt: str,
     cwd: str,
-    exclude_session_id: str | None = None,
+    exclude_session_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
+                "同じ`model_type`で開始した通常起動のsessionだけを渡す。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """工程別モデル設定の候補から委譲先turnを開始する。
 
+    engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
     """
     return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
@@ -684,10 +746,19 @@ async def start_explore(
     prompt: str,
     cwd: str,
     fast: bool = False,
-    exclude_session_id: str | None = None,
+    exclude_session_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
+                "同じ`fast`の値で開始した探索起動のsessionだけを渡す。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
+    engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
     """
     return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)

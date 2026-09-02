@@ -2,7 +2,7 @@
   "mcpServers": {
     "pyfltr": {
       "command": "uvx",
-      "args": ["--from", "pyfltr>=3.16", "pyfltr", "mcp"]
+      "args": ["--from", "pyfltr>=3.17.8", "pyfltr", "mcp"]
     },
     "agents_server": {
       "command": "uv",

@@ -7,6 +7,7 @@ import inspect
 from collections.abc import Iterator
 
 import _atk_help
+import _managed_temp
 import atk
 import pytest
 
@@ -119,3 +120,11 @@ def test_worktree_stash_help_covers_save_restore_and_drop() -> None:
     assert "atk worktree-stash save --label <ラベル>" in help_text
     assert "git stash apply --index refs/worktree/<ラベル>" in help_text
     assert "atk worktree-stash drop refs/worktree/<ラベル>" in help_text
+
+
+def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    help_text = commands["atk managed-temp create"].format_help()
+
+    for description, _satisfied in _managed_temp._PREFIX_RULES:  # pylint: disable=protected-access
+        assert description in help_text

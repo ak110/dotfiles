@@ -712,15 +712,25 @@ _AGENTS_SERVER_TOOL_NAMES = frozenset(
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
 
 
+def _parse_timestamp(value: str) -> datetime.datetime:
+    """ISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。"""
+    parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
 def _record_timestamp(record: _Record) -> datetime.datetime | None:
     value = record.entry.get("timestamp")
     if not isinstance(value, str):
         return None
     try:
-        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return _parse_timestamp(value)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
+
+
+def _apply_observation_boundary(records: list[_Record], boundary: datetime.datetime) -> list[_Record]:
+    """時刻無しと境界以前の親記録を、元の行番号を保って返す。"""
+    return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
 def _token_value(value: Any) -> int:
@@ -969,15 +979,50 @@ def _native_agent_thread_ids(value: Any) -> list[str]:
     return list(dict.fromkeys(found))
 
 
-def _rollout_path(thread_id: str) -> Path | None:
-    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+def _codex_home(explicit: str | None = None) -> Path:
+    """Codexの記録の保存先を、明示引数、空でない`CODEX_HOME`、`~/.codex`の順に解決する。"""
+    if explicit:
+        return Path(explicit)
+    env_home = os.environ.get("CODEX_HOME")
+    if env_home:
+        return Path(env_home)
+    return Path.home() / ".codex"
+
+
+def _rollout_candidates(thread_id: str, codex_home: Path) -> list[Path]:
+    """Thread IDへ完全suffix一致する`sessions`配下のrolloutをファイル名順で返す。
+
+    backupの写しは`sessions`の外へ保存されるため、この探索範囲では一致しない。
+    """
     escaped_thread = re.escape(thread_id)
-    candidates = sorted(
+    return sorted(
         path
         for path in codex_home.glob(f"sessions/*/*/*/rollout-*{thread_id}.jsonl")
         if re.search(rf"rollout-.*{escaped_thread}\.jsonl$", path.name)
     )
-    return candidates[0] if candidates else None
+
+
+def _rollout_path(thread_id: str, codex_home: str | None = None) -> Path | None:
+    """Thread IDへ一意に対応するrolloutを返し、0件又は複数件ではNoneを返す。"""
+    try:
+        return _resolve_codex_transcript(thread_id, codex_home)
+    except ValueError:
+        return None
+
+
+def _resolve_codex_transcript(thread_id: str, codex_home: str | None = None) -> Path:
+    """Codex thread IDから親transcriptの正本を1件解決する。
+
+    一致が0件又は複数件の場合は証拠不足として例外を送出する。
+    """
+    base = _codex_home(codex_home)
+    candidates = _rollout_candidates(thread_id, base)
+    if not candidates:
+        raise ValueError(f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが{base / 'sessions'}配下に無い")
+    if len(candidates) > 1:
+        joined = ", ".join(str(path) for path in candidates)
+        raise ValueError(f"対象記録を解決できない: Codex thread ID {thread_id}に一致するrolloutが複数ある: {joined}")
+    return candidates[0]
 
 
 def _claude_transcript_path(session_id: str) -> Path | None:
@@ -987,16 +1032,17 @@ def _claude_transcript_path(session_id: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _session_path(engine: _Runtime | None, session_id: str) -> tuple[Path, _Runtime] | None:
+def _session_path(
+    engine: _Runtime | None,
+    session_id: str,
+    codex_home: str | None = None,
+) -> tuple[Path, _Runtime] | None:
     """実行系ヒントを優先して両方の記録正本を探索する。"""
-    lookups = {
-        "codex": _rollout_path,
-        "claude": _claude_transcript_path,
-    }
     runtimes: tuple[_Runtime, _Runtime]
     runtimes = ("claude", "codex") if engine == "claude" else ("codex", "claude")
     for runtime in runtimes:
-        if path := lookups[runtime](session_id):
+        path = _rollout_path(session_id, codex_home) if runtime == "codex" else _claude_transcript_path(session_id)
+        if path is not None:
             return path, runtime
     return None
 
@@ -1038,7 +1084,9 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
 
 
 def _collect_records(
-    transcript_path: str, main_records: list[_Record]
+    transcript_path: str,
+    main_records: list[_Record],
+    codex_home: str | None = None,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
@@ -1073,7 +1121,7 @@ def _collect_records(
                 if session_id in seen_sessions:
                     continue
                 seen_sessions.add(session_id)
-                resolved_session = _session_path(engine, session_id)
+                resolved_session = _session_path(engine, session_id, codex_home)
                 if resolved_session is None:
                     unresolved.append(_UnresolvedRecord(session_id, record.line))
                     continue
@@ -2166,7 +2214,27 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "transcript_path",
-        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。",
+        nargs="?",
+        help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。`--codex-thread-id`と併用しない。",
+    )
+    parser.add_argument(
+        "--codex-thread-id",
+        metavar="THREAD_ID",
+        help="Codex thread IDから親transcriptの正本を解決して抽出を開始する。"
+        "保存先は`--codex-home`、空でない`CODEX_HOME`、`~/.codex`の順に解決し、"
+        "`sessions`配下で完全suffix一致するrolloutが1件でない場合はエラーイベントを出力して終了コード2を返す。",
+    )
+    parser.add_argument(
+        "--codex-home",
+        metavar="DIR",
+        help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
+    )
+    parser.add_argument(
+        "--observation-boundary",
+        metavar="TIMESTAMP",
+        help="ISO 8601の時刻を観測境界とし、親記録のうち当該時刻より後の`timestamp`を持つレコードを"
+        "全モードの対象外にする。委譲先の記録へは適用しない。`--detail`の行番号は元ファイルの行番号を維持する。"
+        "解析できない値はエラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(
         "--warn",
@@ -2215,10 +2283,27 @@ def main(argv: list[str] | None = None) -> int:
     if sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices)) > 1:
         return _print_error("--warn・--grep・--detail・--stats・--hook-noticesは併用できない")
 
-    records = _load_records(args.transcript_path)
+    if (args.transcript_path is None) == (args.codex_thread_id is None):
+        return _print_error("transcript_pathと--codex-thread-idはいずれか一方だけを指定する")
+    if args.codex_thread_id is not None:
+        try:
+            transcript_path = str(_resolve_codex_transcript(args.codex_thread_id, args.codex_home))
+        except ValueError as error:
+            return _print_error(str(error))
+    else:
+        transcript_path = args.transcript_path
+
+    records = _load_records(transcript_path)
     if records is None:
-        return _print_error(f"対象記録を読み込めない: {args.transcript_path}")
-    collected, unresolved = _collect_records(args.transcript_path, records)
+        return _print_error(f"対象記録を読み込めない: {transcript_path}")
+    if args.observation_boundary is not None:
+        try:
+            boundary = _parse_timestamp(args.observation_boundary)
+        except ValueError:
+            return _print_error(f"観測境界が不正: {args.observation_boundary}")
+        records = _apply_observation_boundary(records, boundary)
+    delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
+    collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
 
     if args.warn:
         _print_events(_warning_collection_events(collected, unresolved))

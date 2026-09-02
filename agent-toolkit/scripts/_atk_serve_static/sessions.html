@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3157d5">
+  <title>セッション</title>
+  <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
+  <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="stylesheet" href="__BASE_PATH_HTML__/static/shell.css">
+  <link rel="stylesheet" href="__BASE_PATH_HTML__/static/sessions.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-title">
+      <h1>セッション</h1>
+      <span id="host-status" class="secondary-text" role="status"></span>
+    </div>
+    <nav class="app-nav" aria-label="画面">
+      <a href="__BASE_PATH_HTML__/">フィードバック</a>
+      <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+      <a href="__BASE_PATH_HTML__/sessions" aria-current="page">セッション</a>
+    </nav>
+  </header>
+  <div id="app">
+    <aside>
+      <div class="toolbar">
+        <input id="filter" placeholder="ホスト・プロジェクト・識別子を検索">
+        <div class="filter-row">
+          <label><input type="checkbox" class="engine-filter" value="claude" checked> Claude Code</label>
+          <label><input type="checkbox" class="engine-filter" value="codex" checked> Codex</label>
+        </div>
+        <span id="list-status" role="status"></span>
+      </div>
+      <div id="warnings" role="status" hidden></div>
+      <div id="sessions"></div>
+    </aside>
+    <main>
+      <div class="toolbar">
+        <button id="menu-btn" type="button" aria-label="セッション一覧を開く">&#9776;</button>
+        <span id="detail-title" class="detail-title"></span>
+        <span class="spacer"></span>
+        <span id="detail-usage" class="secondary-text"></span>
+      </div>
+      <article id="detail">左の一覧からセッションを選択してください。</article>
+    </main>
+    <div id="drawer-backdrop"></div>
+  </div>
+  <script id="sessions-bootstrap" type="application/json">__SESSIONS_BOOTSTRAP_JSON__</script>
+  <script src="__BASE_PATH_HTML__/static/sessions.js"></script>
+</body>
+</html>

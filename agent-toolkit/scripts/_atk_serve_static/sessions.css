@@ -1,0 +1,229 @@
+/* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, sans-serif;
+  color: #1a1a1a;
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: calc(100svh - var(--shell-header-height));
+}
+
+aside {
+  border-right: 1px solid #e6e6e6;
+  overflow: auto;
+  background: #f9fafb;
+}
+
+aside .toolbar {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  padding: 10px;
+  border-bottom: 1px solid #e6e6e6;
+}
+
+aside input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 0.85rem;
+}
+
+.filter-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#warnings {
+  margin: 8px 10px;
+  padding: 8px;
+  border: 1px solid #f0c36d;
+  border-radius: 6px;
+  background: #fdf6e3;
+  font-size: 0.85rem;
+}
+
+.session-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid #eceff3;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.session-item:hover { background: #eef2ff; }
+.session-item[aria-current="true"] { background: #e0e7ff; }
+
+.session-item .session-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.session-item .engine-badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: #fff;
+  background: #3157d5;
+}
+
+.session-item .engine-badge.codex { background: #0f766e; }
+
+.session-item .session-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-item .session-meta {
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.session-item .session-warning {
+  color: #b45309;
+  font-size: 0.78rem;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+main .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e6e6e6;
+}
+
+main .spacer { flex: 1; }
+
+.detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.secondary-text {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+#detail {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px;
+}
+
+.event {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.event > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  background: #f4f6fa;
+  font-size: 0.85rem;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.event .event-kind {
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #6b7280;
+  font-size: 0.72rem;
+}
+
+.event.kind-user .event-kind { background: #2563eb; }
+.event.kind-assistant .event-kind { background: #16a34a; }
+.event.kind-thinking .event-kind { background: #7c3aed; }
+.event.kind-tool_call .event-kind { background: #d97706; }
+.event.kind-tool_result .event-kind { background: #0891b2; }
+.event.kind-compact_boundary .event-kind { background: #b91c1c; }
+
+.event .event-time { color: #6b7280; }
+
+.event pre {
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  font-size: 0.86rem;
+}
+
+.unavailable {
+  color: #9ca3af;
+  font-style: normal;
+}
+
+#menu-btn { display: none; }
+#drawer-backdrop { display: none; }
+
+@media (max-width: 768px) {
+  #app { grid-template-columns: 1fr; }
+
+  aside {
+    position: fixed;
+    z-index: 20;
+    top: var(--shell-header-height);
+    bottom: 0;
+    left: 0;
+    width: 84vw;
+    max-width: 340px;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  body.drawer-open aside { transform: translateX(0); }
+
+  body.drawer-open #drawer-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 15;
+    inset: var(--shell-header-height) 0 0 0;
+    background: rgb(0 0 0 / 0.35);
+  }
+
+  #menu-btn {
+    display: inline-block;
+    padding: 4px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+  }
+}

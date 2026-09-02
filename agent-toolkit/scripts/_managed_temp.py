@@ -1446,19 +1446,33 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
         ) from error
 
 
-def _report_unregistered_candidates(prefix: str | None) -> None:
-    """既定の一時root直下で、マーカーだけが残る管理対象を報告する。"""
-    try:
-        children = sorted(_temp_root().iterdir())
-    except (OSError, ManagedTempError) as error:
-        print(f"warning: 登録を持たない管理対象を探索できない: {error}", file=sys.stderr)
-        return
-    for child in children:
+def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
+    """既定の一時root直下で、マーカーだけが残る管理対象の絶対パスを返す。"""
+    candidates: list[pathlib.Path] = []
+    for child in sorted(_temp_root().iterdir()):
         if prefix is not None and not child.name.startswith(f"{prefix}-"):
             continue
         registry_path = _registry_path(child)
         if not os.path.lexists(child / _MARKER_NAME) or os.path.lexists(registry_path):
             continue
+        candidates.append(child.absolute())
+    return candidates
+
+
+def count_unregistered_candidates(prefix: str | None = None) -> int:
+    """登録を持たない管理対象の件数を返す。"""
+    return len(_unregistered_candidates(prefix))
+
+
+def _report_unregistered_candidates(prefix: str | None) -> None:
+    """既定の一時root直下で、マーカーだけが残る管理対象を報告する。"""
+    try:
+        candidates = _unregistered_candidates(prefix)
+    except (OSError, ManagedTempError) as error:
+        print(f"warning: 登録を持たない管理対象を探索できない: {error}", file=sys.stderr)
+        return
+    for child in candidates:
+        registry_path = _registry_path(child)
         if _consuming_registry_path(registry_path) is not None:
             print(
                 f"warning: 後始末が中断した可能性がある管理対象があります: {child}"
@@ -1919,7 +1933,9 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     create_parser.add_argument(
         "--prefix",
         required=True,
-        help="作成するディレクトリ名の先頭へ付ける用途識別子。英小文字、数字、ハイフンで指定する。",
+        help="作成するディレクトリ名の先頭へ付ける用途識別子。"
+        + "。".join(description for description, _satisfied in _PREFIX_RULES)
+        + "。",
     )
     create_parser.add_argument(
         "--root",

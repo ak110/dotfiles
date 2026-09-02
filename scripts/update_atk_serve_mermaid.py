@@ -5,7 +5,7 @@
 #     "semantic-version>=2.10.0",
 # ]
 # ///
-"""claude-plans-viewerへ同梱するMermaidをnpmから更新する。"""
+"""`atk serve`へ同梱するMermaidをnpmから更新する。"""
 
 import base64
 import datetime
@@ -27,7 +27,7 @@ import semantic_version
 
 PACKAGE_NAME = "mermaid"
 METADATA_URL = f"https://registry.npmjs.org/{PACKAGE_NAME}"
-VENDOR_DIRECTORY = pathlib.Path(__file__).parent.parent / "pytools" / "claude_plans_viewer" / "vendor"
+VENDOR_DIRECTORY = pathlib.Path(__file__).parent.parent / "agent-toolkit" / "scripts" / "_atk_serve_static" / "vendor"
 VENDOR_FILENAMES = ("mermaid.min.js", "LICENSE.mermaid.txt", "mermaid.json")
 
 _BUNDLE_MEMBER = "package/dist/mermaid.min.js"

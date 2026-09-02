@@ -7,6 +7,7 @@
   <title>フィードバック管理</title>
   <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
   <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="stylesheet" href="__BASE_PATH_HTML__/static/shell.css">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
 <body>
@@ -15,6 +16,11 @@
       <h1>フィードバック管理</h1>
       <span id="connection-status" class="connection-status" role="status">接続中</span>
     </div>
+    <nav class="app-nav" aria-label="画面">
+      <a href="__BASE_PATH_HTML__/" aria-current="page">フィードバック</a>
+      <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+      <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+    </nav>
     <div class="header-actions">
       <span id="sync-result" class="secondary-text" role="status"></span>
       <button id="notification-button" class="button-secondary" type="button" hidden>通知を有効化</button>

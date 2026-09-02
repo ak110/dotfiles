@@ -61,6 +61,46 @@ def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body:
     return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n{body}\n\n"
 
 
+def _batch_args(text: str) -> argparse.Namespace:
+    """一括投入コマンドへ渡す最小引数を返す。"""
+    return argparse.Namespace(messages=[text], body_file=None)
+
+
+def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境の一括投入は予約見出しを含む全入力を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    text = _entry_text("feedback.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
+
+    with pytest.raises(SystemExit) as exc_info:
+        batch._cmd_add_batch(_batch_args(text), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert not list((notes / "inbox").iterdir())
+    assert "ユーザーコメント節を含む本文を投入できません" in capsys.readouterr().err
+
+
+def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """エージェント環境でなければ一括投入で予約見出しを保持する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_repo_operations(monkeypatch, batch)
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+    text = _entry_text("feedback.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
+
+    batch._cmd_add_batch(_batch_args(text), notes, _FIXED_DT, tmp_path)
+
+    assert "## ユーザーコメント" in (notes / "inbox" / "feedback.md").read_text(encoding="utf-8")
+
+
 def test_parse_collects_entries_and_ignores_structural_headings() -> None:
     """種別・リポジトリ見出しと状態ラベルを無視し、エントリ全文だけを取り出す。"""
     text = "# feedback\n## target_repo: github.com/example/foo\n" + _entry_text("a.md") + _entry_text("b.md", body="本文2")

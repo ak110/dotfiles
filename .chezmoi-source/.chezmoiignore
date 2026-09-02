@@ -17,7 +17,7 @@ post-apply.sh
 post-apply-windows.ps1
 {{ end }}
 
-# claude-plans-viewer の設定ファイル: euryale でのみ配布する
+# atk serve の設定ファイル: euryale でのみ配布する
 {{ if ne (lower .chezmoi.hostname) "euryale" }}
-.config/pytools/claude-plans-viewer.toml
+.config/agent-toolkit/serve.toml
 {{ end }}

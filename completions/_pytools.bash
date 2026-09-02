@@ -29,7 +29,6 @@ _python_argcomplete() {
 complete -o nospace -o default -o bashdefault -F _python_argcomplete EcoUtilities
 complete -o nospace -o default -o bashdefault -F _python_argcomplete ccommit
 complete -o nospace -o default -o bashdefault -F _python_argcomplete check-image-sizes
-complete -o nospace -o default -o bashdefault -F _python_argcomplete claude-plans-viewer
 complete -o nospace -o default -o bashdefault -F _python_argcomplete claude-session-export
 complete -o nospace -o default -o bashdefault -F _python_argcomplete claudize
 complete -o nospace -o default -o bashdefault -F _python_argcomplete clonedir

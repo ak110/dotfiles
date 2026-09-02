@@ -57,17 +57,6 @@ from _atk_mq_repo import append_entry as _append_entry
 from _atk_mq_repo import edit_entry as _edit_entry
 
 _GIT_TIMEOUT_SECONDS = 10.0
-_RESERVED_FRONTMATTER_KEYS_FOR_EDITING = (
-    "target_commit",
-    "depends_on",
-    "cooldown_until",
-    "repair_target",
-    "repair_kind",
-    "plan_file",
-)
-_AGENT_USER_COMMENT_ERROR = (
-    "ユーザーコメントはユーザーだけが書き込みます。エージェント環境から起動したatkではユーザーコメントを変更できません。"
-)
 
 
 class _PlanFeedbackValidationError(Exception):
@@ -75,7 +64,7 @@ class _PlanFeedbackValidationError(Exception):
 
 
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
-    """エージェント環境からのユーザーコメント変更を拒否した場合に真を返す。"""
+    """$EDITOR経路からのユーザーコメント変更を拒否した場合に真を返す。"""
     if not is_agent_environment():
         return False
     try:
@@ -84,8 +73,30 @@ def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
         changed = True
     if not changed:
         return False
-    print(_AGENT_USER_COMMENT_ERROR, file=sys.stderr)
+    print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
     return True
+
+
+def _reject_agent_user_comment_message(message: str) -> bool:
+    """エージェント環境のMESSAGEが予約見出しを含む場合に真を返す。"""
+    if not is_agent_environment() or not _user_comment.has_reserved_heading(message):
+        return False
+    print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+    return True
+
+
+def _preserve_agent_user_comment(original: str, updated: str) -> str:
+    """エージェント環境では保存済みユーザーコメント節を編集結果へ連結する。"""
+    if not is_agent_environment():
+        return updated
+    try:
+        _before, saved_user_comment = _user_comment.split_before_user_comment(original)
+    except _user_comment.UserCommentError:
+        print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+        sys.exit(1)
+    if not saved_user_comment:
+        return updated
+    return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
 def _entry_target_repo(path: pathlib.Path, text: str) -> str:
@@ -202,44 +213,6 @@ def _commit_values_by_path(
             )
             warned.add(target_repo)
     return values
-
-
-def _validate_no_reserved_frontmatter_modification(original: str, updated: str) -> None:
-    """frontmatterの予約キーが不正に追加・変更・削除されていないかを検証する。
-
-    ユーザーが$EDITORまたはWeb APIで内部管理用frontmatterを書き換えることを防ぐ。
-    """
-    original_parsed = _frontmatter.parse_frontmatter(original)
-    updated_parsed = _frontmatter.parse_frontmatter(updated)
-
-    if original_parsed is None and updated_parsed is None:
-        return
-    if original_parsed is None or updated_parsed is None:
-        raise WebInputError("frontmatterの解析に失敗しました")
-
-    original_data, _ = original_parsed
-    updated_data, _ = updated_parsed
-    target_repo_changed = original_data.get("target_repo") != updated_data.get("target_repo")
-
-    for key in _RESERVED_FRONTMATTER_KEYS_FOR_EDITING:
-        original_has_key = key in original_data
-        updated_has_key = key in updated_data
-
-        # 予約キーの追加を検出（キー不在 → キー有無を区別）
-        if not original_has_key and updated_has_key:
-            raise WebInputError(f"予約キー`{key}`の追加は許可されていません")
-
-        # 対象リポジトリ変更時の分類失効はシステムが行う正当な削除である。
-        if key == "target_commit" and original_has_key and not updated_has_key and target_repo_changed:
-            continue
-
-        # 予約キーの削除を検出
-        if original_has_key and not updated_has_key:
-            raise WebInputError(f"予約キー`{key}`の削除は許可されていません")
-
-        # 予約キーの変更を検出
-        if original_has_key and updated_has_key and original_data[key] != updated_data[key]:
-            raise WebInputError(f"予約キー`{key}`の変更は許可されていません")
 
 
 def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:
@@ -555,10 +528,7 @@ def edit_entry_content(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でフィードバック本文を更新する。
-
-    保存前に新旧frontmatterを比較し、内部管理用予約キーの追加・変更・削除を禁止する。
-    """
+    """平引数でフィードバック本文を更新する。"""
     if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD}:
         raise WebInputError("編集可能状態はinbox、processing又はholdです")
 
@@ -572,7 +542,6 @@ def edit_entry_content(
         lock_timeout=lock_timeout,
         expected_content=expected_content,
         commit_message="chore: edit feedback item",
-        content_validator=_validate_no_reserved_frontmatter_modification,
         content_transformer=_invalidate_repo_bound_metadata,
     )
 
@@ -595,7 +564,7 @@ def append_entry_content(
     path = directory / filename
 
     def validate(previous: str, updated: str) -> None:
-        _validate_no_reserved_frontmatter_modification(previous, updated)
+        del updated
         if _require_type(path, previous) == MQ_TYPE_TBD:
             raise WebInputError("TBDには追記できません")
 
@@ -645,6 +614,8 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         raise WebInputError("depends_onは予約キーのため atk mq edit では指定できません")
     if "target_commit" in updates:
         raise WebInputError("target_commitは予約キーのため atk mq edit では指定できません")
+    if "cooldown_until" in updates:
+        raise WebInputError("cooldown_untilは予約キーのため atk mq edit では指定できません")
     if "repair_target" in updates:
         raise WebInputError("repair_targetは予約キーのため atk mq edit では指定できません")
     if "repair_kind" in updates:
@@ -1885,8 +1856,9 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 sys.exit(2)
             snapshot = snapshot_path.read_text(encoding="utf-8")
             _verify_target_repo_content(snapshot_path, snapshot, target_repo)
-        if _reject_agent_user_comment_change(snapshot, message):
+        if _reject_agent_user_comment_message(message):
             sys.exit(1)
+        message = _preserve_agent_user_comment(snapshot, message)
         try:
             details = edit_entry_to_plan(
                 private_notes,
@@ -1926,6 +1898,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             )
         except WebInputError as error:
             print(f"編集を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
+        if _reject_agent_user_comment_message(message):
             sys.exit(1)
     editor = None
     if message is None:
@@ -1967,12 +1941,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             print(f"編集を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
+        edited = _preserve_agent_user_comment(original, edited)
     if edited == original:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         print("差分なし。")
         return
-    if _reject_agent_user_comment_change(original, edited):
+    if message is None and _reject_agent_user_comment_change(original, edited):
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         sys.exit(1)
@@ -2019,6 +1994,8 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     except WebInputError as error:
         print(f"追記を拒否しました: {error}", file=sys.stderr)
         sys.exit(1)
+    if _reject_agent_user_comment_message(args.message):
+        sys.exit(1)
 
     inbox_dir = private_notes / MQ_STATE_INBOX
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
@@ -2030,9 +2007,21 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         _verify_target_repo_content(path, snapshot.decode("utf-8"), normalized_target_repo)
 
-    content = snapshot + b"\n\n" + args.message.encode("utf-8")
-    if _reject_agent_user_comment_change(snapshot.decode("utf-8"), content.decode("utf-8")):
-        sys.exit(1)
+    original = snapshot.decode("utf-8")
+    if is_agent_environment():
+        try:
+            before_user_comment, saved_user_comment = _user_comment.split_before_user_comment(original)
+        except _user_comment.UserCommentError:
+            print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
+            sys.exit(1)
+        content = (
+            before_user_comment.encode("utf-8")
+            + b"\n\n"
+            + args.message.encode("utf-8")
+            + (b"\n\n" + saved_user_comment.encode("utf-8") if saved_user_comment else b"")
+        )
+    else:
+        content = snapshot + b"\n\n" + args.message.encode("utf-8")
     try:
         append_entry_content(
             private_notes,

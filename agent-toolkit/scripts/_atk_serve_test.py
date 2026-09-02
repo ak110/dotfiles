@@ -25,6 +25,8 @@ import _atk_serve as serve
 import _atk_serve_app as serve_app
 import _atk_serve_assets as assets
 import _atk_serve_config as config
+import _atk_serve_plans as serve_plans
+import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as state
 import filelock
 import pytest
@@ -164,8 +166,18 @@ def test_text_assets_are_bundled_as_plugin_files() -> None:
         "index.html": assets.HTML,
         "app.css": assets.CSS,
         "app.js": assets.JS,
+        "shell.css": assets.SHELL_CSS,
+        "plans.html": assets.PLANS_HTML,
+        "plans.css": assets.PLANS_CSS,
+        "plans.js": assets.PLANS_JS,
+        "sessions.html": assets.SESSIONS_HTML,
+        "sessions.css": assets.SESSIONS_CSS,
+        "sessions.js": assets.SESSIONS_JS,
+        "markdown.css": assets.MARKDOWN_CSS,
     }
-    assert {path.name for path in static_dir.iterdir()} == set(expected)
+    # Mermaidは容量が大きく要求時に読むため、内容の一致検査ではなく実在だけを確認する。
+    assert {path.name for path in static_dir.iterdir()} == {*expected, "vendor"}
+    assert (static_dir / "vendor" / "mermaid.min.js").is_file()
     for filename, content in expected.items():
         bundled = (static_dir / filename).read_text(encoding="utf-8")
         assert (bundled if filename == "app.js" else bundled.removesuffix("\n")) == content
@@ -2225,6 +2237,155 @@ def test_all_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
     removed = {"/api/status", "/api/enable", "/api/disable"}
     assert expected <= rules
     assert not removed & rules
+
+
+def _three_screen_app(tmp_path: pathlib.Path) -> typing.Any:
+    """3画面を登録したアプリを、外部へ接続しない依存で生成する。"""
+    return serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        plans_context=serve_plans.create_context(root=tmp_path / "plans", hostname="local-host"),
+        sessions_context=serve_sessions.create_context(
+            hostname="local-host",
+            claude_home=tmp_path / "claude",
+            codex_home=tmp_path / "codex",
+        ),
+    )
+
+
+def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Path) -> None:
+    """3画面のページ経路とナビゲーションの表示順・表記を固定する。"""
+    app = _three_screen_app(tmp_path)
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert {"/", "/plans", "/sessions"} <= rules
+    for document in (assets.HTML, assets.PLANS_HTML, assets.SESSIONS_HTML):
+        navigation = re.search(r'<nav class="app-nav"[^>]*>(.*?)</nav>', document, re.DOTALL)
+        assert navigation is not None
+        assert re.findall(r">([^<>]+)</a>", navigation.group(1)) == ["フィードバック", "計画ファイル", "セッション"]
+        assert re.findall(r'href="__BASE_PATH_HTML__(/[a-z]*)"', navigation.group(1)) == ["/", "/plans", "/sessions"]
+    # 現在の画面だけが`aria-current`を持つ。
+    assert assets.HTML.count('aria-current="page"') == 1
+    assert assets.PLANS_HTML.count('aria-current="page"') == 1
+    assert assets.SESSIONS_HTML.count('aria-current="page"') == 1
+
+
+def test_plan_and_session_api_routes_are_registered(tmp_path: pathlib.Path) -> None:
+    """計画ファイル画面とセッション画面のAPI・SSE経路を登録する。"""
+    app = _three_screen_app(tmp_path)
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    expected = {
+        "/api/plans/files",
+        "/api/plans/file",
+        "/api/plans/raw",
+        "/api/plans/search",
+        "/api/plans/host-status",
+        "/api/plans/host-info",
+        "/api/plans/root-info",
+        "/api/plans/root-status",
+        "/api/plans/events",
+        "/api/sessions/list",
+        "/api/sessions/detail",
+        "/api/sessions/host-status",
+        "/api/sessions/events",
+        "/static/shell.css",
+        "/static/plans.css",
+        "/static/plans.js",
+        "/static/sessions.css",
+        "/static/sessions.js",
+        "/static/markdown.css",
+        "/static/pygments.css",
+        "/static/vendor/mermaid.min.js",
+    }
+    assert expected <= rules
+    # SSEは画面ごとに分ける。単一経路へまとめると別画面の更新でも再読込することになる。
+    assert "/api/events" in rules
+
+
+@pytest.mark.asyncio
+async def test_plan_and_session_pages_apply_base_path(tmp_path: pathlib.Path) -> None:
+    """追加した2画面のページがベースパスを反映する。"""
+    app = _three_screen_app(tmp_path)
+    client = app.test_client()
+    for path in ("/atk/plans", "/atk/sessions"):
+        response = await client.get(path, headers={"X-Forwarded-Prefix": "/atk"})
+        assert response.status_code == 200
+        body = await response.get_data(as_text=True)
+        assert 'href="/atk/"' in body
+        assert '"base_path": "/atk"' in body
+        assert "/atk/atk/" not in body
+
+
+@pytest.mark.asyncio
+async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Path) -> None:
+    """追加した2画面のAPIが既存と同じ応答分類（入力不正400・未検出404）を返す。"""
+    app = _three_screen_app(tmp_path)
+    client = app.test_client()
+    assert (await client.get("/api/plans/file")).status_code == 400
+    assert (await client.get("/api/plans/file?path=a.md&host=unknown-host")).status_code == 400
+    assert (await client.get("/api/sessions/detail")).status_code == 400
+    assert (await client.get("/api/sessions/detail?engine=claude&path=../etc/passwd.jsonl")).status_code == 404
+    assert (await client.get("/api/sessions/detail?engine=unknown&path=a.jsonl")).status_code == 404
+
+
+def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> None:
+    """設定の正本を`serve.toml`へ統合し、両画面の参照元を同じファイルで解決する。"""
+    path = tmp_path / "serve.toml"
+    path.write_text(
+        'host = "toml-host"\n'
+        "\n"
+        "[plans]\n"
+        'root = "/srv/plans"\n'
+        'remote_hosts = ["circe", "stheno"]\n'
+        "\n"
+        "[sessions]\n"
+        'claude_home = "/srv/claude"\n'
+        'codex_home = "/srv/codex"\n'
+        'remote_hosts = ["circe"]\n',
+        encoding="utf-8",
+    )
+    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
+    assert resolved.host == "toml-host"
+    assert resolved.port == 28766
+    assert resolved.plans == config.PlansConfig(root="/srv/plans", remote_hosts=("circe", "stheno"))
+    assert resolved.sessions == config.SessionsConfig(
+        claude_home="/srv/claude",
+        codex_home="/srv/codex",
+        remote_hosts=("circe",),
+    )
+
+
+def test_config_defaults_when_sections_are_absent(tmp_path: pathlib.Path) -> None:
+    """節を持たない設定では両画面の参照元を既定へ委ねる。"""
+    path = tmp_path / "serve.toml"
+    path.write_text("port = 3000\n", encoding="utf-8")
+    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
+    assert resolved.plans == config.PlansConfig()
+    assert resolved.sessions == config.SessionsConfig()
+
+
+def test_config_ignores_legacy_plans_viewer_file(tmp_path: pathlib.Path) -> None:
+    """旧`claude-plans-viewer.toml`は読み込まず、`serve.toml`だけを正本とする。"""
+    legacy = tmp_path / "claude-plans-viewer.toml"
+    legacy.write_text('root = "/legacy"\nremote-hosts = ["legacy-host"]\n', encoding="utf-8")
+    path = tmp_path / "serve.toml"
+    path.write_text("", encoding="utf-8")
+    resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
+    assert resolved.plans.root is None
+    assert not resolved.plans.remote_hosts
+
+
+def test_config_warns_unknown_keys_in_screen_sections(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """画面別の節の未知キーを警告して無視し、既知キーの解決は継続する。"""
+    path = tmp_path / "serve.toml"
+    path.write_text('[plans]\nroot = "/srv/plans"\nunknown_key = 1\n', encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        resolved = config.resolve_config(environ={"AGENT_TOOLKIT_SERVE_CONFIG": str(path)}, platform="linux")
+    assert resolved.plans.root == "/srv/plans"
+    assert "unknown_key" in caplog.text
 
 
 @pytest.mark.asyncio

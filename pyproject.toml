@@ -30,14 +30,12 @@ dependencies = [
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
-    "watchdog>=6.0.0",
     "zstandard",
 ]
 
 [project.scripts]
 check-image-sizes = "pytools.check_image_sizes:main"
 ccommit = "pytools.claude_commit:main"
-claude-plans-viewer = "pytools.claude_plans_viewer:main"
 claude-session-export = "pytools.claude_session_export:main"
 claudize = "pytools.claudize:main"
 clonedir = "pytools.clonedir:main"
@@ -127,7 +125,13 @@ colloquial-check = true
 markdownlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-exclude = [".chezmoi-source/dot_codex/AGENTS.md"]
 textlint-args = ["--cache"]
-lychee-exclude = [".chezmoi-source/dot_codex/AGENTS.md", "agent-toolkit/scripts/_atk_serve_static/index.html"]
+lychee-exclude = [
+    ".chezmoi-source/dot_codex/AGENTS.md",
+    # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
+    "agent-toolkit/scripts/_atk_serve_static/index.html",
+    "agent-toolkit/scripts/_atk_serve_static/plans.html",
+    "agent-toolkit/scripts/_atk_serve_static/sessions.html",
+]
 # profile_ipy/はIPython自動生成プロファイル、
 # tone-examples.md・tone-examples-llm-tone.mdは意図的な違反例を収録するため検査対象外とする。
 extend-exclude = [
@@ -160,6 +164,8 @@ targets = [
     "agent-toolkit/.claude-plugin/plugin.json",
     "agent-toolkit/.codex-plugin/plugin.json",
     "agent-toolkit/plugin.json",
+    "agent-toolkit/.mcp.json",
+    "agent-toolkit/.mcp.codex.json",
     "agent-toolkit/mcp.json",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",

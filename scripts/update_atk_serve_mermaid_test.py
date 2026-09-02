@@ -13,13 +13,13 @@ from typing import Any
 
 import pytest
 import semantic_version
-import update_claude_plans_viewer_mermaid as updater
+import update_atk_serve_mermaid as updater
 
 _NOW = datetime.datetime(2026, 7, 29, 12, tzinfo=datetime.UTC)
 _TARBALL_URL = "https://registry.npmjs.org/mermaid/-/mermaid-10.0.0.tgz"
 _BUNDLE = b"window.mermaid={version:'10.0.0'};\n"
 _LICENSE = b"MIT License\n"
-_VENDOR_DIR = pathlib.Path(__file__).resolve().parents[1] / "pytools" / "claude_plans_viewer" / "vendor"
+_VENDOR_DIR = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts" / "_atk_serve_static" / "vendor"
 
 
 def _metadata(integrity: str = "sha512-placeholder") -> dict[str, object]:

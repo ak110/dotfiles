@@ -131,6 +131,49 @@ class FakeBackend:
         """バックエンド終了処理のダミー。"""
 
 
+class UnavailableStartBackend(FakeBackend):
+    """起動応答の前にengineの可用性で終端する偽バックエンド。"""
+
+    def __init__(
+        self,
+        sessions: dict[str, subject.SessionState],
+        engine: str,
+        error: Any = None,
+    ) -> None:
+        super().__init__(sessions, engine)
+        self.error = error if error is not None else {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
+
+    async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await super().start(*args, **kwargs)
+        _complete(session, message="", error=self.error)
+        return session
+
+
+class DelayedUnavailableBackend(FakeBackend):
+    """起動応答を返した後にengineの可用性で終端する偽バックエンド。"""
+
+    def __init__(
+        self,
+        sessions: dict[str, subject.SessionState],
+        engine: str,
+        condition: asyncio.Condition,
+    ) -> None:
+        super().__init__(sessions, engine)
+        self._condition = condition
+        self.pending: list[asyncio.Task[None]] = []
+
+    async def start(self, *args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await super().start(*args, **kwargs)
+        self.pending.append(asyncio.create_task(self._fail_after_response(session)))
+        return session
+
+    async def _fail_after_response(self, session: subject.SessionState) -> None:
+        await asyncio.sleep(0)
+        _complete(session, message="", error={"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"})
+        async with self._condition:
+            self._condition.notify_all()
+
+
 class BlockingInterruptBackend(FakeBackend):
     """中断要求の配送を解除イベントまで停止する偽バックエンド。"""
 
@@ -195,11 +238,22 @@ def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[su
     """指定engineだけをFakeBackendへ差し替えた共有managerを返す。"""
     manager = subject.AgentsServerManager()
     backend = FakeBackend(manager.sessions, engine, delivery)
+    _install_backend(manager, engine, backend)
+    return manager, backend
+
+
+def _install_backend(manager: subject.AgentsServerManager, engine: str, backend: FakeBackend) -> None:
+    """指定engineのバックエンドを差し替える。"""
     if engine == "codex":
         manager._codex = backend
     else:
         manager._claude = backend
-    return manager, backend
+
+
+@pytest.fixture(autouse=True)
+def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動直後の終端確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.05)
 
 
 def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> None:
@@ -264,6 +318,22 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "返した`session_id`" in tool.description
         assert "同じ応答の中で`wait`を発行して観測する" in tool.description
         assert "結果が不要なら`kill`で破棄する" in tool.description
+
+
+def test_exclude_session_id_schema_describes_candidate_exclusion() -> None:
+    """開始ツールの入力スキーマが除外指定の動作と受理条件を示す。"""
+    expected_conditions = {
+        "start": "同じ`model_type`で開始した通常起動のsessionだけを渡す。",
+        "start_explore": "同じ`fast`の値で開始した探索起動のsessionだけを渡す。",
+    }
+    for tool_name, condition in expected_conditions.items():
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        description = tool.parameters["properties"]["exclude_session_id"]["description"]
+        assert description == (
+            "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。" + condition
+        )
+        assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
 
 
 def test_public_timeout_schemas_expose_unified_defaults() -> None:
@@ -383,11 +453,44 @@ async def test_start_rejects_unknown_model_type_and_mismatched_exclusion_before_
 
 
 @pytest.mark.asyncio
-async def test_start_propagates_backend_failure_without_advancing_candidate(
+async def test_start_advances_candidate_when_backend_start_raises(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """backend開始失敗を同じ呼び出し内の次候補で再試行しないことを検証する。"""
+    """backend開始が例外で失敗した候補を除外し、同じ呼び出しで次候補を起動する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+    original_start = backend.start
+    calls: list[tuple[str | None, str | None]] = []
+
+    async def fail_first_start(
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        **kwargs: Any,
+    ) -> subject.SessionState:
+        calls.append((model, effort))
+        if model == "first":
+            raise RuntimeError("backend unavailable")
+        return await original_start(prompt, cwd, model, effort, **kwargs)
+
+    monkeypatch.setattr(backend, "start", fail_first_start)
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert calls == [("first", "high"), ("second", "high")]
+    assert response["model"] == "second"
+    assert response["status"] == "running"
+    assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+
+
+@pytest.mark.asyncio
+async def test_start_raises_last_failure_when_every_candidate_fails_to_launch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """全候補のbackend開始が例外で失敗した場合だけ、最後の失敗を送出する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
@@ -401,12 +504,111 @@ async def test_start_propagates_backend_failure_without_advancing_candidate(
         **_kwargs: Any,
     ) -> subject.SessionState:
         calls.append((model, effort))
-        raise RuntimeError("backend unavailable")
+        raise RuntimeError(f"backend unavailable: {model}")
 
     monkeypatch.setattr(backend, "start", fail_start)
-    with pytest.raises(RuntimeError, match="backend unavailable"):
+    with pytest.raises(RuntimeError, match="backend unavailable: second"):
         await manager.start("plan", "調査", str(tmp_path))
-    assert calls == [("first", "high")]
+    assert calls == [("first", "high"), ("second", "high")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delayed", [False, True])
+async def test_start_advances_candidate_when_engine_reports_unavailable(
+    delayed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """利用上限で終端した候補を除外し、別engineの次候補で起動する。
+
+    起動応答の前に終端した場合と、応答の後に終端した場合の双方を対象とする。
+    """
+    candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, claude = _manager_with_fake("claude")
+    codex: FakeBackend = (
+        DelayedUnavailableBackend(manager.sessions, "codex", manager._condition)
+        if delayed
+        else UnavailableStartBackend(manager.sessions, "codex")
+    )
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert codex.start_calls == [("first", "high", False)]
+    assert claude.start_calls == [("second", "medium", False)]
+    assert response["engine"] == "claude"
+    assert response["model"] == "second"
+    assert response["status"] == "running"
+    assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+
+
+@pytest.mark.asyncio
+async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """全候補が利用上限で終端した場合だけ、最後の候補の失敗を返す。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    codex = UnavailableStartBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert codex.start_calls == [("first", "high", False), ("second", "high", False)]
+    assert response["status"] == "failed"
+    assert response["model"] == "second"
+    assert (await manager.wait(response["session_id"], timeout=0))["error"] == codex.error
+
+
+@pytest.mark.asyncio
+async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """engineの可用性以外で終端した候補では次候補へ進まない。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    codex = UnavailableStartBackend(
+        manager.sessions,
+        "codex",
+        error={"message": "invalid request", "codexErrorInfo": "badRequest"},
+    )
+    _install_backend(manager, "codex", codex)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert codex.start_calls == [("first", "high", False)]
+    assert response["status"] == "failed"
+    assert response["model"] == "first"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("invalid", "message"),
+    [("prompt", "prompt must be a non-empty string"), ("cwd", "cwd is not an existing directory")],
+)
+async def test_start_rejects_candidate_independent_input_before_any_backend(
+    invalid: str,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """候補を変えても結果が変わらない入力の不備は、どの候補も起動せずに拒否する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+
+    with pytest.raises(ValueError, match=message):
+        await manager.start(
+            "plan",
+            "" if invalid == "prompt" else "調査",
+            str(tmp_path) if invalid == "prompt" else str(tmp_path / "missing"),
+        )
+    assert not backend.start_calls
 
 
 @pytest.mark.asyncio
