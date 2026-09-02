@@ -6,7 +6,9 @@
 
 判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
 `wait`は応答の`status`を問わず観測を試みたことになり、`kill`は結果を意図的に
-破棄するため、いずれも`pending_observation`を解消する。一度解消したsessionでも、
+破棄するため、いずれも`pending_observation`を解消する。実行環境が`wait`・`kill`を
+背景タスクへ移し、構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
+一度解消したsessionでも、
 `send_message`が新しい作業を配送すれば再び警告対象になる。
 
 警告は`hookSpecificOutput.additionalContext`で当該ターンを継続させる。

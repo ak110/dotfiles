@@ -365,6 +365,33 @@ def _record_agents_server_session_state(
     update_state(session_id, _mutator)
 
 
+def _record_agents_server_observation_attempt(session_id: str, tool_input: dict, *, operation: str) -> None:
+    """背景タスクへ移った`wait`・`kill`の移行通知から観測の試みだけを記録する。
+
+    実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
+    `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
+    呼び出しの受理をもって観測を試みたものとして扱い、応答境界へ到達しない経路でも
+    `pending_observation`を偽にする。対象は`tool_input`の`session_id`で解決した既存記録に限り、
+    記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
+    公開状態は移行通知から確定できないため更新しない。
+    """
+    if operation not in {"wait", "kill"}:
+        return
+    remote_session_id = tool_input.get("session_id")
+    if not isinstance(remote_session_id, str) or not remote_session_id:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
+        record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
+        if not isinstance(record, dict) or record.get("pending_observation") is False:
+            return None
+        record["pending_observation"] = False
+        return state
+
+    update_state(session_id, _mutator)
+
+
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
     """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
@@ -684,13 +711,18 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         tool_response = payload.get("tool_response", {})
         structured = _extract_agents_server_structured_response(tool_response)
-        if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and _stop_gate.background_task_id_from_notice(tool_response) is None:
+        moved_to_background = _stop_gate.background_task_id_from_notice(tool_response) is not None
+        operation = tool_name.rsplit("__", 1)[-1]
+        if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and not moved_to_background:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
                 display_name = tool_name.rsplit("__", 1)[-1]
                 notices.append(_llm_notice(f"warn: {display_name} response is missing or invalid {', '.join(missing)}."))
+        remote_session_id = structured.get("session_id")
+        if moved_to_background and not (isinstance(remote_session_id, str) and remote_session_id):
+            _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
+            return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
-        operation = tool_name.rsplit("__", 1)[-1]
         owner_agent_id = extract_transcript_agent_id(payload.get("transcript_path")) or _MAIN_AGENT_ID
         if tool_name in _AGENTS_SERVER_START_TOOLS:
             _record_agents_server_session_state(
