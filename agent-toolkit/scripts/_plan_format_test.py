@@ -250,6 +250,18 @@ def test_human_readable_action_rejects_feedback_missing_from_metadata() -> None:
     assert any("フィードバック由来が関連フィードバックに無い" in error for error in errors), errors
 
 
+def test_feedback_origin_diagnostic_shows_expected_format() -> None:
+    """受理形式に一致しない`由来`欄の診断は、半角丸括弧を用いた期待書式の実例を示す。"""
+    example = "`エージェント由来のフィードバック (20260831-000000-001.md)`"
+    origin = f"人間由来のフィードバック ({_plan_fixture.FEEDBACK_FILES[0][0]})"
+    full_width = _HUMAN_MAIN_CONTENT.replace(origin, f"人間由来のフィードバック（{_plan_fixture.FEEDBACK_FILES[0][0]}）", 1)
+    errors = _plan_format.check_plan_main_structure(full_width)[1]
+    assert any(example in error for error in errors), errors
+    without_name = _HUMAN_MAIN_CONTENT.replace(origin, "人間由来のフィードバック", 1)
+    errors = _plan_format.check_plan_main_structure(without_name)[1]
+    assert any(example in error for error in errors), errors
+
+
 def test_related_feedback_rejects_invalid_filename() -> None:
     """関連フィードバックは正本ファイル名だけを受理する。"""
     content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "docs/notes.md", 1)

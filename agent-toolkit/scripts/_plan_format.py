@@ -1907,7 +1907,11 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
         review_origin = PLAN_HUMAN_REVIEW_ORIGIN_PATTERN.fullmatch(origin)
         if origin in PLAN_HUMAN_ORIGINS:
             if origin.endswith("フィードバック"):
-                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来には正本ファイル名を括弧内へ記載する: {origin}")
+                errors.append(
+                    f"`## {PLAN_H2_ACTION}`のフィードバック由来には"
+                    "半角空白1字に続けて半角丸括弧で囲んだ正本ファイル名を記載する"
+                    f"（例: `エージェント由来のフィードバック (20260831-000000-001.md)`）: {origin}"
+                )
         elif origin.startswith(f"{PLAN_HUMAN_FEEDBACK_ORIGIN} (") or origin.startswith("エージェント由来のフィードバック ("):
             match = PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN.fullmatch(origin)
             if match is None:
@@ -1925,8 +1929,10 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                 _collect_origin_notices(match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
-                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}又は計画レビュー第nラウンド、"
-                f"ファイル名付きフィードバックにする: {origin}"
+                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、又は"
+                "区分と半角空白1字と半角丸括弧で囲んだ正本ファイル名"
+                "（例: `エージェント由来のフィードバック (20260831-000000-001.md)`）にする: "
+                f"{origin}"
             )
         decision = row[decision_index]
         if decision not in PLAN_ACTION_DECISIONS:

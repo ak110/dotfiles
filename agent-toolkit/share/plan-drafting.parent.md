@@ -39,6 +39,6 @@
 
 ## 指摘の配送
 
-起動主体が計画担当へレビュー指摘を配送する場合は、配送文へ`agent-toolkit:reviewee-standards`のSKILL.mdと`agent-toolkit:review-standards`の判断詳細契約の絶対パスを含める。
+起動主体が計画担当へレビュー指摘を配送する場合は、配送文へ`agent-toolkit:reviewee-standards`のSKILL.mdと`agent-toolkit:review-standards`の判断詳細契約の絶対パス、及び`round: <ラウンド番号>`の行を含める。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
 
 計画担当又はレビュー担当からエスカレーションを受領した場合は、工程を中断し、内容だけを`needs_escalation`で呼び出し元へ中継する。回答後は同じthreadへ中継する。
