@@ -218,12 +218,9 @@ main .spacer { flex: 1; }
     background: rgb(0 0 0 / 0.35);
   }
 
+  /* 配色・境界・角丸は`shell.css`の共通規則が定める。本規則は表示の切り替えと寸法だけを指定する。 */
   #menu-btn {
     display: inline-block;
     padding: 4px 10px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
   }
 }

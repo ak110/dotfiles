@@ -71,16 +71,11 @@
     background: #ffffff;
     border-bottom: 1px solid #e6e6e6;
   }
+  /* 配色・境界・角丸・無効時表示は`shell.css`の共通規則が定める。本規則はツールバー内の寸法だけを指定する。 */
   main .toolbar button {
     padding: 6px 12px;
     font-size: 13px;
-    background: #ffffff;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    cursor: pointer;
   }
-  main .toolbar button:hover:not(:disabled) { background: #f3f4f6; }
-  main .toolbar button:disabled { color: #9ca3af; cursor: default; }
   main .toolbar .spacer { flex: 1; }
   main .toolbar .nav-btn { min-width: 36px; padding: 6px 10px; }
   /* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */

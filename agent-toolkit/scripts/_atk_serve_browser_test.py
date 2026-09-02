@@ -1956,6 +1956,55 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
 
 
 @pytest.mark.asyncio
+async def test_header_navigation_is_centered_on_three_screens(screen_harness: _ScreenHarness) -> None:
+    """ヘッダーの子要素の数が画面ごとに異なっても、3画面ともナビゲーションを画面中央へ置く。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 1280, "height": 800})
+
+    for path in ("/", "/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        navigation = harness.page.locator("nav.app-nav")
+        await navigation.wait_for(state="visible")
+        box = await navigation.bounding_box()
+        assert box is not None
+        viewport_width = await harness.page.evaluate("document.documentElement.clientWidth")
+        # 小数の丸めだけを許容し、片側へ寄る配置を検出する。
+        assert abs((box["x"] + box["width"] / 2) - viewport_width / 2) <= 1, path
+
+
+@pytest.mark.asyncio
+async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _ScreenHarness) -> None:
+    """3画面のボタンを共通の配色・境界・角丸で表示し、無効なボタンは不透明度を下げる。"""
+    harness = screen_harness
+    properties = ["backgroundColor", "color", "borderTopColor", "borderTopWidth", "borderRadius"]
+    # 一覧を開くボタンは狭い画面でだけ表示するため、3画面とも同じ幅で比較する。
+    await harness.page.set_viewport_size({"width": 600, "height": 800})
+    styles: dict[str, dict[str, str]] = {}
+
+    for path, selector in (("/", "#refresh-button"), ("/plans", "#menu-btn"), ("/sessions", "#menu-btn")):
+        await harness.page.goto(harness.base_url + path)
+        button = harness.page.locator(selector)
+        await button.wait_for(state="visible")
+        styles[path] = await button.evaluate(
+            "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))",
+            properties,
+        )
+
+    assert styles["/plans"] == styles["/"]
+    assert styles["/sessions"] == styles["/"]
+
+    await harness.page.goto(harness.base_url + "/plans")
+    # 計画ファイルが1件だけの構成では、前のファイルへ移動するボタンが無効のまま表示される。
+    previous_button = harness.page.locator("#prev-btn")
+    await previous_button.wait_for(state="visible")
+    assert await previous_button.is_disabled()
+    enabled = await harness.page.locator("#menu-btn").evaluate("(element) => getComputedStyle(element).opacity")
+    disabled = await previous_button.evaluate("(element) => getComputedStyle(element).opacity")
+    assert float(enabled) == 1
+    assert float(disabled) < 1
+
+
+@pytest.mark.asyncio
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
     """左ペインで実行系・ホスト・プロジェクト・日時により一覧を限定し、右ペインへ発話を時系列に表示する。"""
     harness = screen_harness

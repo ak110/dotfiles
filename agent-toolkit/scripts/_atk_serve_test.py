@@ -274,7 +274,7 @@ def test_assets_style_markdown_and_inputs_by_purpose() -> None:
         assert rule is not None
         assert "clamp(" in rule.group(1)
     mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
-    assert ".app-header { align-items: flex-start; flex-wrap: wrap; }" in mobile
+    assert ".app-header { grid-template-columns: minmax(0, 1fr); align-items: start; }" in mobile
     assert ".dialog-footer button { width: auto; }" in mobile
     assert "button,\n  input,\n  select,\n  textarea" not in mobile
 
