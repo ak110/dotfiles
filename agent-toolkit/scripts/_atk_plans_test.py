@@ -1278,6 +1278,77 @@ def test_commit_removes_owner_record_of_direct_working_plan(tmp_path: pathlib.Pa
     assert (notes / "plans" / str(result["plan_file"])).read_text(encoding="utf-8") == "# main\n"
 
 
+def test_commit_removes_working_residue_and_reclaims_parent_directories(tmp_path: pathlib.Path) -> None:
+    """保存確定はstemに対応するロック・退避・一時ファイルを回収し、親ディレクトリも空にする。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-残骸回収-d4f9.md")
+    working_root = _plan_file.working_plans_root(home)
+    main = working_root / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    review = main.with_name(main.stem + ".exec-review.tsv")
+    review.write_text('1\t"implementation-review"\n', encoding="utf-8")
+    residue = (
+        main.with_name(main.name + ".lock"),
+        review.with_name(review.name + ".lock"),
+        main.with_name(main.name + ".bak"),
+        main.with_name(main.stem + ".detail.md.tmp"),
+    )
+    for path in residue:
+        path.touch()
+
+    _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert [path for path in residue if path.exists()] == []
+    assert not main.parent.exists()
+    assert not main.parent.parent.exists()
+
+
+def test_commit_keeps_shared_plan_creation_lock_in_working_root(tmp_path: pathlib.Path) -> None:
+    """保存確定は他計画の残骸と作業root直下の共有ロックを削除しない。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("30-共有ロック-d4f9.md")
+    working_root = _plan_file.working_plans_root(home)
+    main = working_root / relative
+    main.parent.mkdir(parents=True)
+    main.write_text("# main\n", encoding="utf-8")
+    own_lock = main.with_name(main.name + ".lock")
+    own_lock.touch()
+    shared_lock = working_root / ".agent-toolkit-plan-create.lock"
+    shared_lock.touch()
+    other_lock = working_root / "30-別計画-a1b2.md.lock"
+    other_lock.touch()
+
+    _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert not own_lock.exists()
+    assert shared_lock.exists()
+    assert other_lock.exists()
+
+
+def test_commit_removes_working_residue_of_checked_out_plan(tmp_path: pathlib.Path) -> None:
+    """取得した計画の保存確定でも作業側のロックを残さない。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-取得残骸-d4f9.md")
+    main, _detail = _create_saved_plan(notes, relative)
+    copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+    working_main = _plan_file.working_plans_root(home) / main.name
+    working_main.write_text("# updated main\n", encoding="utf-8")
+    lock = working_main.with_name(working_main.name + ".lock")
+    lock.touch()
+
+    _atk_plans.commit_plan(notes, main.name, home=home)
+
+    assert all(not path.exists() for path in copied)
+    assert not lock.exists()
+
+
 def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pathlib.Path) -> None:
     """一覧は所有記録の有無にかかわらず全ての計画ファイル（メイン）を出力する。"""
     home = tmp_path / "home"

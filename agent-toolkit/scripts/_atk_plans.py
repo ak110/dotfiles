@@ -72,12 +72,29 @@ def build_parser(parser) -> None:
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 
+_WORKING_RESIDUE_SUFFIXES = (".lock", ".bak", ".tmp")
+"""計画バンドルへ含めず、作業バンドルの回収時に作業rootから取り除く付随ファイルの拡張子。"""
+
+
 def _excluded_path(path: pathlib.Path) -> bool:
     """計画バンドルから一時ファイルと所有記録を除外する。
 
     所有記録は計画作業rootの局所状態であり、private-notesへ保存しない。
     """
-    return path.name.endswith((".lock", ".bak", ".tmp", _plan_file.OWNER_RECORD_SUFFIX))
+    return path.name.endswith((*_WORKING_RESIDUE_SUFFIXES, _plan_file.OWNER_RECORD_SUFFIX))
+
+
+def _remove_working_residue(working_main: pathlib.Path) -> None:
+    """指定計画のstemに対応する作業側の付随ファイルを削除する。
+
+    これらは計画バンドルから除外されて保存rootへ移らないため、作業バンドルの回収と
+    同じ時点で取り除く。stemに前方一致する名前だけを対象とするため、計画作成の排他に
+    使う作業root直下の共有ロックは削除しない。
+    """
+    prefix = f"{working_main.stem}."
+    for path in working_main.parent.iterdir():
+        if path.name.startswith(prefix) and path.name.endswith(_WORKING_RESIDUE_SUFFIXES):
+            path.unlink()
 
 
 def _as_relative_notes_path(path: pathlib.Path, private_notes: pathlib.Path) -> str:
@@ -392,6 +409,7 @@ def _remove_finalized_working_bundle(
     ordered_sources = sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name))
     for source in ordered_sources:
         _finalize_plan_file(source, destination_by_name[source.name], snapshots[source][1])
+    _remove_working_residue(working_bundle[0].parent / relative_main.name)
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     for directory in (working_bundle[0].parent, working_bundle[0].parent.parent):
         if directory != root and directory.is_relative_to(root):
@@ -425,6 +443,7 @@ def _remove_checked_out_working_bundle(
             raise _common.WebInputError(f"保存処理中に作業ファイルが変更されたため回収しません: {source}")
     for source in sorted(working_bundle, key=lambda path: (path.name == relative_main.name, path.name)):
         source.unlink()
+    _remove_working_residue(working_bundle[0].parent / relative_main.name)
 
 
 def _bundle_contents(bundle: Iterable[pathlib.Path]) -> dict[str, bytes]:
