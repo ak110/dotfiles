@@ -29,6 +29,7 @@ import socket
 import subprocess
 import typing
 
+import _atk_serve_remote
 import _file_lock
 import markdown_it
 import markdown_it.renderer
@@ -137,14 +138,8 @@ _PYGMENTS_CSS_CLASS = "codehilite"
 
 _STATIC_DIR = pathlib.Path(__file__).with_name("_atk_serve_static")
 
-# リモート側で実行する短いPython bootstrap。
-# `$`・`%`・`<`・`>`・`|`・`&`・`^`はPOSIXシェル/cmd.exe双方で意味を持つためコード本体に含めない。
-REMOTE_BOOTSTRAP = (
-    "import os, pathlib; "
-    "p = pathlib.Path(os.path.expanduser('~')) / "
-    "'dotfiles/agent-toolkit/scripts/atk_serve_plans_remote_helper.py'; "
-    "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
-)
+# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`を正本とする。
+REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_helper.py")
 
 
 # --------------------------------------------------------------------------------------
@@ -985,10 +980,9 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
     シェル組み込みコマンドへ依存しないこと。
     リモート側に`$HOME/dotfiles`が存在することを前提とし、ヘルパースクリプトは当該配下から読み込む。
-    `~`はcmd.exeでは展開されないため、Pythonの`os.path.expanduser('~')`で展開する。
     クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
     `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。
-    Windowsの既定ロケールはUTF-8とは限らないため、ヘルパー本体の読み込みはエンコーディングを明示する。
+    bootstrapコード本体が満たす制約は`_atk_serve_remote.remote_bootstrap`を正本とする。
     """
     return [
         "uv",
