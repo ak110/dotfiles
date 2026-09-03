@@ -618,6 +618,55 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("api_error_status", [429, 529])
+async def test_start_advances_candidate_when_claude_reports_unavailable_status(
+    api_error_status: int,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Claudeが可用性由来のHTTPステータスで終端した候補を除外し、次候補で起動する。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, codex = _manager_with_fake("codex")
+    claude = UnavailableStartBackend(
+        manager.sessions,
+        "claude",
+        error={"message": "api error", "apiErrorStatus": api_error_status},
+    )
+    _install_backend(manager, "claude", claude)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert claude.start_calls == [("first", "high", False)]
+    assert codex.start_calls == [("second", "medium", False)]
+    assert response["engine"] == "codex"
+    assert response["model"] == "second"
+    assert response["status"] == "running"
+    assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [{"message": "bad request", "apiErrorStatus": 400}, {"message": "bad request"}])
+async def test_start_keeps_claude_failure_that_does_not_depend_on_the_candidate(
+    error: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Claudeが可用性由来でないHTTPステータスで終端した場合と、状態を持たない場合は次候補へ進まない。"""
+    candidates = [("claude", "first", "high"), ("claude", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    claude = UnavailableStartBackend(manager.sessions, "claude", error=error)
+    _install_backend(manager, "claude", claude)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert claude.start_calls == [("first", "high", False)]
+    assert response["status"] == "failed"
+    assert response["model"] == "first"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("invalid", "message"),
     [("prompt", "prompt must be a non-empty string"), ("cwd", "cwd is not an existing directory")],

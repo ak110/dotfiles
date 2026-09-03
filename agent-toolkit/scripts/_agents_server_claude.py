@@ -499,11 +499,17 @@ class ClaudeServerManager:
         errors = getattr(message, "errors", None)
         if session.status == "failed":
             if isinstance(errors, list) and errors:
-                session.error = {"message": "; ".join(str(item) for item in errors)}
+                error: dict[str, Any] = {"message": "; ".join(str(item) for item in errors)}
             elif isinstance(result, str) and result:
-                session.error = {"message": result}
+                error = {"message": result}
             else:
-                session.error = {"message": "Claude Agent SDK returned an error"}
+                error = {"message": "Claude Agent SDK returned an error"}
+            # `api_error_status`は失敗したAPI呼び出しのHTTPステータスを示す。
+            # MCP層がengineの可用性を判定するために保持する。
+            api_error_status = getattr(message, "api_error_status", None)
+            if isinstance(api_error_status, int):
+                error["apiErrorStatus"] = api_error_status
+            session.error = error
         session.turn_completed = True
         session.turn_start_ambiguous = False
         session.touch()

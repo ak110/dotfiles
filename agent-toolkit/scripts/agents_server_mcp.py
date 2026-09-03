@@ -54,6 +54,11 @@ START_AVAILABILITY_TIMEOUT = 15.0
 # `codex app-server generate-json-schema`が出力する`CodexErrorInfo`列挙のうち、
 # 利用枠超過、流量制限及びサーバー側過負荷に該当する区分へ限定する。
 ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExceeded", "serverOverloaded"})
+# engineの可用性に起因し、別候補なら結果が変わり得るClaude APIのHTTPステータス。
+# Claude APIの公式なエラーコード表が再試行可能とする429（rate_limit_error）と
+# 529（overloaded_error）へ限定する。500（api_error）はサービス内部の失敗であり、
+# 候補の変更で解決するとは限らないため含めない。
+ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({429, 529})
 
 
 @dataclasses.dataclass
@@ -93,7 +98,9 @@ def _engine_unavailable(session: SessionState) -> bool:
     """終端したsessionが、engineの可用性を理由に失敗したかを返す。"""
     if session.status != "failed" or not isinstance(session.error, dict):
         return False
-    return session.error.get("codexErrorInfo") in ENGINE_UNAVAILABLE_ERROR_INFO
+    if session.error.get("codexErrorInfo") in ENGINE_UNAVAILABLE_ERROR_INFO:
+        return True
+    return session.error.get("apiErrorStatus") in ENGINE_UNAVAILABLE_API_ERROR_STATUS
 
 
 class AgentsServerManager:

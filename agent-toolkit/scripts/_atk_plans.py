@@ -720,9 +720,13 @@ def _migratable_legacy_files(
     legacy_root: pathlib.Path,
     files: tuple[pathlib.Path, ...],
 ) -> tuple[pathlib.Path, ...]:
-    """正規作業バンドルを除いた旧形式ファイルを返す。"""
+    """正規作業バンドルと取得中のバンドルを除いた旧形式ファイルを返す。"""
     migratable: list[pathlib.Path] = []
     for main, members in _associated_groups(files).items():
+        if _plan_file.owner_record_path(main).exists():
+            # 所有記録はバンドルを取得した主体が置く。移行はcommitとpushを伴うため、
+            # 取得中のバンドルを移すと当該主体の未反映の更新が保存先と分岐する。
+            continue
         try:
             relative = main.relative_to(legacy_root)
             if len(relative.parts) == 1:

@@ -1047,6 +1047,29 @@ def test_migrate_plans_skips_canonical_working_bundle(tmp_path: pathlib.Path, re
     assert not (notes / "plans" / relative).exists()
 
 
+@pytest.mark.parametrize("owned", [True, False])
+def test_migrate_plans_skips_bundle_with_owner_record(tmp_path: pathlib.Path, owned: bool) -> None:
+    """所有記録を持つ旧形式バンドルは移行せず、記録が無い同じ構成は移行する。"""
+    home = tmp_path / "home"
+    legacy = home / ".claude" / "plans"
+    legacy.mkdir(parents=True)
+    main = legacy / "legacy.md"
+    detail = legacy / "legacy.detail.md"
+    main.write_text("# main\n", encoding="utf-8")
+    detail.write_text("# detail\n", encoding="utf-8")
+    if owned:
+        _plan_file.owner_record_path(main).write_text('{"session_id": "s1"}', encoding="utf-8")
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+
+    result = _atk_plans.migrate_plans(notes, home=home)
+
+    assert result["migrated"] == (0 if owned else 2)
+    assert main.is_file() is owned
+    assert detail.is_file() is owned
+
+
 def test_migrate_plans_keeps_legacy_files_when_remote_does_not_contain_head(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
