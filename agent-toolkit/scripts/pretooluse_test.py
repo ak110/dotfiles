@@ -4332,14 +4332,41 @@ class TestBashOutputTruncationWarning:
             "uv run pytest -q | tail -5",
             "python -m pytest | head -5",
             "timeout 600 uvx pyfltr run | tail -20",
+            "uvx pyfltr ci | tail -20",
+            "uvx pyfltr fast | tail -20",
         ],
-        ids=["run-option", "global-option-with-value", "no-option", "python-module", "timeout-uvx"],
+        ids=[
+            "run-option",
+            "global-option-with-value",
+            "no-option",
+            "python-module",
+            "timeout-uvx",
+            "pyfltr-ci",
+            "pyfltr-fast",
+        ],
     )
     def test_verification_in_execution_position_warns(self, command: str) -> None:
         """前置語とオプションを介して実行位置へ現れる検証コマンドは警告を維持する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "truncating it" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "uvx pyfltr list-runs | tail -20",
+            "uvx pyfltr show-run 01ABC | head -40",
+            "uvx pyfltr grep foo | head -3",
+            "pyfltr command-info mypy | head -5",
+            "uvx pyfltr config get x | tail -3",
+        ],
+        ids=["list-runs", "show-run", "grep", "command-info", "config"],
+    )
+    def test_pyfltr_non_verification_subcommand_is_silent(self, command: str) -> None:
+        """検証を実行しない`pyfltr`のサブコマンドは出力を切り詰めても警告しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "truncating it" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",

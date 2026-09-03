@@ -2567,7 +2567,10 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 # --- Bash: 検証コマンド出力の切り詰め検出 ---
 
 _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
-    ("pyfltr",),
+    ("pyfltr", "ci"),
+    ("pyfltr", "run"),
+    ("pyfltr", "fast"),
+    ("pyfltr", "run-for-agent"),
     ("pytest",),
     ("cargo", "test"),
     ("dotnet", "test"),
