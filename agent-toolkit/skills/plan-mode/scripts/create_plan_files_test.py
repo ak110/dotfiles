@@ -342,6 +342,29 @@ def test_rejects_portable_reference_outside_private_notes(repo: pathlib.Path, tm
     assert not list((tmp_path / "home/.claude/plans").glob("30-計画保存先移行-a1b2.*"))
 
 
+def test_allows_adjunct_prefix_quoted_in_code_fence(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
+    """コードフェンス内の逐語引用にある付属素材の接頭辞を参照として扱わない。"""
+    private_notes = tmp_path / "private-notes"
+    main_source, detail_source = _sources(repo, tmp_path)
+    quoted = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX} のパスで書く"
+    main_source.write_text(
+        main_source.read_text(encoding="utf-8").replace(_plan_fixture.USER_EVENT_TEXT, quoted, 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    main_path, _detail_path = create_plan_files.create_plan_files(
+        main_source,
+        detail_source,
+        "計画保存先移行",
+        private_notes=private_notes,
+        date=datetime.date(2026, 8, 30),
+        work_dir=repo,
+    )
+
+    assert quoted in main_path.read_text(encoding="utf-8")
+
+
 def test_rejects_working_root_symlink_outside_claude_directory(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,

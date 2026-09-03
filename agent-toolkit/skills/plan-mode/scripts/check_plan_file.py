@@ -94,7 +94,7 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
 
 def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     """コードフェンスを除く本文のスキル・専用agent参照を検査する。"""
-    inline_text = "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
+    inline_text = _plan_format.markdown_body_text(text)
     errors: list[str] = []
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
     skill_calls = _classify_skill_references(inline_text) - agent_calls

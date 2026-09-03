@@ -1194,6 +1194,26 @@ def test_rewrite_references_keeps_queue_items_unchanged(tmp_path: pathlib.Path) 
     assert queue_item.read_text(encoding="utf-8") == queue_text
 
 
+def test_rewrite_references_keeps_code_fence_verbatim(tmp_path: pathlib.Path) -> None:
+    """コードフェンス内へ逐語で引用した可搬表記は書き換えの対象にしない。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    stem = "01-参照表記-1a2b"
+    main, _detail = _saved_plan_with_references(notes, stem)
+    quoted = f"{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.norm-texts.md"
+    fence = f"### ユーザー発言1\n\n```text\n{quoted} を参照する\n```\n"
+    main.write_text(f"{main.read_text(encoding='utf-8')}\n{fence}", encoding="utf-8")
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add saved plan")
+    _git(notes, "push")
+
+    result = _atk_plans.rewrite_plan_references(notes)
+
+    assert result["references"] == 3, result
+    assert fence in main.read_text(encoding="utf-8")
+
+
 def test_rewrite_references_reports_zero_without_targets(tmp_path: pathlib.Path) -> None:
     """書き換え対象が無い場合は何も変更せず0件で終わる。"""
     notes = tmp_path / "private-notes"

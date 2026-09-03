@@ -1275,6 +1275,16 @@ title: x
     assert headings == ["## 実在"]
 
 
+def test_markdown_body_text_excludes_code_fence() -> None:
+    """本文テキストにはコードフェンス内の行を含めない。"""
+    content = "# 計画\n\n参照は`~/.claude/plans/01-計画-1a2b.bugs.md`。\n\n```text\n~/.claude/plans/ のパスで書く\n```\n"
+
+    body = _plan_format.markdown_body_text(content)
+
+    assert "`~/.claude/plans/01-計画-1a2b.bugs.md`" in body
+    assert "のパスで書く" not in body
+
+
 def test_duplicate_headings_rejects_same_text_under_same_parent() -> None:
     """同じ親の下に同じ文言の見出しが現れた場合は文言と両方の行番号を返す。"""
     content = "# 計画\n\n## 親\n\n### 子\n\n### 子\n"

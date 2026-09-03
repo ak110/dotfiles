@@ -476,6 +476,16 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
             yield body_start + body_index + 1, line
 
 
+def markdown_body_text(content: str) -> str:
+    """Markdown本文の有効行だけを連結したテキストを返す。
+
+    除外領域の定義は`iter_markdown_body_lines`に従う。
+    本文を文字列パターンで走査する処理は、除外領域内の記述を対象にしないため、
+    本関数または`iter_markdown_body_lines`を経由して入力を得る。
+    """
+    return "\n".join(line for _lineno, line in iter_markdown_body_lines(content))
+
+
 @dataclass(frozen=True)
 class PlanHeading:
     """Markdown本文で有効な見出し1件を表す。"""
