@@ -25,3 +25,17 @@ Codexでは`type`が`compacted`のレコードとして残り、所要時間の�
 - サブエージェントの起動を1件ずつ数える用途では`subagents/*.meta.json`の
   `agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`を典拠とする
 - `parentAgentId`は`spawnDepth`が2以上の記録にだけ現れる。深さ1のサブエージェントは親がセッション本体であり当該欄を持たないため、階層を復元する用途では`spawnDepth`を併用する
+
+## 集計値の典拠
+
+セッション記録から集計したトークン量、リクエスト数又は所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
+抽出器は`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`とし、`--stats`を付けて実行する。
+自作の集計を典拠にしない。
+Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。抽出器は当該重複を最後の`usage`だけへ畳み込んだ値を返す。
+`--stats`が返す総量と工程別の内訳は基準が異なる。
+総量の`elapsed_seconds`はセッションの最初と最後のレコードの時刻差である。
+工程別の`stats-tool`が示す秒はツール呼び出しごとの区間であり、親セッションと委譲先が並行して動く区間は重複して計上される。
+このため工程別の合計は総量を超えることがある。
+比率を提示する場合は、この基準差を同じ本文へ併記する。
+本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。
+再検証は同じ2つの関数を読む。
