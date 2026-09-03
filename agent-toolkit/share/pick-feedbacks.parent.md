@@ -43,6 +43,9 @@ routeとtaskが有効なら同じpicker threadを再開し、その他は一般�
 選定時点で既に`processing`だった再開項目は、この引数へ含めない。
 実行後は`atk mq list --target-repo=<repo> --skip-pull`で対象の全件が`processing`へ配置されたことを確認して①を完了する。
 警告、失敗又は部分状態を検出した場合は対象を再取得し、意図した状態なら再実行せず、部分状態又は原因不明なら計画ファイル、managed-temp、worktree及び実装担当の起動を含む②へ進まない。
+
+②へ進まない場合は、`atk mq list --target-repo=<repo> --skip-pull`で再取得した各項目の保存状態と、`atk mq start-processing`へ渡したファイル名の一覧を対照し、`processing`へ遷移していない項目を確定する。当該項目のファイル名、観測した保存状態及び当該セッションで再実行しない理由を`agent-toolkit:feedback-standards`に従って登録し、①を終える。当該セッションでは②と③へ進まない。
+
 起動時に固定した集合だけを、そのセッションの処理対象とする。
 ②の全レーンが後始末まで完了した後もready一覧を再取得せず、③へ進む。
 
