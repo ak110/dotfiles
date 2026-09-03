@@ -9,6 +9,11 @@ bucket別の既定の順に評価し、最初に一致した指定を採用す�
 「Choose the TTL yourself」節と<https://code.claude.com/docs/en/settings-reference.md>の当該設定の節
 （いずれも2026年9月2日取得）とする。再検証は同資料の当該節を再取得して順序と受理値を照合する。
 
+Claude Agent SDKで開始したセッションのターンは、main conversationのrequest bucketとして扱われる。
+設定読込元を空にした起動でも、subagentのbucketではなくmainのbucketの既定が適用される。
+典拠は同じ公式資料の「Which TTL each request gets」節（2026年9月3日取得）とし、再検証は同節のbucketの区分を読み直す。
+本モジュールは呼び出し元プロセスの環境変数と設定を読むため、別のセッションへ渡した環境変数は本モジュールの判定へ影響しない。
+
 本モジュールが読む設定はユーザー設定ファイル`~/.claude/settings.json`に限る。
 プロジェクト設定と`--settings`の指定は、判定を要求する主体の起動条件から確定できないため読まない。
 サブエージェント定義のfrontmatterも、判定時点では対象の定義が定まらないため読まない。

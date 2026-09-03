@@ -89,8 +89,16 @@ def _build_options(
     owner_session = _plan_file.resolve_owner_session_id()
     if owner_session is not None:
         env[_ENV_OWNER_SESSION] = owner_session
+    # 委譲先のプロンプトキャッシュ保持期間を経路別に固定する。評価順序は`_wait_schedule.py`のdocstringを正本とする。
+    # 探索起動は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
+    # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
+    # 前提が崩れた場合は、探索起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
+    # 1時間で書き込む事象を、セッション記録の`message.usage.cache_creation`から観測できる。
     if explore:
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+        env["CLAUDE_CODE_PROMPT_CACHE_TTL"] = "5m"
+    else:
+        env["CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"] = "1h"
     options: dict[str, Any] = {
         "cwd": cwd,
         "model": model,
