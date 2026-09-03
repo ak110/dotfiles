@@ -284,7 +284,7 @@ def main(payload_text: str) -> int:
         )
 
     if tool_name == "TaskStop":
-        if _check_task_stop(session_id):
+        if _check_task_stop(session_id, tool_input):
             return exit_with(2)
         flush_pending_notices()
         return 0
@@ -1534,14 +1534,31 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
 _TASK_STOP_RETRY_WINDOW_SECONDS = 300
 
 
-def _check_task_stop(session_id: str) -> bool:
+def _task_stop_target_ids(tool_input: dict) -> set[str]:
+    """`TaskStop`の入力から停止対象の識別子を取り出す。
+
+    `task_id`と非推奨の`shell_id`の双方を対象とする。
+    """
+    ids: set[str] = set()
+    for key in ("task_id", "shell_id"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            ids.add(value)
+    return ids
+
+
+def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     """`TaskStop`呼び出しを初回遮断し、再実行窓内なら通過させる。
 
-    判定は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
-    直近の遮断時刻のPOSIX秒）を用いる。値が存在し現在時刻との差が
+    停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
+    当該キーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
+    記録したものであり、自セッションが起動して停止用の識別子を保持している対象を表す。
+    起動主体の確認を要する遮断の対象は、自セッションの起動記録が無い停止に限る。
+
+    それ以外は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
+    直近の遮断時刻のPOSIX秒）で判定する。値が存在し現在時刻との差が
     `_TASK_STOP_RETRY_WINDOW_SECONDS`以下なら通過（偽を返す）し、それ以外は値を
-    現在時刻へ更新して遮断（真を返す）する。停止対象の識別子（`tool_input`の
-    `task_id`・`shell_id`）は読まない。
+    現在時刻へ更新して遮断（真を返す）する。
 
     ここで保存する時刻は再実行許可窓の判定にのみ用いる値であり、状態ファイル自体の
     回収期限（`_session_state.STALE_STATE_MAX_AGE_SECONDS`によるmtime基準の14日）とは
@@ -1549,6 +1566,10 @@ def _check_task_stop(session_id: str) -> bool:
     """
     now = time.time()
     state = read_state(session_id)
+    recorded = state.get("background_task_ids")
+    recorded_ids = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
+    if _task_stop_target_ids(tool_input) & recorded_ids:
+        return False
     blocked_at = state.get("task_stop_blocked_at")
     if isinstance(blocked_at, (int, float)) and now - blocked_at <= _TASK_STOP_RETRY_WINDOW_SECONDS:
         return False

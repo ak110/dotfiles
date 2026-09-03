@@ -435,6 +435,48 @@ def _record_test_executed(session_id: str) -> None:
     update_state(session_id, _set_test_executed)
 
 
+_BACKGROUND_TASK_ID_RE = re.compile(r"running in background with ID:\s*([\w-]+)")
+
+
+def _background_task_id_from_response(value: object) -> str | None:
+    """Bashの背景実行応答からタスクIDを返す。
+
+    応答は文字列と辞書のいずれの形でも届くため、入れ子を再帰的に走査する。
+    """
+    if isinstance(value, str):
+        match = _BACKGROUND_TASK_ID_RE.search(value)
+        return match.group(1) if match is not None else None
+    if isinstance(value, dict):
+        nested_values: list[object] = list(value.values())
+    elif isinstance(value, list):
+        nested_values = list(value)
+    else:
+        return None
+    for nested in nested_values:
+        task_id = _background_task_id_from_response(nested)
+        if task_id is not None:
+            return task_id
+    return None
+
+
+def _record_background_task_id(session_id: str, task_id: str) -> None:
+    """自セッションが起動した背景タスクのIDを記録する。
+
+    PreToolUse(TaskStop)が、停止対象が自セッションの起動した背景タスクかを判定する入力とする。
+    """
+
+    def _append(state: dict) -> dict | None:
+        recorded = state.get("background_task_ids")
+        recorded = list(recorded) if isinstance(recorded, list) else []
+        if task_id in recorded:
+            return None
+        recorded.append(task_id)
+        state["background_task_ids"] = recorded
+        return state
+
+    update_state(session_id, _append)
+
+
 def _record_skill_use(session_id: str, skill_name: object) -> None:
     """Skill呼び出しに対応するセッション状態を記録する。"""
     if not isinstance(skill_name, str):
@@ -687,6 +729,11 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
+
+    if tool_input.get("run_in_background"):
+        task_id = _background_task_id_from_response(payload.get("tool_response"))
+        if task_id is not None:
+            _record_background_task_id(session_id, task_id)
 
     _handle_bash_tool(session_id, command, cwd)
     return 0

@@ -4626,10 +4626,40 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """停止対象の識別子の有無と値によらず、初回は遮断し窓内は通す。"""
+        """自セッションの起動記録が無い停止は、識別子の有無と値によらず初回を遮断し窓内は通す。"""
         session_id = f"task-stop-input-{label}"
         assert self._invoke(session_id, state_dir, tool_input).returncode == 2
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
+
+    @pytest.mark.parametrize(
+        ("label", "tool_input"),
+        [
+            ("task-id", {"task_id": "bg-task-1"}),
+            ("shell-id", {"shell_id": "bg-task-1"}),
+        ],
+    )
+    def test_self_started_background_task_passes_without_block(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        label: str,
+        tool_input: dict,
+    ) -> None:
+        """自セッションが起動した背景タスクの停止は初回から通し、遮断時刻を記録しない。"""
+        session_id = f"task-stop-self-{label}"
+        _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
+        assert self._invoke(session_id, state_dir, tool_input).returncode == 0
+        assert "task_stop_blocked_at" not in _read_session_state(tmp_path, session_id)
+
+    def test_other_task_is_blocked_even_with_recorded_background_tasks(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """記録に無いタスクの停止は、他の背景タスクを記録済みでも遮断する。"""
+        session_id = "task-stop-other-target"
+        _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
 
 
 class TestExecuteReviewAlternateRouteAllowed:

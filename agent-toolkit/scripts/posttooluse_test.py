@@ -171,6 +171,55 @@ class TestTestExecution:
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
 
+    @pytest.mark.parametrize(
+        "tool_response",
+        [
+            "Command running in background with ID: bg-task-1. Output is being written to: /tmp/bg-task-1.output",
+            {"stdout": "Command running in background with ID: bg-task-1.", "stderr": ""},
+        ],
+        ids=["text", "structured"],
+    )
+    def test_background_command_records_task_id(self, tmp_path: pathlib.Path, tool_response: object):
+        """背景実行の応答から取得したタスクIDを自セッションの起動記録として保存する。"""
+        sid = "background-task-record"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": tool_response,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-1"]
+
+    def test_foreground_command_does_not_record_task_id(self, tmp_path: pathlib.Path):
+        """前景実行では起動記録を残さない。"""
+        sid = "background-task-foreground"
+        _run(
+            {
+                "session_id": sid,
+                "tool_input": {"command": "echo hello"},
+                "tool_response": "Command running in background with ID: bg-task-1.",
+            },
+            state_dir=tmp_path,
+        )
+        assert "background_task_ids" not in _read_state(tmp_path, sid)
+
+    def test_background_task_ids_are_recorded_without_duplication(self, tmp_path: pathlib.Path):
+        """同じタスクIDを重複して記録せず、別のIDは追記する。"""
+        sid = "background-task-multi"
+        for task_id in ("bg-task-1", "bg-task-1", "bg-task-2"):
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_input": {"command": "sleep 120", "run_in_background": True},
+                    "tool_response": f"Command running in background with ID: {task_id}.",
+                },
+                state_dir=tmp_path,
+            )
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-1", "bg-task-2"]
+
     def test_pyfltr_mcp_run_for_agent_detected(self, tmp_path: pathlib.Path):
         """pyfltr MCPの検証成功をCLI経由と同じ状態へ記録する。"""
         sid = "test-mcp-run-for-agent"
