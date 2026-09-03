@@ -20,7 +20,7 @@ ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示�
 HELP: dict[str, dict[str, str]] = {
     "atk mq": {
         "summary": "フィードバックとTBDのキューを操作する",
-        "description": "目的: 対象リポジトリごとのフィードバックとTBDを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのinboxとprocessing配下のファイルを読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk mq commit`で確定する。",
+        "description": "目的: 対象リポジトリごとのフィードバックとTBDを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk mq commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk mq commit`で確定する。",
         "epilog": "実行例:\n\n  atk mq list\n  atk mq show 20260901-072734-001",
     },
     "atk mq add": {
@@ -105,7 +105,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk mq commit": {
         "summary": "外部編集後の未コミット変更を確定してpushする",
-        "description": "目的: 外部のエディターなどで直接編集したinboxとprocessing配下の未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesのinboxとprocessing配下の変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
+        "description": "目的: 外部のエディターなどで直接編集したprivate-notesの未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルや保存済みの計画ファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesの作業ツリーの変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk mq commit",
     },
     "atk mq process-loop": {

@@ -30,6 +30,7 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
+    _setup_notes_with_pending_commit,
     _write_feedback_file,
     _write_tbd_file,
 )
@@ -155,17 +156,10 @@ class TestCommitSubcommand:
             ["git", "fetch"],
             ["git", "merge", "--ff-only", "@{u}"],
         ]
-        assert git_cmds[3][:3] == ["git", "status", "--porcelain"]
-        assert git_cmds[4] == ["git", "add", "--all", "--", "inbox", "processing"]
-        assert git_cmds[5] == [
-            "git",
-            "commit",
-            "-m",
-            "chore: edit queue items externally",
-            "--",
-            "inbox",
-            "processing",
-        ]
+        # 対象領域はprivate-notesの作業ツリー全体であり、いずれのコマンドもpathspecで限定しない。
+        assert git_cmds[3] == ["git", "status", "--porcelain"]
+        assert git_cmds[4] == ["git", "add", "--all", "--", "."]
+        assert git_cmds[5] == ["git", "commit", "-m", "chore: edit private notes externally", "--", "."]
         assert git_cmds[6] == ["git", "push"]
         assert calls[0]["kwargs"].get("cwd") == notes
         captured = capsys.readouterr()
@@ -205,6 +199,38 @@ class TestCommitSubcommand:
         assert [cmd for cmd in git_cmds if cmd[:2] == ["git", "push"]] == [["git", "push"], ["git", "push"]]
         captured = capsys.readouterr()
         assert "差分なし。滞留commitをpushしました。" in captured.out
+
+    def test_commit_confirms_plans_only_diff(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """保存済みの計画ファイルだけに差分がある場合も確定し、作業ツリーをcleanにする。"""
+        notes = _setup_notes_with_pending_commit(tmp_path)
+        table = notes / "plans" / "2026" / "09" / "01-example-1a2b.exec-review.tsv"
+        table.parent.mkdir(parents=True)
+        table.write_text("round\ttrack\n1\timplementation-review\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "commit"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "外部編集分をコミット" in capsys.readouterr().out
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=notes,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert status.stdout == ""
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", str(table.relative_to(notes))],
+            cwd=notes,
+            check=False,
+            capture_output=True,
+        )
+        assert tracked.returncode == 0
 
 
 def _write_processing_file(

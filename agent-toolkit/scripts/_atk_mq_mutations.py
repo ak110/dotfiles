@@ -915,17 +915,15 @@ def edit_entry_to_plan(
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:
-    """平引数でinbox・processing配下の外部編集差分をcommit・pushする。
+    """平引数でprivate-notesの作業ツリー全体の外部編集差分をcommit・pushする。
 
-    対象配下に差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
+    差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
         _push_pending_commits(private_notes)
         _pull(private_notes)
-        inbox_rel = MQ_STATE_INBOX
-        processing_rel = MQ_STATE_PROCESSING
         status = subprocess.run(
-            ["git", "status", "--porcelain", "--", inbox_rel, processing_rel],
+            ["git", "status", "--porcelain"],
             cwd=private_notes,
             check=True,
             capture_output=True,
@@ -934,7 +932,7 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
         if not status.stdout.strip():
             _push_pending_commits(private_notes)
             return False
-        _commit_and_push(private_notes, "chore: edit queue items externally", [inbox_rel, processing_rel])
+        _commit_and_push(private_notes, "chore: edit private notes externally", ["."])
     return True
 
 
@@ -2076,11 +2074,11 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def _cmd_commit(private_notes: pathlib.Path) -> None:
-    """commitサブコマンド: 外部編集後のinbox・processing配下未コミット変更をコミット・push。
+    """commitサブコマンド: 外部編集後のprivate-notesの未コミット変更をコミット・push。
 
-    inbox・processing配下に未コミット変更がない場合も滞留commitをpushする。
+    未コミット変更がない場合も滞留commitをpushする。
     """
     if commit_entries(private_notes):
-        print("外部編集分をコミット・pushしました。")
+        print("private-notesの外部編集分をコミット・pushしました。")
     else:
         print("差分なし。滞留commitをpushしました。")
