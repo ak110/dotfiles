@@ -322,6 +322,31 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
+def test_server_instructions_carry_standalone_contract() -> None:
+    """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
+    instructions = subject.mcp.instructions
+    assert instructions is not None
+    assert "同じ応答の中で`wait`を発行して観測する" in instructions
+    assert "結果が不要なら`kill`で破棄する" in instructions
+    assert "engine、model及びeffortは" in instructions
+
+
+def test_tool_descriptions_carry_standalone_contract() -> None:
+    """各ツールの公開説明だけで候補枯渇と継続不能のエラー本文を判別できる。"""
+    tools = {}
+    for tool_name in ("start", "start_explore", "wait", "send_message", "kill"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        tools[tool_name] = tool
+    assert "no model candidates remain for model_type" in tools["start"].description
+    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
+    assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
+    assert "session retention expired" in tools["wait"].description
+    assert "configuration changed" in tools["send_message"].description
+    assert "unknown session" in tools["send_message"].description
+    assert "sessionとbackend processは破棄しない" in tools["kill"].description
+
+
 def test_exclude_session_id_schema_describes_candidate_exclusion() -> None:
     """開始ツールの入力スキーマが除外指定の動作と受理条件を示す。"""
     expected_conditions = {

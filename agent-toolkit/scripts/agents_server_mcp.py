@@ -731,7 +731,16 @@ with warnings.catch_warnings():
         warnings.simplefilter("ignore", IncompleteFieldDefinitionWarning)
     mcp = FastMCP(
         "agents_server",
-        instructions="CodexまたはClaudeへの非同期委譲。承認・停止・一覧操作は公開しない。",
+        instructions=(
+            "CodexまたはClaudeへの非同期委譲。承認・停止・一覧操作は公開しない。\n"
+            "`start`と`start_explore`でsessionを開始し、`wait`で終端と結果本文を受け取る。"
+            "継続は`send_message`、実行中turnの中断は`kill`で行う。\n"
+            "`start`と`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
+            "同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
+            "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
+            "engine、model及びeffortは`model_type`と`fast`から本サーバーが工程別モデル設定を解決して決める。"
+            "呼び出し側は指定しない。"
+        ),
         lifespan=_mcp_lifespan,
     )
 
@@ -763,6 +772,9 @@ async def start(
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    応答は`session_id`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
+    全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
+    これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
     """
     return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
 
@@ -771,7 +783,10 @@ async def start(
 async def start_explore(
     prompt: str,
     cwd: str,
-    fast: bool = False,
+    fast: Annotated[
+        bool,
+        Field(description="`false`は`explore_model`、`true`は`explore_fast_model`の設定を候補列として使う。"),
+    ] = False,
     exclude_session_id: Annotated[
         str | None,
         Field(
@@ -786,6 +801,9 @@ async def start_explore(
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    プロジェクト指示の読込を減らした軽量な起動条件で開始する。
+    書込は機械的に禁止しないため、対象ファイルを変更しない旨を`prompt`へ明示する。
+    応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
     return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)
 
@@ -808,6 +826,8 @@ async def wait(
 
     `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
+    終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
+    `session retention expired: <session_id>`は終端結果の保持期限が過ぎたことだけを示し、会話再開用の最小状態は保持されている。
     """
     return await _MANAGER.wait(session_id, timeout, request_bucket)
 
@@ -828,6 +848,11 @@ async def send_message(
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     待つのは継続要求の配送結果が確定するまでであり、委譲先の応答生成の完了ではない。
     上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
+    実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
+    保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
+    応答は`delivery`で配送結果を示し、保持中のreply開始時は直前結果を`previous_result`へ含める。
+    `configuration changed: <session_id>`は工程別モデル設定の候補列が変わったことを示すため、検収済み状態を渡して新規起動する。
+    `unknown session: <session_id>`だけが継続不能を示す。
     """
     return await _MANAGER.send_message(session_id, prompt, timeout)
 
@@ -846,6 +871,7 @@ async def kill(
 
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
+    timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。
     """
     return await _MANAGER.kill(session_id, timeout)
 
