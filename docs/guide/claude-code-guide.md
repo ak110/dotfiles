@@ -342,7 +342,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `Stop/agents_server_session_advisor` | 観測を試みていない作業が残る`agents_server` sessionがある状態での終了を警告する | 対応 | 非対応。CodexのStopは`hookSpecificOutput`を受理しない |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
+| plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `PostToolUseFailure/posttooluse` | ツール失敗時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | APIエラーでのターン終了をベルとデスクトップ通知で知らせ、発生種別をログへ記録する | 対応 | 非対応。対応するイベントが存在しない |

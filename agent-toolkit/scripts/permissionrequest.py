@@ -3,6 +3,9 @@
 Claude Codeの確認ダイアログを無条件に許可する。
 
 許可した要求は、設定`state_dir`が指すディレクトリ配下の`permissionrequest.log`へ1行1レコードのJSONで追記する。
+レコードには要求元セッションの識別子に加えて、委譲の起点となった最上位セッションの識別子を`root_session_id`として残す。
+値は`AGENT_TOOLKIT_OWNER_SESSION`と`CLAUDE_CODE_SESSION_ID`の順で環境から解決する。
+委譲元は自身が解決した値を同名の変数で委譲先へ渡すため、多段の委譲でも最上位の識別子が保たれる。解決できない場合はnullとする。
 ログが上限を超えた場合は`permissionrequest.log.1`へ退避し、退避は1世代だけ保持する。
 記録に失敗した場合も許可の応答を返す。フックの障害で操作が止まる事態を避けるためである。
 本フックはセキュリティ境界ではない。auto modeと利用者の権限設定が担う。
@@ -17,6 +20,7 @@ import json
 import os
 
 import _atk_config
+import _plan_file
 
 # 記録ファイル名と、退避先の1世代分のファイル名。
 _LOG_NAME = "permissionrequest.log"
@@ -58,7 +62,7 @@ def _record(payload_text: str) -> None:
 def _build_record(payload_text: str) -> dict[str, object]:
     """payloadから記録用のレコードを組み立てる。
 
-    解釈できないpayloadでは`time`だけを持つレコードとし、他のキーはnullとする。
+    解釈できないpayloadでは、payload由来のキーをすべてnullとする。
     """
     try:
         payload = json.loads(payload_text)
@@ -68,6 +72,7 @@ def _build_record(payload_text: str) -> dict[str, object]:
         payload = {}
     record: dict[str, object] = {"time": datetime.datetime.now(datetime.UTC).isoformat()}
     record.update({key: payload.get(key) for key in _RECORD_KEYS})
+    record["root_session_id"] = _plan_file.resolve_owner_session_id()
     return record
 
 
