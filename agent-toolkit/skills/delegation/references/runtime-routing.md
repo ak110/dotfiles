@@ -71,7 +71,7 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
 実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
 
 1. `agents_server`経路では、表の`model_type`を`start`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
-2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合は当該工程を`needs_escalation`または未完了として返す。
+2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合は当該工程を`needs_escalation`または未完了として返す。分解した値は、表の`対応工程`を実行する委譲先の起動へ渡す。当該工程を委譲する調整役の起動へは渡さない。調整役は自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
 3. `agents_server`の応答は、採用した`model_type`、`engine`、`model`及び`effort`を含む。呼び出し側はこの応答値を保持し、実際に用いた組合せとして報告へ記録する。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
