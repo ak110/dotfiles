@@ -27,6 +27,12 @@
   --font-size-secondary: 0.875rem;
 }
 
+/* 画面の入れ替え単位。各画面のレイアウトは`body`の直接の子を前提とするため、
+   包む要素自身はレイアウトへ関与させない。 */
+#screen-root {
+  display: contents;
+}
+
 button {
   max-width: 100%;
   padding: 0.65rem 1rem;

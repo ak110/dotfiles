@@ -540,7 +540,8 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
     await playwright.async_api.expect(refresh_button).to_be_disabled()
 
     await page.route("**/api/entries?*", fail_entries)
-    await page.evaluate("void handleFilterChange({reloadRepos: false})")
+    # 種別フィルターの変更経路を、値を変えずに起動する。
+    await page.locator("#kind-filter").dispatch_event("change")
     await playwright.async_api.expect(page.locator("#global-error")).to_be_visible()
     await page.unroute("**/api/entries?*", fail_entries)
 
@@ -1264,7 +1265,8 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     await page.route("**/api/repos?status=active", delay_first_repo_request)
     await page.locator("#result-status").evaluate("element => { element.textContent = '変更前の通知'; }")
     await page.locator("#kind-filter").evaluate("element => { element.value = 'feedback'; }")
-    await page.evaluate("void handleFilterChange({reloadRepos: true})")
+    # 状態フィルターの変更経路を起動し、対象リポジトリの再取得を伴う一覧の更新を実行する。
+    await page.locator("#state-filter").dispatch_event("change")
     await asyncio.wait_for(first_started.wait(), timeout=5)
     try:
         harness.current_state.publish()
@@ -2095,6 +2097,82 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
 
 
 @pytest.mark.asyncio
+async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarness) -> None:
+    """3画面を順に移動してもドキュメントを再読み込みせず、URLだけが切り替わる。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list").wait_for(state="visible")
+    # 再読み込みが起きると失われる値を置き、遷移後も同じドキュメントが生きていることを判定する。
+    await page.evaluate("() => { window.__atkReloadMarker = 'kept'; }")
+
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    assert await page.evaluate("() => window.__atkReloadMarker") == "kept"
+    assert await page.evaluate("() => location.pathname") == "/plans"
+
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("#sessions .session-item").first.wait_for(state="visible")
+    assert await page.evaluate("() => window.__atkReloadMarker") == "kept"
+    assert await page.evaluate("() => location.pathname") == "/sessions"
+
+
+@pytest.mark.asyncio
+async def test_navigation_unmounts_previous_screen(screen_harness: _ScreenHarness) -> None:
+    """画面を移動すると、直前の画面の後始末が呼ばれる。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list").wait_for(state="visible")
+    await page.evaluate(
+        """() => {
+          window.__atkUnmounted = [];
+          for (const [name, screen] of Object.entries(window.__atkScreens)) {
+            const original = screen.unmount;
+            screen.unmount = () => {
+              window.__atkUnmounted.push(name);
+              original();
+            };
+          }
+        }"""
+    )
+
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+
+    assert await page.evaluate("() => window.__atkUnmounted") == ["feedback"]
+
+
+@pytest.mark.asyncio
+async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenHarness) -> None:
+    """ブラウザーの戻る操作で直前の画面が再び描画される。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+
+    await page.go_back()
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    assert await page.evaluate("() => location.pathname") == "/"
+
+
+@pytest.mark.asyncio
+async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
+    """3画面のURLへ直接アクセスしても各画面が描画される。"""
+    harness = screen_harness
+    for path, selector in (
+        ("/", "#entry-list .entry-select"),
+        ("/plans", "#preview h1"),
+        ("/sessions", "#sessions .session-item"),
+    ):
+        await harness.page.goto(harness.base_url + path)
+        await harness.page.locator(selector).first.wait_for(state="visible")
+
+
+@pytest.mark.asyncio
 async def test_header_navigation_is_centered_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """ヘッダーの子要素の数が画面ごとに異なっても、3画面ともナビゲーションを画面中央へ置く。"""
     harness = screen_harness
@@ -2670,7 +2748,8 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
     second_path.write_text("# 再同期後\n\n更新後の内容\n", encoding="utf-8")
     stat = second_path.stat()
     os.utime(second_path, (stat.st_atime, stat.st_mtime + 1))
-    await harness.page.evaluate("forceResync()")
+    # ウィンドウのフォーカス復帰と同じ経路で強制再同期を起動する。
+    await harness.page.evaluate("() => window.dispatchEvent(new Event('focus'))")
     await harness.page.get_by_role("heading", name="再同期後").wait_for(state="visible")
     release_first.set()
     await asyncio.wait_for(first_fulfilled.wait(), timeout=5)

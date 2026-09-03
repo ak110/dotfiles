@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/shell.css">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
-<body>
+<body data-screen="feedback">
   <header class="app-header">
     <div class="header-title">
       <h1>フィードバック管理</h1>
@@ -29,6 +29,7 @@
     </div>
   </header>
 
+  <div id="screen-root">
   <div id="global-error" class="global-error" hidden>
     <div id="global-error-message" role="alert"></div>
     <button id="global-error-close-button" class="global-error-close" type="button" aria-label="エラーメッセージを閉じる">×</button>
@@ -265,6 +266,8 @@
     <span id="operation-notice-message"></span>
     <button id="operation-notice-close-button" class="operation-notice-close" type="button" aria-label="操作通知を閉じる">×</button>
   </div>
+  </div>
+  <script src="__BASE_PATH_HTML__/static/shell.js"></script>
   <script src="__BASE_PATH_HTML__/static/app.js"></script>
 </body>
 </html>

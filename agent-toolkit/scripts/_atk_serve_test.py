@@ -173,6 +173,7 @@ def test_text_assets_are_bundled_as_plugin_files() -> None:
         "app.css": assets.CSS,
         "app.js": assets.JS,
         "shell.css": assets.SHELL_CSS,
+        "shell.js": assets.SHELL_JS,
         "plans.html": assets.PLANS_HTML,
         "plans.css": assets.PLANS_CSS,
         "plans.js": assets.PLANS_JS,
@@ -313,15 +314,17 @@ def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
 
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
-    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"').replace(
-        "\nbindEvents();\ninitializeApp();\n",
-        "\n",
-    )
+    source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"')
+    # 画面スクリプトは自身の宣言を即時実行関数で囲むため、シナリオも同じ関数の内側へ置いて
+    # 検証対象の関数を直接呼べるようにする。
+    closing = "})();\n"
+    assert source.endswith(closing)
     executable = (
-        source
+        source[: -len(closing)]
         + "\n(async () => {\n"
         + scenario
-        + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });"
+        + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
+        + closing
     )
     script = f"""
 class Element {{
@@ -456,6 +459,7 @@ globalThis.document = {{
   }}
 }};
 globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
+globalThis.window = globalThis;
 globalThis.setTimeout = () => 1;
 globalThis.clearTimeout = () => undefined;
 globalThis.EventSource = class {{

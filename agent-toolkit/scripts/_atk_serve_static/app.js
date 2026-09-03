@@ -1,3 +1,7 @@
+// 3画面は同じドキュメントへ順に読み込まれるため、トップレベルの宣言を即時実行関数で囲んで
+// 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
+// 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
+(() => {
 const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
@@ -1241,10 +1245,12 @@ function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null)
   });
 }
 
+function handleFocusIn() {
+  refreshFocusRequested = false;
+}
+
 function bindEvents() {
-  document.addEventListener('focusin', () => {
-    refreshFocusRequested = false;
-  });
+  document.addEventListener('focusin', handleFocusIn);
   byId('global-error-close-button').addEventListener('click', () => {
     setGlobalError('');
     focusRefreshButton();
@@ -1295,9 +1301,11 @@ function bindEvents() {
 }
 
 let initialization = Promise.resolve();
+// SSE購読。`unmount`で閉じるため保持する。
+let eventSource = null;
 
 function initializeApp() {
-  const eventSource = new EventSource(BASE_PATH + '/api/events');
+  eventSource = new EventSource(BASE_PATH + '/api/events');
   eventSource.addEventListener('open', () => { byId('connection-status').textContent = '自動更新に接続済み'; });
   eventSource.addEventListener('error', () => { byId('connection-status').textContent = '自動更新を再接続中'; });
   eventSource.addEventListener('changed', () => { void initialization.then(reloadFromExternalChange); });
@@ -1310,5 +1318,36 @@ function initializeApp() {
     });
 }
 
-bindEvents();
-initializeApp();
+function mount() {
+  bindEvents();
+  initializeApp();
+}
+
+function unmount() {
+  document.removeEventListener('focusin', handleFocusIn);
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (searchTimer !== null) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+  initialization = Promise.resolve();
+  entries = [];
+  currentEntry = null;
+  detailOrigin = null;
+  detailOriginKey = '';
+  currentPage = 1;
+  pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
+  knownTbdBaselineReady = false;
+  knownTbdFilenames.clear();
+  pendingOperations.clear();
+  dialogOrigins.clear();
+  dialogStack.length = 0;
+  refreshFocusRequested = false;
+}
+
+window.__atkScreens = window.__atkScreens || {};
+window.__atkScreens.feedback = {mount, unmount};
+})();

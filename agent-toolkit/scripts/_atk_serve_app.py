@@ -821,6 +821,10 @@ def _register_shell_routes(app: quart.Quart) -> None:
     async def shell_css() -> quart.Response:
         return quart.Response(assets.SHELL_CSS, content_type="text/css; charset=utf-8")
 
+    @app.get("/static/shell.js")
+    async def shell_js() -> quart.Response:
+        return quart.Response(assets.SHELL_JS, content_type="text/javascript; charset=utf-8")
+
     @app.get("/manifest.webmanifest")
     async def manifest() -> quart.Response:
         base_path = _safe_base_path(quart.request.root_path)
