@@ -38,6 +38,8 @@ import markdown_it.utils
 import platformdirs
 import pygments
 import watchdog.events
+import watchdog.observers
+import watchdog.observers.api
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
@@ -189,6 +191,8 @@ class BroadcastState:
     remote_files: dict[str, list[FileEntry]] = dataclasses.field(default_factory=dict)
     # 起動中のリモートwatchタスク群。after_servingで一括キャンセルする。
     remote_tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
+    # ローカルrootを監視中のobserver。監視対象が1件も無い場合はNoneのままとする。
+    local_observer: watchdog.observers.api.BaseObserver | None = None
     # ホスト名 -> "connected"|"connecting"|"disconnected"。
     host_status: dict[str, str] = dataclasses.field(default_factory=dict)
     # ホスト名 -> 対応する`RemoteWatcher`。本文取得がwatch常駐SSH接続経由のRPCで読む際に参照する。
@@ -1989,6 +1993,41 @@ async def render_file_html(context: PlansContext, host: str, source_id: str, rel
     # 付属計画リンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
     # 付属計画の出現・消失のたびに本文HTMLキャッシュを無効化する必要が生じるため。
     return await plan_links_html(context, host, source_id, rel) + rendered
+
+
+def start_local_watchers(context: PlansContext) -> None:
+    """ローカルrootのファイルシステム監視を開始する。
+
+    計画ファイル画面の更新通知は、ローカルrootを本関数が、リモートホストを`start_remote_watchers`が担う。
+    実在するrootだけをwatchdogへ登録する。private-notesを解決できなかった場合のrootのように、
+    実体を持たないrootを`schedule`へ渡すと監視の起動自体が失敗するためである。
+    観測したイベントは`PlansEventHandler`が`BroadcastState`のSSE購読者へ通知する。
+    """
+    context.state.loop = asyncio.get_running_loop()
+    observer = watchdog.observers.Observer()
+    scheduled = 0
+    for spec in context.roots:
+        if not spec.path.is_dir():
+            continue
+        observer.schedule(PlansEventHandler(spec.path, context.state, spec.source_id), str(spec.path), recursive=True)
+        scheduled += 1
+    if scheduled == 0:
+        return
+    observer.start()
+    context.state.local_observer = observer
+
+
+def stop_local_watchers(context: PlansContext) -> None:
+    """ローカルrootの監視スレッドを終了させ、observerの保持欄を空へ戻す。
+
+    監視スレッドが残ると`after_serving`が完了しないため、`join`まで待って終了を確認する。
+    """
+    observer = context.state.local_observer
+    if observer is None:
+        return
+    observer.stop()
+    observer.join()
+    context.state.local_observer = None
 
 
 def start_remote_watchers(context: PlansContext) -> None:

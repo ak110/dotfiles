@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -515,6 +516,79 @@ def test_synchronized_root_keeps_only_the_oldest_host(tmp_path: pathlib.Path) ->
         ("b", plans.LEGACY_SOURCE_ID),
         ("b", plans.NEW_SOURCE_ID),
     ]
+
+
+# --------------------------------------------------------------------------------------
+# ローカルrootの変更監視
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_local_watchers_schedules_existing_roots(
+    tmp_path: pathlib.Path,
+    index_path: pathlib.Path,
+) -> None:
+    """実在するrootだけを監視へ登録する。"""
+    del index_path
+    present = tmp_path / "present"
+    present.mkdir()
+    absent = tmp_path / "absent"
+    context = plans.create_context(
+        roots=[
+            plans.RootSpec(source_id="present", path=present, portable_path=str(present)),
+            plans.RootSpec(source_id="absent", path=absent, portable_path=str(absent)),
+        ],
+        hostname="local-host",
+    )
+
+    plans.start_local_watchers(context)
+    try:
+        observer = context.state.local_observer
+        assert observer is not None
+        assert {emitter.watch.path for emitter in observer.emitters} == {str(present.resolve())}
+    finally:
+        plans.stop_local_watchers(context)
+
+
+@pytest.mark.asyncio
+async def test_local_watcher_broadcasts_on_local_change(
+    tmp_path: pathlib.Path,
+    index_path: pathlib.Path,
+) -> None:
+    """ローカルrootへ計画ファイルを追加すると、購読中のSSEへ更新を通知する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    context = _context(root)
+    # debounce窓の実時間待ちを避けるため短縮する。
+    context.state.debounce_sec = 0.01
+    queue = await plans.subscribe(context.state)
+
+    plans.start_local_watchers(context)
+    try:
+        _plan(root, "p.md")
+        payload = await asyncio.wait_for(queue.get(), timeout=10.0)
+    finally:
+        plans.stop_local_watchers(context)
+
+    assert json.loads(payload)["type"] == "refresh"
+
+
+@pytest.mark.asyncio
+async def test_stop_local_watchers_releases_observer(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """監視を停止するとobserverの保持欄が空へ戻り、監視スレッドが終了する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    context = _context(root)
+    plans.start_local_watchers(context)
+    observer = context.state.local_observer
+    assert observer is not None
+
+    plans.stop_local_watchers(context)
+
+    assert context.state.local_observer is None
+    assert not observer.is_alive()
 
 
 # --------------------------------------------------------------------------------------
