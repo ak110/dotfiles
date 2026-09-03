@@ -929,7 +929,7 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 利用者の意図、会話全体の意味又は工程の技術的な妥当性は判断しない。
 実行主体はフックの通知を自動生成情報として規範と会話へ照合し、採否と後続処理を決定する。
 
-Codex品質想起通知は、計画メイン側とdetail側の実在後のwhole-writeと、`SessionStart(source=compact)`だけを発火境界とする。
+Codex品質想起通知は、`SessionStart(source=compact)`だけを発火境界とする。
 通知handlerは本文を共有し、意味判定やセッション状態を持たず、非遮断の`additionalContext`として返す。
 Codex専用の`SessionStart`登録はmanifest生成器が生成し、Claude Code向け`hooks.json`へ登録しない。
 

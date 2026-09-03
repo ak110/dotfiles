@@ -170,12 +170,15 @@ def main_fable(
     run: CommandRunner = _run_command,
     isatty: TerminalChecker = os.isatty,
 ) -> NoReturn:
-    """FableモデルでClaude Codeを起動する。"""
+    """FableモデルでClaude Codeを起動する。
+
+    `--fallback-model`は`--print`を伴う実行でだけ有効である。
+    """
     _main(
         (
             "--permission-mode=auto",
             "--model=fable",
-            "--fallback-model=claude-opus-4-7[1m]",
+            "--fallback-model=opus[1m]",
         ),
         argv,
         os_name=os_name,

@@ -250,7 +250,6 @@ def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) 
         "--tools=Bash",
         "--permission-mode=bypassPermissions",
         f"--add-dir={git_root}",
-        "--exclude-dynamic-system-prompt-sections",
         "--disable-slash-commands",
         "--strict-mcp-config",
         "--system-prompt=.",

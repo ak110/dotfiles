@@ -5,7 +5,6 @@ import pathlib
 import subprocess
 import sys
 
-import posttooluse
 import pytest
 import quality_checkpoint as subject
 
@@ -43,8 +42,9 @@ def test_compact_emits_non_blocking_quality_context(capsys: pytest.CaptureFixtur
     assert "Auto-generated hook notice" in notice
 
 
-def test_notice_rejects_decision_neutral_repetition() -> None:
-    assert "Do not repeat searches or checks that cannot change the next decision." in subject.QUALITY_CHECKPOINT_NOTICE
+def test_notice_excludes_search_suppression() -> None:
+    assert "Do not repeat searches or checks that cannot change the next decision." not in subject.QUALITY_CHECKPOINT_NOTICE
+    assert "Retrieve only the information needed for the decision." not in subject.QUALITY_CHECKPOINT_NOTICE
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear"])
@@ -129,10 +129,6 @@ def test_invalid_session_start_field_type_raises_value_error(field: str, value: 
 
     with pytest.raises(ValueError):
         subject.main(json.dumps(payload))
-
-
-def test_notice_body_has_one_shared_source() -> None:
-    assert posttooluse.QUALITY_CHECKPOINT_NOTICE is subject.QUALITY_CHECKPOINT_NOTICE
 
 
 def test_common_entrypoint_reports_handler_error_without_blocking(tmp_path: pathlib.Path) -> None:

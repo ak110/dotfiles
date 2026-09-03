@@ -32,7 +32,7 @@ type Entrypoint = Callable[..., NoReturn]
             [
                 "--permission-mode=auto",
                 "--model=fable",
-                "--fallback-model=claude-opus-4-7[1m]",
+                "--fallback-model=opus[1m]",
             ],
         ),
     ],

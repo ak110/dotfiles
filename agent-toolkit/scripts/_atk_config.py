@@ -21,9 +21,6 @@ _CONFIG_FILENAME = "config.json"
 
 _DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
 _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
-# 暫定処理: 旧キー名が`atk config get`へ指定されたときに現行キーの解決値を返す読替表。
-# 導入日: 2026-08-31。削除可能日: 2026-09-03。旧キー名を参照する並行セッションが残らなくなった後に削除してよい。
-_LEGACY_GET_KEY_ALIASES = {"execute_fix_model": "execute_model"}
 _MUTABLE_KEY_DEFAULTS = {
     "explore_model": _DEFAULT_STAGE_MODEL,
     "explore_fast_model": "codex:gpt-5.6-terra/medium",
@@ -40,7 +37,7 @@ _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
-    "claude": frozenset({"haiku", "sonnet", "opus", "sonnet[1m]", "opus[1m]"}),
+    "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
     "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
@@ -131,15 +128,14 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     """getサブコマンド: 1件以上の設定値を表示する。未知キーはexit 2。"""
     settings = _resolved_settings(home)
     requested_keys = cast(list[str], args.key)
-    resolved_keys = [_LEGACY_GET_KEY_ALIASES.get(key, key) for key in requested_keys]
-    unknown_keys = [key for key in resolved_keys if key not in settings]
+    unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
         print(
             f"未知の設定キーです: {', '.join(unknown_keys)}（利用可能: {', '.join(sorted(settings))}）",
             file=sys.stderr,
         )
         sys.exit(2)
-    for key in resolved_keys:
+    for key in requested_keys:
         print(settings[key])
 
 
