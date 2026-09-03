@@ -63,6 +63,27 @@ def test_blocks_when_plain_text_requests_instruction(tmp_path: pathlib.Path) -> 
     assert result["decision"] == "block"
 
 
+def test_allows_when_a_question_mark_is_inside_a_sentence(tmp_path: pathlib.Path) -> None:
+    """疑問符の直後に語が続く文は、判断を求める文として扱わない。"""
+    transcript = _transcript_with_response(
+        tmp_path,
+        "この関数は引数が3個ですか？と一瞬迷ったが、定義を読んで確認した。",
+    )
+
+    result = _run({"session_id": "inline", "transcript_path": str(transcript)}, state_dir=tmp_path)
+
+    assert not _decision(result)
+
+
+def test_blocks_when_a_question_is_followed_by_another_sentence(tmp_path: pathlib.Path) -> None:
+    """疑問符の後ろへ別の文が続く場合も、問いかけの文を検出して遮断する。"""
+    transcript = _transcript_with_response(tmp_path, "どちらを採用しますか？ 指示があるまで待機する。")
+
+    result = _decision(_run({"session_id": "followed", "transcript_path": str(transcript)}, state_dir=tmp_path))
+
+    assert result["decision"] == "block"
+
+
 def test_allows_when_ask_user_question_used(tmp_path: pathlib.Path) -> None:
     """同じ応答が`AskUserQuestion`を呼び出している場合は通過する。"""
     transcript = _transcript_with_response(

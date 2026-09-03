@@ -5,6 +5,8 @@
 判断を求める場面で`AskUserQuestion`を使う規定は規範が定めるが、自身の応答が
 当該場面に当たるかの分類は誤りやすいため、機械的な検出を置く。
 判定は疑問符で終わる文と、判断を促す定型表現を含む文の2条件とする。
+疑問符は直後に語が続かない場合だけ文末として扱うため、`〜ですか？と尋ねられた`のように
+語句の内側にある疑問符は遮断の対象にならない。
 コードブロック、インラインコード、URL及び行頭が`>`の引用行は地の文から除くため、
 記録の引用と実行例の中の疑問符は遮断の対象にならない。
 判断を求めていない応答が遮断された場合は、当該問いかけを本文から除いて応答を
@@ -13,6 +15,7 @@
 
 import json
 import re
+from collections.abc import Iterator
 
 import _transcript
 from _hook_notice import block_formatter as _block_notice_formatter
@@ -30,8 +33,9 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 _URL_PATTERN = re.compile(r"https?://\S+")
 _QUOTE_LINE_PATTERN = re.compile(r"^[ \t]*>.*$", re.MULTILINE)
 
-# 文の区切り。句点・疑問符・感嘆符と改行を終端とする。
-_SENTENCE_PATTERN = re.compile(r"[^。．？?！!\n]*[。．？?！!]?")
+# 文の終端。句点・感嘆符・改行と、直後に語が続かない疑問符を終端とする。
+# 「〜ですか？と尋ねられた」のように語句の内側にある疑問符は文末ではないため、終端に含めない。
+_SENTENCE_END_PATTERN = re.compile(r"[。．！!\n]|[？?](?=\s|$)")
 
 # 利用者へ判断を促す定型表現。疑問符を伴わない依頼形の問いかけを検出する。
 _REQUEST_EXPRESSIONS = (
@@ -69,10 +73,19 @@ def _plain_text(text: str) -> str:
     return _QUOTE_LINE_PATTERN.sub(" ", plain)
 
 
+def _sentences(plain_text: str) -> Iterator[str]:
+    """地の文を、終端記号を含んだ文へ区切って返す。"""
+    start = 0
+    for match in _SENTENCE_END_PATTERN.finditer(plain_text):
+        yield plain_text[start : match.end()]
+        start = match.end()
+    yield plain_text[start:]
+
+
 def _asks_user(plain_text: str) -> bool:
     """地の文が利用者へ判断を求める文を含むかを返す。"""
-    for match in _SENTENCE_PATTERN.finditer(plain_text):
-        sentence = match.group().strip()
+    for raw in _sentences(plain_text):
+        sentence = raw.strip()
         if not sentence:
             continue
         if sentence.endswith(("？", "?")):
