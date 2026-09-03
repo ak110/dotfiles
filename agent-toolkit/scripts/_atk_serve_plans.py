@@ -29,6 +29,7 @@ import socket
 import subprocess
 import typing
 
+import _atk_serve_remote
 import _file_lock
 import markdown_it
 import markdown_it.renderer
@@ -37,6 +38,8 @@ import markdown_it.utils
 import platformdirs
 import pygments
 import watchdog.events
+import watchdog.observers
+import watchdog.observers.api
 from pygments.formatters.html import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
@@ -137,14 +140,8 @@ _PYGMENTS_CSS_CLASS = "codehilite"
 
 _STATIC_DIR = pathlib.Path(__file__).with_name("_atk_serve_static")
 
-# リモート側で実行する短いPython bootstrap。
-# `$`・`%`・`<`・`>`・`|`・`&`・`^`はPOSIXシェル/cmd.exe双方で意味を持つためコード本体に含めない。
-REMOTE_BOOTSTRAP = (
-    "import os, pathlib; "
-    "p = pathlib.Path(os.path.expanduser('~')) / "
-    "'dotfiles/agent-toolkit/scripts/atk_serve_plans_remote_helper.py'; "
-    "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
-)
+# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`を正本とする。
+REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_helper.py")
 
 
 # --------------------------------------------------------------------------------------
@@ -194,6 +191,8 @@ class BroadcastState:
     remote_files: dict[str, list[FileEntry]] = dataclasses.field(default_factory=dict)
     # 起動中のリモートwatchタスク群。after_servingで一括キャンセルする。
     remote_tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
+    # ローカルrootを監視中のobserver。監視対象が1件も無い場合はNoneのままとする。
+    local_observer: watchdog.observers.api.BaseObserver | None = None
     # ホスト名 -> "connected"|"connecting"|"disconnected"。
     host_status: dict[str, str] = dataclasses.field(default_factory=dict)
     # ホスト名 -> 対応する`RemoteWatcher`。本文取得がwatch常駐SSH接続経由のRPCで読む際に参照する。
@@ -985,10 +984,9 @@ def _build_remote_command_argv(op: str, args: list[str]) -> list[str]:
     Windows OpenSSHの既定シェル`cmd.exe`では`bash -c`やheredoc展開が利用できないため、
     シェル組み込みコマンドへ依存しないこと。
     リモート側に`$HOME/dotfiles`が存在することを前提とし、ヘルパースクリプトは当該配下から読み込む。
-    `~`はcmd.exeでは展開されないため、Pythonの`os.path.expanduser('~')`で展開する。
     クオートはPOSIXシェル/cmd.exe共通のダブルクォートのみを使い、
     `$`・`%`・`<`・`>`・`|`・`&`・`^`はコマンド本体に含めない。
-    Windowsの既定ロケールはUTF-8とは限らないため、ヘルパー本体の読み込みはエンコーディングを明示する。
+    bootstrapコード本体が満たす制約は`_atk_serve_remote.remote_bootstrap`を正本とする。
     """
     return [
         "uv",
@@ -1995,6 +1993,41 @@ async def render_file_html(context: PlansContext, host: str, source_id: str, rel
     # 付属計画リンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
     # 付属計画の出現・消失のたびに本文HTMLキャッシュを無効化する必要が生じるため。
     return await plan_links_html(context, host, source_id, rel) + rendered
+
+
+def start_local_watchers(context: PlansContext) -> None:
+    """ローカルrootのファイルシステム監視を開始する。
+
+    計画ファイル画面の更新通知は、ローカルrootを本関数が、リモートホストを`start_remote_watchers`が担う。
+    実在するrootだけをwatchdogへ登録する。private-notesを解決できなかった場合のrootのように、
+    実体を持たないrootを`schedule`へ渡すと監視の起動自体が失敗するためである。
+    観測したイベントは`PlansEventHandler`が`BroadcastState`のSSE購読者へ通知する。
+    """
+    context.state.loop = asyncio.get_running_loop()
+    observer = watchdog.observers.Observer()
+    scheduled = 0
+    for spec in context.roots:
+        if not spec.path.is_dir():
+            continue
+        observer.schedule(PlansEventHandler(spec.path, context.state, spec.source_id), str(spec.path), recursive=True)
+        scheduled += 1
+    if scheduled == 0:
+        return
+    observer.start()
+    context.state.local_observer = observer
+
+
+def stop_local_watchers(context: PlansContext) -> None:
+    """ローカルrootの監視スレッドを終了させ、observerの保持欄を空へ戻す。
+
+    監視スレッドが残ると`after_serving`が完了しないため、`join`まで待って終了を確認する。
+    """
+    observer = context.state.local_observer
+    if observer is None:
+        return
+    observer.stop()
+    observer.join()
+    context.state.local_observer = None
 
 
 def start_remote_watchers(context: PlansContext) -> None:

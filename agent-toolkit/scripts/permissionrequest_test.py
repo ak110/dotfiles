@@ -17,6 +17,13 @@ _ALLOW_RESPONSE = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _isolate_owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """最上位セッションの識別子の解決元となる環境変数を、テスト実行環境から切り離す。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+
+
 @pytest.fixture(name="state_dir")
 def _state_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """記録先の状態ディレクトリをテスト用一時ディレクトリへ差し替える。"""
@@ -79,6 +86,7 @@ class TestRecord:
             assert record["cwd"] == payload["cwd"]
             assert record["tool_name"] == payload["tool_name"]
             assert record["tool_input"] == payload["tool_input"]
+            assert record["root_session_id"] is None
             # UTCのISO 8601表記であることを、時差表記の有無で判定する。
             assert record["time"].endswith("+00:00")
 
@@ -94,6 +102,7 @@ class TestRecord:
         assert record["session_id"] is None
         assert record["cwd"] is None
         assert record["tool_input"] is None
+        assert record["root_session_id"] is None
 
     def test_unparsable_payload_is_recorded_with_null_fields(
         self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -105,6 +114,33 @@ class TestRecord:
         record = json.loads(_log_path(state_dir).read_text(encoding="utf-8"))
         assert record["tool_name"] is None
         assert record["time"].endswith("+00:00")
+
+    @pytest.mark.parametrize(
+        ("environment", "expected"),
+        [
+            ({"AGENT_TOOLKIT_OWNER_SESSION": "root-session", "CLAUDE_CODE_SESSION_ID": "child-session"}, "root-session"),
+            ({"CLAUDE_CODE_SESSION_ID": "child-session"}, "child-session"),
+            ({}, None),
+        ],
+    )
+    def test_records_root_session_id_resolved_from_environment(
+        self,
+        environment: dict[str, str],
+        expected: str | None,
+        state_dir: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """委譲の起点となった最上位セッションの識別子を、委譲元が渡す変数を優先して記録する。"""
+        for key, value in environment.items():
+            monkeypatch.setenv(key, value)
+
+        assert hook.main(json.dumps({"session_id": "child-session", "tool_name": "Bash"})) == 0
+        capsys.readouterr()
+
+        record = json.loads(_log_path(state_dir).read_text(encoding="utf-8"))
+        assert record["root_session_id"] == expected
+        assert record["session_id"] == "child-session"
 
     def test_rotates_when_log_reaches_size_limit(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """上限へ達した記録先は追記前に退避され、新しい記録先へ書き直される。"""

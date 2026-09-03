@@ -1,8 +1,12 @@
+// 3画面は同じドキュメントへ順に読み込まれるため、トップレベルの宣言を即時実行関数で囲んで
+// 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
+// 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
+(() => {
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 // ページロード時の初期値はサーバーが`sessions.html`のJSONブロックへ埋め込む。
-const BOOTSTRAP = JSON.parse(document.getElementById("sessions-bootstrap").textContent);
+// 画面の入れ替えでJSONブロックの内容も差し替わるため、`mount`のたびに読み直す。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSourceに前置する。
-const BASE_PATH = BOOTSTRAP.base_path;
+let BASE_PATH = "";
 
 const ENGINE_LABELS = { claude: "Claude Code", codex: "Codex" };
 const KIND_LABELS = {
@@ -19,13 +23,16 @@ let selected = null;
 let queryText = "";
 // サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元の記録を古い順に保持して戻れるようにする。
 let parentTrail = [];
+// SSE購読。`unmount`で閉じるため保持する。
+let eventSource = null;
 
-const listEl = document.getElementById("sessions");
-const warningsEl = document.getElementById("warnings");
-const detailEl = document.getElementById("detail");
-const detailTitleEl = document.getElementById("detail-title");
-const detailUsageEl = document.getElementById("detail-usage");
-const filterEl = document.getElementById("filter");
+// 画面の入れ替えでDOMごと差し替わるため、参照は`mount`のたびに取り直す。
+let listEl = null;
+let warningsEl = null;
+let detailEl = null;
+let detailTitleEl = null;
+let detailUsageEl = null;
+let filterEl = null;
 
 function formatTime(value) {
   if (!value) return "不明";
@@ -261,16 +268,27 @@ async function openSession(host, engine, path, trail = []) {
 }
 
 function subscribeEvents() {
-  const source = new EventSource(BASE_PATH + "/api/sessions/events");
-  source.onmessage = () => {
+  eventSource = new EventSource(BASE_PATH + "/api/sessions/events");
+  eventSource.onmessage = () => {
     loadList();
   };
-  source.onerror = () => {
+  eventSource.onerror = () => {
     // EventSourceはブラウザが自動再接続する。切断中の一覧は次の再接続で更新される。
   };
 }
 
-function main() {
+function mount() {
+  BASE_PATH = JSON.parse(document.getElementById("sessions-bootstrap").textContent).base_path;
+  listEl = document.getElementById("sessions");
+  warningsEl = document.getElementById("warnings");
+  detailEl = document.getElementById("detail");
+  detailTitleEl = document.getElementById("detail-title");
+  detailUsageEl = document.getElementById("detail-usage");
+  filterEl = document.getElementById("filter");
+  sessions = [];
+  selected = null;
+  queryText = "";
+  parentTrail = [];
   filterEl.addEventListener("input", () => {
     queryText = filterEl.value.trim().toLowerCase();
     renderList();
@@ -290,4 +308,13 @@ function main() {
   subscribeEvents();
 }
 
-main();
+function unmount() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+}
+
+window.__atkScreens = window.__atkScreens || {};
+window.__atkScreens.sessions = {mount, unmount};
+})();

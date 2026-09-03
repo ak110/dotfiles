@@ -68,6 +68,34 @@ def test_single_english_word_report_is_allowed(capsys: pytest.CaptureFixture[str
     assert capsys.readouterr().out == ""
 
 
+@pytest.mark.parametrize(
+    "report",
+    [
+        "status: checkpoint\ntype: review_round\nround: 2\nfindings_count: 3\nrequirement_spec_count: 0",
+        "status: checkpoint\ntype: merge_request",
+        (
+            "計画実行完了\n"
+            "merged_head: 0123456789abcdef0123456789abcdef01234567\n"
+            "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
+            "released: /home/u/repo/.claude/worktrees/lane-a, feedback-lane-a, /tmp/lane-a-xxxxxxxx"
+        ),
+        "needs_escalation",
+        "status: needs_escalation",
+    ],
+)
+def test_specified_return_formats_are_allowed(report: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """規範が固定書式として定める返却値は空stdoutで許可する。"""
+    assert advisor.main(json.dumps(_payload(report), ensure_ascii=False)) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_english_prose_after_machine_readable_lines_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
+    """機械可読な返却行に英語の地の文を加えた報告は遮断する。"""
+    report = "status: checkpoint\ntype: review_round\nI reviewed the plan and found three issues to fix."
+    assert advisor.main(json.dumps(_payload(report))) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+
 def test_non_string_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
     """非文字列の完了報告は空stdoutで許可する。"""
     assert advisor.main(json.dumps({**_payload(), "last_assistant_message": {"status": "completed"}})) == 0

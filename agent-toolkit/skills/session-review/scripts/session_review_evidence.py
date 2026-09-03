@@ -58,6 +58,19 @@ _SHELL_NAMES = frozenset({"sh", "bash", "zsh"})
 _SCRIPT_RUNNERS = frozenset({"uv", "uvx", "env"})
 _PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
 _HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message", "hook_blocking_error", "hook_success"})
+
+
+def _is_hook_record(value: dict[str, Any]) -> bool:
+    """hook実行の記録に当たるかを`type`の値で判定する。
+
+    `type`の値は文字列とは限らない。ツール定義を含む記録では
+    `attachment.tools[].schema.input_schema.properties`配下に`type`という名前の
+    プロパティ定義が現れ、その値はJSON Schemaのdictになる。
+    集合照合の前に文字列であることを確かめないと`TypeError`で走査が止まる。
+    """
+    return isinstance(value.get("type"), str) and value["type"] in _HOOK_RECORD_TYPES
+
+
 _HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
 _HOOK_NOTICE_KIND_LENGTH = 80
 # 通知本文の可変部（語頭から始まるパスと、TBD識別子・行番号などの数値）。種別キーの分裂を防ぐため置換する。
@@ -1579,7 +1592,7 @@ def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
 
     def collect(value: Any, *, in_body: bool = False) -> None:
         if isinstance(value, dict):
-            if not in_body and value.get("type") in _HOOK_RECORD_TYPES:
+            if not in_body and _is_hook_record(value):
                 found.append(value)
                 return
             for key, item in value.items():
@@ -1813,7 +1826,7 @@ def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _collect_hook_records(value: Any, found: list[dict[str, Any]]) -> None:
     if isinstance(value, dict):
-        if value.get("type") in _HOOK_RECORD_TYPES:
+        if _is_hook_record(value):
             found.append(value)
         for item in value.values():
             _collect_hook_records(item, found)

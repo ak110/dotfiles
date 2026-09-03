@@ -1,6 +1,6 @@
 """Claude Code agent-toolkit: 文字列の記述言語検査。
 
-文字列からコードブロック・インラインコード・URLを除いた地の文を判定する。
+文字列からコードブロック・インラインコード・URL・機械可読な返却行を除いた地の文を判定する。
 直前のメインエージェント応答はtranscriptから文字列を取得して同じ判定へ渡す。
 判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
 語数比が閾値未満であることの3種とする。
@@ -34,6 +34,16 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 
 # HTTP/HTTPS URL。
 _URL_PATTERN = re.compile(r"https?://\S+")
+
+# 機械可読な返却行。小文字のsnake_case識別子だけの行と、当該識別子をキーとする`<キー>: <値>`行を対象とする。
+# `agent-toolkit/rules/02-agent-operations.md`「委譲時の厳守事項」は、委譲先がチェックポイント又は
+# 完了報告でターンを終える場合に指定形式の文面だけを出力し地の文を加えないことを求める。
+# 当該形式（`status: checkpoint`などのcheckpointブロック、`merged_head:`などの統合結果、
+# `needs_escalation`の単独返却）は英字だけで構成されるため、地の文へ残すと英語応答と判定され、
+# 規定どおりの返却が遮断される。
+# キーを小文字のsnake_caseへ限定するのは、`Summary:`のように大文字で始まる英語の散文を
+# 除外対象にせず、人間向け本文が英語で返ることの検出を維持するためである。
+_MACHINE_READABLE_LINE_PATTERN = re.compile(r"^[ \t]*[a-z][a-z0-9_]*(?::[^\n]*)?[ \t]*$", re.MULTILINE)
 
 # 日本語文字。CJK記号（U+3000-U+303F）・ひらがな（U+3040-U+309F）・カタカナ（U+30A0-U+30FF）・
 # CJK統合漢字（U+4E00-U+9FFF）・全角英数記号（U+FF00-U+FF60）・半角カナ（U+FF61-U+FF9F）を対象とする。
@@ -91,7 +101,8 @@ SUBAGENT_REPORT_BLOCK_BODY = (
 def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     """文字列の記述言語を判定し、3値で結果を返す。
 
-    判定対象テキストは、フェンス付きコードブロック・インラインコード・URLを除外した地の文である。
+    判定対象テキストは、フェンス付きコードブロック・インラインコード・URL・機械可読な返却行を
+    除外した地の文である。
     長さ下限を適用しない2条件（英語だけの地の文、先頭の談話標識）を先に判定し、
     どちらにも該当しない場合だけ長さ下限付きの語数比判定へ進む。
 
@@ -102,6 +113,7 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     plain_text = _FENCED_CODE_PATTERN.sub(" ", text)
     plain_text = _INLINE_CODE_PATTERN.sub(" ", plain_text)
     plain_text = _URL_PATTERN.sub(" ", plain_text)
+    plain_text = _MACHINE_READABLE_LINE_PATTERN.sub(" ", plain_text)
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
     if _is_english_only(japanese_count, english_word_count):
@@ -119,7 +131,7 @@ def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]
     """直前のメインエージェント応答の記述言語を判定し、3値で結果を返す。
 
     判定対象テキストはアシスタントターン内の`type == "text"`ブロックのみで、
-    フェンス付きコードブロック・インラインコード・URLを除外する。
+    フェンス付きコードブロック・インラインコード・URL・機械可読な返却行を除外する。
     長さ下限を適用しない2条件（英語だけの地の文、先頭の談話標識）を先に判定し、
     どちらにも該当しない場合だけ長さ下限付きの語数比判定へ進む。
 

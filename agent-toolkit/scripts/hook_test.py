@@ -24,6 +24,7 @@ _SUBCOMMANDS = (
     "autonomous_exit",
     "plan_save_advisor",
     "agents_server_session_advisor",
+    "pending_question_advisor",
     "subagent_stop_advisor",
     "session_end_cleanup",
     "stopfailure_notifier",
@@ -45,7 +46,7 @@ class TestEntrypointExceptionStages:
 
     @pytest.mark.parametrize(
         "subcommand",
-        ["autonomous_exit", "plan_save_advisor", "agents_server_session_advisor"],
+        ["autonomous_exit", "plan_save_advisor", "agents_server_session_advisor", "pending_question_advisor"],
     )
     def test_main_import_error_emits_summary_traceback_and_empty_json(
         self,

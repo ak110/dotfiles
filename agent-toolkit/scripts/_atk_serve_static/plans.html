@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/pygments.css">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/plans.css">
 </head>
-<body>
+<body data-screen="plans">
   <header class="app-header">
     <div class="header-title">
       <h1>計画ファイル</h1>
@@ -25,6 +25,7 @@
       <a href="__BASE_PATH_HTML__/sessions">セッション</a>
     </nav>
   </header>
+  <div id="screen-root">
   <div id="app">
     <aside>
       <div class="toolbar">
@@ -50,7 +51,9 @@
     </main>
     <div id="drawer-backdrop"></div>
   </div>
+  </div>
   <script id="plans-bootstrap" type="application/json">__PLANS_BOOTSTRAP_JSON__</script>
+  <script src="__BASE_PATH_HTML__/static/shell.js"></script>
   <script src="__BASE_PATH_HTML__/static/plans.js"></script>
 </body>
 </html>

@@ -103,8 +103,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
-- `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする
-- `setup_codex_links.py`が公開する`agent-toolkit/agents/*.md`は、Codexメインが名前付きagentの呼び出し時だけ現在のセッションへ直接適用するClaude Markdownのagent定義であり、Codex Custom Agent用TOMLではない。TOMLの生成物及びagent本文の複製は作成しない
+- `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のrulesだけをリンクする
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
@@ -114,7 +113,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 `uv run --no-project --script`で起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 
-公開APIは`start`、`start_explore`、`wait`、`send_message`、`kill`の5つに固定する。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、
+公開APIは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`の6つに固定する。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、
 工程別モデル設定の候補列からengine、model及びeffortを解決し、完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。保持期間が`5m`の場合は270秒、`1h`の場合は1740秒とする。呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。

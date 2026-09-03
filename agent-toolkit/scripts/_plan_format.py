@@ -1772,7 +1772,7 @@ def _check_action_section(
             )
         )
         if any(heading.level == 3 for _position, heading in child_headings(headings, action_index, 3)):
-            errors.append(f"`## {PLAN_H2_ACTION}`直下に独立した除外・保持表を置かない")
+            errors.append(f"`## {PLAN_H2_ACTION}`直下にH3を置かない")
         return errors
     children = child_headings(headings, action_index, 3)
     if any(heading.text != PLAN_EXCLUSION_H3 for _position, heading in children) or len(children) > 1:
@@ -2083,7 +2083,7 @@ def _check_human_history_section(
     body_section = [(lineno, line) for lineno, line in iter_markdown_body_lines(content) if start < lineno < upper]
     errors: list[str] = []
     if extract_tables(section):
-        errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`へ履歴ID表を置かない")
+        errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`へ表を置かない")
     if any(_INTERNAL_PLAN_ID_PATTERN.search(line) for _lineno, line in body_section):
         errors.append(f"`## {PLAN_H2_LEGACY_HISTORY}`へ履歴・要求・実装単位の合成IDを記載しない")
     children = child_headings(headings, history_index, 3)

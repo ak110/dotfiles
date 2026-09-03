@@ -768,7 +768,7 @@ class TestNonEditToolWarnings:
         assert result.stdout == ""
 
     def test_sendmessage_agent_type_recipient_warns(self) -> None:
-        result = _run({"tool_name": "SendMessage", "tool_input": {"to": "agent-toolkit:feedbacks-planner", "message": "通知"}})
+        result = _run({"tool_name": "SendMessage", "tool_input": {"to": "plugin-dev:skill-reviewer", "message": "通知"}})
         assert result.returncode == 0
         assert "not a reachable SendMessage recipient" in _additional_context(result)
 
@@ -1002,8 +1002,7 @@ class TestPlanModeSkillFirstCheck:
     一切ブロックも警告もしない。新旧計画root配下の`*.md`に対する
     Writeと進捗ログ節外を変更するEdit/MultiEditが警告対象となる。`permission_mode`の値には依存しない。
     既存計画の一意かつ最後の`## 進捗ログ`節だけを変更するEdit/MultiEditは警告しない。
-    完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`・`plan-executor`起動時の
-    ブロックへ集約する。
+    完成条件を満たさない状態での次工程移行の抑止は`ExitPlanMode`のブロックへ集約する。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
@@ -1295,7 +1294,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
     `permission_mode`の値に依らず、新旧計画root配下の`*.md`に対する
     Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
     一切ブロック・警告しない。完成条件を満たさない状態での次工程移行の抑止は
-    `ExitPlanMode`・`plan-executor`起動時のブロックへ集約する。
+    `ExitPlanMode`のブロックへ集約する。
     """
 
     _state_env = staticmethod(_plan_file_state_env)
@@ -1873,6 +1872,9 @@ class TestBashSleepPollPattern:
             ("while true; do sleep 60; git status --short; done", "sleep-poll-first-24"),
             ("while :; do sleep 60; git status --short; done", "sleep-poll-first-25"),
             ("for item in a b; do sleep 60; git status --short; done", "sleep-poll-first-26"),
+            # 条件式が読み取り専用の状態確認であるループは、本体の待機だけで反復ポーリングになる。
+            ("while pgrep -f make; do sleep 5; done", "sleep-poll-first-27"),
+            ("sleep 5; pgrep -f make", "sleep-poll-first-28"),
         ],
     )
     def test_first_detection_warns_and_allows(
@@ -1935,6 +1937,8 @@ class TestBashSleepPollPattern:
                 "while true; do while test -f /tmp/marker; do echo inner; done; sleep 60; git status --short; done",
                 "sleep-poll-allow-38",
             ),
+            # 条件式が読み取り専用の状態確認でないループの本体は、待機だけでは検出しない。
+            ("while read -r line; do sleep 1; done < /tmp/list.txt", "sleep-poll-allow-39"),
             ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
             ("sleep 1 || git status --short", "sleep-poll-allow-5"),
             ("sleep 1 | cat", "sleep-poll-allow-6"),
@@ -3353,6 +3357,19 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "relative/path" in result.stderr
 
+    def test_start_shell_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
+        """シェル実行委譲も相対`cwd`を開始前に拒否する。"""
+        result = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
+                "tool_input": {"command": "make test", "cwd": "relative/path", "summary_policy": "終了状態だけ"},
+                "session_id": "shell-cwd-relative",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "relative/path" in result.stderr
+
     def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が絶対パスの場合は許可する。"""
         result = _run(
@@ -3947,6 +3964,73 @@ class TestBashBlockBeforeAccumulatedWarnings:
         assert "running codex exec" in context
 
 
+class TestBashHeredocLiteralExclusion:
+    """ヒアドキュメント本文のリテラルを実行コマンドとして誤検出しない。
+
+    区間分割と実行位置解析はヒアドキュメント本文も実行コマンド列として扱うため、
+    本文へ書き込む字面だけでは検査が成立しないことを検証する。
+    """
+
+    @pytest.mark.parametrize(
+        ("command", "detected_text"),
+        [
+            (
+                "cat <<'EOF' > /tmp/doc.md\n待機例: echo start; sleep 300; echo done\nEOF",
+                "foreground sleep",
+            ),
+            (
+                "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5\nEOF",
+                "truncating it",
+            ),
+            (
+                "cat <<'EOF' > /tmp/doc.md\nrg keyword ~/.local\nEOF",
+                "high-capacity user directory",
+            ),
+            (
+                "cat <<'EOF' > /tmp/doc.md\ncodex exec 'draft the plan'\nEOF",
+                "running codex exec",
+            ),
+        ],
+        ids=["sleep-poll", "output-truncation", "recursive-home-search", "codex-exec"],
+    )
+    def test_warning_checks_skip_heredoc_body(self, tmp_path: pathlib.Path, command: str, detected_text: str) -> None:
+        """ヒアドキュメント本文中の字面では警告を返さない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": "heredoc-exclusion",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert detected_text not in _additional_context(result)
+
+    def test_pattern_kill_in_heredoc_body_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
+        """ヒアドキュメント本文へ書き込むパターン終了コマンドの字面は遮断しない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\nkillall は所有権を確認できない\nEOF"},
+                "session_id": "heredoc-pattern-kill",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_pattern_kill_before_heredoc_is_still_blocked(self, tmp_path: pathlib.Path) -> None:
+        """ヒアドキュメントより前にある実際のパターン終了コマンドは遮断する。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "killall worker; cat <<'EOF' > /tmp/doc.md\ntext\nEOF"},
+                "session_id": "heredoc-pattern-kill-before",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（初回warn・再検出block）。"""
 
@@ -3987,7 +4071,7 @@ class TestBashOutputTruncationWarning:
         assert second.returncode == 2
         assert "detected again in this session" in second.stderr
         assert "tee" in second.stderr
-        assert "agent-toolkit:shell-exec" in second.stderr
+        assert "`start_shell` tool of agents_server" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
 
     def test_output_truncation_block_suppresses_status_diagnosis(self, tmp_path: pathlib.Path) -> None:
@@ -4067,7 +4151,7 @@ class TestBashOutputTruncationWarning:
         # 全量保存・構造化出力の抽出・分離実行の3つの代替手段を示す
         assert "tee" in context
         assert "structured output" in context
-        assert "agent-toolkit:shell-exec" in context
+        assert "`start_shell` tool of agents_server" in context
 
     @pytest.mark.parametrize(
         "command",
@@ -4453,49 +4537,6 @@ class TestAgentNameParameterAccepted:
         assert "`name`" not in result.stderr
 
 
-class TestSubagentModelOverrideGate:
-    """定義済みモデルを使う委譲調整役への`model`引数指定の一律ブロック。"""
-
-    def test_plan_executor_with_model_blocked_short_form(self, tmp_path: pathlib.Path):
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "plan-executor", "model": "haiku", "prompt": "x"},
-                "session_id": "model-override-plan-executor",
-                "permission_mode": "default",
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-    def test_no_model_argument_passes(self, tmp_path: pathlib.Path):
-        """`plan-executor`でモデル指定を省略した起動は通過する。"""
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-executor", "prompt": "x"},
-                "session_id": "model-override-none",
-                "permission_mode": "default",
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize("subagent_type", ["feedbacks-planner", "agent-toolkit:feedbacks-planner"])
-    def test_feedbacks_planner_with_model_is_blocked(self, tmp_path: pathlib.Path, subagent_type: str) -> None:
-        """`feedbacks-planner`の固定モデルを呼び出し側から変更できない。"""
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": subagent_type, "model": "haiku", "prompt": "x"},
-                "session_id": "model-override-feedbacks-planner",
-                "permission_mode": "default",
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 2
-
-
 class TestTaskStopBlock:
     """`TaskStop`の初回遮断と再実行窓。
 
@@ -4585,10 +4626,40 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """停止対象の識別子の有無と値によらず、初回は遮断し窓内は通す。"""
+        """自セッションの起動記録が無い停止は、識別子の有無と値によらず初回を遮断し窓内は通す。"""
         session_id = f"task-stop-input-{label}"
         assert self._invoke(session_id, state_dir, tool_input).returncode == 2
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
+
+    @pytest.mark.parametrize(
+        ("label", "tool_input"),
+        [
+            ("task-id", {"task_id": "bg-task-1"}),
+            ("shell-id", {"shell_id": "bg-task-1"}),
+        ],
+    )
+    def test_self_started_background_task_passes_without_block(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+        label: str,
+        tool_input: dict,
+    ) -> None:
+        """自セッションが起動した背景タスクの停止は初回から通し、遮断時刻を記録しない。"""
+        session_id = f"task-stop-self-{label}"
+        _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
+        assert self._invoke(session_id, state_dir, tool_input).returncode == 0
+        assert "task_stop_blocked_at" not in _read_session_state(tmp_path, session_id)
+
+    def test_other_task_is_blocked_even_with_recorded_background_tasks(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """記録に無いタスクの停止は、他の背景タスクを記録済みでも遮断する。"""
+        session_id = "task-stop-other-target"
+        _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
 
 
 class TestExecuteReviewAlternateRouteAllowed:
@@ -4655,51 +4726,6 @@ def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
         "XDG_STATE_HOME": str(tmp_path / "state"),
         "LOCALAPPDATA": str(tmp_path / "state"),
     }
-
-
-class TestSubagentStartLogOrdering:
-    """`subagent_start`記録は全ブロック検査を通過した場合のみ行われる。
-
-    ブロック時に記録が残ると、対応する`subagent_end`が生成されず
-    process-loopの所要時間分析の対応関係が崩れるため、ブロック経路ごとに未記録を確認する。
-    """
-
-    def _log_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
-        return tmp_path / "state" / "agent-toolkit" / "process-feedbacks.log"
-
-    def test_model_override_block_does_not_log_start(self, tmp_path: pathlib.Path):
-        log_path = self._log_path(tmp_path)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-executor",
-                    "model": "opus",
-                    "prompt": "計画を実装する。",
-                },
-                "session_id": "log-order-model-override",
-                "permission_mode": "default",
-            },
-            env_overrides={**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)},
-        )
-        assert result.returncode == 2
-        assert not log_path.exists() or "subagent_start" not in log_path.read_text(encoding="utf-8")
-
-    def test_all_checks_pass_logs_start(self, tmp_path: pathlib.Path):
-        """モデル指定なし・見出し検査対象外・`process7`未起動時の`plan-executor`は通過し記録される。"""
-        log_path = self._log_path(tmp_path)
-        result = _run(
-            {
-                "tool_name": "Agent",
-                "tool_input": {"subagent_type": "agent-toolkit:plan-executor", "prompt": "計画を実装して。"},
-                "session_id": "log-order-pass",
-                "permission_mode": "default",
-            },
-            env_overrides={**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)},
-        )
-        assert result.returncode == 0
-        assert log_path.exists()
-        assert "subagent_start" in log_path.read_text(encoding="utf-8")
 
 
 def _path_section_build_content(recorded_path: str) -> str:
@@ -5342,7 +5368,7 @@ class TestAgentTaskLaunchIndependence:
                 "session_id": sid,
                 "tool_name": tool_name,
                 "tool_input": {
-                    "subagent_type": "agent-toolkit:plan-executor",
+                    "subagent_type": "general-purpose",
                     "prompt": f"計画ファイル `{plan}` を実装する。",
                 },
             },

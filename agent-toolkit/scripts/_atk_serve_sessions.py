@@ -22,6 +22,8 @@ import socket
 import subprocess
 import typing
 
+import _atk_serve_remote
+
 logger = logging.getLogger(__name__)
 
 # pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
@@ -59,14 +61,8 @@ BACKOFF_MAX_SEC = 30.0
 # 停止段階ごとに`proc.wait()`へ与えるタイムアウト秒。
 TERMINATE_GRACE_TIMEOUT_SEC = 2.0
 
-# リモート側で実行する短いPython bootstrap。
-# `$`・`%`・`<`・`>`・`|`・`&`・`^`はPOSIXシェル/cmd.exe双方で意味を持つためコード本体に含めない。
-REMOTE_BOOTSTRAP = (
-    "import os, pathlib; "
-    "p = pathlib.Path(os.path.expanduser('~')) / "
-    "'dotfiles/agent-toolkit/scripts/atk_serve_sessions_remote_helper.py'; "
-    "exec(compile(p.read_text(encoding='utf-8'), str(p), 'exec'))"
-)
+# リモート側で実行する短いPython bootstrap。組み立ての制約は`_atk_serve_remote`を正本とする。
+REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_sessions_remote_helper.py")
 
 SshRunner = typing.Callable[[str, str, list[str]], typing.Awaitable[str]]
 

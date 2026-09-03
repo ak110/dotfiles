@@ -53,7 +53,7 @@ class FakeBackend:
         self.interrupt_calls = 0
         self.send_calls = 0
         self.resume_calls: list[str] = []
-        self.start_calls: list[tuple[str | None, str | None, bool]] = []
+        self.start_calls: list[tuple[str | None, str | None, str]] = []
 
     async def start(
         self,
@@ -63,11 +63,11 @@ class FakeBackend:
         effort: str | None,
         *,
         model_type: str | None = None,
-        explore: bool = False,
+        launch_kind: state.LaunchKind = "delegate",
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
     ) -> subject.SessionState:
         del prompt
-        self.start_calls.append((model, effort, explore))
+        self.start_calls.append((model, effort, launch_kind))
         session_number = len(self.start_calls)
         session = subject.SessionState(
             session_id=f"{self.engine}-session" if session_number == 1 else f"{self.engine}-session-{session_number}",
@@ -76,7 +76,7 @@ class FakeBackend:
             effort=effort,
             engine=self.engine,
             model_type=model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
         )
         self.sessions[session.session_id] = session
@@ -92,7 +92,7 @@ class FakeBackend:
         effort: str | None,
         *,
         model_type: str | None = None,
-        explore: bool = False,
+        launch_kind: state.LaunchKind = "delegate",
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
     ) -> subject.SessionState:
         async def accept_prompt(value: str) -> None:
@@ -106,7 +106,7 @@ class FakeBackend:
             effort=effort,
             engine=self.engine,
             model_type=model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
         )
         self.sessions[session_id] = session
@@ -301,7 +301,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
 
 def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     """公開ツール集合とstartの入力境界が工程別モデル設定へ密結合している。"""
-    assert set(subject.mcp._tool_manager._tools) == {"start", "start_explore", "wait", "send_message", "kill"}
+    assert set(subject.mcp._tool_manager._tools) == {"start", "start_explore", "start_shell", "wait", "send_message", "kill"}
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     properties = start_tool.parameters["properties"]
@@ -309,12 +309,19 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
-    assert explore_tool.parameters["properties"]["fast"]["default"] is False
+    assert explore_tool.parameters["properties"]["fast"]["default"] is True
+    shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
+    assert shell_tool is not None
+    assert {"command", "cwd", "summary_policy", "exclude_session_id"} == shell_tool.parameters["properties"].keys()
+    assert shell_tool.parameters["properties"]["exclude_session_id"]["description"] == (
+        "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
+        "シェル実行起動のsessionだけを渡す。"
+    )
 
 
 def test_start_tool_descriptions_require_same_turn_observation() -> None:
     """開始ツールの公開説明が返却sessionを同じ応答内で観測させる。"""
-    for tool_name in ("start", "start_explore"):
+    for tool_name in ("start", "start_explore", "start_shell"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         assert "返した`session_id`" in tool.description
@@ -334,7 +341,7 @@ def test_server_instructions_carry_standalone_contract() -> None:
 def test_tool_descriptions_carry_standalone_contract() -> None:
     """各ツールの公開説明だけで候補枯渇と継続不能のエラー本文を判別できる。"""
     tools = {}
-    for tool_name in ("start", "start_explore", "wait", "send_message", "kill"):
+    for tool_name in ("start", "start_explore", "start_shell", "wait", "send_message", "kill"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         tools[tool_name] = tool
@@ -344,7 +351,19 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "session retention expired" in tools["wait"].description
     assert "configuration changed" in tools["send_message"].description
     assert "unknown session" in tools["send_message"].description
+    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
     assert "sessionとbackend processは破棄しない" in tools["kill"].description
+    assert "`send_message`による訂正では足りないこと" in tools["kill"].description
+
+
+def test_delegation_break_even_guidance_is_available_before_calling() -> None:
+    """探索委譲とシェル実行委譲の説明が、委譲と直接実行の採算の目安と前提を示す。"""
+    for tool_name in ("start_explore", "start_shell"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        assert "4,000トークン" in tool.description
+        assert "147,000トークン" in tool.description
+        assert "セッションの残りリクエスト数47" in tool.description
 
 
 def test_exclude_session_id_schema_describes_candidate_exclusion() -> None:
@@ -454,7 +473,7 @@ async def test_start_resolves_one_candidate_and_exclusion_chain_by_candidate_val
     second = await manager.start("plan", "調査", str(tmp_path), first["session_id"])
     third = await manager.start("plan", "調査", str(tmp_path), second["session_id"])
 
-    assert backend.start_calls == [("first", "high", False), ("second", "high", False), ("second", "low", False)]
+    assert backend.start_calls == [("first", "high", "delegate"), ("second", "high", "delegate"), ("second", "low", "delegate")]
     assert manager.sessions[third["session_id"]].excluded_candidates == frozenset(candidates[:2])
     assert backend.interrupt_calls == 0
 
@@ -566,8 +585,8 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
 
     response = await manager.start("plan", "調査", str(tmp_path))
 
-    assert codex.start_calls == [("first", "high", False)]
-    assert claude.start_calls == [("second", "medium", False)]
+    assert codex.start_calls == [("first", "high", "delegate")]
+    assert claude.start_calls == [("second", "medium", "delegate")]
     assert response["engine"] == "claude"
     assert response["model"] == "second"
     assert response["status"] == "running"
@@ -588,7 +607,7 @@ async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
 
     response = await manager.start("plan", "調査", str(tmp_path))
 
-    assert codex.start_calls == [("first", "high", False), ("second", "high", False)]
+    assert codex.start_calls == [("first", "high", "delegate"), ("second", "high", "delegate")]
     assert response["status"] == "failed"
     assert response["model"] == "second"
     assert (await manager.wait(response["session_id"], timeout=0))["error"] == codex.error
@@ -612,7 +631,7 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
 
     response = await manager.start("plan", "調査", str(tmp_path))
 
-    assert codex.start_calls == [("first", "high", False)]
+    assert codex.start_calls == [("first", "high", "delegate")]
     assert response["status"] == "failed"
     assert response["model"] == "first"
 
@@ -637,8 +656,8 @@ async def test_start_advances_candidate_when_claude_reports_unavailable_status(
 
     response = await manager.start("plan", "調査", str(tmp_path))
 
-    assert claude.start_calls == [("first", "high", False)]
-    assert codex.start_calls == [("second", "medium", False)]
+    assert claude.start_calls == [("first", "high", "delegate")]
+    assert codex.start_calls == [("second", "medium", "delegate")]
     assert response["engine"] == "codex"
     assert response["model"] == "second"
     assert response["status"] == "running"
@@ -661,7 +680,7 @@ async def test_start_keeps_claude_failure_that_does_not_depend_on_the_candidate(
 
     response = await manager.start("plan", "調査", str(tmp_path))
 
-    assert claude.start_calls == [("first", "high", False)]
+    assert claude.start_calls == [("first", "high", "delegate")]
     assert response["status"] == "failed"
     assert response["model"] == "first"
 
@@ -706,9 +725,64 @@ async def test_start_explore_selects_fast_route_and_rejects_normal_exclusion(
     normal = await manager.start("plan", "通常", str(tmp_path))
     explored = await manager.start_explore(True, "探索", str(tmp_path))
     assert explored["model_type"] == "explore_fast"
-    assert backend.start_calls[-1] == ("explore_fast", "medium", True)
+    assert backend.start_calls[-1] == ("explore_fast", "medium", "explore")
     with pytest.raises(ValueError, match=r"source model_type=plan.*requested model_type=explore_fast"):
         await manager.start_explore(True, "探索", str(tmp_path), normal["session_id"])
+
+
+@pytest.mark.asyncio
+async def test_start_shell_runs_command_on_the_explore_fast_route(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """シェル実行委譲は軽量な候補で開始し、依頼と要約方針を委譲先へ渡して結果を観測させる。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda model_type: [("codex", model_type, "medium")],
+    )
+    manager, backend = _manager_with_fake("codex")
+    started = await manager.start_shell("make test", str(tmp_path), "終了状態と警告だけ")
+    assert started["model_type"] == "explore_fast"
+    assert backend.start_calls[-1] == ("explore_fast", "medium", "shell")
+    session = manager.sessions[started["session_id"]]
+    assert session.launch_kind == "shell"
+    _complete(session, message="終了コード0")
+
+    observed = await manager.wait(started["session_id"], 0)
+    assert observed["status"] == "completed"
+    assert observed["agent_message"] == "終了コード0"
+
+
+@pytest.mark.asyncio
+async def test_start_shell_rejects_exclusion_from_another_launch_kind(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """同じ`model_type`でも起動条件の種別が異なるsessionは除外指定に利用できない。"""
+    monkeypatch.setattr(
+        subject._atk_config,
+        "resolve_model_candidates",
+        lambda model_type: [("codex", model_type, "medium"), ("codex", "second", "medium")],
+    )
+    manager, _ = _manager_with_fake("codex")
+    explored = await manager.start_explore(True, "調査", str(tmp_path))
+    with pytest.raises(ValueError, match=r"launch_kind=explore.*launch_kind=shell"):
+        await manager.start_shell("make test", str(tmp_path), "終了状態だけ", explored["session_id"])
+    shell = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
+    with pytest.raises(ValueError, match=r"launch_kind=shell.*launch_kind=explore"):
+        await manager.start_explore(True, "調査", str(tmp_path), shell["session_id"])
+
+
+@pytest.mark.asyncio
+async def test_start_shell_rejects_empty_command_and_summary_policy(tmp_path: pathlib.Path) -> None:
+    """コマンドと要約方針のいずれかが空のシェル実行委譲は開始前に拒否する。"""
+    manager, backend = _manager_with_fake("codex")
+    with pytest.raises(ValueError, match="command must be a non-empty string"):
+        await manager.start_shell("   ", str(tmp_path), "終了状態だけ")
+    with pytest.raises(ValueError, match="summary_policy must be a non-empty string"):
+        await manager.start_shell("make test", str(tmp_path), "")
+    assert not backend.start_calls
 
 
 @pytest.mark.asyncio
@@ -750,7 +824,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
     resumed = manager.sessions[session.session_id]
     assert response["delivery"] == "reply_started"
     assert resumed.model_type == "explore"
-    assert resumed.explore is True
+    assert resumed.launch_kind == "explore"
     assert resumed.excluded_candidates == frozenset({candidates[0]})
 
 
@@ -1480,9 +1554,10 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
 
 
 def test_explore_system_prompt_contains_delegate_notice() -> None:
-    """通常起動と探索起動のいずれの指示も委譲先宣言から始まる。"""
+    """通常起動、探索起動及びシェル実行起動のいずれの指示も委譲先宣言から始まる。"""
     assert state.DELEGATE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
     assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+    assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
 
 
 @pytest.mark.asyncio
@@ -1507,7 +1582,7 @@ async def test_codex_explore_changes_thread_start_only(
         return explore_client
 
     monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
-    await explore_manager.start("調査", str(tmp_path), "model", "high", explore=True)
+    await explore_manager.start("調査", str(tmp_path), "model", "high", launch_kind="explore")
 
     normal_thread = normal_client.requests[0][1]
     explore_thread = explore_client.requests[0][1]
@@ -1519,11 +1594,31 @@ async def test_codex_explore_changes_thread_start_only(
 
 
 @pytest.mark.asyncio
+async def test_codex_shell_start_shares_explore_thread_conditions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Codexのシェル実行起動は探索と同じthread条件で開始し、指示だけを実行専用へ替える。"""
+    manager = codex_backend.AppServerManager()
+    client = FakeCodexClient()
+
+    async def ensure_client() -> FakeCodexClient:
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    await manager.start("make test", str(tmp_path), "model", "high", launch_kind="shell")
+
+    thread_params = client.requests[0][1]
+    assert thread_params["config"] == {"project_doc_max_bytes": 0}
+    assert thread_params["developerInstructions"] == state.SHELL_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
 async def test_codex_resume_passes_delegate_instructions(tmp_path: pathlib.Path) -> None:
     """Codexの再開は起動種別に応じた委譲先宣言をthread/resumeへ渡す。"""
     client = FakeCodexClient()
     normal_session = subject.SessionState("thread-normal", str(tmp_path), engine="codex")
-    explore_session = subject.SessionState("thread-explore", str(tmp_path), engine="codex", explore=True)
+    explore_session = subject.SessionState("thread-explore", str(tmp_path), engine="codex", launch_kind="explore")
 
     await codex_backend.AppServerManager._resume_thread(normal_session, client)
     await codex_backend.AppServerManager._resume_thread(explore_session, client)
@@ -2487,6 +2582,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
+        "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h",
     }
 
 
@@ -2502,16 +2598,32 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
 
     所有セッションを解決できない環境では当該キーを設定しない。
     """
-    options = claude_backend._build_options(str(tmp_path), "model", "high", explore=True)
+    options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="explore")
     assert options.setting_sources == []
     assert options.skills == []
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
     assert options.system_prompt == state.EXPLORE_SYSTEM_PROMPT
     assert options.tools == {"type": "preset", "preset": "claude_code"}
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"}
+
+
+@pytest.mark.usefixtures("_owner_session_environment")
+def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_path: pathlib.Path) -> None:
+    """Claudeのシェル実行起動は探索と同じ軽量条件を共有し、実行用toolと指示を選ぶ。"""
+    options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="shell")
+    assert options.setting_sources == []
+    assert options.skills == []
+    assert options.env == {
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
+    }
+    assert options.system_prompt == state.SHELL_SYSTEM_PROMPT
+    assert set(options.allowed_tools) == {"Bash", "Read"}
 
 
 @pytest.mark.asyncio

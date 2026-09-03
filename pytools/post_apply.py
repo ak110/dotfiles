@@ -123,6 +123,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # Claude Code向けMarkdownルールとは互換性がない。
         # 共有ルールは .codex/agent-toolkit/rules 配下に置く。
         Path("rules/agent-toolkit"),
+        # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
+        # agent-toolkit/agents ディレクトリごと除去したため、旧配布先リンクを除去する。
+        Path("agent-toolkit/agents"),
         # dotfilesリポジトリ専用スキルはプロジェクト直下の .agents/skills に置く。
         # ~/.codex/skills はグローバルに使うスキルだけを置く。
         Path("skills/sync-platform-pair"),

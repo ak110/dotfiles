@@ -171,6 +171,55 @@ class TestTestExecution:
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
 
+    @pytest.mark.parametrize(
+        "tool_response",
+        [
+            "Command running in background with ID: bg-task-1. Output is being written to: /tmp/bg-task-1.output",
+            {"stdout": "Command running in background with ID: bg-task-1.", "stderr": ""},
+        ],
+        ids=["text", "structured"],
+    )
+    def test_background_command_records_task_id(self, tmp_path: pathlib.Path, tool_response: object):
+        """背景実行の応答から取得したタスクIDを自セッションの起動記録として保存する。"""
+        sid = "background-task-record"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_input": {"command": "sleep 120", "run_in_background": True},
+                "tool_response": tool_response,
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-1"]
+
+    def test_foreground_command_does_not_record_task_id(self, tmp_path: pathlib.Path):
+        """前景実行では起動記録を残さない。"""
+        sid = "background-task-foreground"
+        _run(
+            {
+                "session_id": sid,
+                "tool_input": {"command": "echo hello"},
+                "tool_response": "Command running in background with ID: bg-task-1.",
+            },
+            state_dir=tmp_path,
+        )
+        assert "background_task_ids" not in _read_state(tmp_path, sid)
+
+    def test_background_task_ids_are_recorded_without_duplication(self, tmp_path: pathlib.Path):
+        """同じタスクIDを重複して記録せず、別のIDは追記する。"""
+        sid = "background-task-multi"
+        for task_id in ("bg-task-1", "bg-task-1", "bg-task-2"):
+            _run(
+                {
+                    "session_id": sid,
+                    "tool_input": {"command": "sleep 120", "run_in_background": True},
+                    "tool_response": f"Command running in background with ID: {task_id}.",
+                },
+                state_dir=tmp_path,
+            )
+        assert _read_state(tmp_path, sid).get("background_task_ids") == ["bg-task-1", "bg-task-2"]
+
     def test_pyfltr_mcp_run_for_agent_detected(self, tmp_path: pathlib.Path):
         """pyfltr MCPの検証成功をCLI経由と同じ状態へ記録する。"""
         sid = "test-mcp-run-for-agent"
@@ -368,24 +417,6 @@ class TestTbdCompletionNotice:
 
         assert result == 0
         assert not notices
-
-
-class TestSubagentEndProcessLoopLog:
-    """`_TRACKED_SUBAGENT_TYPES`対象種別終了時の`_process_loop_log`記録（fb-1、`enable_env`偽は空文字列で継承無効化）。"""
-
-    @pytest.mark.parametrize(
-        ("subagent_type", "enable_env", "expect_logged"),
-        [("plan-executor", True, True), ("plan-executor", False, False), ("claude", True, False)],
-    )
-    def test_subagent_end_logging(self, tmp_path: pathlib.Path, subagent_type: str, enable_env: bool, expect_logged: bool):
-        xdg_state_home = tmp_path / "xdg-state"
-        extra_env = {"XDG_STATE_HOME": str(xdg_state_home), "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1" if enable_env else ""}
-        payload = {"session_id": "sid", "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}}
-        _run(payload, state_dir=tmp_path, extra_env=extra_env)
-        log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"
-        assert log_path.exists() == expect_logged
-        if expect_logged:
-            assert "event=subagent_end" in (text := log_path.read_text(encoding="utf-8")) and f"type={subagent_type}" in text
 
 
 class TestCurrentPlanFilePathTracking:
@@ -1451,6 +1482,23 @@ class TestAgentsServerSessionState:
         assert run_operation(sid, remote_session_id, "start", status="running") is True
         assert run_operation(sid, remote_session_id, "kill", status="interrupted") is False
 
+    def test_start_shell_records_pending_observation(self, tmp_path: pathlib.Path) -> None:
+        """シェル実行委譲も観測を試みていない作業として記録する。"""
+        sid = "pending-shell"
+        remote_session_id = "remote-shell"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
+                "tool_input": {"cwd": str(tmp_path), "command": "make test", "summary_policy": "終了状態だけ"},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "running"}},
+            },
+            state_dir=tmp_path,
+        )
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["pending_observation"] is True
+        assert record["owner_agent_id"] == "main"
+
     def test_pending_work_records_the_agent_that_triggered_it(self, tmp_path: pathlib.Path) -> None:
         """startと配送成立send_messageは、各作業を発生させた主体を観測責任者として記録する。"""
         sid = "pending-owner"
@@ -1606,3 +1654,77 @@ class TestAgentsServerSessionState:
         sessions = _read_state(tmp_path, sid)["agents_server_sessions"]
         assert "remote-unknown" not in sessions
         assert sessions[known_session_id]["pending_observation"] is True
+
+
+class TestAgentsServerProcessLoopLog:
+    """計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の記録。
+
+    `model_type`は`start`応答にだけ現れるため、起動と終端を同じsessionへ通して記録の対応を確認する。
+    """
+
+    def _run_session(
+        self,
+        tmp_path: pathlib.Path,
+        *,
+        model_type: str,
+        observe_tool: str = "wait",
+        final_status: str = "completed",
+        enable_env: bool = True,
+    ) -> str:
+        xdg_state_home = tmp_path / "xdg-state"
+        extra_env = {
+            "XDG_STATE_HOME": str(xdg_state_home),
+            "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1" if enable_env else "",
+        }
+        sid = "process-loop"
+        remote_session_id = "thread-process-loop"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"prompt": "実装する", "cwd": str(tmp_path)},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": remote_session_id,
+                        "status": "running",
+                        "model_type": model_type,
+                    }
+                },
+            },
+            state_dir=tmp_path,
+            extra_env=extra_env,
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{observe_tool}",
+                "tool_input": {"session_id": remote_session_id},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": final_status}},
+            },
+            state_dir=tmp_path,
+            extra_env=extra_env,
+        )
+        log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"
+        return log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+
+    @pytest.mark.parametrize("observe_tool", ("wait", "kill"))
+    def test_terminal_status_logs_start_and_end(self, tmp_path: pathlib.Path, observe_tool: str) -> None:
+        """観測対象の工程は起動時刻を記録し、終端した観測で終了時刻を記録する。"""
+        text = self._run_session(tmp_path, model_type="execute", observe_tool=observe_tool)
+        assert "event=subagent_start" in text
+        assert "event=subagent_end" in text
+        assert text.count("type=execute") == 2
+
+    def test_untracked_model_type_is_not_logged(self, tmp_path: pathlib.Path) -> None:
+        """探索起動など観測対象外の工程は記録しない。"""
+        assert self._run_session(tmp_path, model_type="explore") == ""
+
+    def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
+        """終端していない観測では終了時刻を記録しない。"""
+        text = self._run_session(tmp_path, model_type="plan", final_status="running")
+        assert "event=subagent_start" in text
+        assert "event=subagent_end" not in text
+
+    def test_disabled_env_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
+        """process-loop起動セッション以外では記録しない。"""
+        assert self._run_session(tmp_path, model_type="execute", enable_env=False) == ""

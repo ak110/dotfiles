@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/shell.css">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/sessions.css">
 </head>
-<body>
+<body data-screen="sessions">
   <header class="app-header">
     <div class="header-title">
       <h1>セッション</h1>
@@ -21,6 +21,7 @@
       <a href="__BASE_PATH_HTML__/sessions" aria-current="page">セッション</a>
     </nav>
   </header>
+  <div id="screen-root">
   <div id="app">
     <aside>
       <div class="toolbar">
@@ -40,7 +41,9 @@
     </main>
     <div id="drawer-backdrop"></div>
   </div>
+  </div>
   <script id="sessions-bootstrap" type="application/json">__SESSIONS_BOOTSTRAP_JSON__</script>
+  <script src="__BASE_PATH_HTML__/static/shell.js"></script>
   <script src="__BASE_PATH_HTML__/static/sessions.js"></script>
 </body>
 </html>

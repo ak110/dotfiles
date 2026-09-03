@@ -100,6 +100,39 @@ class TestCheckText:
         assert outcome is CheckOutcome.SKIP
         assert body is None
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "status: checkpoint\ntype: review_round\nround: 2\nfindings_count: 3\nrequirement_spec_count: 0",
+            "status: checkpoint\ntype: merge_request",
+            (
+                "計画実行完了\n"
+                "merged_head: 0123456789abcdef0123456789abcdef01234567\n"
+                "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
+                "released: /home/u/repo/.claude/worktrees/lane-a, feedback-lane-a, /tmp/lane-a-xxxxxxxx"
+            ),
+            "needs_escalation",
+            "status: needs_escalation",
+        ],
+    )
+    def test_allows_specified_return_formats(self, text: str):
+        """規範が固定書式として定める返却値はWARNにしない。"""
+        outcome, body = check_text(text)
+        assert outcome is not CheckOutcome.WARN
+        assert body is None
+
+    def test_warns_for_english_prose_after_machine_readable_lines(self):
+        """機械可読な返却行に続く英語の地の文はWARNを返す。"""
+        outcome, body = check_text("status: checkpoint\ntype: review_round\nI reviewed the plan and found three issues to fix.")
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
+    def test_warns_for_capitalized_label_line(self):
+        """大文字で始まるラベル行の英語の地の文はWARNを返す。"""
+        outcome, body = check_text("Summary: I fixed the hook and verified the tests.")
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+
 
 class TestDetailedCheck:
     """detailed_check()のOutcome・message ID返却の検証。"""

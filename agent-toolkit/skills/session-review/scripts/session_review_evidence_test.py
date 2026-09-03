@@ -4469,3 +4469,56 @@ def test_help_uses_one_claude_only_limitation_note(monkeypatch: pytest.MonkeyPat
     assert raised.value.code == 0
     assert help_text.count(note) == 3
     assert "Codexスレッド別集計はClaude Code形式" not in help_text
+
+
+def test_hook_record_scan_tolerates_non_string_type_values(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`type`の値がdictの記録を含むtranscriptでも警告走査とhook通知集計が完遂する。
+
+    ツール定義を含む記録では`schema.input_schema.properties`配下に`type`という名前の
+    プロパティ定義が現れ、その値がJSON Schemaのdictになる。
+    """
+    notice = "[auto-generated: agent-toolkit/pretooluse][warn] warn: 出力を切り詰めている"
+    tool_schema_entry = {
+        "type": "attachment",
+        "attachment": {
+            "tools": [
+                {
+                    "name": "feedback",
+                    "schema": {
+                        "input_schema": {
+                            "properties": {
+                                "type": {"type": "string", "enum": ["bug", "idea"]},
+                                "title": {"type": "string"},
+                            }
+                        }
+                    },
+                }
+            ]
+        },
+    }
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            tool_schema_entry,
+            _hook_attachment(
+                {
+                    "type": "hook_success",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "stdout": json.dumps({"hookSpecificOutput": {"additionalContext": notice}}, ensure_ascii=False),
+                    "stderr": "",
+                }
+            ),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--hook-notices"]) == 0
+    hook_events = _read_jsonl(capsys)
+    assert hook_events[-1] == {"kind": "summary", "count": 1}
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+    warn_events = _read_jsonl(capsys)
+    assert [event["text"] for event in warn_events if event["kind"] == "warning"] == [notice]

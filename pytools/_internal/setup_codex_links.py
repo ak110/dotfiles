@@ -22,7 +22,6 @@ _LINKS: dict[str, str] = {
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
     "skills/sync-cross-project": ".chezmoi-source/dot_claude/skills/sync-cross-project",
     "references": ".chezmoi-source/dot_claude/references",
-    "agent-toolkit/agents": "agent-toolkit/agents",
     "agent-toolkit/rules": "agent-toolkit/rules",
 }
 

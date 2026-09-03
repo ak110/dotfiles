@@ -42,8 +42,9 @@ HTML = _read_static_text("index.html")
 CSS = _read_static_text("app.css")
 JS = _read_static_text("app.js")
 
-# 3画面が共有するヘッダーとナビゲーションの表示。
+# 3画面が共有するヘッダーとナビゲーションの表示、及び再読み込みなしの画面遷移。
 SHELL_CSS = _read_static_text("shell.css")
+SHELL_JS = _read_static_text("shell.js")
 # 計画ファイル画面。
 PLANS_HTML = _read_static_text("plans.html")
 PLANS_CSS = _read_static_text("plans.css")

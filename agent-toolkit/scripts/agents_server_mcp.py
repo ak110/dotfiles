@@ -24,6 +24,7 @@ import _atk_config
 import _inherited_venv
 import _wait_schedule
 from _agents_server_state import (
+    LaunchKind,
     ModelCandidate,
     ResumePrompt,
     SessionOwnerGoneError,
@@ -32,6 +33,7 @@ from _agents_server_state import (
     _validate_cwd,
     _validate_model_effort,
     _validate_prompt,
+    _validate_shell_request,
 )
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -101,6 +103,11 @@ def _engine_unavailable(session: SessionState) -> bool:
     if session.error.get("codexErrorInfo") in ENGINE_UNAVAILABLE_ERROR_INFO:
         return True
     return session.error.get("apiErrorStatus") in ENGINE_UNAVAILABLE_API_ERROR_STATUS
+
+
+def _shell_prompt(command: str, summary_policy: str) -> str:
+    """コマンドと要約方針を、シェル実行委譲先への指示本文へ組み立てる。"""
+    return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
 class AgentsServerManager:
@@ -194,7 +201,7 @@ class AgentsServerManager:
         self,
         model_type: str,
         *,
-        explore: bool,
+        launch_kind: LaunchKind,
         exclude_session_id: str | None,
     ) -> tuple[list[ModelCandidate], frozenset[ModelCandidate]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。"""
@@ -202,11 +209,11 @@ class AgentsServerManager:
         excluded: frozenset[ModelCandidate] = frozenset()
         if exclude_session_id is not None:
             source = self._route_state(exclude_session_id)
-            if source.model_type != model_type or source.explore != explore:
+            if source.model_type != model_type or source.launch_kind != launch_kind:
                 raise ValueError(
                     "exclude_session_id start conditions differ: "
-                    f"source model_type={source.model_type}, explore={source.explore}; "
-                    f"requested model_type={model_type}, explore={explore}"
+                    f"source model_type={source.model_type}, launch_kind={source.launch_kind}; "
+                    f"requested model_type={model_type}, launch_kind={launch_kind}"
                 )
             if source.model is None or source.effort is None:
                 raise ValueError(f"exclude_session_id has no selected candidate: {exclude_session_id}")
@@ -223,7 +230,7 @@ class AgentsServerManager:
         cwd: str,
         exclude_session_id: str | None = None,
         *,
-        explore: bool = False,
+        launch_kind: LaunchKind = "delegate",
     ) -> dict[str, Any]:
         """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -234,7 +241,7 @@ class AgentsServerManager:
         """
         candidates, excluded = self._resolve_start_candidates(
             model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             exclude_session_id=exclude_session_id,
         )
         _validate_prompt(prompt)
@@ -253,7 +260,7 @@ class AgentsServerManager:
                     model,
                     effort,
                     model_type=model_type,
-                    explore=explore,
+                    launch_kind=launch_kind,
                     excluded_candidates=excluded,
                 )
             except Exception as exc:
@@ -306,7 +313,24 @@ class AgentsServerManager:
             prompt,
             cwd,
             exclude_session_id,
-            explore=True,
+            launch_kind="explore",
+        )
+
+    async def start_shell(
+        self,
+        command: str,
+        cwd: str,
+        summary_policy: str,
+        exclude_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """コマンド実行専用の軽量な起動条件でturnを開始する。"""
+        _validate_shell_request(command, summary_policy)
+        return await self.start(
+            "explore_fast",
+            _shell_prompt(command, summary_policy),
+            cwd,
+            exclude_session_id,
+            launch_kind="shell",
         )
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
@@ -391,7 +415,7 @@ class AgentsServerManager:
                 resume_state.model,
                 resume_state.effort,
                 model_type=resume_state.model_type,
-                explore=resume_state.explore,
+                launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
             )
         except BaseException:
@@ -490,7 +514,7 @@ class AgentsServerManager:
                 effort=resume_state.effort,
                 engine=resume_state.engine,
                 model_type=resume_state.model_type,
-                explore=resume_state.explore,
+                launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
             )
             self.sessions[session.session_id] = session
@@ -740,9 +764,9 @@ with warnings.catch_warnings():
         "agents_server",
         instructions=(
             "CodexまたはClaudeへの非同期委譲。承認・停止・一覧操作は公開しない。\n"
-            "`start`と`start_explore`でsessionを開始し、`wait`で終端と結果本文を受け取る。"
-            "継続は`send_message`、実行中turnの中断は`kill`で行う。\n"
-            "`start`と`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
+            "`start`と`start_explore`でsessionを開始し、`start_shell`でコマンドの実行と要約を委譲する。"
+            "`wait`で終端と結果本文を受け取る。継続は`send_message`、実行中turnの中断は`kill`で行う。\n"
+            "`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
             "同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
             "engine、model及びeffortは`model_type`と`fast`から本サーバーが工程別モデル設定を解決して決める。"
@@ -792,8 +816,13 @@ async def start_explore(
     cwd: str,
     fast: Annotated[
         bool,
-        Field(description="`false`は`explore_model`、`true`は`explore_fast_model`の設定を候補列として使う。"),
-    ] = False,
+        Field(
+            description=(
+                "`false`は`explore_model`、`true`は`explore_fast_model`の設定を候補列として使う。"
+                "既定の`true`のまま使い、軽量側の候補では判断材料が不足する調査だけ`false`を指定する。"
+            )
+        ),
+    ] = True,
     exclude_session_id: Annotated[
         str | None,
         Field(
@@ -810,9 +839,43 @@ async def start_explore(
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
     プロジェクト指示の読込を減らした軽量な起動条件で開始する。
     書込は機械的に禁止しないため、対象ファイルを変更しない旨を`prompt`へ明示する。
+    委譲と直接実行の採算は、追加のツール呼び出しが2回以上必要か、読む対象の合計が4,000トークンを超えるかで判定する。
+    いずれかに当たる調査は本ツールへ委譲し、1回の検索または1ファイルの部分読み取りで確定する調査は自ら実行する。
+    この目安は、呼び出し元の1リクエストの文脈量147,000トークンと、セッションの残りリクエスト数47を前提とする。
+    文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
     return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)
+
+
+@mcp.tool(name="start_shell", structured_output=True)
+async def start_shell(
+    command: Annotated[str, Field(description="実行するコマンド。委譲先がシェルで実行する。")],
+    cwd: Annotated[str, Field(description="実行時の作業ディレクトリ。既存ディレクトリの絶対パスとする。")],
+    summary_policy: Annotated[str, Field(description="結果の要約方針。報告へ含める値と粒度を書く。")],
+    exclude_session_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
+                "シェル実行起動のsessionだけを渡す。"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
+    """コマンドを実行して結果を要約する委譲先turnを開始する。
+
+    `start_explore`と同じ軽量な起動条件で開始し、呼び出し元へは終了状態と要約だけを返す。
+    読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。
+    返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
+    委譲と直接実行の採算は、コマンドの出力量で判定する。
+    出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドは本ツールへ委譲し、
+    1,000トークン未満に収まる見込みのコマンドは自ら実行する。
+    この目安は、呼び出し元の1リクエストの文脈量147,000トークンと、セッションの残りリクエスト数47を前提とする。
+    文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
+    応答と、候補が尽きた場合の扱いは`start`と同じである。
+    """
+    return await _MANAGER.start_shell(command, cwd, summary_policy, exclude_session_id)
 
 
 @mcp.tool(name="wait", structured_output=True)
@@ -876,6 +939,9 @@ async def kill(
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終端を待つ。
 
+    停止は最終手段とする。実行中の委譲先には`send_message`で訂正を配送できるため、
+    そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
+    本ツールを選ぶ前に、`send_message`による訂正では足りないことと、当該作業の継続自体が不要であることを確認する。
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。

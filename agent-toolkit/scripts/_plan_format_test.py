@@ -240,7 +240,18 @@ def test_human_readable_action_rejects_independent_exclusion_table() -> None:
         1,
     )
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("独立した除外・保持表を置かない" in error for error in errors), errors
+    assert any("直下にH3を置かない" in error for error in errors), errors
+
+
+def test_human_readable_action_rejects_arbitrary_h3() -> None:
+    """実施内容直下へ置いた任意のH3を、拒否する対象をH3と述べるメッセージで拒否する。"""
+    content = _HUMAN_MAIN_CONTENT.replace(
+        f"\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
+        f"\n### 補足の観点\n\n対象範囲の補足を述べる。\n\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("実施内容" in error and "H3を置かない" in error for error in errors), errors
 
 
 def test_human_readable_action_rejects_feedback_missing_from_metadata() -> None:
@@ -317,6 +328,18 @@ def test_human_readable_main_rejects_internal_identifiers(mutation: str, expecte
         )
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any(expected in error for error in errors), errors
+
+
+def test_human_readable_history_rejects_table() -> None:
+    """変更履歴配下へ置いた表を、拒否する対象を表と述べるメッセージで拒否する。"""
+    table = "\n\n| 対象 | 内容 |\n| --- | --- |\n| 反映先 | 反映した。 |"
+    content = _HUMAN_MAIN_CONTENT.replace(
+        _plan_fixture.HISTORY_REVIEW_BODY,
+        f"{_plan_fixture.HISTORY_REVIEW_BODY}{table}",
+        1,
+    )
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert f"`## {_plan_format.PLAN_H2_LEGACY_HISTORY}`へ表を置かない" in errors, errors
 
 
 def test_human_readable_history_rejects_internal_identifier() -> None:

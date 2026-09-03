@@ -22,7 +22,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
@@ -50,12 +50,6 @@ Bash:
 Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
-
-Agent / Task:
-
-- `plan-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
-- `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
-- 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
 
 TaskStop:
 
@@ -104,7 +98,6 @@ import _bash_command_parser  # noqa: E402  # pylint: disable=wrong-import-positi
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _scratchpad_path  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -128,11 +121,6 @@ from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,
     is_plan_component_file,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
-# pylint: disable=wrong-import-position,import-error
-from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
-
-# pylint: enable=wrong-import-position,import-error
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
 _ExecutionSegment = _bash_command_parser.ExecutionSegment
@@ -296,7 +284,7 @@ def main(payload_text: str) -> int:
         )
 
     if tool_name == "TaskStop":
-        if _check_task_stop(session_id):
+        if _check_task_stop(session_id, tool_input):
             return exit_with(2)
         flush_pending_notices()
         return 0
@@ -319,9 +307,6 @@ def main(payload_text: str) -> int:
     if tool_name == "Read":
         flush_pending_notices()
         return 0
-
-    if tool_name in ("Agent", "Task"):
-        return exit_with(_handle_agent_tool(tool_input, flush_pending_notices))
 
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex))
 
@@ -405,20 +390,6 @@ def _handle_bash_tool(
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
     else:
         flush_warning()
-    return 0
-
-
-def _handle_agent_tool(
-    tool_input: dict,
-    flush_warning: Callable[[], None],
-) -> int:
-    """Agent・Task起動の委譲契約と観測ログを処理する。"""
-    subagent_type = tool_input.get("subagent_type")
-    if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
-        return 2
-    if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
-        _process_loop_log.append("subagent_start", type=subagent_type)
-    flush_warning()
     return 0
 
 
@@ -1093,12 +1064,12 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     """`file_path`の祖先ディレクトリを起点に`referenced`（相対パス）の実ファイルを探索する。
 
     frontmatterの同期注記は同一ディレクトリまたは近隣ディレクトリの兄弟ファイルを
-    裸ファイル名（例: `plan-executor.md`）で参照する形式が実運用で使われるため、
+    裸ファイル名（例: `02-agent-operations.md`）で参照する形式が実運用で使われるため、
     `.git`を持つ祖先（リポジトリルート）を発見しても即確定とせず、以下の順に実在確認する。
 
     1. `file_path`の各祖先ディレクトリ（近い順。同一ディレクトリの兄弟ファイル参照に対応）
-    2. リポジトリルート配下の`agent-toolkit/agents/`・`agent-toolkit/rules/`・
-       `agent-toolkit/skills/`（近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
+    2. リポジトリルート配下の`agent-toolkit/rules/`・`agent-toolkit/skills/`
+       （近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
 
     いずれの経路でも実在しない場合は`None`を返す。
     """
@@ -1112,9 +1083,7 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
             repo_root = candidate
             break
     if repo_root is not None:
-        search_roots.extend(
-            repo_root / neighbor for neighbor in ("agent-toolkit/agents", "agent-toolkit/rules", "agent-toolkit/skills")
-        )
+        search_roots.extend(repo_root / neighbor for neighbor in ("agent-toolkit/rules", "agent-toolkit/skills"))
 
     for candidate in search_roots:
         resolved = candidate / referenced
@@ -1195,7 +1164,7 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__agents_server__",
 )
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore")
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -1528,13 +1497,6 @@ def _apply_edits_to_content(tool_name: str, tool_input: dict, existing: str) -> 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
-# Agent/Taskツールの`subagent_type`引数として許容するplan-executor識別子。
-# フルネームと短縮名の両方を許容する。
-_PLAN_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-executor", "plan-executor"})
-_FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:feedbacks-planner", "feedbacks-planner"})
-
-# `model`引数指定を一律禁止する対象。調整役は定義済みモデルを使う委譲窓口として動く。
-_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = _PLAN_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
 _WEBFETCH_VERBATIM_RE = re.compile(
     r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
     re.IGNORECASE,
@@ -1567,41 +1529,36 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
     )
 
 
-def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
-    """定義済みモデルを使う委譲調整役への`model`引数指定を一律ブロックする。
-
-    `plan-executor`は定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
-    """
-    if subagent_type not in _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES:
-        return False
-    if "model" not in tool_input:
-        return False
-    model = tool_input.get("model")
-    print(
-        _block_notice(
-            f"blocked: explicit `model` argument (`{model!r}`) for subagent_type `{subagent_type}`.\n"
-            "Why this gate exists: this subagent uses its frontmatter model;"
-            " no per-call model override is defined.",
-            fix="Omit the `model` parameter and let the agent definition's default apply.",
-        ),
-        file=sys.stderr,
-    )
-    return True
-
-
 # --- TaskStop: 初回遮断と再実行窓 ---
 
 _TASK_STOP_RETRY_WINDOW_SECONDS = 300
 
 
-def _check_task_stop(session_id: str) -> bool:
+def _task_stop_target_ids(tool_input: dict) -> set[str]:
+    """`TaskStop`の入力から停止対象の識別子を取り出す。
+
+    `task_id`と非推奨の`shell_id`の双方を対象とする。
+    """
+    ids: set[str] = set()
+    for key in ("task_id", "shell_id"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            ids.add(value)
+    return ids
+
+
+def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     """`TaskStop`呼び出しを初回遮断し、再実行窓内なら通過させる。
 
-    判定は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
-    直近の遮断時刻のPOSIX秒）を用いる。値が存在し現在時刻との差が
+    停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
+    当該キーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
+    記録したものであり、自セッションが起動して停止用の識別子を保持している対象を表す。
+    起動主体の確認を要する遮断の対象は、自セッションの起動記録が無い停止に限る。
+
+    それ以外は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
+    直近の遮断時刻のPOSIX秒）で判定する。値が存在し現在時刻との差が
     `_TASK_STOP_RETRY_WINDOW_SECONDS`以下なら通過（偽を返す）し、それ以外は値を
-    現在時刻へ更新して遮断（真を返す）する。停止対象の識別子（`tool_input`の
-    `task_id`・`shell_id`）は読まない。
+    現在時刻へ更新して遮断（真を返す）する。
 
     ここで保存する時刻は再実行許可窓の判定にのみ用いる値であり、状態ファイル自体の
     回収期限（`_session_state.STALE_STATE_MAX_AGE_SECONDS`によるmtime基準の14日）とは
@@ -1609,6 +1566,10 @@ def _check_task_stop(session_id: str) -> bool:
     """
     now = time.time()
     state = read_state(session_id)
+    recorded = state.get("background_task_ids")
+    recorded_ids = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
+    if _task_stop_target_ids(tool_input) & recorded_ids:
+        return False
     blocked_at = state.get("task_stop_blocked_at")
     if isinstance(blocked_at, (int, float)) and now - blocked_at <= _TASK_STOP_RETRY_WINDOW_SECONDS:
         return False
@@ -1672,6 +1633,16 @@ def _likely_real_command(command: str, pos: int) -> bool:
     """
     prefix = command[:pos]
     return "<<" not in prefix
+
+
+def _contains_heredoc(command: str) -> bool:
+    """コマンド本文がヒアドキュメント（`<<`）を含むかを返す。
+
+    ヒアドキュメント本文は実行されないリテラルだが、区間分割と実行位置解析は本文を
+    実行コマンド列として扱う。本文中のリテラル一致による誤検出を避けるため、
+    誤検出側の実害が誤検出しない側を上回る検査は当該コマンドを対象から外す。
+    """
+    return "<<" in command
 
 
 # --- Bash: git amend / rebaseをlog未確認でブロック ---
@@ -2029,8 +2000,7 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
 
     判定詳細は本関数の冒頭コメントを参照する。真を返すとblock（exit 2）。
     """
-    # heredocを含むコマンドは本文中のリテラル混入で誤検出する余地があるため通過させる。
-    if "<<" in command:
+    if _contains_heredoc(command):
         return False
     segments = split_bash_segments(command)
     current_cwd = CwdResolution(cwd, bool(cwd))
@@ -2135,6 +2105,7 @@ _POLL_COMMAND_PREFIXES = (
     ("gh", "run", "view"),
     ("gh", "run", "watch"),
     ("ps",),
+    ("pgrep",),
     ("atk", "mq", "list"),
     ("atk", "mq", "show"),
     ("systemctl", "status"),
@@ -2329,18 +2300,26 @@ def _split_serial_shell_commands(
     return [segment for segment in segments if segment]
 
 
+def _fixed_sleep_seconds(command: str) -> float | None:
+    """コマンドが数値リテラルを与える`sleep`単体である場合にその秒数を返す。"""
+    args = _command_tokens(command)
+    if args is None or len(args) != 2 or args[0] != _SLEEP_COMMAND:
+        return None
+    try:
+        return float(args[1])
+    except ValueError:
+        return None
+
+
+def _is_fixed_sleep(command: str) -> bool:
+    """コマンドが数値リテラルを与える`sleep`単体であるかを判定する。"""
+    return _fixed_sleep_seconds(command) is not None
+
+
 def _is_long_fixed_sleep(command: str) -> bool:
     """コマンドが閾値以上の数値リテラルを与える`sleep`単体であるかを判定する。"""
-    args = _command_tokens(command)
-    if args is None:
-        return False
-    if len(args) != 2 or args[0] != _SLEEP_COMMAND:
-        return False
-    try:
-        seconds = float(args[1])
-    except ValueError:
-        return False
-    return seconds >= _LONG_SLEEP_SECONDS
+    seconds = _fixed_sleep_seconds(command)
+    return seconds is not None and seconds >= _LONG_SLEEP_SECONDS
 
 
 def _command_tokens(command: str) -> list[str] | None:
@@ -2400,11 +2379,27 @@ def _loop_scope_flags(segments: list[str]) -> list[bool]:
     return flags
 
 
-def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
-    """入れ子でなく早期離脱を持たない単純ポーリングループの本体範囲を返す。"""
+def _is_read_only_status_command(args: Sequence[str]) -> bool:
+    """コマンドのトークン列が読み取り専用の状態確認であるかを判定する。"""
+    if not args:
+        return False
+    if any(tuple(args[: len(prefix)]) == prefix for prefix in _POLL_COMMAND_PREFIXES):
+        return True
+    return tuple(args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(args[1:])
+
+
+def _polling_loop_body_flags(segments: list[str]) -> tuple[list[bool], list[bool]]:
+    """入れ子でなく早期離脱を持たない単純ポーリングループの本体範囲を返す。
+
+    1つ目は本体範囲であり、2つ目はそのうち条件式が読み取り専用の状態確認コマンドである
+    `while`ループの本体範囲とする。後者は反復のたびに条件式が状態を確認するため、
+    本体に`sleep`があるだけで固定待機と状態確認の反復が成立する。
+    """
     flags = [False] * len(segments)
+    status_condition_flags = [False] * len(segments)
     start: int | None = None
     eligible = False
+    status_condition = False
     nested = False
     has_early_exit = False
     depth = 0
@@ -2414,7 +2409,8 @@ def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
         if first in _LOOP_KEYWORDS:
             if depth == 0:
                 start = index
-                eligible = first == "for" or (first == "while" and tokens[1:] in (["true"], [":"]))
+                status_condition = first == "while" and _is_read_only_status_command(tokens[1:])
+                eligible = first == "for" or (first == "while" and tokens[1:] in (["true"], [":"])) or status_condition
                 nested = False
                 has_early_exit = False
             else:
@@ -2428,13 +2424,17 @@ def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
             if depth == 0:
                 if start is not None and eligible and not nested and not has_early_exit:
                     flags[start + 1 : index] = [True] * (index - start - 1)
+                    if status_condition:
+                        status_condition_flags[start + 1 : index] = [True] * (index - start - 1)
                 start = None
             continue
         if first in {"break", "exit", "return"}:
             has_early_exit = True
     if depth == 1 and start is not None and eligible and not nested and not has_early_exit:
         flags[start + 1 :] = [True] * (len(segments) - start - 1)
-    return flags
+        if status_condition:
+            status_condition_flags[start + 1 :] = [True] * (len(segments) - start - 1)
+    return flags, status_condition_flags
 
 
 def _is_sleep_poll_pair(left: str, right: str, *, previous: str | None = None) -> bool:
@@ -2449,9 +2449,7 @@ def _is_sleep_poll_pair(left: str, right: str, *, previous: str | None = None) -
         previous_args = _command_tokens(previous) or []
         if previous_args and previous_args[0] == "kill" and right_args[0] == "ps" and "-p" in right_args[1:]:
             return False
-    if any(tuple(right_args[: len(prefix)]) == prefix for prefix in _POLL_COMMAND_PREFIXES):
-        return True
-    return tuple(right_args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(right_args[1:])
+    return _is_read_only_status_command(right_args)
 
 
 def _has_foreground_sleep_wait(segments: list[str]) -> bool:
@@ -2461,11 +2459,12 @@ def _has_foreground_sleep_wait(segments: list[str]) -> bool:
     直後のセグメントは検出条件の判定にだけ用い、その所属は除外条件へ混ぜない。
     """
     in_loop_body = _loop_scope_flags(segments)
-    polling_loop_body = _polling_loop_body_flags(segments)
+    polling_loop_body, status_condition_loop_body = _polling_loop_body_flags(segments)
     return any(
         (polling_loop_body[index] or not in_loop_body[index])
         and (
             _is_long_fixed_sleep(segments[index])
+            or (status_condition_loop_body[index] and _is_fixed_sleep(segments[index]))
             or _is_sleep_poll_pair(
                 segments[index],
                 segments[index + 1],
@@ -2506,16 +2505,20 @@ def _check_bash_sleep_poll_pattern(
     検出条件は、閾値以上の`sleep`の直後に任意のコマンドが続く形と、
     閾値未満の`sleep`の直後に読み取り専用の状態確認コマンドが続く形の2つとする。
     前者は待機後に続くコマンドの種類に依存しないため、状態確認コマンド名の追随保守を要しない。
-    条件成立で抜けるループ（`until`・条件付き`while`）の本体は検出対象から除く。
-    入れ子でない`for`・`while true`・`while :`の本体は、早期離脱が無い場合だけ検出対象とする。
+    条件式が読み取り専用の状態確認コマンドである`while`ループの本体は、
+    反復のたびに条件式が状態を確認するため、`sleep`単体だけでも検出する。
+    条件成立で抜けるループ（`until`・条件式が状態確認コマンドでない`while`）の本体は検出対象から除く。
+    入れ子でない`for`・`while true`・`while :`・条件式が状態確認コマンドの`while`の本体は、
+    早期離脱が無い場合だけ検出対象とする。
     入れ子ループは検出対象から除く。
     当該範囲の外にある`sleep`は、同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
 
     簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
-    既知の限界: サブシェルで包んだ状態確認は検出しない,
+    既知の限界: サブシェルで包んだ状態確認は検出しない。ヒアドキュメントを含むコマンドは
+    本文中のリテラル混入で誤検出するため対象から外す,
     見直し契機: サブシェル包みの反復ポーリングを実測した場合
     """
-    if run_in_background:
+    if run_in_background or _contains_heredoc(command):
         return None
     if not _has_foreground_sleep_wait(_split_serial_shell_commands(command)):
         return None
@@ -2550,8 +2553,9 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 
     対象の所有権を確認できないパターン一致の一括終了は事故の危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
+    ヒアドキュメント本文へ書き込むリテラルとしての一致は`_likely_real_command`で対象から外す。
     """
-    if not _PROCESS_KILL_BY_PATTERN_RE.search(command):
+    if not any(_likely_real_command(command, match.start()) for match in _PROCESS_KILL_BY_PATTERN_RE.finditer(command)):
         return False
     print(
         _block_notice(
@@ -2790,12 +2794,14 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
     含むだけの読み取り操作は検出しない。実行位置を確定できない区間と、実行位置以外で起動される
     検証コマンドも検出しない（助言であり非検出側の誤差の実害が小さいため）。
     """
+    if _contains_heredoc(command):
+        return None
     if not any(_pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
         return None
     guidance = (
         "Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved file,"
         " select the required record type from structured output, or run the command in a"
-        " separated context with the `agent-toolkit:shell-exec` skill."
+        " separated context with the `start_shell` tool of agents_server."
     )
     if _record_repeat_detection(session_id, "output_truncation_detected"):
         print(
@@ -2860,6 +2866,8 @@ def _status_report_follows_truncation(command: str) -> bool:
 
 def _check_bash_output_status_after_truncation(command: str) -> str | None:
     """切り詰め直後の`$?`報告が検証コマンドの状態を隠す場合に診断を返す。"""
+    if _contains_heredoc(command):
+        return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for index, serial_command in enumerate(serial_commands[:-1]):
         if not any(
@@ -2972,6 +2980,8 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
 
 def _check_bash_recursive_home_search(command: str) -> str | None:
     """高容量のユーザー領域を無限定に再帰検索する実行位置へ警告を返す。"""
+    if _contains_heredoc(command):
+        return None
     if not any(
         segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
         for pipeline in _extract_execution_pipelines(command)
@@ -3201,6 +3211,8 @@ def _check_bash_codex_exec(command: str) -> str | None:
     実行位置を確定できない区間と、実行位置以外で起動される`codex exec`も検出しない
     （助言であり非検出側の誤差の実害が小さいため）。
     """
+    if _contains_heredoc(command):
+        return None
     for segment in _extract_execution_segments(command):
         if not _segment_starts_with(segment, _CODEX_EXEC_PREFIX):
             continue

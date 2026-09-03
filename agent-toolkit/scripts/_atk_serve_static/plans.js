@@ -1,12 +1,15 @@
+// 3画面は同じドキュメントへ順に読み込まれるため、トップレベルの宣言を即時実行関数で囲んで
+// 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
+// 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
+(() => {
 // ページロード時の初期値はサーバーが`plans.html`のJSONブロックへ埋め込む。
 // 資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけをHTML側から受け取る。
-const BOOTSTRAP = JSON.parse(document.getElementById("plans-bootstrap").textContent);
+// 画面の入れ替えでJSONブロックの内容も差し替わるため、`mount`のたびに読み直す。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
-const BASE_PATH = BOOTSTRAP.base_path;
-const LOCAL_HOST_NAME = BOOTSTRAP.local_host_name;
+let BASE_PATH = "";
 // ホスト名 -> 保存元ID -> {portable_root, home, os_type, os_name}。旧単一root形式の
 // {root, home, os_type, os_name}も受理し、保存元IDは画面へ表示しない。
-const ROOT_DIRS = BOOTSTRAP.root_dirs;
+let ROOT_DIRS = {};
 // `host_info_update`受信のたびに加算するカウンタ。`refreshHostInfo`がfetch中に発生した
 // SSE更新を検出し、古いスナップショットで新しい状態を上書きしないようにするために使う。
 let hostInfoEventCounter = 0;
@@ -664,29 +667,19 @@ function connectEvents() {
   return es;
 }
 
-async function main() {
-  await refreshHostStatus();
-  await refreshHostInfo();
-  await refreshRootStatus();
-  await refreshFiles();
-  if (files.length > 0) await openFile(files[0].host, files[0].path, fileSource(files[0]));
-  setupSentinelObserver();
-
-  eventSource = connectEvents();
-}
-
-window.addEventListener("pagehide", () => {
+// bfcache復帰後も自動反映を維持するため、`pagehide`で能動的にcloseし`pageshow`で再接続する。
+function handlePageHide() {
   if (eventSource) {
     eventSource.close();
     eventSource = null;
   }
-});
+}
 
-window.addEventListener("pageshow", (event) => {
+function handlePageShow(event) {
   if (event.persisted && !eventSource) {
     eventSource = connectEvents();
   }
-});
+}
 
 // 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。
 async function forceResync() {
@@ -700,36 +693,91 @@ async function forceResync() {
 // 抑制するため、`EventSource.onmessage`のみに依存するとタブ復帰時に蓄積イベントの処理が体感数秒ずれ込む。
 // `visibilitychange`で`visible`化した瞬間（タブ可視性変化）と`window.focus`時
 // （PWAウィンドウ単独でフォーカスのみ変動するケース）の2系統で`forceResync`を発火する。
-document.addEventListener("visibilitychange", () => {
+function handleVisibilityChange() {
   if (document.visibilityState === "visible") {
     forceResync();
   }
-});
+}
 
-window.addEventListener("focus", () => {
+function handleWindowFocus() {
   forceResync();
-});
+}
 
-document.getElementById("filter").addEventListener("input", () => {
-  // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
-  // 段階展開によって伸びた上限を引きずると、フィルタ後の少数結果に対しても無駄な走査が残るため。
-  scheduleFullTextSearch();
-});
-document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
-document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
-document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
-document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
-document.getElementById("menu-btn").addEventListener("click", () => {
-  const aside = document.querySelector("aside");
-  setDrawerOpen(!(aside && aside.classList.contains("open")));
-});
-document.getElementById("drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
-document.getElementById("preview").addEventListener("click", (event) => {
-  // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
-  // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
-  const link = event.target.closest("a[data-plan-path]");
-  if (!link) return;
-  event.preventDefault();
-  openFile(selectedHost, link.dataset.planPath, selectedSource);
-});
-main();
+function bindScreenEvents() {
+  document.getElementById("filter").addEventListener("input", () => {
+    // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
+    // 段階展開によって伸びた上限を引きずると、フィルタ後の少数結果に対しても無駄な走査が残るため。
+    scheduleFullTextSearch();
+  });
+  document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
+  document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
+  document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
+  document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
+  document.getElementById("menu-btn").addEventListener("click", () => {
+    const aside = document.querySelector("aside");
+    setDrawerOpen(!(aside && aside.classList.contains("open")));
+  });
+  document.getElementById("drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("preview").addEventListener("click", (event) => {
+    // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
+    // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
+    const link = event.target.closest("a[data-plan-path]");
+    if (!link) return;
+    event.preventDefault();
+    openFile(selectedHost, link.dataset.planPath, selectedSource);
+  });
+}
+
+async function mount() {
+  const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
+  BASE_PATH = bootstrap.base_path;
+  ROOT_DIRS = bootstrap.root_dirs;
+  bindScreenEvents();
+  window.addEventListener("pagehide", handlePageHide);
+  window.addEventListener("pageshow", handlePageShow);
+  window.addEventListener("focus", handleWindowFocus);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+
+  await refreshHostStatus();
+  await refreshHostInfo();
+  await refreshRootStatus();
+  await refreshFiles();
+  if (files.length > 0) await openFile(files[0].host, files[0].path, fileSource(files[0]));
+  setupSentinelObserver();
+
+  eventSource = connectEvents();
+}
+
+function unmount() {
+  window.removeEventListener("pagehide", handlePageHide);
+  window.removeEventListener("pageshow", handlePageShow);
+  window.removeEventListener("focus", handleWindowFocus);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (sentinelObserver) {
+    sentinelObserver.disconnect();
+    sentinelObserver = null;
+  }
+  if (searchTimer !== null) {
+    clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+  revokePreviewObjectUrls();
+  files = [];
+  visibleFiles = [];
+  visibleLimit = VISIBLE_FILES_INITIAL;
+  serverSearchKeys = null;
+  hostStatus = {};
+  rootStatus = {};
+  selectedHost = null;
+  selectedSource = "";
+  selectedPath = null;
+  selectedMtime = null;
+}
+
+window.__atkScreens = window.__atkScreens || {};
+window.__atkScreens.plans = {mount, unmount};
+})();

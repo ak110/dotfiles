@@ -83,8 +83,8 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit:plan-mode`から作業を開始し、承認後はAgentツールで`agent-toolkit:plan-executor`を
-起動して引き継ぐ。工程の詳細は各スキル・agent定義を正本とする。
+`agent-toolkit:plan-mode`から作業を開始し、承認後はメインが`agents_server`で実装担当を直接起動して引き継ぐ。
+工程の詳細は各スキルを正本とする。
 計画ファイルの実装者向け領域にあるレビューステップへ
 `レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップする。
 
@@ -111,7 +111,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
 
 - コーディングエージェント向け文書を編集する場合は、`AGENTS.md`が定めるフィードバック由来文書の参照・更新規範に従う
-- `docs/guide/claude-code-guide.md`「agent-toolkit」セクションのチェック内容要約は、要約が変わる変更時に更新する。
+- `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
   `agent-toolkit/rules/`配下のmdファイル一覧は完全一致を保つ
@@ -147,7 +147,7 @@ SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_
 読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
 
 秘匿ファイルの読み取りを禁止する`permissions.deny`は配布原本へ置かず、当該ファイルを持つプロジェクトのリポジトリ直下の`.claude/settings.json`へ置く。
-`Read(*.key)`のような相対グロブを配布原本へ置くと、全プロジェクトのディレクトリ走査が確認ダイアログの対象となる。
+`Read(*.key)`のようにディレクトリを含まないグロブを配布原本へ置くと、gitignore構文で任意の深さに一致するため、全プロジェクトのディレクトリ走査が確認ダイアログの対象となる。
 
 プラグインの有効・無効は、永続的な設定値だけで再現できる場合に
 `share/claude_settings_json_managed*.json`の`enabledPlugins`へ置く。設定反映前に
@@ -195,12 +195,10 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 次のいずれかを変更した場合は、変更後の互換起動条件を確認する。
 
-- `agent-toolkit/agents/`配下のagent定義
 - `agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」のキー
 - `agent-toolkit/share/codex-agents-base.md`のCodex互換起動条件
 
-`agent-toolkit/agents/`配下の全定義を扱えることを人手で確認する。
-3つの対応関係は機械判定できる入力を持たないため、自動検査では保証しない。
+両者の対応関係は機械判定できる入力を持たないため、自動検査では保証しない。人手で確認する。
 
 ## フック実装の配置先（個人フックと配布物）
 
