@@ -1532,12 +1532,9 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "
 # フルネームと短縮名の両方を許容する。
 _PLAN_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-executor", "plan-executor"})
 _FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:feedbacks-planner", "feedbacks-planner"})
-_PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-review-executor", "plan-review-executor"})
 
 # `model`引数指定を一律禁止する対象。調整役は定義済みモデルを使う委譲窓口として動く。
-_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = (
-    _PLAN_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES | _PLAN_REVIEW_EXECUTOR_SUBAGENT_TYPES
-)
+_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = _PLAN_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
 _WEBFETCH_VERBATIM_RE = re.compile(
     r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
     re.IGNORECASE,

@@ -1,6 +1,6 @@
 # レビューラウンドの受領
 
-メインは`feedbacks-planner`、`plan-review-executor`及び`plan-executor`から返る`review_round`を本書に従って受領する。
+メインは`feedbacks-planner`及び`plan-executor`から返る`review_round`を本書に従って受領する。
 レビュー担当の点検、レビューイーの採否・修正ならびに調整担当の状態遷移は各役割の正本へ委ねる。
 
 ## ラウンド番号の正本

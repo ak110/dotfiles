@@ -149,7 +149,7 @@ frontmatterの`model`と`effort`はClaude Code実行時の指定であり、Code
    frontmatterの解析、既知の必須フィールドの写像、名前付きagent定義の直接適用のいずれかに失敗した場合は、部分適用も別の実行経路への迂回もせず、失敗として返す。
 
 名前付き定義の役割がレビュー担当・実装担当などの実際の別主体を必要とする場合、その委譲は特殊経路に含めず、`agent-toolkit:delegation`と`runtime-routing.md`に従う。
-Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeではclaude系モデルの実行主体への委譲にAgentツールを既定で使い、`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各定義が起動する委譲先だけを`agents_server`で起動する。
+Codexから実際の別主体へ委譲するときは`agents_server`を使う。Claude Codeではclaude系モデルの実行主体への委譲にAgentツールを既定で使い、`feedbacks-planner`及び`plan-executor`の各定義が起動する委譲先だけを`agents_server`で起動する。
 
 名前付きagentの直接適用は、外側のメイン工程から呼び出した一時的な役割適用区間として扱う。
 メインは呼び出し前の工程、入力及び再開位置を保持し、定義が出力契約に従ってstatusを組み立てた時点で当該役割と`tools`制約の適用を終了する。

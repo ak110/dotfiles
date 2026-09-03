@@ -24,7 +24,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業は、実行ホストの互換規範に従って定義を適用する。Codexではメインエージェントが同一セッションへ直接適用し、Claude Codeでは定義を実装するAgent機能で起動する
 - 名前付きagent定義の適用と、その役割が要求する実際の別主体への委譲を区別する。特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない
-- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。3定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
+- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`及び`plan-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。2定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start(model_type, prompt, cwd)`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む
   - `start`・`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
@@ -51,8 +51,8 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバックの選定とレーン分け | `agent-toolkit:process-feedbacks`のメイン | `agents_server` MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
-| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner` | `agents_server` MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-executor` | `agents_server` MCP | Agentツール |
 | `execute_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及びフィードバック即時対応の修正 | 引継ぎ修正とレビュー修正では`plan-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン、フィードバック即時対応ではprocess-feedbacksのメイン | `agents_server` MCP | Agentツール |
 | `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-executor` | `agents_server` MCP | Agentツール |

@@ -194,10 +194,10 @@ backend固有のserver requestは共有公開toolを増やさず、非対話の�
 
 Claude Codeからclaude系モデルの実行主体へ委譲する場合の既定はAgentツールとし、`agents_server`を使わない。
 Claude CodeのUIが実行状況と応答を直接表示するため、同じ結果をより少ない観測手段で確認できるためである。
-例外は`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各定義が起動する委譲先とし、engineの別によらず`agents_server`を使う。
+例外は`feedbacks-planner`及び`plan-executor`の各定義が起動する委譲先とし、engineの別によらず`agents_server`を使う。
 これらの定義が委譲する工程は工程別モデル設定がeffortを指定し、Agentツールにeffortに相当する引数が無いためである。
-3定義の`tools`はAgentツールの許可を保つが、MCPツールを呼び出せない場合の自動代替経路は設けない。
-Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、3定義配下を`agents_server`固定とした理由自体を損なうためである。
+2定義の`tools`はAgentツールの許可を保つが、MCPツールを呼び出せない場合の自動代替経路は設けない。
+Agentツールへ自動で切り替えると、`engine=codex`では工程別モデル設定が禁じるengineの自動切替に触れ、`engine=claude`では同設定が指定したeffortを失い、2定義配下を`agents_server`固定とした理由自体を損なうためである。
 MCPツールを呼び出せない場合は「工程別モデル設定」手順4に従い`needs_escalation`又は未完了として返す。
 `tools`へAgentツールを残すのは、明示指示があった場合に定義を書き換えずに手段を選べるようにするためである。
 Codexからの委譲はengineの別によらず`agents_server`を使う既存の扱いを維持する。CodexのUIには同等の表示利得が無いためである。
@@ -205,7 +205,7 @@ Codexからの委譲はengineの別によらず`agents_server`を使う既存の
 却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
 hookの配送境界及び継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
 Claude Codeからの委譲も`agents_server`へ一本化する案は、Claude CodeのUIで直接観測できる実行状況をMCPの状態照会へ置き換え、
-観測手段を増やすだけとなるため採用しない。3定義の配下もAgentツールへ統一する案は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
+観測手段を増やすだけとなるため採用しない。2定義の配下もAgentツールへ統一する案は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
 
 委譲先へ渡す実行環境は、委譲サーバープロセスの環境を起動時に1回整えることで両backendへ同時に適用する。
 起動元ツールのエフェメラル仮想環境は`VIRTUAL_ENV`と`PATH`のコマンド格納ディレクトリの両方を取り除く。
@@ -763,18 +763,22 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 
 `agent-toolkit:plan-and-add-feedback`は、計画の起草から計画レビューの収束までを実施したうえで、
 実装ではなくフィードバック投入で終える運用を担う。
-計画担当（`agent-toolkit:plan-mode`）が調査と計画ファイル初版の起草までを担い、
-以降のレビュー修正ループ（計画構造検査、自己監査、レビュー担当の起動、指摘の配送、修正の検収、収束判定）は
-Claude Codeでは`plan-review-executor`へ委譲する。Codexではメインが同定義を同一セッションへ直接適用し、
-計画レビューの調整主体を担う。Codexで同定義内のレビュー担当を起動する場合は、
-`plan_review_model`のagents_server別セッションへ委譲する。
-`plan-review-executor`は`plan-executor`が実装レビューの調整主体を担う
-構成と対称であり、計画ファイル初稿の絶対パスを入力として計画レビューの調整主体を担う。
-`plan-review-executor`と`feedbacks-planner`は、成果物を直接編集せず委譲と検収を担う点を共有する。
-pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
-`plan-review-executor`は`plan_model`と`plan_review_model`を解決する。
-対象工程では分担が分かれ、`plan-review-executor`は`feedbacks-planner`が所有するフィードバックの調査と項目別採否を担わず、
-計画ファイル初稿を受け取った後のレビュー修正ループだけを対象とする。
+計画担当（`agent-toolkit:plan-mode`）が調査と計画ファイル初版の起草までを担う。
+以降のレビュー修正ループ（計画構造検査、自己監査、レビュー担当の起動、指摘の配送、修正の検収、収束判定）は、
+Claude Codeでは`feedbacks-planner`へ`開始工程: 計画レビュー`で委譲する。
+Codexではメインが同定義を同一セッションへ直接適用し、計画レビューの調整主体を担う。
+Codexで同定義内のレビュー担当を起動する場合は、`plan_review_model`のagents_server別セッションへ委譲する。
+
+`feedbacks-planner`は、`agent-toolkit:process-feedbacks`の通常型レーンでは`開始工程: 計画作成`を受け取って計画担当の起動から始める。
+`agent-toolkit:plan-and-add-feedback`と`agent-toolkit:plan-mode`の直接起動経路では、`開始工程: 計画レビュー`を受け取って起草済み計画のレビューから始める。
+2つの開始工程は、計画担当とレビュー担当の起動、同一threadの継続、ラウンド遷移及びメインへの中継を共有し、
+最初に起動する`model_type`と収束時の完了文字列だけが異なる。
+開始工程ごとに別の定義を置く案は、frontmatter、読む共有文書、checkpoint、収束条件と中継規定が一致したまま二重に保守され、
+`想定外事象:`行の例外規定のように片側だけへ追加された規定が乖離を生むため採らない。
+`feedbacks-planner`は`plan-executor`が実装レビューの調整主体を担う構成と対称であり、成果物を直接編集せず委譲と検収を担う。
+pickerによる分類、rejectとhold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
+`feedbacks-planner`は`plan_model`と`plan_review_model`を解決する。
+フィードバックの調査と項目別採否は計画担当が所有し、`feedbacks-planner`は当該判断を担わない。
 
 レビューの役割固有契約を各SSOTへ残したまま、表のライフサイクル、`track`による帰属、モデル解決及び収束判定だけを
 `agent-toolkit/share/review-loop-coordination.md`へ集約する。
@@ -791,7 +795,7 @@ pickerによる分類、reject及びhold判定は`agent-toolkit/share/pick-feedb
 
 - メイン兼任の維持（Claude Code）: `agent-toolkit:plan-and-add-feedback`経路でClaude Codeメインが計画担当と調整主体を兼ねる案は、
   レビューのラウンドごとに計画全文とレビュー表がメインのコンテキストへ蓄積する構造を変えないため採らない。Codexでは名前付き定義の直接適用としてメインが調整主体を担うため、この却下理由の対象外とする
-- 新しい工程別モデル設定キーの新設: `plan-review-executor`が解決する工程は既存の`plan_model`
+- 新しい工程別モデル設定キーの新設: `feedbacks-planner`が解決する工程は既存の`plan_model`
   （起草とレビュー指摘反映）と`plan_review_model`（計画レビュー）のいずれかであり、新しい工程を持たないため採らない
 
 ## 計画ファイル作成基準の単一正本化

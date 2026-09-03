@@ -768,9 +768,7 @@ class TestNonEditToolWarnings:
         assert result.stdout == ""
 
     def test_sendmessage_agent_type_recipient_warns(self) -> None:
-        result = _run(
-            {"tool_name": "SendMessage", "tool_input": {"to": "agent-toolkit:plan-review-executor", "message": "通知"}}
-        )
+        result = _run({"tool_name": "SendMessage", "tool_input": {"to": "agent-toolkit:feedbacks-planner", "message": "通知"}})
         assert result.returncode == 0
         assert "not a reachable SendMessage recipient" in _additional_context(result)
 
