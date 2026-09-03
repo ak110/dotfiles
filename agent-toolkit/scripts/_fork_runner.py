@@ -186,6 +186,7 @@ def _serve() -> None:
     """標準入力から1行1リクエストのJSONを読み、forkした子でスクリプトを実行し応答を返す。"""
     # サーバー起動時に重い共通依存を事前importし、以降のfork子でimportコストを省く
     # （対象スクリプト自体はimportしない。対象は都度runpyで実行するため）。
+    import _agents_server_state  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _bash_command_parser  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _file_lock  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _git_status  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
@@ -196,7 +197,7 @@ def _serve() -> None:
     import _response_language_check  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _session_state  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _stop_gate  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
-    import _tracked_subagent_types  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
+    import _tracked_model_types  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import _transcript  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
     import pyfltr.colloquial  # noqa: F401,PLC0415 -- 事前importが目的でありモジュール自体は未使用  # pylint: disable=import-outside-toplevel
     import yaml  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
@@ -204,6 +205,7 @@ def _serve() -> None:
     del (
         pyfltr,
         yaml,
+        _agents_server_state,
         _bash_command_parser,
         _file_lock,
         _git_status,
@@ -214,7 +216,7 @@ def _serve() -> None:
         _response_language_check,
         _session_state,
         _stop_gate,
-        _tracked_subagent_types,
+        _tracked_model_types,
         _transcript,
     )
     for line in sys.stdin.buffer:

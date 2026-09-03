@@ -51,12 +51,6 @@ Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
 
-Agent / Task:
-
-- `plan-executor`起動時、起動プロンプトが指す実在計画パスの記録 (side-effect)
-- `_TRACKED_SUBAGENT_TYPES`対象種別起動時の`_process_loop_log`への起動時刻記録 (side-effect)
-- 定義済み既定モデルを持ちoverride運用の定めが無いサブエージェントへの`model`引数指定のブロック (block)
-
 TaskStop:
 
 - 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
@@ -104,7 +98,6 @@ import _bash_command_parser  # noqa: E402  # pylint: disable=wrong-import-positi
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _scratchpad_path  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -128,11 +121,6 @@ from _plan_file import (  # noqa: E402  # pylint: disable=wrong-import-position,
     is_plan_component_file,
 )
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-
-# pylint: disable=wrong-import-position,import-error
-from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
-
-# pylint: enable=wrong-import-position,import-error
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
 _ExecutionSegment = _bash_command_parser.ExecutionSegment
@@ -320,9 +308,6 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
-    if tool_name in ("Agent", "Task"):
-        return exit_with(_handle_agent_tool(tool_input, flush_pending_notices))
-
     return exit_with(_handle_edit_tool(tool_name, tool_input, cwd, emit_json, flush_pending_notices, is_codex=is_codex))
 
 
@@ -405,20 +390,6 @@ def _handle_bash_tool(
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
     else:
         flush_warning()
-    return 0
-
-
-def _handle_agent_tool(
-    tool_input: dict,
-    flush_warning: Callable[[], None],
-) -> int:
-    """Agent・Task起動の委譲契約と観測ログを処理する。"""
-    subagent_type = tool_input.get("subagent_type")
-    if isinstance(subagent_type, str) and _check_subagent_model_override(subagent_type, tool_input):
-        return 2
-    if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
-        _process_loop_log.append("subagent_start", type=subagent_type)
-    flush_warning()
     return 0
 
 
@@ -1093,7 +1064,7 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     """`file_path`の祖先ディレクトリを起点に`referenced`（相対パス）の実ファイルを探索する。
 
     frontmatterの同期注記は同一ディレクトリまたは近隣ディレクトリの兄弟ファイルを
-    裸ファイル名（例: `plan-executor.md`）で参照する形式が実運用で使われるため、
+    裸ファイル名（例: `02-agent-operations.md`）で参照する形式が実運用で使われるため、
     `.git`を持つ祖先（リポジトリルート）を発見しても即確定とせず、以下の順に実在確認する。
 
     1. `file_path`の各祖先ディレクトリ（近い順。同一ディレクトリの兄弟ファイル参照に対応）
@@ -1528,13 +1499,6 @@ def _apply_edits_to_content(tool_name: str, tool_input: dict, existing: str) -> 
 # Skillツールの`skill`引数として許容するplan-modeスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
-# Agent/Taskツールの`subagent_type`引数として許容するplan-executor識別子。
-# フルネームと短縮名の両方を許容する。
-_PLAN_EXECUTOR_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:plan-executor", "plan-executor"})
-_FEEDBACKS_PLANNER_SUBAGENT_TYPES: frozenset[str] = frozenset({"agent-toolkit:feedbacks-planner", "feedbacks-planner"})
-
-# `model`引数指定を一律禁止する対象。調整役は定義済みモデルを使う委譲窓口として動く。
-_MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES: frozenset[str] = _PLAN_EXECUTOR_SUBAGENT_TYPES | _FEEDBACKS_PLANNER_SUBAGENT_TYPES
 _WEBFETCH_VERBATIM_RE = re.compile(
     r"(?:全文|原文|そのまま|逐語|引用|verbatim|word[ -]for[ -]word)",
     re.IGNORECASE,
@@ -1565,28 +1529,6 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
         " send an immediate notification only to the caller identifier supplied by the runtime.",
         tag="warn",
     )
-
-
-def _check_subagent_model_override(subagent_type: str, tool_input: dict) -> bool:
-    """定義済みモデルを使う委譲調整役への`model`引数指定を一律ブロックする。
-
-    `plan-executor`は定義済みモデルを使う委譲窓口として動くため、呼び出しごとの上書きを許容しない。
-    """
-    if subagent_type not in _MODEL_OVERRIDE_FORBIDDEN_SUBAGENT_TYPES:
-        return False
-    if "model" not in tool_input:
-        return False
-    model = tool_input.get("model")
-    print(
-        _block_notice(
-            f"blocked: explicit `model` argument (`{model!r}`) for subagent_type `{subagent_type}`.\n"
-            "Why this gate exists: this subagent uses its frontmatter model;"
-            " no per-call model override is defined.",
-            fix="Omit the `model` parameter and let the agent definition's default apply.",
-        ),
-        file=sys.stderr,
-    )
-    return True
 
 
 # --- TaskStop: 初回遮断と再実行窓 ---

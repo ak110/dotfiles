@@ -16,7 +16,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 3. plan file（計画作業root `~/.claude/plans/` または
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
-5. `_TRACKED_SUBAGENT_TYPES`対象種別のサブエージェント終了時刻の`_process_loop_log`記録
+5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 6. agents_server MCP呼び出し後のsession状態記録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_feedbacks_skill_invoked`のリセット (Skill)
@@ -43,6 +43,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "skills" / "plan-mode" / "scripts"))
+import _agents_server_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -61,7 +62,7 @@ from _plan_format import is_agent_facing_md  # noqa: E402  # pylint: disable=wro
 from _session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
-from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
+from _tracked_model_types import TRACKED_MODEL_TYPES as _TRACKED_MODEL_TYPES  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
 
@@ -306,6 +307,7 @@ def _record_agents_server_session_state(
     operation: str,
     owner_agent_id: str,
     cwd: str | None = None,
+    model_type: str | None = None,
 ) -> None:
     """agents_serverの公開応答をhook側の状態へ記録する。"""
     remote_session_id = structured.get("session_id")
@@ -321,6 +323,8 @@ def _record_agents_server_session_state(
         record.pop("cwd", None)
         record.pop("_".join(("result", "retrieved")), None)
         record.update({"session_id": remote_session_id, "status": status})
+        if model_type is not None:
+            record["model_type"] = model_type
         if operation in {"start", "start_explore"}:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
@@ -354,6 +358,21 @@ def _record_agents_server_session_state(
         return state if changed else None
 
     update_state(session_id, _mutator)
+
+
+def _log_tracked_session_end(session_id: str, structured: dict) -> None:
+    """終端した計画実行系sessionの終了時刻をprocess-loopの観測ログへ記録する。
+
+    `model_type`は`start`応答にだけ現れるため、起動時に保持した記録から取得する。
+    """
+    if structured.get("status") not in _agents_server_state.TERMINAL_STATUSES:
+        return
+    remote_session_id = structured.get("session_id")
+    sessions = read_state(session_id).get(_AGENTS_SERVER_SESSION_STATE_KEY)
+    record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
+    model_type = record.get("model_type") if isinstance(record, dict) else None
+    if model_type in _TRACKED_MODEL_TYPES:
+        _process_loop_log.append("subagent_end", type=model_type)
 
 
 def _record_agents_server_observation_attempt(session_id: str, tool_input: dict, *, operation: str) -> None:
@@ -608,11 +627,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_skill_use(session_id, tool_input.get("skill"))
         return 0
 
-    # AgentとTask: subagent_type別セッション状態フラグ記録 + process-loop観測用の終了時刻記録 (fb-1)
+    # AgentとTask: 後続の分岐が対象としないツールのため、記録せずに終了する
     if tool_name in ("Agent", "Task"):
-        subagent_type = tool_input.get("subagent_type")
-        if isinstance(subagent_type, str) and subagent_type in _TRACKED_SUBAGENT_TYPES:
-            _process_loop_log.append("subagent_end", type=subagent_type)
         return 0
 
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
@@ -633,14 +649,21 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
         owner_agent_id = resolve_hook_agent_id(payload)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
+            model_type = structured.get("model_type")
+            model_type = model_type if isinstance(model_type, str) else None
+            if model_type in _TRACKED_MODEL_TYPES:
+                _process_loop_log.append("subagent_start", type=model_type)
             _record_agents_server_session_state(
                 session_id,
                 structured,
                 operation=operation,
                 owner_agent_id=owner_agent_id,
                 cwd=cwd_value if isinstance(cwd_value, str) else None,
+                model_type=model_type,
             )
         else:
+            if operation in {"wait", "kill"}:
+                _log_tracked_session_end(session_id, structured)
             _record_agents_server_session_state(
                 session_id,
                 structured,

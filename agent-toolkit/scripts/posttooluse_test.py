@@ -370,24 +370,6 @@ class TestTbdCompletionNotice:
         assert not notices
 
 
-class TestSubagentEndProcessLoopLog:
-    """`_TRACKED_SUBAGENT_TYPES`対象種別終了時の`_process_loop_log`記録（fb-1、`enable_env`偽は空文字列で継承無効化）。"""
-
-    @pytest.mark.parametrize(
-        ("subagent_type", "enable_env", "expect_logged"),
-        [("plan-executor", True, True), ("plan-executor", False, False), ("claude", True, False)],
-    )
-    def test_subagent_end_logging(self, tmp_path: pathlib.Path, subagent_type: str, enable_env: bool, expect_logged: bool):
-        xdg_state_home = tmp_path / "xdg-state"
-        extra_env = {"XDG_STATE_HOME": str(xdg_state_home), "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1" if enable_env else ""}
-        payload = {"session_id": "sid", "tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}}
-        _run(payload, state_dir=tmp_path, extra_env=extra_env)
-        log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"
-        assert log_path.exists() == expect_logged
-        if expect_logged:
-            assert "event=subagent_end" in (text := log_path.read_text(encoding="utf-8")) and f"type={subagent_type}" in text
-
-
 class TestCurrentPlanFilePathTracking:
     """plan file編集時の`current_plan_file_path`記録。
 
@@ -1606,3 +1588,77 @@ class TestAgentsServerSessionState:
         sessions = _read_state(tmp_path, sid)["agents_server_sessions"]
         assert "remote-unknown" not in sessions
         assert sessions[known_session_id]["pending_observation"] is True
+
+
+class TestAgentsServerProcessLoopLog:
+    """計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の記録。
+
+    `model_type`は`start`応答にだけ現れるため、起動と終端を同じsessionへ通して記録の対応を確認する。
+    """
+
+    def _run_session(
+        self,
+        tmp_path: pathlib.Path,
+        *,
+        model_type: str,
+        observe_tool: str = "wait",
+        final_status: str = "completed",
+        enable_env: bool = True,
+    ) -> str:
+        xdg_state_home = tmp_path / "xdg-state"
+        extra_env = {
+            "XDG_STATE_HOME": str(xdg_state_home),
+            "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1" if enable_env else "",
+        }
+        sid = "process-loop"
+        remote_session_id = "thread-process-loop"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"prompt": "実装する", "cwd": str(tmp_path)},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": remote_session_id,
+                        "status": "running",
+                        "model_type": model_type,
+                    }
+                },
+            },
+            state_dir=tmp_path,
+            extra_env=extra_env,
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{observe_tool}",
+                "tool_input": {"session_id": remote_session_id},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": final_status}},
+            },
+            state_dir=tmp_path,
+            extra_env=extra_env,
+        )
+        log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"
+        return log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+
+    @pytest.mark.parametrize("observe_tool", ("wait", "kill"))
+    def test_terminal_status_logs_start_and_end(self, tmp_path: pathlib.Path, observe_tool: str) -> None:
+        """観測対象の工程は起動時刻を記録し、終端した観測で終了時刻を記録する。"""
+        text = self._run_session(tmp_path, model_type="execute", observe_tool=observe_tool)
+        assert "event=subagent_start" in text
+        assert "event=subagent_end" in text
+        assert text.count("type=execute") == 2
+
+    def test_untracked_model_type_is_not_logged(self, tmp_path: pathlib.Path) -> None:
+        """探索起動など観測対象外の工程は記録しない。"""
+        assert self._run_session(tmp_path, model_type="explore") == ""
+
+    def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
+        """終端していない観測では終了時刻を記録しない。"""
+        text = self._run_session(tmp_path, model_type="plan", final_status="running")
+        assert "event=subagent_start" in text
+        assert "event=subagent_end" not in text
+
+    def test_disabled_env_suppresses_logging(self, tmp_path: pathlib.Path) -> None:
+        """process-loop起動セッション以外では記録しない。"""
+        assert self._run_session(tmp_path, model_type="execute", enable_env=False) == ""
