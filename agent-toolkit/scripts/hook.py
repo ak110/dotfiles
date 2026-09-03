@@ -46,6 +46,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "autonomous_exit",
         "plan_save_advisor",
         "agents_server_session_advisor",
+        "pending_question_advisor",
         "subagent_stop_advisor",
         "session_end_cleanup",
         "stopfailure_notifier",
@@ -58,7 +59,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 
 # 例外時に`_approve()`で終了を許可する対象。出力形式はStop系モジュールの実装へ委ねる。
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset(
-    {"autonomous_exit", "plan_save_advisor", "agents_server_session_advisor"}
+    {"autonomous_exit", "plan_save_advisor", "agents_server_session_advisor", "pending_question_advisor"}
 )
 
 # 複数hookが共存する環境で自身の出力を判別するための標識。書式は`agent-toolkit:agent-standards`の
