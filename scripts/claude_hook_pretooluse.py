@@ -416,11 +416,117 @@ def _check_dotfiles_specific_names(
 
 # --- 配布コマンドの起動形 check (block) ---
 
-# `uv tool run` と `uvx` に後続するオプションを除外し、その次に現れる名前を取得する。
-# オプションの値（`--from pkg` の `pkg` 等）も名前として取得するが、配布コマンド名と一致しないため検出しない。
-_UV_TOOL_LAUNCH_RE = re.compile(
-    r"\b(?:uvx|uv[ \t]+tool[ \t]+run)(?:[ \t]+-{1,2}[^\s]+)*[ \t]+(?P<name>[A-Za-z][A-Za-z0-9._-]*)"
+# `uv tool run` と `uvx` の起動形の先頭を検出する。以降のトークンは走査で読み進める。
+_UV_TOOL_LAUNCH_PREFIX_RE = re.compile(r"\b(?:uvx|uv[ \t]+tool[ \t]+run)(?=[ \t]|$)")
+
+# 起動形の走査を打ち切る文字。コマンドの連結・パイプ・引用は起動形の外側とみなす。
+_UV_LAUNCH_STOP_CHARS = ";&|)`\"'"
+
+# 起動されるコマンド名として判定対象にする形。
+_UV_COMMAND_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9._-]*")
+
+# `uvx`と`uv tool run`が受理する、値を伴うオプションの名前。
+# uv 0.12.5の`uvx --help`が値の位置を示す形で表示するオプションから取得した。
+# 一覧に無いオプションは値を伴わないものとして扱うため、uv側の追加時は同じ手順で更新する。
+_UV_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--allow-insecure-host",
+        "--build-constraints",
+        "--cache-dir",
+        "--color",
+        "--config-file",
+        "--config-setting",
+        "--config-settings-package",
+        "--constraints",
+        "--default-index",
+        "--directory",
+        "--env-file",
+        "--exclude-newer",
+        "--exclude-newer-package",
+        "--extra-index-url",
+        "--find-links",
+        "--fork-strategy",
+        "--from",
+        "--index",
+        "--index-strategy",
+        "--index-url",
+        "--keyring-provider",
+        "--link-mode",
+        "--no-binary-package",
+        "--no-build-isolation-package",
+        "--no-build-package",
+        "--no-sources-package",
+        "--overrides",
+        "--prerelease",
+        "--prerelease-package",
+        "--project",
+        "--python",
+        "--python-platform",
+        "--refresh-package",
+        "--reinstall-package",
+        "--resolution",
+        "--torch-backend",
+        "--upgrade-group",
+        "--upgrade-package",
+        "--with",
+        "--with-editable",
+        "--with-requirements",
+        "-C",
+        "-P",
+        "-b",
+        "-c",
+        "-f",
+        "-i",
+        "-p",
+        "-w",
+    }
 )
+
+
+def _find_uv_tool_launches(value: str) -> list[tuple[str, str]]:
+    """`uvx`・`uv tool run`の起動形と、そこで起動されるコマンド名の組を列挙する。
+
+    行をまたぐ起動形は扱わないため行単位で走査する。
+    起動形の先頭からトークンを読み進め、オプション区間を越えた最初のコマンド名を取り出す。
+    """
+    launches: list[tuple[str, str]] = []
+    for line in value.splitlines():
+        for match in _UV_TOOL_LAUNCH_PREFIX_RE.finditer(line):
+            found = _scan_launched_command(line, match.end())
+            if found is None:
+                continue
+            name, end = found
+            launches.append((line[match.start() : end], name))
+    return launches
+
+
+def _scan_launched_command(line: str, start: int) -> tuple[str, int] | None:
+    """起動形の先頭の直後から走査し、コマンド名と当該トークンの終端位置を返す。
+
+    値を伴うオプションは一覧に基づいて判定し、次のトークンをコマンド名の候補から除く。
+    `=`を含むオプションは値を同じトークンへ持つため、次のトークンを候補から除かない。
+    """
+    position = start
+    skip_value = False
+    while position < len(line):
+        while position < len(line) and line[position] in " \t":
+            position += 1
+        end = position
+        while end < len(line) and line[end] not in " \t":
+            end += 1
+        token = line[position:end]
+        if not token or any(char in token for char in _UV_LAUNCH_STOP_CHARS):
+            return None
+        if skip_value:
+            skip_value = False
+        elif token.startswith("-"):
+            skip_value = "=" not in token and token in _UV_VALUE_OPTIONS
+        elif _UV_COMMAND_NAME_RE.fullmatch(token) is None:
+            return None
+        else:
+            return token, end
+        position = end
+    return None
 
 
 def _check_pytools_command_launch_form(
@@ -448,12 +554,11 @@ def _check_pytools_command_launch_form(
     if not commands:
         return None
     for field, value in fields:
-        for match in _UV_TOOL_LAUNCH_RE.finditer(value):
-            name = match.group("name")
+        for launch, name in _find_uv_tool_launches(value):
             if name not in commands:
                 continue
             return (
-                f"{tool_name}.{field}: `{match.group()}` resolves '{name}' as a registry package,"
+                f"{tool_name}.{field}: `{launch}` resolves '{name}' as a registry package,"
                 " but this repository ships it as an entry point installed via `uv tool install`,"
                 " so the launch form fails at run time."
                 f" Target: {file_path}"

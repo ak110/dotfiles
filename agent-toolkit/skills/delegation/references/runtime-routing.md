@@ -24,18 +24,18 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業は、実行ホストの互換規範に従って定義を適用する。Codexではメインエージェントが同一セッションへ直接適用し、Claude Codeでは定義を実装するAgent機能で起動する
 - 名前付きagent定義の適用と、その役割が要求する実際の別主体への委譲を区別する。特殊経路はCodexによる前者だけへ適用し、後者は本書の通常経路を変更しない
-- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`、`plan-executor`及び`plan-review-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。3定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
+- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、`feedbacks-planner`及び`plan-executor`の各agent定義が起動する委譲先は、engineの別によらず`agents_server`で起動する。これらの定義が委譲する工程は工程別モデル設定のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。2定義の`tools`はAgentツールの許可を保つが、`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けない。当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
-  - 新規開始は`start(model_type, prompt, cwd)`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む
+  - 新規開始は`start`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない
   - `start`・`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
   - 起動直後にモデル実行環境の可用性で終端した候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ再起動を重ねない
   - 起動後の実行中にモデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start(model_type, prompt, cwd, exclude_session_id=<失敗したsession_id>)`を呼ぶ。サーバーは当該sessionが使った候補を除外集合へ加え、残る候補の先頭で新しいsessionを開始する。次の候補を使うかどうかは呼び出し側が`wait`の状態とエラー本文から判断する。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない
   - `start`・`start_explore`が`no model candidates remain for model_type: <model_type>`を返した場合は、`exclude_session_id`の累積で当該起動条件の候補が尽きた状態であり、設定の不備ではない。同じ起動条件で`start`・`start_explore`を再発行しない。委譲せずに当該作業を自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合は当該工程を`needs_escalation`または未完了として呼び出し元へ返す。設定キーの変更と実行環境の切り替えは行わない
   - `exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。`start_explore`では、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件が一致しないsession IDを渡すと、サーバーはbackendの起動前にエラーを返す。別の設定キーの候補が除外集合へ混入して候補順序が崩れることを防ぐためである
   - 調査だけを委譲する場合は`start_explore(fast, prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。書込は機械的に禁止されないため、対象ファイルを変更しない旨を`prompt`へ明示する
-  - `wait(session_id, timeout)`で進捗を観測し、終端時は結果本文を同じ応答から取得する。`timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。固有のtimeout要件がなければ`timeout`を省略し、サブエージェントは`request_bucket`へ`subagent`を渡す。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。`timeout=0`は待機せず現状態を返す。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
-  - 同じ担当へ追加指示を返す場合は`send_message(session_id, prompt, timeout)`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。timeoutは配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
-  - 実行中turnを明示的に中断する場合は`kill(session_id, timeout=270)`を使う。`timeout=0`は要求配送後の現状態を返す。正のtimeoutは中断後の終端と結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない
+  - `wait`で進捗を観測し、終端時は結果本文を同じ応答から取得する。固有のtimeout要件がなければ`timeout`を省略し、サブエージェントは`request_bucket`へ`subagent`を渡す。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
+  - 同じ担当へ追加指示を返す場合は`send_message`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。固有のtimeout要件がなければ`timeout`を省略する。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
+  - 実行中turnを明示的に中断する場合は`kill`を使う。`TimeoutError`が返った場合もsessionとbackend processは破棄されないため、`wait`で状態を確認してから次の操作を選ぶ
   - 計画の最初のfast担当とCI修正は新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。fast担当からfix担当への引継ぎと通常実装モードのレビュー修正は、後段の継続条件で継続又は新規起動を確定する
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合と、同じworktreeを所有するthreadの担当種別をfast担当とfix担当の間で切り替える場合だけ使う
   - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
@@ -51,8 +51,8 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_feedbacks_model` | フィードバックの選定とレーン分け | `agent-toolkit:process-feedbacks`のメイン | `agents_server` MCP | Agentツール |
-| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner`・`plan-review-executor` | `agents_server` MCP | Agentツール |
-| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・`plan-review-executor`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
+| `plan_model` | 計画起草とレビュー指摘反映 | 計画の計画担当を委譲する`feedbacks-planner` | `agents_server` MCP | Agentツール |
+| `plan_review_model` | 計画レビュー | 計画レビューを委譲する全実行主体（`feedbacks-planner`・調整主体が無い場合の計画担当を含む） | `agents_server` MCP | Agentツール |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲する`plan-executor` | `agents_server` MCP | Agentツール |
 | `execute_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及びフィードバック即時対応の修正 | 引継ぎ修正とレビュー修正では`plan-executor`、CI失敗修正ではprocess-feedbacksのCI修正レーン、フィードバック即時対応ではprocess-feedbacksのメイン | `agents_server` MCP | Agentツール |
 | `execute_review_model` | 実装後の実装レビュー | レビュー担当を委譲する`plan-executor` | `agents_server` MCP | Agentツール |
@@ -66,8 +66,12 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、当該キーの実効値を環境変数の値とする。
 環境変数は保存済みの設定より優先し、`atk config set`は保存先だけを更新する。
 
+`model_type`へは、上表のキー名から`_model`を除いた種別に加えて、設定値と同じ書式の候補列を直接渡せる。
+直接渡した場合、サーバーは工程別モデル設定を読まず、渡した候補列をそのまま候補として使う。
+実験と障害時の回避で一時的に別のengine又はmodelへ切り替える場合に用い、恒常的な変更は`atk config set`で行う。
+
 1. `agents_server`経路では、表の`model_type`を`start`へ渡す。設定の読込、候補の分解及び候補の選択はサーバーが行う。
-2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合は当該工程を`needs_escalation`または未完了として返す。
+2. Agentツール経路では、起動直前に`atk config get <キー>`を実行し、返された候補列の先頭候補を`engine`、`model`、`effort`へ分解する。`engine`部が`claude`でない場合は当該工程を`needs_escalation`または未完了として返す。分解した値は、表の`対応工程`を実行する委譲先の起動へ渡す。当該工程を委譲する調整役の起動へは渡さない。調整役は自身の定義が固定するモデルで起動し、表の解決結果を自身が起動する委譲先へ適用するためである。定義がモデルを固定する委譲先へ`model`引数を渡した呼び出しは遮断される。
 3. `agents_server`の応答は、採用した`model_type`、`engine`、`model`及び`effort`を含む。呼び出し側はこの応答値を保持し、実際に用いた組合せとして報告へ記録する。
 4. 指定engineの経路を利用できない場合は他engineへ自動切替せず、当該工程を`needs_escalation`または未完了として返す。
    `engine=claude`をCodexの`spawn_agent`へ置換してはならない。
@@ -109,8 +113,8 @@ Agentツール経路を使う工程だけ、起動直前に`atk config get <キ�
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
    参照可能な正本がない場合は、呼び出し元が管理対象領域へレビュー表を作成してから継続し、表の内容を起動文へ埋め込まない。
    レビュー担当のthreadで継続不能と判定した場合は、同じ`model_type`で新しいレビュー担当を起動し、当該レビューを最初のラウンドから再実行しない。
-   起動文へは、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、当該時点のラウンド番号、直前修正の直接影響範囲及び読み取り専用の範囲を渡す。実装レビューでは、レビュー対象HEADの完全OIDも渡す。
-   ラウンド番号は調整主体が保持する値を引き継ぎ、新規起動を理由に最初のラウンドへ戻さない。
+   起動文へは、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前修正の直接影響範囲及び読み取り専用の範囲を渡す。実装レビューでは、レビュー対象HEADの完全OIDも渡す。
+   ラウンド番号の正本と各主体への配布は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める。調整主体は保持する値を引き継ぎ、新規起動を理由に最初のラウンドへ戻さない。
    実装レビューでは、起動主体が`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の生成規則で`review_contract`を再生成して渡す。
    新しい担当は、レビュー指摘管理表で解消済みと記録された行を再走査せず、未解消の行と当該ラウンドの走査範囲だけを対象とする。
 

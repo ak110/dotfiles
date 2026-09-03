@@ -1,6 +1,14 @@
   html, body { height: 100%; }
-  body { margin: 0; max-width: none; padding: 0; }
-  #app { display: grid; grid-template-columns: 320px 1fr; height: calc(100svh - var(--shell-header-height)); }
+  body {
+    margin: 0;
+    max-width: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
+  #app { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
   aside {
     border-right: 1px solid #e6e6e6;
     overflow: auto;
@@ -71,13 +79,9 @@
     background: #ffffff;
     border-bottom: 1px solid #e6e6e6;
   }
-  /* 配色・境界・角丸・無効時表示は`shell.css`の共通規則が定める。本規則はツールバー内の寸法だけを指定する。 */
-  main .toolbar button {
-    padding: 6px 12px;
-    font-size: 13px;
-  }
+  /* 配色・境界・角丸・無効時表示・寸法は`shell.css`の共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
   main .toolbar .spacer { flex: 1; }
-  main .toolbar .nav-btn { min-width: 36px; padding: 6px 10px; }
+  main .toolbar .nav-btn { min-width: 36px; }
   /* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */
   #menu-btn { display: none; }
   #meta-mobile { display: none; }
@@ -106,7 +110,7 @@
     font-weight: 600;
   }
   /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
-  @media (max-width: 768px) {
+  @media (max-width: 700px) {
     #app { grid-template-columns: 1fr; }
     aside {
       position: fixed;

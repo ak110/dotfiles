@@ -34,9 +34,8 @@ QUALITY_CHECKPOINT_NOTICE = (
     "sufficient for the required scenario. Separate agent-facing conversation guidance "
     "from durable artifact context, and keep conversation-only directives out of artifacts. "
     "Fail explicitly when requirements are not met. Remove unsupported fallback, legacy, "
-    "and compatibility paths instead of preserving them without evidence. Retrieve only "
-    "the information needed for the decision. Do not repeat searches or checks that cannot "
-    "change the next decision. Treat AGENTS.md and the agent-toolkit rules as the source of truth."
+    "and compatibility paths instead of preserving them without evidence. "
+    "Treat AGENTS.md and the agent-toolkit rules as the source of truth."
 )
 
 

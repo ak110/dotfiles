@@ -21,9 +21,6 @@ _CONFIG_FILENAME = "config.json"
 
 _DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
 _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
-# 暫定処理: 旧キー名が`atk config get`へ指定されたときに現行キーの解決値を返す読替表。
-# 導入日: 2026-08-31。削除可能日: 2026-09-03。旧キー名を参照する並行セッションが残らなくなった後に削除してよい。
-_LEGACY_GET_KEY_ALIASES = {"execute_fix_model": "execute_model"}
 _MUTABLE_KEY_DEFAULTS = {
     "explore_model": _DEFAULT_STAGE_MODEL,
     "explore_fast_model": "codex:gpt-5.6-terra/medium",
@@ -40,7 +37,7 @@ _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
-    "claude": frozenset({"haiku", "sonnet", "opus", "sonnet[1m]", "opus[1m]"}),
+    "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]"}),
     "codex": frozenset({"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
@@ -52,6 +49,15 @@ def _config_dir() -> pathlib.Path:
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
     return pathlib.Path(platformdirs.user_config_dir("agent-toolkit", appauthor=False))
+
+
+def state_dir() -> pathlib.Path:
+    """platformdirsの状態ディレクトリ解決規約に従い、状態ファイル配置ディレクトリを返す。
+
+    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
+    `atk config get state_dir`の出力と、フックが状態ファイルを置く位置の双方をここで決める。
+    """
+    return pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
 
 
 def _config_file_path() -> pathlib.Path:
@@ -114,7 +120,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {
         "config_dir": str(_config_dir()),
-        "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
+        "state_dir": str(state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(private_notes_path(home)),
         **{key: resolve_mutable_setting(key) for key in _MUTABLE_KEY_DEFAULTS},
@@ -131,15 +137,14 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     """getサブコマンド: 1件以上の設定値を表示する。未知キーはexit 2。"""
     settings = _resolved_settings(home)
     requested_keys = cast(list[str], args.key)
-    resolved_keys = [_LEGACY_GET_KEY_ALIASES.get(key, key) for key in requested_keys]
-    unknown_keys = [key for key in resolved_keys if key not in settings]
+    unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
         print(
             f"未知の設定キーです: {', '.join(unknown_keys)}（利用可能: {', '.join(sorted(settings))}）",
             file=sys.stderr,
         )
         sys.exit(2)
-    for key in resolved_keys:
+    for key in requested_keys:
         print(settings[key])
 
 
@@ -204,11 +209,20 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
 
 
 def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
-    """model_typeに対応する工程別モデル設定を候補の3つ組として返す。"""
+    """model_typeに対応する工程別モデル設定を候補の3つ組として返す。
+
+    設定値と同じ書式の候補列を受け取った場合は設定を読まず、当該候補列をそのまま分解して返す。
+    """
     key = f"{model_type}_model"
     if key not in _MUTABLE_KEY_DEFAULTS:
-        available = sorted(item.removesuffix("_model") for item in _MUTABLE_KEY_DEFAULTS if item.endswith("_model"))
-        raise ValueError(f"unknown model_type: {model_type} (available: {', '.join(available)})")
+        try:
+            return parse_stage_model_candidates(model_type)
+        except ValueError as error:
+            available = sorted(item.removesuffix("_model") for item in _MUTABLE_KEY_DEFAULTS if item.endswith("_model"))
+            raise ValueError(
+                f"unknown model_type: {model_type} "
+                f"(available: {', '.join(available)}; or pass candidates like codex:gpt-5.6-sol/medium)"
+            ) from error
     return parse_stage_model_candidates(resolve_mutable_setting(key))
 
 

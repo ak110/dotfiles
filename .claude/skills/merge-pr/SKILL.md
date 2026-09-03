@@ -96,7 +96,7 @@ baseline作成と同期pushの順序を変更しない。push後に同期先のr
 `origin/develop`の更新はローカルbranchを操作元にせず、`MERGE_OID`と宛先refを明示したrefspecでpushする。
 
 ```sh
-uv run --no-project --script /home/aki/dotfiles/agent-toolkit/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
+uv run --no-project --script agent-toolkit/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
 git push origin <MERGE_OID>:refs/heads/develop
 git fetch origin develop master
 git rev-parse origin/develop origin/master
@@ -126,7 +126,7 @@ develop CIの待機は、masterで検収したマージコミットとdevelopへ
 
 ```sh
 # OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
-uv run --no-project --script /home/aki/dotfiles/agent-toolkit/scripts/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
+uv run --no-project --script agent-toolkit/scripts/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
 ```
 
 現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であるため、develop固有検査として扱わない。CI定義が変化した場合は省略条件を再判定する。

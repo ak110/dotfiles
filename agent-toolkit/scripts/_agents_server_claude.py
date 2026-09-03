@@ -16,6 +16,7 @@ import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+import _plan_file
 from _agents_server_state import (
     DELEGATE_SYSTEM_PROMPT,
     EXPLORE_SYSTEM_PROMPT,
@@ -28,6 +29,7 @@ from _agents_server_state import (
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
+_ENV_OWNER_SESSION = "AGENT_TOOLKIT_OWNER_SESSION"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
@@ -79,10 +81,14 @@ def _build_options(
 
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
+    委譲先の計画バンドルを委譲元の所有として記録できるよう、自プロセスで解決した所有セッション識別子も渡す。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
     env = {_ENV_DELEGATED_SESSION: "1"}
+    owner_session = _plan_file.resolve_owner_session_id()
+    if owner_session is not None:
+        env[_ENV_OWNER_SESSION] = owner_session
     if explore:
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
     options: dict[str, Any] = {
@@ -493,11 +499,17 @@ class ClaudeServerManager:
         errors = getattr(message, "errors", None)
         if session.status == "failed":
             if isinstance(errors, list) and errors:
-                session.error = {"message": "; ".join(str(item) for item in errors)}
+                error: dict[str, Any] = {"message": "; ".join(str(item) for item in errors)}
             elif isinstance(result, str) and result:
-                session.error = {"message": result}
+                error = {"message": result}
             else:
-                session.error = {"message": "Claude Agent SDK returned an error"}
+                error = {"message": "Claude Agent SDK returned an error"}
+            # `api_error_status`は失敗したAPI呼び出しのHTTPステータスを示す。
+            # MCP層がengineの可用性を判定するために保持する。
+            api_error_status = getattr(message, "api_error_status", None)
+            if isinstance(api_error_status, int):
+                error["apiErrorStatus"] = api_error_status
+            session.error = error
         session.turn_completed = True
         session.turn_start_ambiguous = False
         session.touch()

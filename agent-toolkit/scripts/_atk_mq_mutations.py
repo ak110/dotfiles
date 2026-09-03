@@ -527,8 +527,12 @@ def edit_entry_content(
     target_repo: str | None = None,
     lock_timeout: float = -1,
     expected_content: str | None = None,
+    finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """平引数でフィードバック本文を更新する。"""
+    """平引数でフィードバック本文を更新する。
+
+    `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
+    """
     if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD}:
         raise WebInputError("編集可能状態はinbox、processing又はholdです")
 
@@ -543,6 +547,7 @@ def edit_entry_content(
         expected_content=expected_content,
         commit_message="chore: edit feedback item",
         content_transformer=_invalidate_repo_bound_metadata,
+        finalized_content=finalized_content,
     )
 
 
@@ -555,8 +560,12 @@ def append_entry_content(
     target_repo: str | None = None,
     lock_timeout: float = -1,
     expected_content: bytes | None = None,
+    finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """フィードバック本文をraw bytesのまま追記する。TBDは拒否する。"""
+    """フィードバック本文をraw bytesのまま追記する。TBDは拒否する。
+
+    `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
+    """
     if state not in {MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD}:
         raise WebInputError("追記可能状態はinbox、processing又はholdです")
 
@@ -578,6 +587,7 @@ def append_entry_content(
         expected_content=expected_content,
         commit_message="chore: append feedback item",
         content_validator=validate,
+        finalized_content=finalized_content,
     )
 
 
@@ -898,21 +908,22 @@ def edit_entry_to_plan(
             "chore: convert feedback item to plan",
             [str(planning_path.relative_to(private_notes)), str(inbox_path.relative_to(private_notes))],
         )
-        return _add._read_saved_entry_details(inbox_path)  # pylint: disable=protected-access
+        return _add._read_saved_entry_details(  # pylint: disable=protected-access
+            inbox_path,
+            expected_body=updated_text,
+        )
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> bool:
-    """平引数でinbox・processing配下の外部編集差分をcommit・pushする。
+    """平引数でprivate-notesの作業ツリー全体の外部編集差分をcommit・pushする。
 
-    対象配下に差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
+    差分がない場合も滞留commitをpushし、外部編集によるcommitを行ったかを返す。
     """
     with _repo_lock(private_notes, timeout=lock_timeout):
         _push_pending_commits(private_notes)
         _pull(private_notes)
-        inbox_rel = MQ_STATE_INBOX
-        processing_rel = MQ_STATE_PROCESSING
         status = subprocess.run(
-            ["git", "status", "--porcelain", "--", inbox_rel, processing_rel],
+            ["git", "status", "--porcelain"],
             cwd=private_notes,
             check=True,
             capture_output=True,
@@ -921,7 +932,7 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
         if not status.stdout.strip():
             _push_pending_commits(private_notes)
             return False
-        _commit_and_push(private_notes, "chore: edit queue items externally", [inbox_rel, processing_rel])
+        _commit_and_push(private_notes, "chore: edit private notes externally", ["."])
     return True
 
 
@@ -1301,7 +1312,12 @@ def _convert_planning_entries(
         if not inbox_path.is_file() or any(path.exists() for path in source_paths):
             raise RuntimeError("計画型変換後の保存集合を検証できません")
         return {
-            "entries": [_add._read_saved_entry_details(inbox_path)],  # pylint: disable=protected-access
+            "entries": [
+                _add._read_saved_entry_details(  # pylint: disable=protected-access
+                    inbox_path,
+                    expected_body=updated_text,
+                )
+            ],
             "plan_file": str(plan_path),
             "commit": _git_head(private_notes),
             "planning": True,
@@ -1446,8 +1462,8 @@ def convert_entries_to_plan(
             if not changed_paths:
                 return {
                     "entries": [
-                        _add._read_saved_entry_details(path)  # pylint: disable=protected-access
-                        for path, _old, _new in updated
+                        _add._read_saved_entry_details(path, expected_body=new)  # pylint: disable=protected-access
+                        for path, _old, new in updated
                     ],
                     "plan_file": stored_plan_file,
                     "commit": None,
@@ -1467,8 +1483,8 @@ def convert_entries_to_plan(
             commit_oid = _git_head(private_notes)
             return {
                 "entries": [
-                    _add._read_saved_entry_details(path)  # pylint: disable=protected-access
-                    for path, _old, _new in updated
+                    _add._read_saved_entry_details(path, expected_body=new)  # pylint: disable=protected-access
+                    for path, _old, new in updated
                 ],
                 "plan_file": stored_plan_file,
                 "commit": commit_oid,
@@ -1597,7 +1613,10 @@ def set_entry_dependencies(
             _atomic_write_text(path, updated_text)
             relative_path = str(path.relative_to(private_notes))
             _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
-        return _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+        return _add._read_saved_entry_details(  # pylint: disable=protected-access
+            path,
+            expected_body=updated_text,
+        )
 
 
 def _active_dependency_graph(
@@ -1951,6 +1970,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         sys.exit(1)
+    finalized_content: dict[str, str] = {}
     try:
         edit_entry_content(
             private_notes,
@@ -1959,6 +1979,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             content=edited,
             target_repo=args.target_repo,
             expected_content=original,
+            finalized_content=finalized_content,
         )
     except RuntimeError:
         if tmp_path is None:
@@ -1978,7 +1999,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         tmp_path.unlink(missing_ok=True)
     print(f"編集反映: {path.name}")
     _add._print_entry_details(  # pylint: disable=protected-access
-        _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+        _add._read_saved_entry_details(  # pylint: disable=protected-access
+            path,
+            expected_body=finalized_content["content"],
+        )
     )
 
 
@@ -2022,6 +2046,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         )
     else:
         content = snapshot + b"\n\n" + args.message.encode("utf-8")
+    finalized_content: dict[str, str] = {}
     try:
         append_entry_content(
             private_notes,
@@ -2030,6 +2055,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             content=content,
             target_repo=args.target_repo,
             expected_content=snapshot,
+            finalized_content=finalized_content,
         )
     except RuntimeError:
         print(
@@ -2040,16 +2066,19 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
     print(f"追記反映: {path.name}")
     _add._print_entry_details(  # pylint: disable=protected-access
-        _add._read_saved_entry_details(path)  # pylint: disable=protected-access
+        _add._read_saved_entry_details(  # pylint: disable=protected-access
+            path,
+            expected_body=finalized_content["content"],
+        )
     )
 
 
 def _cmd_commit(private_notes: pathlib.Path) -> None:
-    """commitサブコマンド: 外部編集後のinbox・processing配下未コミット変更をコミット・push。
+    """commitサブコマンド: 外部編集後のprivate-notesの未コミット変更をコミット・push。
 
-    inbox・processing配下に未コミット変更がない場合も滞留commitをpushする。
+    未コミット変更がない場合も滞留commitをpushする。
     """
     if commit_entries(private_notes):
-        print("外部編集分をコミット・pushしました。")
+        print("private-notesの外部編集分をコミット・pushしました。")
     else:
         print("差分なし。滞留commitをpushしました。")

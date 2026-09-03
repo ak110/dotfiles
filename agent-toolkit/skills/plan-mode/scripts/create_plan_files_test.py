@@ -10,6 +10,7 @@ import create_plan_files
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -497,3 +498,43 @@ def test_parallel_creation_returns_complete_distinct_pairs(repo: pathlib.Path, t
         assert detail_path == main_path.with_name(main_path.stem + ".detail.md")
         assert detail_path.is_file()
     assert not list((tmp_path / "home/.claude/plans").glob(".*.tmp"))
+
+
+def test_creation_records_owning_session(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
+    """新規作成は確定した計画バンドルの所有セッションを記録する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "creating-session")
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    main_source, detail_source = _sources(repo, tmp_path)
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    main_path, _detail_path = create_plan_files.create_plan_files(
+        main_source,
+        detail_source,
+        "所有記録の生成",
+        private_notes=tmp_path / "private-notes",
+        date=datetime.date(2026, 8, 30),
+        work_dir=repo,
+    )
+
+    assert _plan_file.read_owner_session_id(main_path) == "creating-session"
+
+
+def test_creation_succeeds_without_session_identifier(repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch) -> None:
+    """所有セッションを解決できない環境では記録を書かず、作成自体は成功する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    main_source, detail_source = _sources(repo, tmp_path)
+    monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
+
+    main_path, detail_path = create_plan_files.create_plan_files(
+        main_source,
+        detail_source,
+        "記録なしの作成",
+        private_notes=tmp_path / "private-notes",
+        date=datetime.date(2026, 8, 30),
+        work_dir=repo,
+    )
+
+    assert main_path.is_file()
+    assert detail_path.is_file()
+    assert not _plan_file.owner_record_path(main_path).exists()

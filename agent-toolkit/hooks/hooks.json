@@ -102,7 +102,7 @@
     ],
     "PermissionRequest": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",

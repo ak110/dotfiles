@@ -1,3 +1,10 @@
+# Python製hookが使うPythonの版数を固定する。
+# prekはhookリポジトリの`pyproject.toml`からしか`requires-python`を解決しないため、
+# 本リポジトリの`pyproject.toml`の`requires-python`を正本として同じ下限をここへ再掲する。
+# どちらかを変更する場合は両方をそろえる。
+default_language_version:
+  python: ">=3.13"
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

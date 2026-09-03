@@ -33,7 +33,7 @@
     "superpowers@claude-plugins-official": false
   },
   "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
     "CLAUDE_CODE_ENABLE_AUTO_MODE": "1",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "5",
@@ -62,12 +62,7 @@
       "mcp__plugin_serena_serena",
       "mcp__serena"
     ],
-    "defaultMode": "auto",
-    "deny": [
-      "Read(*.key)",
-      "Read(*.crt)",
-      "Read(//**/.credentials.json)"
-    ]
+    "defaultMode": "auto"
   },
   "promptCacheTtl": "1h",
   "showClearContextOnPlanAccept": false,

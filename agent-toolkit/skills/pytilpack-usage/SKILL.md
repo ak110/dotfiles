@@ -39,15 +39,7 @@ extrasが必要なモジュールは`pyproject.toml`の依存指定時にextras�
 
 ## CLIツール
 
-`pytilpack`コマンドで以下のサブコマンドを利用できる。
-
-- `babel`: i18nメッセージ管理（`[babel]`必要）
-- `delete-empty-dirs`: 空ディレクトリの削除
-- `delete-old-files`: N日以上経過したファイルの削除
-- `fetch`: Webコンテンツの取得
-- `mcp`: MCPサーバーの起動
-- `sync`: ディレクトリの一方向同期
-- `wait-for-db-connection`: DB接続待機（`[sqlalchemy]`必要）
+`pytilpack`コマンドが提供するサブコマンドの一覧と各extras要件は、版により増減するため後述のllms.txtで確認する。
 
 ## APIドキュメントの参照方法
 

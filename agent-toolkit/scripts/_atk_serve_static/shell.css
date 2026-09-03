@@ -2,7 +2,6 @@
    フィードバック画面は本ファイルの後に`app.css`を読み込み、同じセレクターを上書きする。 */
 
 :root {
-  --shell-header-height: 3.25rem;
   --color-background: #f3f6fa;
   --color-surface: #ffffff;
   --color-text: #172033;
@@ -61,19 +60,34 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .button-danger:hover { background: var(--color-danger-hover); }
 
-/* ヘッダーの子要素の数は画面ごとに異なるため、列を固定してナビゲーションを画面中央へ置く。 */
+/* ヘッダーの子要素の数は画面ごとに異なるため、列を固定してナビゲーションを画面中央へ置く。
+   高さ・文字サイズ・内側の余白・影・折り返しは本ファイルを正本とし、画面固有のCSSは水平方向の余白だけを上書きする。 */
 .app-header {
+  --header-line-height: 1.55;
   position: sticky;
   z-index: 10;
   top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid #e6e6e6;
   background: rgb(255 255 255 / 0.96);
+  box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
   font-family: system-ui, sans-serif;
+  /* 各画面の本文用の文字サイズと行の高さがヘッダーへ及ぶと、同じ部品の大きさが画面ごとに変わるため明示する。 */
+  font-size: 1rem;
+  line-height: var(--header-line-height);
+}
+
+/* フィードバック画面だけが操作群のボタンを持つため、ボタンの有無でヘッダーの高さが変わらないよう
+   3つの列へボタンと同じ高さを最小値として与える。ボタンの高さは、継承する文字サイズと行の高さの積へ
+   ボタン自身の上下の内側の余白と上下の境界線を加えた値である。 */
+.app-header .header-title,
+.app-header .app-nav,
+.app-header .header-actions {
+  min-height: calc(1em * var(--header-line-height) + var(--space-1) * 2 + 2px);
 }
 
 .app-header .header-title {
@@ -84,12 +98,33 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 
 .app-header .app-nav { grid-column: 2; }
-.app-header .header-actions { grid-column: 3; }
 
+.app-header .header-actions {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 計画ファイル画面は本文用の`markdown.css`も読み込むため、見出しの寸法を本ファイルで明示して打ち消す。 */
 .app-header h1 {
   margin: 0;
+  padding: 0;
+  border: none;
   font-size: 1.375rem;
+  line-height: 1.55;
+  letter-spacing: normal;
 }
+
+/* シェル部品（ヘッダーの操作群と各ペインのツールバー）のボタン寸法と文字サイズを3画面でそろえる。 */
+.app-header .header-actions button,
+main > .toolbar button {
+  padding: var(--space-1) var(--space-2);
+}
+
+main > .toolbar { font-size: 1rem; }
 
 .app-nav {
   display: flex;
@@ -117,10 +152,21 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   font-weight: 600;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 700px) {
+  /* 横方向の余地が無いため、タイトル・ナビゲーション・操作群を1列で縦に並べる。 */
   .app-header {
-    padding: 6px 10px;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    padding: var(--space-1) var(--space-2);
   }
+
+  .app-header .header-title,
+  .app-header .app-nav,
+  .app-header .header-actions {
+    grid-column: 1;
+  }
+
+  .app-header .header-title { justify-content: space-between; }
 
   .app-header h1 {
     font-size: 1.05rem;

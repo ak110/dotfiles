@@ -181,78 +181,6 @@ class TestPlanPostWrite:
             assert result.stdout.strip() == ""
 
     @pytest.mark.parametrize(
-        ("first_name", "second_name"),
-        [
-            ("sample.md", "sample.detail.md"),
-            ("sample.detail.md", "sample.md"),
-            ("plan with spaces.md", "plan with spaces.detail.md"),
-        ],
-    )
-    def test_codex_whole_write_emits_quality_notice_only_after_pair_exists(
-        self,
-        tmp_path: pathlib.Path,
-        first_name: str,
-        second_name: str,
-    ) -> None:
-        """Codexのwhole-writeは計画メイン/detailの両方がそろった後だけ通知する。"""
-        home = tmp_path / "home"
-        plans = _prepare_plan_home(home)
-        state_dir = tmp_path / "state"
-        first = plans / first_name
-        second = plans / second_name
-        first.write_text("content\n", encoding="utf-8")
-        first_result = _run_codex_patch(
-            "codex-pair",
-            _codex_patch(_codex_add_section(first)),
-            state_dir=state_dir,
-            home_dir=home,
-        )
-        second.write_text("content\n", encoding="utf-8")
-        second_result = _run_codex_patch(
-            "codex-pair",
-            _codex_patch(_codex_add_section(second)),
-            state_dir=state_dir,
-            home_dir=home,
-        )
-
-        assert QUALITY_CHECKPOINT_NOTICE not in first_result.stdout
-        assert second_result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
-
-    def test_codex_patch_with_both_pair_files_emits_one_quality_notice(self, tmp_path: pathlib.Path) -> None:
-        """1回のapply_patchで両ファイルを追加しても通知は1件にまとめる。"""
-        home = tmp_path / "home"
-        plans = _prepare_plan_home(home)
-        main = plans / "both.md"
-        detail = plans / "both.detail.md"
-        main.write_text("content\n", encoding="utf-8")
-        detail.write_text("content\n", encoding="utf-8")
-        result = _run_codex_patch(
-            "codex-both",
-            _codex_patch(_codex_add_section(main), _codex_add_section(detail)),
-            state_dir=tmp_path / "state",
-            home_dir=home,
-        )
-
-        assert result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
-
-    def test_codex_existing_pair_rewhole_write_emits_one_quality_notice(self, tmp_path: pathlib.Path) -> None:
-        """完成済みペアのCodex whole-writeでも実行ごとに1件だけ通知する。"""
-        home = tmp_path / "home"
-        plans = _prepare_plan_home(home)
-        main = plans / "existing-pair.md"
-        detail = plans / "existing-pair.detail.md"
-        main.write_text("content\n", encoding="utf-8")
-        detail.write_text("content\n", encoding="utf-8")
-        result = _run_codex_patch(
-            "codex-existing-pair",
-            _codex_patch(_codex_add_section(main)),
-            state_dir=tmp_path / "state",
-            home_dir=home,
-        )
-
-        assert result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
-
-    @pytest.mark.parametrize(
         ("command_builder", "plan_mode_skill_invoked"),
         [
             (lambda main: _codex_patch(_codex_add_section(main)), False),
@@ -324,9 +252,10 @@ class TestPlanPostWrite:
 
         assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
 
-    def test_codex_plan_path_with_spaces_keeps_pair_detection(self, tmp_path: pathlib.Path) -> None:
-        """空白を含む計画パスでも対応する計画ファイル（詳細）を機械的に検出する。"""
+    def test_codex_plan_path_with_spaces_records_plan_file(self, tmp_path: pathlib.Path) -> None:
+        """空白を含む計画パスでもapply_patchの対象を計画ファイル（メイン）として記録する。"""
         home = tmp_path / "home"
+        state_dir = tmp_path / "state"
         plans = _prepare_plan_home(home)
         main = plans / "plan with spaces.md"
         detail = plans / "plan with spaces.detail.md"
@@ -335,11 +264,30 @@ class TestPlanPostWrite:
         result = _run_codex_patch(
             "codex-spaces",
             _codex_patch(_codex_add_section(main)),
+            state_dir=state_dir,
+            home_dir=home,
+        )
+
+        assert result.returncode == 0
+        assert _read_state(state_dir, "codex-spaces")["current_plan_file_path"] == str(main)
+
+    def test_plan_write_never_emits_quality_notice(self, tmp_path: pathlib.Path) -> None:
+        """計画ファイル（メイン）と計画ファイル（詳細）がそろったwhole-writeでも品質通知は出力しない。"""
+        home = tmp_path / "home"
+        plans = _prepare_plan_home(home)
+        main = plans / "no-notice.md"
+        detail = plans / "no-notice.detail.md"
+        main.write_text("content\n", encoding="utf-8")
+        detail.write_text("content\n", encoding="utf-8")
+        result = _run_codex_patch(
+            "codex-no-notice",
+            _codex_patch(_codex_add_section(main)),
             state_dir=tmp_path / "state",
             home_dir=home,
         )
 
-        assert result.stdout.count(QUALITY_CHECKPOINT_NOTICE) == 1
+        assert result.returncode == 0
+        assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
 
     @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
     def test_claude_edit_tools_do_not_emit_codex_quality_notice(

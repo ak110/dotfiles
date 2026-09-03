@@ -25,6 +25,7 @@ import pytest_asyncio
 
 _BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
 _SERVER_START_TIMEOUT_SEC = 10.0
+_SAVE_RELEASE_DELAY_SEC = 1.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
 
 
@@ -1562,6 +1563,28 @@ async def test_save_failure_message_stays_at_scrolled_dialog_top(browser_harness
     await page.unroute("**/api/entries/inbox/long-entry.md", fail_save)
 
 
+async def _release_save_after_delay(release: threading.Event) -> None:
+    """一定時間の経過後に保存処理を解放する。
+
+    保存が即座に完了する場合、前段の通知が残存したまま待機が成立する欠陥があっても、
+    本文の読み取りは保存の完了後に到達し、検体は通過する。解放を遅延させると、
+    保存の完了を待たない待機条件は実行速度によらず失敗として現れる。
+    """
+    await asyncio.sleep(_SAVE_RELEASE_DELAY_SEC)
+    release.set()
+
+
+async def _wait_and_close_operation_notice(page: playwright.async_api.Page, text: str) -> None:
+    """操作の通知が表示されるまで待ち、成立した通知を閉じる。
+
+    通知は自動で消えないため、閉じずに次の待機へ進むと残存した通知で待機が即座に成立する。
+    待機のたびに閉じることで、次の待機が当該操作で新たに表示された通知だけで成立する。
+    """
+    await page.get_by_role("status").filter(has_text=text).wait_for(state="visible")
+    await page.locator("#operation-notice-close-button").click()
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+
+
 @pytest.mark.asyncio
 async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updates(
     browser_harness: _BrowserHarness,
@@ -1604,7 +1627,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
         "comment": "最初のコメント",
         "expected_content": original,
     }
-    await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
+    await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
     assert "## ユーザーコメント\n\n最初のコメント" in path.read_text(encoding="utf-8")
     await playwright.async_api.expect(detail).to_be_hidden()
 
@@ -1623,8 +1646,10 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await playwright.async_api.expect(comment_input).to_be_disabled()
     await playwright.async_api.expect(detail.locator("#save-user-comment-button")).to_be_disabled()
     assert harness.operations.user_comment_calls == 2
-    harness.operations.user_comment_release.set()
-    await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
+    release_task = asyncio.create_task(_release_save_after_delay(harness.operations.user_comment_release))
+    await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
+    await release_task
+    await playwright.async_api.expect(detail).to_be_hidden()
     saved = path.read_text(encoding="utf-8")
     assert "置換後のコメント" in saved
     assert "最初のコメント" not in saved
@@ -1648,14 +1673,18 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await detail.get_by_role("alert").filter(has_text="内容を確認して再度保存してください").wait_for(state="visible")
     await playwright.async_api.expect(comment_input).to_have_value("競合後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()
+    harness.operations.arm_user_comment_delay()
     async with page.expect_request("**/api/entries/user-comment") as retry_request_info:
         await detail.get_by_role("button", name="コメントを保存").click()
     retry_payload = (await retry_request_info.value).post_data_json
     assert isinstance(retry_payload, dict)
     assert retry_payload["expected_content"] == latest
-    await page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました").wait_for(state="visible")
-    assert "競合後も保持する入力" in path.read_text(encoding="utf-8")
+    assert await asyncio.to_thread(harness.operations.user_comment_started.wait, 5)
+    release_task = asyncio.create_task(_release_save_after_delay(harness.operations.user_comment_release))
+    await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
+    await release_task
     await playwright.async_api.expect(detail).to_be_hidden()
+    assert "競合後も保持する入力" in path.read_text(encoding="utf-8")
     assert harness.operations.user_comment_calls == 4
 
 
@@ -2083,10 +2112,116 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
 
 
 @pytest.mark.asyncio
+async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHarness) -> None:
+    """3画面のヘッダーの高さと文字サイズがそろい、折り返しが起きる幅でも見出しとナビゲーションの大きさと水平位置がそろう。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 1400, "height": 800})
+    headers: dict[str, dict[str, float | str]] = {}
+
+    for path in ("/", "/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        header = harness.page.locator(".app-header")
+        await header.wait_for(state="visible")
+        header_box = await header.bounding_box()
+        assert header_box is not None, path
+        headers[path] = {
+            "height": round(header_box["height"], 1),
+            # ヘッダー内の部品は各画面の本文用の指定ではなく共有ヘッダーの文字サイズを継承する。
+            "font_size": await header.evaluate("(element) => getComputedStyle(element).fontSize"),
+        }
+
+    assert headers["/plans"] == headers["/"]
+    assert headers["/sessions"] == headers["/"]
+
+    await harness.page.set_viewport_size({"width": 600, "height": 800})
+    layouts: dict[str, dict[str, float | str]] = {}
+
+    for path in ("/", "/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        header = harness.page.locator(".app-header")
+        await header.wait_for(state="visible")
+        title = harness.page.locator(".app-header .header-title")
+        navigation = harness.page.locator("nav.app-nav")
+        await navigation.wait_for(state="visible")
+        header_box = await header.bounding_box()
+        title_box = await title.bounding_box()
+        navigation_box = await navigation.bounding_box()
+        assert header_box is not None and title_box is not None and navigation_box is not None, path
+        # 折り返す幅ではフィードバック画面だけが同期操作の欄を別の行に置くため、ヘッダー全体の高さと絶対位置は画面ごとに異なる。
+        # 3画面が共通して持つ部品の大きさと、ヘッダー左端からの水平位置を比較する。
+        layouts[path] = {
+            "title_height": round(title_box["height"], 1),
+            "nav_height": round(navigation_box["height"], 1),
+            "nav_offset_x": round(navigation_box["x"] - header_box["x"], 1),
+            "title_font_size": await harness.page.locator(".app-header h1").evaluate(
+                "(element) => getComputedStyle(element).fontSize"
+            ),
+        }
+
+    assert layouts["/plans"] == layouts["/"]
+    assert layouts["/sessions"] == layouts["/"]
+
+
+@pytest.mark.asyncio
+async def test_panes_follow_header_height_on_narrow_width(screen_harness: _ScreenHarness) -> None:
+    """ヘッダーが折り返す幅でも、主要領域の上端がヘッダーの下端と、下端がビューポートの下端と一致する。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 600, "height": 800})
+
+    for path in ("/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        header = harness.page.locator(".app-header")
+        await header.wait_for(state="visible")
+        pane = harness.page.locator("#app")
+        await pane.wait_for(state="visible")
+        header_box = await header.bounding_box()
+        pane_box = await pane.bounding_box()
+        assert header_box is not None and pane_box is not None, path
+        viewport_height = await harness.page.evaluate("document.documentElement.clientHeight")
+        # 小数の丸めだけを許容し、固定値の見積もりによるずれを検出する。
+        assert abs(pane_box["y"] - (header_box["y"] + header_box["height"])) <= 1, path
+        assert abs((pane_box["y"] + pane_box["height"]) - viewport_height) <= 1, path
+
+
+@pytest.mark.asyncio
+async def test_session_detail_matches_plan_typography_and_gutters(screen_harness: _ScreenHarness) -> None:
+    """セッション画面の本文とツールバーは、計画ファイル画面と同じ書体、文字サイズ、最大幅及び余白で表示する。"""
+    harness = screen_harness
+    await harness.page.set_viewport_size({"width": 1280, "height": 800})
+    read_styles = "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))"
+    body_properties = ["fontFamily", "fontSize", "maxWidth", "paddingLeft", "paddingRight"]
+    toolbar_properties = ["padding"]
+
+    await harness.page.goto(harness.base_url + "/plans")
+    await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    plan_styles = await harness.page.locator("#preview").evaluate(read_styles, body_properties)
+    plan_toolbar_styles = await harness.page.locator("main > .toolbar").evaluate(read_styles, toolbar_properties)
+
+    await harness.page.goto(harness.base_url + "/sessions")
+    await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
+    session_styles = await harness.page.locator("#detail").evaluate(read_styles, body_properties)
+    session_toolbar_styles = await harness.page.locator("main > .toolbar").evaluate(read_styles, toolbar_properties)
+
+    assert session_styles == plan_styles
+    assert session_toolbar_styles == plan_toolbar_styles
+
+
+@pytest.mark.asyncio
 async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """3画面のボタンを共通の配色・境界・角丸で表示し、無効なボタンは不透明度を下げる。"""
     harness = screen_harness
-    properties = ["backgroundColor", "color", "borderTopColor", "borderTopWidth", "borderRadius"]
+    properties = [
+        "backgroundColor",
+        "color",
+        "borderTopColor",
+        "borderTopWidth",
+        "borderRadius",
+        "paddingTop",
+        "paddingRight",
+        "paddingBottom",
+        "paddingLeft",
+        "fontSize",
+    ]
     # 一覧を開くボタンは狭い画面でだけ表示するため、3画面とも同じ幅で比較する。
     await harness.page.set_viewport_size({"width": 600, "height": 800})
     styles: dict[str, dict[str, str]] = {}
@@ -2157,7 +2292,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
 
 @pytest.mark.asyncio
 async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
-    """親セッションの詳細からサブエージェント記録を開き、記録本体が無い項目は選択できない表示とする。"""
+    """親セッションの詳細からサブエージェント記録を開いて呼び出し元へ戻り、記録本体が無い項目は選択できない表示とする。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -2176,9 +2311,16 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     ]
     assert offsets[1] > offsets[0]
 
+    # 呼び出し元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
+    assert await harness.page.locator("#detail .detail-back").count() == 0
     await items.nth(0).click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
     assert "サブエージェントの発話" in await harness.page.locator("#detail").inner_text()
+
+    await harness.page.locator("#detail .detail-back").click()
+    await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
+    assert "Claudeの発話" in await harness.page.locator("#detail").inner_text()
+    assert await harness.page.locator("#detail .detail-back").count() == 0
 
 
 @pytest.mark.asyncio

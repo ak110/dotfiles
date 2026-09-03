@@ -3,7 +3,8 @@
 構造検査（`check_plan_file.py`）、フィードバック登録（`_atk_mq_add.py`）、
 2系統のPreToolUse（`pretooluse.py`・`scripts/claude_hook_pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
-SSOTは`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`の「計画ファイルの完成条件」節。
+成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
+本モジュールの構造定数は計画ファイルの見出し、固定H3及び表の行名の正本であり、同書は当該定数から導いた受理形式を記述する。
 
 構造認識と原記法の検査は分離する。
 見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
@@ -1907,7 +1908,11 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
         review_origin = PLAN_HUMAN_REVIEW_ORIGIN_PATTERN.fullmatch(origin)
         if origin in PLAN_HUMAN_ORIGINS:
             if origin.endswith("フィードバック"):
-                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来には正本ファイル名を括弧内へ記載する: {origin}")
+                errors.append(
+                    f"`## {PLAN_H2_ACTION}`のフィードバック由来には"
+                    "半角空白1字に続けて半角丸括弧で囲んだ正本ファイル名を記載する"
+                    f"（例: `エージェント由来のフィードバック (20260831-000000-001.md)`）: {origin}"
+                )
         elif origin.startswith(f"{PLAN_HUMAN_FEEDBACK_ORIGIN} (") or origin.startswith("エージェント由来のフィードバック ("):
             match = PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN.fullmatch(origin)
             if match is None:
@@ -1925,8 +1930,10 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                 _collect_origin_notices(match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
-                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}又は計画レビュー第nラウンド、"
-                f"ファイル名付きフィードバックにする: {origin}"
+                f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、又は"
+                "区分と半角空白1字と半角丸括弧で囲んだ正本ファイル名"
+                "（例: `エージェント由来のフィードバック (20260831-000000-001.md)`）にする: "
+                f"{origin}"
             )
         decision = row[decision_index]
         if decision not in PLAN_ACTION_DECISIONS:

@@ -62,7 +62,6 @@ from _session_state import read_state, update_state  # noqa: E402  # pylint: dis
 
 # pylint: disable=wrong-import-position,import-error
 from _tracked_subagent_types import TRACKED_SUBAGENT_TYPES as _TRACKED_SUBAGENT_TYPES  # noqa: E402
-from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE  # noqa: E402
 
 # pylint: enable=wrong-import-position,import-error
 
@@ -470,8 +469,6 @@ def _handle_edit_tool(
     tool_input: dict,
     cwd: str,
     notices: list[str],
-    *,
-    is_codex: bool,
 ) -> None:
     """編集成功後の状態記録と文書検査を処理する。
 
@@ -485,7 +482,6 @@ def _handle_edit_tool(
         return
     state = read_state(session_id)
     plan_mode_invoked = bool(state.get("plan_mode_skill_invoked", False))
-    quality_checkpoint_emitted = False
     for operation in operations:
         for display_path in operation.display_paths:
             _record_edited_file(session_id, display_path)
@@ -498,17 +494,6 @@ def _handle_edit_tool(
             _append_conditional_prohibition_notice(operation.path, display_path, notices)
         if plan_mode_invoked and is_plan_component_file(display_path) and operation.is_whole_write:
             notices.append(_plan_file_check_notice(_plan_main_path_for(display_path), cwd))
-        if (
-            tool_name == _hook_tool_input.CODEX_APPLY_PATCH_TOOL
-            and is_codex
-            and plan_mode_invoked
-            and is_plan_component_file(display_path)
-            and operation.is_whole_write
-            and _plan_pair_exists(operation.path)
-        ):
-            quality_checkpoint_emitted = True
-    if quality_checkpoint_emitted:
-        notices.append(_llm_notice(QUALITY_CHECKPOINT_NOTICE))
 
 
 def _append_conditional_prohibition_notice(read_path: str, display_path: str, notices: list[str]) -> None:
@@ -533,13 +518,6 @@ def _plan_main_path_for(display_path: str) -> str:
     if display_path.endswith(".detail.md"):
         return display_path[: -len(".detail.md")] + ".md"
     return display_path
-
-
-def _plan_pair_exists(file_path: str) -> bool:
-    """計画構成要素の計画ファイル（メイン）と計画ファイル（詳細）がともに実在するかを返す。"""
-    main_path = pathlib.Path(_plan_main_path_for(file_path))
-    detail_path = main_path.with_suffix(".detail.md")
-    return main_path.is_file() and detail_path.is_file()
 
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
@@ -611,7 +589,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if parsed is None:
         return 0
     payload, session_id, tool_name, tool_input, cwd = parsed
-    is_codex = _hook_tool_input.is_codex_payload(payload)
 
     # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
@@ -680,7 +657,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # git_log_checkedをリセットしない（リセット対象は`_GIT_LOG_RESET_SUBCOMMANDS`が定める
     # commit / rebase / resetのみとする）。
     if tool_name in ("Write", "Edit", "MultiEdit", _hook_tool_input.CODEX_APPLY_PATCH_TOOL):
-        _handle_edit_tool(session_id, tool_name, tool_input, cwd, notices, is_codex=is_codex)
+        _handle_edit_tool(session_id, tool_name, tool_input, cwd, notices)
         return 0
 
     # Bash以外はここで終了

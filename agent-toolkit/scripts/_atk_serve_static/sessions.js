@@ -17,6 +17,8 @@ const KIND_LABELS = {
 let sessions = [];
 let selected = null;
 let queryText = "";
+// サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元の記録を古い順に保持して戻れるようにする。
+let parentTrail = [];
 
 const listEl = document.getElementById("sessions");
 const warningsEl = document.getElementById("warnings");
@@ -175,7 +177,7 @@ function renderSubagents(detail) {
     description.textContent = subagent.description || "";
     item.append(type, description);
     if (subagent.path) {
-      item.addEventListener("click", () => openSession(detail.host, "claude", subagent.path));
+      item.addEventListener("click", () => openSession(detail.host, "claude", subagent.path, [...parentTrail, selected]));
     } else {
       // 記録本体が残っていない項目は開けないため、選択できない表示とする。
       item.disabled = true;
@@ -185,10 +187,25 @@ function renderSubagents(detail) {
   return container;
 }
 
+function renderBack() {
+  const trail = parentTrail;
+  const parent = trail[trail.length - 1];
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "detail-back button-secondary";
+  button.textContent = "呼び出し元の記録へ戻る";
+  button.addEventListener("click", () => openSession(parent.host, parent.engine, parent.path, trail.slice(0, -1)));
+  return button;
+}
+
 function renderDetail(detail) {
   detailTitleEl.textContent = `${ENGINE_LABELS[detail.engine] || detail.engine} / ${detail.host} / ${detail.project || "(プロジェクト不明)"}`;
   detailUsageEl.textContent = usageText(detail.usage);
   detailEl.replaceChildren();
+
+  if (parentTrail.length > 0) {
+    detailEl.append(renderBack());
+  }
 
   const meta = document.createElement("div");
   meta.className = "secondary-text";
@@ -224,8 +241,10 @@ function renderDetail(detail) {
   }
 }
 
-async function openSession(host, engine, path) {
+// `trail`は開こうとする記録の呼び出し元を古い順に並べる。左ペインから選んだ記録には呼び出し元が無いため既定は空とする。
+async function openSession(host, engine, path, trail = []) {
   selected = { host, engine, path };
+  parentTrail = trail;
   renderList();
   detailEl.replaceChildren();
   detailTitleEl.textContent = "読み込み中...";

@@ -269,6 +269,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_atk_config.py",
         "_atk_help.py",
         "_inherited_venv.py",
+        "_plan_file.py",
         "_wait_schedule.py",
     ):
         shutil.copyfile(source_dir / name, script_dir / name)
@@ -319,6 +320,31 @@ def test_start_tool_descriptions_require_same_turn_observation() -> None:
         assert "返した`session_id`" in tool.description
         assert "同じ応答の中で`wait`を発行して観測する" in tool.description
         assert "結果が不要なら`kill`で破棄する" in tool.description
+
+
+def test_server_instructions_carry_standalone_contract() -> None:
+    """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
+    instructions = subject.mcp.instructions
+    assert instructions is not None
+    assert "同じ応答の中で`wait`を発行して観測する" in instructions
+    assert "結果が不要なら`kill`で破棄する" in instructions
+    assert "engine、model及びeffortは" in instructions
+
+
+def test_tool_descriptions_carry_standalone_contract() -> None:
+    """各ツールの公開説明だけで候補枯渇と継続不能のエラー本文を判別できる。"""
+    tools = {}
+    for tool_name in ("start", "start_explore", "wait", "send_message", "kill"):
+        tool = subject.mcp._tool_manager.get_tool(tool_name)
+        assert tool is not None
+        tools[tool_name] = tool
+    assert "no model candidates remain for model_type" in tools["start"].description
+    assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
+    assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
+    assert "session retention expired" in tools["wait"].description
+    assert "configuration changed" in tools["send_message"].description
+    assert "unknown session" in tools["send_message"].description
+    assert "sessionとbackend processは破棄しない" in tools["kill"].description
 
 
 def test_exclude_session_id_schema_describes_candidate_exclusion() -> None:
@@ -587,6 +613,55 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
     response = await manager.start("plan", "調査", str(tmp_path))
 
     assert codex.start_calls == [("first", "high", False)]
+    assert response["status"] == "failed"
+    assert response["model"] == "first"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_error_status", [429, 529])
+async def test_start_advances_candidate_when_claude_reports_unavailable_status(
+    api_error_status: int,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Claudeが可用性由来のHTTPステータスで終端した候補を除外し、次候補で起動する。"""
+    candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, codex = _manager_with_fake("codex")
+    claude = UnavailableStartBackend(
+        manager.sessions,
+        "claude",
+        error={"message": "api error", "apiErrorStatus": api_error_status},
+    )
+    _install_backend(manager, "claude", claude)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert claude.start_calls == [("first", "high", False)]
+    assert codex.start_calls == [("second", "medium", False)]
+    assert response["engine"] == "codex"
+    assert response["model"] == "second"
+    assert response["status"] == "running"
+    assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [{"message": "bad request", "apiErrorStatus": 400}, {"message": "bad request"}])
+async def test_start_keeps_claude_failure_that_does_not_depend_on_the_candidate(
+    error: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Claudeが可用性由来でないHTTPステータスで終端した場合と、状態を持たない場合は次候補へ進まない。"""
+    candidates = [("claude", "first", "high"), ("claude", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager = subject.AgentsServerManager()
+    claude = UnavailableStartBackend(manager.sessions, "claude", error=error)
+    _install_backend(manager, "claude", claude)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert claude.start_calls == [("first", "high", False)]
     assert response["status"] == "failed"
     assert response["model"] == "first"
 
@@ -2388,9 +2463,19 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
     assert not client.queries
 
 
+@pytest.fixture
+def _owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """所有セッションの解決に使う環境変数を未設定の状態から始める。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+
+
 @pytest.mark.asyncio
-async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> None:
-    """Claude Agent SDKへClaude Code presetと設定読込元を渡す。"""
+@pytest.mark.usefixtures("_owner_session_environment")
+async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude Agent SDKへClaude Code presetと設定読込元、解決した所有セッションを渡す。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "owner-session")
+
     options = claude_backend._build_options(str(tmp_path), "model", "high")
     assert options.system_prompt == {
         "type": "preset",
@@ -2399,7 +2484,10 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path) -> 
     }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
-    assert options.env == {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
+    assert options.env == {
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
+    }
 
 
 def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
@@ -2408,8 +2496,12 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
     assert options.resume == "claude-saved"
 
 
+@pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
-    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。"""
+    """Claude探索起動は設定・スキルを省き、探索用toolと指示を明示する。
+
+    所有セッションを解決できない環境では当該キーを設定しない。
+    """
     options = claude_backend._build_options(str(tmp_path), "model", "high", explore=True)
     assert options.setting_sources == []
     assert options.skills == []

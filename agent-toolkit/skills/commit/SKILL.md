@@ -96,7 +96,7 @@ commit直前に次を実施する。
 明文化された方針が扱わない事項では、同種の複数コミットで一貫して観測され、
 明文化された方針と矛盾しない形式だけをプロジェクト内の慣例として優先する。
 単発のコミット履歴は慣例の根拠にしない。
-方針と履歴が矛盾する場合は`agent-toolkit/rules/01-agent.md`「規範と実態の照合」に従う。
+方針と履歴が矛盾する場合は`agent-toolkit:review-standards`の`review-standards/references/judgment-details.md`「矛盾の原因調査」に従う。
 
 - 形式: `<type>[(<scope>)]: <description>`。破壊的変更は`!`を付ける
 - typeは当該リポジトリのエンドユーザー振る舞いへの影響を基準に選ぶ

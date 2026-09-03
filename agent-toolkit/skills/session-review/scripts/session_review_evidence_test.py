@@ -3431,6 +3431,123 @@ def test_stats_takes_codex_hint_from_input_without_arguments(tmp_path: pathlib.P
     ]
 
 
+def _compaction_entry(timestamp: str, metadata: dict | None = None) -> dict:
+    """Claude Codeのコンパクション境界レコードを作成する。"""
+    entry: dict = {"type": "system", "subtype": "compact_boundary", "timestamp": timestamp}
+    if metadata is not None:
+        entry["compactMetadata"] = metadata
+    return entry
+
+
+def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Path, capsys) -> None:
+    """メイン記録とサブエージェント記録のコンパクションを全件数え、記録に無い欄を補わない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _compaction_entry(
+                "2026-09-02T00:01:00Z",
+                {"trigger": "auto", "preTokens": 493099, "postTokens": 14213, "durationMs": 201674},
+            ),
+            _compaction_entry("2026-09-02T00:02:00Z", {"trigger": "manual"}),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_compaction_entry("2026-09-02T00:03:00Z", {"trigger": "auto", "durationMs": 1300})],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert _events_by_kind(events, "stats-compaction") == [
+        {
+            "kind": "stats-compaction",
+            "record": "agent-child",
+            "line": 1,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:03:00Z",
+            "trigger": "auto",
+            "duration_seconds": 1.3,
+        },
+        {
+            "kind": "stats-compaction",
+            "record": "main",
+            "line": 2,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:01:00Z",
+            "trigger": "auto",
+            "pre_tokens": 493099,
+            "post_tokens": 14213,
+            "duration_seconds": 201.7,
+        },
+        {
+            "kind": "stats-compaction",
+            "record": "main",
+            "line": 3,
+            "engine": "claude",
+            "timestamp": "2026-09-02T00:02:00Z",
+            "trigger": "manual",
+        },
+    ]
+    total = _events_by_kind(events, "stats-compaction-total")[0]
+    assert total == {
+        "kind": "stats-compaction-total",
+        "count": 3,
+        "by_record": {"main": 2, "agent-child": 1},
+        "total_duration_seconds": 203.0,
+    }
+    assert list(total["by_record"]) == ["main", "agent-child"]
+
+
+def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) -> None:
+    """Codex形式のコンパクションを`codex`として数え、所要時間の欄を付けない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry("2026-09-02T00:00:00Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+            {
+                "type": "compacted",
+                "timestamp": "2026-09-02T00:01:00Z",
+                "payload": {"message": "", "window_number": 1},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert _events_by_kind(events, "stats-compaction") == [
+        {
+            "kind": "stats-compaction",
+            "record": "main",
+            "line": 2,
+            "engine": "codex",
+            "timestamp": "2026-09-02T00:01:00Z",
+        }
+    ]
+    assert _events_by_kind(events, "stats-compaction-total")[0] == {
+        "kind": "stats-compaction-total",
+        "count": 1,
+        "by_record": {"main": 1},
+        "total_duration_seconds": 0.0,
+    }
+
+
+def test_stats_reports_zero_compaction_total_without_records(tmp_path: pathlib.Path, capsys) -> None:
+    """コンパクションの記録が無い場合は件数0の集計だけを返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [{"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert not _events_by_kind(events, "stats-compaction")
+    assert _events_by_kind(events, "stats-compaction-total") == [
+        {"kind": "stats-compaction-total", "count": 0, "by_record": {}, "total_duration_seconds": 0.0}
+    ]
+
+
 def test_hook_notices_mode_is_exclusive_with_other_query_modes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -3792,6 +3909,198 @@ def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
         ("plan file <var> was written.", 3),
     ]
     assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """集約実行が4走査の全量をファイルへ書き、標準出力へは要約と未解決記録だけを返す。"""
+    missing_thread = "99999999-9999-4999-8999-999999999999"
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "依頼"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Base directory for this skill: /skills/demo"}],
+                },
+            },
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "作業中"}]}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "失敗の詳細"}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-2", "content": "warning: 警告が出た"}],
+                },
+            },
+            _hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PostToolUse:Bash",
+                    "toolUseID": "call-2",
+                    "content": ["[auto-generated: agent-toolkit/posttooluse][notice] 通知本文"],
+                }
+            ),
+            {
+                "type": "user",
+                "toolUseResult": {"status": "completed", "agentId": "agent-1", "summary": "完了報告"},
+                "message": {"role": "user", "content": "<task-notification>内部通知</task-notification>"},
+            },
+            _codex_tool_use_entry("2026-09-02T00:00:00Z", "call-3", missing_thread),
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "最終結果"}]}},
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+    bundle_events = _read_jsonl(capsys, raw=True)
+
+    stored: dict[str, list[dict]] = {}
+    for filename, single_args in (
+        ("timeline.jsonl", []),
+        ("warnings.jsonl", ["--warn"]),
+        ("stats.jsonl", ["--stats"]),
+        ("hook-notices.jsonl", ["--hook-notices"]),
+    ):
+        path = bundle_dir / filename
+        stored[filename] = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        assert evidence.main([str(transcript), *single_args]) == 0
+        single = [event for event in _read_jsonl(capsys, raw=True) if event["kind"] != "unresolved-record"]
+        assert stored[filename] == single
+        assert {"kind": "bundle-file", "path": str(path.resolve()), "count": len(single)} in bundle_events
+
+    assert {event["event_kind"]: event["count"] for event in bundle_events if event["kind"] == "bundle-kind-count"} == {
+        "user": 1,
+        "skill-invocation": 1,
+        "assistant": 1,
+        "failed-tool": 1,
+        "agent-completion": 1,
+        "final-result": 1,
+    }
+    serialized = json.dumps(bundle_events, ensure_ascii=False)
+    assert "作業中" not in serialized
+    assert "Base directory for this skill" not in serialized
+    assert [event for event in bundle_events if event["kind"] == "bundle-locator"] == [
+        {"kind": "bundle-locator", "event_kind": "user", "record": "main", "line": 1},
+        {"kind": "bundle-locator", "event_kind": "failed-tool", "record": "main", "line": 4, "text": "失敗の詳細"},
+        {"kind": "bundle-locator", "event_kind": "agent-completion", "record": "main", "line": 7, "text": "agent-1: 完了報告"},
+        {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 9, "text": "最終結果"},
+    ]
+    assert [event for event in bundle_events if event["kind"] == "bundle-warning-group"] == [
+        {
+            "kind": "bundle-warning-group",
+            "text": "warning: 警告が出た",
+            "count": 1,
+            "samples": [{"record": "main", "line": 5}],
+        }
+    ]
+    assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == stored["stats.jsonl"]
+    assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 8}
+    assert bundle_events[-1 - len(stored["hook-notices.jsonl"]) : -1] == stored["hook-notices.jsonl"]
+
+
+def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """位置イベントの本文を冒頭200文字へ切り詰め、冒頭120文字が同じ警告を1分類へまとめる。"""
+    body = "あ" * 300
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": body}],
+                },
+            },
+            *(
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {"type": "tool_result", "tool_use_id": f"call-{index}", "content": f"warning: {'い' * 130}{index}"}
+                        ],
+                    },
+                }
+                for index in range(2, 5)
+            ),
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    locator = next(event for event in events if event["kind"] == "bundle-locator")
+    assert locator["text"] == "あ" * 200 + "…[省略]"
+    assert [event for event in events if event["kind"] == "bundle-warning-group"] == [
+        {
+            "kind": "bundle-warning-group",
+            "text": ("warning: " + "い" * 130)[:120],
+            "count": 3,
+            "samples": [{"record": "main", "line": 2}, {"record": "main", "line": 3}, {"record": "main", "line": 4}],
+        }
+    ]
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_bundle_rejects_output_that_is_not_an_existing_directory(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    existing: bool,
+) -> None:
+    """出力先が実在しない場合とディレクトリでない場合は、ファイルを生成せず終了コード2で返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+    destination = tmp_path / ("regular.txt" if existing else "missing")
+    if existing:
+        destination.write_text("", encoding="utf-8")
+
+    assert evidence.main([str(transcript), "--bundle", str(destination)]) == 2
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["error"]
+    assert str(destination) in events[0]["text"]
+    assert list(tmp_path.rglob("*.jsonl")) == [transcript]
+
+
+@pytest.mark.parametrize(
+    "conflicting",
+    [["--warn"], ["--grep", "依頼"], ["--detail", "1"], ["--stats"], ["--hook-notices"]],
+)
+def test_bundle_is_exclusive_with_other_query_modes(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    conflicting: list[str],
+) -> None:
+    """集約実行と他の照会モードの併用は引数誤用として終了コード2で返す。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir), *conflicting]) == 2
+
+    events = _read_jsonl(capsys)
+    assert [event["kind"] for event in events] == ["error"]
+    assert "--bundle" in events[0]["text"]
+    assert not list(bundle_dir.iterdir())
 
 
 def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> None:

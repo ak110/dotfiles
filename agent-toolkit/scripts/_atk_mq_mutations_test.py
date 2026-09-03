@@ -1811,6 +1811,7 @@ def test_cmd_convert_to_plan_displays_commit_for_single_planning_input(
         "target_commit": "b" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": [],
+        "body_match": "一致",
         "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
@@ -1850,6 +1851,7 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "target_commit": "a" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": ["dependency.md"],
+        "body_match": "一致",
         "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
@@ -3056,6 +3058,7 @@ def test_cli_edit_outputs_saved_body_for_each_write_route(
     output = capsys.readouterr().out
     marker = "    saved_body:\n"
     assert output.count(marker) == 1
+    assert "    body_match: 一致\n" + marker in output
     assert output.split(marker, maxsplit=1)[1].rstrip("\n") == saved.rstrip("\n")
 
 
@@ -3523,6 +3526,7 @@ class TestNoninteractiveEdit:
             target_repo: str | None = None,
             lock_timeout: float = -1,
             expected_content: str | None = None,
+            finalized_content: dict[str, str] | None = None,
         ) -> bool:
             path.write_text(path.read_text(encoding="utf-8").replace("編集前", "競合側の変更"), encoding="utf-8")
             return original_edit(
@@ -3533,6 +3537,7 @@ class TestNoninteractiveEdit:
                 target_repo=target_repo,
                 lock_timeout=lock_timeout,
                 expected_content=expected_content,
+                finalized_content=finalized_content,
             )
 
         monkeypatch.setattr(mutations, "edit_entry_content", conflict)
@@ -3853,6 +3858,7 @@ class TestAppendEdit:
             target_repo: str | None = None,
             lock_timeout: float = -1,
             expected_content: bytes | None = None,
+            finalized_content: dict[str, str] | None = None,
         ) -> bool:
             path.write_bytes(path.read_bytes() + "競合側の変更".encode())
             return original_append(
@@ -3863,6 +3869,7 @@ class TestAppendEdit:
                 target_repo=target_repo,
                 lock_timeout=lock_timeout,
                 expected_content=expected_content,
+                finalized_content=finalized_content,
             )
 
         monkeypatch.setattr(mutations, "append_entry_content", conflict)
@@ -5337,3 +5344,35 @@ class TestPathTraversalRejection:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "不正なファイル名" in captured.err or "基準ディレクトリ外" in captured.err
+
+
+def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """編集の保存経路で本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
+    notes = _setup_notes(tmp_path)
+    filename = "20260827-000000-001.md"
+    _write_feedback_file(notes, filename, body="編集前")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    captured: dict[str, str] = {}
+
+    def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+        captured["expected"] = expected_body
+        path.write_text(expected_body.replace("編集後", "改変後", 1), encoding="utf-8")
+        return original_read(path, expected_body=expected_body)
+
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "_read_saved_entry_details",
+        read_after_alteration,
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["mq", "edit", filename, "編集後"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    position = captured["expected"].index("編集後") + 1
+    assert f"    body_match: 不一致（最初の差異: {position}文字目）\n" in capsys.readouterr().out
