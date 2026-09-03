@@ -1068,8 +1068,8 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     `.git`を持つ祖先（リポジトリルート）を発見しても即確定とせず、以下の順に実在確認する。
 
     1. `file_path`の各祖先ディレクトリ（近い順。同一ディレクトリの兄弟ファイル参照に対応）
-    2. リポジトリルート配下の`agent-toolkit/agents/`・`agent-toolkit/rules/`・
-       `agent-toolkit/skills/`（近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
+    2. リポジトリルート配下の`agent-toolkit/rules/`・`agent-toolkit/skills/`
+       （近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
 
     いずれの経路でも実在しない場合は`None`を返す。
     """
@@ -1083,9 +1083,7 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
             repo_root = candidate
             break
     if repo_root is not None:
-        search_roots.extend(
-            repo_root / neighbor for neighbor in ("agent-toolkit/agents", "agent-toolkit/rules", "agent-toolkit/skills")
-        )
+        search_roots.extend(repo_root / neighbor for neighbor in ("agent-toolkit/rules", "agent-toolkit/skills"))
 
     for candidate in search_roots:
         resolved = candidate / referenced

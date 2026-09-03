@@ -119,7 +119,7 @@ description: >
 渡された集合の外に属する`track`の行を採否判断と更新の対象にせず、`atk review-table`の公開CLI契約に従って応答と検証を完了する。記録した後は`atk review-table show`で保存本文を取得し、記録した本文と照合する。出力の書式は同コマンドのヘルプを正本とする。欠落又は不一致を検出した場合は、同じ経路で修復してから照合をやり直す。
 検証は表全体を対象とし、扱う`track`集合による限定は採否判断と更新にだけ適用する。
 実装レビューでは、修正対象を`implementation-review`の単一trackに限定する。
-実装レビュー担当へ渡す情報は、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の生成契約に従って調整主体が渡した`review_contract`と直接影響範囲を超えて自ら拡張しない。
+実装レビュー担当へ渡す情報は、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の生成契約に従って呼び出し元が渡した`review_contract`と直接影響範囲を超えて自ら拡張しない。
 
 ## 完了報告
 

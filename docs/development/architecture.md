@@ -103,8 +103,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを正本として`scripts/sync_generated_files.py`で生成する
-- `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のagents・rulesだけをリンクする
-- `setup_codex_links.py`が公開する`agent-toolkit/agents/*.md`は、Codexメインが名前付きagentの呼び出し時だけ現在のセッションへ直接適用するClaude Markdownのagent定義であり、Codex Custom Agent用TOMLではない。TOMLの生成物及びagent本文の複製は作成しない
+- `setup_codex_links.py`はdotfiles固有スキルと、plugin非対応のrulesだけをリンクする
 - `post_apply.py`はリンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順に処理する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 

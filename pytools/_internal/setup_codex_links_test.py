@@ -194,10 +194,9 @@ def test_links_replaces_session_review_skill_with_reference_directory() -> None:
     assert setup_codex_links._LINKS["references"] == ".chezmoi-source/dot_claude/references"
 
 
-def test_links_contains_agent_toolkit_agents() -> None:
-    """`_LINKS`辞書に`agent-toolkit/agents`エントリが含まれること。"""
-    assert "agent-toolkit/agents" in setup_codex_links._LINKS
-    assert setup_codex_links._LINKS["agent-toolkit/agents"] == "agent-toolkit/agents"
+def test_links_omits_agent_toolkit_agents() -> None:
+    """`_LINKS`辞書に`agent-toolkit/agents`エントリが含まれないこと。"""
+    assert "agent-toolkit/agents" not in setup_codex_links._LINKS
     assert setup_codex_links._LINKS["agent-toolkit/rules"] == "agent-toolkit/rules"
 
 

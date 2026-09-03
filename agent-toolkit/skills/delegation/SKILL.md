@@ -15,7 +15,7 @@ user-invocable: false
 委譲先とモデルを選ぶ時点では`agent-toolkit/skills/delegation/references/runtime-routing.md`を全文読み、同文書の経路選択とモデル区分を適用する。
 Claude Code固有経路を確定する時は`agent-toolkit/skills/delegation/references/claude-code-runtime.md`を全文読む。
 完了通知及び待機・停滞を確定する時は`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`を全文読む。
-計画実装の受領契約を確定する時は`${CLAUDE_PLUGIN_ROOT}/share/plan-executor.parent.md`を全文読む。
+計画実装の受領契約を確定する時は、起動経路に対応する正本を全文読む。`agent-toolkit:process-feedbacks`の経路では同スキルの`references/run-lanes.md`、`agent-toolkit:plan-mode`の直接起動経路では同スキルのSKILL.mdを正本とする。
 
 ## 送信
 
@@ -163,13 +163,9 @@ Codexの初回起動（元担当不在を実測確認した初回生成前失敗
 ```text
 route: <実際に使った経路>
 identifier: <threadまたはagent識別子>
-status: completed | checkpoint | needs_escalation
+status: completed | needs_escalation
 response: <受信者の最小完了報告>
 ```
-
-`checkpoint`は作業継続中の定義済み中間報告として受理する。
-`checkpoint`を返せるのは、呼び出し元が最上位セッションであり、呼び出し元のタスク文書がチェックポイントを
-定義する委譲に限る（`agent-toolkit/agents/plan-executor.md`のチェックポイント契約を参照）。
 
 `needs_escalation`は確認、認可又は前提の補正を呼び出し元へ返す状態である。
 回答後は同じ担当へ同じtaskを返す一般的な継続条件を適用する。

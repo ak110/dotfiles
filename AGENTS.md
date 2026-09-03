@@ -75,12 +75,12 @@
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
   修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。
   `.claude/skills/`配下のプロジェクトローカルスキルはプラグイン修飾を付けず素のスキル名で書き、
-  サブエージェント名は起動指示・地の文とも完全名称（`feedbacks-planner`等）で書く
+  サブエージェント名は起動指示・地の文とも短縮せず完全名称で書く
 
 ## 変更後の規範の自セッション適用
 
 本リポジトリでコーディングエージェント自身のふるまいを定める規範を変更する作業では、変更を確定した時点から当該セッションの以降の作業へ変更後の文面を適用する。
-対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/agents/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
+対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
 規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
 適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
@@ -108,8 +108,6 @@
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |
 | `agent-toolkit/skills/`配下 | 全プロジェクト編集者 | スキルの指示本体 |
-| `agent-toolkit/agents/`配下 | 全プロジェクト編集者 | サブエージェントの指示本体 |
-| `agent-toolkit/agents/`配下のfrontmatterコメント | dotfiles編集者 | 連携先や注意事項などの編集用メタ情報 |
 | `.chezmoi-source/dot_claude/`配下 | 全プロジェクト編集者・dotfiles利用者 | 常時自動ロードされる行動原則（dotfiles利用者には配布先`~/.claude/`相当） |
 | `.chezmoi-source/dot_codex/`配下 | 全プロジェクト編集者 | Codex向けのユーザー設定とClaude Code側原本へのリンク |
 | `docs/guide/claude-code-guide.md` | agent-toolkit利用者 | プラグインの導入・更新手順 |

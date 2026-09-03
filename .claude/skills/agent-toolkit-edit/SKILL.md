@@ -83,8 +83,8 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit:plan-mode`から作業を開始し、承認後はAgentツールで`agent-toolkit:plan-executor`を
-起動して引き継ぐ。工程の詳細は各スキル・agent定義を正本とする。
+`agent-toolkit:plan-mode`から作業を開始し、承認後はメインが`agents_server`で実装担当を直接起動して引き継ぐ。
+工程の詳細は各スキルを正本とする。
 計画ファイルの実装者向け領域にあるレビューステップへ
 `レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップする。
 
@@ -195,12 +195,10 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 
 次のいずれかを変更した場合は、変更後の互換起動条件を確認する。
 
-- `agent-toolkit/agents/`配下のagent定義
 - `agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」のキー
 - `agent-toolkit/share/codex-agents-base.md`のCodex互換起動条件
 
-`agent-toolkit/agents/`配下の全定義を扱えることを人手で確認する。
-3つの対応関係は機械判定できる入力を持たないため、自動検査では保証しない。
+両者の対応関係は機械判定できる入力を持たないため、自動検査では保証しない。人手で確認する。
 
 ## フック実装の配置先（個人フックと配布物）
 
