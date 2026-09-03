@@ -1,13 +1,15 @@
 /* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
 
 html, body { height: 100%; }
+
+/* 書体・文字サイズ・行の高さを`markdown.css`へそろえ、右ペインの本文を計画ファイル画面の本文と同じ表示にする。 */
 body {
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: system-ui, sans-serif;
+  font-family: "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
   color: #1a1a1a;
   font-size: 1.125rem;
   line-height: 1.7;
@@ -96,11 +98,12 @@ main {
   overflow: hidden;
 }
 
+/* 内側の余白は計画ファイル画面のツールバーとそろえる。 */
 main .toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   border-bottom: 1px solid #e6e6e6;
 }
 
@@ -128,6 +131,10 @@ main .spacer { flex: 1; }
   padding: 1rem;
   box-sizing: border-box;
 }
+
+/* サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元へ戻る操作を本文の先頭へ置く。
+   配色・境界・角丸・寸法は`shell.css`の共通規則が定める。本規則は下の要素との間隔だけを指定する。 */
+.detail-back { margin-bottom: 10px; }
 
 .subagents {
   margin-bottom: 10px;

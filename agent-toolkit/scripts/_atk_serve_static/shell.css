@@ -61,8 +61,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .button-danger:hover { background: var(--color-danger-hover); }
 
 /* ヘッダーの子要素の数は画面ごとに異なるため、列を固定してナビゲーションを画面中央へ置く。
-   高さ・内側の余白・影・折り返しは本ファイルを正本とし、画面固有のCSSは水平方向の余白だけを上書きする。 */
+   高さ・文字サイズ・内側の余白・影・折り返しは本ファイルを正本とし、画面固有のCSSは水平方向の余白だけを上書きする。 */
 .app-header {
+  --header-line-height: 1.55;
   position: sticky;
   z-index: 10;
   top: 0;
@@ -75,8 +76,18 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   background: rgb(255 255 255 / 0.96);
   box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
   font-family: system-ui, sans-serif;
-  /* 各画面の本文用の行の高さがヘッダーへ及ぶと、同じ部品の高さが画面ごとに変わるため明示する。 */
-  line-height: 1.55;
+  /* 各画面の本文用の文字サイズと行の高さがヘッダーへ及ぶと、同じ部品の大きさが画面ごとに変わるため明示する。 */
+  font-size: 1rem;
+  line-height: var(--header-line-height);
+}
+
+/* フィードバック画面だけが操作群のボタンを持つため、ボタンの有無でヘッダーの高さが変わらないよう
+   3つの列へボタンと同じ高さを最小値として与える。ボタンの高さは、継承する文字サイズと行の高さの積へ
+   ボタン自身の上下の内側の余白と上下の境界線を加えた値である。 */
+.app-header .header-title,
+.app-header .app-nav,
+.app-header .header-actions {
+  min-height: calc(1em * var(--header-line-height) + var(--space-1) * 2 + 2px);
 }
 
 .app-header .header-title {

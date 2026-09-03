@@ -2112,9 +2112,27 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
 
 
 @pytest.mark.asyncio
-async def test_header_layout_matches_on_three_screens_at_narrow_width(screen_harness: _ScreenHarness) -> None:
-    """折り返しが起きる幅でも、3画面の見出しとナビゲーションの大きさ、及びナビゲーションの水平位置がそろう。"""
+async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHarness) -> None:
+    """3画面のヘッダーの高さと文字サイズがそろい、折り返しが起きる幅でも見出しとナビゲーションの大きさと水平位置がそろう。"""
     harness = screen_harness
+    await harness.page.set_viewport_size({"width": 1400, "height": 800})
+    headers: dict[str, dict[str, float | str]] = {}
+
+    for path in ("/", "/plans", "/sessions"):
+        await harness.page.goto(harness.base_url + path)
+        header = harness.page.locator(".app-header")
+        await header.wait_for(state="visible")
+        header_box = await header.bounding_box()
+        assert header_box is not None, path
+        headers[path] = {
+            "height": round(header_box["height"], 1),
+            # ヘッダー内の部品は各画面の本文用の指定ではなく共有ヘッダーの文字サイズを継承する。
+            "font_size": await header.evaluate("(element) => getComputedStyle(element).fontSize"),
+        }
+
+    assert headers["/plans"] == headers["/"]
+    assert headers["/sessions"] == headers["/"]
+
     await harness.page.set_viewport_size({"width": 600, "height": 800})
     layouts: dict[str, dict[str, float | str]] = {}
 
@@ -2129,7 +2147,7 @@ async def test_header_layout_matches_on_three_screens_at_narrow_width(screen_har
         title_box = await title.bounding_box()
         navigation_box = await navigation.bounding_box()
         assert header_box is not None and title_box is not None and navigation_box is not None, path
-        # フィードバック画面だけが同期操作の欄を持つため、ヘッダー全体の高さと絶対位置は画面ごとに異なる。
+        # 折り返す幅ではフィードバック画面だけが同期操作の欄を別の行に置くため、ヘッダー全体の高さと絶対位置は画面ごとに異なる。
         # 3画面が共通して持つ部品の大きさと、ヘッダー左端からの水平位置を比較する。
         layouts[path] = {
             "title_height": round(title_box["height"], 1),
@@ -2167,26 +2185,25 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
 
 @pytest.mark.asyncio
 async def test_session_detail_matches_plan_typography_and_gutters(screen_harness: _ScreenHarness) -> None:
-    """セッション画面の本文は、計画ファイル画面の本文と同じ文字サイズ、最大幅及び左右余白で表示する。"""
+    """セッション画面の本文とツールバーは、計画ファイル画面と同じ書体、文字サイズ、最大幅及び余白で表示する。"""
     harness = screen_harness
     await harness.page.set_viewport_size({"width": 1280, "height": 800})
-    properties = ["fontSize", "maxWidth", "paddingLeft", "paddingRight"]
+    read_styles = "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))"
+    body_properties = ["fontFamily", "fontSize", "maxWidth", "paddingLeft", "paddingRight"]
+    toolbar_properties = ["padding"]
 
     await harness.page.goto(harness.base_url + "/plans")
     await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    plan_styles = await harness.page.locator("#preview").evaluate(
-        "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))",
-        properties,
-    )
+    plan_styles = await harness.page.locator("#preview").evaluate(read_styles, body_properties)
+    plan_toolbar_styles = await harness.page.locator("main > .toolbar").evaluate(read_styles, toolbar_properties)
 
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
-    session_styles = await harness.page.locator("#detail").evaluate(
-        "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))",
-        properties,
-    )
+    session_styles = await harness.page.locator("#detail").evaluate(read_styles, body_properties)
+    session_toolbar_styles = await harness.page.locator("main > .toolbar").evaluate(read_styles, toolbar_properties)
 
     assert session_styles == plan_styles
+    assert session_toolbar_styles == plan_toolbar_styles
 
 
 @pytest.mark.asyncio
@@ -2275,7 +2292,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
 
 @pytest.mark.asyncio
 async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
-    """親セッションの詳細からサブエージェント記録を開き、記録本体が無い項目は選択できない表示とする。"""
+    """親セッションの詳細からサブエージェント記録を開いて呼び出し元へ戻り、記録本体が無い項目は選択できない表示とする。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -2294,9 +2311,16 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     ]
     assert offsets[1] > offsets[0]
 
+    # 呼び出し元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
+    assert await harness.page.locator("#detail .detail-back").count() == 0
     await items.nth(0).click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
     assert "サブエージェントの発話" in await harness.page.locator("#detail").inner_text()
+
+    await harness.page.locator("#detail .detail-back").click()
+    await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
+    assert "Claudeの発話" in await harness.page.locator("#detail").inner_text()
+    assert await harness.page.locator("#detail .detail-back").count() == 0
 
 
 @pytest.mark.asyncio
