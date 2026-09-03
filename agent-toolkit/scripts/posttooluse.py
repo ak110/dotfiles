@@ -173,7 +173,7 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__agents_server__",
 )
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore")
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -325,7 +325,7 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if model_type is not None:
             record["model_type"] = model_type
-        if operation in {"start", "start_explore"}:
+        if operation in {"start", "start_explore", "start_shell"}:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":

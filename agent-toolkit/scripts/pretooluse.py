@@ -22,7 +22,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
@@ -1164,7 +1164,7 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__agents_server__",
 )
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore")
+    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -2767,7 +2767,7 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
     guidance = (
         "Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved file,"
         " select the required record type from structured output, or run the command in a"
-        " separated context with the `agent-toolkit:shell-exec` skill."
+        " separated context with the `start_shell` tool of agents_server."
     )
     if _record_repeat_detection(session_id, "output_truncation_detected"):
         print(

@@ -7,7 +7,7 @@ import dataclasses
 import datetime
 import pathlib
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import Any, Literal
 
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
@@ -24,7 +24,22 @@ EXPLORE_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
 あなたは調査専用の担当である。依頼された対象を読み取り、結論と根拠だけを日本語で返す。
 ファイルを作成、変更又は削除しない。コマンドは対象を変更しない読み取り操作に限る。
 所在、該当箇所及び観測した事実を、後続の判断に足りる粒度で列挙する。"""
+SHELL_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
+あなたはコマンド実行専用の担当である。依頼されたコマンドを実行し、終了状態と要約だけを日本語で返す。
+指示された操作だけを実行し、指示にない操作を追加しない。
+コマンドの生出力を呼び出し元へ転記せず、終了状態、警告、依頼で指定された値、及び後続の判断に必要な要約を報告する。
+失敗原因の特定に必要な行だけを原文のまま添える。
+コマンドが失敗した場合は出力をそのまま報告し、独自の回避策を試みない。"""
 ModelCandidate = tuple[str, str, str]
+LaunchKind = Literal["delegate", "explore", "shell"]
+# 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
+LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
+    "delegate": DELEGATE_SYSTEM_PROMPT,
+    "explore": EXPLORE_SYSTEM_PROMPT,
+    "shell": SHELL_SYSTEM_PROMPT,
+}
+# プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
+LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
 
 
 class SessionOwnerGoneError(RuntimeError):
@@ -156,7 +171,7 @@ class SessionState:
     effort: str | None = None
     engine: str = "codex"
     model_type: str | None = None
-    explore: bool = False
+    launch_kind: LaunchKind = "delegate"
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     turn_id: str = ""
     status: str = "running"
@@ -254,7 +269,7 @@ class SessionResumeState:
     effort: str | None
     engine: str
     model_type: str | None = None
-    explore: bool = False
+    launch_kind: LaunchKind = "delegate"
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
 
     @classmethod
@@ -264,7 +279,7 @@ class SessionResumeState:
             session_id=session.session_id,
             cwd=session.cwd,
             model_type=session.model_type,
-            explore=session.explore,
+            launch_kind=session.launch_kind,
             excluded_candidates=session.excluded_candidates,
             model=session.model,
             effort=session.effort,
@@ -313,6 +328,13 @@ def _validate_cwd(cwd: str) -> None:
         raise ValueError("cwd must be a non-empty absolute path")
     if not pathlib.Path(cwd).is_dir():
         raise ValueError(f"cwd is not an existing directory: {cwd}")
+
+
+def _validate_shell_request(command: str, summary_policy: str) -> None:
+    if not isinstance(command, str) or not command.strip():
+        raise ValueError("command must be a non-empty string")
+    if not isinstance(summary_policy, str) or not summary_policy.strip():
+        raise ValueError("summary_policy must be a non-empty string")
 
 
 def _validate_model_effort(model: str | None, effort: str | None) -> None:

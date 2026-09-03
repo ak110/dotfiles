@@ -24,9 +24,10 @@ from pathlib import Path
 from typing import Any
 
 from _agents_server_state import (
-    DELEGATE_SYSTEM_PROMPT,
-    EXPLORE_SYSTEM_PROMPT,
+    LAUNCH_SYSTEM_PROMPTS,
+    LIGHTWEIGHT_LAUNCH_KINDS,
     TERMINAL_STATUSES,
+    LaunchKind,
     ModelCandidate,
     ResumePrompt,
     SessionState,
@@ -386,7 +387,7 @@ class AppServerManager:
         effort: str | None = None,
         *,
         model_type: str | None = None,
-        explore: bool = False,
+        launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """新しいthreadとturnを開始し、直ちにsession状態を返す。"""
@@ -401,9 +402,9 @@ class AppServerManager:
         }
         if model is not None:
             params["model"] = model
-        if explore:
+        if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
             params["config"] = {"project_doc_max_bytes": 0}
-        params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT if explore else DELEGATE_SYSTEM_PROMPT
+        params["developerInstructions"] = LAUNCH_SYSTEM_PROMPTS[launch_kind]
         thread_response = await client.request("thread/start", params)
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
@@ -413,7 +414,7 @@ class AppServerManager:
             session_id=session_id,
             cwd=cwd,
             model_type=model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
             model=model,
             effort=effort,
@@ -440,7 +441,7 @@ class AppServerManager:
         effort: str | None = None,
         *,
         model_type: str | None = None,
-        explore: bool = False,
+        launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
@@ -451,7 +452,7 @@ class AppServerManager:
             session_id=session_id,
             cwd=cwd,
             model_type=model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
             model=model,
             effort=effort,
@@ -604,9 +605,9 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
-        if session.explore:
+        if session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
             resume_params["config"] = {"project_doc_max_bytes": 0}
-        resume_params["developerInstructions"] = EXPLORE_SYSTEM_PROMPT if session.explore else DELEGATE_SYSTEM_PROMPT
+        resume_params["developerInstructions"] = LAUNCH_SYSTEM_PROMPTS[session.launch_kind]
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:

@@ -19,7 +19,9 @@ from typing import Any, Literal, cast
 import _plan_file
 from _agents_server_state import (
     DELEGATE_SYSTEM_PROMPT,
-    EXPLORE_SYSTEM_PROMPT,
+    LAUNCH_SYSTEM_PROMPTS,
+    LIGHTWEIGHT_LAUNCH_KINDS,
+    LaunchKind,
     ModelCandidate,
     ResumePrompt,
     SessionOwnerGoneError,
@@ -31,6 +33,11 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _ENV_OWNER_SESSION = "AGENT_TOOLKIT_OWNER_SESSION"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
+# 軽量な起動条件で許可するツール。探索は読み取り操作、シェル実行はコマンド実行と結果の確認へ限る。
+_LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
+    "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+    "shell": ["Bash", "Read"],
+}
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
 
@@ -75,7 +82,7 @@ def _build_options(
     model: str | None,
     effort: str | None,
     session_id: str | None = None,
-    explore: bool = False,
+    launch_kind: LaunchKind = "delegate",
 ) -> Any:
     """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
@@ -90,11 +97,12 @@ def _build_options(
     if owner_session is not None:
         env[_ENV_OWNER_SESSION] = owner_session
     # 委譲先のプロンプトキャッシュ保持期間を経路別に固定する。評価順序は`_wait_schedule.py`のdocstringを正本とする。
-    # 探索起動は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
+    # 軽量起動（探索委譲とシェル実行委譲）は連続する要求の間隔が短く、5分でも失効しないため、書き込み単価の低い側を選ぶ。
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
-    # 前提が崩れた場合は、探索起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
+    # 前提が崩れた場合は、軽量起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
     # 1時間で書き込む事象を、セッション記録の`message.usage.cache_creation`から観測できる。
-    if explore:
+    lightweight = launch_kind in LIGHTWEIGHT_LAUNCH_KINDS
+    if lightweight:
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
         env["CLAUDE_CODE_PROMPT_CACHE_TTL"] = "5m"
     else:
@@ -106,16 +114,18 @@ def _build_options(
         "resume": session_id,
         "permission_mode": "bypassPermissions",
         "env": env,
-        "setting_sources": [] if explore else ["user", "project"],
+        "setting_sources": [] if lightweight else ["user", "project"],
         "system_prompt": (
-            EXPLORE_SYSTEM_PROMPT if explore else {"type": "preset", "preset": "claude_code", "append": DELEGATE_SYSTEM_PROMPT}
+            LAUNCH_SYSTEM_PROMPTS[launch_kind]
+            if lightweight
+            else {"type": "preset", "preset": "claude_code", "append": DELEGATE_SYSTEM_PROMPT}
         ),
     }
-    if explore:
+    if lightweight:
         options.update(
             skills=[],
             tools={"type": "preset", "preset": "claude_code"},
-            allowed_tools=["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
+            allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
     return ClaudeAgentOptions(**options)
 
@@ -169,7 +179,7 @@ class ClaudeServerManager:
         effort: str | None = None,
         *,
         model_type: str | None = None,
-        explore: bool = False,
+        launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         return await self._start_owned_task(
@@ -179,7 +189,7 @@ class ClaudeServerManager:
             effort,
             session_id=None,
             model_type=model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
         )
 
@@ -192,7 +202,7 @@ class ClaudeServerManager:
         effort: str | None = None,
         *,
         model_type: str | None = None,
-        explore: bool = False,
+        launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。"""
@@ -204,7 +214,7 @@ class ClaudeServerManager:
             effort,
             session_id=session_id,
             model_type=model_type,
-            explore=explore,
+            launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
         )
 
@@ -226,11 +236,11 @@ class ClaudeServerManager:
         *,
         session_id: str | None,
         model_type: str | None,
-        explore: bool,
+        launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
-        options = _build_options(cwd, model, effort, session_id, explore=explore)
+        options = _build_options(cwd, model, effort, session_id, launch_kind=launch_kind)
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
         task: asyncio.Task[Any] = asyncio.create_task(
@@ -243,7 +253,7 @@ class ClaudeServerManager:
                 initialized,
                 expected_session_id=session_id,
                 model_type=model_type,
-                explore=explore,
+                launch_kind=launch_kind,
                 excluded_candidates=excluded_candidates,
             )
         )
@@ -311,7 +321,7 @@ class ClaudeServerManager:
         *,
         expected_session_id: str | None,
         model_type: str | None,
-        explore: bool,
+        launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
     ) -> None:
         client: Any = None
@@ -383,7 +393,7 @@ class ClaudeServerManager:
                                     session_id=session_id,
                                     cwd=cwd,
                                     model_type=model_type,
-                                    explore=explore,
+                                    launch_kind=launch_kind,
                                     excluded_candidates=excluded_candidates,
                                     model=model,
                                     effort=effort,

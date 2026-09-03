@@ -126,13 +126,14 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-委譲は`start`・`start_explore`・`wait`・`send_message`・`kill`の5ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
+委譲は`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`の6ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
 `prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
 応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`と失敗した`session_id`を`exclude_session_id`へ渡して次の候補を起動する。
-`start_explore`は`fast`、`prompt`、絶対`cwd`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使う。`exclude_session_id`へ渡せるのは、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件の一致しないsession IDは、別の設定キーの候補が除外へ混入するため開始前にエラーとなる。
+`start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、既定は`true`とする。`exclude_session_id`へ渡せるのは、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件の一致しないsession IDは、別の設定キーの候補が除外へ混入するため開始前にエラーとなる。
+`start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検査コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は、委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
 `send_message`は、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補が、起動に使った実効値と一致しない場合に`configuration changed`を返す。呼び出し側は検収済み状態を渡して新規起動する。
-`start`・`start_explore`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
+`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。`timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。固有のtimeout要件がなければ`timeout`を省略し、呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。`timeout=0`は待機せず現状態を返し、
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
@@ -453,8 +454,6 @@ Claude Codeで有効化する。
 - `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
-- `agent-toolkit:shell-exec`: 長出力が予想されるコマンド列をサブエージェントへ委譲し、
-  メインへ終了状態と要約だけを返す
 - `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する

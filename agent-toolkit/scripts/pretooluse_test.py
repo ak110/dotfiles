@@ -3357,6 +3357,19 @@ class TestCheckCodexMcpCwd:
         assert result.returncode == 2
         assert "relative/path" in result.stderr
 
+    def test_start_shell_blocks_relative_path_cwd(self, state_dir: dict[str, str]) -> None:
+        """シェル実行委譲も相対`cwd`を開始前に拒否する。"""
+        result = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
+                "tool_input": {"command": "make test", "cwd": "relative/path", "summary_policy": "終了状態だけ"},
+                "session_id": "shell-cwd-relative",
+            },
+            env_overrides=state_dir,
+        )
+        assert result.returncode == 2
+        assert "relative/path" in result.stderr
+
     def test_allows_absolute_path_cwd(self, state_dir: dict[str, str]) -> None:
         """`cwd`が絶対パスの場合は許可する。"""
         result = _run(
@@ -3991,7 +4004,7 @@ class TestBashOutputTruncationWarning:
         assert second.returncode == 2
         assert "detected again in this session" in second.stderr
         assert "tee" in second.stderr
-        assert "agent-toolkit:shell-exec" in second.stderr
+        assert "`start_shell` tool of agents_server" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
 
     def test_output_truncation_block_suppresses_status_diagnosis(self, tmp_path: pathlib.Path) -> None:
@@ -4071,7 +4084,7 @@ class TestBashOutputTruncationWarning:
         # 全量保存・構造化出力の抽出・分離実行の3つの代替手段を示す
         assert "tee" in context
         assert "structured output" in context
-        assert "agent-toolkit:shell-exec" in context
+        assert "`start_shell` tool of agents_server" in context
 
     @pytest.mark.parametrize(
         "command",

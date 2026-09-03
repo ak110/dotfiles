@@ -1433,6 +1433,23 @@ class TestAgentsServerSessionState:
         assert run_operation(sid, remote_session_id, "start", status="running") is True
         assert run_operation(sid, remote_session_id, "kill", status="interrupted") is False
 
+    def test_start_shell_records_pending_observation(self, tmp_path: pathlib.Path) -> None:
+        """シェル実行委譲も観測を試みていない作業として記録する。"""
+        sid = "pending-shell"
+        remote_session_id = "remote-shell"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
+                "tool_input": {"cwd": str(tmp_path), "command": "make test", "summary_policy": "終了状態だけ"},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "running"}},
+            },
+            state_dir=tmp_path,
+        )
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["pending_observation"] is True
+        assert record["owner_agent_id"] == "main"
+
     def test_pending_work_records_the_agent_that_triggered_it(self, tmp_path: pathlib.Path) -> None:
         """startと配送成立send_messageは、各作業を発生させた主体を観測責任者として記録する。"""
         sid = "pending-owner"

@@ -71,11 +71,11 @@ class CodexHookProjection(NamedTuple):
 CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
-        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__send_message|mcp__agents_server__kill",
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
-        matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill",
+        matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill",
     ),
     "PermissionRequest": CodexHookProjection((CODEX_PERMISSION_REQUEST_COMMAND,)),
     "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
