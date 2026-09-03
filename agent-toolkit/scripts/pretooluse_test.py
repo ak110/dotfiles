@@ -1872,6 +1872,9 @@ class TestBashSleepPollPattern:
             ("while true; do sleep 60; git status --short; done", "sleep-poll-first-24"),
             ("while :; do sleep 60; git status --short; done", "sleep-poll-first-25"),
             ("for item in a b; do sleep 60; git status --short; done", "sleep-poll-first-26"),
+            # 条件式が読み取り専用の状態確認であるループは、本体の待機だけで反復ポーリングになる。
+            ("while pgrep -f make; do sleep 5; done", "sleep-poll-first-27"),
+            ("sleep 5; pgrep -f make", "sleep-poll-first-28"),
         ],
     )
     def test_first_detection_warns_and_allows(
@@ -1934,6 +1937,8 @@ class TestBashSleepPollPattern:
                 "while true; do while test -f /tmp/marker; do echo inner; done; sleep 60; git status --short; done",
                 "sleep-poll-allow-38",
             ),
+            # 条件式が読み取り専用の状態確認でないループの本体は、待機だけでは検出しない。
+            ("while read -r line; do sleep 1; done < /tmp/list.txt", "sleep-poll-allow-39"),
             ("printf 'sleep 1; git status'", "sleep-poll-allow-4"),
             ("sleep 1 || git status --short", "sleep-poll-allow-5"),
             ("sleep 1 | cat", "sleep-poll-allow-6"),

@@ -2075,6 +2075,7 @@ _POLL_COMMAND_PREFIXES = (
     ("gh", "run", "view"),
     ("gh", "run", "watch"),
     ("ps",),
+    ("pgrep",),
     ("atk", "mq", "list"),
     ("atk", "mq", "show"),
     ("systemctl", "status"),
@@ -2269,18 +2270,26 @@ def _split_serial_shell_commands(
     return [segment for segment in segments if segment]
 
 
+def _fixed_sleep_seconds(command: str) -> float | None:
+    """コマンドが数値リテラルを与える`sleep`単体である場合にその秒数を返す。"""
+    args = _command_tokens(command)
+    if args is None or len(args) != 2 or args[0] != _SLEEP_COMMAND:
+        return None
+    try:
+        return float(args[1])
+    except ValueError:
+        return None
+
+
+def _is_fixed_sleep(command: str) -> bool:
+    """コマンドが数値リテラルを与える`sleep`単体であるかを判定する。"""
+    return _fixed_sleep_seconds(command) is not None
+
+
 def _is_long_fixed_sleep(command: str) -> bool:
     """コマンドが閾値以上の数値リテラルを与える`sleep`単体であるかを判定する。"""
-    args = _command_tokens(command)
-    if args is None:
-        return False
-    if len(args) != 2 or args[0] != _SLEEP_COMMAND:
-        return False
-    try:
-        seconds = float(args[1])
-    except ValueError:
-        return False
-    return seconds >= _LONG_SLEEP_SECONDS
+    seconds = _fixed_sleep_seconds(command)
+    return seconds is not None and seconds >= _LONG_SLEEP_SECONDS
 
 
 def _command_tokens(command: str) -> list[str] | None:
@@ -2340,11 +2349,27 @@ def _loop_scope_flags(segments: list[str]) -> list[bool]:
     return flags
 
 
-def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
-    """入れ子でなく早期離脱を持たない単純ポーリングループの本体範囲を返す。"""
+def _is_read_only_status_command(args: Sequence[str]) -> bool:
+    """コマンドのトークン列が読み取り専用の状態確認であるかを判定する。"""
+    if not args:
+        return False
+    if any(tuple(args[: len(prefix)]) == prefix for prefix in _POLL_COMMAND_PREFIXES):
+        return True
+    return tuple(args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(args[1:])
+
+
+def _polling_loop_body_flags(segments: list[str]) -> tuple[list[bool], list[bool]]:
+    """入れ子でなく早期離脱を持たない単純ポーリングループの本体範囲を返す。
+
+    1つ目は本体範囲であり、2つ目はそのうち条件式が読み取り専用の状態確認コマンドである
+    `while`ループの本体範囲とする。後者は反復のたびに条件式が状態を確認するため、
+    本体に`sleep`があるだけで固定待機と状態確認の反復が成立する。
+    """
     flags = [False] * len(segments)
+    status_condition_flags = [False] * len(segments)
     start: int | None = None
     eligible = False
+    status_condition = False
     nested = False
     has_early_exit = False
     depth = 0
@@ -2354,7 +2379,8 @@ def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
         if first in _LOOP_KEYWORDS:
             if depth == 0:
                 start = index
-                eligible = first == "for" or (first == "while" and tokens[1:] in (["true"], [":"]))
+                status_condition = first == "while" and _is_read_only_status_command(tokens[1:])
+                eligible = first == "for" or (first == "while" and tokens[1:] in (["true"], [":"])) or status_condition
                 nested = False
                 has_early_exit = False
             else:
@@ -2368,13 +2394,17 @@ def _polling_loop_body_flags(segments: list[str]) -> list[bool]:
             if depth == 0:
                 if start is not None and eligible and not nested and not has_early_exit:
                     flags[start + 1 : index] = [True] * (index - start - 1)
+                    if status_condition:
+                        status_condition_flags[start + 1 : index] = [True] * (index - start - 1)
                 start = None
             continue
         if first in {"break", "exit", "return"}:
             has_early_exit = True
     if depth == 1 and start is not None and eligible and not nested and not has_early_exit:
         flags[start + 1 :] = [True] * (len(segments) - start - 1)
-    return flags
+        if status_condition:
+            status_condition_flags[start + 1 :] = [True] * (len(segments) - start - 1)
+    return flags, status_condition_flags
 
 
 def _is_sleep_poll_pair(left: str, right: str, *, previous: str | None = None) -> bool:
@@ -2389,9 +2419,7 @@ def _is_sleep_poll_pair(left: str, right: str, *, previous: str | None = None) -
         previous_args = _command_tokens(previous) or []
         if previous_args and previous_args[0] == "kill" and right_args[0] == "ps" and "-p" in right_args[1:]:
             return False
-    if any(tuple(right_args[: len(prefix)]) == prefix for prefix in _POLL_COMMAND_PREFIXES):
-        return True
-    return tuple(right_args[:1]) == _CURL_COMMAND and not _curl_args_have_write_indicator(right_args[1:])
+    return _is_read_only_status_command(right_args)
 
 
 def _has_foreground_sleep_wait(segments: list[str]) -> bool:
@@ -2401,11 +2429,12 @@ def _has_foreground_sleep_wait(segments: list[str]) -> bool:
     直後のセグメントは検出条件の判定にだけ用い、その所属は除外条件へ混ぜない。
     """
     in_loop_body = _loop_scope_flags(segments)
-    polling_loop_body = _polling_loop_body_flags(segments)
+    polling_loop_body, status_condition_loop_body = _polling_loop_body_flags(segments)
     return any(
         (polling_loop_body[index] or not in_loop_body[index])
         and (
             _is_long_fixed_sleep(segments[index])
+            or (status_condition_loop_body[index] and _is_fixed_sleep(segments[index]))
             or _is_sleep_poll_pair(
                 segments[index],
                 segments[index + 1],
@@ -2446,8 +2475,11 @@ def _check_bash_sleep_poll_pattern(
     検出条件は、閾値以上の`sleep`の直後に任意のコマンドが続く形と、
     閾値未満の`sleep`の直後に読み取り専用の状態確認コマンドが続く形の2つとする。
     前者は待機後に続くコマンドの種類に依存しないため、状態確認コマンド名の追随保守を要しない。
-    条件成立で抜けるループ（`until`・条件付き`while`）の本体は検出対象から除く。
-    入れ子でない`for`・`while true`・`while :`の本体は、早期離脱が無い場合だけ検出対象とする。
+    条件式が読み取り専用の状態確認コマンドである`while`ループの本体は、
+    反復のたびに条件式が状態を確認するため、`sleep`単体だけでも検出する。
+    条件成立で抜けるループ（`until`・条件式が状態確認コマンドでない`while`）の本体は検出対象から除く。
+    入れ子でない`for`・`while true`・`while :`・条件式が状態確認コマンドの`while`の本体は、
+    早期離脱が無い場合だけ検出対象とする。
     入れ子ループは検出対象から除く。
     当該範囲の外にある`sleep`は、同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
 
