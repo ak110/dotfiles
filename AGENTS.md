@@ -17,8 +17,9 @@
     自動修正が必要な場合は`make format`（`uvx pyfltr fast`）を使う
   - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
     MCPを利用できない場合は`uvx pyfltr run <対象ファイルの絶対パス>`を使う。
-    デバッガ・最小再現・環境切り分けでは直接実行してよい。
-    `-o addopts=''`で既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
+    デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
+    `-o`と`-p`は`pytest`のオプションであり、`uvx pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
+    `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
   - pyfltrの実行時間を比較する場合は、実行後に`uvx pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
