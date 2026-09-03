@@ -24,8 +24,6 @@ CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.m
 実装担当の経路を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
 分岐検証へ入る前は`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`を全文読む。
 
-原因分析の段階を確定する時は、`agent-toolkit:bugfix`の`bugfix/references/root-cause-analysis.md`を全文読む。
-
 拡張原因分析の条件に該当しない局所不良は、直接的原因への対策と近接検証で完了する。
 拡張原因分析の条件に該当する不良は、2系統4段階の原因分析、原因分析の品質確認、原因起点の類似見直し、
 対策・横展開処置・再発防止策を確定する。

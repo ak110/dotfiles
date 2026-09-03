@@ -17,15 +17,16 @@ description: >
 `references/<フレームワーク・ライブラリ名>.md`へ置く。
 プロジェクト固有の規約は当該プロジェクトの`CLAUDE.md`・`.claude/rules/`へ置く。
 
-コード編集に着手する前に、編集対象の拡張子に対応する`references/<言語>.md`を必ずReadで読み込む
-（変更規模を問わず省略しない。対応ファイルが無い場合に限り共通品質のみで進める）。
+コード編集に着手する前に、編集対象の拡張子に対応する`references/<言語>.md`を`Read`で読み込む。
+言語固有の規約は本体に無く、読まずに書くと当該言語の必須事項を満たせない。
+対応ファイルが無い場合だけ共通品質のみで進める。
 プロジェクトの依存定義（`package.json`等）または`<script>`読み込み等の技術利用痕跡から対象技術の利用が判明する場合は、対応する`references/<フレームワーク・ライブラリ名>.md`も読み込む。
 
 言語別リファレンス:
 
 - Python: `references/python.md`と`references/python-references.md`
 - TypeScript/TSX: `references/typescript.md`
-- Rustのコードを編集する時は`agent-toolkit/skills/coding-standards/references/rust.md`を全文読む
+- Rust: `references/rust.md`
 - C#: `references/csharp.md`
 - Bash/sh・bash・sh.tmpl: `references/bash.md`
 - PowerShell/ps1・ps1.tmpl・psm1・psd1: `references/powershell.md`
@@ -42,7 +43,7 @@ description: >
 - 文字エンコーディング詳細（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等。作成・修正時に必読）:
   `references/independent-html.md`
-- テストコードを作成・修正する時は`agent-toolkit/skills/coding-standards/references/testing.md`を全文読む
+- テストコード（全言語共通）: `references/testing.md`
 
 フレームワーク・ライブラリ別リファレンス:
 
