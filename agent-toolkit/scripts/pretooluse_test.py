@@ -3964,6 +3964,73 @@ class TestBashBlockBeforeAccumulatedWarnings:
         assert "running codex exec" in context
 
 
+class TestBashHeredocLiteralExclusion:
+    """ヒアドキュメント本文のリテラルを実行コマンドとして誤検出しない。
+
+    区間分割と実行位置解析はヒアドキュメント本文も実行コマンド列として扱うため、
+    本文へ書き込む字面だけでは検査が成立しないことを検証する。
+    """
+
+    @pytest.mark.parametrize(
+        ("command", "detected_text"),
+        [
+            (
+                "cat <<'EOF' > /tmp/doc.md\n待機例: echo start; sleep 300; echo done\nEOF",
+                "foreground sleep",
+            ),
+            (
+                "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5\nEOF",
+                "truncating it",
+            ),
+            (
+                "cat <<'EOF' > /tmp/doc.md\nrg keyword ~/.local\nEOF",
+                "high-capacity user directory",
+            ),
+            (
+                "cat <<'EOF' > /tmp/doc.md\ncodex exec 'draft the plan'\nEOF",
+                "running codex exec",
+            ),
+        ],
+        ids=["sleep-poll", "output-truncation", "recursive-home-search", "codex-exec"],
+    )
+    def test_warning_checks_skip_heredoc_body(self, tmp_path: pathlib.Path, command: str, detected_text: str) -> None:
+        """ヒアドキュメント本文中の字面では警告を返さない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": "heredoc-exclusion",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert detected_text not in _additional_context(result)
+
+    def test_pattern_kill_in_heredoc_body_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
+        """ヒアドキュメント本文へ書き込むパターン終了コマンドの字面は遮断しない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\nkillall は所有権を確認できない\nEOF"},
+                "session_id": "heredoc-pattern-kill",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+
+    def test_pattern_kill_before_heredoc_is_still_blocked(self, tmp_path: pathlib.Path) -> None:
+        """ヒアドキュメントより前にある実際のパターン終了コマンドは遮断する。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "killall worker; cat <<'EOF' > /tmp/doc.md\ntext\nEOF"},
+                "session_id": "heredoc-pattern-kill-before",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+
+
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（初回warn・再検出block）。"""
 

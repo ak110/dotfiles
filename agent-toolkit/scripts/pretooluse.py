@@ -1614,6 +1614,16 @@ def _likely_real_command(command: str, pos: int) -> bool:
     return "<<" not in prefix
 
 
+def _contains_heredoc(command: str) -> bool:
+    """コマンド本文がヒアドキュメント（`<<`）を含むかを返す。
+
+    ヒアドキュメント本文は実行されないリテラルだが、区間分割と実行位置解析は本文を
+    実行コマンド列として扱う。本文中のリテラル一致による誤検出を避けるため、
+    誤検出側の実害が誤検出しない側を上回る検査は当該コマンドを対象から外す。
+    """
+    return "<<" in command
+
+
 # --- Bash: git amend / rebaseをlog未確認でブロック ---
 
 
@@ -1969,8 +1979,7 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
 
     判定詳細は本関数の冒頭コメントを参照する。真を返すとblock（exit 2）。
     """
-    # heredocを含むコマンドは本文中のリテラル混入で誤検出する余地があるため通過させる。
-    if "<<" in command:
+    if _contains_heredoc(command):
         return False
     segments = split_bash_segments(command)
     current_cwd = CwdResolution(cwd, bool(cwd))
@@ -2484,10 +2493,11 @@ def _check_bash_sleep_poll_pattern(
     当該範囲の外にある`sleep`は、同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
 
     簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
-    既知の限界: サブシェルで包んだ状態確認は検出しない,
+    既知の限界: サブシェルで包んだ状態確認は検出しない。ヒアドキュメントを含むコマンドは
+    本文中のリテラル混入で誤検出するため対象から外す,
     見直し契機: サブシェル包みの反復ポーリングを実測した場合
     """
-    if run_in_background:
+    if run_in_background or _contains_heredoc(command):
         return None
     if not _has_foreground_sleep_wait(_split_serial_shell_commands(command)):
         return None
@@ -2522,8 +2532,9 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 
     対象の所有権を確認できないパターン一致の一括終了は事故の危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
+    ヒアドキュメント本文へ書き込むリテラルとしての一致は`_likely_real_command`で対象から外す。
     """
-    if not _PROCESS_KILL_BY_PATTERN_RE.search(command):
+    if not any(_likely_real_command(command, match.start()) for match in _PROCESS_KILL_BY_PATTERN_RE.finditer(command)):
         return False
     print(
         _block_notice(
@@ -2762,6 +2773,8 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
     含むだけの読み取り操作は検出しない。実行位置を確定できない区間と、実行位置以外で起動される
     検証コマンドも検出しない（助言であり非検出側の誤差の実害が小さいため）。
     """
+    if _contains_heredoc(command):
+        return None
     if not any(_pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
         return None
     guidance = (
@@ -2832,6 +2845,8 @@ def _status_report_follows_truncation(command: str) -> bool:
 
 def _check_bash_output_status_after_truncation(command: str) -> str | None:
     """切り詰め直後の`$?`報告が検証コマンドの状態を隠す場合に診断を返す。"""
+    if _contains_heredoc(command):
+        return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for index, serial_command in enumerate(serial_commands[:-1]):
         if not any(
@@ -2944,6 +2959,8 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
 
 def _check_bash_recursive_home_search(command: str) -> str | None:
     """高容量のユーザー領域を無限定に再帰検索する実行位置へ警告を返す。"""
+    if _contains_heredoc(command):
+        return None
     if not any(
         segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
         for pipeline in _extract_execution_pipelines(command)
@@ -3173,6 +3190,8 @@ def _check_bash_codex_exec(command: str) -> str | None:
     実行位置を確定できない区間と、実行位置以外で起動される`codex exec`も検出しない
     （助言であり非検出側の誤差の実害が小さいため）。
     """
+    if _contains_heredoc(command):
+        return None
     for segment in _extract_execution_segments(command):
         if not _segment_starts_with(segment, _CODEX_EXEC_PREFIX):
             continue
