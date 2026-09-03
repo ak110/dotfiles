@@ -76,6 +76,18 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{tmp_path / 'config'}\n"
 
+    def test_get_state_dir_matches_public_helper(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """`state_dir()`の戻り値と`atk config get state_dir`の出力が一致する。
+
+        フックは`state_dir()`経由で状態ファイルを配置する。
+        両者が一致しない場合、利用者が`atk config get`で確認した位置と実際の配置先が異なる。
+        """
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "state_dir"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == f"{config_module.state_dir()}\n"
+
     @pytest.mark.parametrize(
         ("key", "expected"),
         [

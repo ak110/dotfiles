@@ -1,661 +1,179 @@
-"""agent-toolkit/scripts/permissionrequest.py の判定ロジックテスト。"""
+"""agent-toolkit/scripts/permissionrequest.py の無条件許可と記録のテスト。"""
 
 import json
-import os
 import pathlib
 
 import _fork_runner
-import _managed_temp
 import permissionrequest as hook
 import pytest
 
 _SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
-_MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+_ALLOW_RESPONSE = {
+    "hookSpecificOutput": {
+        "hookEventName": "PermissionRequest",
+        "decision": {"behavior": "allow"},
+    }
+}
 
 
-@pytest.fixture(name="_disable_tmp_root_allow", autouse=True)
-def _disable_tmp_root_allow(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`/tmp` 全許可判定を無効化する。
-
-    `tmp_path` fixture 由来の `home`・`repo` は `/tmp` 配下に配置される。
-    実装の `/tmp` 全許可判定と衝突すると、対象外パスであっても自動的に許可され
-    既存テストの意図が損なわれる。テスト時のみ判定基準を存在しないパスへ差し替える。
-    `/tmp` 全許可を検証する個別テストではローカルに `_TMP_ROOT_STR` を復元する。
-
-    サブプロセス経由（`TestEndToEnd`）で `permissionrequest.py` を別プロセスとして
-    起動するテストには本 fixture の差し替えが届かない。当該プロセス内の
-    `_TMP_ROOT_STR` は既定値 `"/tmp"` のままとなるため、`TestEndToEnd` で
-    「拒否されるはず」を検証するテストでは `home`・`repo`（`/tmp` 配下）由来のパスを
-    使わず、`/tmp` 配下でない絶対パスを個別に指定する必要がある。
-    """
-    monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/__tmp_root_disabled__")
+@pytest.fixture(name="state_dir")
+def _state_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """記録先の状態ディレクトリをテスト用一時ディレクトリへ差し替える。"""
+    state_dir = tmp_path / "state"
+    monkeypatch.setattr(hook._atk_config, "state_dir", lambda: state_dir)  # noqa: SLF001  # pylint: disable=protected-access
+    return state_dir
 
 
-@pytest.fixture(name="home")
-def _home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """`Path.home()` をテスト用一時ディレクトリへ差し替える。"""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    (tmp_path / ".claude" / "plans").mkdir(parents=True)
-    return tmp_path
+def _log_path(state_dir: pathlib.Path) -> pathlib.Path:
+    """記録先ファイルのパスを返す。"""
+    return state_dir / "permissionrequest.log"
 
 
-@pytest.fixture(name="repo")
-def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
-    """擬似 Git ワークツリーを作成 (`.git/` ディレクトリと `.claude/` 配下を持つ)。"""
-    repo = tmp_path / "repo"
-    (repo / ".git").mkdir(parents=True)
-    (repo / ".claude" / "rules").mkdir(parents=True)
-    return repo
+def _rotated_log_path(state_dir: pathlib.Path) -> pathlib.Path:
+    """退避先ファイルのパスを返す。"""
+    return state_dir / "permissionrequest.log.1"
 
 
-class TestShouldAllow:
-    """`should_allow` の判定動作。"""
-
-    def test_home_claude_plans_file(self, home: pathlib.Path) -> None:
-        assert hook.should_allow(str(home / ".claude" / "plans" / "x.md")) is True
-
-    def test_home_claude_plans_subdir(self, home: pathlib.Path) -> None:
-        assert hook.should_allow(str(home / ".claude" / "plans" / "sub" / "x.md")) is True
-
-    def test_private_notes_plans_file(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
-        target = tmp_path / "private-notes" / "plans" / "2026" / "08" / "30-plan-a1b2.md"
-        assert hook.should_allow(str(target)) is True
-
-    def test_private_notes_sibling_is_not_allowed(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
-        target = tmp_path / "private-notes" / "other" / "x.md"
-        assert hook.should_allow(str(target)) is False
-
-    def test_home_claude_other_subtree_not_allowed(self, home: pathlib.Path) -> None:
-        assert hook.should_allow(str(home / ".claude" / "projects" / "x.md")) is False
-
-    def test_home_claude_settings_not_allowed(self, home: pathlib.Path) -> None:
-        assert hook.should_allow(str(home / ".claude" / "settings.json")) is False
-
-    def test_repo_claude_file(self, home: pathlib.Path, repo: pathlib.Path) -> None:
-        del home  # fixture を有効化するためだけに受け取る
-        assert hook.should_allow(str(repo / ".claude" / "rules" / "test.md")) is True
-
-    def test_repo_claude_top_level(self, home: pathlib.Path, repo: pathlib.Path) -> None:
-        del home
-        assert hook.should_allow(str(repo / ".claude" / "settings.json")) is True
-
-    def test_outside_git_worktree_not_allowed(self, home: pathlib.Path, tmp_path: pathlib.Path) -> None:
-        del home
-        # `.git` を持たないディレクトリ配下の `.claude/` は対象外
-        target = tmp_path / "no_git" / ".claude" / "x.md"
-        target.parent.mkdir(parents=True)
-        assert hook.should_allow(str(target)) is False
-
-    def test_non_claude_path_not_allowed(self, home: pathlib.Path, repo: pathlib.Path) -> None:
-        del home
-        assert hook.should_allow(str(repo / "src" / "main.py")) is False
-
-    def test_relative_path_rejected(self) -> None:
-        assert hook.should_allow(".claude/plans/x.md") is False
-
-    def test_empty_path_rejected(self) -> None:
-        assert hook.should_allow("") is False
+@pytest.mark.usefixtures("state_dir")
+class TestAllowAlways:
+    """入力によらず許可の応答を返す契約を検証する。"""
 
     @pytest.mark.parametrize(
-        ("relative_path", "expected"),
+        "payload_text",
         [
-            # AGENTS.md はリポジトリ直下・サブディレクトリのいずれも許可。
-            ("AGENTS.md", True),
-            ("subdir/AGENTS.md", True),
-            # `.agents/` 配下はパス構成要素一致で許可。
-            (".agents/skill.md", True),
-            (".agents/skills/foo.md", True),
-            ("subdir/.agents/foo.md", True),
-            # 名前が完全一致しないファイルは拒否（大文字小文字差異の境界）。
-            ("agents.md", False),
-            ("Agents.md", False),
-            ("AGENTS.MD", False),
-            ("AGENTS.md.bak", False),
-            ("MY_AGENTS.md", False),
-            # ディレクトリ名が完全一致しないものは拒否。
-            ("agents/foo.md", False),
-            (".agent/foo.md", False),
+            json.dumps({"tool_name": "Bash", "tool_input": {"command": "rm -rf /"}}),
+            json.dumps({"tool_name": "Write", "tool_input": {"file_path": "/etc/passwd", "content": "x"}}),
+            json.dumps({"tool_name": "Read", "tool_input": {"file_path": "/etc/shadow"}}),
+            json.dumps({"tool_name": "mcp__example__tool", "tool_input": {"arg": 1}}),
+            json.dumps({"tool_name": "UnknownFutureTool", "tool_input": {}}),
+            json.dumps({"tool_name": "Bash", "tool_input": "文字列のtool_input"}),
+            json.dumps(["JSONだが辞書ではない"]),
+            "{不正なJSON",
+            "",
         ],
     )
-    def test_repo_path_allowance(self, home: pathlib.Path, repo: pathlib.Path, relative_path: str, expected: bool) -> None:
-        del home
-        assert hook.should_allow(str(repo / relative_path)) is expected
-
-    def test_home_claude_agents_md_not_allowed(self, home: pathlib.Path) -> None:
-        # `~/.claude/AGENTS.md` は配布先誤編集の警告経路維持のため拒否する。
-        assert hook.should_allow(str(home / ".claude" / "AGENTS.md")) is False
-
-    def test_home_claude_dot_agents_not_allowed(self, home: pathlib.Path) -> None:
-        # `~/.claude/.agents/` 配下も同様に拒否する。
-        assert hook.should_allow(str(home / ".claude" / ".agents" / "x.md")) is False
-
-    def test_agents_md_outside_git_worktree_not_allowed(self, home: pathlib.Path, tmp_path: pathlib.Path) -> None:
-        del home
-        target = tmp_path / "no_git" / "AGENTS.md"
-        target.parent.mkdir(parents=True)
-        assert hook.should_allow(str(target)) is False
-
-    def test_dot_agents_outside_git_worktree_not_allowed(self, home: pathlib.Path, tmp_path: pathlib.Path) -> None:
-        del home
-        target = tmp_path / "no_git" / ".agents" / "x.md"
-        target.parent.mkdir(parents=True)
-        assert hook.should_allow(str(target)) is False
-
-    def test_scratchpad_component_under_tmp_allowed(self, home: pathlib.Path) -> None:
-        del home
-        assert hook.should_allow("/tmp/claude-1000/xxx/scratchpad/foo.md") is True
-
-    def test_scratchpad_component_under_home_allowed(self, home: pathlib.Path) -> None:
-        assert hook.should_allow(str(home / ".claude" / "scratchpad" / "bar.md")) is True
-
-    def test_arbitrary_path_under_tmp_allowed(self, home: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        # `/tmp/` 配下は scratchpad 構成要素の有無を問わず自動許可対象に含める
-        del home
-        monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
-        assert hook.should_allow("/tmp/random/foo.md") is True
-
-    def test_scratchpad_outside_tmp_and_home_not_allowed(self) -> None:
-        assert hook.should_allow("/var/scratchpad/foo.md") is False
-
-    def test_scratchpad_in_filename_only_not_allowed(self, home: pathlib.Path) -> None:
-        assert hook.should_allow(str(home / "scratchpad-but-not-dir.md")) is False
+    def test_returns_allow(self, payload_text: str, capsys: pytest.CaptureFixture[str]) -> None:
+        assert hook.main(payload_text) == 0
+        assert json.loads(capsys.readouterr().out) == _ALLOW_RESPONSE
 
 
-class TestShouldAllowBash:
-    """`should_allow_bash` の判定動作。"""
+class TestRecord:
+    """許可した要求の記録内容と退避を検証する。"""
 
-    @pytest.mark.parametrize(
-        ("command_template", "expected"),
-        [
-            (("rm {plans}/x.md", "{home}"), True),
-            (("rm -rf {plans}/sub", "{home}"), True),
-            (("rm --recursive --force {plans}/sub", "{home}"), True),
-            (("rm -- {plans}/-draft.md", "{home}"), True),
-            (("rm {repo}/.claude/rules/x.md", "{repo}"), True),
-            (("mkdir -p {plans}/sub", "{home}"), True),
-            (("mkdir --parents {plans}/sub", "{home}"), True),
-            (("mv {plans}/a.md {plans}/b.md", "{home}"), True),
-            (("cp -r {plans}/a {plans}/b", "{home}"), True),
-            (("cp --recursive {plans}/a {plans}/b", "{home}"), True),
-            (("cp --parents {plans}/a {plans}/backup", "{home}"), True),
-            (("ln -s {plans}/a {plans}/b", "{home}"), True),
-            (("chmod 600 {plans}/a", "{home}"), True),
-            (("chmod -x {plans}/a", "{home}"), True),
-            (("chmod -R 600 {plans}/a", "{home}"), True),
-            (("chmod -- -x {plans}/a", "{home}"), True),
-            (("chown aki {plans}/a", "{home}"), True),
-            (("chown -R aki:staff {plans}/a", "{home}"), True),
-            (("touch {plans}/x.md", "{home}"), True),
-            (("echo hello > {plans}/x.md", "{home}"), True),
-            (("echo hello >> {plans}/log.md", "{home}"), True),
-            (("some-unknown-cmd arg1 arg2 > {plans}/x.md", "{home}"), False),
-            (("rm x.md", "{plans}"), True),
-            (('rm "{plans}/a b.md"', "{home}"), True),
-            (("mv {plans}/a.md {home}/elsewhere.md", "{home}"), False),
-            (("rm {home}/elsewhere.md", "{home}"), False),
-            (("rm {plans}/a.md | rm {plans}/b.md", "{home}"), False),
-            (("rm {plans}/a.md; rm {plans}/b.md", "{home}"), True),
-            (("rm $HOME/.claude/plans/a.md", "{home}"), False),
-            (("rm `echo a.md`", "{home}"), False),
-            (("find {plans} -delete", "{home}"), False),
-            (("echo foo >", "{home}"), False),
-            (("", ""), False),
-            (("rm x.md", ""), False),
-            (('rm "unterminated', "{home}"), False),
-            (("some-unknown-cmd arg1 arg2>{plans}/x.md", "{home}"), False),
-            (("echo $(touch /outside)", "{home}"), False),
-            (("echo '$(touch /outside)'", "{home}"), False),
-            (('echo "$(touch /outside)"', "{home}"), False),
-            (('echo "$var"', "{home}"), True),
-            (("git reset --hard > {plans}/log", "{home}"), False),
-            (("cp --target-directory=/outside {plans}/source", "{home}"), False),
-            (("cp --target-directory /outside {plans}/source", "{home}"), False),
-            (("cp --target-directory={plans}/out {plans}/source", "{home}"), False),
-            (("cp -t {plans}/out {plans}/source", "{home}"), False),
-            (("mv --target-directory={plans}/out {plans}/source", "{home}"), False),
-            (("ln --target-directory={plans}/out {plans}/source", "{home}"), False),
-            (("touch --reference={plans}/ref {plans}/target", "{home}"), False),
-            (("chmod --reference={plans}/ref {plans}/target", "{home}"), False),
-            (("chown --reference={plans}/ref {plans}/target", "{home}"), False),
-            (("chmod 600 {home}/outside", "{home}"), False),
-            (("chown aki {home}/outside", "{home}"), False),
-            (("chmod 600", "{home}"), False),
-            (("chown aki", "{home}"), False),
-            (("cp {plans}/a.md {plans}/b.md && wc -l {plans}/b.md", "{home}"), True),
-            (("cp {plans}/a.md {plans}/b.md&&wc -l {plans}/b.md", "{home}"), True),
-            (("rm {plans}/a.md || rm {plans}/b.md", "{home}"), True),
-            (("rm {plans}/a.md && rm {home}/elsewhere.md", "{home}"), False),
-            (("wc -l -w {plans}/a.md", "{home}"), True),
-            (("wc --lines {plans}/a.md", "{home}"), True),
-            (("wc --unknown=value {plans}/a.md", "{home}"), False),
-            (("wc --files0-from={plans}/list.txt", "{home}"), False),
-            (("wc {plans}/a.md", "{home}"), True),
-            (("wc -l {home}/elsewhere.md", "{home}"), False),
-            (("rm {plans}/a.md &", "{home}"), False),
-            (('echo "a && b" > {plans}/a.md', "{home}"), False),
-            (("rm {plans}/a.md && rm {plans}/b.md | cat", "{home}"), False),
-            (("rm {plans}/a.md && rm {plans}/b.md; echo done", "{home}"), True),
-            (("rm {plans}/a.md && rm {plans}/b.md; rm {home}/elsewhere.md", "{home}"), False),
-            (
-                ("mkdir -p {plans}\ncp /tmp/scratchpad/x.md {plans}/x.md\nwc -l {plans}/x.md", "{home}"),
-                True,
-            ),
-            (
-                ("mkdir -p {plans}; cp /tmp/scratchpad/x.md {plans}/x.md; wc -l {plans}/x.md", "{home}"),
-                True,
-            ),
-            (("cd {plans}", "{home}"), True),
-            (("cd /etc", "{home}"), False),
-            (("mkdir -p {plans}\nuv run x.py", "{home}"), False),
-            (("mkdir -p {plans}\n\n", "{home}"), True),
-            (("head -l {plans}/a.md", "{home}"), False),
-            (('rm "unterminated && wc -l {plans}/a.md', "{home}"), False),
-            (("rm {plans}/a.md |& malicious_tool", "{home}"), False),
-            (("echo hi 2>& {plans}/log.txt", "{home}"), False),
-            (("echo hi &> {plans}/out.txt", "{home}"), False),
-            # 対象配下と対象外パスへの操作が混在するコマンド列は全体を拒否する。
-            (("cp {repo}/AGENTS.md {home}/elsewhere.md && rm {repo}/.agents/new.md", "{repo}"), False),
-        ],
-    )
-    def test_bash_command_allowance(
-        self,
-        home: pathlib.Path,
-        repo: pathlib.Path,
-        command_template: tuple[str, str],
-        expected: bool,
+    def test_appends_one_json_line_per_request(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """要求ごとに1行1レコードのJSONが追記され、payload由来の項目を保持する。"""
+        payloads = [
+            {"session_id": "s1", "cwd": "/home/user/repo", "tool_name": "Bash", "tool_input": {"command": "ls"}},
+            {"session_id": "s2", "cwd": "/home/user/other", "tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}},
+        ]
+        for payload in payloads:
+            assert hook.main(json.dumps(payload)) == 0
+        capsys.readouterr()
+
+        lines = _log_path(state_dir).read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2
+        for line, payload in zip(lines, payloads, strict=True):
+            record = json.loads(line)
+            assert record["session_id"] == payload["session_id"]
+            assert record["cwd"] == payload["cwd"]
+            assert record["tool_name"] == payload["tool_name"]
+            assert record["tool_input"] == payload["tool_input"]
+            # UTCのISO 8601表記であることを、時差表記の有無で判定する。
+            assert record["time"].endswith("+00:00")
+
+    def test_missing_payload_keys_are_recorded_as_null(
+        self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        plans = home / ".claude" / "plans"
-        command_text_template, cwd_template = command_template
-        format_args = {"home": home, "repo": repo, "plans": plans}
-        cmd = command_text_template.format(**format_args)
-        cwd = cwd_template.format(**format_args)
-        assert hook.should_allow_bash(cmd, cwd) is expected
+        """payloadに無いキーはnullとして残り、後段の集計で欠落と区別できる。"""
+        assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
+        capsys.readouterr()
 
-    @pytest.mark.parametrize("command", [";", "\n", ";\n"])
-    def test_separator_only_command_rejected(self, command: str, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(command, str(home)) is False
+        record = json.loads(_log_path(state_dir).read_text(encoding="utf-8"))
+        assert record["tool_name"] == "Bash"
+        assert record["session_id"] is None
+        assert record["cwd"] is None
+        assert record["tool_input"] is None
 
-    @pytest.mark.parametrize(
-        "command",
-        [
-            'echo "任意文字列"',
-            'echo "$var"',
-            'echo "a; b"',
-        ],
-    )
-    def test_echo_standalone_allowed(self, command: str, home: pathlib.Path) -> None:
-        assert hook.should_allow_bash(command, str(home)) is True
-
-    @pytest.mark.parametrize(
-        ("command_template", "cwd_template", "expected"),
-        [
-            # 許可対象への追記・作成は、本文のメタ文字・見出し・空行を問わず許可する。
-            ("cat >> {plans}/plan.md <<'PLAN_EOF'\n## 見出し\n\n$(touch /outside) `date`\nPLAN_EOF\n", "{home}", True),
-            ("cat > {plans}/plan.md <<'PLAN_EOF'\n本文\nPLAN_EOF\n", "{home}", True),
-            ("cat >>{plans}/plan.md <<'EOF'\n本文\nEOF", "{home}", True),
-            # デリミターは識別子形式に限らず、単一引用符で囲まれた任意の文字列を受理する。
-            ("cat >> {plans}/plan.md <<'END-PLAN'\n本文\nEND-PLAN\n", "{home}", True),
-            ("cat >> {plans}/plan.md <<'PLAN 1'\n本文\nPLAN 1\n", "{home}", True),
-            # plans 以外の許可対象（scratchpad・Git ワークツリー内のエージェント文書）も同じ扱いとする。
-            ("cat >> {home}/.claude/scratchpad/notes.md <<'EOF'\n本文\nEOF\n", "{home}", True),
-            ("cat >> {repo}/AGENTS.md <<'EOF'\n本文\nEOF\n", "{repo}", True),
-            # 引用なしデリミターは本文へ展開が作用するため対象外とする。
-            ("cat >> {plans}/plan.md <<PLAN_EOF\n本文\nPLAN_EOF\n", "{home}", False),
-            # リダイレクト先が許可対象外のパスの場合は拒否する。
-            ("cat >> {home}/elsewhere.md <<'EOF'\n本文\nEOF\n", "{home}", False),
-            # 終端デリミター行より後に入力が残る形は拒否する。
-            ("cat >> {plans}/plan.md <<'EOF'\n本文\nEOF\nrm {home}/elsewhere.md\n", "{home}", False),
-            ("cat >> {plans}/plan.md <<'EOF'\nEOF\n本文の続き\n", "{home}", False),
-            # 終端デリミター行が現れない入力は拒否する。
-            ("cat >> {plans}/plan.md <<'EOF'\n本文\n", "{home}", False),
-            # `cat` 以外のコマンドとリダイレクトのない形は対象外のまま。
-            ("python3 - <<'PY'\nprint(1)\nPY\n", "{home}", False),
-            ("cat <<'EOF'\n本文\nEOF\n", "{home}", False),
-        ],
-    )
-    def test_heredoc_write_allowance(
-        self,
-        home: pathlib.Path,
-        repo: pathlib.Path,
-        command_template: str,
-        cwd_template: str,
-        expected: bool,
+    def test_unparsable_payload_is_recorded_with_null_fields(
+        self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        format_args = {"home": home, "repo": repo, "plans": home / ".claude" / "plans"}
-        cmd = command_template.format(**format_args)
-        cwd = cwd_template.format(**format_args)
-        assert hook.should_allow_bash(cmd, cwd) is expected
+        """解釈できないpayloadでも記録は残り、payload由来の項目はnullになる。"""
+        assert hook.main("{不正なJSON") == 0
+        capsys.readouterr()
 
-    def test_rm_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # `/tmp/` 配下は一時ファイル領域として自動許可対象に含める
-        monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
-        assert hook.should_allow_bash("rm /tmp/foo.txt", "/tmp") is True
+        record = json.loads(_log_path(state_dir).read_text(encoding="utf-8"))
+        assert record["tool_name"] is None
+        assert record["time"].endswith("+00:00")
 
-    def test_managed_temp_create_and_cleanup_allowed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
+    def test_rotates_when_log_reaches_size_limit(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """上限へ達した記録先は追記前に退避され、新しい記録先へ書き直される。"""
+        state_dir.mkdir(parents=True)
+        old_content = "x" * hook._LOG_SIZE_LIMIT  # noqa: SLF001  # pylint: disable=protected-access
+        _log_path(state_dir).write_text(old_content, encoding="utf-8")
+
+        assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
+        capsys.readouterr()
+
+        assert _rotated_log_path(state_dir).read_text(encoding="utf-8") == old_content
+        assert json.loads(_log_path(state_dir).read_text(encoding="utf-8"))["tool_name"] == "Bash"
+
+    def test_rotation_overwrites_existing_rotated_log(
+        self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """完全一致するcreateと真正性検証済みcleanupだけを許可する。"""
-        temp_root = tmp_path / "temp"
-        temp_root.mkdir()
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
-        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
-        target = _managed_temp.create_managed_temp("permission-test")
+        """退避は1世代だけ保持し、既存の退避先を上書きする。"""
+        state_dir.mkdir(parents=True)
+        old_content = "y" * hook._LOG_SIZE_LIMIT  # noqa: SLF001  # pylint: disable=protected-access
+        _log_path(state_dir).write_text(old_content, encoding="utf-8")
+        _rotated_log_path(state_dir).write_text("さらに古い世代", encoding="utf-8")
 
-        assert hook.should_allow_bash("atk managed-temp create --prefix agent-work", str(tmp_path)) is True
-        if os.name == "nt":
-            # 公開APIにrootのACL準備がないため、明示root判定の前提だけを設定する。
-            _managed_temp._windows_secure_path(tmp_path, directory=True)  # pylint: disable=protected-access
-        assert hook.should_allow_bash(f"atk managed-temp create --prefix agent-work --root {tmp_path}", str(tmp_path)) is True
-        unsafe_root = tmp_path / "unsafe-root"
-        unsafe_root.mkdir()
-        if os.name == "posix":
-            unsafe_root.chmod(0o777)
-            assert (
-                hook.should_allow_bash(f"atk managed-temp create --prefix agent-work --root {unsafe_root}", str(tmp_path))
-                is False
-            )
-        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
-        assert hook.should_allow_bash("atk managed-temp list --prefix agent-work", str(tmp_path)) is True
-        assert hook.should_allow_bash("atk managed-temp list --prefix agent-work extra", str(tmp_path)) is False
+        assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
+        capsys.readouterr()
 
-    def test_managed_temp_cleanup_of_a_missing_target_allowed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
+        assert _rotated_log_path(state_dir).read_text(encoding="utf-8") == old_content
+
+    def test_keeps_log_when_below_size_limit(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """上限未満の記録先は退避せず追記を続ける。"""
+        state_dir.mkdir(parents=True)
+        _log_path(state_dir).write_text("z" * (hook._LOG_SIZE_LIMIT - 1), encoding="utf-8")  # noqa: SLF001  # pylint: disable=protected-access
+
+        assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
+        capsys.readouterr()
+
+        assert not _rotated_log_path(state_dir).exists()
+
+    def test_returns_allow_when_log_is_unwritable(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """実体を失い登録だけが残る管理対象のcleanupを登録の整合として許可する。"""
-        temp_root = tmp_path / "temp"
-        temp_root.mkdir()
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
-        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
-        target = _managed_temp.create_managed_temp("permission-missing")
-        (target / _MARKER_NAME).unlink()
-        target.rmdir()
+        """記録先を作成できない場合も許可の応答を返す。"""
+        blocked = tmp_path / "blocked"
+        blocked.write_text("状態ディレクトリの位置にある通常ファイル", encoding="utf-8")
+        monkeypatch.setattr(hook._atk_config, "state_dir", lambda: blocked)  # noqa: SLF001  # pylint: disable=protected-access
 
-        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is True
-
-    def test_managed_temp_cleanup_of_an_untrusted_or_unregistered_target_not_allowed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """実体が残り検証に失敗する管理対象と、登録の無い不在パスは許可しない。"""
-        temp_root = tmp_path / "temp"
-        temp_root.mkdir()
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
-        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
-        target = _managed_temp.create_managed_temp("permission-untrusted")
-        (target / _MARKER_NAME).unlink()
-
-        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is False
-        unregistered = temp_root / "permission-absent"
-        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {unregistered}", str(tmp_path)) is False
-
-    def test_managed_temp_cleanup_with_recover_registry_not_allowed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """登録復元を伴うcleanupは真正な管理対象でも自動許可しない。"""
-        temp_root = tmp_path / "temp"
-        temp_root.mkdir()
-        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
-        monkeypatch.setattr(_managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
-        target = _managed_temp.create_managed_temp("permission-recovery")
-        _managed_temp._registry_path(target).unlink()  # pylint: disable=protected-access
-
-        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target}", str(tmp_path)) is False
-        assert hook.should_allow_bash(f"atk managed-temp cleanup --path {target} --recover-registry", str(tmp_path)) is False
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "atk managed-temp create --prefix UPPER",
-            "atk managed-temp create --prefix agent-work extra",
-            "atk managed-temp create --prefix agent-work --root relative-root",
-            "atk managed-temp create --root /tmp --prefix agent-work",
-            "atk managed-temp create --prefix agent-work --root /tmp extra",
-            "atk managed-temp cleanup --path relative",
-            "atk managed-temp cleanup --path /tmp/unmanaged",
-            "atk managed-temp cleanup --path /tmp/unmanaged --recover-registry",
-            "atk managed-temp validate --path /tmp/unmanaged",
-            "atk managed-temp",
-            "atk mq rm --all",
-            "rm -rf /tmp/unmanaged",
-            "atk managed-temp create --prefix foo#; printf permission-bypass-observed",
-            "atk managed-temp create --prefix agent-work > /tmp/log",
-            "atk managed-temp create --prefix agent-work extra > /tmp/log",
-            "atk --verbose managed-temp create --prefix agent-work",
-            "atk managed-temp validate --path /tmp/unmanaged > /tmp/log",
-            "echo ok; atk managed-temp validate --path /tmp/unmanaged > /tmp/log",
-            "echo ok && atk managed-temp create --prefix agent-work extra > /tmp/log",
-            "echo ok || atk managed-temp create --prefix agent-work > /tmp/log",
-            "echo ok | atk managed-temp create --prefix agent-work",
-            "atk managed-temp create --prefix agent-work && echo ok",
-            "(atk managed-temp create --prefix agent-work)",
-            "env atk managed-temp create --prefix agent-work",
-            "/opt/agent-toolkit/bin/atk managed-temp create --prefix agent-work",
-            "./agent-toolkit/bin/atk managed-temp create --prefix agent-work",
-            "echo ok && /opt/agent-toolkit/bin/atk managed-temp create --prefix agent-work",
-            "echo ok; ./agent-toolkit/bin/atk managed-temp create --prefix agent-work",
-            'printf "%s\\n" "atk managed-temp create --prefix agent-work"',
-        ],
-    )
-    def test_managed_temp_noncanonical_command_not_allowed(self, command: str, tmp_path: pathlib.Path) -> None:
-        """不正入力と生の削除コマンドを管理一時領域経路では許可しない。"""
-        assert hook.should_allow_bash(command, str(tmp_path)) is False
-
-    def test_wc_in_tmp_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(hook, "_TMP_ROOT_STR", "/tmp")
-        assert hook.should_allow_bash("wc -l /tmp/foo.txt", "/tmp") is True
-
-    def test_private_notes_plans_commands_are_allowed(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
-        plans = tmp_path / "private-notes" / "plans"
-        assert hook.should_allow_bash(f"mkdir -p {plans}/2026/08", str(tmp_path)) is True
-        assert hook.should_allow_bash(f"cd {plans}", str(tmp_path)) is True
-        assert hook.should_allow_bash(f"echo text > {plans}/2026/08/plan.md", str(tmp_path)) is True
-
-    @pytest.mark.parametrize(
-        ("command_template", "expected"),
-        [
-            # AGENTS.md・`.agents/` 配下への安全コマンドはすべて許可。
-            ("rm {repo}/AGENTS.md", True),
-            ("rm -f {repo}/AGENTS.md", True),
-            ("touch {repo}/AGENTS.md", True),
-            ("mv {repo}/AGENTS.md {repo}/sub/AGENTS.md", True),
-            ("echo hello > {repo}/AGENTS.md", True),
-            ("echo hello >> {repo}/AGENTS.md", True),
-            ("rm {repo}/.agents/skill.md", True),
-            ("touch {repo}/.agents/new.md", True),
-            ("mv {repo}/.agents/a.md {repo}/.agents/b.md", True),
-            # 一方が Git ワークツリー外（境界外）の場合は拒否。
-            ("mv {repo}/AGENTS.md {home}/AGENTS.md", False),
-            ("mv {repo}/.agents/a.md {home}/a.md", False),
-            ("cp {repo}/AGENTS.md {home}/AGENTS.md", False),
-        ],
-    )
-    def test_bash_agents_paths(
-        self,
-        home: pathlib.Path,
-        repo: pathlib.Path,
-        command_template: str,
-        expected: bool,
-    ) -> None:
-        cmd = command_template.format(home=home, repo=repo)
-        assert hook.should_allow_bash(cmd, str(repo)) is expected
-
-    def test_rm_in_scratchpad_under_tmp_allowed(self, home: pathlib.Path) -> None:
-        del home
-        assert hook.should_allow_bash("rm /tmp/claude-1000/xxx/scratchpad/foo.md", "/tmp") is True
-
-    def test_mv_within_scratchpad_under_tmp_allowed(self, home: pathlib.Path) -> None:
-        del home
-        cmd = "mv /tmp/claude-1000/xxx/scratchpad/a.md /tmp/claude-1000/xxx/scratchpad/b.md"
-        assert hook.should_allow_bash(cmd, "/tmp") is True
-
-    def test_mv_scratchpad_to_outside_rejected(self, home: pathlib.Path) -> None:
-        cmd = f"mv /tmp/claude-1000/xxx/scratchpad/a.md {home}/dotfiles/other.md"
-        assert hook.should_allow_bash(cmd, "/tmp") is False
-
-    def test_rm_scratchpad_outside_tmp_and_home_rejected(self) -> None:
-        assert hook.should_allow_bash("rm /var/scratchpad/foo.md", "/var") is False
+        assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
+        assert json.loads(capsys.readouterr().out) == _ALLOW_RESPONSE
 
 
 class TestEndToEnd:
     """サブプロセス経由で stdin / stdout の応答を検証する。"""
 
-    def _run(self, payload: dict) -> tuple[int, str]:
+    def _run(self, payload_text: str, state_dir: pathlib.Path) -> tuple[int, str]:
         result = _fork_runner.run_script(
             _SCRIPT_PATH,
             argv=("permissionrequest",),
-            input=json.dumps(payload),
+            input=payload_text,
+            env={"XDG_STATE_HOME": str(state_dir)},
             timeout=30,
         )
         return result.returncode, result.stdout
 
-    def test_write_to_plans_returns_allow(self, home: pathlib.Path) -> None:
-        payload = {
-            "tool_name": "Write",
-            "tool_input": {"file_path": str(home / ".claude" / "plans" / "x.md"), "content": "x"},
-        }
-        code, stdout = self._run(payload)
+    def test_bash_request_returns_allow(self, tmp_path: pathlib.Path) -> None:
+        payload_text = json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}})
+        code, stdout = self._run(payload_text, tmp_path)
         assert code == 0
-        assert json.loads(stdout) == {
-            "hookSpecificOutput": {
-                "hookEventName": "PermissionRequest",
-                "decision": {"behavior": "allow"},
-            }
-        }
+        assert json.loads(stdout) == _ALLOW_RESPONSE
 
-    def test_write_to_agents_md_returns_allow(self, home: pathlib.Path, repo: pathlib.Path) -> None:
-        del home
-        payload = {
-            "tool_name": "Write",
-            "tool_input": {"file_path": str(repo / "AGENTS.md"), "content": "x"},
-        }
-        code, stdout = self._run(payload)
+    def test_invalid_json_input_returns_allow(self, tmp_path: pathlib.Path) -> None:
+        code, stdout = self._run("not-json", tmp_path)
         assert code == 0
-        assert json.loads(stdout) == {
-            "hookSpecificOutput": {
-                "hookEventName": "PermissionRequest",
-                "decision": {"behavior": "allow"},
-            }
-        }
-
-    def test_bash_rm_in_plans_returns_allow(self, home: pathlib.Path) -> None:
-        payload = {
-            "tool_name": "Bash",
-            "tool_input": {"command": f"rm {home}/.claude/plans/x.md"},
-            "cwd": str(home),
-        }
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert json.loads(stdout) == {
-            "hookSpecificOutput": {
-                "hookEventName": "PermissionRequest",
-                "decision": {"behavior": "allow"},
-            }
-        }
-
-    def test_bash_cp_and_wc_in_scratchpad_and_plans_returns_allow(self, home: pathlib.Path) -> None:
-        scratchpad = home / ".claude" / "scratchpad"
-        scratchpad.mkdir(parents=True)
-        plans = home / ".claude" / "plans"
-        payload = {
-            "tool_name": "Bash",
-            "tool_input": {"command": f"cp {scratchpad}/x.md {plans}/y.md && wc -l {plans}/y.md"},
-            "cwd": str(home),
-        }
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
-
-    def test_bash_heredoc_append_to_plans_returns_allow(self, home: pathlib.Path) -> None:
-        """計画ファイルへのヒアドキュメント追記を`~`表記のまま入口経路で自動許可する。
-
-        `_fork_runner.run_script`は呼び出し時点の`os.environ`を子へ渡すため、
-        `home` fixtureの`HOME`差し替えが子プロセスの`~`展開へ反映される。
-        """
-        command = "cat >> ~/.claude/plans/plan.md <<'PLAN_EOF'\n## 進捗ログ\n\n本文\nPLAN_EOF\n"
-        payload = {
-            "tool_name": "Bash",
-            "tool_input": {"command": command},
-            "cwd": str(home),
-        }
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
-
-    def test_bash_managed_temp_create_returns_allow(self) -> None:
-        """正規のランチャーの`create`確認を自動許可する。"""
-        payload = {
-            "tool_name": "Bash",
-            "tool_input": {"command": "atk managed-temp create --prefix agent-work"},
-            "cwd": "/tmp",
-        }
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert json.loads(stdout)["hookSpecificOutput"]["decision"]["behavior"] == "allow"
-
-    def test_bash_ls_emits_nothing(self) -> None:
-        # ls は対象外コマンドのため自動許可しない
-        payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert stdout == ""
-
-    def test_unrelated_path_emits_nothing(self, home: pathlib.Path) -> None:
-        payload = {
-            "tool_name": "Write",
-            # `home` は `tmp_path`（`/tmp` 配下）に配置されるため、`/tmp` 全許可判定と
-            # 衝突する。フックが自動許可の対象と判定しないパスを検証するため
-            # `/tmp` 配下でない絶対パスを直接指定する。
-            "tool_input": {"file_path": "/nonexistent/src/main.py", "content": "x"},
-        }
-        del home
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert stdout == ""
-
-    def test_invalid_json_input_emits_nothing(self) -> None:
-        result = _fork_runner.run_script(
-            _SCRIPT_PATH,
-            argv=("permissionrequest",),
-            input="not-json",
-            timeout=30,
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
-    def test_file_tools_scratchpad_return_allow(self, home: pathlib.Path, tool_name: str) -> None:
-        del home
-        payload = {
-            "tool_name": tool_name,
-            "tool_input": {"file_path": "/tmp/claude-1000/xxx/scratchpad/foo.md"},
-        }
-        code, stdout = self._run(payload)
-        assert code == 0
-        assert json.loads(stdout) == {
-            "hookSpecificOutput": {
-                "hookEventName": "PermissionRequest",
-                "decision": {"behavior": "allow"},
-            }
-        }
+        assert json.loads(stdout) == _ALLOW_RESPONSE

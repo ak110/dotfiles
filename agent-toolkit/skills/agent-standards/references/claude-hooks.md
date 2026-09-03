@@ -153,6 +153,10 @@ block文面には検出した原因と、遮断を解除して続行する承認
 `hookEventName`は`"PermissionRequest"`を指定する。
 
 組み込みdenyルールは`allow`でも上書きできないが、確認ダイアログ（ask相当）はスキップできる。
+
+`Read(*.key)`のような相対グロブのdeny規則は任意の深さの一致として評価されるため、ディレクトリを走査する読み取りコマンドを一律に確認ダイアログの対象へ変える。
+このダイアログは本イベントの`allow`でも抑止できないため、保護する対象は当該ファイルを持つリポジトリの設定へ、走査対象を巻き込まない具体的なパスで書く。
+
 `matcher`はツール名で評価する（`Bash` / `Edit|Write`等）。
 入力payloadは`tool_name` / `tool_input`に加え、`permission_suggestions`配列を受け取る。
 

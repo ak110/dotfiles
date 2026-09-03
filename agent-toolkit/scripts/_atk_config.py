@@ -51,6 +51,15 @@ def _config_dir() -> pathlib.Path:
     return pathlib.Path(platformdirs.user_config_dir("agent-toolkit", appauthor=False))
 
 
+def state_dir() -> pathlib.Path:
+    """platformdirsの状態ディレクトリ解決規約に従い、状態ファイル配置ディレクトリを返す。
+
+    `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
+    `atk config get state_dir`の出力と、フックが状態ファイルを置く位置の双方をここで決める。
+    """
+    return pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+
+
 def _config_file_path() -> pathlib.Path:
     """変更可能設定を永続化するJSONファイルの絶対パスを返す。"""
     return _config_dir() / _CONFIG_FILENAME
@@ -111,7 +120,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {
         "config_dir": str(_config_dir()),
-        "state_dir": str(pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))),
+        "state_dir": str(state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(private_notes_path(home)),
         **{key: resolve_mutable_setting(key) for key in _MUTABLE_KEY_DEFAULTS},
