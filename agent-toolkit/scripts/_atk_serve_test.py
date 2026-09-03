@@ -36,6 +36,8 @@ import watchdog.events
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestの`_isolated_home`が差し替えた環境を
 # そのまま渡すとこの解決が失敗するため、取り込み時点の環境変数を控えてNodeへ渡す。
+# 同じ目的のconftestの`host_environ` fixtureは使わない。`node`を起動する`_run_node_ui`は
+# module levelのヘルパーであり、fixtureを受け取るには全呼び出し元のテストへ引数を追加する必要がある。
 _HOST_ENVIRON = dict(os.environ)
 
 

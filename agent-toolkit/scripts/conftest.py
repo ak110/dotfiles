@@ -26,6 +26,23 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "CLAUDE_CODE_USE_FOUNDRY",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS",
 )
+_ISOLATED_HOME_ENVIRONMENT_NAMES = ("HOME", "USERPROFILE")
+_ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES = (
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+)
+# `_isolated_home`が差し替える前の値。fixture適用後の`os.environ`からは取得できないため、
+# conftestの読み込み時点（どのfixtureよりも先）で控える。`host_environ`が復元に使う。
+_HOST_HOME_ENVIRON = {
+    name: value
+    for name in (*_ISOLATED_HOME_ENVIRONMENT_NAMES, *_ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES)
+    if (value := os.environ.get(name)) is not None
+}
 
 
 @pytest.fixture(autouse=True)
@@ -86,22 +103,36 @@ def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
     プラットフォームごとに参照される変数が異なるため、両系統をまとめて差し替える。
 
     差し替えた環境変数はテストが起動する子プロセスへも継承される。実行環境のホーム・設定
-    ディレクトリから版や信頼設定を解決する外部ツール（miseのshimとして提供される`node`など）を
-    起動するテストは、この隔離を渡すと解決に失敗するため、隔離前の環境変数を控えて明示的に渡す。
+    ディレクトリから版や信頼設定を解決する外部ツール（miseのshimとして提供される`uv`・`node`など）を
+    起動するテストは、この隔離を渡すと解決に失敗する。当該テストは`os.environ`をそのまま渡さず、
+    `host_environ` fixtureが組み立てる環境変数を子プロセスへ渡す。
     """
     home = tmp_path / "home"
-    for name in ("HOME", "USERPROFILE"):
+    for name in _ISOLATED_HOME_ENVIRONMENT_NAMES:
         monkeypatch.setenv(name, str(home))
-    for name in (
-        "XDG_CONFIG_HOME",
-        "XDG_CACHE_HOME",
-        "XDG_DATA_HOME",
-        "XDG_STATE_HOME",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "PROGRAMDATA",
-    ):
+    for name in _ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
         monkeypatch.setenv(name, str(home / name.lower()))
+
+
+@pytest.fixture(name="host_environ")
+def _host_environ() -> Callable[[], dict[str, str]]:
+    """miseのshimで提供される外部コマンドを起動する子プロセスへ渡す環境変数を組み立てるfactory。
+
+    `_isolated_home`が差し替えた変数だけを隔離前の値へ戻し、他のfixtureによる隔離は維持する。
+    shimは実行環境のホーム・設定ディレクトリから信頼設定とツールの版を解決するため、隔離した値を
+    渡すとPythonの起動前に失敗する。作業ツリーの位置により結果が変わるのを防ぐ用途で使う。
+
+    呼び出し時点の`os.environ`を基にするため、autouse fixtureの適用順序へ依存しない。
+    """
+
+    def _build() -> dict[str, str]:
+        environ = dict(os.environ)
+        for name in (*_ISOLATED_HOME_ENVIRONMENT_NAMES, *_ISOLATED_CONFIG_DIRECTORY_ENVIRONMENT_NAMES):
+            environ.pop(name, None)
+        environ.update(_HOST_HOME_ENVIRON)
+        return environ
+
+    return _build
 
 
 @pytest.fixture(autouse=True)

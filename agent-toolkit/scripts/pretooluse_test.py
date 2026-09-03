@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import textwrap
 import time
+from collections.abc import Callable
 
 import _fork_runner
 import hook
@@ -1798,7 +1799,11 @@ class TestHookEntryPointsPep723Dependencies:
     """
 
     @pytest.mark.parametrize("script_name", _hook_entry_point_names())
-    def test_entry_point_starts_without_import_error(self, script_name: str) -> None:
+    def test_entry_point_starts_without_import_error(
+        self,
+        script_name: str,
+        host_environ: Callable[[], dict[str, str]],
+    ) -> None:
         script = _SCRIPTS_DIR_PATH / script_name
         # 空 JSON 入力（各 hook が最小限の tool_input を要求する場合の共通形）
         result = subprocess.run(
@@ -1808,6 +1813,7 @@ class TestHookEntryPointsPep723Dependencies:
             text=True,
             check=False,
             timeout=60,
+            env=host_environ(),
         )
         # ModuleNotFoundError 等の import 系失敗は stderr の Traceback として現れる。
         # hook 実装の内部エラー（キー不足等）は許容し、import 失敗のみを検出する。

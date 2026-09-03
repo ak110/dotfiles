@@ -55,13 +55,6 @@ def _isolate_agent_and_managed_temp_environment(
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
     monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
-    worktree_root = pathlib.Path(atk.__file__).resolve().parents[2]
-    trusted_config_paths = [worktree_root]
-    git_entry = worktree_root / ".git"
-    if git_entry.is_file():
-        git_dir = pathlib.Path(git_entry.read_text(encoding="utf-8").removeprefix("gitdir: ").strip())
-        trusted_config_paths.append(git_dir.parents[2])
-    monkeypatch.setenv("MISE_TRUSTED_CONFIG_PATHS", os.pathsep.join(str(path) for path in trusted_config_paths))
 
 
 @pytest.mark.parametrize(
@@ -76,13 +69,14 @@ def _isolate_agent_and_managed_temp_environment(
 def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     tmp_path: pathlib.Path,
     argv: list[str],
+    host_environ: Callable[[], dict[str, str]],
 ) -> None:
     """公開出力経路は読取側の早期クローズをTracebackなしのexit 1として処理する。"""
     notes = _setup_notes(tmp_path)
     _write_feedback_file(notes, "feedback.md", body="searchable")
     read_fd, write_fd = os.pipe()
     os.close(read_fd)
-    env = os.environ.copy()
+    env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--script", str(pathlib.Path(atk.__file__).resolve()), *argv],
@@ -99,7 +93,10 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     assert "Exception ignored on flushing sys.stdout" not in stderr
 
 
-def test_cli_local_path_filter_notifies_legacy_and_current_tbds(tmp_path: pathlib.Path) -> None:
+def test_cli_local_path_filter_notifies_legacy_and_current_tbds(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
     """実CLIはローカルパス指定時に旧パス形とURL形の未回答TBDをともに通知する。"""
     notes = _setup_notes(tmp_path)
     local_repo = tmp_path / "repo"
@@ -111,7 +108,7 @@ def test_cli_local_path_filter_notifies_legacy_and_current_tbds(tmp_path: pathli
     _write_tbd_file(notes, "legacy.md", target_repo=str(local_repo), question="旧形式")
     _write_tbd_file(notes, "current.md", target_repo="github.com/example/repo", question="現行形式")
     _write_tbd_file(notes, "other.md", target_repo="github.com/example/other", question="対象外")
-    env = os.environ.copy()
+    env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
 
     result = subprocess.run(  # noqa: S603
