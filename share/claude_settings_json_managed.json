@@ -62,12 +62,7 @@
       "mcp__plugin_serena_serena",
       "mcp__serena"
     ],
-    "defaultMode": "auto",
-    "deny": [
-      "Read(*.key)",
-      "Read(*.crt)",
-      "Read(//**/.credentials.json)"
-    ]
+    "defaultMode": "auto"
   },
   "promptCacheTtl": "1h",
   "showClearContextOnPlanAccept": false,

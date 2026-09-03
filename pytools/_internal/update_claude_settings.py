@@ -122,6 +122,19 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
         "permissions.allow",
         "mcp__codex",
     ),
+    # 2026-09: 秘匿ファイルの読取禁止をプロジェクト側リポジトリ設定へ移したため配布原本の3件を除去
+    (
+        "permissions.deny",
+        "Read(*.key)",
+    ),
+    (
+        "permissions.deny",
+        "Read(*.crt)",
+    ),
+    (
+        "permissions.deny",
+        "Read(//**/.credentials.json)",
+    ),
 )
 
 # ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。

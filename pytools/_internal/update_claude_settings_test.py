@@ -50,7 +50,8 @@ MANAGED_ALLOW = [
     "mcp__serena",
     "mcp__plugin_serena_serena",
 ]
-MANAGED_DENY = ["Read(*.key)", "Read(*.crt)", "Read(//**/.credentials.json)"]
+# 擬似配布内容としての中立な値。配布原本から撤去した規則の文字列とは切り離す。
+MANAGED_DENY = ["Read(./secrets/**)"]
 MANAGED = {
     "language": "japanese",
     "permissions": {
@@ -233,6 +234,11 @@ class TestProductionManagedSettings:
         )
         assert all("claude_hook.py stop;" not in command for command in commands)
         assert ("Stop" in data["hooks"]) is (suffix == "posix")
+
+    def test_managed_settings_declares_no_deny_rules(self):
+        """配布設定は秘匿ファイルの読取禁止を持たず、プロジェクト側設定へ委ねる。"""
+        data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        assert "deny" not in data["permissions"]
 
     def test_windows_hook_commands_use_home_placeholder(self):
         """Windows個人hookの実行パスがプレースホルダー形式である。"""
@@ -1461,7 +1467,10 @@ class TestStripRemovedListItems:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`run()`は旧管理denyだけを除去し、利用者独自denyと現行管理denyを保持する。"""
+        """`run()`は旧管理denyだけを除去し、利用者独自denyと現行管理denyを保持する。
+
+        撤去した秘匿ファイルの読取禁止3件と、以前に撤去した`Read(./.env)`が除去対象である。
+        """
         settings_path = _setup_run_paths(
             tmp_path,
             monkeypatch,
@@ -1469,7 +1478,17 @@ class TestStripRemovedListItems:
         )
         settings_path.write_text(
             json.dumps(
-                {"permissions": {"deny": ["Read(./.env)", "Read(./.secret)", "Read(*.key)"]}},
+                {
+                    "permissions": {
+                        "deny": [
+                            "Read(./.env)",
+                            "Read(./.secret)",
+                            "Read(*.key)",
+                            "Read(*.crt)",
+                            "Read(//**/.credentials.json)",
+                        ]
+                    }
+                },
                 ensure_ascii=False,
             ),
             encoding="utf-8",
@@ -1478,12 +1497,7 @@ class TestStripRemovedListItems:
         mod.run()
 
         result = json.loads(settings_path.read_text(encoding="utf-8"))
-        assert result["permissions"]["deny"] == [
-            "Read(./.secret)",
-            "Read(*.key)",
-            "Read(*.crt)",
-            "Read(//**/.credentials.json)",
-        ]
+        assert result["permissions"]["deny"] == ["Read(./.secret)", "Read(./secrets/**)"]
 
     def test_run_removes_legacy_personal_repo_push_rule(
         self,

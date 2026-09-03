@@ -146,6 +146,9 @@ SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_
 特定ホスト・本リポジトリ限定の内容はリポジトリ直下の`.claude/settings.local.json`（バージョン管理対象外）へ置く。
 読み取り専用コマンドには、引数なしの`Bash`許可を適用する。
 
+秘匿ファイルの読み取りを禁止する`permissions.deny`は配布原本へ置かず、当該ファイルを持つプロジェクトのリポジトリ直下の`.claude/settings.json`へ置く。
+`Read(*.key)`のような相対グロブを配布原本へ置くと、全プロジェクトのディレクトリ走査が確認ダイアログの対象となる。
+
 プラグインの有効・無効は、永続的な設定値だけで再現できる場合に
 `share/claude_settings_json_managed*.json`の`enabledPlugins`へ置く。設定反映前に
 インストール済みプラグインへCLI遷移が必要な場合だけ
