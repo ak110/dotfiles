@@ -122,7 +122,7 @@ git rev-parse develop
 実行後に`git rev-parse develop`が`MERGE_OID`と一致することを確認する。
 再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略し、既存の未コミット差分とローカルbranchを変更せずリモートの完遂を維持する。
 
-develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`の最終完全OID照合は省略しない。
+develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`の最終完全OID照合は省略しない。master CIの待機を省略できる条件は本節の後段が定める。
 
 ```sh
 # OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
@@ -130,6 +130,16 @@ uv run --no-project --script agent-toolkit/scripts/wait_ci.py --baseline <baseli
 ```
 
 現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であるため、develop固有検査として扱わない。CI定義が変化した場合は省略条件を再判定する。
+
+master CIの待機は、次の4つをすべて確認できる場合だけ省略する。いずれか1つでも確認できない場合は省略せず、後段の待機経路をそのまま実行する。
+
+- マージコミットのツリーがPR headのツリーと同一である。`git rev-parse <MERGE_OID>^{tree} <PR headの完全OID>^{tree}`が返す2行が同じ値であり、`git diff --name-only <PR headの完全OID> <MERGE_OID>`の出力が0行であることで判定する
+- PR headの完全OIDを対象とし、`push` eventかつ`develop` head branchであるCI runが`success`で完了している
+- 「条件付きRelease検収」の判定で、マージコミットの第一親との差分に`rust/claude-statusline/`が含まれず、Release検収が不要である
+- 現行CI定義にmaster固有のjob、master向けにだけ実行される追加検査及び外部検査がない
+
+`release-statusline.yaml`はCIの成功を契機に起動し、そのgateは`push` event・`success`・`master` head branchの3条件で対象を絞る。`rust/claude-statusline/`に差分がある場合はmaster CIの成功が後続工程の前提になるため、当該差分がある場合は省略しない。
+現行の`.github/workflows/ci.yaml`は全branchのpushへ共通jobを実行し、master固有jobを持たない。branchで分岐する条件は`develop`から`master`へのpull_requestイベントで一部stepを省く分岐だけであり、`push` eventのjob構成はbranchによらず同一である。CI定義が変化した場合は省略条件を再判定する。
 
 master pushのCIは、完全OID、`push` event及び`master` head branchに一致するrunを一覧から特定する。
 runの完全なdatabase IDを取得した後、公式CLIで待機する。
