@@ -1,13 +1,22 @@
-"""レビュー指摘管理表の8列TSVを排他更新する補助CLI。"""
+"""レビュー指摘管理表の8列TSVを排他更新する補助CLI。
+
+排他ロックは表と同じディレクトリではなくホーム配下の専用ディレクトリへ置く。
+表の配置先には計画作業rootが含まれる。兄弟のロックファイルを生成すると、計画バンドルの回収後も
+ロックだけが作業rootへ残存し、計画の一覧と親ディレクトリの回収を妨げる。
+表の本体ファイル自身へのロックには移行できない。更新は一時ファイルの原子的置換で行い、
+置換のたびにinodeが変わるため、本体を開いて取得したロックは後続の更新と同じ実体を指さない。
+"""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
 import re
 import typing
 import unicodedata
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 import _atk_help
@@ -172,38 +181,52 @@ def _write_atomic(path: Path, rows: list[list[str]]) -> None:
     atomic_write(path, content, fsync=True)
 
 
+def lock_path(path: str | Path) -> Path:
+    """レビュー表の排他に使うロックファイルのパスを返す。
+
+    格納先を表と同じディレクトリから分離し、対象の絶対パスのダイジェストで名前を一意にする。
+    分離の理由と本体ファイル自身をロックできない理由はモジュールのdocstringが述べる。
+    ロックファイルは解放後も削除しない。削除してから再取得するまでの間に別の主体が同名のファイルを
+    生成した場合、別々の実体へロックを取得した2主体が同時に表を更新する。
+    """
+    target = Path(path).expanduser().resolve(strict=False)
+    digest = hashlib.sha256(target.as_posix().encode("utf-8")).hexdigest()[:32]
+    return Path.home() / ".claude" / ".atk-locks" / "review-table" / f"{digest}.lock"
+
+
+@contextlib.contextmanager
+def _table_lock(path: Path) -> Iterator[None]:
+    """レビュー表の排他ロックを取得し、離脱時に解放する。"""
+    target_lock = lock_path(path)
+    target_lock.parent.mkdir(parents=True, exist_ok=True)
+    with target_lock.open("a+", encoding="utf-8") as lock_file:
+        _file_lock.acquire_lock(lock_file)
+        try:
+            yield
+        finally:
+            _file_lock.release_lock(lock_file)
+
+
 def _locked_update(path: Path, updater: Callable[[list[list[str]]], list[list[str]]]) -> list[list[str]]:
     """ロック内で再読込・検証・更新・原子的置換を実行する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = path.with_name(path.name + ".lock")
-    _file_lock.ensure_plan_lock_ignored(lock_path)
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        _file_lock.acquire_lock(lock_file)
-        try:
-            rows = _read(path) if path.exists() else []
-            _validate_rows(rows)
-            updated = updater(rows)
-            _validate_rows(updated)
-            _write_atomic(path, updated)
-            return updated
-        finally:
-            _file_lock.release_lock(lock_file)
+    with _table_lock(path):
+        rows = _read(path) if path.exists() else []
+        _validate_rows(rows)
+        updated = updater(rows)
+        _validate_rows(updated)
+        _write_atomic(path, updated)
+        return updated
 
 
 def init(path: str | Path) -> int:
     """存在しない表を作成する。"""
     target = _path(str(path))
     target.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = target.with_name(target.name + ".lock")
-    _file_lock.ensure_plan_lock_ignored(lock_path)
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        _file_lock.acquire_lock(lock_file)
-        try:
-            if target.exists():
-                raise ValueError(f"レビュー表が既に存在する: {target}")
-            _write_atomic(target, [])
-        finally:
-            _file_lock.release_lock(lock_file)
+    with _table_lock(target):
+        if target.exists():
+            raise ValueError(f"レビュー表が既に存在する: {target}")
+        _write_atomic(target, [])
     print(target)
     return 0
 

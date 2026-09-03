@@ -7,6 +7,7 @@ checkout記録は取得からcommit成功まで保持し、取得元と取得時
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import json
@@ -72,7 +73,9 @@ def build_parser(parser) -> None:
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 
-_WORKING_RESIDUE_SUFFIXES = (".lock", ".bak", ".tmp")
+_LOCK_SUFFIX = ".lock"
+_PLAN_CREATE_LOCK_NAME = f".agent-toolkit-plan-create{_LOCK_SUFFIX}"
+_WORKING_RESIDUE_SUFFIXES = (_LOCK_SUFFIX, ".bak", ".tmp")
 """計画バンドルへ含めず、作業バンドルの回収時に作業rootから取り除く付随ファイルの拡張子。"""
 
 
@@ -90,6 +93,8 @@ def _remove_working_residue(working_main: pathlib.Path) -> None:
     これらは計画バンドルから除外されて保存rootへ移らないため、作業バンドルの回収と
     同じ時点で取り除く。stemに前方一致する名前だけを対象とするため、計画作成の排他に
     使う作業root直下の共有ロックは削除しない。
+    `.bak`と`.tmp`は現行の書き込み経路が生成する。`.lock`はレビュー指摘管理表の
+    ロックを兄弟ファイルとして置いていた旧版の生成物であり、現行版は作業rootの外へ置く。
     """
     prefix = f"{working_main.stem}."
     for path in working_main.parent.iterdir():
@@ -650,10 +655,12 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
 
     所有の有無で対象を絞らないため、他のセッションが取得した計画と所有記録を持たない計画も返す。
     最終更新時刻は当該計画バンドルの構成ファイルの更新時刻の最大値とする。
+    一覧の作成前に、作業rootへ残る孤立したsidecarロックを回収する。
     """
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     if not root.is_dir():
         return ()
+    _remove_orphan_sidecar_locks(root)
     entries: list[dict[str, object]] = []
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file() or not _plan_file.is_plan_main_file(str(path)):
@@ -668,6 +675,23 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
             }
         )
     return tuple(entries)
+
+
+def _remove_orphan_sidecar_locks(root: pathlib.Path) -> None:
+    """計画作業root配下で、対応する本体を失ったロックファイルを削除する。
+
+    レビュー指摘管理表のロックを兄弟ファイルとして置いていた旧版の生成物が対象であり、
+    表の削除後も残って計画の一覧と親ディレクトリの回収を妨げる。
+    計画作成の排他に使う共有ロックと、本体が実在するロックは残す。
+    削除できないファイルがあっても一覧の出力は続ける。
+    """
+    for path in root.rglob(f"*{_LOCK_SUFFIX}"):
+        if path.name == _PLAN_CREATE_LOCK_NAME or path.is_symlink() or not path.is_file():
+            continue
+        if path.with_name(path.name.removesuffix(_LOCK_SUFFIX)).exists():
+            continue
+        with contextlib.suppress(OSError):
+            path.unlink()
 
 
 def _birth_date(path: pathlib.Path) -> str:

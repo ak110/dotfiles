@@ -1373,6 +1373,55 @@ def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pa
     assert updated_by_path[str(owned)] == datetime.datetime.fromtimestamp(1_700_000_500).astimezone().isoformat()
 
 
+def test_list_removes_orphan_sidecar_locks(tmp_path: pathlib.Path) -> None:
+    """一覧は本体を失ったロックだけを回収し、稼働中のロックと共有ロックを残す。"""
+    home = tmp_path / "home"
+    working_root = _plan_file.working_plans_root(home)
+    working_root.mkdir(parents=True)
+    plan = working_root / "30-孤立ロック-a1b2.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    orphan_lock = working_root / "30-孤立ロック-a1b2.exec-review.tsv.lock"
+    orphan_lock.touch()
+    live_table = working_root / "30-孤立ロック-a1b2.plan-review.tsv"
+    live_table.write_text("", encoding="utf-8")
+    live_lock = live_table.with_name(live_table.name + ".lock")
+    live_lock.touch()
+    shared_lock = working_root / ".agent-toolkit-plan-create.lock"
+    shared_lock.touch()
+
+    entries = _atk_plans.list_working_plans(home)
+
+    assert [entry["path"] for entry in entries] == [str(plan)]
+    assert not orphan_lock.exists()
+    assert live_lock.exists()
+    assert shared_lock.exists()
+
+
+def test_list_succeeds_when_orphan_lock_cannot_be_removed(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """孤立ロックを削除できない場合も一覧の出力を続ける。"""
+    home = tmp_path / "home"
+    working_root = _plan_file.working_plans_root(home)
+    working_root.mkdir(parents=True)
+    plan = working_root / "30-削除不能-a1b2.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    orphan_lock = working_root / "30-削除不能-a1b2.exec-review.tsv.lock"
+    orphan_lock.touch()
+
+    def _unlink(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> None:
+        del self, args, kwargs  # noqa
+        raise OSError("ロックを削除できない")
+
+    monkeypatch.setattr(pathlib.Path, "unlink", _unlink)
+
+    entries = _atk_plans.list_working_plans(home)
+
+    assert [entry["path"] for entry in entries] == [str(plan)]
+    assert orphan_lock.exists()
+
+
 def test_dispatch_list_prints_owner_and_update_time_per_plan(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import pathlib
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 import _review_table as table
@@ -13,15 +12,20 @@ import pytest
 _TRACK = "implementation-review"
 
 
-def _git(repo: pathlib.Path, *args: str) -> str:
-    """テスト用リポジトリでGitを実行し、標準出力を返す。"""
-    result = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout
+@pytest.fixture(name="isolated_home", autouse=True)
+def _isolated_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """ロック格納先の解決に使うホームをテスト専用ディレクトリへ向ける。
+
+    `pathlib.Path.home`はPOSIXで`HOME`、Windowsで`USERPROFILE`と`HOMEDRIVE`・`HOMEPATH`を
+    参照するため、実行OSにかかわらず全てを差し替える。
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("HOMEDRIVE", raising=False)
+    monkeypatch.delenv("HOMEPATH", raising=False)
+    return home
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -122,25 +126,37 @@ def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.Capture
     assert "盲検指摘" not in output
 
 
-def test_table_lock_is_kept_as_the_sibling_management_artifact(tmp_path: pathlib.Path) -> None:
-    """表の排他制御に使う対応ロック成果物を管理領域の検収対象として確認する。"""
+def test_locked_update_does_not_create_sidecar_lock(tmp_path: pathlib.Path) -> None:
+    """行追加の排他は、表と同じディレクトリではなくロック格納先へロックを置く。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
 
-    lock_path = path.with_name(path.name + ".lock")
-    assert lock_path.is_file()
+    assert not path.with_name(path.name + ".lock").exists()
+    lock = table.lock_path(path)
+    assert lock.is_file()
+    assert list(lock.parent.glob("*.lock")) == [lock]
 
 
-def test_table_lock_is_ignored_in_plan_repository(tmp_path: pathlib.Path) -> None:
-    """計画配下へレビュー表ロックを作成する前にGit除外を保証する。"""
-    _git(tmp_path, "init", "-q")
-    path = tmp_path / "plans" / "2026" / "09" / "sample.plan-review.tsv"
-
+def test_init_does_not_create_sidecar_lock(tmp_path: pathlib.Path) -> None:
+    """初期化の排他も、表と同じディレクトリへロックを残さない。"""
+    path = tmp_path / "review.tsv"
     table.init(path)
 
-    lock_path = path.with_name(path.name + ".lock")
-    assert _git(tmp_path, "check-ignore", str(lock_path.relative_to(tmp_path))).strip() == str(lock_path.relative_to(tmp_path))
+    assert not path.with_name(path.name + ".lock").exists()
+    lock = table.lock_path(path)
+    assert lock.is_file()
+    assert list(lock.parent.glob("*.lock")) == [lock]
+
+
+def test_lock_path_is_stable_for_same_target(tmp_path: pathlib.Path) -> None:
+    """ロックパスは同じ表へ同じ値を返し、別の表とは共有しない。"""
+    first = tmp_path / "sample.plan-review.tsv"
+    second = tmp_path / "sample.exec-review.tsv"
+
+    assert table.lock_path(first) == table.lock_path(first)
+    assert table.lock_path(first) != table.lock_path(second)
+    assert table.lock_path(first).parent == table.lock_path(second).parent
 
 
 def test_empty_review_table_strictly_validates_after_exclusive_initialization(tmp_path: pathlib.Path) -> None:
@@ -149,7 +165,7 @@ def test_empty_review_table_strictly_validates_after_exclusive_initialization(tm
     assert table.init(path) == 0
     assert table.validate(path) == 0
     assert path.read_text(encoding="utf-8") == ""
-    assert path.with_name(path.name + ".lock").is_file()
+    assert table.lock_path(path).is_file()
 
 
 def test_same_composite_key_can_be_represented_again_in_a_later_round(tmp_path: pathlib.Path) -> None:
