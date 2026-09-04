@@ -130,17 +130,17 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルの保存と旧保存先からの移行",
-        "description": "目的: 作業rootの計画ファイルをprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 実装レビューが収束した計画を保存するとき。旧保存先の計画ファイルが残る環境で保存先をそろえるとき。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "目的: 作業rootの計画ファイル又は独立CI実装レビュー表をprivate-notesへ保存し、旧保存先の計画ファイルを現行の保存先へ移行する。\n利用場面: 実装レビューが収束した計画又は原因commitに対応する計画契約がない処理のレビュー表を保存するとき。旧保存先の計画ファイルが残る環境で保存先をそろえるとき。\n対象と出力: 作業rootの`~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: 保存と移行はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans commit": {
-        "summary": "作業中の計画バンドルを保存rootへ移してcommit・pushする",
-        "description": "目的: 指定した計画のメイン、詳細、付属素材、レビュー指摘管理表を、作業rootからprivate-notesのplans配下へ移し、当該ファイルだけを対象とするcommitを作成する。\n利用場面: 実装レビューが収束し、当該計画を保存するとき。同一セッションで実装しない計画について、計画レビューが収束したとき。\n対象と出力: `~/.claude/plans`配下の同じstemのファイルをprivate-notesへ移し、当該ファイルだけを対象にcommitして既定でpushする。移した後のファイルは、移す前のファイルの作成日時と更新日時を維持する。`atk plans checkout`の取得記録がある場合は、記録した保存先へ内容を書き込んで保存側の作成日時を維持し、成功後に記録を回収する。\n前提: PLAN_FILEは計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、または保存rootからの相対メイン計画パス（yyyy/MM/dd-{名称}-{16進数4桁}.md）で指定する。\n復元・後始末: 保存先に内容の異なる同名ファイルがある場合は、何も変更せずに失敗する。取得記録がある場合は、保存元が取得時点の内容とも作業側の内容とも異なるときに、保存先と作業側のいずれも変更せずに失敗する。取得記録があり作業root直下に対象が無い場合は、保存先を変更せずに取得の記録だけを回収する。commit又はpushに失敗した場合と、移動を確定する前に失敗した場合は、作業側のファイルを保持して失敗するため、同じコマンドで再開できる。保存先と内容の異なる同名ファイルを作業root直下に持つ場合は、当該ファイルを作業root外へ退避し、`atk plans checkout`で保存済みの計画を取得してから退避した内容で置き換えて、同じコマンドを実行する。",
+        "summary": "作業中の計画バンドル又は独立CI実装レビュー表を保存してcommit・pushする",
+        "description": "目的: 指定した計画バンドル又は独立CI実装レビュー表を作業rootからprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 実装レビューが収束した計画又は原因commitに対応する計画契約がない処理のレビュー表を保存するとき。\n対象と出力: 計画バンドルは年月階層へ、独立CI実装レビュー表は`plans/ci/`へ移し、既定でpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。\n前提: PLAN_FILEは計画作業root直下のメイン計画ファイル名、保存root相対のメイン計画パス、又は`ci-<起点OID>.exec-review.tsv`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commit又はpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {
-        "summary": "保存済みの計画バンドルを作業rootへ取得する",
-        "description": "目的: private-notesのplans配下へ保存済みの計画のメイン、詳細、付属素材、レビュー指摘管理表を作業root直下へ取得し、取得時点の内容を保存の照合用に記録する。\n利用場面: 保存済みの計画を再び実装するとき。保存済みの計画へ実装時の進捗を追記するとき。\n対象と出力: private-notesのplans配下を読み取り、`~/.claude/plans`直下へ同じ名前でファイルを作成する。取得したファイルの一覧を標準出力へ書く。private-notesは変更しない。\n前提: PLAN_FILEはplans rootからの相対メイン計画パスで指定する。作業root直下に同じ名前のファイルがないこと。同じ計画を取得済みでないこと。\n復元・後始末: 取得した計画は`atk plans commit`で取得元と同じ保存先へ戻す。取得を取り消す場合は、内容を変えないまま同じ`atk plans commit`を実行する。作業root直下の取得分を削除した後に同じコマンドを実行すると、保存先を変更せずに取得の記録だけを回収する。",
+        "summary": "保存済みの計画バンドル又は独立CI実装レビュー表を作業rootへ取得する",
+        "description": "目的: private-notesのplans配下へ保存済みの計画バンドル又は独立CI実装レビュー表を作業root直下へ取得し、取得時点の内容を保存の照合用に記録する。\n利用場面: 保存済みの計画を再び実装するとき、又は保存済みの独立CI実装レビュー表を検証・更新するとき。\n対象と出力: private-notesのplans配下を読み取り、`~/.claude/plans`直下へ同じ名前でファイルを作成する。private-notesは変更しない。\n前提: PLAN_FILEはplans rootからの相対メイン計画パス、又は`ci/ci-<起点OID>.exec-review.tsv`で指定する。作業root直下に同名ファイルがなく、同じ対象を取得済みでないこと。\n復元・後始末: 取得物は`atk plans commit`で取得元と同じ保存先へ戻す。作業root直下の取得分を削除した後に同じコマンドを実行すると、保存先を変更せずに取得記録だけを回収する。",
         "epilog": "実行例:\n\n  atk plans checkout 2026/09/01-example-1a2b.md",
     },
     "atk plans list": {
@@ -235,7 +235,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
-        "description": "目的: 行を持たない空のレビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: レビューを開始する前に、計画ファイルと同じstemの表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.plan-review.tsv`か`<計画stem>.exec-review.tsv`で指定する。\n復元・後始末: 誤って作成した表は、当該ファイルを削除して取り除く。",
+        "description": "目的: 行を持たない空のレビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: レビューを開始する前に、計画ファイルと同じstemの表、又は原因commitに対応する計画契約がない処理の独立CI実装レビュー表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.plan-review.tsv`か`<計画stem>.exec-review.tsv`、又は計画作業root直下の`ci-<起点OID>.exec-review.tsv`で指定する。\n復元・後始末: 誤って作成した表は、当該ファイルを削除して取り除く。",
         "epilog": "実行例:\n\n  atk review-table init /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
     "atk review-table add": {

@@ -31,7 +31,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
 - mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans checkout/commit/migrate: 保存済み計画の取得、計画bundleの対象限定commit・push、旧保存先からの一括移行
+- plans checkout/commit/migrate: 保存済み計画又は独立CI実装レビュー表の取得・対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
@@ -324,7 +324,8 @@ def _add_wi_add_parser(sub: Any) -> None:
         default=None,
         help=(
             "計画ファイルの絶対パス。指定するとAWIを計画実装型として確定記録する。"
-            "--type=awi（既定）でのみ指定でき、指定したパスは実在を検証する。"
+            "--type=awi（既定）でのみ指定でき、frontmatterへ記録する値へ正規化したうえで保存先の実体の実在を検証する。"
+            "計画作業rootにだけ実体がある計画は、先に`atk plans commit`で保存する。"
             "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
             "計画ファイルのベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない。"
         ),
@@ -605,7 +606,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "--plan-file",
         metavar="ABS_PATH",
         default=None,
-        help="hold項目を計画型awiへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
+        help="hold項目を計画型awiへ編集しinboxへ移す計画ファイルの絶対パス。保存先に実体を持つ計画だけを受理する。",
     )
     edit.add_argument(
         "--depends-on",
@@ -637,6 +638,8 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         help=(
             "新規計画は移動後の$(atk config get private_notes)/plans/から始まるportable値を指定する。"
             "既存の絶対パスも読み取り互換として受理する。"
+            "frontmatterへ記録する値へ正規化したうえで保存先の実体の実在を検証するため、"
+            "計画作業rootにだけ実体がある計画は先に`atk plans commit`で保存する。"
         ),
     )
     convert_to_plan.add_argument(

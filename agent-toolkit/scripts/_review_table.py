@@ -44,7 +44,8 @@ _RECOVERY_GUIDANCE = (
     "保存済み7列形式はlevelを空として読み込み、更新時に8列形式へ書き戻す"
 )
 _INPUT_GUIDANCE = (
-    "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
+    "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`、または原因commit完全OID由来の"
+    "`ci-<OID>.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
     "標準入力、パイプ及びプロセス置換は受理しない"
 )
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
@@ -424,7 +425,10 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         parser_class=_GuidedSubcommandParser,
     )
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
-    path_help = "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`を指定する。"
+    path_help = (
+        "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か"
+        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
+    )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk review-table add"])
     add_command_parser.add_argument("path", help=path_help)

@@ -43,8 +43,11 @@ private-notesの計画ファイルを編集ツールで直接書き換えない�
 
 レビュー指摘管理表は計画ファイルと同じディレクトリへ、計画レビュー用を`<計画stem>.plan-review.tsv`（`track`は`plan-review`）、
 実装レビュー用を`<計画stem>.exec-review.tsv`（`track`は`implementation-review`）として置く。
+原因commitに対応する計画契約が存在する場合は、実装レビューの照合基準となる計画ファイル（メイン）のstemをレビュー表へ用いる。計画stemを名前へ含める付属素材にも同じstemを用いる。commitの生成主体と固定集合にある別計画の有無を、この判定に用いない。
+原因commitに対応する計画契約が存在しない場合は、計画ファイルと計画レビューを新設せず、独立CI実装レビュー表を計画作業root直下へ置く。同じ再帰的CI失敗処理で既存の独立表がある場合は、現在の原因commitが変わっても当該表と起点OIDを継承する。存在しない場合は、現在の原因commitの完全OIDを起点OIDとし、小文字16進数40桁のまま用いた`ci-<起点OID>.exec-review.tsv`を一意に作成する。初回は`atk review-table init <絶対パス>`で作成し、保存済みの同じ独立表を継続する場合は`atk plans checkout ci/ci-<起点OID>.exec-review.tsv`で取得する。
 作成済みのレビュー表は、全ての要求を充足済みと確定して実装工程を省略する計画では計画レビュー完了まで、それ以外は実装レビュー完了まで作業rootで更新する。
 `atk plans commit`はレビュー表を計画バンドルとして収集し、計画ファイルと同じcommitでprivate-notesへ保存する。
+独立CI実装レビュー表はレビュー収束後に`atk plans commit ci-<起点OID>.exec-review.tsv`で`private-notes/plans/ci/`へ対象限定commit・pushする。再取得検証では次の3コマンドを順に実行する。`atk plans checkout ci/ci-<起点OID>.exec-review.tsv`、`atk review-table validate <作業側絶対パス>`、`atk plans commit ci-<起点OID>.exec-review.tsv`である。これにより保存実体を正式経路で読み戻し、検証後の作業側を再び消失させる。各保存後に作業側の不在とprivate-notesのclean状態を確認する。private-notesを直接編集せず、独立表を計画バンドルとしてもキューの`plan_file`としても扱わない。
 
 本書、`agent-toolkit:plan-mode`のSKILL.md及び`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、
 計画に属するファイルとレビュー記録を次の呼称で指す。新規の記述では次表の呼称以外の別名を用いない。

@@ -352,13 +352,10 @@ def add_entries(
         if entry_type != WI_TYPE_AWI:
             raise WebInputError("plan_fileはawi種別でのみ指定できます")
         try:
-            plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
             stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
+            plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
         except ValueError as error:
             raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
-        try:
-            if not plan_path.is_file():
-                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
         except OSError as error:
             raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
     else:

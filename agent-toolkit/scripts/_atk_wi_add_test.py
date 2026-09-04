@@ -946,6 +946,30 @@ def test_add_operation_rejects_plan_file_with_target_repo_override(
     assert not list((notes / "inbox").iterdir())
 
 
+def test_add_operation_rejects_plan_file_only_in_working_root(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存前の作業計画を拒否し、inboxへ項目を書き込まない。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    plan = pathlib.Path.home() / ".claude/plans/30-working-plan-a1b2.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+
+    with pytest.raises(WebInputError, match="atk plans commit"):
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            target_commit="a" * 40,
+            plan_file=str(plan),
+        )
+
+    assert not list((notes / "inbox").iterdir())
+
+
 def test_add_operation_accepts_plan_file_with_equivalent_target_repo(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -759,6 +759,48 @@ def test_convert_to_plan_accepts_and_stores_portable_plan_file(
     assert details["plan_file"] == portable
 
 
+def test_convert_to_plan_rejects_plan_file_only_in_working_root_without_changes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存前の作業計画を拒否し、変換元の状態を維持する。"""
+    notes = _setup_notes(tmp_path)
+    entry = _write_convert_awi(notes, "awi.md")
+    original = entry.read_text(encoding="utf-8")
+    plan = pathlib.Path.home() / ".claude/plans/30-working-plan-a1b2.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="atk plans commit"):
+        mutations.convert_entries_to_plan(notes, filenames=("awi.md",), plan_file=str(plan))
+
+    assert entry.read_text(encoding="utf-8") == original
+
+
+def test_edit_entry_to_plan_rejects_plan_file_only_in_working_root_without_changes(
+    tmp_path: pathlib.Path,
+) -> None:
+    """保存前の作業計画を拒否し、hold項目の状態を維持する。"""
+    notes = _setup_notes(tmp_path)
+    entry = _write_convert_awi(notes, "awi.md", state="hold")
+    original = entry.read_text(encoding="utf-8")
+    plan = pathlib.Path.home() / ".claude/plans/30-working-plan-a1b2.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+
+    with pytest.raises(mutations.WebInputError, match="atk plans commit"):
+        mutations.edit_entry_to_plan(
+            notes,
+            filename="awi.md",
+            content="本文",
+            plan_file=str(plan),
+            target_commit="a" * 40,
+        )
+
+    assert entry.read_text(encoding="utf-8") == original
+
+
 def test_plan_file_write_paths_store_portable_value_for_absolute_input(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1018,7 +1060,7 @@ def test_convert_to_plan_rejects_explicit_dependency_cycle(
 
 @pytest.mark.parametrize(
     ("plan_value", "expected"),
-    [("relative.md", "絶対パス"), ("missing", "実在する通常ファイル")],
+    [("relative.md", "絶対パス"), ("missing", "保存先に実体がありません")],
 )
 def test_convert_to_plan_rejects_invalid_plan(
     tmp_path: pathlib.Path,
@@ -1255,6 +1297,36 @@ def test_convert_to_plan_pushes_pending_commit_before_pull(
     mutations.convert_entry_to_plan(notes, filename="awi.md", plan_file=str(plan))
 
     assert events[:2] == ["push", "pull"]
+
+
+def test_convert_to_plan_validates_saved_plan_after_pull(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """pullで取得した保存済み計画を検証して変換する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_awi(notes, "awi.md")
+    relative = pathlib.Path("plans/2026/08/30-synced-plan-a1b2.md")
+    plan = notes / relative
+    portable = f"$(atk config get private_notes)/{relative.as_posix()}"
+    _disable_convert_git(monkeypatch)
+    events: list[str] = []
+
+    def pull(_path: pathlib.Path) -> None:
+        events.append("pull")
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# 計画\n", encoding="utf-8")
+
+    monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: events.append("push"))
+    monkeypatch.setattr(mutations, "_pull", pull)
+
+    details = mutations.convert_entries_to_plan(notes, filenames=("awi.md",), plan_file=portable)
+
+    assert events == ["push", "pull"]
+    assert details["plan_file"] == portable
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["plan_file"] == portable
 
 
 def test_convert_multiple_entries_uses_one_commit_in_input_order(

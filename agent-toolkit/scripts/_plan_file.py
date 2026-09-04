@@ -357,6 +357,7 @@ def resolve_plan_file(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
     allow_legacy_absolute: bool = True,
+    allow_working_fallback: bool = True,
 ) -> pathlib.Path:
     """保存済み計画参照を実ファイルパスへ解決する。
 
@@ -376,7 +377,7 @@ def resolve_plan_file(
             raise ValueError("計画ファイルの可搬パスがprivate-notes外を指しています")
         if candidate.exists():
             return candidate
-        if relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
+        if allow_working_fallback and relative.parts and relative.parts[0] == NEW_PLANS_DIRECTORY:
             if len(relative.parts) == 4:
                 direct_candidate = _resolve(working_root / relative.name)
                 direct_main = _main_candidate_for_new_path(direct_candidate)
@@ -411,6 +412,31 @@ def resolve_plan_file(
     if allow_legacy_absolute:
         return resolved
     raise ValueError("plan_fileが許可された保存root外を指しています")
+
+
+def require_saved_plan_file(
+    value: pathlib.Path | str,
+    *,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> pathlib.Path:
+    """記録するplan_file値を、その値が指す保存先の実体へ解決する。
+
+    記録値の消費主体は計画作業rootへのフォールバックを持たないため、記録経路と着手可否判定は
+    記録値をそのまま解決した実体だけを受理する。
+    """
+    path = resolve_plan_file(
+        value,
+        private_notes=private_notes,
+        home=home,
+        allow_working_fallback=False,
+    )
+    if not path.is_file():
+        raise ValueError(
+            "plan_fileの保存先に実体がありません。"
+            "先に`atk plans commit <計画作業root直下のメイン計画ファイル名>`で計画バンドルを保存してください"
+        )
+    return path
 
 
 def is_plan_adjunct_reference(value: pathlib.Path | str) -> bool:
