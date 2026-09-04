@@ -14,7 +14,7 @@ import typing
 
 import _git_remote
 import platformdirs
-from _atk_wi_constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI
+from _atk_wi_constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_type
 from _atk_wi_frontmatter import parse_frontmatter
 
 _ANSWER_HEADING = "\n## 回答\n"
@@ -137,9 +137,9 @@ def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
                 complete = False
                 continue
             frontmatter, _body = parsed
-            entry_type = frontmatter.get("type")
+            entry_type = normalized_wi_type(frontmatter.get("type"))
             entry_repo = frontmatter.get("target_repo")
-            if not isinstance(entry_type, str) or not isinstance(entry_repo, str):
+            if entry_type is None or not isinstance(entry_repo, str):
                 complete = False
                 continue
             if entry_type != WI_TYPE_UWI:

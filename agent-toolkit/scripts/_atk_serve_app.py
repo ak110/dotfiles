@@ -583,7 +583,7 @@ class Operations:
         if parsed is None:
             raise common.WebInputError("frontmatterを解析できません")
         metadata, _body = parsed
-        if metadata.get("type") != common.WI_TYPE_AWI:
+        if common.normalized_wi_type(metadata.get("type")) != common.WI_TYPE_AWI:
             raise common.WebInputError(f"ユーザーコメントの対象は{common.WI_TYPE_AWI}だけです")
         if _source_kind(metadata.get("source")) != "agent":
             raise common.WebInputError(

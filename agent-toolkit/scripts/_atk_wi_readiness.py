@@ -9,7 +9,15 @@ from typing import Literal
 
 import _git_remote
 import _plan_file
-from _atk_wi_constants import WI_PROCESSABLE_STATES, WI_STATE_ADOPTED, WI_STATE_REJECTED, WI_TYPE_AWI, WI_TYPE_UWI, WI_TYPES
+from _atk_wi_constants import (
+    WI_PROCESSABLE_STATES,
+    WI_STATE_ADOPTED,
+    WI_STATE_REJECTED,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+    WI_TYPES,
+    normalized_wi_type,
+)
 from _atk_wi_formatters import _parse_target_repo
 from _atk_wi_frontmatter import parse_frontmatter
 from _uwi_scan import is_uwi_answered as _is_uwi_answered
@@ -81,9 +89,8 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
-    value = parsed[0].get("type")
-    entry_type = value if isinstance(value, str) and value else None
-    if entry_type not in WI_TYPES:
+    entry_type = normalized_wi_type(parsed[0].get("type"))
+    if entry_type is None:
         print(f"frontmatterのtypeが不正または欠落しています（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}", file=sys.stderr)
         raise SystemExit(2)
     return entry_type

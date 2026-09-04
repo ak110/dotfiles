@@ -51,6 +51,7 @@ from _atk_wi_constants import (
     WI_TYPE_AWI,
     WI_TYPE_UWI,
     WI_TYPES,
+    normalized_wi_type,
 )
 from _atk_wi_formatters import (
     _display_width,
@@ -74,6 +75,7 @@ __all__ = [
     "WI_STATE_PROCESSING",
     "WI_STATE_REJECTED",
     "WI_TYPES",
+    "normalized_wi_type",
     "WI_TYPE_AWI",
     "WI_TYPE_UWI",
     "QueueEntry",
@@ -656,8 +658,7 @@ def _parse_type(text: str) -> str | None:
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
-    value = parsed[0].get("type")
-    return value if isinstance(value, str) and value else None
+    return normalized_wi_type(parsed[0].get("type"))
 
 
 def make_filename_completer(
@@ -698,10 +699,13 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
 
 
 def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object]) -> str:
-    """解析済みfrontmatterの種別を検証して返す。"""
-    value = metadata.get("type")
-    entry_type = value if isinstance(value, str) and value else None
-    if entry_type not in WI_TYPES:
+    """解析済みfrontmatterの種別を検証して返す。
+
+    保存値は読み取り互換として正規化する。`atk wi migrate`の実行後は現行の値だけが残るため、
+    正規化は移行前の保存値を持つ項目だけを通る。
+    """
+    entry_type = normalized_wi_type(metadata.get("type"))
+    if entry_type is None:
         print(
             f"frontmatterのtypeが不正または欠落しています（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
             file=sys.stderr,

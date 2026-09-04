@@ -688,6 +688,64 @@ class TestListSourceFilter:
         assert "tbd-002.md" not in captured.out
 
 
+class TestListLegacyTypeValues:
+    """`list`サブコマンド: `atk wi migrate`の実行前に保存された`type`値を読み取る。"""
+
+    def test_legacy_type_values_are_listed_as_current_types(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """旧値のfeedback・tbdを持つ項目が、現行の種別の項目として一覧へ現れる。"""
+        notes = _setup_notes(tmp_path)
+        (notes / "inbox" / "fb-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文1\n",
+            encoding="utf-8",
+        )
+        (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\nq1\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == (
+            "# awi\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
+            f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+        )
+
+    def test_legacy_type_values_match_current_type_filter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`--type=uwi`が旧値のtbdを持つ項目を選び、旧値は受理値に加わらない。"""
+        notes = _setup_notes(tmp_path)
+        (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\nq1\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--type=uwi"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+
+        with pytest.raises(SystemExit) as legacy_info:
+            atk.main(["wi", "list", "--type=tbd"], home=tmp_path)
+
+        assert legacy_info.value.code == 2
+
+
 class TestListTypeFilter:
     """`list`サブコマンド: `--type`でフィードバック/`tbd`出力を限定する。"""
 

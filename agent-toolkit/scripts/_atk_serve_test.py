@@ -2679,6 +2679,26 @@ def test_operations_reads_local_entries_and_detail_without_pull(
     assert content.endswith("要約本文\n")
 
 
+def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.Path) -> None:
+    """`atk wi migrate`の実行前に保存された`type`値を現行の種別として一覧へ返す。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "entry.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n要約本文\n",
+        encoding="utf-8",
+    )
+    (inbox / "question.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n質問本文\n",
+        encoding="utf-8",
+    )
+
+    result, warnings = serve_app.Operations(tmp_path).entries_with_warnings({})
+
+    assert not warnings
+    assert {str(item["filename"]): item["kind"] for item in result} == {"entry.md": "awi", "question.md": "uwi"}
+    assert [item["answered"] for item in result if item["filename"] == "question.md"] == [False]
+
+
 def test_detail_returns_existing_tbd_answer(tmp_path: pathlib.Path) -> None:
     """回答済みTBDの詳細は既存回答を編集用に返す。"""
     _write_detail_entry(

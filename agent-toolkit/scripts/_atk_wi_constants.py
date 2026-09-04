@@ -63,3 +63,23 @@ WI_TYPE_UWI = "uwi"
 
 WI_TYPES = (WI_TYPE_AWI, WI_TYPE_UWI)
 """frontmatterの`type`が取り得る値の全体。"""
+
+LEGACY_WI_TYPES = {"feedback": WI_TYPE_AWI, "tbd": WI_TYPE_UWI}
+"""`atk wi migrate`の実行前に保存された`type`値と、現行の値の対応。
+
+配布は移行より先に届くため、移行前のprivate-notesが旧値のまま残る期間がある。
+読み取り経路だけが本表を参照し、書き込み経路は常に現行の値を保存する。
+`atk wi migrate`が保存値を変換した後は、本表に一致する値が残らない。
+"""
+
+
+def normalized_wi_type(value: object) -> str | None:
+    """保存された`type`値を現行の値へ正規化する。
+
+    現行の値と旧値のいずれでもない場合と、文字列でない場合は`None`を返す。
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    if value in WI_TYPES:
+        return value
+    return LEGACY_WI_TYPES.get(value)

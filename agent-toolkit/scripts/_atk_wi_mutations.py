@@ -47,6 +47,7 @@ from _atk_wi_common import (
     _validate_filename,
     _validate_filenames_only,
     is_agent_environment,
+    normalized_wi_type,
 )
 from _atk_wi_repo import (
     _normalize_remote_url,
@@ -691,7 +692,7 @@ def _validated_plan_feedback_paths(
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
             raise _PlanFeedbackValidationError(f"のfrontmatterが破損しています: {filename}")
-        entry_type = parsed[0].get("type")
+        entry_type = normalized_wi_type(parsed[0].get("type"))
         if entry_type == WI_TYPE_AWI:
             if state != WI_STATE_HOLD:
                 raise _PlanFeedbackValidationError(f"の変換元feedbackがholdに存在しません: {filename}")
