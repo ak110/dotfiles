@@ -96,6 +96,18 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 <https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
 本節は経路選択の方針だけを定める。
 
+イベントごとの出力契約の機械検査は`agent-toolkit/scripts/_hook_output_contract.py`を正本とする。
+同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
+`agent-toolkit/scripts/hook_output_contract_test.py`が登録済みの全hookの出力を当該契約へ照合する。
+フックを追加又は変更する場合は、当該契約と検体を同じ変更単位で更新する。
+
+Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器が
+モデルの応答をJSONとして解析できなかった場合に出る。コマンド型hookのJSON出力の検証経路では出ない。
+`/goal`はセッションの範囲で有効なプロンプト型Stop hookを登録する。
+`/goal`を設定したセッションでは、当該表示がコマンド型hookの出力形式とは無関係に現れる
+（2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。
+再検証は同じ2つの資料で当該文字列の出所を確認する）。
+
 PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。これらのイベントでは、`additionalContext`はターン継続を強制しない。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象には付けない。
