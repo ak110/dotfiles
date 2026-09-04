@@ -63,6 +63,23 @@ def test_blocks_when_plain_text_requests_instruction(tmp_path: pathlib.Path) -> 
     assert result["decision"] == "block"
 
 
+def test_allows_delegated_session_to_return_question(tmp_path: pathlib.Path) -> None:
+    """委譲先では問いかけを含む差し戻し報告の終了を許可する。"""
+    transcript = _transcript_with_response(tmp_path, "どちらの案を採用しますか？")
+    env = os.environ.copy()
+    env["AGENT_TOOLKIT_DELEGATED_SESSION"] = "1"
+    env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
+
+    result = _fork_runner.run_script(
+        _SCRIPT,
+        argv=("pending_question_advisor",),
+        input=json.dumps({"session_id": "delegated", "transcript_path": str(transcript)}, ensure_ascii=False),
+        env=env,
+    )
+
+    assert not _decision(result)
+
+
 def test_allows_when_a_question_mark_is_inside_a_sentence(tmp_path: pathlib.Path) -> None:
     """疑問符の直後に語が続く文は、判断を求める文として扱わない。"""
     transcript = _transcript_with_response(

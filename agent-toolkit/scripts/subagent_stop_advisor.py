@@ -5,6 +5,8 @@
 
 正常許可と`stop_hook_active`真の再呼び出し時は、両ホスト共通でstdoutを空にする。
 transcriptを完了判定の契約へ利用せず、安定入力の`last_assistant_message`による空報告検査だけを共有する。
+
+委譲先での実行可否: 委譲先も空でない完了報告を再出力できるため、除外せず遮断できる。
 """
 
 from __future__ import annotations

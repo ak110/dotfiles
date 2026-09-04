@@ -11,9 +11,12 @@
 記録の引用と実行例の中の疑問符は遮断の対象にならない。
 判断を求めていない応答が遮断された場合は、当該問いかけを本文から除いて応答を
 書き直すことで通過する。
+
+委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、環境変数による除外が必要である。
 """
 
 import json
+import os
 import re
 from collections.abc import Iterator
 
@@ -23,6 +26,7 @@ from _stop_gate import append_stop_log
 from _stop_gate import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "agent-toolkit/pending_question_advisor"
+_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
@@ -123,6 +127,11 @@ def main(payload_text: str) -> int:
         append_stop_log("", "approve_invalid_payload", {})
         return 0
     session_id, payload = resolved
+
+    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+        append_stop_log(session_id, "approve_delegated_session", {})
+        _approve()
+        return 0
 
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})

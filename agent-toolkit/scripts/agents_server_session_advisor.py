@@ -14,6 +14,8 @@
 警告は`hookSpecificOutput.additionalContext`で当該ターンを継続させる。
 `stop_hook_active`が真の再呼び出し、payload不正、状態不在・破損時は何も出力せず
 終了を許可し、警告の反復で終了不能になることを避ける。
+
+委譲先での実行可否: 委譲先も`wait`と`kill`を実行できるため、除外せず警告できる。
 """
 
 import json

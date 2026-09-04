@@ -125,8 +125,10 @@ def is_pending_async_work(
     Stop入力の`background_tasks`に有効な非`teammate` taskがあれば、無効な要素の混在に
     かかわらず真を返す。個別taskの`status`その他の任意フィールドは判定に使わない。
     `background_tasks`がlistで全要素が有効な場合は空listと`teammate`だけの一覧も現在状態の
-    権威ある申告とし、transcript由来の未完了残差を根拠にしない。フィールド欠落、listでない入力、
-    無効な要素を含むlist及びCodexでは、transcriptから復元した判定を代替入力として用いる。
+    権威ある申告とし、当該入力が申告する背景Agent、背景Bash及びSendMessage背景再開の
+    transcript由来残差を根拠にしない。MCPツールの背景移行は当該入力へ現れないため、
+    transcriptから復元した残差を独立した根拠とする。フィールド欠落、listでない入力、
+    無効な要素を含むlist及びCodexでは、transcriptから復元した全種別の判定を代替入力として用いる。
     直前の非同期待機系tool_useと有効な非`teammate` taskは、一覧の権威性にかかわらず独立した根拠とする。
 
     transcript由来の後者はtranscript全体を走査して判定する。
@@ -170,22 +172,28 @@ def is_pending_async_work(
     entries = _read_transcript_entries(transcript_path)
     last_tool_use = _get_last_tool_use_block(entries)
     last_async = _last_tool_use_is_async_wait(last_tool_use)
-    launched, completed = _describe_pending_background_entries(
+    launched, completed, host_reported_launched = _describe_pending_background_entries(
         entries,
         session_id,
         transcript_path=transcript_path,
     )
     remainder = launched - completed
+    host_reported_remainder = host_reported_launched - completed
+    unreported_remainder = remainder - host_reported_remainder
     payload_valid, payload_non_teammate, payload_authoritative = _describe_background_tasks(background_tasks)
     pending_sources: list[str] = []
     if payload_non_teammate:
         pending_sources.append("background_tasks")
     if last_async:
         pending_sources.append("last_tool")
-    if remainder and not payload_authoritative:
+    if host_reported_remainder and not payload_authoritative:
         pending_sources.append("transcript")
+    if unreported_remainder:
+        pending_sources.append("transcript_unreported")
     source = "+".join(pending_sources) if pending_sources else "none"
-    pending = bool(last_async or payload_non_teammate or (remainder and not payload_authoritative))
+    pending = bool(
+        last_async or payload_non_teammate or (host_reported_remainder and not payload_authoritative) or unreported_remainder
+    )
     last_tool = _describe_last_tool_use(last_tool_use)
     _emit_debug(
         pending,
@@ -205,6 +213,7 @@ def is_pending_async_work(
             "last_tool": last_tool,
             "launched": len(launched),
             "pending": len(remainder),
+            "pending_unreported": len(unreported_remainder),
             "pending_ids": ",".join(sorted(remainder)[:3]) if remainder else "-",
             "payload_valid": payload_valid,
             "payload_non_teammate": payload_non_teammate,
@@ -450,13 +459,14 @@ def _describe_pending_background_tasks(
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
 ) -> tuple[set[str], set[str]]:
     """transcriptを読み込み、指定した走査範囲の背景タスク起動集合と完了集合を返す。"""
-    return _describe_pending_background_entries(
+    launched, completed, _host_reported_launched = _describe_pending_background_entries(
         _read_transcript_entries(transcript_path),
         session_id,
         include_sidechain=include_sidechain,
         kinds=kinds,
         transcript_path=transcript_path,
     )
+    return launched, completed
 
 
 def _describe_pending_background_entries(
@@ -466,7 +476,7 @@ def _describe_pending_background_entries(
     include_sidechain: bool = False,
     kinds: collections.abc.Collection[str] = ("agent", "bash", "sendmessage", "mcp"),
     transcript_path: str | None = None,
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], set[str], set[str]]:
     r"""transcript全体から背景タスクの起動集合と完了集合を抽出する。
 
     `include_sidechain`が偽の場合はメインのStop判定用に非sidechainエントリへ限定する。
@@ -515,7 +525,7 @@ def _describe_pending_background_entries(
     Agent・Bash・SendMessage背景再開・MCP背景タスクとも同一の完了通知機構で通知され共通の抽出処理を用いる。
     `kinds`は起動集合へ含める種別を`agent`・`bash`・`sendmessage`・`mcp`から指定する。
     既定値は全種別であり、既存の呼び出し元の挙動を維持する。
-    transcript読み取り失敗時は空集合のペアを返す。
+    第3要素はStop入力の`background_tasks`が申告する種別の起動集合である。
 
     走査は2段構成とする。
     第1段でtranscript全行から非sidechain assistantのSendMessage tool_use id集合を構築する。
@@ -524,6 +534,7 @@ def _describe_pending_background_entries(
     """
     launched: set[str] = set()
     completed: set[str] = set()
+    host_reported_launched: set[str] = set()
     sendmessage_ids = _collect_sendmessage_tool_use_ids(entries, include_sidechain=include_sidechain)
     agent_ids = _collect_agent_tool_use_ids(entries, include_sidechain=include_sidechain)
     mcp_ids = _collect_mcp_tool_use_ids(entries, include_sidechain=include_sidechain)
@@ -542,6 +553,7 @@ def _describe_pending_background_entries(
     if "agent" in kinds and not include_sidechain:
         nested_launched, nested_task_id_map = _collect_nested_agent_launches(transcript_path)
         launched.update(nested_launched)
+        host_reported_launched.update(nested_launched)
         for task_id, tool_use_ids in nested_task_id_map.items():
             task_id_map.setdefault(task_id, set()).update(tool_use_ids)
     monitor_task_ids = _collect_monitor_task_ids(entries, include_sidechain=include_sidechain)
@@ -561,6 +573,7 @@ def _describe_pending_background_entries(
             )
             if agent_launch_id is not None:
                 launched.add(agent_launch_id)
+                host_reported_launched.add(agent_launch_id)
             elif (
                 isinstance(tool_use_result, dict)
                 and isinstance(tool_use_result.get("backgroundTaskId"), str)
@@ -569,10 +582,12 @@ def _describe_pending_background_entries(
                 tool_use_id = _extract_tool_result_id(message)
                 if tool_use_id is not None:
                     launched.add(tool_use_id)
+                    host_reported_launched.add(tool_use_id)
             elif "sendmessage" in kinds:
                 resumed_id = _extract_sendmessage_bg_resume_id(message, tool_use_result, sendmessage_ids)
                 if resumed_id is not None:
                     launched.add(resumed_id)
+                    host_reported_launched.add(resumed_id)
             if isinstance(tool_use_result, dict):
                 completed.update(
                     _extract_task_stop_ids(
@@ -622,7 +637,7 @@ def _describe_pending_background_entries(
             )
     if "mcp" in kinds:
         launched.update(mcp_background_tasks)
-    return launched, completed
+    return launched, completed, host_reported_launched
 
 
 def _resolve_task_notification_ids(
