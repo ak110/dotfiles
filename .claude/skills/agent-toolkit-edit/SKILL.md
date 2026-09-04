@@ -124,11 +124,13 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は実装者向け領域へ記載し、
   自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
-- 計画ファイルの見出し、固定H3及び表の行名は`agent-toolkit/scripts/_plan_format.py`の構造定数を正本とする。
+- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan_format.py`が構造定数として名称を持つものは、同ファイルを正本とする。
   改訂するときは同ファイルの構造定数を変更し、`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、
   `agent-toolkit/share/`配下の担当タスク文書、`docs/development/design.md`、`docs/development/concepts.md`及び
   `docs/guide/claude-code-guide.md`のうち当該名称を持つ記述を同じ変更単位でそろえる。
   改訂前の名称は読み取り互換用の構造定数として残し、新規作成・改訂の経路でだけ拒否する
+- 構造定数を持たず`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`だけが必須とする見出しは、同ファイルを正本とする。
+  稼働中の計画を検査で不合格にする変更を避ける必要がある場合に選び、選んだ理由を計画へ記録する
 
 ## セッション状態フラグ
 
