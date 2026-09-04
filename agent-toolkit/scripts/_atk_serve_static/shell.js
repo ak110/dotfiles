@@ -25,7 +25,7 @@ window.__atkScreens = window.__atkScreens || {};
       } catch (error) {
         if (isCurrent()) throw error;
       }
-      // 失効した処理の成功・失敗を呼出し側へ返すと、catchやfinallyを含む継続が
+      // 失効した処理の成功・失敗を呼び出し元へ返すと、catchやfinallyを含む継続が
       // 現行画面へ触れ得る。未完了のまま切り離し、継続をこの入口だけで遮断する。
       return new Promise(() => {});
     };

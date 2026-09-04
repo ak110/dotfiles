@@ -30,7 +30,7 @@ let rootStatus = {};
 let visibleFiles = [];
 let mermaidLoadPromise = null;
 let previewGeneration = 0;
-// 画面内の描画の追い越しは`previewGeneration`、画面間の入れ替えはマウント世代で判定する。
+// 画面内の描画順序の逆転は`previewGeneration`、画面間の入れ替えはマウント世代で判定する。
 let isCurrentMount = () => false;
 let previewObjectUrls = new Set();
 let searchGeneration = 0;

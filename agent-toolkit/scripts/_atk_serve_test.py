@@ -221,15 +221,19 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert "dataset.unansweredUwi" in assets.JS
     assert "種別不明" in assets.JS
 
-    grid = re.search(r"\.entry-columns, \.entry-select \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    grid = re.search(r"\.entry-columns, \.entry-row \{(.*?)\n\}", assets.CSS, re.DOTALL)
     assert grid is not None
     widths = re.findall(r"minmax\(([^)]+)\)", grid.group(1))
-    assert re.search(r"grid-template-columns:\s*12rem", grid.group(1))
     assert widths == [
-        "10rem, 1.35fr",
-        "8rem, 1fr",
-        "12rem, 2fr",
+        "8rem, 0.9fr",
+        "7rem, 0.9fr",
+        "7rem, 0.8fr",
+        "16rem, 3fr",
     ]
+    assert re.search(r"\sauto;", grid.group(1))
+    assert "grid-column: 1 / 5;" in assets.CSS
+    assert "grid-template-columns: subgrid;" in assets.CSS
+    assert ".entry-copy { grid-column: 5;" in assets.CSS
 
 
 def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
@@ -318,11 +322,15 @@ def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
     source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"')
     # 画面スクリプトは自身の宣言を即時実行関数で囲むため、シナリオも同じ関数の内側へ置いて
-    # 検証対象の関数を直接呼べるようにする。
+    # 検証対象の関数を直接呼べるようにする。実画面のmountが渡す継続契約も再現し、
+    # 待機を含む関数を本番と同じ入口から検証する。
     closing = "})();\n"
     assert source.endswith(closing)
     executable = (
         source[: -len(closing)]
+        + "\nconst testMount = () => true;\n"
+        + "testMount.wait = async pending => pending;\n"
+        + "isCurrentMount = testMount;\n"
         + "\n(async () => {\n"
         + scenario
         + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
