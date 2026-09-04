@@ -71,6 +71,7 @@ _WORD_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 
 _REPAIRS: tuple[tuple[str, str], ...] = (
     ("process_awis_contract_test", "process_feedbacks_contract_test"),
+    ("Stop hook awi:", "Stop hook feedback:"),
     ("process-wi-finish", "process-feedbacks-finish"),
     ("process-wi-lane", "process-feedbacks-lane"),
     ("process-wi-loop", "process-feedbacks-loop"),
@@ -81,6 +82,8 @@ _REPAIRS: tuple[tuple[str, str], ...] = (
 
 ハイフンを含まないため`_REPAIR_WORDS`の対象にならないものと、廃止済みの実体を指すために
 現行の呼称へ変換してはならないものを個別に列挙する。長い語から順に適用する。
+
+ホストが出力した文面の逐語記録は、事象の再現条件を成すため原文へ戻す。
 """
 
 _REPAIR_WORDS: tuple[tuple[str, str], ...] = (
@@ -102,6 +105,7 @@ _PROTECTED_TOKENS = (
     "process-feedbacks-lane",
     "process-feedbacks-loop",
     "agent-toolkit:add-awi",
+    "Stop hook feedback:",
     "エージェント由来のフィードバック",
     "人間由来のフィードバック",
     "_FEEDBACKS_PLANNER",

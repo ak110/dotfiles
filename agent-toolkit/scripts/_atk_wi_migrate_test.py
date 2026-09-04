@@ -163,7 +163,8 @@ def test_migrate_converts_current_names_and_keeps_withdrawn_identifiers(tmp_path
             "feedback",
             "process-feedbacksでagent-toolkit:add-feedbackを起動する。\n"
             "feedbacks-plannerとapply-feedbackは廃止済み。\n"
-            "計画ファイルはfeedback-batch-20260818-9c4e.mdを参照する。\n",
+            "計画ファイルはfeedback-batch-20260818-9c4e.mdを参照する。\n"
+            "⎿  Stop hook feedback: uncommitted changes detected。\n",
         ),
         encoding="utf-8",
     )
@@ -175,6 +176,7 @@ def test_migrate_converts_current_names_and_keeps_withdrawn_identifiers(tmp_path
     assert "process-wiでagent-toolkit:add-awiを起動する。" in entry
     assert "feedbacks-plannerとapply-feedbackは廃止済み。" in entry
     assert "feedback-batch-20260818-9c4e.mdを参照する。" in entry
+    assert "⎿  Stop hook feedback: uncommitted changes detected。" in entry
 
 
 def test_migrate_repairs_identifiers_broken_by_word_level_conversion(tmp_path: pathlib.Path) -> None:
@@ -186,7 +188,8 @@ def test_migrate_repairs_identifiers_broken_by_word_level_conversion(tmp_path: p
         "process-awisのレーンをprocess-awis-loopが起動し、awis-plannerが計画する。\n"
         "作業ツリーは/tmp/merge-awis-fxg0fhvb/wtへ作成する。\n"
         "計画ファイルは/plans/2026/08/23-awis-batch-20260823-h3vq.mdを参照する。\n"
-        "agent-toolkit:add-awiとawi_pathは現行の識別子なので変えない。\n",
+        "agent-toolkit:add-awiとawi_pathは現行の識別子なので変えない。\n"
+        "⎿  Stop hook awi: uncommitted changes detected.\n",
         encoding="utf-8",
     )
     _commit_all(notes)
@@ -199,6 +202,7 @@ def test_migrate_repairs_identifiers_broken_by_word_level_conversion(tmp_path: p
     assert "/tmp/merge-feedbacks-fxg0fhvb/wt" in entry
     assert "/plans/2026/08/23-feedbacks-batch-20260823-h3vq.md" in entry
     assert "agent-toolkit:add-awiとawi_pathは現行の識別子なので変えない。" in entry
+    assert "⎿  Stop hook feedback: uncommitted changes detected." in entry
 
 
 def test_migrate_is_idempotent_after_repairing_identifiers(tmp_path: pathlib.Path) -> None:
