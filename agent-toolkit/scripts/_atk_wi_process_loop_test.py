@@ -649,18 +649,10 @@ class TestProcessLoopPromptAndEnv:
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
 
     def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
-        """新規セッションの目的文が対象と起動スキルだけを伝えること。"""
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            "github.com/example/repo",
-        )
-        assert prompt == (
-            "/goal `agent-toolkit:process-wi`を起動し、"
-            f"`{pathlib.Path('/repo')}`で対象リポジトリ`github.com/example/repo`の"
-            "AWI処理を完遂したうえで、"
-            "`agent-toolkit:exit-session`でセッションを終了してください。"
-        )
-        assert "agent-toolkit:exit-session" in prompt
+        """新規セッションの目的文がスキルの完遂だけを伝えること。"""
+        prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
+        assert prompt == "/goal `agent-toolkit:process-wi`を完遂してください。"
+        assert "agent-toolkit:exit-session" not in prompt
 
         forbidden_details = (
             "atk wi list",
@@ -678,32 +670,12 @@ class TestProcessLoopPromptAndEnv:
 
     def test_prompt_references_process_wi(self) -> None:
         """プロンプトが後続工程の集約先としてprocess-wiスキルを参照すること。"""
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            "github.com/example/repo",
-        )
+        prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
         assert "agent-toolkit:process-wi" in prompt
-
-    def test_prompt_includes_target_repo(self) -> None:
-        """プロンプトが`--target-repo`限定指示と正規化リモートURLを本文へ含める。
-
-        LLM起動プロンプトでcwd由来の暗黙解決を排除するため、target_repo_idを
-        プロンプト本文へ明示埋め込みする。
-        """
-        target_repo_id = "github.com/example/repo"
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            target_repo_id,
-        )
-        assert target_repo_id in prompt
-        assert "/repo" in prompt
 
     def test_prompt_does_not_inject_publish_destination(self) -> None:
         """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo/.claude/worktrees/process-loop"),
-            "github.com/ak110/dotfiles",
-        )
+        prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
 
         assert "origin/master" not in prompt
         assert "公開先" not in prompt
@@ -2948,10 +2920,7 @@ class TestProcessLoopUrlInput:
         assert exc_info.value.code == 2
 
     def test_prompt_keeps_dotfiles_goal_free_of_internal_publish_steps(self) -> None:
-        prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
-            pathlib.Path("/repo"),
-            "github.com/ak110/dotfiles",
-        )
+        prompt = _process_loop._build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
         assert "git worktree内で起動" not in prompt
         assert "現在のHEADを`origin/master`へ反映" not in prompt
         assert "git push" not in prompt

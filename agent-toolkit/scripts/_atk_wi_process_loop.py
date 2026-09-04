@@ -447,20 +447,24 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     return None
 
 
-def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
-    """対象リポジトリのAWI処理の完遂と終了を依頼する短い目的文を構築する。
+def _build_process_loop_prompt() -> str:
+    """AWI処理の完遂を依頼する最小の目的文を構築する。
 
-    目的文はスキルの完遂と`agent-toolkit:exit-session`による終了だけを求める。処理範囲、実行基盤の障害対応、再開条件は
-    `agent-toolkit:process-wi`とその参照先が定める。目的文へ重ねて書くと、
-    スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として
-    扱われてスキル側の規範より優先される。
+    目的文はスキルの完遂だけを求める。処理対象、処理範囲、終了手順、実行基盤の障害対応及び
+    再開条件は`agent-toolkit:process-wi`とその参照先が定める。目的文へ重ねて書くと、
+    スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として扱われて
+    スキル側の規範より優先される。
+
+    目的文は`/goal`条件としてオーケストレーターへ渡り、ターンを終えるたびに会話記録の全体を
+    入力とする評価の対象となる。条件が長いほど各評価の入力が増える。この関数へ記述を足す
+    変更は行わない。過去に作業ディレクトリ、対象リポジトリ及び終了手順の指示が順に加わり、
+    そのたびに短縮を求める指摘を受領した経緯がある。
+
+    処理対象は`_run_process_session`が子セッションの作業ディレクトリとして渡す経路で伝わる。
+    `atk wi`の各サブコマンドは`--target-repo`を省略した場合に作業ディレクトリから対象
+    リポジトリを解決するため、目的文へ処理対象を書く必要はない。
     """
-    return (
-        "/goal `agent-toolkit:process-wi`を起動し、"
-        f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
-        "AWI処理を完遂したうえで、"
-        "`agent-toolkit:exit-session`でセッションを終了してください。"
-    )
+    return "/goal `agent-toolkit:process-wi`を完遂してください。"
 
 
 def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
@@ -901,7 +905,7 @@ def _prepare_session_target(
     prepared = _sync_worktree_with_upstream(local_path, effective_name)
     if prepared is None:
         return None
-    return prepared, _build_process_loop_prompt(prepared, target_repo_id)
+    return prepared, _build_process_loop_prompt()
 
 
 def _run_process_session(
@@ -1039,7 +1043,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     _resolve_orchestrator_specs()
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
-    prompt = _build_process_loop_prompt(local_path, target_repo_id)
+    prompt = _build_process_loop_prompt()
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     mise_refresh_root = dotfiles_root if target_repo_id == _DOTFILES_REPO_ID and not args.no_update else None
