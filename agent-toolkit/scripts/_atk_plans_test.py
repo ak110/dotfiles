@@ -44,7 +44,7 @@ def _init_local_notes(root: pathlib.Path) -> None:
     _git(root, "config", "user.email", "plans-test@example.invalid")
     _git(root, "config", "core.quotePath", "false")
     (root / ".agent-toolkit-local-only").touch()
-    for state in ("inbox", "processing", "planning", "editing", "hold", "adopted", "rejected"):
+    for state in ("inbox", "processing", "hold", "adopted", "rejected"):
         (root / state / ".gitkeep").parent.mkdir(parents=True)
         (root / state / ".gitkeep").touch()
     _git(root, "add", ".")

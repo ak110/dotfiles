@@ -472,7 +472,7 @@ def _setup_notes(tmp_path: pathlib.Path) -> pathlib.Path:
     notes = tmp_path / "private-notes"
     notes.mkdir()
     (notes / "inbox").mkdir(parents=True)
-    (notes / "planning").mkdir()
+    (notes / "hold").mkdir(exist_ok=True)
     return notes
 
 

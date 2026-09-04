@@ -18,25 +18,15 @@ from collections.abc import Callable
 import _atk_mq_add as _add
 import _git_command
 import _json_command
-from _atk_mq_common import (
-    MQ_STATE_ADOPTED,
-    MQ_STATE_INBOX,
-    MQ_STATE_PROCESSING,
-    MQ_STATE_REJECTED,
-    _iter_entries,
-)
+from _atk_mq_common import MQ_STATES, _iter_entries
 from _atk_mq_formatters import _parse_alert_keys
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
 _GLAB_SUBPROCESS_TIMEOUT = 30.0
 _GIT_SUBPROCESS_TIMEOUT = 10.0
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
-_ALL_FEEDBACK_STATES = (
-    MQ_STATE_INBOX,
-    MQ_STATE_PROCESSING,
-    MQ_STATE_ADOPTED,
-    MQ_STATE_REJECTED,
-)
+_ALL_FEEDBACK_STATES = MQ_STATES
+"""重複投入の判定で走査する保存状態。全ての保存状態を対象とする。"""
 
 GhRunListFn = Callable[[str, str], list[dict]]
 GhDependabotAlertsFn = Callable[[str], list[dict]]

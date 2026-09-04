@@ -103,6 +103,18 @@ def test_make_filename_completer_limits_states(tmp_path: pathlib.Path) -> None:
     assert completer("") == ["inbox.md"]
 
 
+def test_state_sets_define_five_states_without_withdrawn_names() -> None:
+    """保存状態を5つに固定し、一覧集合を型によらず同じ集合として定義する。"""
+    assert _common.MQ_STATES == ("inbox", "processing", "hold", "adopted", "rejected")
+    assert _common.MQ_ACTIVE_STATES == ("inbox", "processing", "hold")
+    assert _common.MQ_PROCESSABLE_STATES == ("inbox", "processing")
+    assert not hasattr(_common, "MQ_FEEDBACK_ACTIVE_STATES")
+    assert set(_common.MQ_ACTIVE_STATES) <= set(_common.MQ_STATES)
+    assert set(_common.MQ_PROCESSABLE_STATES) <= set(_common.MQ_ACTIVE_STATES)
+    for states in _common.TRANSITION_EXPLICIT_STATES.values():
+        assert set(states) <= set(_common.MQ_STATES)
+
+
 def test_make_filename_completer_filters_entry_type(tmp_path: pathlib.Path) -> None:
     """種別を指定した場合はfrontmatterの種別が一致するものだけを返す。"""
     private_notes = tmp_path / "private-notes"

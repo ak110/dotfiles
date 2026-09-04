@@ -17,7 +17,9 @@ description: >
 
 - `normal`はレビュー済み計画が関連していないフィードバック、`plan`はレビュー済み計画が関連するフィードバックである。
 - 変更量にかかわらず、全ての実装要求は実装前に計画と計画レビューを完了する。`normal`を計画なしで実装しない。
-- `agent-toolkit:plan-and-add-feedback`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を一時的な`planning(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
+- `agent-toolkit:plan-and-add-feedback`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を`hold(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
+- 計画ファイルと同じstemの付属ファイルは、実装レビューが収束するまで計画作業root`~/.claude/plans`の直下で更新する。private-notes配下の計画ファイルを編集せず、保存先への移動は`atk plans commit`だけが行う。
+- `plan_file`へは、計画の作成時点で保存先を指す可搬値`$(atk config get private_notes)/plans/yyyy/MM/<メイン計画ファイル名>`を書く。計画ファイルの実体が計画作業rootと保存先のどちらにあっても同じ値が同じ計画を指すため、保存先への移動後も値を書き換えない。
 
 ## 通常フィードバックの本文
 
@@ -84,16 +86,29 @@ TBDの`## 回答`節とフィードバックの`## ユーザーコメント`節�
 | 分類 | 値 | 意味 |
 | --- | --- | --- |
 | 保存状態 | `inbox` | 次の処理主体による取得待ち。依存未解決なら`blocked` |
-| 保存状態 | `planning` | 既存の`normal`を計画化する主体が一時所有し、自動処理対象外 |
-| 保存状態 | `processing` | 処理主体が取得済み |
-| 保存状態 | `editing` | 外部編集処理が一時所有し、自動処理対象外 |
-| 保存状態 | `hold` | ユーザーが明示的に自動処理から除外し、`unhold`で`inbox`へ戻る。編集・回答・採否・削除は`inbox`と同じ条件で行える |
+| 保存状態 | `processing` | `agent-toolkit:process-feedbacks`が取得して処理中 |
+| 保存状態 | `hold` | ユーザー又はエージェントが編集中であり、自動処理の対象外 |
 | 保存状態 | `adopted` | 採用内容が完了した終端 |
-| 保存状態 | `rejected` | 全要求の不採用を確定した終端。`return-to-inbox`で`inbox`へ戻して再処理できる |
+| 保存状態 | `rejected` | 全要求の不採用を確定した終端 |
 | 導出判定 | `ready` | 全依存が終端し、TBD回答、metadata及び計画が有効 |
 | 導出判定 | `blocked` | 依存、未回答TBD、cooldown又はmetadata不備により着手不能 |
-| 一覧集合 | `active` | `inbox`、`processing`、`editing`及び`hold` |
+| 一覧集合 | `active` | `inbox`、`processing`及び`hold`。ユーザーが未終端の項目を確認する範囲 |
 | 一覧集合 | `processable` | `inbox`及び`processing`。`ready`かは別途判定する |
+
+エージェントが実行できる状態遷移を次に示す。ユーザーはブラウザーUIから任意の状態へ遷移させられる。
+
+| 遷移 | 操作 | 実行する主体と契機 |
+| --- | --- | --- |
+| `inbox`→`hold` | `atk mq hold` | 項目を編集する主体が、編集の開始時に自動処理から除外する |
+| `hold`→`inbox` | `atk mq unhold` | 編集した主体が、編集の完了時に自動処理へ戻す |
+| `inbox`→`processing` | `atk mq start-processing` | `agent-toolkit:process-feedbacks`のメインが、選定担当の出力を検収した直後に遷移させる |
+| `processing`→`adopted` | `atk mq adopt` | `agent-toolkit:process-feedbacks`のレーンが、ベースブランチへのマージ完了時に遷移させる |
+| `processing`→`rejected` | `atk mq reject` | `agent-toolkit:process-feedbacks`のメインが、計画工程で全要求の不採用を確定した時に遷移させる |
+| `rejected`→`inbox` | `atk mq return-to-inbox --state=rejected` | TBDの回答が採用を示した項目を再処理へ戻す |
+| `processing`→`inbox` | `atk mq return-to-inbox` | 処理中に未回答TBDへの依存が生じた項目を`inbox`かつ`blocked`へ戻す |
+
+`inbox`と`hold`の項目は`atk mq rm`で削除できる。本文の編集は保存状態によらず行える。
+`agent-toolkit:process-feedbacks`は`processable`の項目だけを処理の対象とし、`hold`の項目を候補、優先度、依存判断及び固有指示の入力から除外する。
 
 `depends_on`は、当該項目より先に終端すべきキュー項目のファイル名を保持する。用途は、未回答TBDによる外部待ちと、先に終端すべきフィードバックへの先行成果依存の2つとする。依存先は`target_repo`が異なるキュー項目でもよく、着手可否はリポジトリを横断して判定する。値は保存済みのメタデータを正本とし、本文の記述から依存を再構築しない。
 

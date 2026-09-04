@@ -11,9 +11,8 @@ import shutil
 import sys
 
 from _atk_mq_common import (
-    MQ_FEEDBACK_ACTIVE_STATES,
+    MQ_ACTIVE_STATES,
     MQ_PROCESSABLE_STATES,
-    MQ_STATE_PLANNING,
     MQ_STATES,
     MQ_TYPE_TBD,
     ReadinessResult,
@@ -42,7 +41,7 @@ type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 def _resolve_states(status: str) -> tuple[str, ...]:
     """状態フィルターを走査対象へ変換する。"""
     if status == "active":
-        return MQ_FEEDBACK_ACTIVE_STATES
+        return MQ_ACTIVE_STATES
     if status == "processable":
         return MQ_PROCESSABLE_STATES
     if status == "all":
@@ -60,16 +59,8 @@ def _answered_matches(entry_type: str | None, text: str, answered_filter: str) -
     return answered if answered_filter == "yes" else not answered
 
 
-def _is_selected_state(entry: QueueEntryDisplay, status: str) -> bool:
-    """状態フィルターと種別の組み合わせで表示可能か判定する。"""
-    _path, _target_repo, _text, state, entry_type = entry
-    return not (status in {"active", "processable"} and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD)
-
-
 def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
     """一覧表示用の状態別着手可否を返す。"""
-    if state == MQ_STATE_PLANNING:
-        return "blocked"
     if state not in MQ_PROCESSABLE_STATES:
         return "complete"
     return "ready" if filename in readiness.ready else "blocked"
@@ -192,11 +183,9 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
-    `active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、
-    `processable`は`inbox`・`processing`を出力する。
-    フィードバック側は`inbox`・`planning`・`processing`・`editing`・`hold`・`adopted`・`rejected`・`all`を解釈する。
-    `tbd`側は`answered`・`unanswered`で回答状況を限定する（`inbox`・`planning`・`processing`・`adopted`・`rejected`・`all`は
-    `tbd`側に作用せず、`tbd` inboxの全件を返す）。
+    `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
+    個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。
+    `tbd`側は`answered`・`unanswered`で回答状況を限定する。
     `--source`指定時はフィードバック・`tbd`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
@@ -213,8 +202,6 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     selected: list[QueueEntryDisplay] = []
     for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
-        if not _is_selected_state(entry, args.status):
-            continue
         _, _, text, _, entry_type = entry
         if not _answered_matches(entry_type, text, args.answered):
             continue

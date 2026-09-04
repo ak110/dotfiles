@@ -43,11 +43,6 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。該当が0件のときは終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": '実行例:\n\n  atk mq grep "worktree-stash" --status=all',
     },
-    "atk mq start-planning": {
-        "summary": "通常型フィードバックをplanningへ移す",
-        "description": "目的: inboxの通常型フィードバックをplanningへ移し、計画作成中であることをキュー上へ表す。\n利用場面: 複数件を1つの計画へ取り込む前に、対象を計画作成中として占有するとき。\n対象と出力: private-notesのinboxからplanningへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあり、通常型フィードバックであること。\n復元・後始末: `atk mq return-to-inbox --state=planning`でinboxへ戻す。",
-        "epilog": "実行例:\n\n  atk mq start-planning 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
-    },
     "atk mq start-processing": {
         "summary": "フィードバックをprocessingへ移して処理中にする",
         "description": "目的: inboxのフィードバックをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk mq return-to-inbox`でinboxへ戻す。",
@@ -64,8 +59,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk mq unhold 20260901-072734-001.md",
     },
     "atk mq return-to-inbox": {
-        "summary": "processingまたはplanningの項目をinboxへ戻す",
-        "description": "目的: processing又はplanningの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。planningから戻す場合は`--state=planning`を指定する。\n復元・後始末: 処理を再開する場合は`atk mq start-processing`を使う。",
+        "summary": "processingまたはrejectedの項目をinboxへ戻す",
+        "description": "目的: processing又はrejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。不採用とした項目をTBDの回答により再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。rejectedから戻す場合は`--state=rejected`を指定する。\n復元・後始末: 処理を再開する場合は`atk mq start-processing`を使う。",
         "epilog": "実行例:\n\n  atk mq return-to-inbox 20260901-072734-001.md --cooldown-days=3",
     },
     "atk mq adopt": {
@@ -80,7 +75,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk mq rm": {
         "summary": "指定項目または未処理・処理中の項目を削除する",
-        "description": "目的: 指定した項目、又は対象リポジトリの未処理と処理中の項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。`--all`では削除の前に対象を一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。planningとprocessingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
+        "description": "目的: 指定した項目、又は対象リポジトリの未処理と処理中の項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。`--all`では削除の前に対象を一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
         "epilog": "実行例:\n\n  atk mq rm 20260901-072734-001.md",
     },
     "atk mq edit": {
@@ -90,7 +85,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk mq convert-to-plan": {
         "summary": "フィードバックを計画実装型へ変換する",
-        "description": "目的: 既存フィードバックを計画実装型へ変換し、planning入力では全件を最古の1件へ統合する。\n利用場面: 計画ファイルの作成とレビューが収束し、実装へ引き渡すとき。\n対象と出力: private-notesの対象ファイルへ計画ファイルの参照と依存を記録する。planning入力では統合元を同じcommitで除去してinboxへ移す。1回のcommitと任意のpushで処理する。\n前提: `--plan-file`へ`$(atk config get private_notes)/plans/`から始まる可搬表記を指定する。入力の状態を混在させない。planning入力では`--message`を指定する。\n復元・後始末: commitの前に失敗した場合は部分的な変換を残さない。pushだけが失敗した場合はcleanなローカルcommitが残るため、pushから再開する。",
+        "description": "目的: 既存フィードバックを計画実装型へ変換し、hold入力では全件を最古の1件へ統合する。\n利用場面: 計画ファイルの作成とレビューが収束し、実装へ引き渡すとき。\n対象と出力: private-notesの対象ファイルへ計画ファイルの参照と依存を記録する。hold入力では統合元を同じcommitで除去してinboxへ移す。1回のcommitと任意のpushで処理する。\n前提: `--plan-file`へ`$(atk config get private_notes)/plans/`から始まる可搬表記を指定する。入力の状態を混在させない。hold入力では`--message`を指定する。\n復元・後始末: commitの前に失敗した場合は部分的な変換を残さない。pushだけが失敗した場合はcleanなローカルcommitが残るため、pushから再開する。",
         "epilog": "実行例:\n\n  atk mq convert-to-plan 20260901-072734-001.md --plan-file='$(atk config get private_notes)/plans/2026/09/01-example-1a2b.md'",
     },
     "atk mq set-dependencies": {

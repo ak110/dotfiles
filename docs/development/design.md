@@ -45,20 +45,18 @@ toolkitは自身の排他区間外で他プロセスが行うfetchを管理し�
 pickerはフィードバック本文、対象実装、計画の先行成果依存を調査し、レーン内の実装依存順を技術判断する。
 実装担当は渡された要求と計画を知る一方、キュー全体の採否や他項目の開始時機を決定しない。
 
-### 計画作成状態と計画型変換
+### 保留状態を経由する計画型変換
 
-通常型フィードバックをファイル名で計画化するため、`inbox`と`processing`の間に`planning`状態を置く。
+通常型フィードバックをファイル名で計画化する間は、対象を`hold`へ置く。
 `processing`はprocess-loopが計画作成から実装までを所有する状態であり、`agent-toolkit:process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
-`agent-toolkit:process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、`planning`を別に置く。
-`planning`は計画作業中の明示状態として一覧・詳細で確認できる。
-feedback用の`active`表示には含めるが、`processable`の自動処理集合、TBDの配置先、readiness、process-loop、一般編集及びユーザーコメントの対象から除外する。
+`agent-toolkit:process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、自動処理から除外する`hold`を用いる。
+`hold`は一覧・詳細で確認でき、`active`表示に含む一方、`processable`の自動処理集合、readiness、process-loop及びユーザーコメントの対象から除外する。
 計画型へ変換する公開操作は、`atk mq edit`の`--plan-file`互換経路と`atk mq convert-to-plan`に限定する。
-`atk mq convert-to-plan`による`planning`統合は正規の計画変換として受理する。
-必要な場合は`--status=planning`を明示して参照する。
+`atk mq convert-to-plan`による`hold`統合は正規の計画変換として受理する。
 
 通常型フィードバックのファイル名を1件以上指定した場合はファイル名モードとし、全対象が同一対象リポジトリのinbox通常型feedbackであることを計画調査前に一括検証する。
-検証後に`atk mq start-planning <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象をplanningへ移す。
-自然言語要件を受領した場合は、この状態を経由せず、従来どおり新しい計画型フィードバックを追加する。
+検証後に`atk mq hold <filename>... --target-repo=<repo>`を1回実行し、ファイル名昇順で全対象を`hold`へ移す。
+自然言語要件を受領した場合は、この状態を経由せず、新しい計画型フィードバックを追加する。
 
 同一セッションで、既に扱った同じ計画又は計画型feedbackを後続の方針に基づいて改訂し、別の処理経路が明示されていない場合は、本スキルの再開として扱う。自然言語modeとファイル名modeのいずれでも対象リポジトリを実装せず、計画の更新を検収し、計画型feedbackの投入までを完了する。更新後に実装承認を求めず、投入したfeedbackファイル名、計画ファイル及び実装へ着手していないことを固定完了報告として返して終了する。
 
@@ -70,11 +68,11 @@ atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --mes
 
 新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値を指定する。
 既存データが参照する絶対パスは読み取り互換として受理する。
-CLIは全入力が同一対象リポジトリの`planning`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
+CLIは全入力が同一対象リポジトリの`hold`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
 activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 検証後は最古のfeedbackへ計画型本文、`source: plan-and-add-feedback`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
 
-入力検証、管理リポジトリのclean検査、対象の書込み、commit及びpushを分離する。入力検証、書込み又はcommitの失敗では、全統合元の作業ツリーとindexを開始時の`planning`内容へ戻し、部分変換を残さない。push失敗では変換済みのcleanなローカルcommitと保存結果を保持し、滞留commitのpushから再開する。`--skip-push`ではcommitを保持したままpushだけを省略する。単一入力と複数入力は同じ経路で処理し、変換後の別`rm`及びそのための前方回復状態を設けない。
+入力検証、管理リポジトリのclean検査、対象の書込み、commit及びpushを分離する。入力検証、書込み又はcommitの失敗では、全統合元の作業ツリーとindexを開始時の`hold`内容へ戻し、部分変換を残さない。push失敗では変換済みのcleanなローカルcommitと保存結果を保持し、滞留commitのpushから再開する。`--skip-push`ではcommitを保持したままpushだけを省略する。単一入力と複数入力は同じ経路で処理し、変換後の別`rm`及びそのための前方回復状態を設けない。
 
 `atk mq reject`は、process-loop内で要求の全てを不採用と確定した項目だけに用いる。
 採用済み内容を統合した元項目と、別リポジトリへ移管して投入先を検収した元項目は、統合先又は移管先をnoteへ記録して`rm`で除去する。
@@ -82,12 +80,14 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 
 ### キュー状態と公開一覧
 
-キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`である。feedback用の公開一覧の`active`は`inbox`、`planning`、`processing`、`editing`、`hold`を表示する。TBDの`active`には`planning`を含めない。`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。`hold`と`editing`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
+キューの全状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`hold`を表示し、`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。一覧集合は型によらず同じ定義とする。`hold`は明示操作まで処理ループ、readiness、TBDスキャン及びalertsの対象にしない。
 
-`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。`planning`、`editing`、終端状態からの`hold`と、`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、TBD回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。強制削除は`editing`を候補へ含めない。
-削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`planning`・`processing`の削除保護だけを維持する。
+計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は、自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`_atk_mq_common.py`へ集約する。
 
-`editing`は一覧と既存データの状態判定で認識する。今回の状態追加は編集操作の排他方式を変更せず、永続的な編集セッション、専用の復旧状態又はpush再試行APIを追加しない。
+`hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。終端状態からの`hold`と、`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、TBD回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。
+削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`processing`の削除保護だけを維持する。
+
+エージェントが実行できる遷移は、`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、及び`rejected`から`inbox`への差し戻しとする。ユーザーはブラウザーUIから任意の状態へ遷移させられる。
 
 ### 一覧出力と計画変換
 
@@ -95,7 +95,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 
 テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
-`atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`planning`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
+`atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`hold`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
 
 ### ユーザーコメントの由来と編集境界
 
@@ -107,7 +107,7 @@ activeなTBD素材は状態を変更せず、統合依存へ保持できる。
 空コメントによる節削除は提供しない。
 
 コメント編集の正本条件は、`inbox`又は`hold`にあるfeedbackかつエージェント由来（frontmatterの`source`が未設定でない）であることとする。
-planning、processing、TBD、終端項目及び人間由来の項目はAPIと画面の両方で対象外とする。
+processing、TBD、終端項目及び人間由来の項目はAPIと画面の両方で対象外とする。
 由来の判定は一覧フィルターと同じ`_source_kind`を用い、`source`値の列挙をユーザーコメント側へ複製しない。
 保存時はロック内で取得した最新本文と`expected_content`を照合し、競合時は無変更で失敗を返す。
 詳細APIが返す抽出済みコメントと操作可否を画面が利用し、JavaScript側へMarkdown解析を複製しない。
@@ -337,7 +337,7 @@ Claude Codeで委譲先がさらに読み取り専用調査・レビューを委
 pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上あれば当該項目だけを処理対象とする。
 無ければ`inbox`かつ除外条件に当たらない項目を処理対象の候補として、実装不要、処理中に新たに必要と判定した保留、計画型及び通常型を分類する。要求の不採用と既存の変更による充足はpickerが確定せず、計画担当が確定する。
 除外条件は、外部待ち（`cooldown_until`による時間経過待ちと未終端の依存先）と修復待ち（frontmatterや依存関係の不備）とする。
-既存のplanning、editing、hold項目は候補、優先度、依存判断又は固有指示の入力へ含めない。
+既存の`hold`項目は候補、優先度、依存判断又は固有指示の入力へ含めない。
 ①はpicker出力の検収直後に、選定時点で`inbox`だった項目へ既存の一括`start-processing`を1回実行し、全件の`processing`配置を確認して完了する。
 計画ファイル、managed-temp、worktree及び実装担当の起動をこの遷移の成功より後へ置くことで、着手済みの処理回が占有する範囲を外部観測と中断後の再開位置から識別できる。
 起動時に固定した集合の全レーンが完了した後はready一覧を再取得せず③へ進み、処理回の進行中に追加された項目は次回の処理で扱う。

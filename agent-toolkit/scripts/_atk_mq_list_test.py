@@ -905,6 +905,34 @@ class TestListStatusFilter:
         assert f"{_FIXED_TIMESTAMP}-{expected_suffix}" in captured.out
         assert f"{_FIXED_TIMESTAMP}-{excluded_suffix}" not in captured.out
 
+    def test_active_covers_hold_for_both_types(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--status=activeがfeedbackとTBDのどちらでもholdを含む3状態を返す。"""
+        notes = _setup_notes(tmp_path)
+        hold_dir = notes / "hold"
+        hold_dir.mkdir(parents=True, exist_ok=True)
+        (hold_dir / "fb-hold.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
+            encoding="utf-8",
+        )
+        (hold_dir / "tbd-hold.md").write_text(
+            "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\nhold質問\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--status=active", "--no-json"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "fb-hold.md" in captured.out
+        assert "tbd-hold.md" in captured.out
+
     def test_status_all_outputs_every_tbd(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -949,6 +977,14 @@ class TestListStatusFilter:
         """--statusに不正値を指定するとargparseがexit 2で終了する。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["mq", "list", "--status=invalid"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+
+    @pytest.mark.parametrize("status", ["planning", "editing"])
+    def test_status_rejects_withdrawn_states(self, tmp_path: pathlib.Path, status: str) -> None:
+        """廃止した状態名を--statusへ渡すとargparseがexit 2で終了する。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", f"--status={status}"], home=tmp_path)
 
         assert exc_info.value.code == 2
 

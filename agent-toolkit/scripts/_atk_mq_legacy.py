@@ -20,6 +20,7 @@ MQ_STATE_PROCESSING = "processing"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
 MQ_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING, MQ_STATE_ADOPTED, MQ_STATE_REJECTED)
+"""旧ディレクトリ構成を読み取るための状態名。現行の保存状態が廃止した`planning`も走査対象に残す。"""
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 

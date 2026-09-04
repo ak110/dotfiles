@@ -457,17 +457,17 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   全ての要求を充足済みと確定した計画と、同一セッションで実装しない計画は計画レビュー収束後に、それ以外は実装レビュー合格後に、計画と同じstemの付属ファイルを`atk plans commit`で作成日の年月階層へ移動して保存する。
   同一セッション内で実装工程へ進む計画は計画レビュー合格時に移動又はcommitしない（2026年9月、利用者指示。並行作業中のprivate-notesをcleanに保つため）
 - キュー項目の削除はGit履歴から復旧できる経路として維持し、エージェントが自身の誤りで投入した項目の整理に用いる
-- 計画作成中の通常型フィードバックは専用の`planning`へ移し、TBDの`active`・`processable`、`process-loop`のready集合、一般編集及びユーザーコメントから分離する。feedback用の公開一覧の`active`表示には`planning`を含めるが、計画作成途中の項目を自動処理や実装対象として扱わず、必要な場合は`--status=planning`を明示して参照する状態境界を優先する
-- キューの全状態は`inbox`、`processing`、`planning`、`editing`、`hold`、`adopted`、`rejected`とする。feedback用の公開一覧の`active`は`inbox`・`planning`・`processing`・`editing`・`hold`、TBDの`active`には`planning`を含めず、`processable`は通常の自動処理へ渡せる`inbox`・`processing`だけを表示する。`hold`・`editing`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない
+- キューの全状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`とする。公開一覧の`active`は`inbox`・`processing`・`hold`、`processable`は通常の自動処理へ渡せる`inbox`・`processing`とし、型による差を設けない。`hold`は明示操作までprocess-loop、readiness、TBDスキャン及びalertsの対象にしない（2026年9月、利用者指示）
+- 計画作成中の通常型フィードバックと外部編集中の項目はいずれも`hold`へ置く。用途別に`planning`と`editing`を分けていた区分は、自動処理から除外する点で同じ振る舞いになり、状態集合の定義が型と操作ごとに分岐する原因になったため廃止した
 - `hold`は`inbox`または`processing`から移動し、`unhold`では`inbox`へ戻す。保留元を推測して`processing`へ戻す経路は設けない。`hold`は自動処理からの除外だけを意味し、編集、TBD回答、ユーザーコメント、採用、不採用及び削除は`inbox`と同じ条件で許可する
-- 項目の削除は、明示`state`として`inbox`・`planning`・`processing`・`hold`に加えて終端状態（`adopted`・`rejected`）も受理する。エージェントが自身の誤りで投入した項目を`atk serve`の画面から片付けられるようにするためであり、`planning`・`processing`の削除保護は維持する
-- `editing`は一覧と既存データの状態判定で認識する。今回の状態追加を理由に、永続的な編集セッション、専用の復旧状態又はpush再試行APIを新設しない
+- 項目の削除は、明示`state`として`inbox`・`processing`・`hold`に加えて終端状態（`adopted`・`rejected`）も受理する。エージェントが自身の誤りで投入した項目を`atk serve`の画面から片付けられるようにするためであり、`processing`の削除保護は維持する
+- エージェントが実行してよい遷移は`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終端、及び`rejected`から`inbox`への差し戻しとする。ユーザーはブラウザーUIから任意の状態へ遷移させられる。本文の編集は保存状態によらず行える（2026年9月、利用者指示。規範の不具合で操作不能に陥る事故を避けるため、状態による編集の制限を増やさない）
 - `atk mq list`は`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では既定でJSON Linesを出力し、`--no-json`でテキスト表示へ戻す。`--json`と`--count`の明示指定を優先し、この既定変更を他のサブコマンドへ拡張しない
 - `atk mq list`のテキスト表示はstdoutがTTYの場合だけ端末幅に応じて短縮し、非TTYでは`target_repo`と要約を全文で保持する。人間TTYの幅適応は維持する
 - TBDの回答欄とフィードバックのユーザーコメント節はユーザーだけが書き込む。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境から起動した`atk`は、当該節を含む本文の新規投入と編集を拒否する。`atk mq edit`が本文をMESSAGEで受け取る場合は、当該節を編集の対象から外して保存済みの内容をそのまま残す。エージェントはユーザーの発言を本文中へ出所を示して引用する。`atk serve`のブラウザー操作は人間の入力であるため拒否の対象にしない（2026年9月1日、利用者指示。エージェントがユーザーコメント節を生成した事故に由来する。同日の利用者指示により、非対話の編集経路は拒否ではなく自動保持とする）
 - `atk`はユーザーとコーディングエージェントが使うツールであり、複数条件の同時成立を要する未観測の競合を閉じるための恒常的な機構を足さない。変更の優先順位は、実際に観測された不具合、公開インターフェースの破壊、データの明白な喪失への対応を上位に置く。ユーザーが明示した機能追加とユーザービリティ改善は、この優先順位にかかわらず対象とする
 - `atk mq add`・`atk mq edit`は保存結果から読み直した本文を同じ出力へ含める。投入・編集した主体は追加の`atk mq show`を実行せずに送信元本文と保存本文を照合する
-- `atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文と状態を保持して計画実装型へ変換し、`planning`入力では`--message`を伴う全入力を最古の1件へ統合する。異なる状態を混在させず、全入力を事前検証して1回のロック・commit・任意pushで処理する。commit前の失敗では部分変換を残さず、push失敗では変換済みのcleanなローカルcommitを保持する
+- `atk mq convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文と状態を保持して計画実装型へ変換し、`hold`入力では`--message`を伴う全入力を最古の1件へ統合する。異なる状態を混在させず、全入力を事前検証して1回のロック・commit・任意pushで処理する。commit前の失敗では部分変換を残さず、push失敗では変換済みのcleanなローカルcommitを保持する
 - 同一バッチの複数項目はpickerが1つ以上の通常レーンへ明示的に分け、1件ずつの直列処理をしない。
   計画ファイルの分割は対象ファイル集合の重なりと検証境界の独立性を主判定とする。
   通常レーンは1計画ファイルと1専用worktreeを持つ。変更対象ファイルの重なりと変更規模はレーン数の決定入力にせず、
@@ -483,9 +483,9 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   `atk mq start-processing <filename>... --target-repo=<repo>`を1回実行する
 - 一括処理開始は移動前に集合全体を検証し、移動開始後の失敗ではprocessing配置、未コミット差分、遷移commit及び
   remote設定時のupstream包含を照合する。全条件が成立しない場合は項目別再実行をせず未完了で停止する
-- 通常型フィードバックのファイル名を1件以上指定する計画化では、調査前に同一対象リポジトリの全対象を`start-planning`でplanningへ一括移動する
+- 通常型フィードバックのファイル名を1件以上指定する計画化では、調査前に同一対象リポジトリの全対象を`hold`へ一括移動する
 - 通常型フィードバックのファイル名を指定する計画化では、レビュー収束後に全入力を1回の`convert-to-plan`へ渡す。最古項目を計画型`inbox`へ移し、残る統合元を同じcommitで除去する。単一入力も同じ経路で処理し、別`rm`を呼ばない
-- 計画型変換前に中断するときは`planning`から`inbox`へ戻す。入力検証、書込み又はcommitの失敗では元の`planning`集合を復元し、pushだけが失敗した場合は変換済みcommitのpushと保存結果の確認から再開する
+- 計画型変換前に中断するときは`unhold`で`inbox`へ戻す。入力検証、書込み又はcommitの失敗では元の`hold`集合を復元し、pushだけが失敗した場合は変換済みcommitのpushと保存結果の確認から再開する
 - 計画型inbox項目をprocessingへ移すのは、明示的な`start-processing`又は`process-loop`の処理開始だけとする
 - `agent-toolkit:process-feedbacks`は①のpicker出力を検収した直後に、選定時点で`inbox`だった全項目を一括で`processing`へ移す。
   計画ファイル・worktree・実装担当の起動をその後へ置く（2026年8月、利用者指示。着手中の占有範囲を外部観測と中断後の再開位置から識別するため）
@@ -540,7 +540,7 @@ pickerは計画対象集合を1つ以上の通常レーンへ割り当て、各�
 部分採用はこの確認へ機械的に含めず、実施内容へ採用範囲、実施しない範囲、理由を記載し、要求別の採否詳細は内部採否記録を正本とする。
 人間由来の本文か回答に外部操作、対象、範囲が明記されている場合は、その要求単位の範囲で利用者認可として扱う。source値だけの場合、空のコメント欄、エージェント推奨、一般的な進行指示は認可にしない。
 `atk serve`では、inboxとholdにあるエージェント由来（frontmatterの`source`が未設定でない）のfeedbackがユーザーコメントを編集できる。初回は末尾へ追記し、再編集は同じ節だけを置換する。
-planning、processing、TBD、終端項目と人間由来の項目はユーザーコメント編集の対象にしない。
+processing、TBD、終端項目と人間由来の項目はユーザーコメント編集の対象にしない。
 別リポジトリ項目は投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換え、
 元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して登録する。通常の`atk mq add`はfrontmatterの
 `target_repo`をCLI値で置き換えず、frontmatterの値を優先する。

@@ -234,21 +234,21 @@ class TestGrepFilters:
         assert "fb-001.md" not in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
 
-    def test_active_includes_planning_feedback_but_excludes_planning_tbd(
+    def test_active_includes_hold_entries_of_both_types(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既定activeのgrepはplanning feedbackを含め、planning TBDを除外する。"""
+        """既定activeのgrepはhold配下のfeedbackとTBDをいずれも含める。"""
         notes = _setup_notes(tmp_path)
-        planning_dir = notes / "planning"
-        planning_dir.mkdir(parents=True, exist_ok=True)
-        (planning_dir / "planning-feedback.md").write_text(
+        hold_dir = notes / "hold"
+        hold_dir.mkdir(parents=True, exist_ok=True)
+        (hold_dir / "hold-feedback.md").write_text(
             "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
-        (planning_dir / "planning-tbd.md").write_text(
+        (hold_dir / "hold-tbd.md").write_text(
             "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
@@ -259,8 +259,8 @@ class TestGrepFilters:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "planning-feedback.md" in captured.out
-        assert "planning-tbd.md" not in captured.out
+        assert "hold-feedback.md" in captured.out
+        assert "hold-tbd.md" in captured.out
 
     def test_answered_filter_limits_to_unanswered(
         self,

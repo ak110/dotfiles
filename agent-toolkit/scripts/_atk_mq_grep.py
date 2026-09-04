@@ -7,7 +7,7 @@ import argparse
 import pathlib
 import re
 
-from _atk_mq_common import MQ_STATE_PLANNING, MQ_TYPE_TBD, _iter_entries, _pull_with_recent_reuse, _repo_lock
+from _atk_mq_common import _iter_entries, _pull_with_recent_reuse, _repo_lock
 from _atk_mq_list import _answered_matches, _resolve_states
 from _atk_mq_repo import _resolve_repo_id
 
@@ -41,14 +41,12 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         args.subparser.error(f"正規表現が不正です: {error}")
         raise AssertionError("unreachable") from error  # pragma: no cover - args.subparser.error()はSystemExitを送出する
     matched = False
-    for path, _, text, state, entry_type in _iter_entries(
+    for path, _, text, _state, entry_type in _iter_entries(
         private_notes,
         _resolve_states(args.status),
         filter_repo,
         args.type,
     ):
-        if args.status in {"active", "processable"} and state == MQ_STATE_PLANNING and entry_type == MQ_TYPE_TBD:
-            continue
         if not _answered_matches(entry_type, text, args.answered):
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):

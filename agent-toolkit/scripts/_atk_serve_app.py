@@ -85,17 +85,12 @@ def _safe_base_path(raw: str) -> str:
 def _resolve_states(status: str) -> tuple[str, ...]:
     """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
     if status == "active":
-        return common.MQ_FEEDBACK_ACTIVE_STATES
+        return common.MQ_ACTIVE_STATES
     if status == "processable":
         return common.MQ_PROCESSABLE_STATES
     if status == "all":
         return common.MQ_STATES
     return (status,)
-
-
-def _is_selected_state(status: str, state: str, kind: str | None) -> bool:
-    """一覧の状態フィルターと種別の組み合わせで表示対象か判定する。"""
-    return not (status in {"active", "processable"} and state == common.MQ_STATE_PLANNING and kind == common.MQ_TYPE_TBD)
 
 
 async def _request_json() -> typing.Any:
@@ -421,8 +416,6 @@ class Operations:
                 parsed = frontmatter.parse_frontmatter(text)
                 metadata = parsed[0] if parsed is not None else {}
                 kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
-                if not _is_selected_state(status_filter, state, kind):
-                    continue
                 if kind_filter not in ("all", kind):
                     continue
                 item = _entry(path, kind or "unknown", state, text, metadata)
@@ -550,8 +543,6 @@ class Operations:
         for _state, _path, text in self._iter_entry_files(_resolve_states(status)):
             parsed = frontmatter.parse_frontmatter(text)
             if parsed is None:
-                continue
-            if not _is_selected_state(status, _state, common.entry_type_from_metadata(_path, parsed[0])):
                 continue
             target_repo = parsed[0].get("target_repo")
             if isinstance(target_repo, str) and target_repo:

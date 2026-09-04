@@ -29,7 +29,7 @@
 
 `blocked_reason`が`dependency-unmet`で、`depends_on`の全てが処理対象の候補に入るフィードバックである項目は、処理対象に含める。
 
-既存の`planning`、`editing`及び`hold`項目は、候補、優先度、依存判断又は固有指示の入力へ含めない。
+既存の`hold`項目は、候補、優先度、依存判断又は固有指示の入力へ含めない。
 処理回の進行中に追加されたフィードバックを、確定済みの出力へ混ぜない。
 
 `processing`状態のフィードバックは、過去の`agent-toolkit:process-feedbacks`が中断して残した項目である。

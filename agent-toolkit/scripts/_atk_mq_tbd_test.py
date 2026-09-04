@@ -1405,7 +1405,7 @@ def test_answer_tbd_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypa
     notes = _setup_notes(tmp_path)
     held = _write_tbd_file(notes, "held.md")
     held.write_text(held.read_text(encoding="utf-8") + f"{tbd_module.ANSWER_MARKER}\n", encoding="utf-8")
-    (notes / "hold").mkdir()
+    (notes / "hold").mkdir(exist_ok=True)
     held.rename(notes / "hold/held.md")
     monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)

@@ -1691,10 +1691,10 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
 
 
 @pytest.mark.asyncio
-async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_planning(
+async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """planningへのSSE移動後も入力へ到達でき、保存だけを無効にする。"""
+    """processingへのSSE移動後も入力へ到達でき、保存だけを無効にする。"""
     harness = browser_harness
     page = harness.page
     path = harness.root / "inbox" / "feedback.md"
@@ -1707,16 +1707,16 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_planning(
     await page.locator('.entry-select[data-key="inbox/feedback.md"]').click()
     await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
     comment_input = detail.locator("#user-comment-input")
-    await comment_input.fill("planning移動後も保持する入力")
+    await comment_input.fill("processing移動後も保持する入力")
 
-    planning = harness.root / "planning"
-    planning.mkdir(exist_ok=True)
-    path.replace(planning / path.name)
+    processing = harness.root / "processing"
+    processing.mkdir(exist_ok=True)
+    path.replace(processing / path.name)
     harness.current_state.publish()
 
-    await detail.get_by_role("alert").filter(has_text="計画作成中へ移動したため").wait_for(state="visible")
+    await detail.get_by_role("alert").filter(has_text="処理中へ移動したため").wait_for(state="visible")
     await playwright.async_api.expect(detail).to_be_visible()
-    await playwright.async_api.expect(comment_input).to_have_value("planning移動後も保持する入力")
+    await playwright.async_api.expect(comment_input).to_have_value("processing移動後も保持する入力")
     await playwright.async_api.expect(comment_input).to_be_focused()
     await playwright.async_api.expect(detail.locator("#save-user-comment-button")).to_be_disabled()
 

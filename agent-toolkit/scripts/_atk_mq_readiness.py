@@ -11,7 +11,7 @@ import _git_remote
 import _plan_file
 from _atk_mq_formatters import _parse_target_repo
 from _atk_mq_frontmatter import parse_frontmatter
-from _tbd_scan import _ACTIVE_STATES as MQ_ACTIVE_STATES
+from _tbd_scan import _ACTIVE_STATES as MQ_PROCESSABLE_STATES
 from _tbd_scan import _TBD_TYPE as MQ_TYPE_TBD
 from _tbd_scan import is_tbd_answered as _is_tbd_answered
 
@@ -390,7 +390,7 @@ def calculate_readiness(
     now_utc = now.astimezone(datetime.UTC)
     resolver_cache: dict[str, str | None] = {}
     canonical_target = _normalized_repo_or_none(target_repo, resolver_cache)
-    all_active = _load_queue_entries(private_notes, None, MQ_ACTIVE_STATES, resolver_cache)
+    all_active = _load_queue_entries(private_notes, None, MQ_PROCESSABLE_STATES, resolver_cache)
     active = (
         all_active
         if target_repo is None

@@ -149,7 +149,7 @@ route変更、識別子消失又は前提無効時だけ一般的な継続契約
 - `released`が挙げる資源の集合が、起動時に当該レーンへ記録した所有worktree、所有branch及びレーンmanaged-tempの集合と、過不足なく一致する。一致を確認した所有worktreeと所有branchが、`git -C <マージ先worktreeの絶対パス> worktree list`と`git -C <マージ先worktreeの絶対パス> branch --list <所有branch名>`の出力へ現れない。一致を確認したレーンmanaged-tempについて、`test ! -e <当該managed-tempの絶対パス>`が終了コード0を返す
 
 件数の一致だけでは、別の項目を終端した報告と所有資源を列挙から省いた報告を区別できないため、集合の一致を先に確認してから各要素の実状態を照合する。
-各要素の照合は、当該操作の公開契約が定める終了状態を直接観測して行う。`adopted`は`atk mq adopt`の終了状態が`adopted`への移動であるため当該状態への存在を観測し、`released`は資源回収の終了状態が資源の消失であるため当該消失を観測する。`processing`に現れないことは、`inbox`・`planning`・`editing`・`hold`・`rejected`への移動と未終端を区別しないため用いない。
+各要素の照合は、当該操作の公開契約が定める終了状態を直接観測して行う。`adopted`は`atk mq adopt`の終了状態が`adopted`への移動であるため当該状態への存在を観測し、`released`は資源回収の終了状態が資源の消失であるため当該消失を観測する。`processing`に現れないことは、`inbox`・`hold`・`rejected`への移動と未終端を区別しないため用いない。
 照合はいずれもコマンド1回で判定でき、成果物と実装差分の再読解を伴わない。メインは成果物、Git状態、検証結果及びレビュー表を完了報告の再検収目的で読み直さない。
 
 `upstream_submission`が`混在`の項目は`adopt`しない。レーンはffマージ後に所有資源を回収して既存の完了報告を返す。メインは完了報告を受領した後、投入先のファイル名を元項目の`depends_on`へ加え、`atk mq return-to-inbox`で`inbox`へ戻す。再着手は次の処理回とする。

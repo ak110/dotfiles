@@ -6,10 +6,8 @@ import typing
 
 from _atk_mq_common import (
     MQ_STATE_INBOX,
-    MQ_STATE_PLANNING,
     MQ_STATE_PROCESSING,
     MQ_STATES,
-    MQ_TYPE_TBD,
     MQ_TYPES,
     _commit_and_push,
     _iter_entries,
@@ -39,16 +37,16 @@ def _select_candidates(
     private_notes: pathlib.Path,
     target_repo: str,
 ) -> list[QueueEntryDisplay]:
-    """`active`項目から同じ正規リポジトリと有効な種別を選択する。"""
+    """未処理と処理中の項目から同じ正規リポジトリと有効な種別を選択する。"""
     return [
         entry
         for entry in _iter_entries(
             private_notes,
-            (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_PLANNING),
+            (MQ_STATE_INBOX, MQ_STATE_PROCESSING),
             target_repo,
             "all",
         )
-        if entry[4] in MQ_TYPES and not (entry[3] == MQ_STATE_PLANNING and entry[4] == MQ_TYPE_TBD)
+        if entry[4] in MQ_TYPES
     ]
 
 
@@ -69,14 +67,11 @@ def _ensure_processing_is_explicit(
     *,
     force: bool,
 ) -> None:
-    """planningまたはprocessing候補がある場合に明示的な保護解除を要求する。"""
-    protected = [
-        path.name for path, _repo, _text, state, _type in candidates if state in {MQ_STATE_PLANNING, MQ_STATE_PROCESSING}
-    ]
+    """processing候補がある場合に明示的な保護解除を要求する。"""
+    protected = [path.name for path, _repo, _text, state, _type in candidates if state == MQ_STATE_PROCESSING]
     if protected and not force:
         print(
-            "planning・processing状態のファイルは既定で削除を保護します。"
-            f"削除するには--forceを指定してください: {', '.join(protected)}",
+            f"processing状態のファイルは既定で削除を保護します。削除するには--forceを指定してください: {', '.join(protected)}",
             file=sys.stderr,
         )
         sys.exit(2)

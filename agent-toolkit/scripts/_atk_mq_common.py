@@ -53,25 +53,19 @@ from _tbd_scan import is_tbd_answered as _is_tbd_answered
 __all__ = ["QueueEntry", "ReadinessResult", "_count_pending_entries", "calculate_readiness"]
 
 # フィードバック管理repoの状態フォルダー名（管理repoのroot直下）。
-# - `inbox`: 未処理の投入直後
-# - `planning`: 計画作成中。process-loopの着手対象外
+# - `inbox`: 次の処理主体による取得待ち
 # - `processing`: `start-processing`で処理中に移動された途中状態
-# - `editing`: 外部の編集処理が使用する編集中状態
-# - `hold`: 明示的な解除まで自動処理を保留した状態
+# - `hold`: ユーザーまたはエージェントが編集中であり、自動処理の対象外
 # - `adopted`: 採用として最終処理された状態
 # - `rejected`: 不採用として最終処理された状態
 MQ_STATE_INBOX = "inbox"
-MQ_STATE_PLANNING = "planning"
 MQ_STATE_PROCESSING = "processing"
-MQ_STATE_EDITING = "editing"
 MQ_STATE_HOLD = "hold"
 MQ_STATE_ADOPTED = "adopted"
 MQ_STATE_REJECTED = "rejected"
 MQ_STATES = (
     MQ_STATE_INBOX,
     MQ_STATE_PROCESSING,
-    MQ_STATE_PLANNING,
-    MQ_STATE_EDITING,
     MQ_STATE_HOLD,
     MQ_STATE_ADOPTED,
     MQ_STATE_REJECTED,
@@ -79,12 +73,11 @@ MQ_STATES = (
 MQ_PROCESSABLE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING)
 TRANSITION_EXPLICIT_STATES = {
     "start-processing": (MQ_STATE_HOLD,),
-    "return-to-inbox": (MQ_STATE_PLANNING, MQ_STATE_REJECTED),
+    "return-to-inbox": (MQ_STATE_REJECTED,),
     "adopt": (MQ_STATE_HOLD,),
     "reject": (MQ_STATE_INBOX, MQ_STATE_HOLD),
     "remove": (
         MQ_STATE_INBOX,
-        MQ_STATE_PLANNING,
         MQ_STATE_PROCESSING,
         MQ_STATE_HOLD,
         MQ_STATE_ADOPTED,
@@ -97,14 +90,7 @@ TRANSITION_EXPLICIT_STATES = {
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
 """
-MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_EDITING, MQ_STATE_HOLD)
-MQ_FEEDBACK_ACTIVE_STATES = (
-    MQ_STATE_INBOX,
-    MQ_STATE_PLANNING,
-    MQ_STATE_PROCESSING,
-    MQ_STATE_EDITING,
-    MQ_STATE_HOLD,
-)
+MQ_ACTIVE_STATES = (MQ_STATE_INBOX, MQ_STATE_PROCESSING, MQ_STATE_HOLD)
 MQ_TYPE_FEEDBACK = "feedback"
 MQ_TYPES = (MQ_TYPE_FEEDBACK, MQ_TYPE_TBD)
 
@@ -364,7 +350,7 @@ def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> b
         if len(path.parts) != 2 or path.suffix != ".md":
             return False
         state, filename = path.parts
-        if status == "D" and state in MQ_FEEDBACK_ACTIVE_STATES:
+        if status == "D" and state in MQ_ACTIVE_STATES:
             removed[filename] = relative
         elif status == "A" and state == outcome:
             added[filename] = relative

@@ -129,10 +129,10 @@ def test_transition_explicit_state_contract_matches_web_operations() -> None:
     """Web操作が明示できる状態集合を操作別契約として固定する。"""
     assert common.TRANSITION_EXPLICIT_STATES == {
         "start-processing": ("hold",),
-        "return-to-inbox": ("planning", "rejected"),
+        "return-to-inbox": ("rejected",),
         "adopt": ("hold",),
         "reject": ("inbox", "hold"),
-        "remove": ("inbox", "planning", "processing", "hold", "adopted", "rejected"),
+        "remove": ("inbox", "processing", "hold", "adopted", "rejected"),
     }
     for action, states in common.TRANSITION_EXPLICIT_STATES.items():
         for state_name in states:
@@ -255,7 +255,7 @@ def test_transition_restores_missing_state_directories_before_commit(
 ) -> None:
     """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
     notes = _setup_notes(tmp_path)
-    (notes / "planning").rmdir()
+    (notes / "hold").rmdir()
     _write_feedback_file(notes, "entry.md")
     monkeypatch.setattr(mutations, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
@@ -541,7 +541,7 @@ def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.
     return plan
 
 
-def _write_planning_plan(
+def _write_integration_plan(
     directory: pathlib.Path,
     target_commit: str,
     filenames: tuple[str, ...],
@@ -558,7 +558,7 @@ def _write_planning_plan(
     return plan
 
 
-def _write_legacy_planning_plan(
+def _write_legacy_integration_plan(
     tmp_path: pathlib.Path,
     _target_commit: str,
     filenames: tuple[str, ...],
@@ -576,7 +576,7 @@ def test_read_plan_input_filenames_uses_related_feedback_and_legacy_materials(tm
     """新書式は関連フィードバックを読み、旧書式は提示素材へフォールバックする。"""
     read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
     filenames = ("20260827-000000-002.md", "20260827-000000-001.md")
-    plan = _write_planning_plan(tmp_path, "a" * 40, filenames)
+    plan = _write_integration_plan(tmp_path, "a" * 40, filenames)
     assert read_plan_input_filenames(plan) == (tuple(sorted(filenames)), "計画メタ情報の関連フィードバック")
 
     plan.write_text("## 提示素材\n\n" + "".join(f"- {name}\n" for name in filenames), encoding="utf-8")
@@ -593,7 +593,7 @@ def test_read_plan_input_filenames_uses_related_feedback_and_legacy_materials(tm
         ("missing", "を一意に特定できません"),
         ("multiple", "を一意に特定できません"),
         ("broken-frontmatter", "のfrontmatterが破損しています"),
-        ("feedback-outside-planning", "の変換元feedbackがplanningに存在しません"),
+        ("feedback-outside-hold", "の変換元feedbackがholdに存在しません"),
         ("already-planned", "が既に計画型です"),
         ("inactive-tbd", "のTBDがactive状態ではありません"),
         ("invalid-type", "のtypeが不正です"),
@@ -611,27 +611,27 @@ def test_plan_feedback_paths_identifies_plan_input_source_in_errors(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     if condition == "multiple":
-        _write_convert_feedback(notes, filename, state="planning")
+        _write_convert_feedback(notes, filename, state="hold")
         _write_convert_feedback(notes, filename, state="inbox")
     elif condition == "broken-frontmatter":
-        path = notes / "planning" / filename
+        path = notes / "hold" / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("本文\n", encoding="utf-8")
     elif condition == "already-planned":
-        path = _write_convert_feedback(notes, filename, state="planning")
+        path = _write_convert_feedback(notes, filename, state="hold")
         path.write_text(
             path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\nplan_file: x\n"), encoding="utf-8"
         )
-    elif condition == "feedback-outside-planning":
+    elif condition == "feedback-outside-hold":
         _write_convert_feedback(notes, filename, state="inbox")
     elif condition == "inactive-tbd":
         _write_convert_feedback(notes, filename, entry_type="tbd", state="adopted")
     elif condition == "invalid-type":
-        _write_convert_feedback(notes, filename, entry_type="invalid", state="planning")
+        _write_convert_feedback(notes, filename, entry_type="invalid", state="hold")
     elif condition == "no-feedback":
         _write_convert_feedback(notes, filename, entry_type="tbd", state="inbox")
 
-    writer = _write_legacy_planning_plan if legacy else _write_planning_plan
+    writer = _write_legacy_integration_plan if legacy else _write_integration_plan
     plan = writer(tmp_path, "a" * 40, (filename,))
     read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
     plan_feedback_paths = vars(mutations)["_plan_feedback_paths"]
@@ -646,7 +646,7 @@ def test_read_plan_input_filenames_rejects_invalid_related_feedback(tmp_path: pa
     """関連フィードバックの要約欠落を提示素材へフォールバックせず拒否する。"""
     read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
     filename = "20260827-000000-001.md"
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     plan.write_text(plan.read_text(encoding="utf-8").replace(": 変換対象の要求", ":"), encoding="utf-8")
 
     with pytest.raises(mutations.WebInputError, match="計画メタ情報の関連フィードバックが不正"):
@@ -674,8 +674,8 @@ def _write_convert_feedback(
     return path
 
 
-def _patch_planning_target_resolution(monkeypatch: pytest.MonkeyPatch, target_commit: str = "b" * 40) -> None:
-    """planning変換テストの対象worktreeと計画ベースcommit解決を固定する。"""
+def _patch_integration_target_resolution(monkeypatch: pytest.MonkeyPatch, target_commit: str = "b" * 40) -> None:
+    """hold統合テストの対象worktreeと計画ベースcommit解決を固定する。"""
     monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
     monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda _plan, _worktree: target_commit)
 
@@ -769,7 +769,7 @@ def test_plan_file_write_paths_store_portable_value_for_absolute_input(
     """保存root配下の計画を絶対パスで渡しても、全ての書込経路が可搬値を保存する。"""
     _disable_convert_git(monkeypatch)
     _disable_transition_git(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
     plan_relative = pathlib.PurePosixPath("plans/2026/08/plan.md")
     expected = f"$(atk config get private_notes)/{plan_relative}"
 
@@ -790,26 +790,26 @@ def test_plan_file_write_paths_store_portable_value_for_absolute_input(
     assert stored_plan_file(entry) == expected
     assert details["plan_file"] == expected
 
-    notes = setup_notes("planning")
-    planning_names = ("20260827-000000-001.md", "20260827-000000-002.md")
-    for name in planning_names:
-        _write_convert_feedback(notes, name, state="planning")
-    plan = _write_planning_plan(notes / plan_relative.parent, "a" * 40, planning_names)
+    notes = setup_notes("hold")
+    held_names = ("20260827-000000-001.md", "20260827-000000-002.md")
+    for name in held_names:
+        _write_convert_feedback(notes, name, state="hold")
+    plan = _write_integration_plan(notes / plan_relative.parent, "a" * 40, held_names)
     details = mutations.convert_entries_to_plan(
         notes,
-        filenames=planning_names,
+        filenames=held_names,
         plan_file=str(plan),
         message="統合本文",
         local_worktree=tmp_path / "target-worktree",
         skip_push=True,
     )
-    assert stored_plan_file(notes / "inbox" / planning_names[0]) == expected
+    assert stored_plan_file(notes / "inbox" / held_names[0]) == expected
     assert details["plan_file"] == expected
 
     notes = setup_notes("edit")
     edit_name = "20260827-000000-001.md"
-    _write_convert_feedback(notes, edit_name, state="planning")
-    plan = _write_planning_plan(notes / plan_relative.parent, "a" * 40, (edit_name,))
+    _write_convert_feedback(notes, edit_name, state="hold")
+    plan = _write_integration_plan(notes / plan_relative.parent, "a" * 40, (edit_name,))
     details = mutations.edit_entry_to_plan(
         notes,
         filename=edit_name,
@@ -1310,14 +1310,14 @@ def test_convert_multiple_entries_rejects_duplicate_before_writing(
     assert path.read_text(encoding="utf-8") == original
 
 
-def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_item(
+def test_convert_held_entries_integrates_all_materials_into_oldest_inbox_item(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """planningの全feedbackを最古項目へ統合し、TBDと外部依存を保持する。"""
+    """holdの全feedbackを最古項目へ統合し、TBDと外部依存を保持する。"""
     notes = _setup_notes(tmp_path)
     feedback_names = ("20260827-000000-001.md", "20260827-000000-002.md")
-    paths = [_write_convert_feedback(notes, name, state="planning") for name in feedback_names]
+    paths = [_write_convert_feedback(notes, name, state="hold") for name in feedback_names]
     tbd_name = "20260826-235959-001.md"
     _write_tbd_entry(notes, tbd_name)
     paths[0].write_text(
@@ -1339,9 +1339,9 @@ def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_ite
         encoding="utf-8",
     )
     plan_relative = pathlib.PurePosixPath("plans/2026/08/plan.md")
-    plan = _write_planning_plan(notes / plan_relative.parent, "a" * 40, (*feedback_names, tbd_name))
+    plan = _write_integration_plan(notes / plan_relative.parent, "a" * 40, (*feedback_names, tbd_name))
     _disable_convert_git(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
     commit_calls: list[tuple[object, ...]] = []
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
 
@@ -1356,8 +1356,8 @@ def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_ite
     )
 
     output_path = notes / "inbox" / feedback_names[0]
-    assert not (notes / "planning" / feedback_names[0]).exists()
-    assert not (notes / "planning" / feedback_names[1]).exists()
+    assert not (notes / "hold" / feedback_names[0]).exists()
+    assert not (notes / "hold" / feedback_names[1]).exists()
     assert output_path.is_file()
     assert (notes / "inbox" / tbd_name).is_file()
     parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
@@ -1371,23 +1371,23 @@ def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_ite
     assert "統合した計画本文" in body
     entries = result["entries"]
     assert isinstance(entries, list) and len(entries) == 1
-    assert result["planning"] is True
+    assert result["integrated"] is True
     assert len(commit_calls) == 1
     assert commit_calls[0][2] == (
-        "planning/20260827-000000-001.md",
-        "planning/20260827-000000-002.md",
+        "hold/20260827-000000-001.md",
+        "hold/20260827-000000-002.md",
         "inbox/20260827-000000-001.md",
     )
 
 
-def test_convert_planning_entries_rejects_unrepresentable_legacy_dependency_before_changes(
+def test_convert_held_entries_rejects_unrepresentable_legacy_dependency_before_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """planningの旧形式依存を移行できない場合は書込み前に拒否する。"""
+    """holdの旧形式依存を移行できない場合は書込み前に拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    path = _write_convert_feedback(notes, filename, state="planning")
+    path = _write_convert_feedback(notes, filename, state="hold")
     path.write_text(
         path.read_text(encoding="utf-8").replace(
             "type: feedback\n",
@@ -1396,9 +1396,9 @@ def test_convert_planning_entries_rejects_unrepresentable_legacy_dependency_befo
         encoding="utf-8",
     )
     original = path.read_text(encoding="utf-8")
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_convert_git(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     with pytest.raises(mutations.WebInputError, match="旧形式の依存を計画実装型へ移行できません"):
         mutations.convert_entries_to_plan(
@@ -1416,7 +1416,7 @@ def test_convert_planning_entries_rejects_unrepresentable_legacy_dependency_befo
 @pytest.mark.parametrize(
     ("state", "message", "expected"),
     [
-        ("planning", None, "--message"),
+        ("hold", None, "--message"),
         ("inbox", "統合本文", "指定できません"),
     ],
 )
@@ -1432,9 +1432,11 @@ def test_convert_to_plan_rejects_message_for_wrong_input_state_without_changes(
     filename = "20260827-000000-001.md"
     path = _write_convert_feedback(notes, filename, state=state)
     original = path.read_text(encoding="utf-8")
-    material_names = (filename,) if state == "planning" else ()
+    material_names = (filename,) if state == "hold" else ()
     plan = (
-        _write_planning_plan(tmp_path, "a" * 40, material_names) if material_names else _write_convert_plan(tmp_path, "a" * 40)
+        _write_integration_plan(tmp_path, "a" * 40, material_names)
+        if material_names
+        else _write_convert_plan(tmp_path, "a" * 40)
     )
     _disable_convert_git(monkeypatch)
 
@@ -1447,20 +1449,20 @@ def test_convert_to_plan_rejects_message_for_wrong_input_state_without_changes(
         )
 
     assert path.read_text(encoding="utf-8") == original
-    assert not (notes / "inbox" / filename).exists() if state == "planning" else True
+    assert not (notes / "inbox" / filename).exists() if state == "hold" else True
 
 
 def test_convert_to_plan_rejects_mixed_states_before_writing(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """inboxとplanningの入力混在を全体拒否する。"""
+    """inboxとholdの入力混在を全体拒否する。"""
     notes = _setup_notes(tmp_path)
     first = _write_convert_feedback(notes, "20260827-000000-001.md")
-    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="hold")
     first_original = first.read_text(encoding="utf-8")
     second_original = second.read_text(encoding="utf-8")
-    plan = _write_planning_plan(tmp_path, "a" * 40, (first.name, second.name))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (first.name, second.name))
     _disable_convert_git(monkeypatch)
 
     with pytest.raises(mutations.WebInputError, match="異なる状態"):
@@ -1480,7 +1482,7 @@ def test_convert_to_plan_rejects_mixed_states_before_writing(
     ("legacy", "source_description"),
     [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
 )
-def test_convert_planning_entries_rejects_material_mismatch_without_changes(
+def test_convert_held_entries_rejects_material_mismatch_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     legacy: bool,
@@ -1488,13 +1490,13 @@ def test_convert_planning_entries_rejects_material_mismatch_without_changes(
 ) -> None:
     """CLI入力と新旧計画入力の集合が異なる場合は書込み前に拒否する。"""
     notes = _setup_notes(tmp_path)
-    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="planning")
-    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="planning")
+    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="hold")
+    second = _write_convert_feedback(notes, "20260827-000000-002.md", state="hold")
     originals = {path.name: path.read_text(encoding="utf-8") for path in (first, second)}
-    writer = _write_legacy_planning_plan if legacy else _write_planning_plan
+    writer = _write_legacy_integration_plan if legacy else _write_integration_plan
     plan = writer(tmp_path, "a" * 40, (first.name,))
     _disable_convert_git(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     expected = f"convert-to-planの入力と{source_description}が一致しません"
     with pytest.raises(mutations.WebInputError, match=re.escape(expected)):
@@ -1515,23 +1517,23 @@ def test_convert_planning_entries_rejects_material_mismatch_without_changes(
     ("legacy", "source_description"),
     [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
 )
-def test_convert_planning_entries_identifies_source_for_feedback_outside_planning(
+def test_convert_held_entries_identifies_source_for_feedback_outside_hold(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     legacy: bool,
     source_description: str,
 ) -> None:
-    """planning外の変換元feedbackを新旧計画入力の参照元付きで拒否する。"""
+    """hold外の変換元feedbackを新旧計画入力の参照元付きで拒否する。"""
     notes = _setup_notes(tmp_path)
-    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="planning")
+    first = _write_convert_feedback(notes, "20260827-000000-001.md", state="hold")
     second = _write_convert_feedback(notes, "20260827-000000-002.md", state="inbox")
     originals = {path: path.read_text(encoding="utf-8") for path in (first, second)}
-    writer = _write_legacy_planning_plan if legacy else _write_planning_plan
+    writer = _write_legacy_integration_plan if legacy else _write_integration_plan
     plan = writer(tmp_path, "a" * 40, (first.name, second.name))
     _disable_convert_git(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
-    expected = f"{source_description}の変換元feedbackがplanningに存在しません: {second.name}"
+    expected = f"{source_description}の変換元feedbackがholdに存在しません: {second.name}"
     with pytest.raises(mutations.WebInputError, match=re.escape(expected)):
         mutations.convert_entries_to_plan(
             notes,
@@ -1544,21 +1546,21 @@ def test_convert_planning_entries_identifies_source_for_feedback_outside_plannin
     assert all(path.read_text(encoding="utf-8") == content for path, content in originals.items())
 
 
-def test_convert_planning_entries_rejects_destination_conflict_without_changes(
+def test_convert_held_entries_rejects_destination_conflict_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """統合先inboxの同名競合時はplanningを変更しない。"""
+    """統合先inboxの同名競合時はholdを変更しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    source = _write_convert_feedback(notes, filename, state="planning")
+    source = _write_convert_feedback(notes, filename, state="hold")
     original = source.read_text(encoding="utf-8")
     conflict = notes / "inbox" / filename
     conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
     conflict_original = conflict.read_text(encoding="utf-8")
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_convert_git(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     with pytest.raises(mutations.WebInputError, match="同名"):
         mutations.convert_entries_to_plan(
@@ -1679,16 +1681,16 @@ def test_conversion_restore_preserves_unrelated_index_change(
     """commit前の復元後も対象外のstage済み差分をindexへ保持する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    source = _write_convert_feedback(notes, filename, state="planning")
+    source = _write_convert_feedback(notes, filename, state="hold")
     original = source.read_text(encoding="utf-8")
     unrelated = notes / "unrelated.txt"
     unrelated.write_text("before\n", encoding="utf-8")
     _initialize_private_notes_git(notes)
     unrelated.write_text("staged\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(notes), "add", unrelated.name], check=True)
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_real_convert_network(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     def fail_after_write(path: pathlib.Path, content: str) -> None:
         path.write_text(content, encoding="utf-8")
@@ -1715,19 +1717,19 @@ def test_conversion_restore_preserves_unrelated_index_change(
     assert staged.stdout == "unrelated.txt\n"
 
 
-def test_convert_planning_entries_restores_all_paths_after_write_failure(
+def test_convert_held_entries_restores_all_paths_after_write_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """書込み失敗時にplanningの全入力とindexを開始時へ戻す。"""
+    """書込み失敗時にholdの全入力とindexを開始時へ戻す。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    source = _write_convert_feedback(notes, filename, state="planning")
+    source = _write_convert_feedback(notes, filename, state="hold")
     original = source.read_text(encoding="utf-8")
     start_head = _initialize_private_notes_git(notes)
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_real_convert_network(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     def fail_after_write(path: pathlib.Path, content: str) -> None:
         path.write_text(content, encoding="utf-8")
@@ -1757,19 +1759,19 @@ def test_convert_planning_entries_restores_all_paths_after_write_failure(
     )
 
 
-def test_convert_planning_entries_restores_all_paths_after_commit_failure(
+def test_convert_held_entries_restores_all_paths_after_commit_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """commit失敗時にplanningの全入力とindexを開始時へ戻す。"""
+    """commit失敗時にholdの全入力とindexを開始時へ戻す。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    source = _write_convert_feedback(notes, filename, state="planning")
+    source = _write_convert_feedback(notes, filename, state="hold")
     original = source.read_text(encoding="utf-8")
     start_head = _initialize_private_notes_git(notes)
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_real_convert_network(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     def fail_commit(*_args: object, **_kwargs: object) -> None:
         raise subprocess.CalledProcessError(1, ["git", "commit"])
@@ -1798,18 +1800,18 @@ def test_convert_planning_entries_restores_all_paths_after_commit_failure(
     )
 
 
-def test_convert_planning_entries_keeps_clean_local_commit_after_push_failure(
+def test_convert_held_entries_keeps_clean_local_commit_after_push_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """push失敗時は変換済みのcleanなローカルcommitを保持する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    _write_convert_feedback(notes, filename, state="planning")
+    _write_convert_feedback(notes, filename, state="hold")
     start_head = _initialize_private_notes_git(notes)
-    plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+    plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_real_convert_network(monkeypatch)
-    _patch_planning_target_resolution(monkeypatch)
+    _patch_integration_target_resolution(monkeypatch)
 
     def commit_then_fail_push(
         private_notes: pathlib.Path,
@@ -1857,19 +1859,19 @@ def test_convert_planning_entries_keeps_clean_local_commit_after_push_failure(
     ).stdout.strip()
     assert head != start_head
     assert (notes / "inbox" / filename).is_file()
-    assert not (notes / "planning" / filename).exists()
+    assert not (notes / "hold" / filename).exists()
     assert (
         subprocess.run(["git", "-C", str(notes), "status", "--porcelain"], check=True, capture_output=True, text=True).stdout
         == ""
     )
 
 
-def test_cmd_convert_to_plan_displays_commit_for_single_planning_input(
+def test_cmd_convert_to_plan_displays_commit_for_single_hold_input(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """単一planning入力でも保存結果、commit及びpush結果を表示する。"""
+    """単一hold入力でも保存結果、commit及びpush結果を表示する。"""
     details: dict[str, object | None] = {
         "target_repo": "github.com/example/foo",
         "target_commit": "b" * 40,
@@ -1886,7 +1888,7 @@ def test_cmd_convert_to_plan_displays_commit_for_single_planning_input(
     monkeypatch.setattr(
         mutations,
         "convert_entries_to_plan",
-        lambda *_args, **_kwargs: {"entries": [details], "commit": "c" * 40, "planning": True},
+        lambda *_args, **_kwargs: {"entries": [details], "commit": "c" * 40, "integrated": True},
     )
     args = argparse.Namespace(
         filename=["20260827-000000-001.md"],
@@ -2886,9 +2888,9 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     if route == "append":
         argv = ["mq", "edit", "--append", filename, "変更後\n\n## ユーザーコメント\n\n変更する"]
     elif route == "plan":
-        planning_path = notes / "planning" / filename
-        path.replace(planning_path)
-        path = planning_path
+        held_path = notes / "hold" / filename
+        path.replace(held_path)
+        path = held_path
         plan = tmp_path / "plan.md"
         plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
         worktree = tmp_path / "worktree"
@@ -2976,8 +2978,8 @@ def test_agent_environment_plan_edit_preserves_saved_user_comment(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_feedback_file(notes, filename, body="編集前\n\n## ユーザーコメント\n\n保持する")
-    planning_path = notes / "planning" / filename
-    path.replace(planning_path)
+    held_path = notes / "hold" / filename
+    path.replace(held_path)
     plan = tmp_path / "plan.md"
     plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
     worktree = tmp_path / "worktree"
@@ -3100,9 +3102,9 @@ def test_cli_edit_outputs_saved_body_for_each_write_route(
     elif route == "append":
         argv = ["mq", "edit", "--append", filename, message]
     elif route == "plan":
-        planning_path = notes / "planning" / filename
-        path.replace(planning_path)
-        plan = _write_planning_plan(tmp_path, "a" * 40, (filename,))
+        held_path = notes / "hold" / filename
+        path.replace(held_path)
+        plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
         worktree = tmp_path / "worktree"
         worktree.mkdir()
         monkeypatch.setattr(
@@ -3110,7 +3112,7 @@ def test_cli_edit_outputs_saved_body_for_each_write_route(
             "resolve_add_target",
             lambda _value: ("github.com/example/foo", worktree),
         )
-        _patch_planning_target_resolution(monkeypatch, "a" * 40)
+        _patch_integration_target_resolution(monkeypatch, "a" * 40)
         argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
         path = notes / "inbox" / filename
 
@@ -4031,16 +4033,16 @@ class TestStartProcessingSingle:
         assert "chore: start processing 1 entry" in commit_cmd
 
 
-class TestStartPlanning:
-    """start-planningサブコマンド: inboxの通常型フィードバックをplanning/へ移動する。"""
+class TestHold:
+    """holdサブコマンド: 処理可能な項目をhold/へ移動する。"""
 
-    def test_multiple_files_move_to_planning_in_sorted_commit(
+    def test_multiple_files_move_to_hold_in_single_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """複数項目をファイル名順で単一commitへまとめ、planning/へ移動する。"""
+        """複数項目を単一commitへまとめ、hold/へ移動する。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "20260827-000000-002.md")
         _write_feedback_file(notes, "20260827-000000-001.md")
@@ -4051,7 +4053,7 @@ class TestStartPlanning:
             atk.main(
                 [
                     "mq",
-                    "start-planning",
+                    "hold",
                     "20260827-000000-002.md",
                     "20260827-000000-001.md",
                 ],
@@ -4060,7 +4062,7 @@ class TestStartPlanning:
             )
 
         assert exc_info.value.code == 0
-        assert sorted(path.name for path in (notes / "planning").iterdir()) == [
+        assert sorted(path.name for path in (notes / "hold").iterdir()) == [
             "20260827-000000-001.md",
             "20260827-000000-002.md",
         ]
@@ -4071,18 +4073,16 @@ class TestStartPlanning:
                 "git",
                 "commit",
                 "-m",
-                "chore: start planning 2 entries",
+                "chore: hold 2 entries",
                 "--",
                 "inbox",
                 "processing",
-                "planning",
-                "editing",
                 "hold",
                 "adopted",
                 "rejected",
             ]
         ]
-        assert "20260827-000000-001.md, 20260827-000000-002.md" in capsys.readouterr().out
+        assert "2件保留: 20260827-000000-002.md, 20260827-000000-001.md" in capsys.readouterr().out
 
 
 def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
@@ -4093,8 +4093,8 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
     notes = _setup_notes(tmp_path)
     first = _write_feedback_file(notes, "20260827-000000-001.md")
     second = _write_feedback_file(notes, "20260827-000000-002.md")
-    first_destination = notes / "planning" / first.name
-    second_destination = notes / "planning" / second.name
+    first_destination = notes / "hold" / first.name
+    second_destination = notes / "hold" / second.name
     first.replace(first_destination)
     second.replace(second_destination)
     first = first_destination
@@ -4134,7 +4134,7 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
 
     output_path = notes / "inbox" / first.name
     assert not first.exists()
-    assert not (notes / "planning" / first.name).exists()
+    assert not (notes / "hold" / first.name).exists()
     assert not (notes / "processing" / first.name).exists()
     assert second.exists()
     assert output_path.is_file()
@@ -4149,7 +4149,7 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
     assert details["plan_file"] == str(plan)
     assert len(commit_calls) == 1
     assert commit_calls[0][2] == [
-        "planning/20260827-000000-001.md",
+        "hold/20260827-000000-001.md",
         "inbox/20260827-000000-001.md",
     ]
 
@@ -4162,8 +4162,8 @@ def test_edit_entry_to_plan_commit_failure_leaves_inbox_without_processing(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    planning = notes / "planning" / filename
-    source.replace(planning)
+    held = notes / "hold" / filename
+    source.replace(held)
     plan = tmp_path / "main-plan.md"
     plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
     _disable_transition_git(monkeypatch)
@@ -4182,7 +4182,7 @@ def test_edit_entry_to_plan_commit_failure_leaves_inbox_without_processing(
             target_repo="github.com/example/foo",
         )
 
-    assert not planning.exists()
+    assert not held.exists()
     assert (notes / "inbox" / filename).is_file()
     assert not (notes / "processing" / filename).exists()
 
@@ -4195,8 +4195,8 @@ def test_edit_entry_to_plan_push_failure_leaves_local_inbox_commit_without_proce
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    planning = notes / "planning" / filename
-    source.replace(planning)
+    held = notes / "hold" / filename
+    source.replace(held)
     plan = tmp_path / "main-plan.md"
     plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
     (notes / "processing").mkdir()
@@ -4257,7 +4257,7 @@ def test_edit_entry_to_plan_push_failure_leaves_local_inbox_commit_without_proce
     assert after_head != before_head
     assert status.stdout == ""
     assert upstream.returncode != 0
-    assert not planning.exists()
+    assert not held.exists()
     assert (notes / "inbox" / filename).is_file()
     assert not (notes / "processing" / filename).exists()
 
@@ -4266,13 +4266,13 @@ def test_edit_entry_to_plan_rejects_inbox_name_conflict_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """変換先inboxの同名競合時はplanningと競合先を変更しない。"""
+    """変換先inboxの同名競合時はholdと競合先を変更しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    planning = notes / "planning" / filename
-    source.replace(planning)
-    original = planning.read_text(encoding="utf-8")
+    held = notes / "hold" / filename
+    source.replace(held)
+    original = held.read_text(encoding="utf-8")
     conflict = notes / "inbox" / filename
     conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
     conflict_original = conflict.read_text(encoding="utf-8")
@@ -4292,7 +4292,7 @@ def test_edit_entry_to_plan_rejects_inbox_name_conflict_without_changes(
             target_repo="github.com/example/foo",
         )
 
-    assert planning.read_text(encoding="utf-8") == original
+    assert held.read_text(encoding="utf-8") == original
     assert conflict.read_text(encoding="utf-8") == conflict_original
     assert not (notes / "processing" / filename).exists()
     assert not commit_calls
@@ -4302,13 +4302,13 @@ def test_edit_entry_to_plan_rejects_content_conflict_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """planning本文の内容競合時は変換先を作成しない。"""
+    """hold本文の内容競合時は変換先を作成しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    planning = notes / "planning" / filename
-    source.replace(planning)
-    original = planning.read_text(encoding="utf-8")
+    held = notes / "hold" / filename
+    source.replace(held)
+    original = held.read_text(encoding="utf-8")
     plan = tmp_path / "main-plan.md"
     plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
     _disable_transition_git(monkeypatch)
@@ -4326,7 +4326,7 @@ def test_edit_entry_to_plan_rejects_content_conflict_without_changes(
             expected_content=original + "外部変更",
         )
 
-    assert planning.read_text(encoding="utf-8") == original
+    assert held.read_text(encoding="utf-8") == original
     assert not (notes / "inbox" / filename).exists()
     assert not (notes / "processing" / filename).exists()
     assert not commit_calls
@@ -4350,8 +4350,8 @@ def test_edit_entry_to_plan_allows_active_tbd_materials_outside_feedback_set(
     feedback_names = ("20260827-000000-001.md", "20260827-000000-002.md")
     for index, name in enumerate(feedback_names):
         source = _write_feedback_file(notes, name)
-        source.replace(notes / "planning" / name)
-        path = notes / "planning" / name
+        source.replace(notes / "hold" / name)
+        path = notes / "hold" / name
         path.write_text(
             path.read_text(encoding="utf-8").replace(
                 "type: feedback\n",
@@ -4397,8 +4397,8 @@ def test_edit_entry_to_plan_rejects_invalid_structured_materials_before_changes(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    planning = notes / "planning" / filename
-    source.replace(planning)
+    held = notes / "hold" / filename
+    source.replace(held)
     material_type = "不正種別" if case == "invalid_type" else "フィードバック"
     second_row = f"| P-002 | フィードバック | {filename} | test | 本文全文 |\n" if case == "duplicate_queue_id" else ""
     requirement_table = (
@@ -4423,7 +4423,7 @@ def test_edit_entry_to_plan_rejects_invalid_structured_materials_before_changes(
     _disable_transition_git(monkeypatch)
     commit_calls: list[tuple[object, ...]] = []
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
-    original = planning.read_text(encoding="utf-8")
+    original = held.read_text(encoding="utf-8")
 
     with pytest.raises(mutations.WebInputError, match="提示素材"):
         mutations.edit_entry_to_plan(
@@ -4435,7 +4435,7 @@ def test_edit_entry_to_plan_rejects_invalid_structured_materials_before_changes(
             target_repo="github.com/example/foo",
         )
 
-    assert planning.read_text(encoding="utf-8") == original
+    assert held.read_text(encoding="utf-8") == original
     assert not (notes / "processing" / filename).exists()
     assert not commit_calls
 
@@ -4448,7 +4448,7 @@ def test_edit_plan_cli_uses_plan_base_commit_instead_of_current_head(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    source.replace(notes / "planning" / filename)
+    source.replace(notes / "hold" / filename)
     plan_base = "a" * 40
     current_head = "b" * 40
     plan = tmp_path / "main-plan.md"
@@ -4520,7 +4520,7 @@ def test_edit_plan_cli_rejects_invalid_or_unresolvable_plan_base(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_feedback_file(notes, filename)
-    source.replace(notes / "planning" / filename)
+    source.replace(notes / "hold" / filename)
     plan = tmp_path / "main-plan.md"
     plan.write_text(
         f"# 計画\n\n## 概要\n\n### 計画メタ情報\n\n{metadata}\n## 提示素材\n\n- {filename}\n",
@@ -4558,7 +4558,7 @@ def test_edit_plan_cli_rejects_invalid_or_unresolvable_plan_base(
         )
 
     assert captured.value.code == expected_exit
-    assert (notes / "planning" / filename).is_file()
+    assert (notes / "hold" / filename).is_file()
     assert not (notes / "processing" / filename).exists()
 
 
@@ -4574,7 +4574,7 @@ def test_edit_entry_to_plan_rejects_invalid_material_set_without_changes(
     names = ("20260827-000000-001.md", "20260827-000000-002.md")
     for name in names:
         source = _write_feedback_file(notes, name)
-        source.replace(notes / "planning" / name)
+        source.replace(notes / "hold" / name)
     materials = names
     filename = names[0]
     if case == "empty":
@@ -4584,7 +4584,7 @@ def test_edit_entry_to_plan_rejects_invalid_material_set_without_changes(
     elif case == "not_oldest":
         filename = names[1]
     elif case == "mixed_state":
-        (notes / "planning" / names[1]).replace(notes / "processing" / names[1])
+        (notes / "hold" / names[1]).replace(notes / "processing" / names[1])
     plan = tmp_path / "main-plan.md"
     rows = "".join(f"- {name}\n" for name in materials)
     plan.write_text(f"## 提示素材\n\n{rows}", encoding="utf-8")
@@ -4593,7 +4593,7 @@ def test_edit_entry_to_plan_rejects_invalid_material_set_without_changes(
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *args, **_kwargs: commit_calls.append(args))
     before = {
         path.relative_to(notes): path.read_text(encoding="utf-8")
-        for state in ("planning", "processing")
+        for state in ("hold", "processing")
         for path in (notes / state).iterdir()
     }
 
@@ -4609,7 +4609,7 @@ def test_edit_entry_to_plan_rejects_invalid_material_set_without_changes(
 
     after = {
         path.relative_to(notes): path.read_text(encoding="utf-8")
-        for state in ("planning", "processing")
+        for state in ("hold", "processing")
         for path in (notes / state).iterdir()
     }
     assert after == before

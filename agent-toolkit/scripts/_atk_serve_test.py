@@ -3046,24 +3046,24 @@ def test_render_body_renders_footnote_with_document_anchor() -> None:
     assert 'href="%E6%B3%A8%E8%A8%98%E3%81%AE%E6%9C%AC%E6%96%87"' not in rendered
 
 
-def test_operations_active_includes_planning_feedback_but_excludes_planning_tbd(tmp_path: pathlib.Path) -> None:
-    """一覧APIのactive状態はplanning feedbackを含め、planning TBDを除外する。"""
-    planning = tmp_path / "planning"
-    planning.mkdir()
-    (planning / "planned.md").write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n計画作成中\n",
+def test_operations_active_includes_hold_entries_of_both_types(tmp_path: pathlib.Path) -> None:
+    """一覧APIのactive状態はhold配下のfeedbackとTBDをいずれも含める。"""
+    hold = tmp_path / "hold"
+    hold.mkdir()
+    (hold / "held.md").write_text(
+        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n保留中\n",
         encoding="utf-8",
     )
-    (planning / "planned-tbd.md").write_text(
-        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n計画作成中TBD\n",
+    (hold / "held-tbd.md").write_text(
+        "---\ntype: tbd\ntarget_repo: example/repo\n---\n\n保留中TBD\n",
         encoding="utf-8",
     )
 
     entries, warnings = serve_app.Operations(tmp_path).entries_with_warnings({"status": "active"})
 
     assert not warnings
-    assert [item["filename"] for item in entries] == ["planned.md"]
-    assert entries[0]["state"] == "planning"
+    assert sorted(str(item["filename"]) for item in entries) == ["held-tbd.md", "held.md"]
+    assert {item["state"] for item in entries} == {"hold"}
 
 
 @pytest.mark.parametrize(
@@ -4081,10 +4081,8 @@ def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatc
         current.start(loop)
         assert sorted(pathlib.Path(p).name for p in scheduled) == [
             "adopted",
-            "editing",
             "hold",
             "inbox",
-            "planning",
             "processing",
             "rejected",
         ]
@@ -5678,8 +5676,23 @@ def test_assets_offer_batch_creation_without_required_target_repo() -> None:
 
 def test_assets_offer_every_queue_state_filter() -> None:
     """状態フィルターがキューの全状態を個別に選択できる。"""
-    for state_name in ("inbox", "planning", "processing", "adopted", "rejected"):
+    for state_name in common.MQ_STATES:
         assert f'<option value="{state_name}">{state_name}</option>' in assets.HTML
+
+
+def test_assets_state_sets_match_python_states() -> None:
+    """フロントエンドが持つ状態集合をPython側の保存状態と一致させる。"""
+    labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.JS, re.DOTALL)
+    assert labels is not None
+    assert set(re.findall(r"(\w+):", labels.group(1))) == set(common.MQ_STATES)
+
+    deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
+    assert deletable is not None
+    assert set(re.findall(r"'(\w+)'", deletable.group(1))) == set(common.MQ_STATES)
+
+    processable = re.search(r"const PROCESSABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
+    assert processable is not None
+    assert set(re.findall(r"'(\w+)'", processable.group(1))) == set(common.MQ_PROCESSABLE_STATES)
 
 
 def test_batch_creation_sends_raw_text_and_hides_frontmatter_driven_fields() -> None:
@@ -5955,10 +5968,9 @@ async def test_user_comment_api_rejects_non_inbox_states_and_tbd(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """planning・processing・終端状態及びTBDには操作を提供しない。"""
+    """processing・終端状態及びTBDには操作を提供しない。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents = {
-        "planning": _session_review_feedback("planning本文\n"),
         "processing": _session_review_feedback("processing本文\n"),
         "adopted": _session_review_feedback("adopted本文\n"),
         "rejected": _session_review_feedback("rejected本文\n"),
@@ -5997,10 +6009,10 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """終端状態は削除し、作業中状態の保護とeditingの拒否を維持する。"""
+    """終端状態とholdは削除し、processingの保護を維持する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     content = _session_review_feedback("本文\n")
-    for state_name in ("adopted", "rejected", "planning", "processing", "editing"):
+    for state_name in ("adopted", "rejected", "hold", "processing"):
         directory = tmp_path / state_name
         directory.mkdir()
         (directory / f"{state_name}.md").write_text(content, encoding="utf-8")
@@ -6011,7 +6023,7 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
     )
     client = app.test_client()
 
-    for state_name in ("adopted", "rejected"):
+    for state_name in ("adopted", "rejected", "hold"):
         response = await client.post(
             "/api/entries/remove",
             json={
@@ -6024,7 +6036,7 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
         assert response.status_code == 200
         assert not (tmp_path / state_name / f"{state_name}.md").exists()
 
-    for state_name in ("planning", "processing", "editing"):
+    for state_name in ("processing",):
         response = await client.post(
             "/api/entries/remove",
             json={

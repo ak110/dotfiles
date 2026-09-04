@@ -28,7 +28,6 @@ from _atk_mq_common import (
     MQ_STATE_ADOPTED,
     MQ_STATE_HOLD,
     MQ_STATE_INBOX,
-    MQ_STATE_PLANNING,
     MQ_STATE_PROCESSING,
     MQ_STATE_REJECTED,
     MQ_STATES,
@@ -239,7 +238,7 @@ def _validate_transition_options(
     cooldown_days: int | None,
 ) -> None:
     """状態遷移オプション間の制約を検証する。"""
-    if action not in {"start-planning", "start-processing", "return-to-inbox", "hold", "unhold", "adopt", "reject", "remove"}:
+    if action not in {"start-processing", "return-to-inbox", "hold", "unhold", "adopt", "reject", "remove"}:
         raise WebInputError(f"未知のエントリ操作です: {action}")
     if cooldown_days is not None and (action != "return-to-inbox" or cooldown_days < 3):
         raise WebInputError("cooldown_daysはreturn-to-inboxで3以上を指定してください")
@@ -265,8 +264,6 @@ def _resolve_transition_paths(
     processing_dir = _subdir(private_notes, MQ_STATE_PROCESSING)
     if state is not None:
         return _resolve_feedback_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
-    if action == "start-planning":
-        return _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
     if action == "start-processing":
         return _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
     if action == "return-to-inbox":
@@ -282,7 +279,6 @@ def _resolve_transition_paths(
             filenames,
             inbox_dir,
             processing_dir,
-            _subdir(private_notes, MQ_STATE_PLANNING),
             missing_is_conflict=missing_is_conflict,
         )
     return _resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
@@ -309,28 +305,13 @@ def _validate_transition_targets(
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
     for path in paths:
         content = current_content if current_content is not None else path.read_text(encoding="utf-8")
-        if action in {"start-planning", "start-processing"}:
-            entry_type = _require_type(path, content)
+        if action == "start-processing":
+            # 移動前にtype欠落・不正を拒否する。
+            _require_type(path, content)
             # `--target-repo`未指定でもtarget_repo欠落とfrontmatter解析不能を拒否するため、
             # 不一致判定を`_verify_target_repo_content`へ委ねる一方でこの必須検査は残す。
             _entry_target_repo(path, content)
-            if action == "start-planning":
-                if entry_type != MQ_TYPE_FEEDBACK:
-                    raise WebInputError(f"通常型フィードバックだけをplanningへ移動できます: {path.name}")
-                parsed = _frontmatter.parse_frontmatter(content)
-                if parsed is None or "plan_file" in parsed[0]:
-                    raise WebInputError(f"既存の計画型フィードバックはplanningへ移動できません: {path.name}")
         _verify_target_repo_content(path, content, normalized_target_repo)
-        if (
-            path.parent.name == MQ_STATE_PLANNING
-            and action == "return-to-inbox"
-            and _require_type(path, content) != MQ_TYPE_FEEDBACK
-        ):
-            raise WebInputError(f"TBDをplanningから差し戻すことはできません: {path.name}")
-    if action == "start-planning":
-        repositories = {_entry_target_repo(path, path.read_text(encoding="utf-8")) for path in paths}
-        if len(repositories) != 1:
-            raise WebInputError("start-planningの対象は同一target_repoで指定してください")
     if cooldown_days is not None:
         non_feedback = [
             path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != MQ_TYPE_FEEDBACK
@@ -338,10 +319,10 @@ def _validate_transition_targets(
         if non_feedback:
             raise WebInputError(f"--`cooldown-days`はフィードバック専用です: {', '.join(non_feedback)}")
     if action == "remove" and not force:
-        protected = [path.name for path in paths if path.parent.name in {MQ_STATE_PLANNING, MQ_STATE_PROCESSING}]
+        protected = [path.name for path in paths if path.parent.name == MQ_STATE_PROCESSING]
         if protected:
             print(
-                "planning・processing状態のファイルは既定で削除を保護します。"
+                "processing状態のファイルは既定で削除を保護します。"
                 f"削除するには--force（Web APIはforce指定）を指定してください: {', '.join(protected)}",
                 file=sys.stderr,
             )
@@ -397,7 +378,6 @@ def _apply_transition(
 ) -> None:
     """検証済みエントリを削除又は目的状態へ移動する。"""
     destination_name = {
-        "start-planning": MQ_STATE_PLANNING,
         "start-processing": MQ_STATE_PROCESSING,
         "return-to-inbox": MQ_STATE_INBOX,
         "hold": MQ_STATE_HOLD,
@@ -431,7 +411,6 @@ def _transition_commit_message(action: str, count: int, note: str | None) -> str
     item_word = "entry" if count == 1 else "entries"
     note_suffix = f" (理由: {note})" if action == "remove" and note else ""
     return {
-        "start-planning": f"chore: start planning {count} {item_word}",
         "start-processing": f"chore: start processing {count} {item_word}",
         "return-to-inbox": f"chore: return {count} {item_word} to inbox",
         "hold": f"chore: hold {count} {item_word}",
@@ -716,8 +695,8 @@ def _validated_plan_feedback_paths(
             raise _PlanFeedbackValidationError(f"のfrontmatterが破損しています: {filename}")
         entry_type = parsed[0].get("type")
         if entry_type == MQ_TYPE_FEEDBACK:
-            if state != MQ_STATE_PLANNING:
-                raise _PlanFeedbackValidationError(f"の変換元feedbackがplanningに存在しません: {filename}")
+            if state != MQ_STATE_HOLD:
+                raise _PlanFeedbackValidationError(f"の変換元feedbackがholdに存在しません: {filename}")
             if "plan_file" in parsed[0]:
                 raise _PlanFeedbackValidationError(f"が既に計画型です: {filename}")
             feedback_paths.append(path)
@@ -737,7 +716,7 @@ def _plan_feedback_paths(
     filenames: tuple[str, ...],
     source_description: str,
 ) -> tuple[pathlib.Path, ...]:
-    """計画入力を検証し、planningにある変換元feedbackだけを返す。"""
+    """計画入力を検証し、holdにある変換元feedbackだけを返す。"""
     try:
         return _validated_plan_feedback_paths(private_notes, filenames)
     except _PlanFeedbackValidationError as error:
@@ -808,7 +787,7 @@ def edit_entry_to_plan(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> dict[str, object | None]:
-    """planningの最古項目を計画型feedbackへ編集し、inboxへ原子的に移動する。"""
+    """holdの最古項目を計画型feedbackへ編集し、inboxへ原子的に移動する。"""
     try:
         plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
         stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
@@ -843,19 +822,19 @@ def edit_entry_to_plan(
         oldest_material = min(feedback_names)
         if normalized_filename != oldest_material:
             raise WebInputError(f"計画型へ変換できるのは変換元feedbackの昇順最古だけです: {oldest_material}")
-        planning_path = _validate_filename(normalized_filename, private_notes / MQ_STATE_PLANNING)
-        previous = planning_path.read_text(encoding="utf-8")
+        held_path = _validate_filename(normalized_filename, private_notes / MQ_STATE_HOLD)
+        previous = held_path.read_text(encoding="utf-8")
         if expected_content is not None and previous != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        _verify_target_repo_content(planning_path, previous, normalized_target_repo)
+        _verify_target_repo_content(held_path, previous, normalized_target_repo)
         parsed = _frontmatter.parse_frontmatter(previous)
         if parsed is None:
-            raise WebInputError(f"frontmatterが破損しているため計画型へ編集できません: {planning_path.name}")
+            raise WebInputError(f"frontmatterが破損しているため計画型へ編集できません: {held_path.name}")
         stored_data, _stored_body = parsed
-        if _require_type(planning_path, previous) != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"フィードバックだけを計画型へ編集できます: {planning_path.name}")
+        if _require_type(held_path, previous) != MQ_TYPE_FEEDBACK:
+            raise WebInputError(f"フィードバックだけを計画型へ編集できます: {held_path.name}")
         if "plan_file" in stored_data:
-            raise WebInputError(f"既に計画型のため再変換できません: {planning_path.name}")
+            raise WebInputError(f"既に計画型のため再変換できません: {held_path.name}")
 
         material_repositories: set[str] = set()
         dependencies: list[str] = []
@@ -879,7 +858,7 @@ def edit_entry_to_plan(
         message_frontmatter, message_body = _add.parse_entry_message(content, entry_type=MQ_TYPE_FEEDBACK)
         requested_type = message_frontmatter.get("type")
         if requested_type is not None and requested_type != MQ_TYPE_FEEDBACK:
-            raise WebInputError(f"計画型編集のtypeはfeedbackで指定してください: {planning_path.name}")
+            raise WebInputError(f"計画型編集のtypeはfeedbackで指定してください: {held_path.name}")
         for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
             if key in message_frontmatter:
                 raise WebInputError(f"{key}は計画型編集が管理する予約キーです")
@@ -902,16 +881,16 @@ def edit_entry_to_plan(
         canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in all_dependencies))
         excluded_inputs = set(feedback_names)
         canonical_dependencies = tuple(
-            value for value in canonical_dependencies if value not in excluded_inputs and value != planning_path.name
+            value for value in canonical_dependencies if value not in excluded_inputs and value != held_path.name
         )
         dependency_graph = _active_dependency_graph(
             inbox_dir,
             _subdir(private_notes, MQ_STATE_PROCESSING),
-            _subdir(private_notes, MQ_STATE_PLANNING),
+            _subdir(private_notes, MQ_STATE_HOLD),
         )
-        dependency_graph[planning_path.name] = set(canonical_dependencies)
-        if any(_dependency_reaches(dependency_graph, dependency, planning_path.name) for dependency in canonical_dependencies):
-            raise WebInputError(f"循環する依存を指定できません: {planning_path.name}")
+        dependency_graph[held_path.name] = set(canonical_dependencies)
+        if any(_dependency_reaches(dependency_graph, dependency, held_path.name) for dependency in canonical_dependencies):
+            raise WebInputError(f"循環する依存を指定できません: {held_path.name}")
         if canonical_dependencies:
             updated_data["depends_on"] = list(canonical_dependencies)
         else:
@@ -921,15 +900,15 @@ def edit_entry_to_plan(
             "\n" + message_body.strip("\n").rstrip() + "\n",
         )
 
-        inbox_path = inbox_dir / planning_path.name
+        inbox_path = inbox_dir / held_path.name
         if inbox_path.exists():
-            raise WebInputError(f"inboxに同名エントリが既に存在します: {planning_path.name}")
+            raise WebInputError(f"inboxに同名エントリが既に存在します: {held_path.name}")
         _atomic_write_text(inbox_path, updated_text)
-        planning_path.unlink()
+        held_path.unlink()
         _commit_and_push(
             private_notes,
             "chore: convert feedback item to plan",
-            [str(planning_path.relative_to(private_notes)), str(inbox_path.relative_to(private_notes))],
+            [str(held_path.relative_to(private_notes)), str(inbox_path.relative_to(private_notes))],
         )
         return _add._read_saved_entry_details(  # pylint: disable=protected-access
             inbox_path,
@@ -1019,7 +998,7 @@ def _resolve_conversion_targets(
     filenames: tuple[str, ...],
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
-    planning_dir: pathlib.Path,
+    hold_dir: pathlib.Path,
 ) -> tuple[str, list[pathlib.Path]]:
     """convert-to-planの入力を状態ごとに解決し、混在を拒否する。"""
     resolved: list[pathlib.Path] = []
@@ -1027,11 +1006,11 @@ def _resolve_conversion_targets(
     for name in filenames:
         inbox_path = _validate_filename(name, inbox_dir)
         processing_path = _validate_filename(inbox_path.name, processing_dir)
-        planning_path = _validate_filename(inbox_path.name, planning_dir)
-        if planning_path.exists():
+        hold_path = _validate_filename(inbox_path.name, hold_dir)
+        if hold_path.exists():
             if inbox_path.exists() or processing_path.exists():
-                raise WebInputError(f"異なる状態の同名項目が存在するため変換できません: {planning_path.name}")
-            resolved.append(planning_path)
+                raise WebInputError(f"異なる状態の同名項目が存在するため変換できません: {hold_path.name}")
+            resolved.append(hold_path)
         elif processing_path.exists():
             resolved.append(processing_path)
         elif inbox_path.exists():
@@ -1040,7 +1019,7 @@ def _resolve_conversion_targets(
             missing.append(inbox_path.name)
     if missing:
         for name in missing:
-            print(f"inbox・processing・planningのいずれにも存在しません: {name}", file=sys.stderr)
+            print(f"inbox・processing・holdのいずれにも存在しません: {name}", file=sys.stderr)
         sys.exit(2)
     states = {path.parent.name for path in resolved}
     if len(states) != 1:
@@ -1052,18 +1031,16 @@ def _resolve_removable_targets(
     filenames: list[str],
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
-    planning_dir: pathlib.Path,
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """rmの対象をprocessing、planning、inboxの優先順で解決する。"""
+    """rmの対象をprocessing、inboxの優先順で解決する。"""
     resolved: list[pathlib.Path] = []
     missing: list[str] = []
     for name in filenames:
         normalized = _validate_filename(name, inbox_dir).name
         candidates = (
             processing_dir / normalized,
-            planning_dir / normalized,
             inbox_dir / normalized,
         )
         path = next((candidate for candidate in candidates if candidate.exists()), None)
@@ -1075,7 +1052,7 @@ def _resolve_removable_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            print(f"inbox・processingのいずれにも存在しません（planningも探索対象です）: {name}", file=sys.stderr)
+            print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)
         sys.exit(2)
     return resolved
 
@@ -1202,7 +1179,7 @@ def _restore_conversion_paths(
         print(f"計画変換対象の復元に失敗しました。手動確認が必要です: {error}", file=sys.stderr)
 
 
-def _convert_planning_entries(
+def _convert_held_entries(
     private_notes: pathlib.Path,
     *,
     paths: list[pathlib.Path],
@@ -1214,10 +1191,10 @@ def _convert_planning_entries(
     local_worktree: pathlib.Path | None,
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
-    planning_dir: pathlib.Path,
+    hold_dir: pathlib.Path,
     skip_push: bool,
 ) -> dict[str, object]:
-    """planningの全入力を最古の1件へ統合し、inboxへ原子的に保存する。"""
+    """holdの全入力を最古の1件へ統合し、inboxへ原子的に保存する。"""
     material_names, source_description = _read_plan_input_filenames(plan_path)
     normalized_material_names = tuple(_validate_filename(name, inbox_dir).name for name in material_names)
     if len(set(normalized_material_names)) != len(normalized_material_names):
@@ -1228,7 +1205,7 @@ def _convert_planning_entries(
     if tuple(sorted(input_names)) != tuple(sorted(feedback_names)):
         raise WebInputError(f"convert-to-planの入力と{source_description}が一致しません")
     if local_worktree is None:
-        raise WebInputError("planningの変換には対象リポジトリのローカルworktreeが必要です")
+        raise WebInputError("holdの変換には対象リポジトリのローカルworktreeが必要です")
     _assert_conversion_targets_tracked(private_notes, paths)
     snapshots = [(path, path.read_text(encoding="utf-8")) for path in sorted(paths, key=lambda item: item.name)]
 
@@ -1260,16 +1237,16 @@ def _convert_planning_entries(
     if normalized_target_repo is not None and material_repo != normalized_target_repo:
         raise WebInputError(f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}")
     if _local_worktree_repo_id(local_worktree) != material_repo:
-        raise WebInputError("planningの変換対象repoとローカルworktreeが一致しません")
+        raise WebInputError("holdの変換対象repoとローカルworktreeが一致しません")
     target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
 
     message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=MQ_TYPE_FEEDBACK)
     requested_type = message_frontmatter.get("type")
     if requested_type is not None and requested_type != MQ_TYPE_FEEDBACK:
-        raise WebInputError("planningの統合本文のtypeはfeedbackで指定してください")
+        raise WebInputError("holdの統合本文のtypeはfeedbackで指定してください")
     for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
         if key in message_frontmatter:
-            raise WebInputError(f"{key}はplanningの統合処理が管理する予約キーです")
+            raise WebInputError(f"{key}はholdの統合処理が管理する予約キーです")
     updates = dict(message_frontmatter)
     if "target_repo" in updates:
         raw_target_repo = updates["target_repo"]
@@ -1292,7 +1269,7 @@ def _convert_planning_entries(
     canonical_dependencies = tuple(
         value for value in dict.fromkeys(all_dependencies) if value not in excluded_inputs and value != oldest_path.name
     )
-    dependency_graph = _active_dependency_graph(inbox_dir, processing_dir, planning_dir)
+    dependency_graph = _active_dependency_graph(inbox_dir, processing_dir, hold_dir)
     dependency_graph[oldest_path.name] = set(canonical_dependencies)
     if any(_dependency_reaches(dependency_graph, dependency, oldest_path.name) for dependency in canonical_dependencies):
         raise WebInputError(f"循環する依存を指定できません: {oldest_path.name}")
@@ -1344,7 +1321,7 @@ def _convert_planning_entries(
             ],
             "plan_file": stored_plan_file,
             "commit": _git_head(private_notes),
-            "planning": True,
+            "integrated": True,
         }
     except Exception as error:
         command = getattr(error, "cmd", ())
@@ -1371,7 +1348,7 @@ def convert_entries_to_plan(
     skip_push: bool = False,
     local_worktree: pathlib.Path | None = None,
 ) -> dict[str, object]:
-    """状態別のfeedbackを計画実装型へ変換し、planningは1件へ統合する。"""
+    """状態別のfeedbackを計画実装型へ変換し、holdは1件へ統合する。"""
     if not filenames:
         raise WebInputError("変換するFILENAMEを1件以上指定してください")
     try:
@@ -1395,19 +1372,19 @@ def convert_entries_to_plan(
                 raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
         except OSError as error:
             raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
-        planning_dir = _subdir(private_notes, MQ_STATE_PLANNING)
+        hold_dir = _subdir(private_notes, MQ_STATE_HOLD)
         state, paths = _resolve_conversion_targets(
             normalized_filenames,
             inbox_dir,
             processing_dir,
-            planning_dir,
+            hold_dir,
         )
-        if state == MQ_STATE_PLANNING:
+        if state == MQ_STATE_HOLD:
             if message is None:
-                raise WebInputError("planningの入力には--messageを指定してください")
+                raise WebInputError("holdの入力には--messageを指定してください")
             destination = inbox_dir / min(paths, key=lambda path: path.name).name
             _assert_conversion_paths_clean(private_notes, [*paths, destination])
-            return _convert_planning_entries(
+            return _convert_held_entries(
                 private_notes,
                 paths=paths,
                 plan_path=plan_path,
@@ -1418,7 +1395,7 @@ def convert_entries_to_plan(
                 local_worktree=local_worktree,
                 inbox_dir=inbox_dir,
                 processing_dir=processing_dir,
-                planning_dir=planning_dir,
+                hold_dir=hold_dir,
                 skip_push=skip_push,
             )
         if message is not None:
@@ -1492,7 +1469,7 @@ def convert_entries_to_plan(
                     ],
                     "plan_file": stored_plan_file,
                     "commit": None,
-                    "planning": False,
+                    "integrated": False,
                 }
             try:
                 _commit_and_push(
@@ -1513,7 +1490,7 @@ def convert_entries_to_plan(
                 ],
                 "plan_file": stored_plan_file,
                 "commit": commit_oid,
-                "planning": False,
+                "integrated": False,
             }
         except Exception as error:
             command = getattr(error, "cmd", ())
@@ -1580,7 +1557,7 @@ def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) 
         sys.exit(1)
     for filename in filenames:
         print(f"計画実装型へ変換: {filename}")
-    if not single_compat or result.get("planning") is True:
+    if not single_compat or result.get("integrated") is True:
         commit_oid = result.get("commit")
         if commit_oid:
             print(f"変換commit: {commit_oid}")
@@ -1647,11 +1624,11 @@ def set_entry_dependencies(
 def _active_dependency_graph(
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
-    planning_dir: pathlib.Path | None = None,
+    hold_dir: pathlib.Path | None = None,
 ) -> dict[str, set[str]]:
     """ロック内で取得したactiveなフィードバックの依存グラフを返す。"""
     entries: dict[str, pathlib.Path] = {}
-    directories = (inbox_dir, processing_dir) if planning_dir is None else (inbox_dir, planning_dir, processing_dir)
+    directories = (inbox_dir, processing_dir) if hold_dir is None else (inbox_dir, hold_dir, processing_dir)
     for directory in directories:
         if directory.is_dir():
             entries.update({path.name: path for path in directory.glob("*.md") if path.is_file()})
@@ -1796,19 +1773,6 @@ def _cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: date
     print(f"{len(filenames)}件保留解除: {', '.join(filenames)}")
 
 
-def _cmd_start_planning(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """start-planningサブコマンド: inboxからplanning/へ移動しcommit・pushする。"""
-    args.filenames = _dedup_positional_filenames(args.filenames, "start-planning")
-    filenames = transition_entries(
-        private_notes,
-        action="start-planning",
-        filenames=sorted(args.filenames),
-        now=now,
-        target_repo=args.target_repo,
-    )
-    print(f"{len(filenames)}件計画作成を開始: {', '.join(filenames)}")
-
-
 def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
@@ -1894,9 +1858,9 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _validate_filenames_only([args.filename], inbox_dir)
         with _repo_lock(private_notes):
             _pull(private_notes)
-            snapshot_path = _validate_filename(args.filename, private_notes / MQ_STATE_PLANNING)
+            snapshot_path = _validate_filename(args.filename, private_notes / MQ_STATE_HOLD)
             if not snapshot_path.is_file():
-                print(f"planningに存在しません: {snapshot_path.name}", file=sys.stderr)
+                print(f"holdに存在しません: {snapshot_path.name}", file=sys.stderr)
                 sys.exit(2)
             snapshot = snapshot_path.read_text(encoding="utf-8")
             _verify_target_repo_content(snapshot_path, snapshot, target_repo)

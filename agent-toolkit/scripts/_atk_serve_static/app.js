@@ -6,7 +6,7 @@ const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
 const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
 const STATE_LABELS = {
-  inbox: '未処理', planning: '計画作成中', processing: '処理中', editing: '編集中', hold: '保留',
+  inbox: '未処理', processing: '処理中', hold: '保留',
   adopted: '採用済み', rejected: '不採用'
 };
 const PROCESSABLE_STATES = new Set(['inbox', 'processing']);

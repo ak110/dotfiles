@@ -378,10 +378,10 @@ class TestListFeedbackStatusActive:
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
-        planning_dir = notes / "planning"
-        planning_dir.mkdir(parents=True, exist_ok=True)
-        (planning_dir / "fb-planning.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nplanning-body\n",
+        hold_dir = notes / "hold"
+        hold_dir.mkdir(parents=True, exist_ok=True)
+        (hold_dir / "fb-hold.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold-body\n",
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted-body")
@@ -400,7 +400,7 @@ class TestListFeedbackStatusActive:
         captured = capsys.readouterr()
         assert "fb-inbox.md: github.com/example/foo [inbox/normal/ready] in-body" in captured.out
         assert "fb-proc.md: github.com/example/foo [processing/normal/ready] proc-body" in captured.out
-        assert "fb-planning.md: github.com/example/foo [planning/normal/blocked] planning-body" in captured.out
+        assert "fb-hold.md: github.com/example/foo [hold/normal/complete] hold-body" in captured.out
         assert "fb-adopted.md" not in captured.out
         assert "fb-rejected.md" not in captured.out
 
@@ -413,10 +413,10 @@ class TestListFeedbackStatusActive:
         """`--status`省略時、フィードバック側は`adopted`配下を除外し、`tbd`側は未回答を除外する（`--status=active`と同じ結果）。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
-        planning_dir = notes / "planning"
-        planning_dir.mkdir(parents=True, exist_ok=True)
-        (planning_dir / "fb-planning.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nplanning本文\n",
+        hold_dir = notes / "hold"
+        hold_dir.mkdir(parents=True, exist_ok=True)
+        (hold_dir / "fb-hold.md").write_text(
+            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted本文")
@@ -436,7 +436,7 @@ class TestListFeedbackStatusActive:
 
         assert default_out == active_out
         assert "fb-inbox.md: github.com/example/foo [inbox/normal/ready] inbox本文" in default_out
-        assert "fb-planning.md: github.com/example/foo [planning/normal/blocked] planning本文" in default_out
+        assert "fb-hold.md: github.com/example/foo [hold/normal/complete] hold本文" in default_out
         assert "fb-adopted.md" not in default_out
         assert f"{_FIXED_TIMESTAMP}-001.md" in default_out
         assert f"{_FIXED_TIMESTAMP}-002.md" in default_out

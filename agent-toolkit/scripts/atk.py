@@ -76,11 +76,9 @@ import _wait_schedule  # noqa: E402
 _queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES)
 _convert_to_plan_filename_completer = _common.make_filename_completer(
-    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
+    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_HOLD)
 )
-_removable_filename_completer = _common.make_filename_completer(
-    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
-)
+_removable_filename_completer = _common.make_filename_completer((_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING))
 _hold_filename_completer = _common.make_filename_completer((_common.MQ_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.MQ_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.MQ_STATE_PROCESSING,))
@@ -89,7 +87,6 @@ _tbd_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE
 _MQ_SYNC_MUTATIONS = frozenset(
     (
         "add",
-        "start-planning",
         "start-processing",
         "hold",
         "unhold",
@@ -350,8 +347,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
-            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
-            "`processable`は`inbox`・`processing`を指す。"
+            "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
     )
@@ -400,8 +396,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
-            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
-            "`processable`は`inbox`・`processing`を指す。"
+            "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
@@ -418,15 +413,6 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 def _add_mq_transition_parsers(sub: Any) -> None:
     """状態遷移・削除サブコマンドを登録する。"""
-    start_planning = _atk_help.add_command(sub, "start-planning", **_atk_help.HELP["atk mq start-planning"])
-    start_planning.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="+",
-        help="計画作成を開始するinboxの通常型フィードバック名（1個以上）。",
-    ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
-    _add_target_repo_arg(start_planning, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
-
     start_processing = _atk_help.add_command(sub, "start-processing", **_atk_help.HELP["atk mq start-processing"])
     start_processing.add_argument(
         "filenames",
@@ -464,9 +450,9 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     )
     return_to_inbox.add_argument(
         "--state",
-        choices=("planning",),
+        choices=("rejected",),
         default=None,
-        help="planningから差し戻す場合に指定する。省略時はprocessingから差し戻す。",
+        help="rejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。",
     )
     _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
@@ -539,17 +525,17 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     rm.add_argument(
         "--all",
         action="store_true",
-        help="--target-repoと完全一致するinbox・planning・processingの全項目を一覧表示後に削除する。",
+        help="--target-repoと完全一致するinbox・processingの全項目を一覧表示後に削除する。",
     )
     rm.add_argument(
         "--yes",
         action="store_true",
-        help="--allによる一括削除の確認入力を省略する。一覧表示とplanning・processing保護は維持する。",
+        help="--allによる一括削除の確認入力を省略する。一覧表示とprocessing保護は維持する。",
     )
     rm.add_argument(
         "--force",
         action="store_true",
-        help="planning・processing状態のファイルも削除する（既定では保護し拒否する）。",
+        help="processing状態のファイルも削除する（既定では保護し拒否する）。",
     )
     rm.add_argument(
         "--skip-pull",
@@ -602,7 +588,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "--plan-file",
         metavar="ABS_PATH",
         default=None,
-        help="planning項目を計画型feedbackへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
+        help="hold項目を計画型feedbackへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
     )
     edit.add_argument(
         "--depends-on",
@@ -619,13 +605,13 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "filename",
         metavar="FILENAME",
         nargs="+",
-        help="変換する同一状態のフィードバックファイル名（1個以上）。planningでは--messageを指定する。",
+        help="変換する同一状態のフィードバックファイル名（1個以上）。holdでは--messageを指定する。",
     ).completer = _convert_to_plan_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--message",
         metavar="MESSAGE",
         default=None,
-        help="planning項目を統合する計画型フィードバック本文。inbox・processingでは指定しない。",
+        help="hold項目を統合する計画型フィードバック本文。inbox・processingでは指定しない。",
     )
     convert_to_plan.add_argument(
         "--plan-file",
@@ -1017,7 +1003,6 @@ def main(
         ),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
-        "start-planning": lambda: _mutations._cmd_start_planning(args, private_notes, now),
         "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),
         "hold": lambda: _mutations._cmd_hold(args, private_notes, now),
         "unhold": lambda: _mutations._cmd_unhold(args, private_notes, now),
