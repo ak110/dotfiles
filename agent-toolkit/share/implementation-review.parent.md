@@ -70,7 +70,6 @@ review_contract:
 `atk plans commit dd-{名称}-{小文字16進数4桁}.md`を1回実行する。
 実装担当はこの操作へ着手せず、メインへ差し戻す。
 `agent-toolkit:process-feedbacks`の経路では、メインがマージ許可を与える前に本節を完了する。
-引数は`plans` rootからの相対メイン計画パスとし、portable接頭辞や絶対パスを渡さない。
 この操作は指定stemのメイン、detail、付属素材及びレビュー表をprivate-notesへ移動してcommitとpushを行う。
 対象リポジトリの実装commitや他計画は含めない。
 失敗時は作業rootの計画を保持して同じ操作から再開し、成功後に保存実体と作業側の消失を確認する。

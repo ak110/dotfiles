@@ -107,7 +107,8 @@ def main(payload_text: str) -> int:
         "Move a bundle into private-notes only when its implementation review has converged. "
         "Leave the remaining bundles in place and end the turn.",
         fix=(
-            "Run `atk plans commit <relative main plan path>` for each converged plan, or end the turn if none has converged."
+            "Run `atk plans commit <main plan file name in the plan working root>` for each converged plan, "
+            "or end the turn if none has converged."
         ),
     )
     append_stop_log(session_id, "block_working_plan_save", {"paths": len(paths)})

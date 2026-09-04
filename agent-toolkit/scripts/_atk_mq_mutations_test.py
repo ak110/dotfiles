@@ -530,9 +530,10 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
     assert unreadable.exists()
 
 
-def _write_convert_plan(tmp_path: pathlib.Path, target_commit: str) -> pathlib.Path:
+def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.Path:
     """変換テスト用の計画ファイルを作成する。"""
-    plan = tmp_path / "plan.md"
+    directory.mkdir(parents=True, exist_ok=True)
+    plan = directory / "plan.md"
     plan.write_text(
         f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- ベースコミット: `{target_commit}`\n",
         encoding="utf-8",
@@ -541,12 +542,13 @@ def _write_convert_plan(tmp_path: pathlib.Path, target_commit: str) -> pathlib.P
 
 
 def _write_planning_plan(
-    tmp_path: pathlib.Path,
+    directory: pathlib.Path,
     target_commit: str,
     filenames: tuple[str, ...],
 ) -> pathlib.Path:
     """計画型変換テスト用に関連フィードバックを持つ計画を作成する。"""
-    plan = tmp_path / "plan.md"
+    directory.mkdir(parents=True, exist_ok=True)
+    plan = directory / "plan.md"
     related_feedback = "".join(f"  - {filename}: 変換対象の要求\n" for filename in filenames)
     plan.write_text(
         f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- 関連フィードバック:\n{related_feedback}"
@@ -758,6 +760,66 @@ def test_convert_to_plan_accepts_and_stores_portable_plan_file(
     assert parsed is not None
     assert parsed[0]["plan_file"] == portable
     assert details["plan_file"] == portable
+
+
+def test_plan_file_write_paths_store_portable_value_for_absolute_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存root配下の計画を絶対パスで渡しても、全ての書込経路が可搬値を保存する。"""
+    _disable_convert_git(monkeypatch)
+    _disable_transition_git(monkeypatch)
+    _patch_planning_target_resolution(monkeypatch)
+    plan_relative = pathlib.PurePosixPath("plans/2026/08/plan.md")
+    expected = f"$(atk config get private_notes)/{plan_relative}"
+
+    def setup_notes(case: str) -> pathlib.Path:
+        root = tmp_path / case
+        root.mkdir()
+        return _setup_notes(root)
+
+    def stored_plan_file(path: pathlib.Path) -> object:
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        return parsed[0]["plan_file"]
+
+    notes = setup_notes("convert")
+    entry = _write_convert_feedback(notes, "feedback.md")
+    plan = _write_convert_plan(notes / plan_relative.parent, "a" * 40)
+    details = mutations.convert_entries_to_plan(notes, filenames=("feedback.md",), plan_file=str(plan))
+    assert stored_plan_file(entry) == expected
+    assert details["plan_file"] == expected
+
+    notes = setup_notes("planning")
+    planning_names = ("20260827-000000-001.md", "20260827-000000-002.md")
+    for name in planning_names:
+        _write_convert_feedback(notes, name, state="planning")
+    plan = _write_planning_plan(notes / plan_relative.parent, "a" * 40, planning_names)
+    details = mutations.convert_entries_to_plan(
+        notes,
+        filenames=planning_names,
+        plan_file=str(plan),
+        message="統合本文",
+        local_worktree=tmp_path / "target-worktree",
+        skip_push=True,
+    )
+    assert stored_plan_file(notes / "inbox" / planning_names[0]) == expected
+    assert details["plan_file"] == expected
+
+    notes = setup_notes("edit")
+    edit_name = "20260827-000000-001.md"
+    _write_convert_feedback(notes, edit_name, state="planning")
+    plan = _write_planning_plan(notes / plan_relative.parent, "a" * 40, (edit_name,))
+    details = mutations.edit_entry_to_plan(
+        notes,
+        filename=edit_name,
+        content="---\nsummary: 編集本文\n---\n\n編集本文\n",
+        plan_file=str(plan),
+        target_commit="a" * 40,
+        target_repo="github.com/example/foo",
+    )
+    assert stored_plan_file(notes / "inbox" / edit_name) == expected
+    assert details["plan_file"] == expected
 
 
 @pytest.mark.parametrize(
@@ -1276,7 +1338,8 @@ def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_ite
         ),
         encoding="utf-8",
     )
-    plan = _write_planning_plan(tmp_path, "a" * 40, (*feedback_names, tbd_name))
+    plan_relative = pathlib.PurePosixPath("plans/2026/08/plan.md")
+    plan = _write_planning_plan(notes / plan_relative.parent, "a" * 40, (*feedback_names, tbd_name))
     _disable_convert_git(monkeypatch)
     _patch_planning_target_resolution(monkeypatch)
     commit_calls: list[tuple[object, ...]] = []
@@ -1301,7 +1364,8 @@ def test_convert_planning_entries_integrates_all_materials_into_oldest_inbox_ite
     assert parsed is not None
     data, body = parsed
     assert data["source"] == "plan-and-add-feedback"
-    assert data["plan_file"] == str(plan)
+    assert data["plan_file"] == f"$(atk config get private_notes)/{plan_relative}"
+    assert result["plan_file"] == data["plan_file"]
     assert data["target_commit"] == "b" * 40
     assert data["depends_on"] == [tbd_name, "external-a.md", "external-b.md"]
     assert "統合した計画本文" in body

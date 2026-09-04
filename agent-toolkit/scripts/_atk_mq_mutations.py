@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import typing
 
 import _atk_git_sync
 import _atk_mq_add as _add
@@ -773,6 +774,28 @@ def _entry_dependencies(path: pathlib.Path, data: dict[str, object]) -> tuple[st
     return tuple(raw_dependencies)
 
 
+_StoredPlanFile = typing.NewType("_StoredPlanFile", str)
+"""キュー項目のfrontmatterへ保存するplan_file値。"""
+
+
+def _normalize_stored_plan_file(plan_file: str, *, private_notes: pathlib.Path) -> _StoredPlanFile:
+    """入力のplan_fileを保存用の値へ正規化する。"""
+    return _StoredPlanFile(_plan_file.normalize_plan_file(plan_file, private_notes=private_notes))
+
+
+def _store_plan_file(data: dict[str, object], stored_plan_file: _StoredPlanFile) -> None:
+    """キュー項目のfrontmatterへplan_fileを書き込む。
+
+    保存値は可搬接頭辞で始まる値か、読み取り互換で受理するroot外の絶対パスに限る。
+    """
+    if (
+        not stored_plan_file.startswith(_plan_file.PORTABLE_PLAN_PREFIX)
+        and not pathlib.PurePath(stored_plan_file).is_absolute()
+    ):
+        raise WebInputError(f"plan_fileの保存値が可搬値でも絶対パスでもありません: {stored_plan_file}")
+    data["plan_file"] = stored_plan_file
+
+
 def edit_entry_to_plan(
     private_notes: pathlib.Path,
     *,
@@ -788,7 +811,7 @@ def edit_entry_to_plan(
     """planningの最古項目を計画型feedbackへ編集し、inboxへ原子的に移動する。"""
     try:
         plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
-        stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
+        stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
     except ValueError as error:
         raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
     try:
@@ -871,7 +894,7 @@ def edit_entry_to_plan(
 
         updated_data = {**stored_data, **updates}
         updated_data["source"] = "plan-and-add-feedback"
-        updated_data["plan_file"] = stored_plan_file
+        _store_plan_file(updated_data, stored_plan_file)
         updated_data["target_commit"] = target_commit
         updated_data.pop("queue_schedule", None)
         updated_data.pop("cooldown_until", None)
@@ -1184,6 +1207,7 @@ def _convert_planning_entries(
     *,
     paths: list[pathlib.Path],
     plan_path: pathlib.Path,
+    stored_plan_file: _StoredPlanFile,
     message: str,
     normalized_dependencies: tuple[str, ...],
     normalized_target_repo: str | None,
@@ -1259,7 +1283,7 @@ def _convert_planning_entries(
     oldest_data, _oldest_body = parsed_entries[oldest_path]
     updated_data = {**oldest_data, **updates}
     updated_data["source"] = "plan-and-add-feedback"
-    updated_data["plan_file"] = str(plan_path)
+    _store_plan_file(updated_data, stored_plan_file)
     updated_data["target_commit"] = target_commit
     updated_data.pop("queue_schedule", None)
     updated_data.pop("cooldown_until", None)
@@ -1318,7 +1342,7 @@ def _convert_planning_entries(
                     expected_body=updated_text,
                 )
             ],
-            "plan_file": str(plan_path),
+            "plan_file": stored_plan_file,
             "commit": _git_head(private_notes),
             "planning": True,
         }
@@ -1352,7 +1376,7 @@ def convert_entries_to_plan(
         raise WebInputError("変換するFILENAMEを1件以上指定してください")
     try:
         plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
-        stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
+        stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
     except ValueError as error:
         raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
     inbox_dir = private_notes / MQ_STATE_INBOX
@@ -1387,6 +1411,7 @@ def convert_entries_to_plan(
                 private_notes,
                 paths=paths,
                 plan_path=plan_path,
+                stored_plan_file=stored_plan_file,
                 message=message,
                 normalized_dependencies=normalized_dependencies,
                 normalized_target_repo=normalized_target_repo,
@@ -1445,7 +1470,7 @@ def convert_entries_to_plan(
                     data["depends_on"] = list(normalized_dependencies)
                 else:
                     data.pop("depends_on", None)
-            data["plan_file"] = stored_plan_file
+            _store_plan_file(data, stored_plan_file)
             data.pop("queue_schedule", None)
             updated_text = _frontmatter.serialize_frontmatter(data, body)
             updated.append((path, text, updated_text))
