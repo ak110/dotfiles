@@ -1447,6 +1447,32 @@ class TestResponseLanguageCheck:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    @pytest.mark.parametrize(("delegated", "warns"), [(False, True), (True, False)])
+    def test_delegated_session_language_check_boundary(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        delegated: bool,
+        warns: bool,
+    ) -> None:
+        """agents_serverの委譲先だけを言語検査から除外する。"""
+        transcript = self._write_transcript(tmp_path, "This is a plain English status report for the current task.")
+        if delegated:
+            monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+        else:
+            monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+            }
+        )
+
+        assert result.returncode == 0
+        assert ("英語主体" in _additional_context(result)) is warns
+
     def test_no_warn_without_transcript_path(self):
         """transcript_path未指定なら検査スキップ。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})

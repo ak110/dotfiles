@@ -84,6 +84,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 
 import datetime
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -546,6 +547,8 @@ def _collect_edit_operation_warnings(
 def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, str | None]:
     """直前メインエージェント応答の言語検査を実行し、セッション状態でエスカレーションを管理する。
 
+    agents_serverが起動した委譲先セッションでは、作業途中の文章を呼び出し元もユーザーも読まないため検査しない。
+
     Returns:
         (exit code, 警告本文)のタプル。
         exit code 2: ブロック（stderrに出力済み）。
@@ -566,6 +569,8 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
     if not isinstance(transcript_path, str) or not transcript_path:
         return (None, None)
     if payload.get("isSidechain") is True:
+        return (None, None)
+    if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1":
         return (None, None)
 
     outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)

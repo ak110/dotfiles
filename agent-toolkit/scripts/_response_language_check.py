@@ -92,11 +92,6 @@ WARNING_BODY = (
 
 BLOCK_BODY = "英語主体の応答が2ターン連続で検出された。ユーザーは英語の発話を読まないため、日本語での応答に切り替えること。"
 
-SUBAGENT_REPORT_BLOCK_BODY = (
-    "完了報告が英語主体であるため、01-agent.mdに従い日本語で書き直すこと。"
-    "遮断された報告本文は呼び出し元へ保持されないため、報告全文を再掲すること。"
-)
-
 
 def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     """文字列の記述言語を判定し、3値で結果を返す。
