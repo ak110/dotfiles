@@ -1,4 +1,4 @@
-"""ワークアイテムの保存状態の集合を定義する共有モジュール。
+"""ワークアイテムの保存状態と項目種別の値を定義する共有モジュール。
 
 `_atk_wi_common`と`_uwi_scan`の双方が本モジュールをimportする。
 両者は依存関係を持つため、状態集合をどちらかへ置くと循環importになる。
@@ -54,3 +54,12 @@ TRANSITION_EXPLICIT_STATES = {
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
 """
+
+WI_TYPE_AWI = "awi"
+"""frontmatterの`type`がエージェントワークアイテムであることを示す値。"""
+
+WI_TYPE_UWI = "uwi"
+"""frontmatterの`type`がユーザーワークアイテムであることを示す値。"""
+
+WI_TYPES = (WI_TYPE_AWI, WI_TYPE_UWI)
+"""frontmatterの`type`が取り得る値の全体。"""

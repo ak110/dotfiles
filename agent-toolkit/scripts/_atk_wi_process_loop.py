@@ -27,8 +27,8 @@ import _wait_schedule
 import watchdog.events
 import watchdog.observers
 from _atk_wi_common import _count_pending_entries, _pull, _repo_lock
+from _atk_wi_constants import WI_STATE_INBOX, WI_STATE_PROCESSING
 from _atk_wi_repo import _resolve_local_worktree, _resolve_repo_id
-from _atk_wi_states import WI_STATE_INBOX, WI_STATE_PROCESSING
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
 WATCHED_EVENT_TYPES: tuple[type[watchdog.events.FileSystemEvent], ...] = (

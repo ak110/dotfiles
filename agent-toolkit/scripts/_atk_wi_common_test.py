@@ -58,7 +58,7 @@ def _write_tbd(
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / filename).write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: tbd\n---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
+        f"---\ntarget_repo: {target_repo}\ntype: uwi\n---\n\n## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
     )
 
@@ -78,7 +78,7 @@ def _write_feedback(
     directory = private_notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
-    lines = ["---", f"target_repo: {target_repo}", "type: feedback"]
+    lines = ["---", f"target_repo: {target_repo}", "type: awi"]
     if depends_on:
         lines.extend(("depends_on:", *(f"  - {value}" for value in depends_on)))
     if legacy_dependency is not None:
@@ -108,7 +108,7 @@ def test_state_sets_have_single_definition_site() -> None:
     """状態名の値を書くモジュールを1つに保つ。
 
     `_atk_wi_common`と`_uwi_scan`は依存関係を持つため、どちらかへ状態集合を置くと循環importになる。
-    値の記述を`_atk_wi_states`だけに残し、他のモジュールは当該モジュールからimportする。
+    値の記述を`_atk_wi_constants`だけに残し、他のモジュールは当該モジュールからimportする。
     旧ディレクトリ構成の読み取り互換を担う`_atk_wi_legacy`は、廃止した状態名を含む別の集合を保持するため対象から除く。
     """
     scripts_dir = pathlib.Path(__file__).resolve().parent
@@ -120,7 +120,7 @@ def test_state_sets_have_single_definition_site() -> None:
         and path.name != "_atk_wi_legacy.py"
         and any(pattern.search(line) for line in path.read_text(encoding="utf-8").splitlines())
     }
-    assert definition_sites == {"_atk_wi_states.py"}
+    assert definition_sites == {"_atk_wi_constants.py"}
 
 
 def test_state_sets_define_five_states_without_withdrawn_names() -> None:
@@ -140,7 +140,7 @@ def test_make_filename_completer_filters_entry_type(tmp_path: pathlib.Path) -> N
     private_notes = tmp_path / "private-notes"
     _write_feedback(private_notes, "feedback.md")
     _write_tbd(private_notes, "tbd.md")
-    completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES, _common.WI_TYPE_TBD)
+    completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES, _common.WI_TYPE_UWI)
     assert completer("") == ["tbd.md"]
 
 
@@ -224,8 +224,8 @@ class TestReadiness:
         path = tmp_path / "inbox/tbd.md"
         path.write_text(
             path.read_text(encoding="utf-8").replace(
-                "type: tbd\n",
-                "type: tbd\ncooldown_until: '2999-01-01T00:00:00+00:00'\n",
+                "type: uwi\n",
+                "type: uwi\ncooldown_until: '2999-01-01T00:00:00+00:00'\n",
             ),
             encoding="utf-8",
         )
@@ -256,7 +256,7 @@ class TestReadiness:
             cooldown_until="2026-08-15T00:00:00+00:00",
         )
         invalid.write_text(
-            invalid.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: malformed\n"),
+            invalid.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: malformed\n"),
             encoding="utf-8",
         )
         _write_feedback(
@@ -562,7 +562,7 @@ class TestReadiness:
             legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
         )
         path.write_text(
-            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: answer.md\n"),
+            path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: answer.md\n"),
             encoding="utf-8",
         )
 
@@ -614,8 +614,8 @@ class TestReadiness:
         repair = tmp_path / "inbox" / "repair.md"
         repair.write_text(
             repair.read_text(encoding="utf-8").replace(
-                "type: tbd\n",
-                "type: tbd\nrepair_target: plan.md\nrepair_kind: missing-plan-file\n",
+                "type: uwi\n",
+                "type: uwi\nrepair_target: plan.md\nrepair_kind: missing-plan-file\n",
             ),
             encoding="utf-8",
         )
@@ -632,8 +632,8 @@ class TestReadiness:
         repair = tmp_path / "inbox" / "repair.md"
         repair.write_text(
             repair.read_text(encoding="utf-8").replace(
-                "type: tbd\n",
-                "type: tbd\nrepair_target: plan-item.md\nrepair_kind: frontmatter\n",
+                "type: uwi\n",
+                "type: uwi\nrepair_target: plan-item.md\nrepair_kind: frontmatter\n",
             ),
             encoding="utf-8",
         )
@@ -741,7 +741,7 @@ class TestNotifyUnansweredTbdsIfAny:
 
         _common.notify_unanswered_tbds_if_any(tmp_path, None)
 
-        assert capsys.readouterr().err == "# tbd\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
+        assert capsys.readouterr().err == "# uwi\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
 
     def test_notifies_matching_unanswered_entries_in_filename_order(
         self,
@@ -756,7 +756,7 @@ class TestNotifyUnansweredTbdsIfAny:
         _common.notify_unanswered_tbds_if_any(tmp_path, "github.com/example/repo")
 
         assert capsys.readouterr().err == (
-            "# tbd\n001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
+            "# uwi\n001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
             "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
         )
 
@@ -801,7 +801,7 @@ class TestNotifyUnansweredTbdsIfAny:
         monkeypatch.setattr(git_remote, "resolve_repo_identifier", resolve)
 
         iter_entries = _common.__dict__["_iter_entries"]
-        entries = list(iter_entries(tmp_path, ("inbox",), "github.com/example/repo", "tbd"))
+        entries = list(iter_entries(tmp_path, ("inbox",), "github.com/example/repo", _common.WI_TYPE_UWI))
 
         assert [entry[0].name for entry in entries] == ["first.md", "second.md"]
         assert calls.count("/legacy/repo") == 1
@@ -1386,12 +1386,12 @@ class TestMigrateLegacyLayout:
         assert not (root / "feedback").exists()
         assert not (root / "tbd").exists()
         assert (root / "inbox" / "20260101-000000-001.md").read_text(encoding="utf-8") == (
-            "---\ntarget_repo: github.com/example/repo\ntype: feedback\n---\n\n本文\n"
+            "---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n本文\n"
         )
-        assert (root / "adopted" / "20260101-000000-002.md").read_text(encoding="utf-8").splitlines()[2] == "type: feedback"
+        assert (root / "adopted" / "20260101-000000-002.md").read_text(encoding="utf-8").splitlines()[2] == "type: awi"
         assert (root / "inbox" / "20260102-000000-001.md").read_text(encoding="utf-8").splitlines()[1:4] == [
             "target_repo: github.com/example/repo",
-            "type: tbd",
+            "type: uwi",
             "question_type: free-form",
         ]
         assert "3件を平坦レイアウトへ移行" in capsys.readouterr().err
@@ -1411,7 +1411,7 @@ class TestMigrateLegacyLayout:
     def test_removes_empty_legacy_dirs_without_commit(self, tmp_path: pathlib.Path) -> None:
         """エントリを含まない旧ディレクトリだけがある場合は削除のみで完結する。"""
         root = tmp_path / "private-notes"
-        _init_legacy_repo(root, {"inbox/20260101-000000-001.md": "---\ntarget_repo: r\ntype: feedback\n---\n\n本文\n"})
+        _init_legacy_repo(root, {"inbox/20260101-000000-001.md": "---\ntarget_repo: r\ntype: awi\n---\n\n本文\n"})
         (root / "feedback" / "inbox").mkdir(parents=True)
         head = _git_stdout(root, "rev-parse", "HEAD")
 

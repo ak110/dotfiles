@@ -14,7 +14,9 @@ from _atk_wi_common import (
     WI_ACTIVE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATES,
-    WI_TYPE_TBD,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+    WI_TYPES,
     ReadinessResult,
     _is_uwi_answered,
     _iter_entries,
@@ -53,7 +55,7 @@ def _answered_matches(entry_type: str | None, text: str, answered_filter: str) -
     """回答状況フィルターとの一致を返す。"""
     if answered_filter == "all":
         return True
-    if entry_type != WI_TYPE_TBD:
+    if entry_type != WI_TYPE_UWI:
         return False
     answered = _is_uwi_answered(text)
     return answered if answered_filter == "yes" else not answered
@@ -71,7 +73,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
 
     次の全条件を満たす場合に`True`を返す:
     - `args.count`が`False`（整数のみ出力時は本文表示がないため対象外）
-    - `args.type`が`"all"`または`"tbd"`
+    - `args.type`が`"all"`または`"uwi"`
     - `args.status`が`"all"`、`"active"`または`"processable"`
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`（source指定時は出力が部分集合になり得るため対象外）
@@ -80,7 +82,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     return (
         not args.count
         and not emits_json
-        and args.type in ("all", "tbd")
+        and args.type in ("all", WI_TYPE_UWI)
         and args.status in ("all", "active", "processable")
         and args.answered in ("all", "no")
         and args.source is None
@@ -107,8 +109,8 @@ def _blocked_reason(readiness: ReadinessResult, filename: str) -> str | None:
 
 def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
     """選択済みエントリを`atk wi list`の1件1行形式で出力する。"""
-    for header_type in ("feedback", "tbd"):
-        group = [entry for entry in selected if entry[4] == header_type or (header_type == "feedback" and entry[4] is None)]
+    for header_type in WI_TYPES:
+        group = [entry for entry in selected if entry[4] == header_type or (header_type == WI_TYPE_AWI and entry[4] is None)]
         if not group:
             continue
         print(f"# {header_type}")
@@ -119,7 +121,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
             state_readiness = _state_readiness(state, path.name, readiness)
             label = f"{state}/{item_kind}/{state_readiness}"
             answered = False
-            if entry_type == WI_TYPE_TBD:
+            if entry_type == WI_TYPE_UWI:
                 answered = _is_uwi_answered(text)
                 label = (
                     f"{state}/answered/blocked"
@@ -136,7 +138,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 display_repo = target_repo
             reason = (
                 _blocked_reason(readiness, path.name)
-                if state_readiness == "blocked" and (entry_type != WI_TYPE_TBD or answered)
+                if state_readiness == "blocked" and (entry_type != WI_TYPE_UWI or answered)
                 else None
             )
             reason_suffix = f" blocked_reason={reason}" if reason is not None else ""
@@ -148,7 +150,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 shutil.get_terminal_size().columns - _display_width(prefix) if sys.stdout.isatty() else sys.maxsize
             )
             summary = (
-                _tbd_body_summary(text, available_width) if entry_type == WI_TYPE_TBD else _body_summary(text, available_width)
+                _tbd_body_summary(text, available_width) if entry_type == WI_TYPE_UWI else _body_summary(text, available_width)
             )
             print(f"{prefix}{summary}")
 
@@ -156,15 +158,15 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
 def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult) -> None:
     """選択済みエントリを端末幅に依存しないJSON Linesで出力する。"""
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
-        actual_type = entry_type or "feedback"
+        actual_type = entry_type or WI_TYPE_AWI
         state_readiness = _state_readiness(state, path.name, readiness)
-        answered = actual_type == WI_TYPE_TBD and _is_uwi_answered(text)
+        answered = actual_type == WI_TYPE_UWI and _is_uwi_answered(text)
         reason = (
             _blocked_reason(readiness, path.name)
-            if state_readiness == "blocked" and (actual_type != WI_TYPE_TBD or answered)
+            if state_readiness == "blocked" and (actual_type != WI_TYPE_UWI or answered)
             else None
         )
-        summary = _tbd_body_summary(text, sys.maxsize) if actual_type == WI_TYPE_TBD else _body_summary(text, sys.maxsize)
+        summary = _tbd_body_summary(text, sys.maxsize) if actual_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
         record = {
             "filename": path.name,
             "type": actual_type,
@@ -181,7 +183,7 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: フィードバック/`tbd`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
-    `--type`指定で出力対象種別（feedback・tbd・all）を限定する（既定: all）。
+    `--type`指定で出力対象種別（awi・uwi・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
     `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
     個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。

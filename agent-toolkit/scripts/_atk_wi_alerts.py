@@ -18,7 +18,7 @@ from collections.abc import Callable
 import _atk_wi_add as _add
 import _git_command
 import _json_command
-from _atk_wi_common import WI_STATES, _iter_entries
+from _atk_wi_common import WI_STATES, WI_TYPE_AWI, _iter_entries
 from _atk_wi_formatters import _parse_alert_keys
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
@@ -293,7 +293,7 @@ def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[st
     """対象リポジトリに限定したフィードバック全状態の`alert_keys`を集合として返す。"""
     keys: set[str] = set()
     for _path, _entry_repo, text, _state, _entry_type in _iter_entries(
-        private_notes, _ALL_FEEDBACK_STATES, target_repo, "feedback"
+        private_notes, _ALL_FEEDBACK_STATES, target_repo, WI_TYPE_AWI
     ):
         keys.update(_parse_alert_keys(text))
     return keys

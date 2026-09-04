@@ -14,14 +14,11 @@ import typing
 
 import _git_remote
 import platformdirs
+from _atk_wi_constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI
 from _atk_wi_frontmatter import parse_frontmatter
-from _atk_wi_states import WI_PROCESSABLE_STATES
 
 _ANSWER_HEADING = "\n## 回答\n"
 """TBD本文の回答節を示す見出し。`_atk_wi_add`が投入時に付与する。"""
-
-_UWI_TYPE = "tbd"
-"""frontmatterの`type`がTBDであることを示す値。"""
 
 
 class ActiveUwi(typing.NamedTuple):
@@ -145,7 +142,7 @@ def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
             if not isinstance(entry_type, str) or not isinstance(entry_repo, str):
                 complete = False
                 continue
-            if entry_type != _UWI_TYPE:
+            if entry_type != WI_TYPE_UWI:
                 continue
             if canonical_target is None or _git_remote.canonical_repo(entry_repo, resolver_cache) != canonical_target:
                 continue

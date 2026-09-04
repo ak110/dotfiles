@@ -48,8 +48,8 @@
         <label for="kind-filter">種別</label>
         <select id="kind-filter">
           <option value="all">all</option>
-          <option value="feedback">feedback</option>
-          <option value="tbd">tbd</option>
+          <option value="awi">awi</option>
+          <option value="uwi">uwi</option>
         </select>
         <label for="state-filter">状態</label>
         <select id="state-filter">
@@ -195,8 +195,8 @@
         <div class="dialog-form-fields">
           <label for="create-kind">種別（必須）</label>
           <select id="create-kind" name="type">
-            <option value="feedback">feedback</option>
-            <option value="tbd">tbd</option>
+            <option value="awi">awi</option>
+            <option value="uwi">uwi</option>
             <option value="batch">一括登録（show形式）</option>
           </select>
           <label id="create-content-label" for="create-content">本文（必須）</label>
@@ -210,7 +210,7 @@
             <label for="create-source">投入元（任意）</label>
             <input id="create-source" name="source">
           </div>
-          <div id="tbd-fields" class="dialog-form-fields" hidden>
+          <div id="uwi-fields" class="dialog-form-fields" hidden>
             <label for="create-scope">確認範囲（任意）</label>
             <input id="create-scope" name="scope">
             <label for="create-question-type">回答形式（必須）</label>

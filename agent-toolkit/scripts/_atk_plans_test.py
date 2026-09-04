@@ -822,7 +822,7 @@ def test_migrate_plans_moves_bundle_references_and_deletes_after_remote_push(tmp
     mq = notes / "inbox" / "queue.md"
     mq.write_text(
         "---\n# frontmatter comment\ntarget_repo: github.com/example/repo\n"
-        'type: feedback\nplan_file: "' + main_token + '" # inline comment\n'
+        'type: awi\nplan_file: "' + main_token + '" # inline comment\n'
         "custom: '保持する値'\n---\n\n本文\n",
         encoding="utf-8",
     )
@@ -858,7 +858,7 @@ def test_migrate_plans_moves_bundle_references_and_deletes_after_remote_push(tmp
     assert f"対応表外suffix: {main_token}suffix" in transformed
     assert mq.read_text(encoding="utf-8") == (
         "---\n# frontmatter comment\ntarget_repo: github.com/example/repo\n"
-        'type: feedback\nplan_file: "' + portable_main + '" # inline comment\n'
+        'type: awi\nplan_file: "' + portable_main + '" # inline comment\n'
         "custom: '保持する値'\n---\n\n本文\n"
     )
     assert not _git(notes, "status", "--porcelain").stdout

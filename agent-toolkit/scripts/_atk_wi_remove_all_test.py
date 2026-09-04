@@ -30,7 +30,7 @@ def _write_entry(
     filename: str,
     *,
     target_repo: str = "github.com/example/foo",
-    entry_type: str = "feedback",
+    entry_type: str = "awi",
     body: str = "テスト本文",
 ) -> pathlib.Path:
     """指定状態へテスト用エントリを書き込む。"""
@@ -139,7 +139,7 @@ class TestRemoveAllConfirmation:
         """フィードバックとTBDを一覧表示し、1回の承認で単一commitへまとめる。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "feedback.md")
-        _write_entry(notes, "inbox", "question.md", entry_type="tbd", body="## 質問\n\n確認事項\n\n## 回答\n")
+        _write_entry(notes, "inbox", "question.md", entry_type="uwi", body="## 質問\n\n確認事項\n\n## 回答\n")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
         stdin = _TtyInput("y\n")
@@ -148,9 +148,9 @@ class TestRemoveAllConfirmation:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         captured = capsys.readouterr()
-        assert "# feedback" in captured.out
+        assert "# awi" in captured.out
         assert "[inbox/" in captured.out
-        assert "# tbd" in captured.out
+        assert "# uwi" in captured.out
         assert "[inbox/unanswered]" in captured.out
         assert "上記2件を削除します" in captured.out
         assert stdin.tell() == 2
@@ -266,7 +266,7 @@ class TestRemoveAllConfirmation:
 
         assert not path.exists()
         output = capsys.readouterr().out
-        assert "# feedback" in output
+        assert "# awi" in output
         assert "[inbox/" in output
         assert len(commits) == 1
 
@@ -282,7 +282,7 @@ class TestRemoveAllScope:
         """一致するinbox・processingだけを種別横断で削除し、履歴と他リポジトリを保持する。"""
         notes = _setup_notes(tmp_path)
         matching_inbox = _write_entry(notes, "inbox", "feedback.md")
-        matching_processing = _write_entry(notes, "processing", "question.md", entry_type="tbd")
+        matching_processing = _write_entry(notes, "processing", "question.md", entry_type="uwi")
         other_repo = _write_entry(notes, "inbox", "other.md", target_repo="github.com/example/other")
         adopted = _write_entry(notes, "adopted", "adopted.md")
         rejected = _write_entry(notes, "rejected", "rejected.md")
@@ -345,7 +345,7 @@ class TestRemoveAllScope:
         broken.write_text("---\ntarget_repo: github.com/example/foo\n", encoding="utf-8")
         unknown_repo = notes / "inbox/unknown-repo.md"
         unknown_repo.write_text(
-            "---\ntype: feedback\n---\n\n本文\n",
+            "---\ntype: awi\n---\n\n本文\n",
             encoding="utf-8",
         )
         commits: list[tuple[str, list[str]]] = []

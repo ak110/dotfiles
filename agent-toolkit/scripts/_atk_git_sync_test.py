@@ -40,7 +40,7 @@ def _init_diverged_mq_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     _git(seed, "config", "user.email", "sync-test@example.invalid")
     source = seed / "processing" / "20260831-101752-001.md"
     source.parent.mkdir()
-    source.write_text("---\ntype: feedback\n---\n\n同じ項目\n", encoding="utf-8")
+    source.write_text("---\ntype: awi\n---\n\n同じ項目\n", encoding="utf-8")
     _git(seed, "add", ".")
     _git(seed, "commit", "-m", "base")
     _git(seed, "remote", "add", "origin", str(origin))

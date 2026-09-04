@@ -28,7 +28,7 @@ from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     fake_git_worktree_remote_response as _fake_git_worktree_remote_response,
 )
-from _atk_wi_common import WI_TYPE_TBD, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk_wi_common import WI_TYPE_UWI, WebInputError  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -497,7 +497,7 @@ def test_add_rejects_dependencies_for_tbd(tmp_path: pathlib.Path, capsys: pytest
                 "add",
                 "--target-repo",
                 "github.com/example/repo",
-                "--type=tbd",
+                "--type=uwi",
                 "--depends-on",
                 "feedback.md",
                 "確認しますか？",
@@ -507,7 +507,7 @@ def test_add_rejects_dependencies_for_tbd(tmp_path: pathlib.Path, capsys: pytest
         )
 
     assert exc_info.value.code == 1
-    assert "--type=feedbackでのみ" in capsys.readouterr().err
+    assert "--type=awiでのみ" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("plan_file", ["relative-plan.md", "/missing-plan.md"])
@@ -554,7 +554,7 @@ def test_add_operation_rejects_plan_file_for_tbd(
             target_repo="github.com/example/repo",
             source=None,
             now=_FIXED_DT,
-            entry_type=WI_TYPE_TBD,
+            entry_type=WI_TYPE_UWI,
             question_type="free-form",
             plan_file=str(plan),
         )
@@ -1533,7 +1533,7 @@ def test_add_entries_rejects_answer_marker_in_tbd_body(tmp_path: pathlib.Path, m
             target_repo="github.com/example/repo",
             source=None,
             now=_FIXED_DT,
-            entry_type=WI_TYPE_TBD,
+            entry_type=WI_TYPE_UWI,
             question_type="free-form",
         )
 
@@ -1548,7 +1548,7 @@ def test_add_entries_rejects_answer_heading_in_tbd_body(tmp_path: pathlib.Path, 
             target_repo="github.com/example/repo",
             source=None,
             now=_FIXED_DT,
-            entry_type=WI_TYPE_TBD,
+            entry_type=WI_TYPE_UWI,
             question_type="free-form",
         )
 
@@ -1736,7 +1736,7 @@ def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch:
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
-        entry_type=WI_TYPE_TBD,
+        entry_type=WI_TYPE_UWI,
         question_type="free-form",
     )
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")

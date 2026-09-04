@@ -244,7 +244,7 @@ def _write_processing_file(
     processing_dir.mkdir(parents=True, exist_ok=True)
     path = processing_dir / filename
     path.write_text(
-        f"---\ntype: feedback\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -261,7 +261,7 @@ def _write_adopted_file(
     adopted_dir.mkdir(parents=True, exist_ok=True)
     path = adopted_dir / filename
     path.write_text(
-        f"---\ntype: feedback\ntarget_repo: {target_repo}\n---\n\n{body}\n\n## 処理結果\n\n- 採否: adopted\n",
+        f"---\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n\n## 処理結果\n\n- 採否: adopted\n",
         encoding="utf-8",
     )
     return path
@@ -283,7 +283,7 @@ class TestListFeedbackStatusDefaultAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -307,7 +307,7 @@ class TestListFeedbackStatusProcessing:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback", "--status=processing"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=processing"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -332,7 +332,7 @@ class TestListFeedbackStatusAdopted:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback", "--status=adopted"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=adopted"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -357,7 +357,7 @@ class TestListFeedbackStatusAll:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback", "--status=all"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -381,20 +381,20 @@ class TestListFeedbackStatusActive:
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold-body\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold-body\n",
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted-body")
         rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback", "--status=active", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=active", "--no-json"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -416,7 +416,7 @@ class TestListFeedbackStatusActive:
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted本文")
@@ -457,13 +457,13 @@ class TestListFeedbackStatusRejected:
         rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback", "--status=rejected", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--status=rejected", "--no-json"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -798,7 +798,7 @@ class TestAddTargetRepoOption:
 
 
 class TestTbdAddTargetRepoOption:
-    """`mq add --type=tbd --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
+    """`mq add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,
@@ -813,7 +813,7 @@ class TestTbdAddTargetRepoOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                ["wi", "add", "--type=uwi", "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -836,7 +836,7 @@ class TestTbdAddTargetRepoOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                ["wi", "add", "--type=uwi", str(myrepo), "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )

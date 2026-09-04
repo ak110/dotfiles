@@ -79,14 +79,14 @@ def test_flat_tbd_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
         target_repo="github.com/example/repo",
         source=None,
         now=_FIXED_DT,
-        entry_type="tbd",
+        entry_type="uwi",
         scope="test",
         question_type="yes-no",
         choices=None,
     )
     assert generated == [f"{_FIXED_TIMESTAMP}-001.md"]
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    assert "type: tbd" in content
+    assert "type: uwi" in content
     assert "question_type: yes-no" in content
     assert "ユーザーはこの行以降に回答を追記する" in content
 
@@ -160,7 +160,7 @@ class TestCmdTbdAddSelfContainmentWarning:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "採否は?"],
+                ["wi", "add", "--type=uwi", str(myrepo), "採否は?"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -186,7 +186,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "--scope", "theme1", "未確認の挙動"],
+                ["wi", "add", "--type=uwi", str(myrepo), "--scope", "theme1", "未確認の挙動"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -225,7 +225,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "--question-type", "choice", "q"],
+                ["wi", "add", "--type=uwi", str(myrepo), "--question-type", "choice", "q"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -248,7 +248,7 @@ class TestTbdAdd:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "実施報告のみで疑問文を含まない本文"],
+                ["wi", "add", "--type=uwi", str(myrepo), "実施報告のみで疑問文を含まない本文"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -302,7 +302,7 @@ class TestTbdAdd:
                 [
                     "wi",
                     "add",
-                    "--type=tbd",
+                    "--type=uwi",
                     str(myrepo),
                     "--question-type",
                     "choice",
@@ -366,7 +366,7 @@ class TestTbdAddEditorBeforePull:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=tbd"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         assert editor_calls
@@ -400,7 +400,7 @@ class TestTbdAddEditorBeforePull:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "--question-type", "choice", "q"],
+                ["wi", "add", "--type=uwi", str(myrepo), "--question-type", "choice", "q"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -410,7 +410,7 @@ class TestTbdAddEditorBeforePull:
 
 
 class TestTbdAddRepoPathOverrideCli:
-    """`mq add --type=tbd`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+    """`mq add --type=uwi`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
         self,
@@ -444,7 +444,7 @@ class TestTbdAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=tbd", "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi", "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -461,7 +461,7 @@ class TestTbdAddRepoPathOverrideCli:
         myrepo.mkdir()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=tbd", str(myrepo)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi", str(myrepo)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -483,7 +483,7 @@ class TestTbdAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=tbd", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -507,7 +507,7 @@ class TestTbdAddSourceOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=tbd", str(myrepo), "--scope", "hold", "--source", "session-hold", "保留理由"],
+                ["wi", "add", "--type=uwi", str(myrepo), "--scope", "hold", "--source", "session-hold", "保留理由"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -529,7 +529,7 @@ class TestTbdAddSourceOption:
         monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=tbd", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--type=uwi", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         files = sorted((notes / "inbox").iterdir())
@@ -645,10 +645,10 @@ class TestTbdList:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered", "no", "--no-json"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered", "no", "--no-json"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+        assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
 
 
 class TestTbdListSkipPull:
@@ -666,7 +666,7 @@ class TestTbdListSkipPull:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
@@ -1319,7 +1319,7 @@ def test_answer_tbd_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: p
     monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox" / "20260101-000000-001.md"
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{tbd_module.QUESTION_HEADING}\n\n"
         f"前半の質問本文。\n\n{tbd_module.ANSWER_MARKER}\n\n"
         f"後半の質問本文。\n\n{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n",
@@ -1341,7 +1341,7 @@ def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox" / "20260101-000000-002.md"
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n",
         encoding="utf-8",
     )
@@ -1359,7 +1359,7 @@ def test_answer_tbd_rejects_empty_answer_without_changing_existing_answer(
     notes = _setup_notes(tmp_path)
     path = notes / "inbox" / "20260101-000000-003.md"
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n"
         f"{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n既存回答\n",
         encoding="utf-8",
@@ -1382,7 +1382,7 @@ def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
     monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
     monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     content = (
-        "---\ntarget_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form\n---\n\n"
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n"
         f"{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n"
     )

@@ -130,11 +130,11 @@ class TestProcessLoopIncludesProcessingInCount:
         # `_fake_run_with_remote_url`が返す正規化後IDと一致させる。
         target_repo_id = "github.com/example/myrepo"
         (inbox_dir / "a.md").write_text(
-            f"---\ntarget_repo: {target_repo_id}\ntype: feedback\n---\n\n本文A\n",
+            f"---\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文A\n",
             encoding="utf-8",
         )
         (processing_dir / "b.md").write_text(
-            f"---\ntarget_repo: {target_repo_id}\ntype: feedback\n---\n\n本文B\n",
+            f"---\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文B\n",
             encoding="utf-8",
         )
 
@@ -176,7 +176,7 @@ class TestProcessLoopIncludesProcessingInCount:
         myrepo.mkdir()
         target_repo = "github.com/example/myrepo"
         (inbox / "cooldown.md").write_text(
-            f"---\ntarget_repo: {target_repo}\ntype: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
+            f"---\ntarget_repo: {target_repo}\ntype: awi\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
             encoding="utf-8",
         )
         child_calls: list[dict[str, Any]] = []
@@ -208,13 +208,13 @@ class TestProcessLoopIncludesProcessingInCount:
         myrepo.mkdir()
         target_repo = "github.com/example/myrepo"
         (inbox / "cooldown.md").write_text(
-            f"---\ntarget_repo: {target_repo}\ntype: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
+            f"---\ntarget_repo: {target_repo}\ntype: awi\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
             encoding="utf-8",
         )
 
         ready = inbox / "ready.md"
         ready.write_text(
-            f"---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n本文\n",
+            f"---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
             encoding="utf-8",
         )
         child_calls: list[dict[str, Any]] = []

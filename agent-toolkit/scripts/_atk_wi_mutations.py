@@ -32,8 +32,8 @@ from _atk_wi_common import (
     WI_STATE_PROCESSING,
     WI_STATE_REJECTED,
     WI_STATES,
-    WI_TYPE_FEEDBACK,
-    WI_TYPE_TBD,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
@@ -313,9 +313,7 @@ def _validate_transition_targets(
             _entry_target_repo(path, content)
         _verify_target_repo_content(path, content, normalized_target_repo)
     if cooldown_days is not None:
-        non_feedback = [
-            path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_FEEDBACK
-        ]
+        non_feedback = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI]
         if non_feedback:
             raise WebInputError(f"--`cooldown-days`はフィードバック専用です: {', '.join(non_feedback)}")
     if action == "remove" and not force:
@@ -554,7 +552,7 @@ def append_entry_content(
 
     def validate(previous: str, updated: str) -> None:
         del updated
-        if _require_type(path, previous) == WI_TYPE_TBD:
+        if _require_type(path, previous) == WI_TYPE_UWI:
             raise WebInputError("TBDには追記できません")
 
     return _append_entry(
@@ -589,7 +587,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
             file=sys.stderr,
         )
         sys.exit(2)
-    if entry_type != WI_TYPE_TBD:
+    if entry_type != WI_TYPE_UWI:
         tbd_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
         if tbd_only_keys:
             raise WebInputError(f"フィードバックでは指定できないメタデータです: {', '.join(tbd_only_keys)}")
@@ -617,7 +615,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if target_repo_changed:
         updated_data.pop("target_commit", None)
 
-    if entry_type != WI_TYPE_TBD:
+    if entry_type != WI_TYPE_UWI:
         return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
 
     if not normalized_message_body.strip():
@@ -694,14 +692,14 @@ def _validated_plan_feedback_paths(
         if parsed is None:
             raise _PlanFeedbackValidationError(f"のfrontmatterが破損しています: {filename}")
         entry_type = parsed[0].get("type")
-        if entry_type == WI_TYPE_FEEDBACK:
+        if entry_type == WI_TYPE_AWI:
             if state != WI_STATE_HOLD:
                 raise _PlanFeedbackValidationError(f"の変換元feedbackがholdに存在しません: {filename}")
             if "plan_file" in parsed[0]:
                 raise _PlanFeedbackValidationError(f"が既に計画型です: {filename}")
             feedback_paths.append(path)
             continue
-        if entry_type == WI_TYPE_TBD:
+        if entry_type == WI_TYPE_UWI:
             if state not in WI_PROCESSABLE_STATES:
                 raise _PlanFeedbackValidationError(f"のTBDがactive状態ではありません: {filename}")
             continue
@@ -831,7 +829,7 @@ def edit_entry_to_plan(
         if parsed is None:
             raise WebInputError(f"frontmatterが破損しているため計画型へ編集できません: {held_path.name}")
         stored_data, _stored_body = parsed
-        if _require_type(held_path, previous) != WI_TYPE_FEEDBACK:
+        if _require_type(held_path, previous) != WI_TYPE_AWI:
             raise WebInputError(f"フィードバックだけを計画型へ編集できます: {held_path.name}")
         if "plan_file" in stored_data:
             raise WebInputError(f"既に計画型のため再変換できません: {held_path.name}")
@@ -855,10 +853,10 @@ def edit_entry_to_plan(
         if normalized_target_repo is not None and material_repo != normalized_target_repo:
             raise WebInputError(f"target_repoが一致しません: 期待={normalized_target_repo} 実際={material_repo}")
 
-        message_frontmatter, message_body = _add.parse_entry_message(content, entry_type=WI_TYPE_FEEDBACK)
+        message_frontmatter, message_body = _add.parse_entry_message(content, entry_type=WI_TYPE_AWI)
         requested_type = message_frontmatter.get("type")
-        if requested_type is not None and requested_type != WI_TYPE_FEEDBACK:
-            raise WebInputError(f"計画型編集のtypeはfeedbackで指定してください: {held_path.name}")
+        if requested_type is not None and requested_type != WI_TYPE_AWI:
+            raise WebInputError(f"計画型編集のtypeは{WI_TYPE_AWI}で指定してください: {held_path.name}")
         for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
             if key in message_frontmatter:
                 raise WebInputError(f"{key}は計画型編集が管理する予約キーです")
@@ -1217,7 +1215,7 @@ def _convert_held_entries(
         if parsed is None:
             raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
         data, body = parsed
-        if _require_type(path, text) != WI_TYPE_FEEDBACK:
+        if _require_type(path, text) != WI_TYPE_AWI:
             raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
@@ -1240,10 +1238,10 @@ def _convert_held_entries(
         raise WebInputError("holdの変換対象repoとローカルworktreeが一致しません")
     target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
 
-    message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=WI_TYPE_FEEDBACK)
+    message_frontmatter, message_body = _add.parse_entry_message(message, entry_type=WI_TYPE_AWI)
     requested_type = message_frontmatter.get("type")
-    if requested_type is not None and requested_type != WI_TYPE_FEEDBACK:
-        raise WebInputError("holdの統合本文のtypeはfeedbackで指定してください")
+    if requested_type is not None and requested_type != WI_TYPE_AWI:
+        raise WebInputError(f"holdの統合本文のtypeは{WI_TYPE_AWI}で指定してください")
     for key in ("target_commit", "depends_on", "plan_file", "queue_schedule", "cooldown_until"):
         if key in message_frontmatter:
             raise WebInputError(f"{key}はholdの統合処理が管理する予約キーです")
@@ -1425,7 +1423,7 @@ def convert_entries_to_plan(
             if parsed is None:
                 raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
             data, body = parsed
-            if _require_type(path, text) != WI_TYPE_FEEDBACK:
+            if _require_type(path, text) != WI_TYPE_AWI:
                 raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
             raw_entry_repo = data.get("target_repo")
             if not isinstance(raw_entry_repo, str):
@@ -1589,7 +1587,7 @@ def set_entry_dependencies(
         if parsed is None:
             raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
         data, body = parsed
-        if _require_type(path, text) != WI_TYPE_FEEDBACK:
+        if _require_type(path, text) != WI_TYPE_AWI:
             raise WebInputError(f"フィードバックだけ依存を更新できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
@@ -1639,7 +1637,7 @@ def _active_dependency_graph(
         if parsed is None:
             raise WebInputError(f"active項目のfrontmatterが破損しているため依存を更新できません: {name}")
         data, _body = parsed
-        if _require_type(entry_path, entry_text) != WI_TYPE_FEEDBACK:
+        if _require_type(entry_path, entry_text) != WI_TYPE_AWI:
             continue
         raw_dependencies = data.get("depends_on", [])
         if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):

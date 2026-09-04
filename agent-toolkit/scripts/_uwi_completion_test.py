@@ -18,7 +18,7 @@ def _entry(*, answer: str = "", target_repo: str = _REPO) -> str:
     return (
         "---\n"
         f"target_repo: {target_repo}\n"
-        "type: tbd\n"
+        "type: uwi\n"
         "---\n\n"
         "## 質問\n\n本文\n\n"
         "## 回答\n\n"

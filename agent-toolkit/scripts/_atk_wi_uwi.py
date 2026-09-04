@@ -16,7 +16,7 @@ from _atk_wi_common import (
     WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
-    WI_TYPE_TBD,
+    WI_TYPE_UWI,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
@@ -187,7 +187,7 @@ def require_tbd_entry(path: pathlib.Path, text: str) -> None:
     frontmatterの`type`のみを根拠とし、所在ディレクトリーは根拠にしない。
     """
     entry_type = _require_type(path, text)
-    if entry_type != WI_TYPE_TBD:
+    if entry_type != WI_TYPE_UWI:
         raise WebInputError(f"回答はTBDのエントリにのみ適用できます（type={entry_type}）: {path.name}")
 
 
@@ -297,7 +297,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         filter_repo: str | None = None
         if args.target_repo is not None:
             filter_repo = _resolve_repo_id(args.target_repo)
-        for path, _repo, text, _state, _kind in _iter_entries(private_notes, WI_PROCESSABLE_STATES, filter_repo, WI_TYPE_TBD):
+        for path, _repo, text, _state, _kind in _iter_entries(private_notes, WI_PROCESSABLE_STATES, filter_repo, WI_TYPE_UWI):
             if _is_uwi_answered(text):
                 continue
             targets.append(path)

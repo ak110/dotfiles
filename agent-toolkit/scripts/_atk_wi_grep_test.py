@@ -178,14 +178,14 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=feedback`でフィードバック種別のみを対象とする。"""
+        """`--type=awi`でフィードバック種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="searchword")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "grep", "searchword", "--type=feedback", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "grep", "searchword", "--type=awi", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -220,14 +220,14 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=tbdでtbd種別のみを対象とする。"""
+        """--type=uwiでtbd種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", body="searchword")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "grep", "searchword", "--type=tbd", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "grep", "searchword", "--type=uwi", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -245,11 +245,11 @@ class TestGrepFilters:
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "hold-feedback.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
         (hold_dir / "hold-tbd.md").write_text(
-            "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
+            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -275,7 +275,7 @@ class TestGrepFilters:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "grep", "searchword", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "grep", "searchword", "--type=uwi", "--answered=no", "--skip-pull"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

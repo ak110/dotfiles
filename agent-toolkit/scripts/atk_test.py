@@ -489,7 +489,7 @@ def _write_feedback_file(
     path = inbox_dir / filename
     source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: feedback\n{source_line}---\n\n{body}\n",
+        f"---\ntarget_repo: {target_repo}\ntype: awi\n{source_line}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -620,7 +620,7 @@ class TestMutationTargetRepoParserOption:
         processing = notes / "processing"
         processing.mkdir()
         (processing / "entry.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -771,9 +771,9 @@ class TestTbdAddSourceOptionParser:
     """TBD投入時の`--source`受理をargparseレベルで検証する。"""
 
     def test_accepts_source(self) -> None:
-        """`mq add --type=tbd`が`--source`を受理しargs.sourceへ格納される。"""
+        """`mq add --type=uwi`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["wi", "add", "--type=tbd", "--source", "session-hold", "hello"])
+        args = parser.parse_args(["wi", "add", "--type=uwi", "--source", "session-hold", "hello"])
         assert args.source == "session-hold"
 
 
@@ -829,7 +829,7 @@ class TestServeParser:
 class TestAddTargetRepoOptionParser:
     """`mq add`の`--target-repo`受理をargparseレベルで検証する。"""
 
-    @pytest.mark.parametrize("type_option", [[], ["--type=tbd"]])
+    @pytest.mark.parametrize("type_option", [[], ["--type=uwi"]])
     def test_add_accepts_target_repo(self, type_option: list[str]) -> None:
         """`mq add`が種別にかかわらず`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
@@ -891,7 +891,7 @@ def test_add_output_reloads_saved_metadata(
 class TestSubcommandSubparserDefault:
     """`mq add`が`args.subparser`へ自パーサ参照を設定することを検証する。"""
 
-    @pytest.mark.parametrize("type_option", [[], ["--type=tbd"]])
+    @pytest.mark.parametrize("type_option", [[], ["--type=uwi"]])
     def test_add(self, type_option: list[str]) -> None:
         """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
         args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
@@ -1091,21 +1091,21 @@ class TestUnansweredTbdNotification:
             _write_tbd_file(notes, f"tbd-{index:03d}.md", question=f"質問{index}")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         stderr = capsys.readouterr().err
         assert stderr.count("[inbox/unanswered]") == count
-        assert stderr.startswith("# tbd\n") if count else not stderr
+        assert stderr.startswith("# uwi\n") if count else not stderr
 
     def test_suppresses_notify_when_list_covers_all_unanswered(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """list --type=tbd --answered=no実行時、通知が抑止されることを検証する。"""
+        """list --type=uwi --answered=no実行時、通知が抑止されることを検証する。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered=no", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.count("[inbox/unanswered]") == 1
@@ -1136,7 +1136,7 @@ class TestUnansweredTbdNotification:
             atk.main(["wi", "list", "--source=session-review", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# tbd" in captured.err
+        assert "# uwi" in captured.err
 
     def test_does_not_suppress_notify_when_list_has_status_inbox(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1149,20 +1149,20 @@ class TestUnansweredTbdNotification:
             atk.main(["wi", "list", "--status=inbox", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# tbd" in captured.err
+        assert "# uwi" in captured.err
 
     def test_suppresses_notify_when_show_all_covers_unanswered(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """show --all --type=tbd --answered=no実行時、通知が抑止されることを検証する。"""
+        """show --all --type=uwi --answered=no実行時、通知が抑止されることを検証する。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "show", "--all", "--type=uwi", "--answered=no", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# tbd" not in captured.err
+        assert "# uwi" not in captured.err
 
     def test_does_not_suppress_notify_when_show_with_filename(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1175,7 +1175,7 @@ class TestUnansweredTbdNotification:
             atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# tbd" in captured.err
+        assert "# uwi" in captured.err
 
 
 class TestInboxAlwaysEnabled:
@@ -1295,7 +1295,7 @@ class TestAddSingleMessage:
         fetch_idx = git_cmds.index(["git", "fetch"])
         assert git_cmds[fetch_idx + 1] == ["git", "merge", "--ff-only", "@{u}"]
         assert git_cmds[fetch_idx + 2] == ["git", "add", "--all", "--", "inbox"]
-        assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 feedback item", "--", "inbox"]
+        assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"]
         assert git_cmds[fetch_idx + 4] == ["git", "push"]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:
@@ -1387,7 +1387,7 @@ class TestAddCompletionShowsProcessingCount:
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "existing-001.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n既存処理中\n", encoding="utf-8"
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存処理中\n", encoding="utf-8"
         )
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1434,7 +1434,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "existing-001.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの処理中\n", encoding="utf-8"
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの処理中\n", encoding="utf-8"
         )
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1459,7 +1459,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         inbox_dir = notes / "inbox"
         inbox_dir.mkdir(parents=True, exist_ok=True)
         (inbox_dir / "existing-001.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの未処理\n", encoding="utf-8"
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n別リポジトリの未処理\n", encoding="utf-8"
         )
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -1522,7 +1522,7 @@ class TestAddMultipleMessages:
         assert files[1].name == f"{_FIXED_TIMESTAMP}-002.md"
 
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: add 2 feedback items" in commit_cmd
+        assert "chore: add 2 awi items" in commit_cmd
 
         captured = capsys.readouterr()
         assert "2件投入:\n" in captured.out
@@ -1705,7 +1705,7 @@ def _write_tbd_file(
     path = tbd_dir / filename
     source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\ntype: tbd\n"
+        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\ntype: uwi\n"
         f"question_type: free-form\n{source_line}---\n\n"
         f"## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
@@ -1716,7 +1716,7 @@ def _write_tbd_file(
 class TestAddBatchOption:
     """`mq add --batch`のCLI分岐と併用制約を検証する。"""
 
-    _ENTRY = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文\n\n"
+    _ENTRY = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n\n"
 
     @staticmethod
     def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1731,7 +1731,7 @@ class TestAddBatchOption:
         """`--type`省略時のargparse既定値はNoneとし、明示指定と区別する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         assert parser.parse_args(["wi", "add", "本文"]).type is None
-        assert parser.parse_args(["wi", "add", "--type=feedback", "本文"]).type == "feedback"
+        assert parser.parse_args(["wi", "add", "--type=awi", "本文"]).type == "awi"
 
     def test_normal_add_normalizes_omitted_type_to_feedback(
         self,
@@ -1749,13 +1749,13 @@ class TestAddBatchOption:
 
         assert exc_info.value.code == 0
         contents = [path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir()]
-        assert all("type: feedback" in content for content in contents)
+        assert all("type: awi" in content for content in contents)
 
     @pytest.mark.parametrize(
         "options",
         [
-            ["--type=feedback"],
-            ["--type=tbd"],
+            ["--type=awi"],
+            ["--type=uwi"],
             ["--target-repo=github.com/example/foo"],
             ["--source=session-review"],
             ["--scope=name"],
@@ -1855,7 +1855,7 @@ class TestAddBatchOption:
         """MESSAGE・`--body-file`いずれも省略時はエディター経路の生テキストを原文保持で取り込む。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
-        entry = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文  \n"
+        entry = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
         self._patch_editor(monkeypatch, f"\n{entry}")
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1863,7 +1863,7 @@ class TestAddBatchOption:
 
         assert exc_info.value.code == 0
         assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8") == (
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n取り込む本文  \n"
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
         )
         assert "1件取り込み:" in capsys.readouterr().out
 

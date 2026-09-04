@@ -339,13 +339,13 @@ class TestShowStatusAll:
         adopted_dir = notes / "adopted"
         adopted_dir.mkdir(parents=True, exist_ok=True)
         (adopted_dir / "fb-adopted.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\nadopted本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\nadopted本文\n",
             encoding="utf-8",
         )
         rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\nrejected本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\nrejected本文\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -394,13 +394,13 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=tbd指定時はinboxのみを探索しstatusラベル付きで出力する。"""
+        """--type=uwi指定時はinboxのみを探索しstatusラベル付きで出力する。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=tbd"], home=tmp_path)
+            atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=uwi"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -412,13 +412,13 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=feedback指定時はtbdエントリを種別不一致として除外し該当なしでexit 2になる。"""
+        """--type=awi指定時はtbdエントリを種別不一致として除外し該当なしでexit 2になる。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=feedback"], home=tmp_path)
+            atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--type=awi"], home=tmp_path)
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
@@ -494,7 +494,7 @@ class TestShowSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
+            atk.main(["wi", "show", "--all", "--type=uwi", "--status=all", "--source=session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -561,7 +561,7 @@ def _write_feedback_state_file(
     state_dir.mkdir(parents=True, exist_ok=True)
     path = state_dir / filename
     path.write_text(
-        f"---\ntype: feedback\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -632,11 +632,11 @@ class TestShowProcessing:
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
-        (hold_dir / "tbd-hold.md").write_text(
-            "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\nhold TBD\n",
+        (hold_dir / "uwi-hold.md").write_text(
+            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\nhold UWI\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -652,8 +652,8 @@ class TestShowProcessing:
         assert "processing本文" in captured.out
         assert "### fb-hold.md" in captured.out
         assert "hold本文" in captured.out
-        assert "### tbd-hold.md" in captured.out
-        assert "hold TBD" in captured.out
+        assert "### uwi-hold.md" in captured.out
+        assert "hold UWI" in captured.out
 
 
 class TestShowProcessedStates:

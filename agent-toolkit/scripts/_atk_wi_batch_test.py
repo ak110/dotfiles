@@ -58,7 +58,7 @@ def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
     """`show`形式の1エントリ分（見出し＋全文＋区切り空行）を組み立てる。"""
-    return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: feedback\n---\n\n{body}\n\n"
+    return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n{body}\n\n"
 
 
 def _batch_args(text: str) -> argparse.Namespace:
@@ -103,37 +103,37 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
 
 def test_parse_collects_entries_and_ignores_structural_headings() -> None:
     """種別・リポジトリ見出しと状態ラベルを無視し、エントリ全文だけを取り出す。"""
-    text = "# feedback\n## target_repo: github.com/example/foo\n" + _entry_text("a.md") + _entry_text("b.md", body="本文2")
+    text = "# awi\n## target_repo: github.com/example/foo\n" + _entry_text("a.md") + _entry_text("b.md", body="本文2")
 
     entries = batch.parse_show_batch(text)
 
     assert [entry.original_name for entry in entries] == ["a.md", "b.md"]
-    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n"
+    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
     assert entries[1].raw_text.endswith("\n\n本文2\n")
 
 
 def test_parse_ignores_answered_label_of_tbd() -> None:
     """TBDの`[状態/回答状況]`ラベル付き見出しも境界として扱う。"""
     text = (
-        "# tbd\n## target_repo: github.com/example/foo\n"
+        "# uwi\n## target_repo: github.com/example/foo\n"
         "### q.md [inbox/unanswered]\n"
-        "---\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\n## 質問\n\n内容\n\n"
+        "---\ntarget_repo: github.com/example/foo\ntype: uwi\n---\n\n## 質問\n\n内容\n\n"
     )
 
     entries = batch.parse_show_batch(text)
 
     assert [entry.original_name for entry in entries] == ["q.md"]
-    assert entries[0].frontmatter["type"] == "tbd"
+    assert entries[0].frontmatter["type"] == "uwi"
 
 
 def test_parse_accepts_crlf_line_endings() -> None:
     """CRLF改行の入力でも境界を検出し、保存対象の生テキストをLFへ正規化する。"""
-    text = ("# feedback\n## target_repo: github.com/example/foo\n" + _entry_text("a.md")).replace("\n", "\r\n")
+    text = ("# awi\n## target_repo: github.com/example/foo\n" + _entry_text("a.md")).replace("\n", "\r\n")
 
     entries = batch.parse_show_batch(text)
 
     assert [entry.original_name for entry in entries] == ["a.md"]
-    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n"
+    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
 
 
 @pytest.mark.parametrize(
@@ -155,9 +155,9 @@ def test_parse_rejects_non_show_format(text: str) -> None:
     [
         "target_repo: github.com/example/foo\n",
         "target_repo: github.com/example/foo\ntype: plan\n",
-        "type: feedback\n",
-        "target_repo: ''\ntype: feedback\n",
-        "target_repo:\n- github.com/example/foo\ntype: feedback\n",
+        "type: awi\n",
+        "target_repo: ''\ntype: awi\n",
+        "target_repo:\n- github.com/example/foo\ntype: awi\n",
     ],
 )
 def test_parse_rejects_invalid_frontmatter(frontmatter: str) -> None:
@@ -184,13 +184,13 @@ def test_import_keeps_original_names_and_raw_text(
     raw = (
         "---\n"
         'target_repo: "github.com/example/foo"\n'
-        "type: tbd\n"
+        "type: uwi\n"
         f"target_commit: {'a' * 40}\n"
         "choices: [A, B]\n"
         "queue_schedule:\n  carry_count: 2\n"
         "---\n\n## 質問\n\n内容\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n既存回答\n"
     )
-    text = f"# tbd\n## target_repo: github.com/example/foo\n### keep.md [inbox/answered]\n{raw}\n"
+    text = f"# uwi\n## target_repo: github.com/example/foo\n### keep.md [inbox/answered]\n{raw}\n"
 
     mapping, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
@@ -361,7 +361,7 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
         "### plan.md [inbox]\n"
         "---\n"
         'target_repo: "github.com/example/foo"\n'
-        "type: feedback\n"
+        "type: awi\n"
         "# 依存先のコメント\n"
         "depends_on:\n"
         "- dep.md\n"
@@ -394,7 +394,7 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
         "### plan.md [inbox]\n"
         "---\n"
         "target_repo: github.com/example/foo\n"
-        "type: feedback\n"
+        "type: awi\n"
         "depends_on:\n"
         "- dep.md  # 依存の由来\n"
         "---\n\n本文\n\n"
@@ -418,7 +418,7 @@ def test_import_rewrites_depends_on_with_commented_heading_line(
         "### plan.md [inbox]\n"
         "---\n"
         "target_repo: github.com/example/foo\n"
-        "type: feedback\n"
+        "type: awi\n"
         "depends_on:  # 依存の由来\n"
         "- dep.md\n"
         "---\n\n本文\n\n"
@@ -440,13 +440,7 @@ def test_import_rejects_quoted_depends_on_element_needing_rewrite(
     _patch_repo_operations(monkeypatch, batch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
-        "### plan.md [inbox]\n"
-        "---\n"
-        "target_repo: github.com/example/foo\n"
-        "type: feedback\n"
-        "depends_on:\n"
-        '- "dep.md"\n'
-        "---\n\n本文\n\n"
+        '### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- "dep.md"\n---\n\n本文\n\n'
     )
 
     with pytest.raises(WebInputError):
@@ -464,7 +458,7 @@ def test_import_rejects_non_canonical_depends_on_needing_rewrite(
     _patch_repo_operations(monkeypatch, batch)
     (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
-        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on: [dep.md]\n---\n\n本文\n\n"
+        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: [dep.md]\n---\n\n本文\n\n"
     )
 
     with pytest.raises(WebInputError):
@@ -481,13 +475,7 @@ def test_import_warns_for_missing_external_dependency(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
     dependent = (
-        "### plan.md [inbox]\n"
-        "---\n"
-        "target_repo: github.com/example/foo\n"
-        "type: feedback\n"
-        "depends_on:\n"
-        "- missing.md\n"
-        "---\n\n本文\n\n"
+        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- missing.md\n---\n\n本文\n\n"
     )
 
     _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
@@ -503,7 +491,7 @@ def test_import_warns_for_missing_scalar_dependency(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
     dependent = (
-        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on: missing.md\n---\n\n本文\n\n"
+        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: missing.md\n---\n\n本文\n\n"
     )
 
     _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
@@ -521,7 +509,7 @@ def test_import_does_not_warn_for_dependency_differing_only_by_case(
     _assume_case_insensitive(monkeypatch)
     (notes / "adopted" / "dep.md").write_text("既存\n", encoding="utf-8")
     dependent = (
-        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\ndepends_on:\n- Dep.md\n---\n\n本文\n\n"
+        "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- Dep.md\n---\n\n本文\n\n"
     )
 
     _mapping, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
@@ -543,7 +531,7 @@ def test_import_does_not_warn_for_dependency_on_renumbered_name(
         "### plan.md [inbox]\n"
         "---\n"
         "target_repo: github.com/example/foo\n"
-        "type: feedback\n"
+        "type: awi\n"
         "depends_on:\n"
         f"- {renumbered}\n"
         "---\n\n本文\n\n"
@@ -580,9 +568,7 @@ def test_import_normalizes_new_plan_file_to_portable_value(
     plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
     plan.parent.mkdir(parents=True)
     plan.write_text("# 計画\n", encoding="utf-8")
-    text = (
-        f"### imported.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: feedback\nplan_file: {plan}\n---\n\n本文\n\n"
-    )
+    text = f"### imported.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nplan_file: {plan}\n---\n\n本文\n\n"
 
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 

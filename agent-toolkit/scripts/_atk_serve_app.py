@@ -155,7 +155,7 @@ def _specified_text(data: JsonObject, name: str) -> str | None:
 def _summary(text: str, kind: str) -> str:
     body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
-    if kind == "tbd":
+    if kind == common.WI_TYPE_UWI:
         lines = [line for line in lines if not line.startswith("<!--")]
     return lines[0][:160] if lines else ""
 
@@ -177,13 +177,13 @@ def _entry(
     text: str,
     metadata: dict[str, typing.Any],
 ) -> dict[str, object]:
-    answered = common.is_uwi_answered(text) if kind == "tbd" else None
+    answered = common.is_uwi_answered(text) if kind == common.WI_TYPE_UWI else None
     return {
         "kind": kind,
         "state": state,
         "filename": path.name,
         "answered": answered,
-        "plan": kind == "feedback" and isinstance(metadata.get("plan_file"), str),
+        "plan": kind == common.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str),
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),
         "summary": _summary(text, kind),
@@ -322,7 +322,7 @@ def _render_body(text: str) -> str:
 
 def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str, list[str]]:
     """TBDの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
-    if kind != common.WI_TYPE_TBD:
+    if kind != common.WI_TYPE_UWI:
         return "free-form", []
     raw_type = metadata.get("question_type")
     question_type = raw_type if isinstance(raw_type, str) and raw_type in {"choice", "yes-no", "free-form"} else "free-form"
@@ -338,7 +338,7 @@ def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str,
 
 def _tbd_answer(text: str, kind: str) -> str | None:
     """TBD回答欄の既存回答を編集用文字列として返す。"""
-    if kind != common.WI_TYPE_TBD or tbd_mutations.ANSWER_MARKER not in text:
+    if kind != common.WI_TYPE_UWI or tbd_mutations.ANSWER_MARKER not in text:
         return None
     return text.rsplit(tbd_mutations.ANSWER_MARKER, maxsplit=1)[1].strip() or None
 
@@ -453,12 +453,12 @@ class Operations:
                 continue
             result.append(item)
         unanswered_tbd_items = sorted(
-            [item for item in result if item["kind"] == "tbd" and item["answered"] is False],
+            [item for item in result if item["kind"] == common.WI_TYPE_UWI and item["answered"] is False],
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
         other_items = sorted(
-            [item for item in result if not (item["kind"] == "tbd" and item["answered"] is False)],
+            [item for item in result if not (item["kind"] == common.WI_TYPE_UWI and item["answered"] is False)],
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
@@ -490,7 +490,7 @@ class Operations:
             else:
                 comment_editable = (
                     state in {common.WI_STATE_INBOX, common.WI_STATE_HOLD}
-                    and kind == common.WI_TYPE_FEEDBACK
+                    and kind == common.WI_TYPE_AWI
                     and _source_kind(metadata.get("source")) == "agent"
                 )
             return {
@@ -583,8 +583,8 @@ class Operations:
         if parsed is None:
             raise common.WebInputError("frontmatterを解析できません")
         metadata, _body = parsed
-        if metadata.get("type") != common.WI_TYPE_FEEDBACK:
-            raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
+        if metadata.get("type") != common.WI_TYPE_AWI:
+            raise common.WebInputError(f"ユーザーコメントの対象は{common.WI_TYPE_AWI}だけです")
         if _source_kind(metadata.get("source")) != "agent":
             raise common.WebInputError(
                 "ユーザーコメントの対象はエージェント由来のfeedbackだけです。sourceが未設定の項目は対象になりません"
@@ -623,9 +623,9 @@ class Operations:
         """
         if entry_type not in common.WI_TYPES:
             raise common.WebInputError("typeが不正です")
-        if entry_type == common.WI_TYPE_FEEDBACK and (scope or question_type or choices):
-            raise common.WebInputError("scope・question_type・choicesはtype=tbdでのみ指定できます")
-        if entry_type == common.WI_TYPE_TBD:
+        if entry_type == common.WI_TYPE_AWI and (scope or question_type or choices):
+            raise common.WebInputError(f"scope・question_type・choicesはtype={common.WI_TYPE_UWI}でのみ指定できます")
+        if entry_type == common.WI_TYPE_UWI:
             if question_type not in {"choice", "yes-no", "free-form"}:
                 raise common.WebInputError("question_typeが不正です")
             if question_type == "choice" and (choices is None or len(choices) < 2):
@@ -1125,7 +1125,7 @@ def _entry_page(filters: dict[str, str]) -> int | None:
 
 def _validate_entry_filters(filters: dict[str, str]) -> None:
     """一覧APIのquery組合せを検証する。"""
-    if filters.get("type", "all") not in {"all", "feedback", "tbd"}:
+    if filters.get("type", "all") not in {"all", *common.WI_TYPES}:
         raise common.WebInputError("typeが不正です")
     if filters.get("status", "all") not in _STATUS_FILTERS:
         raise common.WebInputError("statusが不正です")
@@ -1316,7 +1316,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise common.WebInputError(f"{key}は空でない文字列で指定してください")
         question_type = data.get("question_type")
-        if data["type"] == common.WI_TYPE_TBD and question_type is None:
+        if data["type"] == common.WI_TYPE_UWI and question_type is None:
             question_type = "free-form"
         filenames = await workers.run(
             ops.add,

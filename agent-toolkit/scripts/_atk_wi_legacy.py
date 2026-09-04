@@ -11,8 +11,8 @@ from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from typing import Any
 
+from _atk_wi_constants import WI_TYPE_AWI, WI_TYPE_UWI
 from _atk_wi_frontmatter import parse_frontmatter, serialize_frontmatter
-from _uwi_scan import _UWI_TYPE as WI_TYPE_TBD
 
 WI_STATE_INBOX = "inbox"
 WI_STATE_PLANNING = "planning"
@@ -21,8 +21,15 @@ WI_STATE_ADOPTED = "adopted"
 WI_STATE_REJECTED = "rejected"
 WI_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_PLANNING, WI_STATE_ADOPTED, WI_STATE_REJECTED)
 """旧ディレクトリ構成を読み取るための状態名。現行の保存状態が廃止した`planning`も走査対象に残す。"""
-WI_TYPE_FEEDBACK = "feedback"
-WI_TYPES = (WI_TYPE_FEEDBACK, WI_TYPE_TBD)
+_LEGACY_TYPE_DIRECTORIES = {"feedback": WI_TYPE_AWI, "tbd": WI_TYPE_UWI}
+"""旧2階層レイアウトの種別ディレクトリ名と、平坦レイアウトへ書き込む現行の`type`値の対応。"""
+
+_LEGACY_RESERVATION_TYPES = ("feedback", WI_TYPE_AWI)
+"""2.34.0形式の予約が保持し得る`type`値。
+
+当時の保存値と、`atk wi migrate`が変換した後の現行値の双方を受理する。
+片方だけで判定すると、変換の前後どちらかの環境で予約の移行が働かない。
+"""
 
 
 def _with_type_frontmatter(text: str, entry_type: str) -> str | None:
@@ -52,7 +59,7 @@ def _plan_legacy_migration(
     destinations: set[pathlib.Path] = set()
     errors: list[str] = []
     for legacy_dir in legacy_dirs:
-        entry_type = legacy_dir.name
+        entry_type = _LEGACY_TYPE_DIRECTORIES[legacy_dir.name]
         for path in sorted(legacy_dir.rglob("*")):
             relative = path.relative_to(legacy_dir)
             if path.is_dir():
@@ -119,12 +126,12 @@ def migrate_legacy_layout(
     移行前のバージョンのコマンドが並行稼働していると空の旧ディレクトリが再生成されうるため、
     commit対象が生じない場合はcommitへ進まず削除のみで完結させる。
     """
-    if not any((private_notes / name).is_dir() for name in WI_TYPES):
+    if not any((private_notes / name).is_dir() for name in _LEGACY_TYPE_DIRECTORIES):
         return
     with repo_lock_fn(private_notes):
         pull_fn(private_notes)
         # 他プロセス・他端末が先に移行済みの場合があるため、pull後の状態で再判定する。
-        legacy_dirs = [private_notes / name for name in WI_TYPES if (private_notes / name).is_dir()]
+        legacy_dirs = [private_notes / name for name in _LEGACY_TYPE_DIRECTORIES if (private_notes / name).is_dir()]
         if not legacy_dirs:
             return
         planned = _plan_legacy_migration(private_notes, legacy_dirs)
@@ -161,7 +168,7 @@ def _legacy_reservation_companion(data: dict[str, object]) -> dict[str, str] | N
     raw = data.get("reservation_companion")
     if (
         data.get("target_repo") != _LEGACY_RESERVATION_INTERNAL_REPO
-        or data.get("type") != WI_TYPE_FEEDBACK
+        or data.get("type") not in _LEGACY_RESERVATION_TYPES
         or not isinstance(raw, dict)
     ):
         return None
@@ -192,7 +199,7 @@ def _is_legacy_reservation(
     """対応する内部companionを持つ2.34.0形式の予約かを返す。"""
     raw = data.get("reservation")
     target_repo = data.get("target_repo")
-    if state != WI_STATE_PROCESSING or data.get("type") != WI_TYPE_FEEDBACK or raw is None:
+    if state != WI_STATE_PROCESSING or data.get("type") not in _LEGACY_RESERVATION_TYPES or raw is None:
         return False
     if not isinstance(target_repo, str) or not target_repo:
         return False
@@ -272,6 +279,7 @@ def migrate_legacy_reservations(
         if path in reservation_paths:
             data.pop("reservation", None)
             data.pop("target_commit_history", None)
+            data["type"] = WI_TYPE_AWI
             changed = True
         dependencies = data.get("depends_on")
         if isinstance(dependencies, list):

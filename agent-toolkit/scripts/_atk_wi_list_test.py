@@ -82,7 +82,7 @@ class TestListSingle:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
+        assert captured.out == "# awi\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
     def test_cooldown_and_invalid_cooldown_display_stable_reasons(
         self,
@@ -96,13 +96,13 @@ class TestListSingle:
         invalid = _write_feedback_file(notes, "invalid.md")
         pending.write_text(
             pending.read_text(encoding="utf-8").replace(
-                "type: feedback\n",
-                "type: feedback\ncooldown_until: '2999-01-01T00:00:00+00:00'\n",
+                "type: awi\n",
+                "type: awi\ncooldown_until: '2999-01-01T00:00:00+00:00'\n",
             ),
             encoding="utf-8",
         )
         invalid.write_text(
-            invalid.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ncooldown_until: bad\n"),
+            invalid.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ncooldown_until: bad\n"),
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -129,7 +129,7 @@ class TestLegacyReservationMigration:
         path = notes / state / "main.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n"
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n"
             "depends_on: [companion.md, normal.md]\n"
             f"reservation: {reservation}\n"
             "target_commit_history: [abc123]\n---\n\n利用者本文\n",
@@ -145,7 +145,7 @@ class TestLegacyReservationMigration:
     ) -> pathlib.Path:
         path = notes / "inbox" / filename
         path.write_text(
-            "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: feedback\n"
+            "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: awi\n"
             "reservation_companion: {target_repo: github.com/example/foo, "
             f"target_filename: {target_filename}, token_hash: {'a' * 64}}}\n---\n\n内部項目\n",
             encoding="utf-8",
@@ -239,8 +239,8 @@ class TestLegacyReservationMigration:
         dependent = _write_feedback_file(notes, "dependent.md", body="本文")
         dependent.write_text(
             dependent.read_text(encoding="utf-8").replace(
-                "type: feedback\n",
-                "type: feedback\ndepends_on: [orphan.md, normal.md]\n",
+                "type: awi\n",
+                "type: awi\ndepends_on: [orphan.md, normal.md]\n",
             ),
             encoding="utf-8",
         )
@@ -264,8 +264,8 @@ class TestLegacyReservationMigration:
         notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "user.md", body="利用者本文")
         original = path.read_text(encoding="utf-8").replace(
-            "type: feedback\n",
-            "type: feedback\nreservation_companion: {target_repo: github.com/example/foo}\n",
+            "type: awi\n",
+            "type: awi\nreservation_companion: {target_repo: github.com/example/foo}\n",
         )
         path.write_text(original, encoding="utf-8")
         git_calls: list[_GitCall] = []
@@ -291,8 +291,8 @@ class TestLegacyReservationMigration:
         path.rename(processing_path)
         path = processing_path
         original = path.read_text(encoding="utf-8").replace(
-            "type: feedback\n",
-            "type: feedback\nreservation: {owner: user, purpose: custom}\ntarget_commit_history: [custom]\n",
+            "type: awi\n",
+            "type: awi\nreservation: {owner: user, purpose: custom}\ntarget_commit_history: [custom]\n",
         )
         path.write_text(original, encoding="utf-8")
         git_calls: list[_GitCall] = []
@@ -367,7 +367,7 @@ class TestListPlanImplementationClassification:
         plan = tmp_path / "plan.md"
         path = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
         path.write_text(
-            path.read_text(encoding="utf-8").replace("type: feedback\n", f"type: feedback\nplan_file: {plan}\n"),
+            path.read_text(encoding="utf-8").replace("type: awi\n", f"type: awi\nplan_file: {plan}\n"),
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -390,7 +390,7 @@ class TestListPlanImplementationClassification:
         notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "feedback.md", target_repo="github.com/example/repo", body="本文")
         path.write_text(
-            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [missing.md]\n"),
+            path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"),
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -412,8 +412,8 @@ class TestListPlanImplementationClassification:
         plan = tmp_path / "plan.md"
         path = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
         text = path.read_text(encoding="utf-8").replace(
-            "type: feedback\n",
-            f"type: feedback\nplan_file: {plan}\n",
+            "type: awi\n",
+            f"type: awi\nplan_file: {plan}\n",
         )
         path.write_text(text + "\n本文変更\n", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -487,7 +487,7 @@ class TestListMultipleRepos:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.splitlines() == [
-            "# feedback",
+            "# awi",
             "fb-001.md: github.com/example/foo [inbox/normal/ready] テスト本文",
             "fb-002.md: github.com/example/bar [inbox/normal/ready] テスト本文",
         ]
@@ -516,10 +516,10 @@ class TestListMultipleRepos:
         output = capsys.readouterr().out
         lines = output.splitlines()
         assert [line.split(":", 1)[0] for line in lines] == [
-            "# feedback",
+            "# awi",
             "a-feedback.md",
             "z-feedback.md",
-            "# tbd",
+            "# uwi",
             "a-tbd.md",
             "z-tbd.md",
         ]
@@ -597,7 +597,7 @@ class TestListTargetRepoFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/myrepo [inbox/normal/ready] テスト本文\n"
+        assert captured.out == "# awi\nfb-001.md: github.com/example/myrepo [inbox/normal/ready] テスト本文\n"
 
     def test_filter_no_match_outputs_nothing(
         self,
@@ -680,7 +680,7 @@ class TestListSourceFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--status=all", "--source=session-review"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--status=all", "--source=session-review"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -697,18 +697,18 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=feedback`指定時はフィードバック部のみ出力され`tbd`ヘッダは出力されない。"""
+        """`--type=awi`指定時はフィードバック部のみ出力され`tbd`ヘッダは出力されない。"""
         notes = _setup_notes(tmp_path)
         _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=feedback"], home=tmp_path)
+            atk.main(["wi", "list", "--type=awi"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == "# feedback\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
+        assert captured.out == "# awi\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
     def test_type_tbd_outputs_status_label(
         self,
@@ -716,17 +716,17 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=tbd指定時はtbd部のみ出力され回答状況ラベルが付与される。"""
+        """--type=uwi指定時はtbd部のみ出力され回答状況ラベルが付与される。"""
         notes = _setup_notes(tmp_path)
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered=no"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered=no"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert captured.out == f"# tbd\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+        assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
 
     def test_answered_tbd_displays_blocked_reason(
         self,
@@ -738,13 +738,13 @@ class TestListTypeFilter:
         notes = _setup_notes(tmp_path)
         path = _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答済み")
         path.write_text(
-            path.read_text(encoding="utf-8").replace("type: tbd\n", "type: tbd\ndepends_on: [missing.md]\n"),
+            path.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\ndepends_on: [missing.md]\n"),
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered=yes"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered=yes"], home=tmp_path)
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
@@ -763,7 +763,7 @@ class TestListTypeFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered=yes"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered=yes"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -786,8 +786,8 @@ class TestListTypeFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback" in captured.out
-        assert "# tbd" not in captured.out
+        assert "# awi" in captured.out
+        assert "# uwi" not in captured.out
 
 
 class TestListSkipPull:
@@ -898,7 +898,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", f"--answered={answered}"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", f"--answered={answered}"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -916,11 +916,11 @@ class TestListStatusFilter:
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
         (hold_dir / "tbd-hold.md").write_text(
-            "---\ntype: tbd\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\nhold質問\n",
+            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\nhold質問\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -946,7 +946,7 @@ class TestListStatusFilter:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--status=all"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--status=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -970,7 +970,7 @@ class TestListStatusFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# feedback" not in captured.out
+        assert "# awi" not in captured.out
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
 
     def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
@@ -1043,7 +1043,7 @@ class TestListCount:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered=yes", "--count"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered=yes", "--count"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1082,7 +1082,7 @@ class TestListJson:
         body = "本文の長い要約 " + "長文" * 100
         path = _write_feedback_file(notes, "json.md", target_repo=long_repo, body=body)
         path.write_text(
-            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [missing.md]\n"),
+            path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"),
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1094,7 +1094,7 @@ class TestListJson:
         assert exc_info.value.code == 0
         record = json.loads(capsys.readouterr().out)
         assert record["filename"] == "json.md"
-        assert record["type"] == "feedback"
+        assert record["type"] == "awi"
         assert record["target_repo"] == long_repo
         assert record["summary"] == body
         assert record["ready"] is False
@@ -1151,7 +1151,7 @@ class TestListJson:
         with pytest.raises(SystemExit) as text_exit:
             atk.main(["wi", "list", "--no-json"], home=tmp_path)
         assert text_exit.value.code == 0
-        assert capsys.readouterr().out.startswith("# feedback\n")
+        assert capsys.readouterr().out.startswith("# awi\n")
 
         with pytest.raises(SystemExit) as count_exit:
             atk.main(["wi", "list", "--count"], home=tmp_path)
@@ -1162,7 +1162,7 @@ class TestListJson:
 class TestMultipleFiltersCombinedAsAnd:
     """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
 
-    `--answered`はフィードバックを無条件除外する仕様（`_answered_matches`が`entry_type != WI_TYPE_TBD`時に
+    `--answered`はフィードバックを無条件除外する仕様（`_answered_matches`が`entry_type != WI_TYPE_UWI`時に
     `False`を返す）のため、`--answered=no`とtype不一致（feedback）を1回の呼び出しへ同居させると
     type条件の除外効果がanswered条件の除外効果と区別できなくなる。
     target-repo・source・type・statusの4条件は`--answered=all`（無効化）の下で検証し、
@@ -1195,7 +1195,7 @@ class TestMultipleFiltersCombinedAsAnd:
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True, exist_ok=True)
         (processing_dir / "tbd-other-status.md").write_text(
-            f"---\ntarget_repo: {matching_repo}\ntype: tbd\nquestion_type: free-form\n"
+            f"---\ntarget_repo: {matching_repo}\ntype: uwi\nquestion_type: free-form\n"
             "source: session-review\n---\n\n## 質問\n\n本文\n\n## 回答\n\n",
             encoding="utf-8",
         )
@@ -1208,7 +1208,7 @@ class TestMultipleFiltersCombinedAsAnd:
                     "list",
                     f"--target-repo={matching_repo}",
                     "--source=session-review",
-                    "--type=tbd",
+                    "--type=uwi",
                     "--status=inbox",
                     "--answered=all",
                 ],
@@ -1249,7 +1249,7 @@ class TestMultipleFiltersCombinedAsAnd:
                     "list",
                     f"--target-repo={matching_repo}",
                     "--source=session-review",
-                    "--type=tbd",
+                    "--type=uwi",
                     "--status=inbox",
                     "--answered=no",
                 ],
@@ -1349,7 +1349,7 @@ class TestListNonTtyTargetRepo:
         monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=tbd", "--answered=no"], home=tmp_path)
+            atk.main(["wi", "list", "--type=uwi", "--answered=no"], home=tmp_path)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()

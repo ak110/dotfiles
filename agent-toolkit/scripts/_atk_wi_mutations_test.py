@@ -55,7 +55,7 @@ def _write_tbd_entry(
     *,
     question: str = "変更前の質問",
     answer: str = "既存回答",
-    frontmatter: str = "target_repo: github.com/example/foo\ntype: tbd\nquestion_type: free-form",
+    frontmatter: str = "target_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form",
 ) -> pathlib.Path:
     """非対話edit用のTBDエントリを書き込む。"""
     path = notes / "inbox" / filename
@@ -440,7 +440,7 @@ def test_remove_targets_explicit_state_and_keeps_legacy_priority(
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    content = "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文\n"
+    content = "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
     inbox = notes / "inbox/same.md"
     processing = notes / "processing/same.md"
     processing.parent.mkdir()
@@ -482,7 +482,7 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
     monkeypatch.setattr(mutations, "_pull", lambda _path: None)
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
-    original = "---\ntype: feedback\n---\n\n確認時本文\n"
+    original = "---\ntype: awi\n---\n\n確認時本文\n"
 
     changed = notes / "inbox/changed.md"
     changed.write_text(original.replace("確認時", "外部更新後"), encoding="utf-8")
@@ -619,17 +619,15 @@ def test_plan_feedback_paths_identifies_plan_input_source_in_errors(
         path.write_text("本文\n", encoding="utf-8")
     elif condition == "already-planned":
         path = _write_convert_feedback(notes, filename, state="hold")
-        path.write_text(
-            path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\nplan_file: x\n"), encoding="utf-8"
-        )
+        path.write_text(path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\nplan_file: x\n"), encoding="utf-8")
     elif condition == "feedback-outside-hold":
         _write_convert_feedback(notes, filename, state="inbox")
     elif condition == "inactive-tbd":
-        _write_convert_feedback(notes, filename, entry_type="tbd", state="adopted")
+        _write_convert_feedback(notes, filename, entry_type="uwi", state="adopted")
     elif condition == "invalid-type":
         _write_convert_feedback(notes, filename, entry_type="invalid", state="hold")
     elif condition == "no-feedback":
-        _write_convert_feedback(notes, filename, entry_type="tbd", state="inbox")
+        _write_convert_feedback(notes, filename, entry_type="uwi", state="inbox")
 
     writer = _write_legacy_integration_plan if legacy else _write_integration_plan
     plan = writer(tmp_path, "a" * 40, (filename,))
@@ -657,7 +655,7 @@ def _write_convert_feedback(
     notes: pathlib.Path,
     filename: str,
     *,
-    entry_type: str = "feedback",
+    entry_type: str = "awi",
     state: str = "inbox",
     target_repo: str = "github.com/example/foo",
     target_commit: str = "a" * 40,
@@ -845,7 +843,7 @@ def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
         ),
     )
     path.write_text(
-        path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [predecessor.md]\n"),
+        path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [predecessor.md]\n"),
         encoding="utf-8",
     )
     plan = _write_convert_plan(tmp_path, "a" * 40)
@@ -1004,7 +1002,7 @@ def test_convert_to_plan_rejects_explicit_dependency_cycle(
     first = _write_convert_feedback(notes, "first.md")
     _write_convert_feedback(notes, "second.md")
     first.write_text(
-        first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+        first.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [second.md]\n"),
         encoding="utf-8",
     )
     plan = _write_convert_plan(tmp_path, "a" * 40)
@@ -1047,7 +1045,7 @@ def test_convert_to_plan_rejects_tbd_repo_mismatch_and_self_dependency(
     notes = _setup_notes(tmp_path)
     plan = _write_convert_plan(tmp_path, "a" * 40)
     _disable_convert_git(monkeypatch)
-    _write_convert_feedback(notes, "tbd.md", entry_type="tbd")
+    _write_convert_feedback(notes, "tbd.md", entry_type="uwi")
     with pytest.raises(mutations.WebInputError, match="フィードバックだけ"):
         mutations.convert_entry_to_plan(notes, filename="tbd.md", plan_file=str(plan))
 
@@ -1091,7 +1089,7 @@ def test_set_dependencies_updates_normal_feedback_without_converting_plan(
     parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None
     data, body = parsed
-    assert data["type"] == "feedback"
+    assert data["type"] == "awi"
     assert "plan_file" not in data
     assert data["depends_on"] == ["dependency.md"]
     assert "queue_schedule" not in data
@@ -1103,7 +1101,7 @@ def test_set_dependencies_can_clear_dependencies(tmp_path: pathlib.Path, monkeyp
     """依存オプション省略時は既存の明示依存を解除する。"""
     notes = _setup_notes(tmp_path)
     path = _write_convert_feedback(notes, "feedback.md")
-    text = path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [old.md]\n")
+    text = path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [old.md]\n")
     path.write_text(text, encoding="utf-8")
     _disable_convert_git(monkeypatch)
 
@@ -1134,12 +1132,12 @@ def test_set_dependencies_rejects_mutual_and_existing_chain_cycles(
         path = _write_convert_feedback(notes, name)
         if name == "first.md":
             path.write_text(
-                path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+                path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [second.md]\n"),
                 encoding="utf-8",
             )
         elif name == "second.md" and len(existing) == 3:
             path.write_text(
-                path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [third.md]\n"),
+                path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [third.md]\n"),
                 encoding="utf-8",
             )
     _disable_convert_git(monkeypatch)
@@ -1162,7 +1160,7 @@ def test_set_dependencies_uses_graph_refreshed_after_pull(
 
     def pull_with_competing_update(_path: pathlib.Path) -> None:
         first.write_text(
-            first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+            first.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [second.md]\n"),
             encoding="utf-8",
         )
 
@@ -1182,7 +1180,7 @@ def test_set_dependencies_cli_rejects_cycle(
     first = _write_convert_feedback(notes, "first.md")
     _write_convert_feedback(notes, "second.md")
     first.write_text(
-        first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [second.md]\n"),
+        first.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [second.md]\n"),
         encoding="utf-8",
     )
     _disable_convert_git(monkeypatch)
@@ -1324,8 +1322,8 @@ def test_convert_held_entries_integrates_all_materials_into_oldest_inbox_item(
         paths[0]
         .read_text(encoding="utf-8")
         .replace(
-            "type: feedback\n",
-            f"type: feedback\ndepends_on: [{tbd_name}, external-a.md]\n",
+            "type: awi\n",
+            f"type: awi\ndepends_on: [{tbd_name}, external-a.md]\n",
         ),
         encoding="utf-8",
     )
@@ -1333,8 +1331,8 @@ def test_convert_held_entries_integrates_all_materials_into_oldest_inbox_item(
         paths[1]
         .read_text(encoding="utf-8")
         .replace(
-            "type: feedback\n",
-            "type: feedback\nqueue_schedule:\n  dependency:\n    kind: entries\n    filenames: [external-b.md]\n",
+            "type: awi\n",
+            "type: awi\nqueue_schedule:\n  dependency:\n    kind: entries\n    filenames: [external-b.md]\n",
         ),
         encoding="utf-8",
     )
@@ -1390,8 +1388,8 @@ def test_convert_held_entries_rejects_unrepresentable_legacy_dependency_before_c
     path = _write_convert_feedback(notes, filename, state="hold")
     path.write_text(
         path.read_text(encoding="utf-8").replace(
-            "type: feedback\n",
-            "type: feedback\nqueue_schedule:\n  dependency:\n    kind: external-user\n",
+            "type: awi\n",
+            "type: awi\nqueue_schedule:\n  dependency:\n    kind: external-user\n",
         ),
         encoding="utf-8",
     )
@@ -1556,7 +1554,7 @@ def test_convert_held_entries_rejects_destination_conflict_without_changes(
     source = _write_convert_feedback(notes, filename, state="hold")
     original = source.read_text(encoding="utf-8")
     conflict = notes / "inbox" / filename
-    conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
+    conflict.write_text("---\ntype: awi\n---\n\n競合本文\n", encoding="utf-8")
     conflict_original = conflict.read_text(encoding="utf-8")
     plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     _disable_convert_git(monkeypatch)
@@ -1994,7 +1992,7 @@ def test_plain_return_clears_existing_cooldown(tmp_path: pathlib.Path, monkeypat
     notes = _setup_notes(tmp_path)
     path = _write_feedback_file(notes, "entry.md")
     path.write_text(
-        path.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ncooldown_until: old\n"),
+        path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ncooldown_until: old\n"),
         encoding="utf-8",
     )
     _disable_transition_git(monkeypatch)
@@ -2671,7 +2669,7 @@ class TestRejectIfInbox:
         processing.mkdir(parents=True, exist_ok=True)
         path = processing / "processing.md"
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n処理中本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n処理中本文\n",
             encoding="utf-8",
         )
         original = path.read_text(encoding="utf-8")
@@ -2698,7 +2696,7 @@ class TestRejectIfInbox:
         processing_dir.mkdir(parents=True, exist_ok=True)
         processing = processing_dir / "processing.md"
         processing.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\nprocessing本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         inbox_original = inbox.read_text(encoding="utf-8")
@@ -3194,7 +3192,7 @@ class TestEditWithChanges:
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True)
         (processing_dir / "fb-001.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n編集前\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -3227,8 +3225,8 @@ class TestEditWithChanges:
         path = _write_feedback_file(notes, "fb-001.md", body="編集前")
         path.write_text(
             path.read_text(encoding="utf-8").replace(
-                "type: feedback\n",
-                f"type: feedback\ntarget_commit: {'a' * 40}\n",
+                "type: awi\n",
+                f"type: awi\ntarget_commit: {'a' * 40}\n",
             ),
             encoding="utf-8",
         )
@@ -3329,7 +3327,7 @@ class TestNoninteractiveEdit:
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8") == (
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\nsource: session-review\n---\n\n編集後\n"
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
         )
 
     def test_message_does_not_start_editor(
@@ -3365,7 +3363,7 @@ class TestNoninteractiveEdit:
         path = notes / "inbox" / "fb-001.md"
         path.write_text(
             "---\n# 保持するコメント\ntarget_repo: old.example/a/b\n\n"
-            "target_repo: old.example/a/b\ntype: feedback\nsource: manual\n---\n\n編集前\n",
+            "target_repo: old.example/a/b\ntype: awi\nsource: manual\n---\n\n編集前\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -3379,7 +3377,7 @@ class TestNoninteractiveEdit:
         assert parsed is not None
         assert parsed[0] == {
             "target_repo": "github.com/example/repo",
-            "type": "feedback",
+            "type": "awi",
             "source": "manual",
         }
         assert parsed[1] == "\n編集後\n"
@@ -3387,7 +3385,7 @@ class TestNoninteractiveEdit:
     @pytest.mark.parametrize(
         ("message", "exit_code", "error_fragment"),
         [
-            ("---\ntype: tbd\n---\n\n本文", 2, "typeを変更"),
+            ("---\ntype: uwi\n---\n\n本文", 2, "typeを変更"),
             ("---\nscope: item\n---\n\n本文", 1, "フィードバックでは指定できない"),
             (" \n-\n ", 1, "実質空"),
         ],
@@ -3453,7 +3451,7 @@ class TestNoninteractiveEdit:
                     "add",
                     "--target-repo",
                     "github.com/example/foo",
-                    "--type=tbd",
+                    "--type=uwi",
                     "--question-type=free-form",
                     "",
                 ],
@@ -3483,7 +3481,7 @@ class TestNoninteractiveEdit:
         processing.mkdir()
         path = processing / "fb-001.md"
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n編集前\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -3504,7 +3502,7 @@ class TestNoninteractiveEdit:
         path = _write_tbd_entry(
             notes,
             "tbd-001.md",
-            frontmatter=("target_repo: github.com/example/foo\ntype: tbd\nscope: old\nquestion_type: choice\nchoices: A,B"),
+            frontmatter=("target_repo: github.com/example/foo\ntype: uwi\nscope: old\nquestion_type: choice\nchoices: A,B"),
         )
         original_answer = path.read_text(encoding="utf-8").split(tbd.ANSWER_HEADING, maxsplit=1)[1]
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -3717,8 +3715,8 @@ class TestNoninteractiveEdit:
         notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8").replace(
-            "type: feedback\n",
-            f"type: feedback\ntarget_commit: {'a' * 40}\n",
+            "type: awi\n",
+            f"type: awi\ntarget_commit: {'a' * 40}\n",
         )
         path.write_text(original, encoding="utf-8")
         updated = original.replace("target_repo: github.com/example/foo", "target_repo: github.com/example/new")
@@ -3786,8 +3784,8 @@ class TestNoninteractiveEdit:
         notes = _setup_notes(tmp_path)
         path = _write_feedback_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8").replace(
-            "type: feedback\n",
-            "type: feedback\nplan_file: /tmp/plan.md\n",
+            "type: awi\n",
+            "type: awi\nplan_file: /tmp/plan.md\n",
         )
         path.write_text(original, encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -3873,7 +3871,7 @@ class TestAppendEdit:
         """CRLF本文の改行を変換せず、元bytesへ追記する。"""
         notes = _setup_notes(tmp_path)
         path = notes / "inbox" / "fb-001.md"
-        path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: feedback\r\n---\r\n\r\n" + "本文\r\n".encode())
+        path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\n" + "本文\r\n".encode())
         original = path.read_bytes()
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -4100,11 +4098,11 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
     first = first_destination
     second = second_destination
     first.write_text(
-        first.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [external-a.md]\n"),
+        first.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [external-a.md]\n"),
         encoding="utf-8",
     )
     second.write_text(
-        second.read_text(encoding="utf-8").replace("type: feedback\n", "type: feedback\ndepends_on: [external-b.md]\n"),
+        second.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [external-b.md]\n"),
         encoding="utf-8",
     )
     plan = tmp_path / "main-plan.md"
@@ -4274,7 +4272,7 @@ def test_edit_entry_to_plan_rejects_inbox_name_conflict_without_changes(
     source.replace(held)
     original = held.read_text(encoding="utf-8")
     conflict = notes / "inbox" / filename
-    conflict.write_text("---\ntype: feedback\n---\n\n競合本文\n", encoding="utf-8")
+    conflict.write_text("---\ntype: awi\n---\n\n競合本文\n", encoding="utf-8")
     conflict_original = conflict.read_text(encoding="utf-8")
     plan = tmp_path / "main-plan.md"
     plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
@@ -4354,8 +4352,8 @@ def test_edit_entry_to_plan_allows_active_tbd_materials_outside_feedback_set(
         path = notes / "hold" / name
         path.write_text(
             path.read_text(encoding="utf-8").replace(
-                "type: feedback\n",
-                f"type: feedback\ndepends_on: [{tbd_name}, external-{index}.md]\n",
+                "type: awi\n",
+                f"type: awi\ndepends_on: [{tbd_name}, external-{index}.md]\n",
             ),
             encoding="utf-8",
         )
@@ -4703,7 +4701,7 @@ class TestStartProcessingMultiple:
                 "target_repo: github.com/example/foo",
                 ["--target-repo", "github.com/example/foo"],
             ),
-            ("type: feedback", []),
+            ("type: awi", []),
             (
                 "type: unknown\ntarget_repo: github.com/example/foo",
                 ["--target-repo", "github.com/example/foo"],
@@ -4904,7 +4902,7 @@ class TestAdoptFromProcessing:
         processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
@@ -4931,7 +4929,7 @@ class TestRejectFromProcessing:
         processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
@@ -4958,14 +4956,14 @@ class TestProcessingPrecedence:
         _write_feedback_file(notes, "fb-dup.md")
         inbox_path = notes / "inbox" / "fb-dup.md"
         inbox_path.write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\ninbox本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\ninbox本文\n",
             encoding="utf-8",
         )
         processing = notes / "processing"
         processing.mkdir(parents=True, exist_ok=True)
         processing_path = processing / "fb-dup.md"
         processing_path.write_text(
-            "---\ntype: feedback\ntarget_repo: github.com/example/foo\n---\n\nprocessing本文\n",
+            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
@@ -5187,7 +5185,7 @@ class TestTargetRepoVerification:
         processing.mkdir(parents=True, exist_ok=True)
         processing_path = processing / "fb-dup.md"
         processing_path.write_text(
-            "---\ntarget_repo: github.com/example/other\ntype: feedback\n---\n\nprocessing本文\n",
+            "---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -5212,7 +5210,7 @@ class TestTargetRepoVerification:
         processing.mkdir(parents=True, exist_ok=True)
         processing_path = processing / "fb-dup.md"
         processing_path.write_text(
-            "---\ntarget_repo: github.com/example/other\ntype: feedback\n---\n\nprocessing本文\n",
+            "---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("EDITOR", "fake-editor")

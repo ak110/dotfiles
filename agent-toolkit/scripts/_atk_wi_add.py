@@ -19,8 +19,8 @@ from _atk_wi_common import (
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
     WI_STATES,
-    WI_TYPE_FEEDBACK,
-    WI_TYPE_TBD,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
@@ -128,9 +128,9 @@ _EMPTY_FEEDBACK_ERROR = "フィードバック本文が実質空です"
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
     """先頭frontmatterと論理本文を返し、種別共通の本文契約を検証する。"""
     frontmatter, body = _parse_leading_frontmatter(message)
-    if entry_type == WI_TYPE_FEEDBACK and _body_is_effectively_empty(body):
+    if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
         raise WebInputError(_EMPTY_FEEDBACK_ERROR)
-    if entry_type != WI_TYPE_FEEDBACK:
+    if entry_type != WI_TYPE_AWI:
         _tbd.reject_reserved_tbd_markup(body)
     return frontmatter, body
 
@@ -287,7 +287,7 @@ def _add_entries_locked(
         if item_source:
             frontmatter_data["source"] = item_source
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
-        if entry_type != WI_TYPE_FEEDBACK:
+        if entry_type != WI_TYPE_AWI:
             if scope:
                 frontmatter_data["scope"] = scope
             frontmatter_data["question_type"] = question_type
@@ -305,7 +305,7 @@ def _add_entries_locked(
                 frontmatter_data["depends_on"] = list(depends_on)
         content = _frontmatter.serialize_frontmatter(frontmatter_data, logical_body)
         (inbox_dir / filename).write_text(content, encoding="utf-8")
-        if entry_type != WI_TYPE_FEEDBACK:
+        if entry_type != WI_TYPE_AWI:
             _tbd.warn_question_quality(filename, body, question_type)
         generated.append((filename, content))
         counter += 1
@@ -319,7 +319,7 @@ def add_entries(
     target_repo: str | None,
     source: str | None,
     now: datetime.datetime,
-    entry_type: str = WI_TYPE_FEEDBACK,
+    entry_type: str = WI_TYPE_AWI,
     scope: str | None = None,
     question_type: str | None = None,
     choices: str | None = None,
@@ -349,7 +349,7 @@ def add_entries(
             raise WebInputError(f"target_repoを解決できません: {target_repo}") from error
     plan_path: pathlib.Path | None = None
     if plan_file is not None:
-        if entry_type != WI_TYPE_FEEDBACK:
+        if entry_type != WI_TYPE_AWI:
             raise WebInputError("plan_fileはfeedback種別でのみ指定できます")
         try:
             plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
@@ -363,7 +363,7 @@ def add_entries(
             raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
     else:
         stored_plan_file = None
-    if entry_type != WI_TYPE_FEEDBACK and question_type not in {"choice", "yes-no", "free-form"}:
+    if entry_type != WI_TYPE_AWI and question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     if normalized_target_repo is None:
@@ -372,7 +372,7 @@ def add_entries(
         if normalized_target_repo is None:
             raise WebInputError("plan_file指定時はtarget_repoを指定してください")
         _verify_plan_target_repos(parsed_messages, normalized_target_repo)
-    if entry_type != WI_TYPE_FEEDBACK and question_type == "choice" and not choices:
+    if entry_type != WI_TYPE_AWI and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
     with _repo_lock(private_notes, timeout=lock_timeout):
         _pull(private_notes)
@@ -498,8 +498,8 @@ def _cmd_add(
             else:
                 print(f"投入を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
-    if args.type == WI_TYPE_TBD and args.depends_on:
-        print("投入を拒否しました: --depends-onは--type=feedbackでのみ指定できます", file=sys.stderr)
+    if args.type == WI_TYPE_UWI and args.depends_on:
+        print("投入を拒否しました: --depends-onは--type=awiでのみ指定できます", file=sys.stderr)
         sys.exit(1)
     try:
         target_commit = resolve_head_commit(local_worktree) if local_worktree is not None else None

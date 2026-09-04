@@ -109,14 +109,14 @@ def test_collect_new_alerts_filters_keys_per_repository(tmp_path: pathlib.Path) 
     adopted = notes / "adopted"
     adopted.mkdir(parents=True)
     (adopted / "other.md").write_text(
-        "---\ntarget_repo: github.com/other/repo\ntype: feedback\nalert_keys: github-dependabot:21\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/other/repo\ntype: awi\nalert_keys: github-dependabot:21\n---\n\n本文\n",
         encoding="utf-8",
     )
     payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]
     result = alerts.collect_new_alerts("github.com/owner/repo", None, notes, forge="github", dependabot_fn=lambda _r: payload)
     assert [alert.keys for alert in result] == [("github-dependabot:21",)]
     (adopted / "same.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\nalert_keys: github-dependabot:21\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: awi\nalert_keys: github-dependabot:21\n---\n\n本文\n",
         encoding="utf-8",
     )
     assert not alerts.collect_new_alerts("github.com/owner/repo", None, notes, forge="github", dependabot_fn=lambda _r: payload)
@@ -133,14 +133,14 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
     inbox = notes / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "absent.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: awi\n---\n\n本文\n",
         encoding="utf-8",
     )
     assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == set()
 
     (inbox / "absent.md").unlink()
     (inbox / "multiple.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\n"
+        "---\ntarget_repo: github.com/owner/repo\ntype: awi\n"
         "alert_keys: github-dependabot:21, github-dependabot:22\n---\n\n本文\n",
         encoding="utf-8",
     )
@@ -151,7 +151,7 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
     (inbox / "multiple.md").unlink()
     (inbox / "empty.md").write_text(
-        "---\ntarget_repo: github.com/owner/repo\ntype: feedback\nalert_keys: \n---\n\n本文\n",
+        "---\ntarget_repo: github.com/owner/repo\ntype: awi\nalert_keys: \n---\n\n本文\n",
         encoding="utf-8",
     )
     assert alerts.existing_alert_keys(notes, "github.com/owner/repo") == set()

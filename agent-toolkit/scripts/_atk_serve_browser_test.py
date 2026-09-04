@@ -270,7 +270,7 @@ def _write_entries(root: Path) -> None:
     rejected.mkdir()
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
-        "---\ntype: tbd\ntarget_repo: example/repo\nsource: session-review\npriority: high\n"
+        "---\ntype: uwi\ntarget_repo: example/repo\nsource: session-review\npriority: high\n"
         f"z_key: z\na_key: a\n{_LONG_UNKNOWN_FRONTMATTER_KEY}: long\n"
         "metadata:\n  branch: main\n  flags:\n    - one\nquestion_type: choice\nchoices: A, B\n---\n\n"
         f"## 質問\n\n{long_body}\n\n```text\n折り返す長いコード {'x' * 240}\n```\n\n"
@@ -278,27 +278,26 @@ def _write_entries(root: Path) -> None:
         encoding="utf-8",
     )
     (inbox / "feedback.md").write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: alert-monitor\n"
-        "plan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: alert-monitor\nplan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
         encoding="utf-8",
     )
     (inbox / "unknown.md").write_text("種別を判定できない本文\n", encoding="utf-8")
     (inbox / "empty.md").write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: browser\n---\n",
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n",
         encoding="utf-8",
     )
     (inbox / "invalid.md").write_bytes(b"\xff")
     (adopted / "adopted.md").write_text(
-        "---\ntype: feedback\ntarget_repo: adopted/repo\nsource: browser\n---\n\n採用済みの本文\n",
+        "---\ntype: awi\ntarget_repo: adopted/repo\nsource: browser\n---\n\n採用済みの本文\n",
         encoding="utf-8",
     )
     (rejected / "rejected.md").write_text(
-        "---\ntype: feedback\ntarget_repo: rejected/repo\nsource: browser\n---\n\n不採用の本文\n",
+        "---\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n不採用の本文\n",
         encoding="utf-8",
     )
     for index in range(6):
         (rejected / f"many-terminal-{index}.md").write_text(
-            "---\ntype: feedback\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終端検索\n",
+            "---\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終端検索\n",
             encoding="utf-8",
         )
 
@@ -376,7 +375,7 @@ async def _browser_harness_fixture(
 
 
 async def _open_question(page: playwright.async_api.Page) -> playwright.async_api.Locator:
-    row = page.locator('#entry-list .entry-select[data-kind="tbd"]')
+    row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
     await row.click()
     await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
     return row
@@ -592,8 +591,8 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert "UTF-8として読み取れません" in await warning.inner_text()
     assert await page.locator('#entry-list .entry-select[data-kind="unknown"]').count() == 1
 
-    feedback_row = page.locator('#entry-list .entry-select[data-kind="feedback"]').filter(has_text="feedback.md")
-    assert await feedback_row.locator(".entry-kind").text_content() == "feedback"
+    feedback_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="feedback.md")
+    assert await feedback_row.locator(".entry-kind").text_content() == "awi"
     assert await feedback_row.locator(".plan-badge").text_content() == "plan"
     assert await feedback_row.locator(".state-badge").text_content() == "inbox"
     assert await feedback_row.locator(".filename-cell").text_content() == "feedback.md"
@@ -641,19 +640,19 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.get_by_role("dialog", name="詳細").is_visible()
     await page.keyboard.press("Escape")
 
-    await page.locator("#kind-filter").select_option("feedback")
+    await page.locator("#kind-filter").select_option("awi")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_be_disabled()
     assert await page.locator("#answer-filter").input_value() == "all"
     assert await page.locator("#source-filter option").all_text_contents() == ["すべて", "human", "agent"]
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=agent&page=1")
+        lambda response: response.url.endswith("/api/entries?type=awi&status=active&answered=all&source_kind=agent&page=1")
     ):
         await page.locator("#source-filter").select_option("agent")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     await playwright.async_api.expect(feedback_row).to_be_visible()
     await playwright.async_api.expect(empty_row).to_be_visible()
     async with page.expect_response(
-        lambda response: response.url.endswith("/api/entries?type=feedback&status=active&answered=all&source_kind=human&page=1")
+        lambda response: response.url.endswith("/api/entries?type=awi&status=active&answered=all&source_kind=human&page=1")
     ):
         await page.locator("#source-filter").select_option("human")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
@@ -689,7 +688,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("1件を表示")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
     (harness.root / "inbox" / "sse.md").write_text(
-        "---\ntype: feedback\ntarget_repo: sse/repo\nsource: browser\n---\n\n編集対象の外部追加\n",
+        "---\ntype: awi\ntarget_repo: sse/repo\nsource: browser\n---\n\n編集対象の外部追加\n",
         encoding="utf-8",
     )
     harness.current_state.publish()
@@ -790,14 +789,14 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("tbd / inbox")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
     await detail.get_by_role("button", name="回答を変更", exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
 
     await page.locator("#state-filter").select_option("all")
     await page.locator('.entry-select[data-key="adopted/adopted.md"]').click()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / adopted")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#readonly-notice")).to_have_text("この項目は編集と回答の対象外です。")
     await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
@@ -813,11 +812,11 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
     hold = harness.root / "hold"
     hold.mkdir()
     (hold / "held-feedback.md").write_text(
-        "---\ntype: feedback\ntarget_repo: held/repo\nsource: session-review\n---\n\n保留中の本文\n",
+        "---\ntype: awi\ntarget_repo: held/repo\nsource: session-review\n---\n\n保留中の本文\n",
         encoding="utf-8",
     )
     (hold / "held-question.md").write_text(
-        "---\ntype: tbd\ntarget_repo: held/repo\nquestion_type: free-form\n---\n\n"
+        "---\ntype: uwi\ntarget_repo: held/repo\nquestion_type: free-form\n---\n\n"
         "## 質問\n\n保留中の質問\n\n## 回答\n\n"
         "<!-- ユーザーはこの行以降に回答を追記する -->\n",
         encoding="utf-8",
@@ -859,7 +858,7 @@ class TestNotification {
 Object.defineProperty(window, 'Notification', {configurable: true, value: TestNotification});
 """
     )
-    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=tbd&status=all&answered=all")):
+    async with page.expect_response(lambda response: response.url.endswith("/api/entries?type=uwi&status=all&answered=all")):
         await page.goto(harness.base_url + "/")
     assert await page.evaluate("window.__notificationCalls.length") == 0
     notification_button = page.get_by_role("button", name="通知を有効化")
@@ -868,13 +867,13 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
 
     async def publish_and_wait() -> None:
         async with page.expect_response(
-            lambda response: response.url.endswith("/api/entries?type=tbd&status=all&answered=all")
+            lambda response: response.url.endswith("/api/entries?type=uwi&status=all&answered=all")
         ):
             harness.current_state.publish()
 
     marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
     new_path = harness.root / "inbox" / "new-question.md"
-    new_unanswered = f"---\ntype: tbd\ntarget_repo: new/repo\n---\n\n## 質問\n\n新規\n\n## 回答\n\n{marker}\n"
+    new_unanswered = f"---\ntype: uwi\ntarget_repo: new/repo\n---\n\n## 質問\n\n新規\n\n## 回答\n\n{marker}\n"
     new_path.write_text(new_unanswered, encoding="utf-8")
     await publish_and_wait()
     await page.wait_for_function("window.__notificationCalls.length === 1")
@@ -912,7 +911,7 @@ async def test_pending_edit_and_closed_delete_route_results(browser_harness: _Br
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
 
-    feedback_row = page.locator('#entry-list .entry-select[data-kind="feedback"]').filter(has_text="feedback.md")
+    feedback_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="feedback.md")
     await feedback_row.click()
     detail = page.get_by_role("dialog", name="詳細")
     await detail.get_by_role("button", name="編集", exact=True).click()
@@ -987,13 +986,13 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
     page = harness.page
     feedback_path = harness.root / "inbox" / "feedback.md"
     await page.goto(harness.base_url + "/")
-    feedback_row = page.locator('#entry-list .entry-select[data-kind="feedback"]').filter(has_text="feedback.md")
+    feedback_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="feedback.md")
     await feedback_row.click()
     detail = page.get_by_role("dialog", name="詳細")
     await detail.wait_for(state="visible")
 
     feedback_path.write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: browser\n---\n\n外部更新後の本文\n",
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n外部更新後の本文\n",
         encoding="utf-8",
     )
     harness.current_state.publish()
@@ -1003,7 +1002,7 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
     edit_input = detail.locator("#edit-content")
     await edit_input.fill("利用者の未保存本文")
     feedback_path.write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: browser\n---\n\n編集中の外部更新\n",
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n編集中の外部更新\n",
         encoding="utf-8",
     )
     harness.current_state.publish()
@@ -1030,7 +1029,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
 
     await page.locator("#answer-filter").select_option("no")
-    question_row = page.locator('#entry-list .entry-select[data-kind="tbd"]')
+    question_row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
     await detail.get_by_role("button", name="回答", exact=True).click()
@@ -1041,7 +1040,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await playwright.async_api.expect(page.locator("#empty-clear-button")).to_be_focused()
 
     await page.locator("#empty-clear-button").click()
-    feedback_row = page.locator('#entry-list .entry-select[data-kind="feedback"]').filter(has_text="feedback.md")
+    feedback_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="feedback.md")
     await feedback_row.click()
     detail = page.get_by_role("dialog", name="詳細")
     await detail.get_by_role("button", name="削除").click()
@@ -1065,19 +1064,19 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     inbox_same = harness.root / "inbox" / "same.md"
     processing_same = processing / "same.md"
     moving = harness.root / "inbox" / "moving.md"
-    inbox_same.write_text("---\ntype: feedback\n---\n\n未処理の同名本文\n", encoding="utf-8")
-    processing_same.write_text("---\ntype: feedback\n---\n\n処理中の同名本文\n", encoding="utf-8")
-    moving.write_text("---\ntype: feedback\n---\n\n移動対象\n", encoding="utf-8")
+    inbox_same.write_text("---\ntype: awi\n---\n\n未処理の同名本文\n", encoding="utf-8")
+    processing_same.write_text("---\ntype: awi\n---\n\n処理中の同名本文\n", encoding="utf-8")
+    moving.write_text("---\ntype: awi\n---\n\n移動対象\n", encoding="utf-8")
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
 
     processing_row = page.locator('.entry-select[data-key="processing/same.md"]')
     await processing_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
     harness.current_state.publish()
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
     await playwright.async_api.expect(detail.locator("#detail-content")).to_contain_text("処理中の同名本文")
 
     await detail.get_by_role("button", name="編集", exact=True).click()
@@ -1106,7 +1105,7 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     moving.rename(moved)
     harness.current_state.publish()
     await delete_dialog.wait_for(state="hidden")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("feedback / processing")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / processing")
     await playwright.async_api.expect(detail.locator("#detail-dialog-body")).to_be_focused()
 
     await detail.get_by_role("button", name="削除").click()
@@ -1209,7 +1208,7 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     page = harness.page
     for filename in ("sse-first.md", "response-first.md"):
         (harness.root / "inbox" / filename).write_text(
-            "---\ntype: feedback\n---\n\n削除順序の検証\n",
+            "---\ntype: awi\n---\n\n削除順序の検証\n",
             encoding="utf-8",
         )
     harness.operations.enable_file_mutations()
@@ -1264,7 +1263,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
 
     await page.route("**/api/repos?status=active", delay_first_repo_request)
     await page.locator("#result-status").evaluate("element => { element.textContent = '変更前の通知'; }")
-    await page.locator("#kind-filter").evaluate("element => { element.value = 'feedback'; }")
+    await page.locator("#kind-filter").evaluate("element => { element.value = 'awi'; }")
     # 状態フィルターの変更経路を起動し、対象リポジトリの再取得を伴う一覧の更新を実行する。
     await page.locator("#state-filter").dispatch_event("change")
     await asyncio.wait_for(first_started.wait(), timeout=5)
@@ -1286,10 +1285,10 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
     processing.mkdir(exist_ok=True)
     marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
     tbd_content = (
-        "---\ntype: tbd\ntarget_repo: example/repo\nquestion_type: free-form\n---\n\n"
+        "---\ntype: uwi\ntarget_repo: example/repo\nquestion_type: free-form\n---\n\n"
         f"## 質問\n\n状態を指定しますか？\n\n## 回答\n\n{marker}\n"
     )
-    feedback_content = "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n状態付き削除\n"
+    feedback_content = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n状態付き削除\n"
     for state_name in ("inbox", "processing"):
         (harness.root / state_name / "answer-same.md").write_text(tbd_content, encoding="utf-8")
         (harness.root / state_name / "remove-same.md").write_text(feedback_content, encoding="utf-8")
@@ -1387,14 +1386,14 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         "**/api/entries/inbox/feedback.md",
         "保存",
         "#edit-content",
-        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n保存中の外部更新\n",
+        "---\ntype: awi\ntarget_repo: example/repo\n---\n\n保存中の外部更新\n",
     )
     await exercise(
         "inbox/question.md",
         "**/api/entries/answer",
         "回答を保存",
         "#answer-input",
-        "---\ntype: tbd\ntarget_repo: example/repo\nquestion_type: free-form\n---\n\n"
+        "---\ntype: uwi\ntarget_repo: example/repo\nquestion_type: free-form\n---\n\n"
         "## 質問\n\n回答中の外部更新ですか？\n\n## 回答\n\n"
         "<!-- ユーザーはこの行以降に回答を追記する -->\n",
     )
@@ -1410,7 +1409,7 @@ async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict
     harness.operations.enable_file_mutations()
     failure_path = harness.root / "inbox/dialog-failure.md"
     conflict_path = harness.root / "inbox/delete-conflict.md"
-    original = "---\ntype: feedback\ntarget_repo: example/old\n---\n\n変更前の要約\n"
+    original = "---\ntype: awi\ntarget_repo: example/old\n---\n\n変更前の要約\n"
     failure_path.write_text(original, encoding="utf-8")
     conflict_path.write_text(original, encoding="utf-8")
     await page.goto(harness.base_url + "/")
@@ -1429,7 +1428,7 @@ async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict
 
     await page.route("**/api/entries/inbox/dialog-failure.md", fail_detail)
     failure_path.write_text(
-        "---\ntype: feedback\ntarget_repo: example/new\n---\n\n変更後の要約\n",
+        "---\ntype: awi\ntarget_repo: example/new\n---\n\n変更後の要約\n",
         encoding="utf-8",
     )
     harness.current_state.publish()
@@ -1470,8 +1469,8 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     await playwright.async_api.expect(create_dialog.locator("#create-repo-fields")).to_be_hidden()
     await playwright.async_api.expect(create_dialog.locator("#create-content-label")).to_have_text("show形式テキスト（必須）")
     batch_text = (
-        "# feedback\n## target_repo: batch/repo\n"
-        "### imported.md [inbox]\n---\ntarget_repo: batch/repo\ntype: feedback\n---\n\n一括取り込みの本文\n\n"
+        "# awi\n## target_repo: batch/repo\n"
+        "### imported.md [inbox]\n---\ntarget_repo: batch/repo\ntype: awi\n---\n\n一括取り込みの本文\n\n"
     )
     await create_dialog.locator("#create-content").fill(batch_text)
     async with page.expect_request("**/api/entries/batch") as batch_request_info:
@@ -1482,7 +1481,7 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     await page.get_by_role("status").filter(has_text="1件を取り込みました").wait_for(state="visible")
     await page.locator('.entry-select[data-key="inbox/imported.md"]').wait_for(state="visible")
     assert (harness.root / "inbox" / "imported.md").read_text(encoding="utf-8") == (
-        "---\ntarget_repo: batch/repo\ntype: feedback\n---\n\n一括取り込みの本文\n"
+        "---\ntarget_repo: batch/repo\ntype: awi\n---\n\n一括取り込みの本文\n"
     )
 
     await page.get_by_role("button", name="新規追加").click()
@@ -1527,7 +1526,7 @@ async def test_save_failure_message_stays_at_scrolled_dialog_top(browser_harness
     harness = browser_harness
     path = harness.root / "inbox" / "long-entry.md"
     path.write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\n---\n\n" + "長い本文\n\n" * 120,
+        "---\ntype: awi\ntarget_repo: example/repo\n---\n\n" + "長い本文\n\n" * 120,
         encoding="utf-8",
     )
     page = harness.page
@@ -1595,7 +1594,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     harness = browser_harness
     page = harness.page
     path = harness.root / "inbox" / "feedback.md"
-    original = "---\ntype: feedback\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n"
+    original = "---\ntype: awi\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n"
     path.write_text(original, encoding="utf-8")
     await page.goto(harness.base_url + "/")
     detail = page.get_by_role("dialog", name="詳細")
@@ -1699,7 +1698,7 @@ async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     page = harness.page
     path = harness.root / "inbox" / "feedback.md"
     path.write_text(
-        "---\ntype: feedback\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n",
+        "---\ntype: awi\ntarget_repo: example/repo\nsource: session-review\n---\n\n通常本文\n",
         encoding="utf-8",
     )
     await page.goto(harness.base_url + "/")

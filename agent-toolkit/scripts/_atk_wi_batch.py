@@ -37,6 +37,7 @@ from _atk_wi_common import (
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
     WI_STATES,
+    WI_TYPE_AWI,
     WI_TYPES,
     WebInputError,
     _collect_message_via_editor,
@@ -54,7 +55,7 @@ from _atk_wi_formatters import _shorten_home
 _ENTRY_HEADING_RE = re.compile(r"### (?P<name>\S+\.md)(?: \[[^\]]*\])?")
 """エントリ境界となる`show`の見出し行。角括弧内の状態ラベルは無視する。"""
 
-_TYPE_HEADING_RE = re.compile(r"# (?:feedback|tbd)")
+_TYPE_HEADING_RE = re.compile("# (?:" + "|".join(WI_TYPES) + ")")
 _REPO_HEADING_RE = re.compile(r"## target_repo: .*")
 _DEPENDS_ON_HEADING_RE = re.compile(r"depends_on:(?P<inline>.*)")
 _DEPENDS_ON_ELEMENT_RE = re.compile(r"(?P<indent>[ \t]*)- (?P<value>.*)")
@@ -108,12 +109,12 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
     frontmatter, body = parsed
     entry_type = frontmatter.get("type")
     if entry_type not in WI_TYPES:
-        raise WebInputError(f"frontmatterのtypeがfeedback・tbdのいずれかではありません: {name}")
+        raise WebInputError(f"frontmatterのtypeがawi・uwiのいずれかではありません: {name}")
     target_repo = frontmatter.get("target_repo")
     if not isinstance(target_repo, str) or not target_repo.strip():
         raise WebInputError(f"frontmatterのtarget_repoを非空の文字列で指定してください: {name}")
-    if entry_type == "feedback" and _body_is_effectively_empty(body):
-        raise WebInputError(f"フィードバック本文が実質空です: {name}")
+    if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
+        raise WebInputError(f"AWI本文が実質空です: {name}")
     return BatchEntry(original_name=name, raw_text=raw_text, frontmatter=frontmatter, body=body)
 
 
@@ -121,7 +122,7 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
     """`atk wi show --all`の出力形式のテキストからエントリ列を取り出す。
 
     エントリ境界は`### <ファイル名>[ [状態]]`行のうち直後の行がfrontmatter開始区切りのものとする。
-    先頭境界より前には空行と`show`の構造見出し（`# feedback`・`# tbd`・`## target_repo: ...`）だけを許し、
+    先頭境界より前には空行と`show`の構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）だけを許し、
     それ以外を含む入力と境界が1件も無い入力は`WebInputError`で拒否する。
     各エントリの生テキストは境界の次行から次境界の前までとし、末尾の構造見出しと空行を除去してから
     末尾改行1つへ正規化する。frontmatterと本文はこの生テキストのまま保持する。

@@ -64,10 +64,11 @@ import _atk_wi_batch as _batch  # noqa: E402
 import _atk_wi_common as _common  # noqa: E402
 import _atk_wi_grep as _grep  # noqa: E402
 import _atk_wi_list as _list  # noqa: E402
+import _atk_wi_migrate as _migrate  # noqa: E402
 import _atk_wi_mutations as _mutations  # noqa: E402
 import _atk_wi_process_loop as _process_loop  # noqa: E402
 import _atk_wi_show as _show  # noqa: E402
-import _atk_wi_uwi as _tbd  # noqa: E402
+import _atk_wi_uwi as _uwi  # noqa: E402
 import _atk_worktree_stash as _worktree_stash  # noqa: E402
 import _managed_temp  # noqa: E402
 import _review_table  # noqa: E402
@@ -82,7 +83,7 @@ _removable_filename_completer = _common.make_filename_completer((_common.WI_STAT
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
-_tbd_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_TBD)
+_tbd_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_UWI)
 
 _MQ_SYNC_MUTATIONS = frozenset(
     (
@@ -257,7 +258,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         metavar="MESSAGE",
         nargs="*",
         help=(
-            "投入する本文（省略時は$EDITORで編集する）。--type=feedback（既定）・tbdで種別を切り替える。"
+            "投入する本文（省略時は$EDITORで編集する）。--type=awi（既定）・uwiで種別を切り替える。"
             "対象リポジトリは省略時にカレントworktree、ローカルパス指定時に指定worktree、"
             "正規化リモートURL指定時にローカルHEADを持たないリポジトリ識別子として解決する。"
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
@@ -294,35 +295,35 @@ def _add_wi_add_parser(sub: Any) -> None:
     )
     add.add_argument(
         "--type",
-        choices=("feedback", "tbd"),
+        choices=_common.WI_TYPES,
         default=None,
-        help="投入する種別（既定: feedback）。tbdを指定すると確認事項として投入する。",
+        help="投入する種別（既定: awi）。uwiを指定すると確認事項として投入する。",
     )
     add.add_argument(
         "--scope",
         metavar="NAME",
         default=None,
-        help="TBDの適用範囲を表す識別子。`--type=tbd`でのみ指定できる。",
+        help="UWIの適用範囲を表す識別子。`--type=uwi`でのみ指定できる。",
     )
     add.add_argument(
         "--question-type",
         choices=("free-form", "yes-no", "choice"),
         default=None,
-        help="TBDの回答形式（既定: free-form）。`--type=tbd`でのみ指定できる。",
+        help="UWIの回答形式（既定: free-form）。`--type=uwi`でのみ指定できる。",
     )
     add.add_argument(
         "--choices",
         metavar="A,B,C",
         default=None,
-        help="TBDの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
+        help="UWIの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
     )
     add.add_argument(
         "--plan-file",
         metavar="PATH",
         default=None,
         help=(
-            "計画ファイルの絶対パス。指定するとフィードバックを計画実装型として確定記録する。"
-            "--type=feedback（既定）でのみ指定でき、指定したパスは実在を検証する。"
+            "計画ファイルの絶対パス。指定するとAWIを計画実装型として確定記録する。"
+            "--type=awi（既定）でのみ指定でき、指定したパスは実在を検証する。"
             "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
             "計画ファイルのベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない。"
         ),
@@ -332,7 +333,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         metavar="FILENAME",
         action="append",
         default=None,
-        help="フィードバックが処理完了を待つキュー項目。--type=feedbackでのみ指定でき、複数回指定できる。",
+        help="AWIが処理完了を待つキュー項目。--type=awiでのみ指定でき、複数回指定できる。",
     )
     add.add_argument(
         "--source",
@@ -355,7 +356,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
     list_ = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk wi list"])
     _add_target_repo_arg(list_)
-    list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    list_.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
         choices=("all", "active", "processable", *_common.WI_STATES),
@@ -404,7 +405,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
     _add_target_repo_arg(show)
-    show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    show.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
         choices=("all", "active", "processable", *_common.WI_STATES),
@@ -672,7 +673,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk wi grep"])
     grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
-    grep.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    grep.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     grep.add_argument(
         "--status",
         choices=("all", "active", "processable", *_common.WI_STATES),
@@ -697,6 +698,13 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_target_repo_arg(answer)
 
     _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
+    migrate = _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk wi migrate"])
+    migrate.add_argument(
+        "--private-notes",
+        default=None,
+        help="変換対象のprivate-notesの絶対パス（既定: atk config get private_notesの値）。",
+    )
+    migrate.add_argument("--skip-push", action="store_true", help="commitまでを行い、pushを行わない。")
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
@@ -849,10 +857,10 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:
-    """`mq add`の`--batch`併用制約を検証し、種別の既定値を確定する。
+    """`atk wi add`の`--batch`併用制約を検証し、種別の既定値を確定する。
 
     `--type`の既定値を`None`とすることで、`--batch`との併用判定で明示指定
-    （`--type=feedback`を含む）を区別する。検証後に通常add経路の既定値`feedback`へ正規化する。
+    （`--type=awi`を含む）を区別する。検証後に通常add経路の既定値`awi`へ正規化する。
     """
     if args.batch:
         conflicting = [
@@ -873,7 +881,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
         if conflicting:
             args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
     if args.type is None:
-        args.type = "feedback"
+        args.type = _common.WI_TYPE_AWI
 
 
 def _sync_exit_code(exit_code: int, private_notes: pathlib.Path, *, should_check: bool) -> int:
@@ -932,8 +940,8 @@ def main(
     args.repo_path_override = repo_path_override
     if args.command == "wi" and args.wi_subcommand == "add":
         _validate_add_args(args)
-    if args.command == "wi" and args.wi_subcommand == "add" and args.type != "tbd":
-        tbd_only = [
+    if args.command == "wi" and args.wi_subcommand == "add" and args.type != _common.WI_TYPE_UWI:
+        uwi_only = [
             name
             for name, value in (
                 ("--scope", args.scope),
@@ -942,14 +950,14 @@ def main(
             )
             if value is not None
         ]
-        if tbd_only:
-            args.subparser.error(f"{'・'.join(tbd_only)}は--type=tbdでのみ指定できます。")
-    if args.command == "wi" and args.wi_subcommand == "add" and args.type == "tbd" and args.question_type is None:
+        if uwi_only:
+            args.subparser.error(f"{'・'.join(uwi_only)}は--type=uwiでのみ指定できます。")
+    if args.command == "wi" and args.wi_subcommand == "add" and args.type == _common.WI_TYPE_UWI and args.question_type is None:
         args.question_type = "free-form"
     if (
         args.command == "wi"
         and args.wi_subcommand == "add"
-        and args.type == "tbd"
+        and args.type == _common.WI_TYPE_UWI
         and args.question_type == "choice"
         and not args.choices
     ):
@@ -1030,9 +1038,10 @@ def main(
         "convert-to-plan": lambda: _mutations._cmd_convert_to_plan(args, private_notes),
         "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
-        "answer": lambda: _tbd._cmd_answer(args, private_notes),
+        "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
+        "migrate": lambda: _migrate.cmd_migrate(args, private_notes),
     }
     try:
         exit_code = dispatch[sub]() or 0

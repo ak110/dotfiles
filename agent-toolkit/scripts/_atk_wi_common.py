@@ -38,16 +38,7 @@ import _git_command
 import _git_remote
 import filelock
 import platformdirs
-from _atk_wi_formatters import (
-    _display_width,
-    _parse_target_repo,
-    _target_repo_budget,
-    _tbd_body_summary,
-    _truncate_target_repo,
-)
-from _atk_wi_frontmatter import parse_frontmatter
-from _atk_wi_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
-from _atk_wi_states import (
+from _atk_wi_constants import (
     TRANSITION_EXPLICIT_STATES,
     WI_ACTIVE_STATES,
     WI_PROCESSABLE_STATES,
@@ -57,8 +48,19 @@ from _atk_wi_states import (
     WI_STATE_PROCESSING,
     WI_STATE_REJECTED,
     WI_STATES,
+    WI_TYPE_AWI,
+    WI_TYPE_UWI,
+    WI_TYPES,
 )
-from _uwi_scan import _UWI_TYPE as WI_TYPE_TBD
+from _atk_wi_formatters import (
+    _display_width,
+    _parse_target_repo,
+    _target_repo_budget,
+    _tbd_body_summary,
+    _truncate_target_repo,
+)
+from _atk_wi_frontmatter import parse_frontmatter
+from _atk_wi_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
 from _uwi_scan import is_uwi_answered as _is_uwi_answered
 
 __all__ = [
@@ -71,14 +73,15 @@ __all__ = [
     "WI_STATE_INBOX",
     "WI_STATE_PROCESSING",
     "WI_STATE_REJECTED",
+    "WI_TYPES",
+    "WI_TYPE_AWI",
+    "WI_TYPE_UWI",
     "QueueEntry",
     "ReadinessResult",
     "_count_pending_entries",
     "calculate_readiness",
 ]
 
-WI_TYPE_FEEDBACK = "feedback"
-WI_TYPES = (WI_TYPE_FEEDBACK, WI_TYPE_TBD)
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 """コーディングエージェントの実行環境を示す環境変数。
@@ -700,7 +703,7 @@ def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object])
     entry_type = value if isinstance(value, str) and value else None
     if entry_type not in WI_TYPES:
         print(
-            f"frontmatterのtypeが不正または欠落しています（feedback・tbdのいずれかが必要）: {path}",
+            f"frontmatterのtypeが不正または欠落しています（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -735,12 +738,12 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
     """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
         (path, entry_repo, text, state)
-        for path, entry_repo, text, state, _ in _iter_entries(private_notes, WI_PROCESSABLE_STATES, target_repo, WI_TYPE_TBD)
+        for path, entry_repo, text, state, _ in _iter_entries(private_notes, WI_PROCESSABLE_STATES, target_repo, WI_TYPE_UWI)
         if not _is_uwi_answered(text)
     ]
     if not entries:
         return
-    print("# tbd", file=sys.stderr)
+    print(f"# {WI_TYPE_UWI}", file=sys.stderr)
     for path, entry_repo, text, state in entries:
         label = f"{state}/unanswered"
         repo_budget = _target_repo_budget(path.name, label)

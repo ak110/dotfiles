@@ -44,7 +44,7 @@ def _target_repo_budget(path_name: str, bracket_label: str) -> int:
     端末幅から`path_name`・角括弧ラベル部分・要約本文用の最小予約幅
     （`_MIN_BODY_RESERVED_WIDTH`）を差し引いた残りを上限候補とし、
     `_TARGET_REPO_MIN_WIDTH`以上`_TARGET_REPO_MAX_WIDTH`以下へクランプする。
-    `atk wi list`・`atk wi list --type=tbd`・対話シェル起動時の未回答TBD通知が共通で使う。
+    `atk wi list`・`atk wi list --type=uwi`・対話シェル起動時の未回答UWI通知が共通で使う。
     """
     terminal_columns = shutil.get_terminal_size().columns
     reserved = _display_width(f"{path_name}: ") + _display_width(f" [{bracket_label}] ") + _MIN_BODY_RESERVED_WIDTH

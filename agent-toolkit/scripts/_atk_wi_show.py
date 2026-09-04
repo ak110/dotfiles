@@ -12,7 +12,8 @@ from _atk_wi_common import (
     WI_ACTIVE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATES,
-    WI_TYPE_TBD,
+    WI_TYPE_UWI,
+    WI_TYPES,
     _canonical_repo,
     _dedup_positional_filenames,
     _is_uwi_answered,
@@ -31,7 +32,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
 
     次の全条件を満たす場合に`True`を返す:
     - `args.filenames`が空かつ`args.all`が`True`（ファイル指定は全集合対象外）
-    - `args.type`が`"all"`または`"tbd"`
+    - `args.type`が`"all"`または`"uwi"`
     - `args.status`が`"all"`または`"active"`
     - `args.answered`が`"all"`または`"no"`
     - `args.source`が`None`
@@ -39,7 +40,7 @@ def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
     return (
         not args.filenames
         and args.all
-        and args.type in ("all", "tbd")
+        and args.type in ("all", WI_TYPE_UWI)
         and args.status in ("all", "active")
         and args.answered in ("all", "no")
         and args.source is None
@@ -68,7 +69,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
     `FILENAME`を2件以上指定した場合の区切りは`--all`と同じく各項目の後の空行1行とし、
     1件だけ指定した場合は従来どおり空行を付けない。
-    `--type`指定時は出力対象種別（feedback・tbd・all）を限定する（既定: all）。
+    `--type`指定時は出力対象種別（awi・uwi・all）を限定する（既定: all）。
     `FILENAME...`指定時は5状態フォルダすべてを探索し、指定順に表示する。
     `--type`・`--target-repo`・`--source`の
     値で対象を限定する。`--status`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
@@ -132,7 +133,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         for path, target_repo, text, state, kind in selected_by_name:
             answered = _is_uwi_answered(text)
             label = f" [{state}]"
-            if kind == WI_TYPE_TBD:
+            if kind == WI_TYPE_UWI:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
             print(f"## target_repo: {target_repo}")
             print(f"### {path.name}{label}")
@@ -151,15 +152,15 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         else (args.status,)
     )
     selected = list(_iter_entries(private_notes, states, filter_repo, args.type))
-    for header_type in ("feedback", "tbd"):
+    for header_type in WI_TYPES:
         entries: dict[str, list[tuple[str, str, str]]] = {}
         for path, target_repo, text, state, entry_type in selected:
             if entry_type != header_type:
                 continue
             answered = _is_uwi_answered(text)
-            if args.answered == "yes" and (entry_type != WI_TYPE_TBD or not answered):
+            if args.answered == "yes" and (entry_type != WI_TYPE_UWI or not answered):
                 continue
-            if args.answered == "no" and (entry_type != WI_TYPE_TBD or answered):
+            if args.answered == "no" and (entry_type != WI_TYPE_UWI or answered):
                 continue
             if args.source is not None and not _source_matches(_parse_source(text), args.source):
                 continue
@@ -170,7 +171,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 print(f"## target_repo: {repo}")
                 for name, text, state in items:
                     label = f" [{state}]"
-                    if header_type == WI_TYPE_TBD:
+                    if header_type == WI_TYPE_UWI:
                         label = f" [{state}/{'answered' if _is_uwi_answered(text) else 'unanswered'}]"
                     print(f"### {name}{label}")
                     print(text)

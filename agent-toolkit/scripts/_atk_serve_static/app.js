@@ -4,7 +4,7 @@
 (() => {
 const BASE_PATH=__BASE_PATH_JS__;
 // エラー表示は既存のError契約に合わせ、error.messageを直接参照する。
-const KIND_LABELS = {feedback: 'フィードバック', tbd: 'TBD', unknown: '種別不明'};
+const KIND_LABELS = {awi: 'AWI', uwi: 'UWI', unknown: '種別不明'};
 const STATE_LABELS = {
   inbox: '未処理', processing: '処理中', hold: '保留',
   adopted: '採用済み', rejected: '不採用'
@@ -246,8 +246,8 @@ function renderEntry(entry) {
   button.className = 'entry-select';
   button.dataset.key = entryKey(entry);
   button.dataset.kind = entry.kind || 'unknown';
-  const unanswered = entry.kind === 'tbd' && entry.answered === false;
-  button.dataset.unansweredTbd = String(unanswered);
+  const unanswered = entry.kind === 'uwi' && entry.answered === false;
+  button.dataset.unansweredUwi = String(unanswered);
   button.setAttribute('aria-current', String(entryKey(currentEntry) === entryKey(entry)));
 
   appendTextCell(button, 'ファイル名', 'filename-cell', entry.filename);
@@ -335,7 +335,7 @@ function renderWarnings(warnings) {
 function renderList(warnings = [], announce = false, searchFallback = false) {
   const list = byId('entry-list');
   list.replaceChildren(...entries.map(renderEntry));
-  const unanswered = entries.filter(entry => entry.kind === 'tbd' && entry.answered === false).length;
+  const unanswered = entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
   byId('entry-count').textContent = `${entries.length}件（未回答TBD ${unanswered}件）`;
   renderPagination();
   setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
@@ -478,7 +478,7 @@ function syncNotificationButton() {
 }
 
 async function refreshKnownTbds({notify = false} = {}) {
-  const payload = await api('/api/entries?type=tbd&status=all&answered=all');
+  const payload = await api('/api/entries?type=uwi&status=all&answered=all');
   const allTbds = Array.isArray(payload.entries) ? payload.entries : [];
   const newUnanswered = knownTbdBaselineReady && notify ? allTbds.filter(entry =>
     !knownTbdFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
@@ -539,9 +539,9 @@ async function loadTargetRepos() {
 }
 
 function syncFilterDependencies() {
-  const feedbackOnly = byId('kind-filter').value === 'feedback';
-  if (feedbackOnly) byId('answer-filter').value = 'all';
-  byId('answer-filter').disabled = feedbackOnly;
+  const awiOnly = byId('kind-filter').value === 'awi';
+  if (awiOnly) byId('answer-filter').value = 'all';
+  byId('answer-filter').disabled = awiOnly;
 }
 
 async function clearFilters({load = true} = {}) {
@@ -642,7 +642,7 @@ function setDetailMode(mode) {
   const answering = mode === 'answer';
   const commenting = mode === 'user-comment';
   const mutating = editing || answering || commenting;
-  const unansweredTbd = currentEntry?.kind === 'tbd' && currentEntry.answered === false;
+  const unansweredUwi = currentEntry?.kind === 'uwi' && currentEntry.answered === false;
   const processable = currentEntry && PROCESSABLE_STATES.has(currentEntry.state);
   const mutable = currentEntry && MUTABLE_STATES.has(currentEntry.state);
   const deletable = currentEntry && DELETABLE_STATES.has(currentEntry.state);
@@ -654,11 +654,11 @@ function setDetailMode(mode) {
   byId('decision-panel').hidden = mutating || !mutable;
   byId('edit-button').hidden = mutating || !mutable;
   byId('answer-button').hidden = mutating || !currentEntry ||
-    currentEntry.kind !== 'tbd' || !mutable;
+    currentEntry.kind !== 'uwi' || !mutable;
   byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
   byId('answer-button').textContent = currentEntry?.answered === true ? '回答を変更' : '回答';
   byId('adopt-button').hidden = mutating || !mutable;
-  byId('reject-button').hidden = mutating || !mutable || currentEntry.kind !== 'feedback';
+  byId('reject-button').hidden = mutating || !mutable || currentEntry.kind !== 'awi';
   byId('hold-button').hidden = mutating || !processable;
   byId('unhold-button').hidden = mutating || !held;
   byId('return-to-inbox-button').hidden = mutating || !rejected;
@@ -667,7 +667,7 @@ function setDetailMode(mode) {
   byId('save-answer-button').hidden = !answering;
   byId('save-user-comment-button').hidden = !commenting;
   syncDetailMutationAvailability();
-  byId('edit-button').className = unansweredTbd ? 'button-secondary' : 'button-primary';
+  byId('edit-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
   if (!editing) setFieldError(byId('edit-content'), byId('edit-content-error'), '');
   if (!answering) setFieldError(byId('answer-input'), byId('answer-input-error'), '');
   if (!commenting) setFieldError(byId('user-comment-input'), byId('user-comment-input-error'), '');
@@ -1031,7 +1031,7 @@ async function transitionDetail(action) {
   if (!currentEntry || detailRefreshRequired) return;
   const allowed = action === 'unhold' ? currentEntry.state === 'hold' :
     action === 'return-to-inbox' ? currentEntry.state === 'rejected' : MUTABLE_STATES.has(currentEntry.state);
-  if (!allowed || (action === 'reject' && currentEntry.kind !== 'feedback')) return;
+  if (!allowed || (action === 'reject' && currentEntry.kind !== 'awi')) return;
   const key = entryKey(currentEntry);
   const payload = {filenames: [currentEntry.filename]};
   if (action === 'return-to-inbox') payload.state = 'rejected';
@@ -1054,7 +1054,7 @@ async function transitionDetail(action) {
 }
 
 function resetCreateForm() {
-  byId('create-kind').value = 'feedback';
+  byId('create-kind').value = 'awi';
   byId('create-content').value = '';
   byId('create-target').value = '';
   byId('create-source').value = '';
@@ -1070,9 +1070,9 @@ function resetCreateForm() {
 function updateCreateFields() {
   const kind = byId('create-kind').value;
   const isBatch = kind === 'batch';
-  const isTbd = kind === 'tbd';
-  const isChoice = isTbd && byId('create-question-type').value === 'choice';
-  byId('tbd-fields').hidden = !isTbd;
+  const isUwi = kind === 'uwi';
+  const isChoice = isUwi && byId('create-question-type').value === 'choice';
+  byId('uwi-fields').hidden = !isUwi;
   byId('choice-fields').hidden = !isChoice;
   // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄と投入元欄を隠す。
   byId('create-repo-fields').hidden = isBatch;
@@ -1109,7 +1109,7 @@ async function createEntry(event) {
     byId('create-content'), byId('create-content-error'),
     message ? '' : (isBatch ? 'show形式テキストを入力してください。' : '本文を入力してください。')
   );
-  const choiceInvalid = type === 'tbd' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
+  const choiceInvalid = type === 'uwi' && byId('create-question-type').value === 'choice' && choiceValues.length < 2;
   setFieldError(byId('create-choices'), byId('create-choices-error'), choiceInvalid ? '選択肢を2件以上入力してください。' : '');
   if (firstInvalid([byId('create-content'), byId('create-choices')])) return;
   const payload = isBatch ? {text: rawContent} : {type, messages: [message]};
@@ -1117,7 +1117,7 @@ async function createEntry(event) {
     if (targetRepo) payload.target_repo = targetRepo;
     const source = byId('create-source').value.trim();
     if (source) payload.source = source;
-    if (type === 'tbd') {
+    if (type === 'uwi') {
       const scope = byId('create-scope').value.trim();
       if (scope) payload.scope = scope;
       payload.question_type = byId('create-question-type').value;

@@ -10,7 +10,7 @@ import pytest
 _REPO = "github.com/ak110/dotfiles"
 
 
-def _entry(*, entry_type: str = "tbd", target_repo: str = _REPO, answer: str = "") -> str:
+def _entry(*, entry_type: str = "uwi", target_repo: str = _REPO, answer: str = "") -> str:
     """テスト用エントリ本文を返す。"""
     return (
         "---\n"
@@ -50,7 +50,7 @@ class TestScanActiveUwis:
             (tmp_path / state).mkdir()
         (tmp_path / "inbox" / "b.md").write_text(_entry(answer="回答\n"), encoding="utf-8")
         (tmp_path / "inbox" / "a.md").write_text(_entry(), encoding="utf-8")
-        (tmp_path / "inbox" / "feedback.md").write_text(_entry(entry_type="feedback"), encoding="utf-8")
+        (tmp_path / "inbox" / "feedback.md").write_text(_entry(entry_type="awi"), encoding="utf-8")
         (tmp_path / "processing" / "c.md").write_text(_entry(), encoding="utf-8")
         (tmp_path / "processing" / "other.md").write_text(_entry(target_repo="example.com/x/y"), encoding="utf-8")
         (tmp_path / "adopted" / "done.md").write_text(_entry(), encoding="utf-8")
@@ -142,8 +142,8 @@ class TestScanActiveUwis:
     @pytest.mark.parametrize(
         "frontmatter",
         [
-            f"target_repo: \"{_REPO}\" # repository\ntype: 'tbd' # entry kind",
-            f"target_repo: {_REPO}\ntype: >-\n  tbd",
+            f"target_repo: \"{_REPO}\" # repository\ntype: 'uwi' # entry kind",
+            f"target_repo: {_REPO}\ntype: >-\n  uwi",
         ],
     )
     def test_uses_standard_yaml_forms(self, tmp_path: pathlib.Path, frontmatter: str) -> None:
@@ -155,7 +155,7 @@ class TestScanActiveUwis:
             [_uwi_scan.ActiveUwi("entry.md", True)], True
         )
 
-    @pytest.mark.parametrize("text", ["type: tbd\n", "---\ntype: tbd\n", "---\n: invalid\n---\n"])
+    @pytest.mark.parametrize("text", ["type: uwi\n", "---\ntype: uwi\n", "---\n: invalid\n---\n"])
     def test_marks_invalid_frontmatter_incomplete(self, tmp_path: pathlib.Path, text: str) -> None:
         inbox = tmp_path / "inbox"
         inbox.mkdir()
@@ -203,7 +203,7 @@ class TestPrivateNotesRoot:
         entry_text = (
             "---\n"
             "target_repo: github.com/ak110/dotfiles\n"
-            "type: tbd\n"
+            "type: uwi\n"
             "depends_on:\n"
             "  - predecessor.md\n"
             "choices: (a) 前半の選択肢,(b)\n"
