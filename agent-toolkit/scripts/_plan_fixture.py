@@ -132,21 +132,19 @@ def _permanence_sections(*, refactoring: str = REFACTORING_TABLE, legacy_similar
 
 # --- 新書式（人間向けの計画ファイル（メイン）・計画ファイル（詳細）） ---
 
-FEEDBACK_FILES: tuple[tuple[str, str], ...] = (
+WI_FILES: tuple[tuple[str, str], ...] = (
     ("20260817-223603-001.md", "入力の境界を追加確認する"),
     ("20260817-223603-002.md", "保留中の要求を確認する"),
 )
-"""関連フィードバックへ記載する正本ファイル名と1行要約。"""
+"""`関連WI`へ記載する正本ファイル名と1行要約。"""
 
 USER_ACTION_SUBJECT: str = "公開契約に必要な変更を実装する"
 USER_ACTION_ROW: str = f"| {USER_ACTION_SUBJECT} | ユーザー指示 | 採用 | - |"
 PROPOSAL_ACTION_ROW: str = (
     "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | 当初目的と公開契約への影響が無いため。 |"
 )
-FEEDBACK_ACTION_REASON: str = "対象外の入力経路は変更しない。要求範囲に含まれないため。"
-FEEDBACK_ACTION_ROW: str = (
-    f"| 入力の境界を追加確認する | 人間由来のフィードバック ({FEEDBACK_FILES[0][0]}) | 部分採用 | {FEEDBACK_ACTION_REASON} |"
-)
+WI_ACTION_REASON: str = "対象外の入力経路は変更しない。要求範囲に含まれないため。"
+WI_ACTION_ROW: str = f"| 入力の境界を追加確認する | 人間由来のWI ({WI_FILES[0][0]}) | 部分採用 | {WI_ACTION_REASON} |"
 JUDGMENT_ROW: str = "| 類似するが対象外の記述は変更しない | 影響なし。 | 対象外。 | 維持する。 | 実測。 |"
 
 USER_EVENT_HEADING: str = f"### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}1"
@@ -162,21 +160,29 @@ HUMAN_UNIT_ROWS: tuple[str, ...] = (
 HUMAN_UNITS_TABLE: str = "\n".join([_header_row(_plan_format.PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER), *HUMAN_UNIT_ROWS])
 
 
-def human_action_table(*, feedback: bool) -> str:
+def human_action_table(*, wi: bool) -> str:
     """新書式の実施内容4列表を組み立てる。"""
     rows = [USER_ACTION_ROW, PROPOSAL_ACTION_ROW]
-    if feedback:
-        rows.append(FEEDBACK_ACTION_ROW)
+    if wi:
+        rows.append(WI_ACTION_ROW)
     return "\n".join([_header_row(_plan_format.PLAN_HUMAN_ACTION_TABLE_HEADER), *rows])
 
 
-def _related_feedback_block(entries: tuple[tuple[str, str], ...]) -> str:
-    """計画メタ情報の関連フィードバック項目を組み立てる。"""
-    field = _plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD
+def _related_wi_block(entries: tuple[tuple[str, str], ...]) -> str:
+    """計画メタ情報の`関連WI`項目を組み立てる。"""
+    field = _plan_format.PLAN_METADATA_RELATED_WI_FIELD
     if not entries:
         return f"- {field}: なし"
     children = "\n".join(f"  - {filename}: {summary}" for filename, summary in entries)
     return f"- {field}:\n{children}"
+
+
+def legacy_wi_names(content: str) -> str:
+    """新書式の本文を、改名前の`関連WI`項目名と`由来`欄の区分へ差し戻す。"""
+    return content.replace(
+        f"- {_plan_format.PLAN_METADATA_RELATED_WI_FIELD}:",
+        f"- {_plan_format.PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD}:",
+    ).replace(_plan_format.PLAN_HUMAN_WI_ORIGIN, _plan_format.PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN)
 
 
 def human_main(
@@ -184,7 +190,7 @@ def human_main(
     repo: str | pathlib.Path = REPOSITORY,
     base: str = "作成時点の参照値",
     work_type: str = "通常変更",
-    related_feedback: tuple[tuple[str, str], ...] = (),
+    related_wi: tuple[tuple[str, str], ...] = (),
 ) -> str:
     """新書式の人間向け計画ファイル（メイン）の正常系本文を返す。"""
     judgment_table = "\n".join([_header_row(_plan_format.PLAN_HUMAN_JUDGMENT_TABLE_HEADER), JUDGMENT_ROW])
@@ -198,13 +204,13 @@ def human_main(
 
 - 起動経路: `agent-toolkit:plan-mode`
 - 対象リポジトリ: `{repo}`
-{_related_feedback_block(related_feedback)}
+{_related_wi_block(related_wi)}
 - 作業種別: {work_type}
 - ベースコミット: `{base}`
 
 ## {_plan_format.PLAN_H2_ACTION}
 
-{human_action_table(feedback=bool(related_feedback))}
+{human_action_table(wi=bool(related_wi))}
 
 ## {_plan_format.PLAN_H2_AGENT_JUDGMENT}
 

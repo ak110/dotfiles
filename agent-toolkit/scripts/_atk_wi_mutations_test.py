@@ -546,13 +546,12 @@ def _write_integration_plan(
     target_commit: str,
     filenames: tuple[str, ...],
 ) -> pathlib.Path:
-    """計画型変換テスト用に関連フィードバックを持つ計画を作成する。"""
+    """計画型変換テスト用に関連WIを持つ計画を作成する。"""
     directory.mkdir(parents=True, exist_ok=True)
     plan = directory / "plan.md"
-    related_feedback = "".join(f"  - {filename}: 変換対象の要求\n" for filename in filenames)
+    related_wi = "".join(f"  - {filename}: 変換対象の要求\n" for filename in filenames)
     plan.write_text(
-        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- 関連フィードバック:\n{related_feedback}"
-        f"- ベースコミット: `{target_commit}`\n",
+        f"# 計画\n\n## 背景\n\n### 計画メタ情報\n\n- 関連WI:\n{related_wi}- ベースコミット: `{target_commit}`\n",
         encoding="utf-8",
     )
     return plan
@@ -572,12 +571,12 @@ def _write_legacy_integration_plan(
     return plan
 
 
-def test_read_plan_input_filenames_uses_related_feedback_and_legacy_materials(tmp_path: pathlib.Path) -> None:
-    """新書式は関連フィードバックを読み、旧書式は提示素材へフォールバックする。"""
+def test_read_plan_input_filenames_uses_related_wi_and_legacy_materials(tmp_path: pathlib.Path) -> None:
+    """新書式は関連WIを読み、旧書式は提示素材へフォールバックする。"""
     read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
     filenames = ("20260827-000000-002.md", "20260827-000000-001.md")
     plan = _write_integration_plan(tmp_path, "a" * 40, filenames)
-    assert read_plan_input_filenames(plan) == (tuple(sorted(filenames)), "計画メタ情報の関連フィードバック")
+    assert read_plan_input_filenames(plan) == (tuple(sorted(filenames)), "計画メタ情報の関連WI")
 
     plan.write_text("## 提示素材\n\n" + "".join(f"- {name}\n" for name in filenames), encoding="utf-8")
     assert read_plan_input_filenames(plan) == (tuple(sorted(filenames)), "計画の提示素材")
@@ -585,7 +584,7 @@ def test_read_plan_input_filenames_uses_related_feedback_and_legacy_materials(tm
 
 @pytest.mark.parametrize(
     ("legacy", "source_description"),
-    [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
+    [(False, "計画メタ情報の関連WI"), (True, "計画の提示素材")],
 )
 @pytest.mark.parametrize(
     ("condition", "message_suffix"),
@@ -640,14 +639,14 @@ def test_plan_feedback_paths_identifies_plan_input_source_in_errors(
         plan_feedback_paths(notes, filenames, actual_source_description)
 
 
-def test_read_plan_input_filenames_rejects_invalid_related_feedback(tmp_path: pathlib.Path) -> None:
-    """関連フィードバックの要約欠落を提示素材へフォールバックせず拒否する。"""
+def test_read_plan_input_filenames_rejects_invalid_related_wi(tmp_path: pathlib.Path) -> None:
+    """関連WIの要約欠落を提示素材へフォールバックせず拒否する。"""
     read_plan_input_filenames = vars(mutations)["_read_plan_input_filenames"]
     filename = "20260827-000000-001.md"
     plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
     plan.write_text(plan.read_text(encoding="utf-8").replace(": 変換対象の要求", ":"), encoding="utf-8")
 
-    with pytest.raises(mutations.WebInputError, match="計画メタ情報の関連フィードバックが不正"):
+    with pytest.raises(mutations.WebInputError, match="計画メタ情報の関連WIが不正"):
         read_plan_input_filenames(plan)
 
 
@@ -1478,7 +1477,7 @@ def test_convert_to_plan_rejects_mixed_states_before_writing(
 
 @pytest.mark.parametrize(
     ("legacy", "source_description"),
-    [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
+    [(False, "計画メタ情報の関連WI"), (True, "計画の提示素材")],
 )
 def test_convert_held_entries_rejects_material_mismatch_without_changes(
     tmp_path: pathlib.Path,
@@ -1513,7 +1512,7 @@ def test_convert_held_entries_rejects_material_mismatch_without_changes(
 
 @pytest.mark.parametrize(
     ("legacy", "source_description"),
-    [(False, "計画メタ情報の関連フィードバック"), (True, "計画の提示素材")],
+    [(False, "計画メタ情報の関連WI"), (True, "計画の提示素材")],
 )
 def test_convert_held_entries_identifies_source_for_feedback_outside_hold(
     tmp_path: pathlib.Path,

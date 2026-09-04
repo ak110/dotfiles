@@ -657,13 +657,13 @@ def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[tuple[str, ...]
     metadata, metadata_errors = _plan_format.parse_plan_metadata(text)
     if metadata_errors:
         raise WebInputError("計画メタ情報が不正です: " + "; ".join(metadata_errors))
-    if metadata is not None and _plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD in metadata.values:
-        source_description = "計画メタ情報の関連フィードバック"
-        related_errors = _plan_format.check_plan_related_feedback(metadata)
+    if metadata is not None and _plan_format.PLAN_METADATA_RELATED_WI_FIELD in metadata.values:
+        source_description = "計画メタ情報の関連WI"
+        related_errors = _plan_format.check_plan_related_wi(metadata)
         if related_errors:
-            raise WebInputError("計画メタ情報の関連フィードバックが不正です: " + "; ".join(related_errors))
-        filenames = tuple(filename for filename, _summary in metadata.related_feedback)
-        if metadata.values[_plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD] == "なし":
+            raise WebInputError("計画メタ情報の関連WIが不正です: " + "; ".join(related_errors))
+        filenames = tuple(filename for filename, _summary in metadata.related_wi)
+        if metadata.values[_plan_format.PLAN_METADATA_RELATED_WI_FIELD] == "なし":
             filenames = ()
     else:
         source_description = "計画の提示素材"

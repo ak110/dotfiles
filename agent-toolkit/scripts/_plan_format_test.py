@@ -23,10 +23,10 @@ _BUG_FILE_CONTENT = _plan_fixture.bug_file()
 _LEGACY_ROWS_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_ROWS)
 _LEGACY_BUG_FILE_CONTENT = _plan_fixture.bug_file(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE)
 
-_HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_feedback=_plan_fixture.FEEDBACK_FILES)
+_HUMAN_MAIN_CONTENT = _plan_fixture.human_main(related_wi=_plan_fixture.WI_FILES)
 _HUMAN_DETAIL_CONTENT = _plan_fixture.human_detail()
-_HUMAN_PARTIAL_ROW = _plan_fixture.FEEDBACK_ACTION_ROW
-_HUMAN_PARTIAL_REASON = _plan_fixture.FEEDBACK_ACTION_REASON
+_HUMAN_PARTIAL_ROW = _plan_fixture.WI_ACTION_ROW
+_HUMAN_PARTIAL_REASON = _plan_fixture.WI_ACTION_REASON
 
 _VALID_MAIN_CONTENT = _plan_fixture.two_file_main()
 _VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
@@ -50,7 +50,7 @@ def test_human_readable_main_accepts_satisfied_action() -> None:
     """新書式の実施内容表は裏付けを持つ`充足済み`を受理する。"""
     source = _HUMAN_PARTIAL_ROW
     replacement = (
-        "| 入力の境界を追加確認する | 人間由来のフィードバック (20260817-223603-001.md) | 充足済み | "
+        "| 入力の境界を追加確認する | 人間由来のWI (20260817-223603-001.md) | 充足済み | "
         "対象実装と要求を突合して充足を確認した。 |"
     )
     content = _HUMAN_MAIN_CONTENT.replace(
@@ -62,12 +62,12 @@ def test_human_readable_main_accepts_satisfied_action() -> None:
     assert not errors, errors
 
 
-def test_human_readable_feedback_and_units_do_not_expose_internal_ids() -> None:
+def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
     """人間向け形式は正本ファイル名と説明的な実装単位だけを解析する。"""
     metadata, metadata_errors = _plan_format.parse_plan_metadata(_HUMAN_MAIN_CONTENT)
     assert not metadata_errors, metadata_errors
     assert metadata is not None
-    assert tuple(filename for filename, _summary in metadata.related_feedback) == (
+    assert tuple(filename for filename, _summary in metadata.related_wi) == (
         "20260817-223603-001.md",
         "20260817-223603-002.md",
     )
@@ -254,27 +254,50 @@ def test_human_readable_action_rejects_arbitrary_h3() -> None:
     assert any("実施内容" in error and "H3を置かない" in error for error in errors), errors
 
 
-def test_human_readable_action_rejects_feedback_missing_from_metadata() -> None:
-    """フィードバック由来の正本は関連フィードバックから逆照合できる。"""
+def test_human_readable_action_rejects_wi_missing_from_metadata() -> None:
+    """WI由来の正本は`関連WI`から逆照合できる。"""
     content = _HUMAN_MAIN_CONTENT.replace("(20260817-223603-001.md)", "(20260817-223603-999.md)", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
-    assert any("フィードバック由来が関連フィードバックに無い" in error for error in errors), errors
+    assert any("WI由来が`関連WI`に無い" in error for error in errors), errors
 
 
-def test_feedback_origin_diagnostic_shows_expected_format() -> None:
+def test_wi_origin_diagnostic_shows_expected_format() -> None:
     """受理形式に一致しない`由来`欄の診断は、半角丸括弧を用いた期待書式の実例を示す。"""
-    example = "`エージェント由来のフィードバック (20260831-000000-001.md)`"
-    origin = f"人間由来のフィードバック ({_plan_fixture.FEEDBACK_FILES[0][0]})"
-    full_width = _HUMAN_MAIN_CONTENT.replace(origin, f"人間由来のフィードバック（{_plan_fixture.FEEDBACK_FILES[0][0]}）", 1)
+    example = "`エージェント由来のWI (20260831-000000-001.md)`"
+    origin = f"人間由来のWI ({_plan_fixture.WI_FILES[0][0]})"
+    full_width = _HUMAN_MAIN_CONTENT.replace(origin, f"人間由来のWI（{_plan_fixture.WI_FILES[0][0]}）", 1)
     errors = _plan_format.check_plan_main_structure(full_width)[1]
     assert any(example in error for error in errors), errors
-    without_name = _HUMAN_MAIN_CONTENT.replace(origin, "人間由来のフィードバック", 1)
+    without_name = _HUMAN_MAIN_CONTENT.replace(origin, "人間由来のWI", 1)
     errors = _plan_format.check_plan_main_structure(without_name)[1]
     assert any(example in error for error in errors), errors
 
 
-def test_related_feedback_rejects_invalid_filename() -> None:
-    """関連フィードバックは正本ファイル名だけを受理する。"""
+def test_human_readable_main_accepts_legacy_wi_names() -> None:
+    """改名前の項目名と`由来`欄を持つ計画を読み取り経路で受理する。"""
+    content = _plan_fixture.legacy_wi_names(_HUMAN_MAIN_CONTENT)
+    work_type, errors = _plan_format.check_plan_main_structure(content)
+    assert work_type == "通常変更"
+    assert not errors, errors
+    metadata, metadata_errors = _plan_format.parse_plan_metadata(content)
+    assert not metadata_errors, metadata_errors
+    assert metadata is not None
+    assert _plan_format.PLAN_METADATA_RELATED_WI_FIELD in metadata.values
+    assert tuple(filename for filename, _summary in metadata.related_wi) == tuple(
+        filename for filename, _summary in _plan_fixture.WI_FILES
+    )
+
+
+def test_legacy_wi_origins_reports_only_legacy_names() -> None:
+    """改名前の`由来`欄だけを移行対象として報告する。"""
+    assert not _plan_format.legacy_wi_origins(_HUMAN_MAIN_CONTENT)
+    assert _plan_format.legacy_wi_origins(_plan_fixture.legacy_wi_names(_HUMAN_MAIN_CONTENT)) == (
+        _plan_format.PLAN_HUMAN_WI_ORIGIN,
+    )
+
+
+def test_related_wi_rejects_invalid_filename() -> None:
+    """関連WIは正本ファイル名だけを受理する。"""
     content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "docs/notes.md", 1)
     errors = _plan_format.check_plan_main_structure(content)[1]
     assert any("ファイル名が不正" in error for error in errors), errors
@@ -283,22 +306,21 @@ def test_related_feedback_rejects_invalid_filename() -> None:
 @pytest.mark.parametrize(
     ("replacement", "expected"),
     [
-        ("- 関連フィードバック:\n  - 20260817-223603-001.md:", "1行要約が空"),
+        ("- 関連WI:\n  - 20260817-223603-001.md:", "1行要約が空"),
         (
-            "- 関連フィードバック:\n  - 20260817-223603-001.md: 入力の境界を追加確認する\n"
-            "  - 20260817-223603-001.md: 重複した要求",
+            "- 関連WI:\n  - 20260817-223603-001.md: 入力の境界を追加確認する\n  - 20260817-223603-001.md: 重複した要求",
             "ファイル名が重複",
         ),
         (
-            "- 関連フィードバック: なし\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
+            "- 関連WI: なし\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
             "なし`と子項目",
         ),
     ],
 )
-def test_related_feedback_rejects_invalid_children(replacement: str, expected: str) -> None:
-    """関連フィードバックの要約欠落、重複及び`なし`との併記を拒否する。"""
+def test_related_wi_rejects_invalid_children(replacement: str, expected: str) -> None:
+    """関連WIの要約欠落、重複及び`なし`との併記を拒否する。"""
     content = _HUMAN_MAIN_CONTENT.replace(
-        "- 関連フィードバック:\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
+        "- 関連WI:\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
         replacement,
         1,
     )
@@ -309,7 +331,7 @@ def test_related_feedback_rejects_invalid_children(replacement: str, expected: s
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
-        ("関連フィードバック", "ファイル名が不正"),
+        ("関連WI", "ファイル名が不正"),
         (
             "| 対象外の類似するが対象外の記述は変更しない |",
             "`## 実施内容`へ素材・要求・履歴・実装単位の合成IDを記載しない",
@@ -318,7 +340,7 @@ def test_related_feedback_rejects_invalid_children(replacement: str, expected: s
 )
 def test_human_readable_main_rejects_internal_identifiers(mutation: str, expected: str) -> None:
     """人間向けメイン側に内部管理IDを持ち込まない。"""
-    if mutation == "関連フィードバック":
+    if mutation == "関連WI":
         content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "P-001.md", 1)
     else:
         content = _HUMAN_MAIN_CONTENT.replace(
@@ -1643,17 +1665,17 @@ def test_detail_structure_permanence_rejects_free_h3() -> None:
     assert any("固定見出し以外のH3" in error for error in errors), errors
 
 
-def _feedback_source(*, source: bool, trailing_user_comment: bool = False, answer: bool = False) -> str:
-    """フィードバック正本の本文を組み立てる。"""
+def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: bool = False) -> str:
+    """WIの正本の本文を組み立てる。"""
     frontmatter = ["---", "status: inbox"]
     if source:
-        frontmatter.append(f"{_plan_format.PLAN_FEEDBACK_SOURCE_KEY}: agent-toolkit:session-review")
+        frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:session-review")
     frontmatter.append("---")
     sections = ["# 要求", "", "本文。"]
     if answer:
-        sections += ["", f"## {_plan_format.PLAN_FEEDBACK_ANSWER_HEADING}", "", "回答本文。"]
+        sections += ["", f"## {_plan_format.PLAN_WI_ANSWER_HEADING}", "", "回答本文。"]
     if trailing_user_comment:
-        sections += ["", f"## {_plan_format.PLAN_FEEDBACK_USER_COMMENT_HEADING}", "", "ユーザーの記入。"]
+        sections += ["", f"## {_plan_format.PLAN_WI_USER_COMMENT_HEADING}", "", "ユーザーの記入。"]
     return "\n".join([*frontmatter, "", *sections, ""])
 
 
@@ -1667,33 +1689,33 @@ def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTEN
     return errors, notices, skips
 
 
-def _write_feedback(private_notes: pathlib.Path, body: str, name: str = _plan_fixture.FEEDBACK_FILES[0][0]) -> None:
+def _write_wi(private_notes: pathlib.Path, body: str, name: str = _plan_fixture.WI_FILES[0][0]) -> None:
     """キュー管理リポジトリの状態ディレクトリへ正本を作成する。"""
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / name).write_text(body, encoding="utf-8")
 
 
-def test_origin_check_reports_notice_for_agent_sourced_feedback(tmp_path: pathlib.Path) -> None:
+def test_origin_check_reports_notice_for_agent_sourced_wi(tmp_path: pathlib.Path) -> None:
     """`source`を持ち機械判定できる明示由来が無い正本を移行の指摘として報告する。"""
-    _write_feedback(tmp_path, _feedback_source(source=True))
+    _write_wi(tmp_path, _wi_source(source=True))
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
     assert not skips, skips
-    assert any(_plan_fixture.FEEDBACK_FILES[0][0] in notice for notice in notices), notices
+    assert any(_plan_fixture.WI_FILES[0][0] in notice for notice in notices), notices
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        _feedback_source(source=False),
-        _feedback_source(source=True, trailing_user_comment=True),
-        _feedback_source(source=True, answer=True),
+        _wi_source(source=False),
+        _wi_source(source=True, trailing_user_comment=True),
+        _wi_source(source=True, answer=True),
     ],
 )
 def test_origin_check_accepts_human_origin(tmp_path: pathlib.Path, body: str) -> None:
     """`source`の欠落と機械判定できる明示由来を持つ正本は指摘の対象にしない。"""
-    _write_feedback(tmp_path, body)
+    _write_wi(tmp_path, body)
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
     assert not notices, notices
@@ -1702,10 +1724,10 @@ def test_origin_check_accepts_human_origin(tmp_path: pathlib.Path, body: str) ->
 
 def test_origin_check_skips_conversational_note(tmp_path: pathlib.Path) -> None:
     """`[対話由来]`注記のある行は書式として受理し、照合の対象から除く。"""
-    _write_feedback(tmp_path, _feedback_source(source=True))
+    _write_wi(tmp_path, _wi_source(source=True))
     content = _HUMAN_MAIN_CONTENT.replace(
-        f"({_plan_fixture.FEEDBACK_FILES[0][0]})",
-        f"({_plan_fixture.FEEDBACK_FILES[0][0]}) [対話由来]",
+        f"({_plan_fixture.WI_FILES[0][0]})",
+        f"({_plan_fixture.WI_FILES[0][0]}) [対話由来]",
     )
     errors, notices, skips = _origin_check(tmp_path, content)
     assert not errors, errors
@@ -1719,7 +1741,7 @@ def test_origin_check_skips_when_source_is_unresolvable(tmp_path: pathlib.Path) 
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
     assert not notices, notices
-    assert any(_plan_fixture.FEEDBACK_FILES[0][0] in skip for skip in skips), skips
+    assert any(_plan_fixture.WI_FILES[0][0] in skip for skip in skips), skips
 
 
 def test_origin_check_skips_when_queue_repository_is_absent(tmp_path: pathlib.Path) -> None:
@@ -1734,6 +1756,6 @@ def test_origin_check_skips_when_queue_repository_is_absent(tmp_path: pathlib.Pa
 
 def test_origin_check_is_inactive_without_collectors(tmp_path: pathlib.Path) -> None:
     """収集用の一覧を渡さない既存の呼び出しでは照合を行わない。"""
-    _write_feedback(tmp_path, _feedback_source(source=True))
+    _write_wi(tmp_path, _wi_source(source=True))
     _work_type, errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
     assert not errors, errors

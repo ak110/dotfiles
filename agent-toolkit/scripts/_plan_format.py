@@ -123,16 +123,29 @@ PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ"
 PLAN_METADATA_DETAIL_FIELD: str = "計画ファイル（詳細）"
 """改訂前の二ファイル計画が持つ計画ファイル（詳細）の参照項目。読み取り互換専用。"""
 
-PLAN_METADATA_RELATED_FEEDBACK_FIELD: str = "関連フィードバック"
+PLAN_METADATA_RELATED_WI_FIELD: str = "関連WI"
 """新書式計画ファイル（メイン）が入力の正本ファイル名と要約を持つ項目。"""
 
 PLAN_METADATA_LEGACY_DETAIL_FIELD: str = "実装詳細"
 """読み取り互換で受理する旧形式の計画ファイル（詳細）参照項目。"""
 
+PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD: str = "関連フィードバック"
+"""読み取り互換で受理する改名前の`関連WI`項目。"""
+
+PLAN_METADATA_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    PLAN_METADATA_DETAIL_FIELD: (PLAN_METADATA_DETAIL_FIELD, PLAN_METADATA_LEGACY_DETAIL_FIELD),
+    PLAN_METADATA_RELATED_WI_FIELD: (PLAN_METADATA_RELATED_WI_FIELD, PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD),
+}
+"""計画メタ情報の項目名と、読み取り互換で受理する旧名称の対応。"""
+
+_PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS: dict[str, str] = {
+    alias: canonical for canonical, aliases in PLAN_METADATA_FIELD_ALIASES.items() for alias in aliases
+}
+
 PLAN_METADATA_MAIN_FIELDS: tuple[str, ...] = (
     "起動経路",
     "対象リポジトリ",
-    PLAN_METADATA_RELATED_FEEDBACK_FIELD,
+    PLAN_METADATA_RELATED_WI_FIELD,
     "作業種別",
     "ベースコミット",
 )
@@ -144,7 +157,7 @@ PLAN_METADATA_TWO_FILE_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_ME
 PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset(
     {"起動経路", "対象リポジトリ", "ベースコミット", PLAN_METADATA_DETAIL_FIELD}
 )
-"""値をバッククォートで囲む項目。`関連フィードバック`と`作業種別`は裸で書く。"""
+"""値をバッククォートで囲む項目。`関連WI`と`作業種別`は裸で書く。"""
 
 PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
 
@@ -175,33 +188,52 @@ PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "採否", "ユー�
 PLAN_LEGACY_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
 PLAN_HUMAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "由来", "採否", "根拠")
 PLAN_HUMAN_JUDGMENT_TABLE_HEADER: tuple[str, ...] = ("実施内容", "観測事象", "ユーザー要求との関係", "具体化した内容", "根拠")
+PLAN_HUMAN_WI_ORIGIN: str = "人間由来のWI"
+"""正本の`source`と機械判定できる明示由来から照合する由来の区分。"""
+
+PLAN_AGENT_WI_ORIGIN: str = "エージェント由来のWI"
+"""正本が機械判定できる明示由来を持たない場合の由来の区分。"""
+
+PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
+"""読み取り互換で受理する改名前の人間由来の区分。"""
+
+PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN: str = "エージェント由来のフィードバック"
+"""読み取り互換で受理する改名前のエージェント由来の区分。"""
+
+PLAN_WI_ORIGIN_ALIASES: dict[str, tuple[str, ...]] = {
+    PLAN_HUMAN_WI_ORIGIN: (PLAN_HUMAN_WI_ORIGIN, PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN),
+    PLAN_AGENT_WI_ORIGIN: (PLAN_AGENT_WI_ORIGIN, PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN),
+}
+"""WI由来の`由来`欄が持つ区分と、読み取り互換で受理する旧名称の対応。"""
+
+_PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS: dict[str, str] = {
+    alias: canonical for canonical, aliases in PLAN_WI_ORIGIN_ALIASES.items() for alias in aliases
+}
+
 PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
-    "人間由来のフィードバック",
-    "エージェント由来のフィードバック",
+    PLAN_HUMAN_WI_ORIGIN,
+    PLAN_AGENT_WI_ORIGIN,
     "ユーザー指示",
     "エージェント提案",
 )
 PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")
-PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN = re.compile(
-    r"(?P<kind>人間由来のフィードバック|エージェント由来のフィードバック) "
+PLAN_WI_ORIGIN_PATTERN = re.compile(
+    "(?P<kind>" + "|".join(re.escape(alias) for alias in _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS) + ") "
     r"\((?P<name>[^/\\()\s]+\.md)\)(?P<note> \[対話由来\])?"
 )
-"""フィードバック由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
+"""WI由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
 
-PLAN_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
-"""正本の`source`と機械判定できる明示由来から照合する由来の区分。"""
+PLAN_WI_SOURCE_KEY: str = "source"
+"""WIの正本のfrontmatterで投入元スキルを表すキー。"""
 
-PLAN_FEEDBACK_SOURCE_KEY: str = "source"
-"""フィードバック正本のfrontmatterで投入元スキルを表すキー。"""
+PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
+"""WIの正本の末尾に置く、ユーザー専用の記入欄の見出し。"""
 
-PLAN_FEEDBACK_USER_COMMENT_HEADING: str = "ユーザーコメント"
-"""フィードバック正本の末尾に置く、ユーザー専用の記入欄の見出し。"""
-
-PLAN_FEEDBACK_ANSWER_HEADING: str = "回答"
-"""TBDの正本でユーザーの回答を記録する見出し。"""
+PLAN_WI_ANSWER_HEADING: str = "回答"
+"""UWIの正本でユーザーの回答を記録する見出し。"""
 
 _FRONTMATTER_DELIMITER: str = "---"
-_FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_FEEDBACK_SOURCE_KEY}:[ \t]*\S")
+_FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")
 PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
 """計画ファイル（メイン）の実施内容表が受理する採否値。"""
@@ -577,6 +609,16 @@ def h2_aliases(text: str) -> tuple[str, ...]:
     return PLAN_H2_ALIASES.get(canonical, (canonical,))
 
 
+def canonical_metadata_field(field: str) -> str:
+    """計画メタ情報の項目名の旧名称を正規名へ写す。未知の項目名はそのまま返す。"""
+    return _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS.get(field, field)
+
+
+def canonical_wi_origin(origin: str) -> str:
+    """`由来`欄のWI区分の旧名称を正規名へ写す。未知の区分はそのまま返す。"""
+    return _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS.get(origin, origin)
+
+
 def find_heading_index(headings: list[PlanHeading], level: int, text: str) -> int | None:
     """指定階層・指定見出し文（旧別名を含む）の最初の索引を返す。"""
     accepted = h2_aliases(text) if level == 2 else (text,)
@@ -695,8 +737,8 @@ class PlanMetadata:
     values: dict[str, str]
     """認識した項目の値。バッククォートは除去済みで、欠落項目は含めない。"""
 
-    related_feedback: tuple[tuple[str, str], ...]
-    """関連フィードバックの(正本ファイル名, 1行要約)。記載順を保持する。"""
+    related_wi: tuple[tuple[str, str], ...]
+    """`関連WI`の(正本ファイル名, 1行要約)。記載順を保持する。"""
 
     base_commit_candidates: tuple[str, ...]
     """`ベースコミット`と旧別名`基準コミット`から抽出した16進値の全候補。"""
@@ -708,7 +750,7 @@ class PlanMetadata:
 
 
 _METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+):(?: (?P<value>.*?))?\s*$")
-_METADATA_RELATED_FEEDBACK_PATTERN = re.compile(r"^  - (?P<filename>[^:]+):(?: (?P<summary>.*?))?\s*$")
+_METADATA_RELATED_WI_PATTERN = re.compile(r"^  - (?P<filename>[^:]+):(?: (?P<summary>.*?))?\s*$")
 _METADATA_BASE_COMMIT_LINE = re.compile(r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`(?P<oid>[0-9a-fA-F]+)`.*$")
 """ベースコミットを記載した箇条書きからOIDを読み取る互換パターン。
 
@@ -767,25 +809,25 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
         if match is not None:
             entries.append((match.group("field").strip(), match.group("value") or ""))
 
-    related_feedback: list[tuple[str, str]] = []
-    in_related_feedback = False
+    related_wi: list[tuple[str, str]] = []
+    in_related_wi = False
     for _lineno, line in section:
         entry_match = _METADATA_ENTRY_PATTERN.fullmatch(line)
         if entry_match is not None:
-            in_related_feedback = entry_match.group("field").strip() == PLAN_METADATA_RELATED_FEEDBACK_FIELD
+            in_related_wi = canonical_metadata_field(entry_match.group("field").strip()) == PLAN_METADATA_RELATED_WI_FIELD
             continue
-        if not in_related_feedback:
+        if not in_related_wi:
             continue
-        child_match = _METADATA_RELATED_FEEDBACK_PATTERN.fullmatch(line)
+        child_match = _METADATA_RELATED_WI_PATTERN.fullmatch(line)
         if child_match is not None:
-            related_feedback.append((child_match.group("filename").strip(), (child_match.group("summary") or "").strip()))
+            related_wi.append((child_match.group("filename").strip(), (child_match.group("summary") or "").strip()))
         elif line.strip():
-            in_related_feedback = False
+            in_related_wi = False
 
     values: dict[str, str] = {}
     conflicts: list[str] = []
     for field, raw_value in entries:
-        canonical_field = PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
+        canonical_field = canonical_metadata_field(field)
         if canonical_field not in (*PLAN_METADATA_MAIN_FIELDS, PLAN_METADATA_DETAIL_FIELD):
             continue
         normalized = _strip_backticks(raw_value)
@@ -797,7 +839,7 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     ]
     if conflicts:
         return None, conflicts
-    return PlanMetadata(parent, tuple(entries), values, tuple(related_feedback), tuple(base_candidates)), []
+    return PlanMetadata(parent, tuple(entries), values, tuple(related_wi), tuple(base_candidates)), []
 
 
 def extract_implementer_region(content: str) -> list[tuple[int, str]]:
@@ -1003,14 +1045,11 @@ def _check_metadata_block(
         return None, errors or [f"`## {PLAN_H2_OVERVIEW}`直下の`### {PLAN_METADATA_H3}`を検査できない"]
     if not metadata.is_canonical:
         errors.append(f"計画メタ情報は`## {PLAN_H2_OVERVIEW}`直下へ置く: 実際=`## {metadata.parent}`直下")
-    fields = [
-        PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
-        for field, _value in metadata.entries
-    ]
+    fields = [canonical_metadata_field(field) for field, _value in metadata.entries]
     if fields != list(expected_fields):
         errors.append(f"計画メタ情報は{list(expected_fields)}をこの順序で1行ずつ置く: 実際={fields}")
     for field, raw_value in metadata.entries:
-        canonical_field = PLAN_METADATA_DETAIL_FIELD if field == PLAN_METADATA_LEGACY_DETAIL_FIELD else field
+        canonical_field = canonical_metadata_field(field)
         if canonical_field not in expected_fields:
             continue
         quoted = raw_value.startswith("`") and raw_value.endswith("`") and len(raw_value) >= 2
@@ -1018,10 +1057,10 @@ def _check_metadata_block(
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲む")
         if canonical_field not in PLAN_METADATA_QUOTED_FIELDS and quoted:
             errors.append(f"計画メタ情報の`{field}`はバッククォートで囲まない")
-        if not _strip_backticks(raw_value) and canonical_field != PLAN_METADATA_RELATED_FEEDBACK_FIELD:
+        if not _strip_backticks(raw_value) and canonical_field != PLAN_METADATA_RELATED_WI_FIELD:
             errors.append(f"計画メタ情報の`{field}`が空である")
-    if PLAN_METADATA_RELATED_FEEDBACK_FIELD in expected_fields:
-        errors.extend(check_plan_related_feedback(metadata))
+    if PLAN_METADATA_RELATED_WI_FIELD in expected_fields:
+        errors.extend(check_plan_related_wi(metadata))
     work_type = metadata.values.get("作業種別")
     if work_type is not None and work_type not in PLAN_WORK_TYPES:
         errors.append(f"計画メタ情報の`作業種別`は{list(PLAN_WORK_TYPES)}のいずれかで記載する")
@@ -1031,26 +1070,26 @@ def _check_metadata_block(
     return work_type, errors
 
 
-def check_plan_related_feedback(metadata: PlanMetadata) -> list[str]:
-    """計画メタ情報の関連フィードバックの値と子項目を検査する。"""
+def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
+    """計画メタ情報の`関連WI`の値と子項目を検査する。"""
     errors: list[str] = []
-    related_value = metadata.values.get(PLAN_METADATA_RELATED_FEEDBACK_FIELD, "")
+    related_value = metadata.values.get(PLAN_METADATA_RELATED_WI_FIELD, "")
     if related_value == "なし":
-        if metadata.related_feedback:
-            errors.append("計画メタ情報の`関連フィードバック: なし`と子項目を併記しない")
+        if metadata.related_wi:
+            errors.append("計画メタ情報の`関連WI: なし`と子項目を併記しない")
     elif related_value:
-        errors.append("計画メタ情報の`関連フィードバック`は子項目又は`なし`で記載する")
-    elif not metadata.related_feedback:
-        errors.append("計画メタ情報の`関連フィードバック`には正本ファイル名と1行要約を1件以上記載する")
-    seen_feedback: set[str] = set()
-    for filename, summary in metadata.related_feedback:
+        errors.append("計画メタ情報の`関連WI`は子項目又は`なし`で記載する")
+    elif not metadata.related_wi:
+        errors.append("計画メタ情報の`関連WI`には正本ファイル名と1行要約を1件以上記載する")
+    seen_wi: set[str] = set()
+    for filename, summary in metadata.related_wi:
         if PLAN_QUEUE_ID_PATTERN.fullmatch(filename) is None:
-            errors.append(f"計画メタ情報の`関連フィードバック`のファイル名が不正である: {filename}")
+            errors.append(f"計画メタ情報の`関連WI`のファイル名が不正である: {filename}")
         if not summary:
-            errors.append(f"計画メタ情報の`関連フィードバック`の1行要約が空である: {filename}")
-        if filename in seen_feedback:
-            errors.append(f"計画メタ情報の`関連フィードバック`のファイル名が重複している: {filename}")
-        seen_feedback.add(filename)
+            errors.append(f"計画メタ情報の`関連WI`の1行要約が空である: {filename}")
+        if filename in seen_wi:
+            errors.append(f"計画メタ情報の`関連WI`のファイル名が重複している: {filename}")
+        seen_wi.add(filename)
     return errors
 
 
@@ -1742,6 +1781,27 @@ def has_legacy_action_table(content: str) -> bool:
     return any(table.header == PLAN_LEGACY_ACTION_TABLE_HEADER for table in extract_tables(lines_within(body, start, end)))
 
 
+def legacy_wi_origins(content: str) -> tuple[str, ...]:
+    """`## 実施内容`の`由来`欄が使っている改名前のWI区分を、正規名の並び順で返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
+    if action_index is None:
+        return ()
+    start, end = heading_subtree_range(headings, action_index)
+    origins: set[str] = set()
+    for table in extract_tables(lines_within(body, start, end)):
+        if table.header != PLAN_HUMAN_ACTION_TABLE_HEADER:
+            continue
+        origin_index = table.header.index("由来")
+        for row in table.rows:
+            if len(row) != len(PLAN_HUMAN_ACTION_TABLE_HEADER):
+                continue
+            match = PLAN_WI_ORIGIN_PATTERN.fullmatch(row[origin_index])
+            origins.add(match.group("kind") if match is not None else row[origin_index])
+    return tuple(canonical for canonical, aliases in PLAN_WI_ORIGIN_ALIASES.items() if origins & (set(aliases) - {canonical}))
+
+
 def _check_action_section(
     body: list[tuple[int, str]],
     headings: list[PlanHeading],
@@ -1750,7 +1810,7 @@ def _check_action_section(
     requirement_ids: set[str],
     adopted_requirement_ids: set[str],
     identifiers: set[str],
-    related_feedback: frozenset[str] = frozenset(),
+    related_wi: frozenset[str] = frozenset(),
     *,
     origin_notices: list[str] | None = None,
     origin_skips: list[str] | None = None,
@@ -1759,7 +1819,7 @@ def _check_action_section(
 ) -> list[str]:
     """`## 実施内容`の固定表と新旧の除外・保持表を検査する。
 
-    `origin_notices`と`origin_skips`を渡した場合だけ、フィードバック由来行を正本へ照合する。
+    `origin_notices`と`origin_skips`を渡した場合だけ、WI由来行を正本へ照合する。
     照合の結果はエラーではなく呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
     """
     if action_index is None:
@@ -1774,7 +1834,7 @@ def _check_action_section(
             _check_human_action_table(
                 table,
                 materials,
-                related_feedback,
+                related_wi,
                 origin_notices=origin_notices,
                 origin_skips=origin_skips,
                 private_notes=private_notes,
@@ -1816,7 +1876,7 @@ def _check_action_section(
 
 
 def _has_frontmatter_source(content: str) -> bool:
-    """フィードバック正本のfrontmatterが値を伴う第1階層の`source`を持つかを返す。
+    """WIの正本のfrontmatterが値を伴う第1階層の`source`を持つかを返す。
 
     キーの有無だけを判定するため、YAMLパーサーへ依存せず行頭一致で確定する。
     本モジュールはhookとPEP 723スクリプトから読み込まれるため、依存を広げない選択とする。
@@ -1835,15 +1895,15 @@ def _has_frontmatter_source(content: str) -> bool:
 def _has_machine_detectable_human_origin(content: str) -> bool:
     """機械判定できる明示由来を持つかを返す。
 
-    末尾の厳密なH2`## ユーザーコメント`と、TBDの`## 回答`を対象とする。
+    末尾の厳密なH2`## ユーザーコメント`と、UWIの`## 回答`を対象とする。
     """
     h2_headings = [heading for heading in extract_headings(content) if heading.level == 2]
-    if any(heading.text == PLAN_FEEDBACK_ANSWER_HEADING for heading in h2_headings):
+    if any(heading.text == PLAN_WI_ANSWER_HEADING for heading in h2_headings):
         return True
-    return bool(h2_headings) and h2_headings[-1].text == PLAN_FEEDBACK_USER_COMMENT_HEADING
+    return bool(h2_headings) and h2_headings[-1].text == PLAN_WI_USER_COMMENT_HEADING
 
 
-def _find_feedback_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
+def _find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
     """キュー管理リポジトリのルート配下から正本ファイルを探す。
 
     状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
@@ -1862,7 +1922,7 @@ def _collect_origin_notices(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """`人間由来のフィードバック`行を正本へ照合し、移行の指摘と省略の事実を積む。
+    """`人間由来のWI`行を正本へ照合し、移行の指摘と省略の事実を積む。
 
     正本を解決できない場合とキュー管理リポジトリのルートが実在しない場合は当該行の照合だけを省略し、
     他の検査の結果を変えない。
@@ -1872,7 +1932,7 @@ def _collect_origin_notices(
         if not root.is_dir():
             origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。キュー管理リポジトリが実在しない: {root}")
             return
-        source = _find_feedback_source(name, root)
+        source = _find_wi_source(name, root)
         if source is None:
             origin_skips.append(f"`## {PLAN_H2_ACTION}`の由来照合を省略した。正本を解決できない: {name}")
             return
@@ -1882,16 +1942,16 @@ def _collect_origin_notices(
         return
     if _has_frontmatter_source(content) and not _has_machine_detectable_human_origin(content):
         origin_notices.append(
-            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_FEEDBACK_ORIGIN}`が正本の由来と一致しない: {name}。"
-            f"正本は`{PLAN_FEEDBACK_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
-            "`エージェント由来のフィードバック`とするか、機械判定できない明示由来を根拠とする場合は`[対話由来]`注記を付ける"
+            f"`## {PLAN_H2_ACTION}`の`{PLAN_HUMAN_WI_ORIGIN}`が正本の由来と一致しない: {name}。"
+            f"正本は`{PLAN_WI_SOURCE_KEY}`を持ち機械判定できる明示由来が無いため、"
+            f"`{PLAN_AGENT_WI_ORIGIN}`とするか、機械判定できない明示由来を根拠とする場合は`[対話由来]`注記を付ける"
         )
 
 
 def _check_human_action_table(  # pylint: disable=too-many-arguments
     table: MarkdownTable,
     materials: PlanMaterials | None,
-    related_feedback: frozenset[str],
+    related_wi: frozenset[str],
     *,
     origin_notices: list[str] | None = None,
     origin_skips: list[str] | None = None,
@@ -1900,9 +1960,9 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
 ) -> list[str]:
     """新規書式の実施内容4列表を検査する。
 
-    `人間由来のフィードバック`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
+    `人間由来のWI`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
     正本のfrontmatterと本文へ照合する。`[対話由来]`注記のある行は機械判定できない明示由来を
-    根拠とするため照合の対象から除く。
+    根拠とするため照合の対象から除く。改名前の由来は読み取り互換で受理する。
     """
     errors: list[str] = []
     if not table.rows:
@@ -1915,26 +1975,27 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
             errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {list(row)}")
             continue
         origin = row[origin_index]
+        canonical_origin = canonical_wi_origin(origin)
         review_origin = PLAN_HUMAN_REVIEW_ORIGIN_PATTERN.fullmatch(origin)
-        if origin in PLAN_HUMAN_ORIGINS:
-            if origin.endswith("フィードバック"):
+        if canonical_origin in PLAN_HUMAN_ORIGINS:
+            if canonical_origin in PLAN_WI_ORIGIN_ALIASES:
                 errors.append(
-                    f"`## {PLAN_H2_ACTION}`のフィードバック由来には"
+                    f"`## {PLAN_H2_ACTION}`のWI由来には"
                     "半角空白1字に続けて半角丸括弧で囲んだ正本ファイル名を記載する"
-                    f"（例: `エージェント由来のフィードバック (20260831-000000-001.md)`）: {origin}"
+                    f"（例: `{PLAN_AGENT_WI_ORIGIN} (20260831-000000-001.md)`）: {origin}"
                 )
-        elif origin.startswith(f"{PLAN_HUMAN_FEEDBACK_ORIGIN} (") or origin.startswith("エージェント由来のフィードバック ("):
-            match = PLAN_HUMAN_FEEDBACK_ORIGIN_PATTERN.fullmatch(origin)
+        elif any(origin.startswith(f"{alias} (") for alias in _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS):
+            match = PLAN_WI_ORIGIN_PATTERN.fullmatch(origin)
             if match is None:
                 errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
-            elif match.group("name") not in related_feedback and (
+            elif match.group("name") not in related_wi and (
                 materials is None or match.group("name") not in materials.material_paths
             ):
-                errors.append(f"`## {PLAN_H2_ACTION}`のフィードバック由来が関連フィードバックに無い: {match.group('name')}")
+                errors.append(f"`## {PLAN_H2_ACTION}`のWI由来が`関連WI`に無い: {match.group('name')}")
             elif (
                 origin_notices is not None
                 and origin_skips is not None
-                and match.group("kind") == PLAN_HUMAN_FEEDBACK_ORIGIN
+                and canonical_wi_origin(match.group("kind")) == PLAN_HUMAN_WI_ORIGIN
                 and match.group("note") is None
             ):
                 _collect_origin_notices(match.group("name"), origin_notices, origin_skips, private_notes, home)
@@ -1942,7 +2003,7 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、又は"
                 "区分と半角空白1字と半角丸括弧で囲んだ正本ファイル名"
-                "（例: `エージェント由来のフィードバック (20260831-000000-001.md)`）にする: "
+                f"（例: `{PLAN_AGENT_WI_ORIGIN} (20260831-000000-001.md)`）にする: "
                 f"{origin}"
             )
         decision = row[decision_index]
@@ -2356,9 +2417,9 @@ def check_plan_main_structure(
 ) -> tuple[str | None, list[str]]:
     """新書式の計画ファイル（メイン）`<計画名>.md`を検査して(作業種別, 違反一覧)を返す。
 
-    固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は関連フィードバックを含む5項目とする。
+    固定H2順は`PLAN_MAIN_H2_ORDER`とし、計画メタ情報は`関連WI`を含む5項目とする。
     改訂前の二ファイル形式は提示素材と計画ファイル（詳細）参照を読み取り互換で受理する。
-    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のフィードバック由来行を正本へ照合し、
+    `origin_notices`と`origin_skips`を渡した場合だけ、実施内容表のWI由来行を正本へ照合し、
     移行を促す指摘と照合を省略した事実をそれぞれへ積む。照合の結果は違反一覧へ含めない。
     """
     body = list(iter_markdown_body_lines(content))
@@ -2370,7 +2431,7 @@ def check_plan_main_structure(
     old_two_file_format = bool(
         metadata is not None
         and PLAN_METADATA_DETAIL_FIELD in metadata.values
-        and PLAN_METADATA_RELATED_FEEDBACK_FIELD not in metadata.values
+        and PLAN_METADATA_RELATED_WI_FIELD not in metadata.values
     )
     expected_metadata = PLAN_METADATA_TWO_FILE_FIELDS if old_two_file_format else PLAN_METADATA_MAIN_FIELDS
     work_type, metadata_errors = _check_metadata_block(content, expected_fields=expected_metadata)
@@ -2408,7 +2469,7 @@ def check_plan_main_structure(
             requirement_ids,
             adopted_requirement_ids,
             identifiers,
-            frozenset(filename for filename, _summary in metadata.related_feedback) if metadata is not None else frozenset(),
+            frozenset(filename for filename, _summary in metadata.related_wi) if metadata is not None else frozenset(),
             origin_notices=origin_notices,
             origin_skips=origin_skips,
             private_notes=private_notes,
