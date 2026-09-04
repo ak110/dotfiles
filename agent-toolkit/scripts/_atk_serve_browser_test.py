@@ -2143,6 +2143,266 @@ async def test_navigation_unmounts_previous_screen(screen_harness: _ScreenHarnes
 
 
 @pytest.mark.asyncio
+async def test_navigation_ignores_responses_for_unmounted_screens(screen_harness: _ScreenHarness) -> None:
+    """遷移前の画面で開始した応答が遅れても、旧DOMへ書き込まずコンソールエラーの出力を防ぐ。"""
+    harness = screen_harness
+    page = harness.page
+    errors: list[str] = []
+    sync_requested = asyncio.Event()
+    plans_requested = asyncio.Event()
+
+    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    async def delay_sync(route: playwright.async_api.Route) -> None:
+        sync_requested.set()
+        await asyncio.sleep(0.2)
+        await route.continue_()
+
+    async def delay_plans(route: playwright.async_api.Route) -> None:
+        plans_requested.set()
+        await asyncio.sleep(0.2)
+        await route.continue_()
+
+    await page.route("**/api/sync", delay_sync)
+    await page.route("**/api/plans/host-status", delay_plans)
+    await page.goto(harness.base_url + "/")
+    await sync_requested.wait()
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await plans_requested.wait()
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("#sessions .session-item").first.wait_for(state="visible")
+    await page.wait_for_timeout(300)
+
+    assert not errors
+
+
+@pytest.mark.asyncio
+async def test_navigation_ignores_delayed_detail_and_search_results(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """詳細取得と全文検索の成功・失敗が遷移後に届いても、旧DOMへ書き込まない。"""
+    harness = screen_harness
+    page = harness.page
+    errors: list[str] = []
+    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    async def exercise_detail(succeeds: bool) -> None:
+        requested = asyncio.Event()
+        release = asyncio.Event()
+        fulfilled = asyncio.Event()
+
+        async def delay_detail(route: playwright.async_api.Route) -> None:
+            response = await route.fetch() if succeeds else None
+            requested.set()
+            await release.wait()
+            if response is None:
+                await route.fulfill(status=200, content_type="application/json", body="{")
+            else:
+                await route.fulfill(response=response)
+            fulfilled.set()
+
+        await page.route("**/api/entries/inbox/awi.md", delay_detail)
+        await page.goto(harness.base_url + "/")
+        await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
+        await asyncio.wait_for(requested.wait(), timeout=5)
+        await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+        await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+        release.set()
+        await asyncio.wait_for(fulfilled.wait(), timeout=5)
+        await page.wait_for_timeout(50)
+        await page.unroute("**/api/entries/inbox/awi.md", delay_detail)
+
+    async def exercise_search(succeeds: bool) -> None:
+        requested = asyncio.Event()
+        release = asyncio.Event()
+        fulfilled = asyncio.Event()
+
+        async def delay_search(route: playwright.async_api.Route) -> None:
+            response = await route.fetch() if succeeds else None
+            requested.set()
+            await release.wait()
+            if response is None:
+                await route.fulfill(status=200, content_type="application/json", body="{")
+            else:
+                await route.fulfill(response=response)
+            fulfilled.set()
+
+        await page.route("**/api/plans/search?*", delay_search)
+        await page.goto(harness.base_url + "/plans")
+        await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+        await page.locator("#filter").fill("初回")
+        await asyncio.wait_for(requested.wait(), timeout=5)
+        await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+        await page.locator("#sessions .session-item").first.wait_for(state="visible")
+        release.set()
+        await asyncio.wait_for(fulfilled.wait(), timeout=5)
+        await page.wait_for_timeout(50)
+        await page.unroute("**/api/plans/search?*", delay_search)
+
+    for succeeds in (True, False):
+        await exercise_detail(succeeds)
+        await exercise_search(succeeds)
+
+    assert not errors
+
+
+@pytest.mark.parametrize("reload_succeeds", [True, False], ids=["success", "failure"])
+@pytest.mark.asyncio
+async def test_navigation_stops_user_comment_conflict_reload_after_unmount(
+    screen_harness: _ScreenHarness,
+    reload_succeeds: bool,
+) -> None:
+    """コメント競合後の詳細再取得が遷移後に完了しても、現行画面へ触れない。"""
+    harness = screen_harness
+    page = harness.page
+    errors: list[str] = []
+    reload_requested = asyncio.Event()
+    release_reload = asyncio.Event()
+    reload_fulfilled = asyncio.Event()
+    entry_path = harness.plan_path.parent.parent / "inbox" / "awi.md"
+    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    await page.goto(harness.base_url + "/")
+    await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
+    await detail.locator("#user-comment-input").fill("競合後も保持する入力")
+    entry_path.write_text(
+        entry_path.read_text(encoding="utf-8").replace("編集対象の本文", "外部更新された本文"),
+        encoding="utf-8",
+    )
+
+    async def return_edit_conflict(route: playwright.async_api.Route) -> None:
+        await route.fulfill(
+            status=200,
+            headers={"X-Atk-Test-Edit-Conflict": "1"},
+            json={"error": "外部更新と競合しました", "code": "edit_conflict"},
+        )
+
+    async def delay_conflict_reload(route: playwright.async_api.Route) -> None:
+        response = await route.fetch() if reload_succeeds else None
+        reload_requested.set()
+        await release_reload.wait()
+        if response is None:
+            await route.fulfill(status=200, content_type="application/json", body="{")
+        else:
+            await route.fulfill(response=response)
+        reload_fulfilled.set()
+
+    await page.evaluate(
+        """() => {
+          const originalFetch = window.fetch.bind(window);
+          window.fetch = async (...args) => {
+            const response = await originalFetch(...args);
+            if (response.headers.get("X-Atk-Test-Edit-Conflict") !== "1") return response;
+            return new Response(await response.text(), {
+              status: 409,
+              headers: response.headers
+            });
+          };
+        }"""
+    )
+    comment_route_pattern = "**/api/entries/user-comment"
+    route_pattern = "**/api/entries/inbox/awi.md"
+    await page.route(comment_route_pattern, return_edit_conflict)
+    await page.route(route_pattern, delay_conflict_reload)
+    await detail.get_by_role("button", name="コメントを保存").click()
+    await asyncio.wait_for(reload_requested.wait(), timeout=5)
+    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(detail).to_be_hidden()
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    release_reload.set()
+    await asyncio.wait_for(reload_fulfilled.wait(), timeout=5)
+    await page.wait_for_timeout(50)
+
+    assert await page.evaluate("() => location.pathname") == "/plans"
+    assert not errors
+    await page.unroute(comment_route_pattern, return_edit_conflict)
+    await page.unroute(route_pattern, delay_conflict_reload)
+
+
+@pytest.mark.asyncio
+async def test_remount_discards_initial_response_from_previous_mount(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """同じ画面を再マウントした後も、前のマウントの初期応答を現行表示へ適用しない。"""
+    harness = screen_harness
+    page = harness.page
+    errors: list[str] = []
+    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    async def exercise(
+        path: str,
+        route_pattern: str,
+        stale_payload: dict[str, object] | list[object],
+        away_label: str,
+        return_label: str,
+        stable_selector: str,
+    ) -> None:
+        first_requested = asyncio.Event()
+        release_first = asyncio.Event()
+        first_fulfilled = asyncio.Event()
+        request_count = 0
+
+        async def delay_first_response(route: playwright.async_api.Route) -> None:
+            nonlocal request_count
+            request_count += 1
+            if request_count > 1:
+                await route.continue_()
+                return
+            first_requested.set()
+            await release_first.wait()
+            await route.fulfill(status=200, json=stale_payload)
+            first_fulfilled.set()
+
+        await page.route(route_pattern, delay_first_response)
+        await page.goto(harness.base_url + path)
+        await asyncio.wait_for(first_requested.wait(), timeout=5)
+        await page.locator("nav.app-nav").get_by_role("link", name=away_label).click()
+        await page.locator("nav.app-nav").get_by_role("link", name=return_label).click()
+        stable = page.locator(stable_selector)
+        await stable.first.wait_for(state="visible")
+        expected = await stable.all_inner_texts()
+        release_first.set()
+        await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
+        await page.wait_for_timeout(100)
+        assert await stable.all_inner_texts() == expected
+        await page.unroute(route_pattern, delay_first_response)
+
+    await exercise(
+        "/",
+        "**/api/entries?type=all&status=active&answered=all&page=1",
+        {"entries": [], "warnings": []},
+        "計画ファイル",
+        "WI",
+        "#entry-list .entry-select",
+    )
+    await exercise(
+        "/plans",
+        "**/api/plans/files",
+        [{"host": "stale-host", "path": "stale.md", "ctime": "stale", "mtime_epoch": 0}],
+        "セッション",
+        "計画ファイル",
+        "#files .file",
+    )
+    await exercise(
+        "/sessions",
+        "**/api/sessions/list",
+        {"sessions": [], "warnings": []},
+        "WI",
+        "セッション",
+        "#sessions .session-item",
+    )
+
+    assert not errors
+
+
+@pytest.mark.asyncio
 async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenHarness) -> None:
     """ブラウザーの戻る操作で直前の画面が再び描画される。"""
     harness = screen_harness
@@ -2156,6 +2416,24 @@ async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenH
     await page.go_back()
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     assert await page.evaluate("() => location.pathname") == "/"
+
+
+@pytest.mark.asyncio
+async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """一覧のコピー操作はファイル名と要約を写し、詳細選択を発生させない。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/")
+    row = page.locator("#entry-list .entry-row").first
+    await row.locator(".entry-copy").wait_for(state="visible")
+    filename = await row.locator(".filename-cell").inner_text()
+    summary = await row.locator(".summary-cell").inner_text()
+
+    await row.locator(".entry-copy").click()
+
+    assert await page.evaluate("() => navigator.clipboard.readText()") == f"{filename} {summary}"
+    assert await page.locator("#detail-dialog").evaluate("element => element.open") is False
 
 
 @pytest.mark.asyncio
@@ -2365,6 +2643,47 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "入力: 12" in await harness.page.locator("#detail-usage").inner_text()
     # 破損した行は該当セッションの警告として示し、他の発話を失わせない。
     assert "解析できない行が1件あります" in detail_text
+
+
+@pytest.mark.asyncio
+async def test_session_details_use_exclusive_default_closed_sections(screen_harness: _ScreenHarness) -> None:
+    """思考とツール呼び出しは既定で畳み、同時に1項目だけを展開する。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="claude"]').click()
+    sections = page.locator('#detail details[data-exclusive-event="true"]')
+    await sections.nth(1).wait_for(state="visible")
+
+    assert not await sections.nth(0).evaluate("element => element.open")
+    assert not await sections.nth(1).evaluate("element => element.open")
+    await sections.nth(0).locator("summary").click()
+    assert await sections.nth(0).evaluate("element => element.open")
+    await sections.nth(1).locator("summary").click()
+    await playwright.async_api.expect(sections.nth(0)).not_to_have_attribute("open", "")
+    await playwright.async_api.expect(sections.nth(1)).to_have_attribute("open", "")
+
+
+@pytest.mark.asyncio
+async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _ScreenHarness) -> None:
+    """狭い画面では右ペイン全体がスクロールし、タイトルとトークン表示も本文とともに移動する。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 900, "height": 360})
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="claude"]').click()
+    await page.locator("#detail .event").first.wait_for(state="visible")
+    await page.locator("#detail").evaluate(
+        "element => { const spacer = document.createElement('div'); spacer.style.height = '600px'; element.append(spacer); }"
+    )
+    toolbar = page.locator("main .toolbar")
+    before = await toolbar.bounding_box()
+    assert before is not None
+
+    scroll_top = await page.locator("main").evaluate("element => { element.scrollTop = 120; return element.scrollTop; }")
+    after = await toolbar.bounding_box()
+
+    assert scroll_top > 0
+    assert after is not None
+    assert after["y"] < before["y"]
 
 
 @pytest.mark.asyncio

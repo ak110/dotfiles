@@ -30,6 +30,8 @@ let rootStatus = {};
 let visibleFiles = [];
 let mermaidLoadPromise = null;
 let previewGeneration = 0;
+// 画面内の描画の追い越しは`previewGeneration`、画面間の入れ替えはマウント世代で判定する。
+let isCurrentMount = () => false;
 let previewObjectUrls = new Set();
 let searchGeneration = 0;
 let searchTimer = null;
@@ -309,31 +311,35 @@ function setupSentinelObserver() {
 }
 
 async function refreshFiles() {
-  const res = await fetch(BASE_PATH + "/api/plans/files");
-  files = await res.json();
+  const currentMount = isCurrentMount;
+  const res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/files"));
+  if (!currentMount()) return;
+  files = await currentMount.wait(res.json());
+  if (!currentMount()) return;
   renderFiles();
 }
 
 async function searchFullText(query, generation) {
+  const currentMount = isCurrentMount;
   const status = document.getElementById("search-status");
   status.textContent = "検索中";
   try {
     let res = null;
     for (let attempt = 0; ; attempt++) {
-      res = await fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query));
-      if (generation !== searchGeneration) return;
+      res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
+      if (!currentMount() || generation !== searchGeneration) return;
       if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
-      await new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS));
-      if (generation !== searchGeneration) return;
+      await currentMount.wait(new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS)));
+      if (!currentMount() || generation !== searchGeneration) return;
     }
     if (!res.ok) throw new Error("status " + res.status);
-    const matched = await res.json();
-    if (generation !== searchGeneration) return;
+    const matched = await currentMount.wait(res.json());
+    if (!currentMount() || generation !== searchGeneration) return;
     serverSearchKeys = new Set(matched.map(fileKey));
     status.textContent = "";
     renderFiles();
   } catch (_) {
-    if (generation !== searchGeneration) return;
+    if (!currentMount() || generation !== searchGeneration) return;
     serverSearchKeys = new Set();
     status.textContent = "検索に失敗しました";
     renderFiles();
@@ -341,6 +347,7 @@ async function searchFullText(query, generation) {
 }
 
 function scheduleFullTextSearch() {
+  const currentMount = isCurrentMount;
   const query = document.getElementById("filter").value.trim();
   const generation = ++searchGeneration;
   if (searchTimer !== null) clearTimeout(searchTimer);
@@ -351,15 +358,18 @@ function scheduleFullTextSearch() {
   if (!query) return;
   searchTimer = setTimeout(() => {
     searchTimer = null;
-    searchFullText(query, generation);
+    if (currentMount()) searchFullText(query, generation);
   }, SEARCH_DEBOUNCE_MS);
 }
 
 async function refreshHostStatus() {
+  const currentMount = isCurrentMount;
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await fetch(BASE_PATH + "/api/plans/host-status");
+  const res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/host-status"));
+  if (!currentMount()) return;
   if (res.ok) {
-    hostStatus = await res.json();
+    hostStatus = await currentMount.wait(res.json());
+    if (!currentMount()) return;
   }
 }
 
@@ -369,16 +379,20 @@ async function refreshHostStatus() {
 const HOST_INFO_REFRESH_MAX_ATTEMPTS = 3;
 
 async function refreshHostInfo() {
+  const currentMount = isCurrentMount;
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
   // fetch開始前後でhostInfoEventCounterを比較し、変化していれば当該フェッチのスナップショットは
   // 新しいSSE更新より古い可能性があるため、カウンタが安定するまで取得し直す。上限到達時は
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    let res = await fetch(BASE_PATH + "/api/plans/root-info");
-    if (!res.ok) res = await fetch(BASE_PATH + "/api/plans/host-info");
+    let res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/root-info"));
+    if (!currentMount()) return;
+    if (!res.ok) res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/host-info"));
+    if (!currentMount()) return;
     if (!res.ok) return;
-    const info = await res.json();
+    const info = await currentMount.wait(res.json());
+    if (!currentMount()) return;
     if (hostInfoEventCounter !== counterBefore) continue;
     for (const host of Object.keys(ROOT_DIRS)) {
       if (!(host in info)) delete ROOT_DIRS[host];
@@ -390,27 +404,32 @@ async function refreshHostInfo() {
 }
 
 async function refreshRootStatus() {
-  const res = await fetch(BASE_PATH + "/api/plans/root-status");
+  const currentMount = isCurrentMount;
+  const res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/root-status"));
+  if (!currentMount()) return;
   if (res.ok) {
-    rootStatus = await res.json();
+    rootStatus = await currentMount.wait(res.json());
+    if (!currentMount()) return;
     renderRootWarnings();
   }
 }
 
 async function applyPreviewHtml(html, scrollTop, generation) {
-  if (generation !== previewGeneration) return;
+  const currentMount = isCurrentMount;
+  if (!currentMount() || generation !== previewGeneration) return;
   revokePreviewObjectUrls();
   const preview = document.getElementById("preview");
   preview.innerHTML = html;
-  await renderDiagrams(preview, generation);
-  if (generation !== previewGeneration) return;
+  await currentMount.wait(renderDiagrams(preview, generation));
+  if (!currentMount() || generation !== previewGeneration) return;
   const main = document.querySelector("main");
   if (main) main.scrollTop = scrollTop;
 }
 
 async function renderDiagrams(preview, generation) {
+  const currentMount = isCurrentMount;
   renderSvgDiagrams(preview.querySelectorAll(".diagram-svg"), generation);
-  await renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation);
+  await currentMount.wait(renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation));
 }
 
 function loadMermaid() {
@@ -433,21 +452,24 @@ function loadMermaid() {
 
 async function renderMermaidDiagrams(nodes, generation) {
   if (nodes.length === 0) return;
+  const currentMount = isCurrentMount;
   let api;
   try {
-    api = await loadMermaid();
+    api = await currentMount.wait(loadMermaid());
   } catch (error) {
+    if (!currentMount() || generation !== previewGeneration) return;
     for (const node of nodes) showDiagramError(node.closest("figure"), error.message);
     return;
   }
-  if (generation !== previewGeneration) return;
+  if (!currentMount() || generation !== previewGeneration) return;
   for (const node of nodes) {
     const source = node.textContent;
     try {
-      await api.run({nodes: [node]});
+      await currentMount.wait(api.run({nodes: [node]}));
       disableMermaidNavigation(node);
-      if (generation !== previewGeneration) return;
+      if (!currentMount() || generation !== previewGeneration) return;
     } catch (_) {
+      if (!currentMount() || generation !== previewGeneration) return;
       node.textContent = source;
       showDiagramError(node.closest("figure"), "Mermaid図を描画できませんでした");
     }
@@ -498,22 +520,26 @@ function showDiagramError(figure, message) {
 
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
+  const currentMount = isCurrentMount;
   const main = document.querySelector("main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
-  if (generation !== previewGeneration) return;
+  const res = await currentMount.wait(
+    fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource)),
+  );
+  if (!currentMount() || generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     return;
   }
-  const html = await res.text();
-  if (generation !== previewGeneration) return;
-  await applyPreviewHtml(html, scrollTop, generation);
-  if (generation !== previewGeneration) return;
+  const html = await currentMount.wait(res.text());
+  if (!currentMount() || generation !== previewGeneration) return;
+  await currentMount.wait(applyPreviewHtml(html, scrollTop, generation));
+  if (!currentMount() || generation !== previewGeneration) return;
 }
 
 async function openFile(host, path, source) {
+  const currentMount = isCurrentMount;
   // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
@@ -533,38 +559,45 @@ async function openFile(host, path, source) {
   if (isMobileViewport()) setDrawerOpen(false);
   const main = document.querySelector("main");
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
-  if (generation !== previewGeneration) return;
+  const res = await currentMount.wait(
+    fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource)),
+  );
+  if (!currentMount() || generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     if (main) main.scrollTop = 0;
     return;
   }
-  const html = await res.text();
-  if (generation !== previewGeneration) return;
-  await applyPreviewHtml(html, 0, generation);
+  const html = await currentMount.wait(res.text());
+  if (!currentMount() || generation !== previewGeneration) return;
+  await currentMount.wait(applyPreviewHtml(html, 0, generation));
 }
 
 async function resyncFromServer() {
-  await refreshFiles();
+  const currentMount = isCurrentMount;
+  await currentMount.wait(refreshFiles());
+  if (!currentMount()) return;
   if (!selectedPath || !selectedHost) return;
   const current = files.find(f => isSelected(f));
   if (current && current.mtime_epoch !== selectedMtime) {
     selectedMtime = current.mtime_epoch;
-    await updatePreview();
+    await currentMount.wait(updatePreview());
   }
 }
 
 async function copySelectedRaw() {
   if (!selectedPath || !selectedHost) return;
+  const currentMount = isCurrentMount;
   const btn = document.getElementById("copy-btn");
   const originalLabel = btn.dataset.label || btn.textContent;
   btn.dataset.label = originalLabel;
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await currentMount.wait(
+      fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource)),
+    );
     if (!res.ok) throw new Error("status " + res.status);
-    const text = await res.text();
-    await navigator.clipboard.writeText(text);
+    const text = await currentMount.wait(res.text());
+    await currentMount.wait(navigator.clipboard.writeText(text));
     btn.textContent = "コピーしました";
   } catch (e) {
     btn.textContent = "コピーに失敗しました";
@@ -574,6 +607,7 @@ async function copySelectedRaw() {
 
 async function copySelectedPath() {
   if (!selectedPath || !selectedHost) return;
+  const currentMount = isCurrentMount;
   const info = rootInfo(selectedHost, selectedSource);
   if (!info) return;
   const btn = document.getElementById("copy-path-btn");
@@ -594,7 +628,7 @@ async function copySelectedPath() {
     absolutePath = (info.root + "/" + selectedPath).replace(info.home, "~");
   }
   try {
-    await navigator.clipboard.writeText(absolutePath);
+    await currentMount.wait(navigator.clipboard.writeText(absolutePath));
     btn.textContent = "コピーしました";
   } catch (e) {
     btn.textContent = "コピーに失敗しました";
@@ -609,7 +643,8 @@ async function copySelectedPath() {
 // バックフォワード遷移後も自動反映を維持する（beforeunloadはbfcacheを無効化するため避ける）。
 let eventSource = null;
 
-async function handleSseMessage(event) {
+async function handleSseMessage(event, currentMount) {
+  if (!currentMount()) return;
   // 旧形式（dataが"refresh"文字列固定）と新形式（JSON）を両対応する。
   // JSON解析失敗時もrefresh扱いで再同期する（パース不能なフレームを握り潰さない）。
   let payload = null;
@@ -650,20 +685,25 @@ async function handleSseMessage(event) {
     renderRootWarnings();
     return;
   }
-  await resyncFromServer();
+  await currentMount.wait(resyncFromServer());
 }
 
 function connectEvents() {
+  const currentMount = isCurrentMount;
   const es = new EventSource(BASE_PATH + "/api/plans/events");
   // EventSourceは接続断後にブラウザが自動再接続するが、再接続中に発生したSSEイベントは
   // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
   es.onopen = async () => {
-    await refreshHostStatus();
-    await refreshHostInfo();
-    await refreshRootStatus();
-    await resyncFromServer();
+    if (!currentMount()) return;
+    await currentMount.wait(refreshHostStatus());
+    if (!currentMount()) return;
+    await currentMount.wait(refreshHostInfo());
+    if (!currentMount()) return;
+    await currentMount.wait(refreshRootStatus());
+    if (!currentMount()) return;
+    await currentMount.wait(resyncFromServer());
   };
-  es.onmessage = handleSseMessage;
+  es.onmessage = (event) => { void handleSseMessage(event, currentMount); };
   return es;
 }
 
@@ -683,10 +723,14 @@ function handlePageShow(event) {
 
 // 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。
 async function forceResync() {
-  await refreshHostStatus();
-  await refreshHostInfo();
-  await refreshRootStatus();
-  await resyncFromServer();
+  const currentMount = isCurrentMount;
+  await currentMount.wait(refreshHostStatus());
+  if (!currentMount()) return;
+  await currentMount.wait(refreshHostInfo());
+  if (!currentMount()) return;
+  await currentMount.wait(refreshRootStatus());
+  if (!currentMount()) return;
+  await currentMount.wait(resyncFromServer());
 }
 
 // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
@@ -728,7 +772,8 @@ function bindScreenEvents() {
   });
 }
 
-async function mount() {
+async function mount(currentMount) {
+  isCurrentMount = currentMount;
   const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
   BASE_PATH = bootstrap.base_path;
   ROOT_DIRS = bootstrap.root_dirs;
@@ -738,17 +783,27 @@ async function mount() {
   window.addEventListener("focus", handleWindowFocus);
   document.addEventListener("visibilitychange", handleVisibilityChange);
 
-  await refreshHostStatus();
-  await refreshHostInfo();
-  await refreshRootStatus();
-  await refreshFiles();
-  if (files.length > 0) await openFile(files[0].host, files[0].path, fileSource(files[0]));
+  await currentMount.wait(refreshHostStatus());
+  if (!currentMount()) return;
+  await currentMount.wait(refreshHostInfo());
+  if (!currentMount()) return;
+  await currentMount.wait(refreshRootStatus());
+  if (!currentMount()) return;
+  await currentMount.wait(refreshFiles());
+  if (!currentMount()) return;
+  if (files.length > 0) {
+    await currentMount.wait(openFile(files[0].host, files[0].path, fileSource(files[0])));
+  }
+  if (!currentMount()) return;
   setupSentinelObserver();
 
   eventSource = connectEvents();
 }
 
 function unmount() {
+  isCurrentMount = () => false;
+  previewGeneration += 1;
+  searchGeneration += 1;
   window.removeEventListener("pagehide", handlePageHide);
   window.removeEventListener("pageshow", handlePageShow);
   window.removeEventListener("focus", handleWindowFocus);

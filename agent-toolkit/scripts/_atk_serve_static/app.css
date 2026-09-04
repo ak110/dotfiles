@@ -135,14 +135,15 @@ textarea { resize: vertical; }
 .additional-filters { margin-top: var(--space-2); }
 .additional-filters h3 { margin: 0 0 var(--space-2); font-size: inherit; }
 .entry-pane { min-height: 34rem; }
-.entry-columns, .entry-select {
+.entry-columns, .entry-row {
   display: grid;
-  /* ファイル名と要約を主情報として幅を配分する。 */
+  /* ファイル名と要約を主情報として幅を配分し、末尾にコピー操作を置く。 */
   grid-template-columns:
-    12rem
-    minmax(10rem, 1.35fr)
-    minmax(8rem, 1fr)
-    minmax(12rem, 2fr);
+    minmax(8rem, 0.9fr)
+    minmax(7rem, 0.9fr)
+    minmax(7rem, 0.8fr)
+    minmax(16rem, 3fr)
+    auto;
   gap: var(--space-2);
   align-items: center;
 }
@@ -161,11 +162,15 @@ textarea { resize: vertical; }
   list-style: none;
 }
 .entry-select {
+  display: grid;
+  grid-column: 1 / 5;
+  grid-template-columns: subgrid;
   width: 100%;
   padding: var(--space-2);
   text-align: left;
   background: var(--color-surface);
 }
+.entry-copy { grid-column: 5; white-space: nowrap; }
 .entry-select:hover { border-color: #aeb9cd; background: #f7f9fd; }
 .entry-select[aria-current="true"] {
   border-color: var(--color-primary);
@@ -411,7 +416,9 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
 
 @media (max-width: 1279px) {
   .entry-columns { display: none; }
-  .entry-select { grid-template-columns: 1fr; gap: var(--space-1); padding: var(--space-3); }
+  .entry-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .entry-select { grid-column: 1; grid-template-columns: 1fr; gap: var(--space-1); padding: var(--space-3); }
+  .entry-copy { grid-column: 2; }
   .entry-cell {
     display: grid;
     grid-template-columns: minmax(7rem, 35%) minmax(0, 1fr);

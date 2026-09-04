@@ -37,6 +37,7 @@ let detailRequestGeneration = 0;
 let detailSessionGeneration = 0;
 let listRequestGeneration = 0;
 let targetRepoRequestGeneration = 0;
+let knownUwiRequestGeneration = 0;
 let pendingListRequests = 0;
 let pendingListAnnouncement = false;
 let detailRefreshRequired = false;
@@ -175,6 +176,7 @@ function firstInvalid(inputs) {
 }
 
 async function runPending(key, {container, button, busyLabel}, operation) {
+  const currentMount = isCurrentMount;
   if (pendingOperations.has(key)) return undefined;
   pendingOperations.add(key);
   const controls = Array.from(container.querySelectorAll('input, select, textarea, button'))
@@ -188,17 +190,19 @@ async function runPending(key, {container, button, busyLabel}, operation) {
   button.setAttribute('aria-busy', 'true');
   container.setAttribute('aria-busy', 'true');
   try {
-    return await operation();
+    return await currentMount.wait(operation());
   } finally {
-    controls.forEach((control, index) => { control.disabled = previous[index]; });
-    button.textContent = originalLabel;
-    button.classList.remove('is-pending');
-    button.setAttribute('aria-busy', 'false');
-    container.setAttribute('aria-busy', 'false');
-    pendingOperations.delete(key);
-    syncFilterDependencies();
-    syncDetailMutationAvailability();
-    restoreRefreshFocus();
+    if (currentMount()) {
+      controls.forEach((control, index) => { control.disabled = previous[index]; });
+      button.textContent = originalLabel;
+      button.classList.remove('is-pending');
+      button.setAttribute('aria-busy', 'false');
+      container.setAttribute('aria-busy', 'false');
+      pendingOperations.delete(key);
+      syncFilterDependencies();
+      syncDetailMutationAvailability();
+      restoreRefreshFocus();
+    }
   }
 }
 
@@ -286,7 +290,20 @@ function renderEntry(entry) {
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
   button.addEventListener('click', () => selectEntry(entry, button));
-  item.append(button);
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'entry-copy button-secondary';
+  copy.textContent = 'コピー';
+  copy.setAttribute('aria-label', `${entry.filename}の要約をコピー`);
+  copy.addEventListener('click', async () => {
+    const currentMount = isCurrentMount;
+    try {
+      await currentMount.wait(navigator.clipboard.writeText(`${entry.filename} ${entry.summary || ''}`));
+    } catch (error) {
+      if (currentMount()) setGlobalError(`コピーに失敗しました。 ${error.message}`);
+    }
+  });
+  item.append(button, copy);
   return item;
 }
 
@@ -390,13 +407,14 @@ function renderPagination() {
 }
 
 async function movePage(offset) {
+  const currentMount = isCurrentMount;
   const targetPage = Math.min(
     Math.max(1, currentPage + offset),
     pagination.page_count || 1
   );
   if (targetPage === currentPage) return;
   currentPage = targetPage;
-  await loadEntries({announce: true});
+  await currentMount.wait(loadEntries({announce: true}));
 }
 
 function applyPagination(payload) {
@@ -424,6 +442,7 @@ function applyPagination(payload) {
 }
 
 async function loadEntries({announce = false} = {}) {
+  const currentMount = isCurrentMount;
   pendingListAnnouncement = pendingListAnnouncement || announce;
   const query = buildQuery(currentPage);
   const searchTerm = query.get('q') || '';
@@ -431,8 +450,8 @@ async function loadEntries({announce = false} = {}) {
   const generation = ++listRequestGeneration;
   setListLoading(true);
   try {
-    const payload = await api(`/api/entries?${query.toString()}`);
-    if (generation !== listRequestGeneration) return entries;
+    const payload = await currentMount.wait(api(`/api/entries?${query.toString()}`));
+    if (!currentMount() || generation !== listRequestGeneration) return entries;
     const initialEntries = Array.isArray(payload.entries) ? payload.entries : [];
     let selectedPayload = payload;
     let searchFallback = false;
@@ -440,8 +459,8 @@ async function loadEntries({announce = false} = {}) {
     if (canSearchFallback && initialEntries.length === 0) {
       try {
         const fallbackQuery = new URLSearchParams({q: searchTerm, page: String(currentPage)});
-        const fallbackPayload = await api(`/api/entries?${fallbackQuery.toString()}`);
-        if (generation !== listRequestGeneration) return entries;
+        const fallbackPayload = await currentMount.wait(api(`/api/entries?${fallbackQuery.toString()}`));
+        if (!currentMount() || generation !== listRequestGeneration) return entries;
         const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
         if (fallbackEntries.length > 0 && fallbackEntries.length <= SEARCH_FALLBACK_MAX_RESULTS) {
           selectedPayload = fallbackPayload;
@@ -451,7 +470,7 @@ async function loadEntries({announce = false} = {}) {
         fallbackError = error;
       }
     }
-    if (generation !== listRequestGeneration) return entries;
+    if (!currentMount() || generation !== listRequestGeneration) return entries;
     entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
     applyPagination(selectedPayload);
     const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
@@ -462,13 +481,13 @@ async function loadEntries({announce = false} = {}) {
     if (fallbackError) setGlobalError(fallbackError.message);
     return entries;
   } catch (error) {
-    if (generation === listRequestGeneration) {
+    if (currentMount() && generation === listRequestGeneration) {
       pendingListAnnouncement = false;
       setGlobalError(error.message);
     }
     return entries;
   } finally {
-    setListLoading(false);
+    if (currentMount()) setListLoading(false);
   }
 }
 
@@ -478,7 +497,16 @@ function syncNotificationButton() {
 }
 
 async function refreshKnownUwis({notify = false} = {}) {
-  const payload = await api('/api/entries?type=uwi&status=all&answered=all');
+  const currentMount = isCurrentMount;
+  const generation = ++knownUwiRequestGeneration;
+  let payload;
+  try {
+    payload = await currentMount.wait(api('/api/entries?type=uwi&status=all&answered=all'));
+  } catch (error) {
+    if (!currentMount() || generation !== knownUwiRequestGeneration) return;
+    throw error;
+  }
+  if (!currentMount() || generation !== knownUwiRequestGeneration) return;
   const allUwis = Array.isArray(payload.entries) ? payload.entries : [];
   const newUnanswered = knownUwiBaselineReady && notify ? allUwis.filter(entry =>
     !knownUwiFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
@@ -495,8 +523,9 @@ async function refreshKnownUwis({notify = false} = {}) {
 
 async function enableNotifications() {
   if (typeof Notification === 'undefined') return;
-  await Notification.requestPermission();
-  syncNotificationButton();
+  const currentMount = isCurrentMount;
+  await currentMount.wait(Notification.requestPermission());
+  if (currentMount()) syncNotificationButton();
 }
 
 function replaceOptions(select, values, firstLabel) {
@@ -516,12 +545,14 @@ function replaceOptions(select, values, firstLabel) {
 }
 
 async function loadTargetRepos() {
+  const currentMount = isCurrentMount;
   const generation = ++targetRepoRequestGeneration;
   const requestedState = byId('state-filter').value;
   try {
     const status = encodeURIComponent(requestedState);
-    const payload = await api(`/api/repos?status=${status}`);
-    if (generation !== targetRepoRequestGeneration || byId('state-filter').value !== requestedState) return false;
+    const payload = await currentMount.wait(api(`/api/repos?status=${status}`));
+    if (!currentMount() || generation !== targetRepoRequestGeneration ||
+        byId('state-filter').value !== requestedState) return false;
     const repos = Array.isArray(payload.repos) ? payload.repos : [];
     replaceOptions(byId('target-filter'), repos, 'すべて');
     const datalist = byId('repo-options');
@@ -532,7 +563,8 @@ async function loadTargetRepos() {
     }));
     return true;
   } catch (error) {
-    const isCurrent = generation === targetRepoRequestGeneration && byId('state-filter').value === requestedState;
+    const isCurrent = currentMount() && generation === targetRepoRequestGeneration &&
+      byId('state-filter').value === requestedState;
     if (isCurrent) setGlobalError(error.message);
     return isCurrent;
   }
@@ -545,6 +577,7 @@ function syncFilterDependencies() {
 }
 
 async function clearFilters({load = true} = {}) {
+  const currentMount = isCurrentMount;
   byId('search-input').value = '';
   byId('kind-filter').value = 'all';
   byId('state-filter').value = 'active';
@@ -555,8 +588,9 @@ async function clearFilters({load = true} = {}) {
   pagination.page = 1;
   syncFilterDependencies();
   if (load) {
-    await loadTargetRepos();
-    await loadEntries({announce: true});
+    await currentMount.wait(loadTargetRepos());
+    if (!currentMount()) return;
+    await currentMount.wait(loadEntries({announce: true}));
   }
 }
 
@@ -721,18 +755,23 @@ function displayEntry(entry) {
 }
 
 async function selectEntry(entry, origin = null) {
+  const currentMount = isCurrentMount;
   const requestGeneration = ++detailRequestGeneration;
   const sessionGeneration = ++detailSessionGeneration;
+  const requestIsCurrent = () => currentMount() && requestGeneration === detailRequestGeneration &&
+    sessionGeneration === detailSessionGeneration;
   detailOrigin = origin || document.activeElement;
   detailOriginKey = entryKey(entry);
   clearDialogMessages('detail');
   try {
-    const payload = await api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`);
-    if (requestGeneration !== detailRequestGeneration || sessionGeneration !== detailSessionGeneration) return;
+    const payload = await currentMount.wait(
+      api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`),
+    );
+    if (!requestIsCurrent()) return;
     displayEntry(payload.entry);
     openDialog(byId('detail-dialog'), detailOrigin, byId('detail-dialog-body'));
   } catch (error) {
-    if (requestGeneration === detailRequestGeneration) setGlobalError(error.message);
+    if (requestIsCurrent()) setGlobalError(error.message);
   }
 }
 
@@ -797,13 +836,14 @@ function refreshUserCommentMode(entry, message) {
 }
 
 async function reloadOpenDetailFromExternalChange() {
+  const currentMount = isCurrentMount;
   if (!byId('detail-dialog').open || !currentEntry) return;
   if (detailOriginKey !== entryKey(currentEntry)) return;
   const sessionGeneration = detailSessionGeneration;
   const originalState = currentEntry.state;
   const filename = currentEntry.filename;
   const requestGeneration = ++detailRequestGeneration;
-  const requestIsCurrent = () => requestGeneration === detailRequestGeneration &&
+  const requestIsCurrent = () => currentMount() && requestGeneration === detailRequestGeneration &&
     sessionGeneration === detailSessionGeneration && byId('detail-dialog').open &&
     currentEntry?.filename === filename;
   let deleteConfirmationInvalidated = false;
@@ -812,7 +852,9 @@ async function reloadOpenDetailFromExternalChange() {
   }
   let resolvedEntry = null;
   try {
-    const payload = await api(`/api/entries/${encodeURIComponent(originalState)}/${encodeURIComponent(filename)}`);
+    const payload = await currentMount.wait(
+      api(`/api/entries/${encodeURIComponent(originalState)}/${encodeURIComponent(filename)}`),
+    );
     if (!requestIsCurrent()) return;
     resolvedEntry = payload.entry;
   } catch (error) {
@@ -827,7 +869,9 @@ async function reloadOpenDetailFromExternalChange() {
     const candidates = [];
     for (const state of Object.keys(STATE_LABELS).filter(state => state !== originalState)) {
       try {
-        const payload = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
+        const payload = await currentMount.wait(
+          api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`),
+        );
         if (!requestIsCurrent()) return;
         candidates.push(payload.entry);
       } catch (error) {
@@ -904,12 +948,15 @@ function enterUserComment() {
 }
 
 async function reloadUserCommentAfterConflict(key, sessionGeneration) {
+  const currentMount = isCurrentMount;
   const state = currentEntry?.state;
   const filename = currentEntry?.filename;
   if (!state || !filename) return false;
   try {
-    const refreshed = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
-    if (!byId('detail-dialog').open || entryKey(currentEntry) !== key ||
+    const refreshed = await currentMount.wait(
+      api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`),
+    );
+    if (!currentMount() || !byId('detail-dialog').open || entryKey(currentEntry) !== key ||
         sessionGeneration !== detailSessionGeneration || refreshed.entry.user_comment_editable !== true) return false;
     refreshUserCommentMode(
       refreshed.entry,
@@ -932,6 +979,7 @@ function mutationFailureMessage(key, failure, error) {
 }
 
 async function saveEntry() {
+  const currentMount = isCurrentMount;
   if (!currentEntry || detailRefreshRequired) return;
   const content = byId('edit-content').value;
   setFieldError(byId('edit-content'), byId('edit-content-error'), content.trim() ? '' : 'ファイル全体を入力してください。');
@@ -941,12 +989,14 @@ async function saveEntry() {
   const payload = {content, expected_content: currentEntry.content};
   clearDialogMessages('detail');
   try {
-    await runPending('save', {
+    await currentMount.wait(runPending('save', {
       container: byId('detail-shell'), button: byId('save-entry-button'), busyLabel: '保存中'
     }, () => api(`/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`, {
       method: 'PUT', body: JSON.stringify(payload)
-    }));
-    await loadEntries();
+    })));
+    if (!currentMount()) return;
+    await currentMount.wait(loadEntries());
+    if (!currentMount()) return;
     // 本文編集の保存確定後は詳細を閉じて一覧へ戻す。保存中に別項目へ切り替えた場合は閉じない。
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
@@ -954,6 +1004,7 @@ async function saveEntry() {
     }
     deliverOperationMessage(`${key}を保存しました。`);
   } catch (error) {
+    if (!currentMount()) return;
     const failure = `${key}を保存できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('edit-content').focus();
@@ -961,6 +1012,7 @@ async function saveEntry() {
 }
 
 async function saveAnswer() {
+  const currentMount = isCurrentMount;
   if (!currentEntry || detailRefreshRequired) return;
   const answer = byId('answer-input').value;
   setFieldError(byId('answer-input'), byId('answer-input-error'), answer.trim() ? '' : '回答を入力してください。');
@@ -975,10 +1027,12 @@ async function saveAnswer() {
   };
   clearDialogMessages('detail');
   try {
-    await runPending('answer', {
+    await currentMount.wait(runPending('answer', {
       container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}));
-    await loadEntries();
+    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)})));
+    if (!currentMount()) return;
+    await currentMount.wait(loadEntries());
+    if (!currentMount()) return;
     // 回答の確定は次の項目へ移る操作単位のため、保存後は詳細を閉じて一覧へ戻す。
     // 本文編集の保存は同じ対象を続けて編集する操作単位のため閉じない（saveEntry参照）。
     // 保存中に別項目へ切り替わった場合は、切り替え先の詳細を閉じない。
@@ -989,6 +1043,7 @@ async function saveAnswer() {
     // 詳細を閉じた後に配送し、成功メッセージを一覧側の共通通知へ表示する。
     deliverOperationMessage(`${key}へ回答しました。`);
   } catch (error) {
+    if (!currentMount()) return;
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('answer-input').focus();
@@ -996,6 +1051,7 @@ async function saveAnswer() {
 }
 
 async function saveUserComment() {
+  const currentMount = isCurrentMount;
   if (!currentEntry || detailRefreshRequired || currentEntry.user_comment_editable !== true) return;
   const input = byId('user-comment-input');
   const comment = input.value;
@@ -1011,23 +1067,28 @@ async function saveUserComment() {
   };
   clearDialogMessages('detail');
   try {
-    await runPending('user-comment', {
+    await currentMount.wait(runPending('user-comment', {
       container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)}));
-    await loadEntries();
+    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)})));
+    if (!currentMount()) return;
+    await currentMount.wait(loadEntries());
+    if (!currentMount()) return;
     if (byId('detail-dialog').open && entryKey(currentEntry) === key &&
         sessionGeneration === detailSessionGeneration) {
       closeDetailDialog();
     }
     deliverOperationMessage(`${key}のユーザーコメントを保存しました。`);
   } catch (error) {
-    if (error.payload?.code === 'edit_conflict' && await reloadUserCommentAfterConflict(key, sessionGeneration)) return;
+    if (!currentMount()) return;
+    if (error.payload?.code === 'edit_conflict' &&
+        await currentMount.wait(reloadUserCommentAfterConflict(key, sessionGeneration))) return;
     deliverOperationMessage(`${key}のユーザーコメントを保存できませんでした。 ${error.message}`, true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) input.focus();
   }
 }
 
 async function transitionDetail(action) {
+  const currentMount = isCurrentMount;
   if (!currentEntry || detailRefreshRequired) return;
   const allowed = action === 'unhold' ? currentEntry.state === 'hold' :
     action === 'return-to-inbox' ? currentEntry.state === 'rejected' : MUTABLE_STATES.has(currentEntry.state);
@@ -1039,16 +1100,19 @@ async function transitionDetail(action) {
   const note = byId('decision-note').value.trim();
   if (note && (action === 'adopt' || action === 'reject')) payload.note = note;
   try {
-    await runPending(`transition-${action}`, {
+    await currentMount.wait(runPending(`transition-${action}`, {
       container: byId('detail-shell'), button: byId(`${action}-button`), busyLabel: '処理中'
-    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}));
-    await loadEntries();
+    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)})));
+    if (!currentMount()) return;
+    await currentMount.wait(loadEntries());
+    if (!currentMount()) return;
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) closeDetailDialog();
     const label = {
       adopt: '採用', reject: '却下', hold: '保留', unhold: '保留解除', 'return-to-inbox': 'inboxへ戻す'
     }[action];
     deliverOperationMessage(`${key}を${label}しました。`);
   } catch (error) {
+    if (!currentMount()) return;
     deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
   }
 }
@@ -1098,6 +1162,7 @@ function createResultMessage(isBatch, result) {
 
 async function createEntry(event) {
   event.preventDefault();
+  const currentMount = isCurrentMount;
   const type = byId('create-kind').value;
   const isBatch = type === 'batch';
   // 一括登録は原文保持のため、送信値へtrimを適用せず入力の生テキストをそのまま送る。
@@ -1126,15 +1191,20 @@ async function createEntry(event) {
   }
   clearDialogMessages('create');
   try {
-    const result = await runPending('create', {
+    const result = await currentMount.wait(runPending('create', {
       container: byId('create-form'), button: byId('create-submit-button'), busyLabel: '追加中'
-    }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {method: 'POST', body: JSON.stringify(payload)}));
+    }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {method: 'POST', body: JSON.stringify(payload)})));
+    if (!currentMount()) return;
     closeDialog(byId('create-dialog'));
-    await clearFilters({load: false});
-    await loadTargetRepos();
-    await loadEntries({announce: true});
+    await currentMount.wait(clearFilters({load: false}));
+    if (!currentMount()) return;
+    await currentMount.wait(loadTargetRepos());
+    if (!currentMount()) return;
+    await currentMount.wait(loadEntries({announce: true}));
+    if (!currentMount()) return;
     deliverOperationMessage(createResultMessage(isBatch, result));
   } catch (error) {
+    if (!currentMount()) return;
     deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
     if (byId('create-dialog').open) byId('create-content').focus();
   }
@@ -1157,6 +1227,7 @@ function openDeleteDialog() {
 
 async function deleteEntry(event) {
   event.preventDefault();
+  const currentMount = isCurrentMount;
   if (!currentEntry) return;
   const force = byId('force-delete-confirmation').checked;
   if (currentEntry.state === 'processing' && !force) {
@@ -1173,11 +1244,13 @@ async function deleteEntry(event) {
   };
   clearDialogMessages('delete');
   try {
-    await runPending('delete', {
+    await currentMount.wait(runPending('delete', {
       container: byId('delete-form'), button: byId('delete-submit-button'), busyLabel: '削除中'
-    }, () => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload)}));
+    }, () => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload)})));
+    if (!currentMount()) return;
     if (byId('delete-dialog').open) closeDeleteDialog();
-    await loadEntries();
+    await currentMount.wait(loadEntries());
+    if (!currentMount()) return;
     if (!entries.some(entry => entryKey(entry) === key)) {
       if (byId('detail-dialog').open || currentEntry) closeDetailDialog();
       else detailReturnTarget().focus();
@@ -1188,6 +1261,7 @@ async function deleteEntry(event) {
     }
     deliverOperationMessage(`${key}を削除しました。`);
   } catch (error) {
+    if (!currentMount()) return;
     const failure = `${key}を削除できませんでした。 ${error.message}`;
     if (error.payload?.code === 'edit_conflict' && byId('detail-dialog').open) {
       invalidateDeleteConfirmation();
@@ -1203,36 +1277,47 @@ async function deleteEntry(event) {
 }
 
 async function synchronizeAndLoad() {
+  const currentMount = isCurrentMount;
   const payload = {};
   setTextMessage('sync-result', '');
   try {
-    await runPending('sync', {
+    await currentMount.wait(runPending('sync', {
       container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
-    }, () => api('/api/sync', {method: 'POST', body: JSON.stringify(payload)}));
+    }, () => api('/api/sync', {method: 'POST', body: JSON.stringify(payload)})));
+    if (!currentMount()) return;
     setTextMessage('sync-result', 'Git同期が完了しました。');
   } catch (error) {
+    if (!currentMount()) return;
     setTextMessage('sync-result', `Git同期に失敗しました。ローカル内容を表示中です。 ${error.message}`);
   }
-  await loadTargetRepos();
-  await loadEntries({announce: true});
+  await currentMount.wait(loadTargetRepos());
+  if (!currentMount()) return;
+  await currentMount.wait(loadEntries({announce: true}));
 }
 
 async function handleFilterChange({reloadRepos = false} = {}) {
+  const currentMount = isCurrentMount;
   currentPage = 1;
   pagination.page = 1;
   syncFilterDependencies();
   const requestedState = byId('state-filter').value;
-  if (reloadRepos && !await loadTargetRepos() && byId('state-filter').value !== requestedState) return;
-  await loadEntries({announce: true});
+  if (reloadRepos) {
+    const loaded = await currentMount.wait(loadTargetRepos());
+    if (!currentMount() || (!loaded && byId('state-filter').value !== requestedState)) return;
+  }
+  await currentMount.wait(loadEntries({announce: true}));
 }
 
 async function reloadFromExternalChange() {
+  const currentMount = isCurrentMount;
   void refreshKnownUwis({notify: true}).catch((error) => {
-    setGlobalError(error.message);
+    if (currentMount()) setGlobalError(error.message);
   });
-  await loadTargetRepos();
-  await loadEntries({announce: false});
-  await reloadOpenDetailFromExternalChange();
+  await currentMount.wait(loadTargetRepos());
+  if (!currentMount()) return;
+  await currentMount.wait(loadEntries({announce: false}));
+  if (!currentMount()) return;
+  await currentMount.wait(reloadOpenDetailFromExternalChange());
 }
 
 function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null) {
@@ -1250,6 +1335,7 @@ function handleFocusIn() {
 }
 
 function bindEvents() {
+  const currentMount = isCurrentMount;
   document.addEventListener('focusin', handleFocusIn);
   byId('global-error-close-button').addEventListener('click', () => {
     setGlobalError('');
@@ -1277,7 +1363,9 @@ function bindEvents() {
     if (searchTimer !== null) clearTimeout(searchTimer);
     currentPage = 1;
     pagination.page = 1;
-    searchTimer = setTimeout(() => loadEntries({announce: true}), 250);
+    searchTimer = setTimeout(() => {
+      if (currentMount()) loadEntries({announce: true});
+    }, 250);
   });
   byId('edit-button').addEventListener('click', enterEdit);
   byId('answer-button').addEventListener('click', enterAnswer);
@@ -1303,27 +1391,45 @@ function bindEvents() {
 let initialization = Promise.resolve();
 // SSE購読。`unmount`で閉じるため保持する。
 let eventSource = null;
+let isCurrentMount = () => false;
 
 function initializeApp() {
+  const currentMount = isCurrentMount;
   eventSource = new EventSource(BASE_PATH + '/api/events');
-  eventSource.addEventListener('open', () => { byId('connection-status').textContent = '自動更新に接続済み'; });
-  eventSource.addEventListener('error', () => { byId('connection-status').textContent = '自動更新を再接続中'; });
-  eventSource.addEventListener('changed', () => { void initialization.then(reloadFromExternalChange); });
+  eventSource.addEventListener('open', () => {
+    if (currentMount()) byId('connection-status').textContent = '自動更新に接続済み';
+  });
+  eventSource.addEventListener('error', () => {
+    if (currentMount()) byId('connection-status').textContent = '自動更新を再接続中';
+  });
+  eventSource.addEventListener('changed', () => {
+    void initialization.then(() => {
+      if (currentMount()) return reloadFromExternalChange();
+      return undefined;
+    });
+  });
   syncFilterDependencies();
   syncNotificationButton();
   initialization = synchronizeAndLoad()
-    .then(() => refreshKnownUwis({notify: false}))
+    .then(() => currentMount() ? refreshKnownUwis({notify: false}) : undefined)
     .catch((error) => {
-      setGlobalError(error.message);
+      if (currentMount()) setGlobalError(error.message);
     });
 }
 
-function mount() {
+function mount(currentMount) {
+  isCurrentMount = currentMount;
   bindEvents();
   initializeApp();
 }
 
 function unmount() {
+  isCurrentMount = () => false;
+  detailRequestGeneration += 1;
+  detailSessionGeneration += 1;
+  listRequestGeneration += 1;
+  targetRepoRequestGeneration += 1;
+  knownUwiRequestGeneration += 1;
   document.removeEventListener('focusin', handleFocusIn);
   if (eventSource) {
     eventSource.close();
@@ -1342,6 +1448,7 @@ function unmount() {
   pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
   knownUwiBaselineReady = false;
   knownUwiFilenames.clear();
+  pendingListRequests = 0;
   pendingOperations.clear();
   dialogOrigins.clear();
   dialogStack.length = 0;

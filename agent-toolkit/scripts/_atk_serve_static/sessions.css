@@ -95,7 +95,7 @@ main {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 /* 内側の余白は計画ファイル画面のツールバーとそろえる。 */
@@ -123,8 +123,7 @@ main .spacer { flex: 1; }
 
 /* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
 #detail {
-  flex: 1;
-  overflow: auto;
+  flex: none;
   width: 100%;
   max-width: 860px;
   margin: 0 auto;

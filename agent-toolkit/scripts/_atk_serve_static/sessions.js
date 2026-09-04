@@ -25,6 +25,7 @@ let queryText = "";
 let parentTrail = [];
 // SSE購読。`unmount`で閉じるため保持する。
 let eventSource = null;
+let isCurrentMount = () => false;
 
 // 画面の入れ替えでDOMごと差し替わるため、参照は`mount`のたびに取り直す。
 let listEl = null;
@@ -102,14 +103,18 @@ function renderWarnings(warnings) {
 }
 
 async function loadList() {
+  const currentMount = isCurrentMount;
   try {
-    const response = await fetch(BASE_PATH + "/api/sessions/list");
+    const response = await currentMount.wait(fetch(BASE_PATH + "/api/sessions/list"));
+    if (!currentMount()) return;
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
-    const payload = await response.json();
+    const payload = await currentMount.wait(response.json());
+    if (!currentMount()) return;
     sessions = payload.sessions || [];
     renderWarnings(payload.warnings);
     renderList();
   } catch (error) {
+    if (!currentMount()) return;
     showWarnings([String(error)]);
   }
 }
@@ -135,6 +140,15 @@ function renderEvent(event) {
   const block = document.createElement("details");
   block.className = `event kind-${event.kind}`;
   block.open = event.kind === "user" || event.kind === "assistant";
+  if (!block.open) {
+    block.dataset.exclusiveEvent = "true";
+    block.addEventListener("toggle", () => {
+      if (!block.open) return;
+      for (const other of detailEl.querySelectorAll('details[data-exclusive-event="true"]')) {
+        if (other !== block) other.open = false;
+      }
+    });
+  }
 
   const summary = document.createElement("summary");
   const kind = document.createElement("span");
@@ -250,6 +264,7 @@ function renderDetail(detail) {
 
 // `trail`は開こうとする記録の呼び出し元を古い順に並べる。左ペインから選んだ記録には呼び出し元が無いため既定は空とする。
 async function openSession(host, engine, path, trail = []) {
+  const currentMount = isCurrentMount;
   selected = { host, engine, path };
   parentTrail = trail;
   renderList();
@@ -257,10 +272,14 @@ async function openSession(host, engine, path, trail = []) {
   detailTitleEl.textContent = "読み込み中...";
   const query = new URLSearchParams({ host, engine, path });
   try {
-    const response = await fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`);
+    const response = await currentMount.wait(fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`));
+    if (!currentMount()) return;
     if (!response.ok) throw new Error(`記録を取得できません (${response.status})`);
-    renderDetail(await response.json());
+    const detail = await currentMount.wait(response.json());
+    if (!currentMount()) return;
+    renderDetail(detail);
   } catch (error) {
+    if (!currentMount()) return;
     detailTitleEl.textContent = "";
     detailEl.textContent = String(error);
   }
@@ -268,16 +287,18 @@ async function openSession(host, engine, path, trail = []) {
 }
 
 function subscribeEvents() {
+  const currentMount = isCurrentMount;
   eventSource = new EventSource(BASE_PATH + "/api/sessions/events");
   eventSource.onmessage = () => {
-    loadList();
+    if (currentMount()) loadList();
   };
   eventSource.onerror = () => {
     // EventSourceはブラウザが自動再接続する。切断中の一覧は次の再接続で更新される。
   };
 }
 
-function mount() {
+function mount(currentMount) {
+  isCurrentMount = currentMount;
   BASE_PATH = JSON.parse(document.getElementById("sessions-bootstrap").textContent).base_path;
   listEl = document.getElementById("sessions");
   warningsEl = document.getElementById("warnings");
@@ -309,6 +330,7 @@ function mount() {
 }
 
 function unmount() {
+  isCurrentMount = () => false;
   if (eventSource) {
     eventSource.close();
     eventSource = null;

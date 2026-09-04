@@ -2,9 +2,10 @@
 // ナビゲーションのリンクを傍受し、ページ全体を再読み込みせずに画面を入れ替える。
 //
 // 各画面スクリプトは`window.__atkScreens`へ、`<body data-screen>`が示す画面名をキーとして
-// `{mount, unmount}`を登録する。`mount`は差し替え後のDOMへ初期化を適用し、`unmount`は
+// `{mount, unmount}`を登録する。`mount`は現在のマウントかを返す関数を受け取り、
+// 差し替え後のDOMへ初期化を適用する。`unmount`は
 // SSE購読・監視・生成済みオブジェクトURL・`window`と`document`へ登録した購読を解放する。
-// いずれも引数と戻り値を持たない。
+// `unmount`は引数と戻り値を持たない。
 // 画面ごとのDOMは同時に1つだけ存在するため、3画面が同じ`id`を持つ要素は衝突しない。
 window.__atkScreens = window.__atkScreens || {};
 
@@ -12,6 +13,24 @@ window.__atkScreens = window.__atkScreens || {};
   // 読み込み済みの画面スクリプトとスタイルシートのURL。同じ資産を二重に読み込まないために持つ。
   const loadedAssets = new Set();
   let currentScreen = null;
+  let mountGeneration = 0;
+  let navigationGeneration = 0;
+
+  function createContinuation(isCurrent) {
+    const continuation = () => isCurrent();
+    continuation.wait = async (pending) => {
+      try {
+        const value = await pending;
+        if (isCurrent()) return value;
+      } catch (error) {
+        if (isCurrent()) throw error;
+      }
+      // 失効した処理の成功・失敗を呼出し側へ返すと、catchやfinallyを含む継続が
+      // 現行画面へ触れ得る。未完了のまま切り離し、継続をこの入口だけで遮断する。
+      return new Promise(() => {});
+    };
+    return continuation;
+  }
 
   function screenNameOf(doc) {
     return doc.body.getAttribute("data-screen") || "";
@@ -27,13 +46,18 @@ window.__atkScreens = window.__atkScreens || {};
     const screen = window.__atkScreens[name];
     if (!screen) return;
     currentScreen = name;
+    const generation = ++mountGeneration;
+    const continuation = createContinuation(
+      () => generation === mountGeneration && currentScreen === name,
+    );
     // `mount`が初期表示のためにサーバーへ問い合わせる画面があるため、完了まで待つ。
-    await screen.mount();
+    await continuation.wait(screen.mount(continuation));
   }
 
   function unmountScreen() {
     const screen = currentScreen ? window.__atkScreens[currentScreen] : null;
     currentScreen = null;
+    mountGeneration++;
     if (screen) screen.unmount();
   }
 
@@ -101,21 +125,24 @@ window.__atkScreens = window.__atkScreens || {};
     replaceBootstrapData(doc);
   }
 
-  async function swapScreen(url) {
-    const response = await fetch(url);
+  async function swapScreen(url, continuation) {
+    const response = await continuation.wait(fetch(url));
     if (!response.ok) throw new Error(`画面を取得できません (${response.status})`);
-    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const text = await continuation.wait(response.text());
+    const doc = new DOMParser().parseFromString(text, "text/html");
     unmountScreen();
     replaceScreenContent(doc);
-    await loadStylesheets(doc);
-    await loadScreenScripts(doc);
+    await continuation.wait(loadStylesheets(doc));
+    await continuation.wait(loadScreenScripts(doc));
     return doc;
   }
 
   async function navigate(url, {push}) {
+    const generation = ++navigationGeneration;
+    const continuation = createContinuation(() => generation === navigationGeneration);
     let doc = null;
     try {
-      doc = await swapScreen(url);
+      doc = await continuation.wait(swapScreen(url, continuation));
     } catch (_) {
       // 取得と資産の読み込みに失敗した画面は中途半端な状態のため、通常のページ遷移でやり直す。
       location.assign(url);
@@ -123,7 +150,7 @@ window.__atkScreens = window.__atkScreens || {};
     }
     // 画面の初期表示はサーバーへの問い合わせを伴うため、資産がそろった時点で履歴を進める。
     if (push) history.pushState({atkShell: true}, "", url);
-    await mountScreen(screenNameOf(doc));
+    await continuation.wait(mountScreen(screenNameOf(doc)));
   }
 
   function isSameOriginNavigation(link, event) {
