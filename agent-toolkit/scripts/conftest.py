@@ -75,7 +75,7 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _atk_private_notes_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`atk mq`用の管理repo rootをテスト用一時ディレクトリへ差し替える。
+    """`atk wi`用の管理repo rootをテスト用一時ディレクトリへ差し替える。
 
     実運用の`~/private-notes/`ハードコードを避け、`AGENT_TOOLKIT_PRIVATE_NOTES`環境変数で
     テストごとに`tmp_path/private-notes`を指す。実ディレクトリの作成は各テストヘルパー
@@ -156,8 +156,8 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fixed_terminal_size(monkeypatch: pytest.MonkeyPatch) -> None:
     """`shutil.get_terminal_size`を固定幅へ差し替え、実行環境の端末幅に依存しない結果にする。
 
-    `_atk_mq_list.py`・`_atk_mq_common.py`は`shutil.get_terminal_size()`から表示幅を算出し
-    `atk mq list`・未回答TBD通知の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
+    `_atk_wi_list.py`・`_atk_wi_common.py`は`shutil.get_terminal_size()`から表示幅を算出し
+    `atk wi list`・未回答TBD通知の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
     両モジュールおよびこのディレクトリ配下の全テストファイルへ一括で適用する
     （個別テストファイルごとの重複フィクスチャ定義を避けるSSOT化）。
     """

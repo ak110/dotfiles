@@ -8,8 +8,8 @@ import types
 import typing
 
 import _atk_git_sync
-import _atk_mq_common as _common
 import _atk_plans
+import _atk_wi_common as _common
 import _plan_file
 import atk
 import pytest

@@ -369,7 +369,7 @@ class TestTbdCompletionNotice:
     def test_dispatch_appends_answered_filename_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """回答差分通知をLLM向けnoticeとして蓄積する。"""
         monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._tbd_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
             "build_notice",
             lambda _session_id, _cwd, _transcript_path: "newly answered: answered.md",
         )
@@ -398,7 +398,7 @@ class TestTbdCompletionNotice:
     ) -> None:
         """失敗イベントでは回答差分を問い合わせない。"""
         monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._tbd_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
             "build_notice",
             lambda *_args: pytest.fail("失敗イベントでTBD通知が呼ばれた"),
         )

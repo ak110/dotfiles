@@ -85,20 +85,20 @@ def test_set_console_title_uses_windows_api_branch(monkeypatch: pytest.MonkeyPat
     calls: list[str] = []
     monkeypatch.setattr(_console_title, "_set_windows_console_title", calls.append)
     stream = _Tty()
-    _console_title.set_console_title("atk mq process-loop", stream=stream)
-    assert calls == ["atk mq process-loop"]
+    _console_title.set_console_title("atk wi process-loop", stream=stream)
+    assert calls == ["atk wi process-loop"]
     assert stream.getvalue() == ""
 
 
 def test_set_console_title_writes_osc_sequence_without_restore() -> None:
     """非WindowsのTTYでは`set_console_title`がOSC制御文字を1回だけ出力する。"""
     stream = _Tty()
-    _console_title.set_console_title("atk mq process-loop", stream=stream)
-    assert stream.getvalue() == "\033]2;atk mq process-loop\a"
+    _console_title.set_console_title("atk wi process-loop", stream=stream)
+    assert stream.getvalue() == "\033]2;atk wi process-loop\a"
 
 
 def test_set_console_title_skips_without_tty() -> None:
     """ターミナル未接続時は`set_console_title`も制御文字を出力しない。"""
     stream = io.StringIO()
-    _console_title.set_console_title("atk mq process-loop", stream=stream)
+    _console_title.set_console_title("atk wi process-loop", stream=stream)
     assert stream.getvalue() == ""

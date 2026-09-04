@@ -48,7 +48,7 @@ import _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import
 import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _tbd_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+import _uwi_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_git_events,
 )
@@ -654,7 +654,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
     if cwd:
-        tbd_notice = _tbd_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
+        tbd_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if tbd_notice is not None:
             notices.append(_llm_notice(tbd_notice, tag="notice"))
 

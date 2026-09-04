@@ -2106,6 +2106,8 @@ _POLL_COMMAND_PREFIXES = (
     ("gh", "run", "watch"),
     ("ps",),
     ("pgrep",),
+    ("atk", "wi", "list"),
+    ("atk", "wi", "show"),
     ("atk", "mq", "list"),
     ("atk", "mq", "show"),
     ("systemctl", "status"),

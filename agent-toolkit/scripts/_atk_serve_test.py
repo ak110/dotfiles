@@ -19,9 +19,6 @@ import types
 import typing
 import zlib
 
-import _atk_mq_common as common
-import _atk_mq_repo as feedback_repo
-import _atk_mq_user_comment as user_comment
 import _atk_serve as serve
 import _atk_serve_app as serve_app
 import _atk_serve_assets as assets
@@ -29,6 +26,9 @@ import _atk_serve_config as config
 import _atk_serve_plans as serve_plans
 import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as state
+import _atk_wi_common as common
+import _atk_wi_repo as feedback_repo
+import _atk_wi_user_comment as user_comment
 import filelock
 import pytest
 import watchdog.events
@@ -5676,7 +5676,7 @@ def test_assets_offer_batch_creation_without_required_target_repo() -> None:
 
 def test_assets_offer_every_queue_state_filter() -> None:
     """状態フィルターがキューの全状態を個別に選択できる。"""
-    for state_name in common.MQ_STATES:
+    for state_name in common.WI_STATES:
         assert f'<option value="{state_name}">{state_name}</option>' in assets.HTML
 
 
@@ -5684,15 +5684,15 @@ def test_assets_state_sets_match_python_states() -> None:
     """フロントエンドが持つ状態集合をPython側の保存状態と一致させる。"""
     labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.JS, re.DOTALL)
     assert labels is not None
-    assert set(re.findall(r"(\w+):", labels.group(1))) == set(common.MQ_STATES)
+    assert set(re.findall(r"(\w+):", labels.group(1))) == set(common.WI_STATES)
 
     deletable = re.search(r"const DELETABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
     assert deletable is not None
-    assert set(re.findall(r"'(\w+)'", deletable.group(1))) == set(common.MQ_STATES)
+    assert set(re.findall(r"'(\w+)'", deletable.group(1))) == set(common.WI_STATES)
 
     processable = re.search(r"const PROCESSABLE_STATES = new Set\(\[(.*?)\]\);", assets.JS)
     assert processable is not None
-    assert set(re.findall(r"'(\w+)'", processable.group(1))) == set(common.MQ_PROCESSABLE_STATES)
+    assert set(re.findall(r"'(\w+)'", processable.group(1))) == set(common.WI_PROCESSABLE_STATES)
 
 
 def test_batch_creation_sends_raw_text_and_hides_frontmatter_driven_fields() -> None:

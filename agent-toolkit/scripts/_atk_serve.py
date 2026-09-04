@@ -6,10 +6,10 @@ import logging
 import pathlib
 import signal
 
-import _atk_mq_common as common
 import _atk_serve_app
 import _atk_serve_config
 import _atk_serve_state
+import _atk_wi_common as common
 import _console_title
 import hypercorn.asyncio
 import hypercorn.config

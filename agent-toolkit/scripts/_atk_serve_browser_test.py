@@ -13,12 +13,12 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-import _atk_mq_user_comment as user_comment_mutations
 import _atk_serve_app as serve_app
 import _atk_serve_config as config
 import _atk_serve_plans as serve_plans
 import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as serve_state
+import _atk_wi_user_comment as user_comment_mutations
 import playwright.async_api
 import pytest
 import pytest_asyncio

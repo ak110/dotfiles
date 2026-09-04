@@ -1837,7 +1837,7 @@ class TestBashSleepPollPattern:
             ("sleep 10; git status --short", "sleep-poll-first-1"),
             ("sleep 5 && gh run view 123", "sleep-poll-first-2"),
             ("sleep 1; systemctl status example.service", "sleep-poll-first-3"),
-            ("echo start; sleep 2; atk mq list", "sleep-poll-first-4"),
+            ("echo start; sleep 2; atk wi list", "sleep-poll-first-4"),
             ("sleep 3; curl https://example.com/status", "sleep-poll-first-5"),
             ("sleep 3 && curl -D - https://example.com/status", "sleep-poll-first-6"),
             ("sleep 3; curl -XGET https://example.com/status", "sleep-poll-first-7"),

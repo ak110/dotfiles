@@ -368,7 +368,7 @@ class _GuidedSubcommandParser(argparse.ArgumentParser):
 def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
     """セル本文を受け取るオプションと、同じ本文をファイルから読むオプションを対で登録する。
 
-    `atk mq add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
+    `atk wi add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
     シェルの引用規則を経由せずに渡せるようにする。
     """
     group = parser.add_mutually_exclusive_group()

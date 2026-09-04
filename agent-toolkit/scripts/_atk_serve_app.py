@@ -15,19 +15,19 @@ import re
 import subprocess
 import typing
 
-import _atk_mq_add as feedback_add
-import _atk_mq_batch as feedback_batch
-import _atk_mq_common as common
-import _atk_mq_frontmatter as frontmatter
-import _atk_mq_mutations as feedback_mutations
-import _atk_mq_repo as feedback_repo
-import _atk_mq_tbd as tbd_mutations
-import _atk_mq_user_comment as user_comment_mutations
 import _atk_serve_assets as assets
 import _atk_serve_config as serve_config
 import _atk_serve_plans as serve_plans
 import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as serve_state
+import _atk_wi_add as feedback_add
+import _atk_wi_batch as feedback_batch
+import _atk_wi_common as common
+import _atk_wi_frontmatter as frontmatter
+import _atk_wi_mutations as feedback_mutations
+import _atk_wi_repo as feedback_repo
+import _atk_wi_user_comment as user_comment_mutations
+import _atk_wi_uwi as tbd_mutations
 import _git_remote
 import filelock
 import markdown_it
@@ -38,8 +38,8 @@ import quart
 import werkzeug.exceptions
 
 type JsonObject = dict[str, typing.Any]
-_ENTRY_STATES = set(common.MQ_STATES)
-_STATUS_FILTERS = {"all", "active", "processable", *common.MQ_STATES}
+_ENTRY_STATES = set(common.WI_STATES)
+_STATUS_FILTERS = {"all", "active", "processable", *common.WI_STATES}
 _ANSWERED_FILTERS = {"all", "yes", "no"}
 _PLAN_FILTERS = {"all", "normal", "plan"}
 _SOURCE_KIND_FILTERS = {"human", "agent"}
@@ -49,7 +49,7 @@ _WEB_LOCK_TIMEOUT = 2.0
 _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
 """定期バックグラウンド更新の間隔。
 
-`atk mq process-loop`が10分間隔で更新する先例に対し、
+`atk wi process-loop`が10分間隔で更新する先例に対し、
 Web UIはエンドユーザーが画面を閲覧する前提のため短く取る。
 """
 _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
@@ -85,11 +85,11 @@ def _safe_base_path(raw: str) -> str:
 def _resolve_states(status: str) -> tuple[str, ...]:
     """`status` queryの指定値を走査対象の状態フォルダ列へ変換する。"""
     if status == "active":
-        return common.MQ_ACTIVE_STATES
+        return common.WI_ACTIVE_STATES
     if status == "processable":
-        return common.MQ_PROCESSABLE_STATES
+        return common.WI_PROCESSABLE_STATES
     if status == "all":
-        return common.MQ_STATES
+        return common.WI_STATES
     return (status,)
 
 
@@ -177,7 +177,7 @@ def _entry(
     text: str,
     metadata: dict[str, typing.Any],
 ) -> dict[str, object]:
-    answered = common.is_tbd_answered(text) if kind == "tbd" else None
+    answered = common.is_uwi_answered(text) if kind == "tbd" else None
     return {
         "kind": kind,
         "state": state,
@@ -322,7 +322,7 @@ def _render_body(text: str) -> str:
 
 def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str, list[str]]:
     """TBDの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
-    if kind != common.MQ_TYPE_TBD:
+    if kind != common.WI_TYPE_TBD:
         return "free-form", []
     raw_type = metadata.get("question_type")
     question_type = raw_type if isinstance(raw_type, str) and raw_type in {"choice", "yes-no", "free-form"} else "free-form"
@@ -338,7 +338,7 @@ def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str,
 
 def _tbd_answer(text: str, kind: str) -> str | None:
     """TBD回答欄の既存回答を編集用文字列として返す。"""
-    if kind != common.MQ_TYPE_TBD or tbd_mutations.ANSWER_MARKER not in text:
+    if kind != common.WI_TYPE_TBD or tbd_mutations.ANSWER_MARKER not in text:
         return None
     return text.rsplit(tbd_mutations.ANSWER_MARKER, maxsplit=1)[1].strip() or None
 
@@ -489,8 +489,8 @@ class Operations:
                 comment_editable = False
             else:
                 comment_editable = (
-                    state in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}
-                    and kind == common.MQ_TYPE_FEEDBACK
+                    state in {common.WI_STATE_INBOX, common.WI_STATE_HOLD}
+                    and kind == common.WI_TYPE_FEEDBACK
                     and _source_kind(metadata.get("source")) == "agent"
                 )
             return {
@@ -572,7 +572,7 @@ class Operations:
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinbox又はhold項目へユーザーコメントを追記又は置換する。"""
-        if state not in {common.MQ_STATE_INBOX, common.MQ_STATE_HOLD}:
+        if state not in {common.WI_STATE_INBOX, common.WI_STATE_HOLD}:
             raise common.WebInputError("ユーザーコメントを編集できる状態はinbox又はholdだけです")
         if not isinstance(comment, str) or not comment.strip():
             raise common.WebInputError("commentは空でない文字列で指定してください")
@@ -583,7 +583,7 @@ class Operations:
         if parsed is None:
             raise common.WebInputError("frontmatterを解析できません")
         metadata, _body = parsed
-        if metadata.get("type") != common.MQ_TYPE_FEEDBACK:
+        if metadata.get("type") != common.WI_TYPE_FEEDBACK:
             raise common.WebInputError("ユーザーコメントの対象はfeedbackだけです")
         if _source_kind(metadata.get("source")) != "agent":
             raise common.WebInputError(
@@ -621,11 +621,11 @@ class Operations:
         `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`を必須とし、
         検証は`add_entries`の共通経路へ委ねる。
         """
-        if entry_type not in common.MQ_TYPES:
+        if entry_type not in common.WI_TYPES:
             raise common.WebInputError("typeが不正です")
-        if entry_type == common.MQ_TYPE_FEEDBACK and (scope or question_type or choices):
+        if entry_type == common.WI_TYPE_FEEDBACK and (scope or question_type or choices):
             raise common.WebInputError("scope・question_type・choicesはtype=tbdでのみ指定できます")
-        if entry_type == common.MQ_TYPE_TBD:
+        if entry_type == common.WI_TYPE_TBD:
             if question_type not in {"choice", "yes-no", "free-form"}:
                 raise common.WebInputError("question_typeが不正です")
             if question_type == "choice" and (choices is None or len(choices) < 2):
@@ -652,9 +652,9 @@ class Operations:
         )
 
     def add_batch(self, text: str) -> dict[str, object]:
-        """`atk mq show --all`の出力形式のテキストからエントリを一括で取り込む。
+        """`atk wi show --all`の出力形式のテキストからエントリを一括で取り込む。
 
-        原文保持の契約はCLIと共通の`_atk_mq_batch.add_batch_entries`が担う。
+        原文保持の契約はCLIと共通の`_atk_wi_batch.add_batch_entries`が担う。
         """
         mapping, warnings = feedback_batch.add_batch_entries(
             self.private_notes,
@@ -700,7 +700,7 @@ class Operations:
         """複数エントリを全件検証後に移動又は削除する。
 
         `force`は`action="remove"`の場合のみ意味を持ち、
-        processing状態のファイルへの既定保護（`atk mq rm`の`--force`と同義）を解除する。
+        processing状態のファイルへの既定保護（`atk wi rm`の`--force`と同義）を解除する。
         """
         try:
             return feedback_mutations.transition_entries(
@@ -1309,14 +1309,14 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             allowed={"type", "messages", "source", "target_repo", "scope", "question_type", "choices"},
             required={"type", "messages"},
         )
-        if data["type"] not in common.MQ_TYPES:
+        if data["type"] not in common.WI_TYPES:
             raise common.WebInputError("typeが不正です")
         messages = _strings(data["messages"], "messages")
         for key in ("source", "target_repo"):
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise common.WebInputError(f"{key}は空でない文字列で指定してください")
         question_type = data.get("question_type")
-        if data["type"] == common.MQ_TYPE_TBD and question_type is None:
+        if data["type"] == common.WI_TYPE_TBD and question_type is None:
             question_type = "free-form"
         filenames = await workers.run(
             ops.add,
@@ -1351,7 +1351,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             raise common.WebInputError("filenameは文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         state_name = _optional_string(data, "state")
-        if state_name is not None and state_name not in (*common.MQ_PROCESSABLE_STATES, common.MQ_STATE_HOLD):
+        if state_name is not None and state_name not in (*common.WI_PROCESSABLE_STATES, common.WI_STATE_HOLD):
             raise common.WebInputError("stateはinbox、processing又はholdで指定してください")
         if state_name is None:
             changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)

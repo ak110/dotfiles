@@ -8,7 +8,7 @@ import threading
 import time
 import typing
 
-import _atk_mq_common as common
+import _atk_wi_common as common
 import watchdog.events
 import watchdog.observers
 
@@ -53,7 +53,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         """監視を開始する。"""
         self._loop = loop
         self._stopped = False
-        for relative in common.MQ_STATES:
+        for relative in common.WI_STATES:
             path = self.root / relative
             path.mkdir(parents=True, exist_ok=True)
             self.observer.schedule(self, str(path), recursive=False)

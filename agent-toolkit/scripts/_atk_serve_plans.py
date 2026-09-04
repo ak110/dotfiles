@@ -273,7 +273,7 @@ def _private_notes_result() -> tuple[pathlib.Path | None, str | None]:
     常駐サービスのPATHに依存しない。
     """
     try:
-        private_notes_path = vars(importlib.import_module("_atk_mq_common"))["_private_notes_path"]
+        private_notes_path = vars(importlib.import_module("_atk_wi_common"))["_private_notes_path"]
         value = private_notes_path(pathlib.Path.home())
     except Exception as error:  # pylint: disable=broad-exception-caught
         warning = f"private_notesの取得に失敗しました: {error}"

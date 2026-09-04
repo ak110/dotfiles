@@ -22,8 +22,8 @@ from collections.abc import Iterable
 
 import _atk_git_sync
 import _atk_help
-import _atk_mq_common as _common
-import _atk_mq_frontmatter as _frontmatter
+import _atk_wi_common as _common
+import _atk_wi_frontmatter as _frontmatter
 import _git_command
 import _plan_file
 import _plan_format
@@ -913,7 +913,7 @@ def _migrate_mq_contents(
 ) -> dict[pathlib.Path, bytes]:
     """全MQ状態の既知の計画参照と本文の旧パスをportable値へ移す。"""
     changes: dict[pathlib.Path, bytes] = {}
-    for state in _common.MQ_STATES:
+    for state in _common.WI_STATES:
         directory = private_notes / state
         if not directory.is_dir():
             continue

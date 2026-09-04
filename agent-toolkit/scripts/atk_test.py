@@ -1,10 +1,10 @@
-"""atk (agent-toolkit `atk mq`) のテスト。
+"""atk (agent-toolkit `atk wi`) のテスト。
 
 同値分割と境界値分析で各サブコマンドの観点を網羅する。
 add・本文要約切り詰めなど基本サブコマンドの単体テストを集約する。
-list系は`_atk_mq_list_test.py`、show系は`_atk_mq_show_test.py`、mutation系は`_atk_mq_mutations_test.py`、
-process-loop・リポジトリ解決は`_atk_mq_process_loop_test.py`、拡張機能は`_atk_mq_extras_test.py`、
-TBD系は`_atk_mq_tbd_test.py`、本文要約の切り詰め境界ケースは`_atk_mq_formatters_test.py`に分離する。
+list系は`_atk_wi_list_test.py`、show系は`_atk_wi_show_test.py`、mutation系は`_atk_wi_mutations_test.py`、
+process-loop・リポジトリ解決は`_atk_wi_process_loop_test.py`、拡張機能は`_atk_wi_extras_test.py`、
+TBD系は`_atk_wi_uwi_test.py`、本文要約の切り詰め境界ケースは`_atk_wi_formatters_test.py`に分離する。
 TBD共通ヘルパーは本ファイルと分割先テストの双方から使うため本ファイルに残置する。
 gitリモート応答フェイクは複数テストファイルが共有するため`_atk_git_fake_test_helpers.py`に集約する。
 """
@@ -24,7 +24,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_mq_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_wi_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
@@ -60,9 +60,9 @@ def _isolate_agent_and_managed_temp_environment(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["mq", "list", "--skip-pull"],
-        ["mq", "show", "--all", "--skip-pull"],
-        ["mq", "grep", ".", "--skip-pull"],
+        ["wi", "list", "--skip-pull"],
+        ["wi", "show", "--all", "--skip-pull"],
+        ["wi", "grep", ".", "--skip-pull"],
         ["config", "show"],
     ],
 )
@@ -117,7 +117,7 @@ def test_cli_local_path_filter_notifies_legacy_and_current_tbds(
             "run",
             "--script",
             str(pathlib.Path(atk.__file__).resolve()),
-            "mq",
+            "wi",
             "list",
             "--count",
             f"--target-repo={local_repo}",
@@ -536,21 +536,21 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["mq", "start-processing", "feedback.md"], home=tmp_path)
+        atk.main(["wi", "start-processing", "feedback.md"], home=tmp_path)
     assert exc_info.value.code == 3
     stderr = capsys.readouterr().err
     assert "private-notesに未pushのcommitが1件残っています" in stderr
     assert f"`git -C {notes.resolve()} status`" in stderr
-    assert "atk mq commit" in stderr
+    assert "atk wi commit" in stderr
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
+        atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
     assert exc_info.value.code == 0
     assert "未pushのcommit" not in capsys.readouterr().err
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["mq", "convert-to-plan", "feedback.md", "--plan-file", str(tmp_path / "plan.md"), "--skip-push"],
+            ["wi", "convert-to-plan", "feedback.md", "--plan-file", str(tmp_path / "plan.md"), "--skip-push"],
             home=tmp_path,
         )
     assert exc_info.value.code == 0
@@ -568,12 +568,12 @@ class TestMutationTargetRepoParserOption:
     @pytest.mark.parametrize(
         ("top_command", "subcommand", "argv_tail"),
         [
-            ("mq", "adopt", ["20260714-000001-001.md"]),
-            ("mq", "reject", ["20260714-000001-001.md"]),
-            ("mq", "rm", ["20260714-000001-001.md"]),
-            ("mq", "edit", ["20260714-000001-001.md"]),
-            ("mq", "start-processing", ["20260714-000001-001.md"]),
-            ("mq", "return-to-inbox", ["20260714-000001-001.md"]),
+            ("wi", "adopt", ["20260714-000001-001.md"]),
+            ("wi", "reject", ["20260714-000001-001.md"]),
+            ("wi", "rm", ["20260714-000001-001.md"]),
+            ("wi", "edit", ["20260714-000001-001.md"]),
+            ("wi", "start-processing", ["20260714-000001-001.md"]),
+            ("wi", "return-to-inbox", ["20260714-000001-001.md"]),
         ],
     )
     def test_accepts_target_repo(self, top_command: str, subcommand: str, argv_tail: list[str]) -> None:
@@ -585,14 +585,14 @@ class TestMutationTargetRepoParserOption:
     def test_edit_accepts_message(self) -> None:
         """`edit FILENAME MESSAGE`を解析して両方の位置引数を保持する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "edit", "20260714-000001-001.md", "更新本文"])
+        args = parser.parse_args(["wi", "edit", "20260714-000001-001.md", "更新本文"])
         assert args.filename == "20260714-000001-001.md"
         assert args.message == "更新本文"
 
     def test_edit_accepts_append_option(self) -> None:
         """`edit --append FILENAME MESSAGE`を追記モードとして解析する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "edit", "--append", "20260714-000001-001.md", "追記本文"])
+        args = parser.parse_args(["wi", "edit", "--append", "20260714-000001-001.md", "追記本文"])
         assert args.append is True
         assert args.filename == "20260714-000001-001.md"
         assert args.message == "追記本文"
@@ -602,12 +602,12 @@ class TestMutationTargetRepoParserOption:
         """再処理抑制日数は3以上の整数だけを受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit):
-            parser.parse_args(["mq", "return-to-inbox", "entry.md", f"--cooldown-days={value}"])
+            parser.parse_args(["wi", "return-to-inbox", "entry.md", f"--cooldown-days={value}"])
 
     def test_return_to_inbox_accepts_minimum_cooldown_days(self) -> None:
         """再処理抑制日数の下限3を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "return-to-inbox", "entry.md", "--cooldown-days=3"])
+        args = parser.parse_args(["wi", "return-to-inbox", "entry.md", "--cooldown-days=3"])
         assert args.cooldown_days == 3
 
     def test_return_to_inbox_uses_main_injected_time(
@@ -628,7 +628,7 @@ class TestMutationTargetRepoParserOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["mq", "return-to-inbox", "entry.md", "--cooldown-days=3"],
+                ["wi", "return-to-inbox", "entry.md", "--cooldown-days=3"],
                 home=tmp_path,
                 now=now,
             )
@@ -640,7 +640,7 @@ class TestMutationTargetRepoParserOption:
     def test_edit_without_message_remains_interactive(self) -> None:
         """従来の`edit FILENAME`ではMESSAGEを未指定として扱う。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "edit", "20260714-000001-001.md"])
+        args = parser.parse_args(["wi", "edit", "20260714-000001-001.md"])
         assert args.filename == "20260714-000001-001.md"
         assert args.message is None
 
@@ -648,7 +648,7 @@ class TestMutationTargetRepoParserOption:
         """`commit`は引数を取らないシグネチャのため`--target-repo`を受理しない。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["mq", "commit", "--target-repo", "github.com/foo/bar"])
+            parser.parse_args(["wi", "commit", "--target-repo", "github.com/foo/bar"])
         assert exc_info.value.code == 2
 
 
@@ -657,7 +657,7 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     args = parser.parse_args(
         [
-            "mq",
+            "wi",
             "convert-to-plan",
             "feedback.md",
             "--plan-file",
@@ -676,12 +676,73 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
     assert args.depends_on == ["first.md", "second.md"]
 
 
+class TestLegacyTopLevelCommandAlias:
+    """改名前のトップレベル名`mq`が現行名`wi`と同じ結果を返し、公開名として露出しないことを検証する。"""
+
+    def test_alias_resolves_to_current_command(self) -> None:
+        """先頭の`mq`を`wi`へ解決し、以降の引数をそのまま渡す。"""
+        assert atk._resolve_legacy_top_level_command(["mq", "list", "--status=all"]) == [  # noqa: SLF001  # pylint: disable=protected-access
+            "wi",
+            "list",
+            "--status=all",
+        ]
+        assert atk._resolve_legacy_top_level_command(["wi", "list"]) == ["wi", "list"]  # noqa: SLF001  # pylint: disable=protected-access
+        assert atk._resolve_legacy_top_level_command(["plans", "mq"]) == ["plans", "mq"]  # noqa: SLF001  # pylint: disable=protected-access
+        assert not atk._resolve_legacy_top_level_command([])  # noqa: SLF001  # pylint: disable=protected-access
+
+    def test_alias_lists_same_entries_as_current_command(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`atk mq list`が`atk wi list`と同じ出力を返す。"""
+        notes = _setup_notes(tmp_path)
+        _write_feedback_file(notes, "fb-001.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--no-json", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        current_output = capsys.readouterr().out
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["mq", "list", "--no-json", "--skip-pull"], home=tmp_path)
+        assert exc_info.value.code == 0
+        assert capsys.readouterr().out == current_output
+        assert "fb-001.md" in current_output
+
+    def test_alias_is_absent_from_help_and_completion_choices(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """トップレベルのhelpと補完候補が現行名だけを示す。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["--help"])
+        assert exc_info.value.code == 0
+        root_help = capsys.readouterr().out
+        assert "atk mq" not in root_help
+        assert "{wi," in root_help
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["wi", "--help"])
+        assert exc_info.value.code == 0
+        assert "atk mq" not in capsys.readouterr().out
+
+        command_action = next(
+            action
+            for action in parser._actions  # pylint: disable=protected-access  # noqa: SLF001
+            if action.dest == "command"
+        )
+        assert command_action.choices is not None
+        assert "mq" not in list(command_action.choices)
+
+
 def test_convert_to_plan_help_describes_portable_and_legacy_paths(capsys: pytest.CaptureFixture[str]) -> None:
     """convert-to-planの公開helpが新規portable値と既存絶対パス互換を案内する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
 
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["mq", "convert-to-plan", "--help"])
+        parser.parse_args(["wi", "convert-to-plan", "--help"])
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
@@ -693,7 +754,7 @@ def test_convert_to_plan_help_describes_portable_and_legacy_paths(capsys: pytest
 def test_convert_to_plan_parser_accepts_multiple_filenames_and_skip_push() -> None:
     """convert-to-planが複数入力とpush省略を1つの操作として保持する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    args = parser.parse_args(["mq", "convert-to-plan", "first.md", "second.md", "--plan-file", "/tmp/plan.md", "--skip-push"])
+    args = parser.parse_args(["wi", "convert-to-plan", "first.md", "second.md", "--plan-file", "/tmp/plan.md", "--skip-push"])
     assert args.filename == ["first.md", "second.md"]
     assert args.skip_push is True
 
@@ -701,7 +762,7 @@ def test_convert_to_plan_parser_accepts_multiple_filenames_and_skip_push() -> No
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
     """`set-dependencies`が既存フィードバックと複数の依存先を受理する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    args = parser.parse_args(["mq", "set-dependencies", "feedback.md", "--depends-on", "first", "--depends-on", "second.md"])
+    args = parser.parse_args(["wi", "set-dependencies", "feedback.md", "--depends-on", "first", "--depends-on", "second.md"])
     assert args.filename == "feedback.md"
     assert args.depends_on == ["first", "second.md"]
 
@@ -712,7 +773,7 @@ class TestTbdAddSourceOptionParser:
     def test_accepts_source(self) -> None:
         """`mq add --type=tbd`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "add", "--type=tbd", "--source", "session-hold", "hello"])
+        args = parser.parse_args(["wi", "add", "--type=tbd", "--source", "session-hold", "hello"])
         assert args.source == "session-hold"
 
 
@@ -772,7 +833,7 @@ class TestAddTargetRepoOptionParser:
     def test_add_accepts_target_repo(self, type_option: list[str]) -> None:
         """`mq add`が種別にかかわらず`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["mq", "add", *type_option, "--target-repo", "github.com/foo/bar", "本文"])
+        args = parser.parse_args(["wi", "add", *type_option, "--target-repo", "github.com/foo/bar", "本文"])
         assert args.target_repo == "github.com/foo/bar"
 
     def test_add_help_describes_explicit_worktree_resolution(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -780,7 +841,7 @@ class TestAddTargetRepoOptionParser:
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
 
         with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["mq", "add", "--help"])
+            parser.parse_args(["wi", "add", "--help"])
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
@@ -797,7 +858,7 @@ def test_transition_commit_help_describes_resolution_and_warning(
     """採否のcommit案内が完全OID化と対応不能時の警告継続を説明する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["mq", subcommand, "--help"])
+        parser.parse_args(["wi", subcommand, "--help"])
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
     assert "対象リポジトリで解決できるrevision" in output
@@ -817,7 +878,7 @@ def test_add_output_reloads_saved_metadata(
     monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+        atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
@@ -834,9 +895,9 @@ class TestSubcommandSubparserDefault:
     def test_add(self, type_option: list[str]) -> None:
         """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
         args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-            ["mq", "add", *type_option, "本文"]
+            ["wi", "add", *type_option, "本文"]
         )
-        assert args.subparser.prog == "atk mq add"
+        assert args.subparser.prog == "atk wi add"
 
 
 def test_review_table_subcommands_are_public() -> None:
@@ -1004,7 +1065,7 @@ class TestSpaceSeparatedOptionWarning:
 
     @pytest.mark.parametrize(
         "top_command,subcommand",
-        [("mq", "adopt"), ("mq", "reject"), ("mq", "adopt")],
+        [("wi", "adopt"), ("wi", "reject"), ("wi", "adopt")],
     )
     def test_warns_before_argument_error(self, top_command: str, subcommand: str, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
@@ -1013,7 +1074,7 @@ class TestSpaceSeparatedOptionWarning:
 
     def test_does_not_warn_for_equals_form(self, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit):
-            atk.main(["mq", "adopt", "missing.md", "--note=memo"])
+            atk.main(["wi", "adopt", "missing.md", "--note=memo"])
         assert "警告:" not in capsys.readouterr().err
 
 
@@ -1030,7 +1091,7 @@ class TestUnansweredTbdNotification:
             _write_tbd_file(notes, f"tbd-{index:03d}.md", question=f"質問{index}")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=feedback", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--type=feedback", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         stderr = capsys.readouterr().err
         assert stderr.count("[inbox/unanswered]") == count
@@ -1044,7 +1105,7 @@ class TestUnansweredTbdNotification:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.count("[inbox/unanswered]") == 1
@@ -1058,7 +1119,7 @@ class TestUnansweredTbdNotification:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.count("[inbox/unanswered]") == 1
@@ -1072,7 +1133,7 @@ class TestUnansweredTbdNotification:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--source=session-review", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--source=session-review", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "# tbd" in captured.err
@@ -1085,7 +1146,7 @@ class TestUnansweredTbdNotification:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list", "--status=inbox", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "list", "--status=inbox", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "# tbd" in captured.err
@@ -1098,7 +1159,7 @@ class TestUnansweredTbdNotification:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "show", "--all", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "show", "--all", "--type=tbd", "--answered=no", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "# tbd" not in captured.err
@@ -1111,7 +1172,7 @@ class TestUnansweredTbdNotification:
         _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "show", f"{_FIXED_TIMESTAMP}-001.md", "--skip-pull"], home=tmp_path)
+            atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "# tbd" in captured.err
@@ -1124,7 +1185,7 @@ class TestInboxAlwaysEnabled:
     def test_removed_control_subcommands_exit_with_usage_error(self, subcommand: str) -> None:
         """削除済みのinbox制御サブコマンドはexit 2で拒否される。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", subcommand])
+            atk.main(["wi", subcommand])
 
         assert exc_info.value.code == 2
 
@@ -1140,7 +1201,7 @@ class TestInboxAlwaysEnabled:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), "dummy message"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "dummy message"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert "1件投入:" in capsys.readouterr().out
@@ -1156,7 +1217,7 @@ class TestPrivateNotesMissing:
     def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """管理repo rootが存在しない場合はexit 1でディレクトリ不在案内を出力する。"""
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
+            atk.main(["wi", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -1213,7 +1274,7 @@ class TestAddSingleMessage:
         message = "テストメッセージ"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", repo_path, message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", repo_path, message], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -1245,7 +1306,7 @@ class TestAddSingleMessage:
         assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
         assert "inbox: 計1件" in captured.out
         assert "編集する場合:\n" in captured.out
-        assert f"  atk mq edit {files[0].name}\n" in captured.out
+        assert f"  atk wi edit {files[0].name}\n" in captured.out
 
 
 class TestMqLifecycleScenario:
@@ -1284,25 +1345,25 @@ class TestMqLifecycleScenario:
         message = "ライフサイクル確認"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), message], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
         capsys.readouterr()
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "list"], home=tmp_path)
+            atk.main(["wi", "list"], home=tmp_path)
         assert exc_info.value.code == 0
         expected = f"{filename}: github.com/example/myrepo [inbox/normal/ready] {message}"
         assert expected in capsys.readouterr().out
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "start-processing", filename], home=tmp_path)
+            atk.main(["wi", "start-processing", filename], home=tmp_path)
         assert exc_info.value.code == 0
         assert not (notes / "inbox" / filename).exists()
         assert (notes / "processing" / filename).exists()
 
         git_calls.clear()
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "adopt", filename], home=tmp_path)
+            atk.main(["wi", "adopt", filename], home=tmp_path)
         assert exc_info.value.code == 0
         assert not (notes / "processing" / filename).exists()
         assert (notes / "adopted" / filename).exists()
@@ -1333,7 +1394,7 @@ class TestAddCompletionShowsProcessingCount:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1352,7 +1413,7 @@ class TestAddCompletionShowsProcessingCount:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1380,7 +1441,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1405,7 +1466,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1450,7 +1511,7 @@ class TestAddMultipleMessages:
         repo_path = str(myrepo)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -1469,8 +1530,8 @@ class TestAddMultipleMessages:
         assert f"  ~/private-notes/inbox/{files[1].name}\n" in captured.out
         assert "inbox: 計2件" in captured.out
         assert "編集する場合:\n" in captured.out
-        assert f"  atk mq edit {files[0].name}\n" in captured.out
-        assert f"  atk mq edit {files[1].name}\n" in captured.out
+        assert f"  atk wi edit {files[0].name}\n" in captured.out
+        assert f"  atk wi edit {files[1].name}\n" in captured.out
 
 
 class TestAddRepoPathExpansion:
@@ -1491,7 +1552,7 @@ class TestAddRepoPathExpansion:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -1560,7 +1621,7 @@ class TestAddFrontmatterOverride:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["mq", "add", str(myrepo), message, "--source", "cli-source"],
+                ["wi", "add", str(myrepo), message, "--source", "cli-source"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -1591,7 +1652,7 @@ class TestAddFrontmatterOverride:
         msg_plain = "frontmatter無し本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         inbox = notes / "inbox"
@@ -1619,7 +1680,7 @@ class TestAddFrontmatterOverride:
         message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
         inbox = notes / "inbox"
@@ -1660,7 +1721,7 @@ class TestAddBatchOption:
     @staticmethod
     def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
         """一括取り込み側のロック・remote同期・commitを無効化する。"""
-        import _atk_mq_batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        import _atk_wi_batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         monkeypatch.setattr(batch_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
         monkeypatch.setattr(batch_module, "_pull", lambda _path: None)
@@ -1669,8 +1730,8 @@ class TestAddBatchOption:
     def test_type_option_defaults_to_none_before_normalization(self) -> None:
         """`--type`省略時のargparse既定値はNoneとし、明示指定と区別する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        assert parser.parse_args(["mq", "add", "本文"]).type is None
-        assert parser.parse_args(["mq", "add", "--type=feedback", "本文"]).type == "feedback"
+        assert parser.parse_args(["wi", "add", "本文"]).type is None
+        assert parser.parse_args(["wi", "add", "--type=feedback", "本文"]).type == "feedback"
 
     def test_normal_add_normalizes_omitted_type_to_feedback(
         self,
@@ -1684,7 +1745,7 @@ class TestAddBatchOption:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         contents = [path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir()]
@@ -1714,7 +1775,7 @@ class TestAddBatchOption:
         _setup_notes(tmp_path)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "--batch", *options, self._ENTRY], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", *options, self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         assert "--batchと併用できません" in capsys.readouterr().err
@@ -1732,7 +1793,7 @@ class TestAddBatchOption:
         body_path.write_text(self._ENTRY, encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "--batch", "--body-file", str(body_path), self._ENTRY], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", "--body-file", str(body_path), self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         assert "併用できません" in capsys.readouterr().err
@@ -1748,7 +1809,7 @@ class TestAddBatchOption:
         self._patch_batch_repo_operations(monkeypatch)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "--batch", self._ENTRY], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8").endswith("取り込む本文\n")
@@ -1766,7 +1827,7 @@ class TestAddBatchOption:
         body_path.write_text(self._ENTRY, encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "--batch", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert (notes / "inbox" / "keep.md").is_file()
@@ -1798,7 +1859,7 @@ class TestAddBatchOption:
         self._patch_editor(monkeypatch, f"\n{entry}")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "--batch"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8") == (
@@ -1817,7 +1878,7 @@ class TestAddBatchOption:
         self._patch_batch_repo_operations(monkeypatch)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["mq", "add", "--batch", "ただの本文\n"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", "ただの本文\n"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         assert "投入を拒否しました" in capsys.readouterr().err

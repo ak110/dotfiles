@@ -15,98 +15,98 @@ import textwrap
 from typing import Any
 
 ROOT_DESCRIPTION = "目的: agent-toolkitのフィードバックキュー、計画ファイル、レビュー指摘管理表、管理対象一時領域と委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとコーディングエージェントが、フィードバックの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末は当該コマンドの`--help`に示す。"
-ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk mq list\n  atk config show"
+ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
 HELP: dict[str, dict[str, str]] = {
-    "atk mq": {
+    "atk wi": {
         "summary": "フィードバックとTBDのキューを操作する",
-        "description": "目的: 対象リポジトリごとのフィードバックとTBDを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk mq commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk mq commit`で確定する。",
-        "epilog": "実行例:\n\n  atk mq list\n  atk mq show 20260901-072734-001",
+        "description": "目的: 対象リポジトリごとのフィードバックとTBDを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",
+        "epilog": "実行例:\n\n  atk wi list\n  atk wi show 20260901-072734-001",
     },
-    "atk mq add": {
+    "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: フィードバック又はTBDをinboxへ1件以上投入し、保存本文を標準出力へ表示する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書くため、送信元本文との照合に追加の`atk mq show`を要しない。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk mq rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
-        "epilog": '実行例:\n\n  atk mq add "認証エラーの再現手順を整理する"',
+        "description": "目的: フィードバック又はTBDをinboxへ1件以上投入し、保存本文を標準出力へ表示する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書くため、送信元本文との照合に追加の`atk wi show`を要しない。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
+        "epilog": '実行例:\n\n  atk wi add "認証エラーの再現手順を整理する"',
     },
-    "atk mq list": {
+    "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
         "description": "目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境ではJSON Lines、それ以外ではテキスト形式を既定とする。ファイルは変更しない。\n前提: 既定でremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "実行例:\n\n  atk mq list --status=processable",
+        "epilog": "実行例:\n\n  atk wi list --status=processable",
     },
-    "atk mq show": {
+    "atk wi show": {
         "summary": "指定エントリまたは全件の本文を表示する",
         "description": "目的: ファイル名で指定した項目、又は対象範囲の全件の本文をfrontmatterとともに表示する。\n利用場面: 処理を始める前に要求の原文を確認するとき。複数件を1回の実行で取得するとき。\n対象と出力: private-notesを読み取り、標準出力へtarget_repoごとに区切って書く。ファイルは変更しない。\n前提: FILENAMEを1件以上指定するか`--all`を指定する。FILENAME指定時は全ての状態ディレクトリを探索する。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "実行例:\n\n  atk mq show 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles --skip-pull",
+        "epilog": "実行例:\n\n  atk wi show 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles --skip-pull",
     },
-    "atk mq grep": {
+    "atk wi grep": {
         "summary": "本文を正規表現で検索して該当行を列挙する",
         "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現で検索し、ファイル名、行番号、該当行を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。\n対象と出力: private-notesを読み取り、標準出力へ`<ファイル名>:<行番号>:<該当行>`の形式で書く。該当が0件のときは終了コード1を返す。ファイルは変更しない。\n前提: PATTERNはPythonのreモジュールが解釈できる正規表現として与える。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": '実行例:\n\n  atk mq grep "worktree-stash" --status=all',
+        "epilog": '実行例:\n\n  atk wi grep "worktree-stash" --status=all',
     },
-    "atk mq start-processing": {
+    "atk wi start-processing": {
         "summary": "フィードバックをprocessingへ移して処理中にする",
-        "description": "目的: inboxのフィードバックをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk mq return-to-inbox`でinboxへ戻す。",
-        "epilog": "実行例:\n\n  atk mq start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
+        "description": "目的: inboxのフィードバックをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
-    "atk mq hold": {
+    "atk wi hold": {
         "summary": "inboxまたはprocessingの項目を保留する",
-        "description": "目的: inbox又はprocessingの項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで当該項目を処理させないとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。\n復元・後始末: `atk mq unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
-        "epilog": "実行例:\n\n  atk mq hold 20260901-072734-001.md",
+        "description": "目的: inbox又はprocessingの項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで当該項目を処理させないとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
+        "epilog": "実行例:\n\n  atk wi hold 20260901-072734-001.md",
     },
-    "atk mq unhold": {
+    "atk wi unhold": {
         "summary": "holdの項目をinboxへ戻す",
-        "description": "目的: holdの項目をinboxへ戻し、自動処理の対象へ復帰させる。\n利用場面: 保留の理由が解消したとき。\n対象と出力: private-notesのholdからinboxへファイルを移動し、commitとpushを行う。\n前提: 対象がholdにあること。保留元がprocessingであった場合もinboxへ戻る。\n復元・後始末: 再び保留する場合は`atk mq hold`を使う。",
-        "epilog": "実行例:\n\n  atk mq unhold 20260901-072734-001.md",
+        "description": "目的: holdの項目をinboxへ戻し、自動処理の対象へ復帰させる。\n利用場面: 保留の理由が解消したとき。\n対象と出力: private-notesのholdからinboxへファイルを移動し、commitとpushを行う。\n前提: 対象がholdにあること。保留元がprocessingであった場合もinboxへ戻る。\n復元・後始末: 再び保留する場合は`atk wi hold`を使う。",
+        "epilog": "実行例:\n\n  atk wi unhold 20260901-072734-001.md",
     },
-    "atk mq return-to-inbox": {
+    "atk wi return-to-inbox": {
         "summary": "processingまたはrejectedの項目をinboxへ戻す",
-        "description": "目的: processing又はrejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。不採用とした項目をTBDの回答により再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。rejectedから戻す場合は`--state=rejected`を指定する。\n復元・後始末: 処理を再開する場合は`atk mq start-processing`を使う。",
-        "epilog": "実行例:\n\n  atk mq return-to-inbox 20260901-072734-001.md --cooldown-days=3",
+        "description": "目的: processing又はrejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。不採用とした項目をTBDの回答により再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。rejectedから戻す場合は`--state=rejected`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
+        "epilog": "実行例:\n\n  atk wi return-to-inbox 20260901-072734-001.md --cooldown-days=3",
     },
-    "atk mq adopt": {
+    "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
         "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitを記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。\n前提: 対象がinboxかprocessingにあること。`--commit`で指定するrevisionは対象リポジトリで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
-        "epilog": '実行例:\n\n  atk mq adopt 20260901-072734-001.md --note="計画で対応済み"',
+        "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
-    "atk mq reject": {
+    "atk wi reject": {
         "summary": "不採用として終端し理由を記録する",
         "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。\n前提: 対象がinboxかprocessingにあること。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。",
-        "epilog": '実行例:\n\n  atk mq reject 20260901-072734-001.md --note="現行実装で解消済み"',
+        "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
-    "atk mq rm": {
+    "atk wi rm": {
         "summary": "指定項目または未処理・処理中の項目を削除する",
         "description": "目的: 指定した項目、又は対象リポジトリの未処理と処理中の項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。`--all`では削除の前に対象を一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
-        "epilog": "実行例:\n\n  atk mq rm 20260901-072734-001.md",
+        "epilog": "実行例:\n\n  atk wi rm 20260901-072734-001.md",
     },
-    "atk mq edit": {
+    "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
         "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`はTBDを対象にしない。コーディングエージェントの実行環境から起動した場合、MESSAGEへ`## ユーザーコメント`節を含めると編集を拒否する。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
-        "epilog": '実行例:\n\n  atk mq edit 20260901-072734-001.md "更新後の本文"',
+        "epilog": '実行例:\n\n  atk wi edit 20260901-072734-001.md "更新後の本文"',
     },
-    "atk mq convert-to-plan": {
+    "atk wi convert-to-plan": {
         "summary": "フィードバックを計画実装型へ変換する",
         "description": "目的: 既存フィードバックを計画実装型へ変換し、hold入力では全件を最古の1件へ統合する。\n利用場面: 計画ファイルの作成とレビューが収束し、実装へ引き渡すとき。\n対象と出力: private-notesの対象ファイルへ計画ファイルの参照と依存を記録する。hold入力では統合元を同じcommitで除去してinboxへ移す。1回のcommitと任意のpushで処理する。\n前提: `--plan-file`へ`$(atk config get private_notes)/plans/`から始まる可搬表記を指定する。入力の状態を混在させない。hold入力では`--message`を指定する。\n復元・後始末: commitの前に失敗した場合は部分的な変換を残さない。pushだけが失敗した場合はcleanなローカルcommitが残るため、pushから再開する。",
-        "epilog": "実行例:\n\n  atk mq convert-to-plan 20260901-072734-001.md --plan-file='$(atk config get private_notes)/plans/2026/09/01-example-1a2b.md'",
+        "epilog": "実行例:\n\n  atk wi convert-to-plan 20260901-072734-001.md --plan-file='$(atk config get private_notes)/plans/2026/09/01-example-1a2b.md'",
     },
-    "atk mq set-dependencies": {
+    "atk wi set-dependencies": {
         "summary": "フィードバックの明示依存だけを更新する",
         "description": "目的: 既存フィードバックの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
-        "epilog": "実行例:\n\n  atk mq set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
+        "epilog": "実行例:\n\n  atk wi set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
     },
-    "atk mq answer": {
+    "atk wi answer": {
         "summary": "TBDへ回答する",
         "description": "目的: TBDへ回答を記録し、回答待ちの依存を解除できる状態にする。\n利用場面: ユーザーが確認事項へ回答するとき。\n対象と出力: private-notesの対象TBDの回答節へ本文を書き込み、commitとpushを行う。引数を省略すると、未回答のTBDを1件ずつ表示して$EDITORで開く。\n前提: 回答欄はユーザーだけが書き込む。エージェント環境から起動した場合は書き込みを拒否する。\n復元・後始末: 記録した回答はprivate-notesのGit履歴に残る。",
-        "epilog": '実行例:\n\n  atk mq answer 20260901-072734-001.md "案1を採用する"',
+        "epilog": '実行例:\n\n  atk wi answer 20260901-072734-001.md "案1を採用する"',
     },
-    "atk mq commit": {
+    "atk wi commit": {
         "summary": "外部編集後の未コミット変更を確定してpushする",
         "description": "目的: 外部のエディターなどで直接編集したprivate-notesの未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルや保存済みの計画ファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesの作業ツリーの変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk mq commit",
+        "epilog": "実行例:\n\n  atk wi commit",
     },
-    "atk mq process-loop": {
+    "atk wi process-loop": {
         "summary": "フィードバック消化の常駐処理を開始する",
         "description": "目的: 対象リポジトリのフィードバック消化を、オーケストレーターの新規セッション起動で反復実行する常駐処理を開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗とDependabotのアラートを検出してフィードバックを投入する。対象リポジトリの作業ツリーは起動したセッションが変更する。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。\n復元・後始末: 前景で動作するため、停止は当該プロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
-        "epilog": "実行例:\n\n  atk mq process-loop --worktree",
+        "epilog": "実行例:\n\n  atk wi process-loop --worktree",
     },
     "atk plans": {
         "summary": "計画ファイルの保存と旧保存先からの移行",
@@ -175,7 +175,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk managed-temp create": {
         "summary": "管理対象一時ディレクトリを作成する",
-        "description": "目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: `atk mq show`の出力の保存など、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は必須とし、受理条件は当該オプションの説明に示す。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 使い終えたら`atk managed-temp cleanup --path <絶対パス>`を実行する。最終更新から7日を超えた領域は`atk`の実行時に自動で削除する。",
+        "description": "目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: `atk wi show`の出力の保存など、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は必須とし、受理条件は当該オプションの説明に示す。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 使い終えたら`atk managed-temp cleanup --path <絶対パス>`を実行する。最終更新から7日を超えた領域は`atk`の実行時に自動で削除する。",
         "epilog": "実行例:\n\n  atk managed-temp create --prefix=mq-show",
     },
     "atk managed-temp cleanup": {
@@ -191,7 +191,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk worktree-stash": {
         "summary": "worktree固有refへ変更を退避する",
         "description": "目的: 複数のworktreeが共有する`refs/stash`を直接操作せず、退避物をworktree固有のrefへ記録して安全に扱う。\n利用場面: 並行して別のworktreeが動く環境で、承認された退避が必要になったとき。\n対象と出力: 現在のworktreeの未コミット変更と未追跡ファイルを`refs/worktree/<ラベル>`へ記録し、又は当該refを削除する。共有する`refs/stash`は変更しない。\n前提: カレントディレクトリがGitの作業ツリーであること。private-notesの作業ツリーでは実行しない。\n復元・後始末: 復元は`git stash apply --index refs/worktree/<ラベル>`で行い、不要になったrefは`atk worktree-stash drop`で削除する。",
-        "epilog": "実行例:\n\n  atk worktree-stash save --label <ラベル>\n  git stash apply --index refs/worktree/<ラベル>\n  atk worktree-stash drop refs/worktree/<ラベル>\n\nprivate-notesリポジトリの作業ツリーは本コマンドの対象にしない。private-notesの未コミットのキュー操作は`atk mq commit`で確定する。",
+        "epilog": "実行例:\n\n  atk worktree-stash save --label <ラベル>\n  git stash apply --index refs/worktree/<ラベル>\n  atk worktree-stash drop refs/worktree/<ラベル>\n\nprivate-notesリポジトリの作業ツリーは本コマンドの対象にしない。private-notesの未コミットのキュー操作は`atk wi commit`で確定する。",
     },
     "atk worktree-stash save": {
         "summary": "現在worktreeの変更をworktree固有refへ退避する",

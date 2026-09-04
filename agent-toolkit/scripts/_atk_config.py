@@ -115,7 +115,7 @@ def resolve_mutable_setting(key: str) -> str:
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
-    private_notes_path = vars(importlib.import_module("_atk_mq_common"))["_private_notes_path"]
+    private_notes_path = vars(importlib.import_module("_atk_wi_common"))["_private_notes_path"]
 
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {

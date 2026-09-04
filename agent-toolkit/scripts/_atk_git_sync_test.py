@@ -4,8 +4,8 @@ import pathlib
 import subprocess
 
 import _atk_git_sync
-import _atk_mq_common
-import _atk_mq_mutations
+import _atk_wi_common
+import _atk_wi_mutations
 import pytest
 
 
@@ -201,9 +201,9 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
 
     if operation == "pull":
         with _atk_git_sync.repo_lock(local):
-            _atk_mq_common.pull(local)
+            _atk_wi_common.pull(local)
     else:
-        assert _atk_mq_mutations.commit_entries(local) is False
+        assert _atk_wi_mutations.commit_entries(local) is False
 
     assert _git(local, "rev-parse", "HEAD").stdout.strip() == upstream
     assert _git(local, "status", "--porcelain").stdout == ""
@@ -225,7 +225,7 @@ def test_mq_pull_rebases_clean_divergence(
     upstream = _git(peer, "rev-parse", "HEAD").stdout.strip()
 
     with _atk_git_sync.repo_lock(local):
-        _atk_mq_common.pull(local)
+        _atk_wi_common.pull(local)
 
     assert _git(local, "merge-base", "--is-ancestor", upstream, "HEAD").returncode == 0
     assert _git(local, "log", "-1", "--format=%s").stdout.strip() == "local change"
@@ -249,7 +249,7 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     (local / "untracked.txt").write_text("dirty\n", encoding="utf-8")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError):
-        _atk_mq_common.pull(local)
+        _atk_wi_common.pull(local)
 
     assert _git(local, "rev-parse", "HEAD").stdout.strip() == local_head
     assert not _atk_git_sync.is_rebase_in_progress(local)
@@ -272,7 +272,7 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     _git(peer, "push")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError) as exc_info:
-        _atk_mq_common.pull(local)
+        _atk_wi_common.pull(local)
 
     assert exc_info.value.cmd[-3:] == ["merge", "--ff-only", "@{u}"]
     assert _atk_git_sync.is_rebase_in_progress(local)

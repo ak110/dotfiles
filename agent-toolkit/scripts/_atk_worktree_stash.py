@@ -20,8 +20,8 @@ _LOCK_NAME = "agent-toolkit-stash.lock"
 _STASH_IDENTIFIER_PATTERN = re.compile(r"stash@\{[0-9]+\}\Z")
 _QUEUE_REPOSITORY_ERROR = (
     "操作を拒否しました: 対象はキュー管理リポジトリです。"
-    "変更にはatk mq・atk plans・atk serveが提供する経路を使い、"
-    "未コミットのキュー操作はatk mq commitで確定してください。"
+    "変更にはatk wi・atk plans・atk serveが提供する経路を使い、"
+    "未コミットのキュー操作はatk wi commitで確定してください。"
 )
 
 
