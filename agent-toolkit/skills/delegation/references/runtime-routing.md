@@ -47,15 +47,15 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 ## 工程別モデル設定
 
 次の工程では、委譲する実行主体が`agents_server`の`start`へ表の`model_type`を渡し、engine、model及びeffortの解決をサーバーへ委ねる。「## 経路」が定める明示指示によりAgentツール経路を使う場合だけ、起動直前に`atk config get <キー>`を実行して実効値を取得する。
-表の「起動直前に解決する主体」が指すメインは、`agent-toolkit:process-feedbacks`のメイン、又は`agent-toolkit:plan-mode`若しくは`agent-toolkit:plan-and-add-feedback`を起動した実行主体とする。
+表の「起動直前に解決する主体」が指すメインは、`agent-toolkit:process-wi`のメイン、又は`agent-toolkit:plan-mode`若しくは`agent-toolkit:plan-and-add-awi`を起動した実行主体とする。
 
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
-| `pick_feedbacks_model` | フィードバックの選定とレーン分け | `agent-toolkit:process-feedbacks`のメイン | `agents_server` MCP | `agents_server` MCP |
+| `pick_wi_model` | WIの選定とレーン分け | `agent-toolkit:process-wi`のメイン | `agents_server` MCP | `agents_server` MCP |
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `plan_review_model` | 計画レビュー | 計画レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及びフィードバック即時対応の修正 | 引継ぎ修正、レビュー修正、CI失敗修正及びフィードバック即時対応を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及び即時対応の修正 | 引継ぎ修正、レビュー修正、CI失敗修正及び即時対応を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実装レビュー | 実装レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 

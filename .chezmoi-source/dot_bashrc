@@ -116,9 +116,9 @@ case $- in
 *) return ;;
 esac
 
-# 対話シェル起動時に未回答TBDを通知する
+# 対話シェル起動時に未回答UWIを通知する
 if command -v atk >/dev/null 2>&1; then
-    atk mq list --type=tbd --answered=no --skip-pull || true
+    atk wi list --type=uwi --answered=no --skip-pull || true
 fi
 
 # SSH対話ログイン時にtmuxへ自動アタッチする

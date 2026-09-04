@@ -363,19 +363,19 @@ class TestDelegationStateRemoval:
         assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
 
 
-class TestTbdCompletionNotice:
-    """TBD回答差分をPostToolUseの追加contextへ接続する。"""
+class TestUwiCompletionNotice:
+    """UWI回答差分をPostToolUseの追加contextへ接続する。"""
 
     def test_dispatch_appends_answered_filename_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """回答差分通知をLLM向けnoticeとして蓄積する。"""
         monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._tbd_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
             "build_notice",
             lambda _session_id, _cwd, _transcript_path: "newly answered: answered.md",
         )
         notices: list[str] = []
         payload = {
-            "session_id": "tbd-answer",
+            "session_id": "uwi-answer",
             "hook_event_name": "PostToolUse",
             "tool_name": "Read",
             "tool_input": {"file_path": "README.md"},
@@ -391,20 +391,20 @@ class TestTbdCompletionNotice:
         assert "newly answered: answered.md" in notices[0]
 
     @pytest.mark.parametrize("hook_event_name", ["PostToolUseFailure", "PermissionDenied"])
-    def test_failure_events_skip_tbd_notice(
+    def test_failure_events_skip_uwi_notice(
         self,
         monkeypatch: pytest.MonkeyPatch,
         hook_event_name: str,
     ) -> None:
         """失敗イベントでは回答差分を問い合わせない。"""
         monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._tbd_completion,  # pylint: disable=protected-access  # noqa: SLF001
+            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
             "build_notice",
-            lambda *_args: pytest.fail("失敗イベントでTBD通知が呼ばれた"),
+            lambda *_args: pytest.fail("失敗イベントでUWI通知が呼ばれた"),
         )
         notices: list[str] = []
         payload = {
-            "session_id": "tbd-failure",
+            "session_id": "uwi-failure",
             "hook_event_name": hook_event_name,
             "tool_name": "Read",
             "tool_input": {"file_path": "README.md"},
@@ -938,14 +938,14 @@ class TestPlanFilePostWriteNotice:
         assert "post-write checks" not in result.stdout
 
 
-class TestFeedbackSkillFlags:
+class TestAwiSkillFlags:
     """自動振り返りの起点となるスキル呼び出しの状態フラグ記録。"""
 
     @pytest.mark.parametrize(
         ("skill", "flag"),
         [
-            ("agent-toolkit:process-feedbacks", "process_feedbacks_skill_invoked"),
-            ("process-feedbacks", "process_feedbacks_skill_invoked"),
+            ("agent-toolkit:process-wi", "process_wi_skill_invoked"),
+            ("process-wi", "process_wi_skill_invoked"),
         ],
     )
     def test_skill_records_flag(self, tmp_path: pathlib.Path, skill: str, flag: str) -> None:
@@ -954,10 +954,10 @@ class TestFeedbackSkillFlags:
         assert _read_state(tmp_path, sid).get(flag) is True
 
 
-class TestExitSessionResetsProcessFeedbacksFlag:
+class TestExitSessionResetsProcessAwisFlag:
     """exit-sessionスキル起動検知時の自動振り返り起点フラグリセット。
 
-    `agent-toolkit:process-feedbacks`の`references/finish-session.md`がexit-sessionで終端するため、
+    `agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端するため、
     exit-session起動を完了シグナルとする。
     """
 
@@ -966,13 +966,13 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         ["agent-toolkit:exit-session", "exit-session"],
     )
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
-        """exit-session起動でprocess_feedbacks_skill_invokedが偽になる。"""
+        """exit-session起動でprocess_wi_skill_invokedが偽になる。"""
         sid = f"exit-{skill.replace(':', '-')}"
         # 事前に自動振り返り起点フラグを立てる。
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(
                 {
-                    "process_feedbacks_skill_invoked": True,
+                    "process_wi_skill_invoked": True,
                 },
                 ensure_ascii=False,
             ),
@@ -980,14 +980,14 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         )
         _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
-        assert state.get("process_feedbacks_skill_invoked") is False
+        assert state.get("process_wi_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
         """既に偽の状態でもexit-sessionの記録だけを追加する。"""
         sid = "exit-idem"
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps({"process_feedbacks_skill_invoked": False}, ensure_ascii=False),
+            json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
         )
         _run(
@@ -999,7 +999,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
             state_dir=tmp_path,
         )
         state = _read_state(tmp_path, sid)
-        assert state.get("process_feedbacks_skill_invoked") is False
+        assert state.get("process_wi_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
@@ -1010,7 +1010,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
             json.dumps(
                 {
                     "autonomous_exit_invoked": True,
-                    "process_feedbacks_skill_invoked": False,
+                    "process_wi_skill_invoked": False,
                     "marker": "keep",
                 },
                 ensure_ascii=False,
@@ -1030,8 +1030,8 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         assert path.stat().st_mtime_ns == mtime_before
 
 
-class TestProcessFeedbacksInvokedNonIdempotent:
-    """process-feedbacksスキル再起動時のフラグ強制上書き。"""
+class TestProcessAwisInvokedNonIdempotent:
+    """process-wiスキル再起動時のフラグ強制上書き。"""
 
     def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:
         """exit-session後の再起動でフラグが確実にTrueへ戻る。"""
@@ -1041,11 +1041,11 @@ class TestProcessFeedbacksInvokedNonIdempotent:
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
+                "tool_input": {"skill": "agent-toolkit:process-wi"},
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
         # exit-session起動でリセット。
         _run(
             {
@@ -1055,17 +1055,17 @@ class TestProcessFeedbacksInvokedNonIdempotent:
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is False
+        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is False
         # 再起動でTrueへ確実に戻ることを確認する。
         _run(
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:process-feedbacks"},
+                "tool_input": {"skill": "agent-toolkit:process-wi"},
             },
             state_dir=tmp_path,
         )
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
 
 
 class TestAmendPendingStatusCheck:
@@ -1704,7 +1704,7 @@ class TestAgentsServerProcessLoopLog:
             state_dir=tmp_path,
             extra_env=extra_env,
         )
-        log_path = xdg_state_home / "agent-toolkit" / "process-feedbacks.log"
+        log_path = xdg_state_home / "agent-toolkit" / "process-wi.log"
         return log_path.read_text(encoding="utf-8") if log_path.exists() else ""
 
     @pytest.mark.parametrize("observe_tool", ("wait", "kill"))

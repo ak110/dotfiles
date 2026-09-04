@@ -84,6 +84,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 
 import datetime
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -546,6 +547,8 @@ def _collect_edit_operation_warnings(
 def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, str | None]:
     """直前メインエージェント応答の言語検査を実行し、セッション状態でエスカレーションを管理する。
 
+    agents_serverが起動した委譲先セッションでは、作業途中の文章を呼び出し元もユーザーも読まないため検査しない。
+
     Returns:
         (exit code, 警告本文)のタプル。
         exit code 2: ブロック（stderrに出力済み）。
@@ -566,6 +569,8 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
     if not isinstance(transcript_path, str) or not transcript_path:
         return (None, None)
     if payload.get("isSidechain") is True:
+        return (None, None)
+    if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1":
         return (None, None)
 
     outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)
@@ -1199,7 +1204,7 @@ def _check_plan_mode_skill_first(
     サブエージェント経由の呼び出しでも同一の判定が働く
     （本checkは`isSidechain`を参照せず、`permission_mode`とセッション状態のみで判定するため）。
     計画ファイル編集に至るまでは警告を表示しない
-    （`agent-toolkit:process-feedbacks`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
+    （`agent-toolkit:process-wi`等の他スキル呼び出し・通常のRead・Bash操作は素通りする）。
     既存計画へのEdit・MultiEditで、一意かつ最後の`## 進捗ログ`見出し行までの接頭部が
     編集後も不変である場合は、受領側の正規操作として警告しない。
     ファイル又は入力を解釈できない場合は警告を維持する。
@@ -2106,6 +2111,8 @@ _POLL_COMMAND_PREFIXES = (
     ("gh", "run", "watch"),
     ("ps",),
     ("pgrep",),
+    ("atk", "wi", "list"),
+    ("atk", "wi", "show"),
     ("atk", "mq", "list"),
     ("atk", "mq", "show"),
     ("systemctl", "status"),

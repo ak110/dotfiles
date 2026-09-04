@@ -185,7 +185,7 @@ class TestBlockCondition:
         assert decision.get("decision") == "block"
         reason = decision.get("reason")
         assert isinstance(reason, str)
-        assert "agent-toolkit:process-feedbacks" in reason
+        assert "agent-toolkit:process-wi" in reason
         assert "agent-toolkit:completion-report" in reason
         assert "agent-toolkit:exit-session" in reason
         assert "Fix: " in reason

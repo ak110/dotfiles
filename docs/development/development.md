@@ -8,7 +8,7 @@ uvはbootstrap自身の実行基盤であるため、ルートのmise設定で�
 手動起動した`update-dotfiles`は、公式インストーラー版uvの自己更新を起動時に試行する。
 WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
 この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
-`atk mq process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
+`atk wi process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
 次回の手動起動まで延期する。補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
 
 ```bash
@@ -69,7 +69,7 @@ uv sync --reinstall  # .venvを再構築する場合
   波及する。Dependabot alertsを有効化し、自動修正PRの作成（Dependabot security updates）は
   無効化する方針を採用する。あわせて`.github/workflows/audit.yaml`が`uv audit`を定期実行し、
   検出結果をSARIFでCode Scanningへ送る。Dependabot alertsの未解決分は
-  `atk mq process-loop`がフィードバックとして自動投入する（Code Scanning由来のアラートは
+  `atk wi process-loop`がAWIとして自動投入する（Code Scanning由来のアラートは
   当該自動投入の対象に含まない）。
   実測でDependabot alertsは有効である（`gh api repos/ak110/dotfiles/vulnerability-alerts`が204）。
   自動修正PRの作成は無効である（`gh api repos/ak110/dotfiles/automated-security-fixes`が

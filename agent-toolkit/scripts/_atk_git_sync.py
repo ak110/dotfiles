@@ -593,7 +593,7 @@ def commit_and_push(
         if has_remote(private_notes):
             print(
                 "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。"
-                "最後の操作は--skip-pushなしで実行するか、atk mq commitを実行して滞留commitをpushしてください。",
+                "最後の操作は--skip-pushなしで実行するか、atk wi commitを実行して滞留commitをpushしてください。",
                 file=sys.stderr,
             )
         return

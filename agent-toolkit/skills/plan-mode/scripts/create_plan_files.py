@@ -148,7 +148,7 @@ def _remove_owned(path: pathlib.Path, identity: tuple[int, int], content: bytes)
 
 
 def _portable_reference_values(text: str) -> Iterator[str]:
-    """本文から固定portable接頭辞を持つ参照値を抽出する。"""
+    """Markdown本文の有効行から固定portable接頭辞を持つ参照値を抽出する。"""
     for match in _PORTABLE_REFERENCE_RE.finditer(text):
         value = match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
         if value:
@@ -156,7 +156,7 @@ def _portable_reference_values(text: str) -> Iterator[str]:
 
 
 def _adjunct_reference_values(text: str) -> Iterator[str]:
-    """本文から付属ファイル参照の固定接頭辞を持つ参照値を抽出する。"""
+    """Markdown本文の有効行から付属ファイル参照の固定接頭辞を持つ参照値を抽出する。"""
     for match in _ADJUNCT_REFERENCE_RE.finditer(text):
         yield match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
 
@@ -171,17 +171,20 @@ def _check_plan_references(
 
     付属ファイル参照は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
     既存の可搬参照は従来どおりprivate-notes基準で解決する。
+    参照の抽出対象はコードフェンスなどを除いたMarkdown本文の有効行に限る。
+    コードフェンス内はユーザー発言の逐語引用を含み、そこに現れる接頭辞は参照ではないためである。
     """
     for content in contents:
         text = content.decode("utf-8")
         if PLAN_STEM_PLACEHOLDER in text:
             raise PlanCreationError("計画本文に未解決のstemプレースホルダーがあります")
-        for reference in _portable_reference_values(text):
+        body = _plan_format.markdown_body_text(text)
+        for reference in _portable_reference_values(body):
             try:
                 _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
             except (OSError, ValueError) as error:
                 raise PlanCreationError(f"計画本文の可搬参照が不正です: {reference}: {error}") from error
-        for reference in _adjunct_reference_values(text):
+        for reference in _adjunct_reference_values(body):
             try:
                 _plan_file.resolve_plan_adjunct_reference(reference, plan_path=main_path)
             except (OSError, ValueError) as error:

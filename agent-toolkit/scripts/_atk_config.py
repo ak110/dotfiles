@@ -24,7 +24,7 @@ _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
 _MUTABLE_KEY_DEFAULTS = {
     "explore_model": _DEFAULT_STAGE_MODEL,
     "explore_fast_model": "codex:gpt-5.6-terra/medium",
-    "pick_feedbacks_model": _DEFAULT_STAGE_MODEL,
+    "pick_wi_model": _DEFAULT_STAGE_MODEL,
     "plan_model": _DEFAULT_STAGE_MODEL,
     "plan_review_model": _DEFAULT_STAGE_MODEL,
     "execute_fast_model": _DEFAULT_STAGE_MODEL,
@@ -115,7 +115,7 @@ def resolve_mutable_setting(key: str) -> str:
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
-    private_notes_path = vars(importlib.import_module("_atk_mq_common"))["_private_notes_path"]
+    private_notes_path = vars(importlib.import_module("_atk_wi_common"))["_private_notes_path"]
 
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {

@@ -1,6 +1,6 @@
 """Claude Code agent-toolkit: hook payloadからの呼出主体（agentId）解決ヘルパー。
 
-`posttooluse.py`・`agents_server_session_advisor.py`・`_tbd_completion.py`が
+`posttooluse.py`・`agents_server_session_advisor.py`・`_uwi_completion.py`が
 メイン会話とサブエージェントの呼び出しを区別するために共有する。
 
 判別には`agent_id`だけを用いる。`transcript_path`はサブエージェント内で発火した

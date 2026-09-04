@@ -1,7 +1,7 @@
 # grilling
 
-`agent-toolkit:plan-mode`又は`agent-toolkit:plan-and-add-feedback`の直接起動で、実装前に必要な共通理解へ到達するためのユーザー確認手順。
-`agent-toolkit:process-feedbacks`経路では本書を適用せず、確認事項をTBDへ登録する。
+`agent-toolkit:plan-mode`又は`agent-toolkit:plan-and-add-awi`の直接起動で、実装前に必要な共通理解へ到達するためのユーザー確認手順。
+`agent-toolkit:process-wi`経路では本書を適用せず、確認事項をUWIへ登録する。
 
 ## 確認対象
 

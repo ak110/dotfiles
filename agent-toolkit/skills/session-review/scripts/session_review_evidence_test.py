@@ -1551,6 +1551,41 @@ def test_warn_mode_reports_matches_found_only_in_tool_use_result(
     assert [event["line"] for event in events] == [1, 1]
 
 
+def test_warn_mode_ignores_read_result_body_and_keeps_hook_notice(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """読み取り結果の本文を除外し、同じレコードのフック通知だけを警告として返す。"""
+    file_body = 'warning: 文書内の例示\n{"warning_message": "文書内の構造化警告"}'
+    notice = "[auto-generated: agent-toolkit/posttooluse][warn] 読み取り後の通知"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {
+                    "type": "text",
+                    "file": {"filePath": "/tmp/rules.md", "content": file_body, "numLines": 2},
+                },
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "read-1", "content": file_body}],
+                },
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PostToolUse:Read",
+                    "toolUseID": "read-1",
+                    "content": [notice],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert [event["text"] for event in _read_jsonl(capsys)] == [notice]
+
+
 def test_warn_mode_does_not_duplicate_tool_use_result_already_visible(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1931,7 +1966,7 @@ def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
                 "message": {
                     "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "atk mq list", "n": 1}},
+                        {"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "atk wi list", "n": 1}},
                         {"type": "tool_use", "name": "Read", "id": "c2", "input": {"file_path": "/tmp/x.md"}},
                         {"type": "tool_use", "name": "Agent", "id": "c3", "input": {"prompt": "依頼本文"}},
                     ],
@@ -1952,7 +1987,7 @@ def test_detail_mode_keeps_tool_use_input_shapes_and_result_body(
     events = _read_jsonl(capsys)
     assert [event["line"] for event in events] == [1, 1, 1, 2]
     assert [event.get("name") for event in events[:3]] == ["Bash", "Read", "Agent"]
-    assert events[0]["input"] == {"command": "atk mq list", "n": 1}
+    assert events[0]["input"] == {"command": "atk wi list", "n": 1}
     assert events[1]["input"] == {"file_path": "/tmp/x.md"}
     assert events[2]["input"] == {"prompt": "依頼本文"}
     assert events[3] == {"kind": "detail", "line": 2, "tool": "c1", "text": "結果本文"}
@@ -2175,7 +2210,7 @@ def test_grep_mode_reports_matching_lines_and_entry_count(
                 "message": {
                     "role": "assistant",
                     "content": [
-                        {"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "atk mq list"}},
+                        {"type": "tool_use", "name": "Bash", "id": "c1", "input": {"command": "atk wi list"}},
                     ],
                 },
             },
@@ -2183,13 +2218,13 @@ def test_grep_mode_reports_matching_lines_and_entry_count(
                 "type": "user",
                 "message": {
                     "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "失敗: atk mq list"}],
+                    "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "失敗: atk wi list"}],
                 },
             },
         ],
     )
 
-    assert evidence.main([str(transcript), "--grep", "atk mq"]) == 0
+    assert evidence.main([str(transcript), "--grep", "atk wi"]) == 0
 
     events = _read_jsonl(capsys)
     assert [event["kind"] for event in events] == ["match", "match", "summary"]

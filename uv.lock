@@ -1686,6 +1686,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "filelock" },
+    { name = "jsonschema" },
     { name = "playwright" },
     { name = "pyfltr" },
     { name = "pytest-asyncio" },
@@ -1729,6 +1730,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "filelock", specifier = ">=3.30" },
+    { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
     { name = "pyfltr", extras = ["python"], specifier = ">=3.17.7" },
     { name = "pytest-asyncio", specifier = ">=1.0" },

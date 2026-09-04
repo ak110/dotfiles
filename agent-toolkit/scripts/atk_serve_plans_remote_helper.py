@@ -130,6 +130,8 @@ def _atk_env() -> dict[str, str]:
 
 # 警告本文へ引き継ぐ標準エラー出力の最大文字数。原因の判別に足りる長さを残しつつ、警告欄を占有させない。
 _STDERR_EXCERPT_MAX_CHARS = 500
+# 依存解決を含む`uv run`経由の初回起動を待てる上限にする。
+_PRIVATE_NOTES_TIMEOUT_SEC = 30
 
 
 def _stderr_excerpt(stderr: str) -> str:
@@ -156,7 +158,7 @@ def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=_PRIVATE_NOTES_TIMEOUT_SEC,
             env=_atk_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:

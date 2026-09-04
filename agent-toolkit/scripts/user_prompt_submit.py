@@ -8,7 +8,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し�
 検出対象スキルと対応フラグ:
 
 - plan-mode → `plan_mode_skill_invoked`
-- process-feedbacks → `process_feedbacks_skill_invoked`
+- process-wi → `process_wi_skill_invoked`
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -31,7 +31,7 @@ from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-posit
 )
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
-    _PROCESS_FEEDBACKS_SKILL_NAMES,
+    _PROCESS_WI_SKILL_NAMES,
 )
 
 
@@ -48,7 +48,7 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 
 # スラッシュコマンド起動時にも検出できるように、フルネームと短縮名の両方を含む拡張集合を組み立てる。
 _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
-_PROCESS_FEEDBACKS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_FEEDBACKS_SKILL_NAMES)
+_PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 
 # ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
@@ -72,10 +72,10 @@ def _set_plan_mode_invoked(state: dict) -> dict | None:
     return state
 
 
-def _set_process_feedbacks_invoked(state: dict) -> dict | None:
-    if state.get("process_feedbacks_skill_invoked", False):
+def _set_process_wi_invoked(state: dict) -> dict | None:
+    if state.get("process_wi_skill_invoked", False):
         return None
-    state["process_feedbacks_skill_invoked"] = True
+    state["process_wi_skill_invoked"] = True
     return state
 
 
@@ -150,8 +150,8 @@ def main(payload_text: str) -> int:
     # 対応スキル別にフラグを設定する。
     if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
         update_state(session_id, _set_plan_mode_invoked)
-    if name in _PROCESS_FEEDBACKS_NAMES_EXTENDED or full_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
-        update_state(session_id, _set_process_feedbacks_invoked)
+    if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
+        update_state(session_id, _set_process_wi_invoked)
 
     if plan_session_title is not None:
         _emit_hook_output(session_title_output=plan_session_title)

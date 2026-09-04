@@ -8,8 +8,8 @@ import types
 import typing
 
 import _atk_git_sync
-import _atk_mq_common as _common
 import _atk_plans
+import _atk_wi_common as _common
 import _plan_file
 import atk
 import pytest
@@ -44,7 +44,7 @@ def _init_local_notes(root: pathlib.Path) -> None:
     _git(root, "config", "user.email", "plans-test@example.invalid")
     _git(root, "config", "core.quotePath", "false")
     (root / ".agent-toolkit-local-only").touch()
-    for state in ("inbox", "processing", "planning", "editing", "hold", "adopted", "rejected"):
+    for state in ("inbox", "processing", "hold", "adopted", "rejected"):
         (root / state / ".gitkeep").parent.mkdir(parents=True)
         (root / state / ".gitkeep").touch()
     _git(root, "add", ".")
@@ -822,7 +822,7 @@ def test_migrate_plans_moves_bundle_references_and_deletes_after_remote_push(tmp
     mq = notes / "inbox" / "queue.md"
     mq.write_text(
         "---\n# frontmatter comment\ntarget_repo: github.com/example/repo\n"
-        'type: feedback\nplan_file: "' + main_token + '" # inline comment\n'
+        'type: awi\nplan_file: "' + main_token + '" # inline comment\n'
         "custom: '保持する値'\n---\n\n本文\n",
         encoding="utf-8",
     )
@@ -858,7 +858,7 @@ def test_migrate_plans_moves_bundle_references_and_deletes_after_remote_push(tmp
     assert f"対応表外suffix: {main_token}suffix" in transformed
     assert mq.read_text(encoding="utf-8") == (
         "---\n# frontmatter comment\ntarget_repo: github.com/example/repo\n"
-        'type: feedback\nplan_file: "' + portable_main + '" # inline comment\n'
+        'type: awi\nplan_file: "' + portable_main + '" # inline comment\n'
         "custom: '保持する値'\n---\n\n本文\n"
     )
     assert not _git(notes, "status", "--porcelain").stdout
@@ -1192,6 +1192,26 @@ def test_rewrite_references_keeps_queue_items_unchanged(tmp_path: pathlib.Path) 
     _atk_plans.rewrite_plan_references(notes)
 
     assert queue_item.read_text(encoding="utf-8") == queue_text
+
+
+def test_rewrite_references_keeps_code_fence_verbatim(tmp_path: pathlib.Path) -> None:
+    """コードフェンス内へ逐語で引用した可搬表記は書き換えの対象にしない。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    stem = "01-参照表記-1a2b"
+    main, _detail = _saved_plan_with_references(notes, stem)
+    quoted = f"{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.norm-texts.md"
+    fence = f"### ユーザー発言1\n\n```text\n{quoted} を参照する\n```\n"
+    main.write_text(f"{main.read_text(encoding='utf-8')}\n{fence}", encoding="utf-8")
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add saved plan")
+    _git(notes, "push")
+
+    result = _atk_plans.rewrite_plan_references(notes)
+
+    assert result["references"] == 3, result
+    assert fence in main.read_text(encoding="utf-8")
 
 
 def test_rewrite_references_reports_zero_without_targets(tmp_path: pathlib.Path) -> None:

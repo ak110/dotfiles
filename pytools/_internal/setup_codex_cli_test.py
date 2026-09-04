@@ -1,6 +1,7 @@
 """pytools._internal.setup_codex_cliのテスト。"""
 
 import contextlib
+import logging
 import os
 import subprocess
 import typing
@@ -27,6 +28,8 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.delenv("CODEX_INSTALL_DIR", raising=False)
+    monkeypatch.delenv("NVM_DIR", raising=False)
+    monkeypatch.delenv("MISE_DATA_DIR", raising=False)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
 
     def fake_which(name: str, *, path: str | None = None) -> str | None:
@@ -57,6 +60,7 @@ def _make_fake_run(
     *,
     launcher: Path | None = None,
     mise_list: str = "[]",
+    mise_all: str = "{}",
     failing: str = "",
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     """`run_subprocess`の代用関数を組み立てる。
@@ -77,7 +81,8 @@ def _make_fake_run(
         if command[1:3] == ["ls", "--json"]:
             if failing == "mise_list":
                 return subprocess.CompletedProcess(command, 1, "", "failed")
-            return subprocess.CompletedProcess(command, 0, "not json" if failing == "mise_json" else mise_list, "")
+            output = mise_list if len(command) > 3 else mise_all
+            return subprocess.CompletedProcess(command, 0, "not json" if failing == "mise_json" else output, "")
         failed = (failing == "mise_uninstall" and command[1] == "uninstall") or (failing == "reshim" and command[1] == "reshim")
         return subprocess.CompletedProcess(command, 1 if failed else 0, "", "failed")
 
@@ -89,7 +94,7 @@ def _forbid_migration(monkeypatch) -> None:
     monkeypatch.setattr(
         setup_codex_cli.setup_cli_common,
         "migrate_npm_launchers",
-        lambda *args: (_ for _ in ()).throw(AssertionError("移行してはならない")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("移行してはならない")),
     )
 
 
@@ -102,8 +107,8 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
     def fake_prepend(path: Path) -> None:
         events.append(f"path:{path}")
 
-    def fake_migrate(*args: object) -> bool:
-        del args
+    def fake_migrate(*args: object, **kwargs: object) -> bool:
+        del args, kwargs
         events.append("migrate")
         return True
 
@@ -164,8 +169,8 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
                 profile.write_text("# >>> Codex installer >>>\n", encoding="utf-8")
         return base_fake_run(command, **kwargs)
 
-    def fake_migrate(*args: object) -> bool:
-        migrated.append(args)
+    def fake_migrate(*args: object, **kwargs: object) -> bool:
+        migrated.append((*args, kwargs))
         return True
 
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
@@ -182,7 +187,34 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
     installer_path = env_overrides["PATH"]
     assert installer_path == os.pathsep.join([str(visible_bin), str(other_bin)])
     assert not profile.exists()
-    assert migrated == [("codex", "@openai/codex", launcher, tmp_path / ".codex" / "packages" / "standalone")]
+    assert migrated == [
+        (
+            "codex",
+            "@openai/codex",
+            launcher,
+            tmp_path / ".codex" / "packages" / "standalone",
+            {"extra_search_directories": ()},
+        )
+    ]
+
+
+@pytest.mark.parametrize("use_environment", [False, True])
+def test_nvm_bin_directories_use_existing_version_directories(monkeypatch, tmp_path: Path, use_environment: bool) -> None:
+    """NVM_DIR又は既定の.nvmから、実在するバージョン別binだけを返す。"""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    nvm_dir = tmp_path / "configured" if use_environment else tmp_path / "home" / ".nvm"
+    if use_environment:
+        monkeypatch.setenv("NVM_DIR", str(nvm_dir))
+    else:
+        monkeypatch.delenv("NVM_DIR", raising=False)
+    first = nvm_dir / "versions" / "node" / "v22" / "bin"
+    second = nvm_dir / "versions" / "node" / "v24" / "bin"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    (nvm_dir / "versions" / "node" / "v25" / "bin-file").parent.mkdir(parents=True)
+    (nvm_dir / "versions" / "node" / "v25" / "bin-file").write_text("", encoding="utf-8")
+
+    assert setup_codex_cli._nvm_bin_directories() == (first, second)  # pylint: disable=protected-access
 
 
 def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path: Path) -> None:
@@ -191,7 +223,7 @@ def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path
     calls: list[_Call] = []
     prepended: list[Path] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client()
@@ -248,7 +280,7 @@ def test_run_selects_available_powershell(
 
     monkeypatch.setattr(setup_codex_cli.shutil, "which", fake_which)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client(requests)
@@ -301,7 +333,7 @@ def test_run_obeys_official_installer_contract(
     requests: list[httpx.Request] = []
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client(requests)
@@ -327,7 +359,7 @@ def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path
     launcher.write_text("", encoding="utf-8")
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls))
 
     client = _make_client()
@@ -346,7 +378,7 @@ def test_run_accepts_legacy_launcher_layout(monkeypatch, tmp_path: Path, platfor
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / name
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client()
@@ -369,7 +401,11 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
     prepended: list[Path] = []
     migrated: list[tuple[object, ...]] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: migrated.append(args))
+    monkeypatch.setattr(
+        setup_codex_cli.setup_cli_common,
+        "migrate_npm_launchers",
+        lambda *args, **kwargs: migrated.append((*args, kwargs)),
+    )
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client()
@@ -385,7 +421,15 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
     }
     assert calls[1][0] == [str(launcher), "--version"]
     assert prepended == [install_dir]
-    assert migrated == [("codex", "@openai/codex", launcher, codex_home / "packages" / "standalone")]
+    assert migrated == [
+        (
+            "codex",
+            "@openai/codex",
+            launcher,
+            codex_home / "packages" / "standalone",
+            {"extra_search_directories": ()},
+        )
+    ]
 
 
 def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_path: Path) -> None:
@@ -421,7 +465,7 @@ def test_run_retries_transient_http_status(monkeypatch, tmp_path: Path, status_c
     monkeypatch.setattr(setup_codex_cli.time, "sleep", lambda delay: None)
     monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
@@ -448,7 +492,7 @@ def test_run_retries_transient_transport_error(monkeypatch, tmp_path: Path, erro
     monkeypatch.setattr(setup_codex_cli.time, "sleep", lambda delay: None)
     monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
     client = httpx.Client(transport=httpx.MockTransport(handle_request))
     try:
@@ -615,7 +659,7 @@ def test_run_skips_mise_removal_when_no_version_is_installed(monkeypatch, tmp_pa
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client()
@@ -632,7 +676,7 @@ def test_run_skips_mise_removal_when_listed_version_is_not_installed(monkeypatch
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         setup_codex_cli.claude_common,
         "run_subprocess",
@@ -648,13 +692,77 @@ def test_run_skips_mise_removal_when_listed_version_is_not_installed(monkeypatch
     assert not any(command[1] in {"uninstall", "reshim"} for command, _ in calls[2:])
 
 
+def test_run_reshims_orphaned_mise_launcher(monkeypatch, tmp_path: Path) -> None:
+    """miseがCodexを提供しない状態で中継が実在する場合は再生成する。"""
+    _isolate(monkeypatch, tmp_path, "linux")
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
+    shim = tmp_path / "mise-data" / "shims" / "codex"
+    shim.parent.mkdir(parents=True)
+    shim.write_text("stale", encoding="utf-8")
+    monkeypatch.setenv("MISE_DATA_DIR", str(tmp_path / "mise-data"))
+    calls: list[_Call] = []
+    base_fake_run = _make_fake_run(calls, launcher=launcher, mise_all="{}")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        result = base_fake_run(command, **kwargs)
+        if command[1:] == ["reshim"]:
+            shim.unlink()
+        return result
+
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", fake_run)
+
+    client = _make_client()
+    try:
+        assert setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert any(command[1:] == ["ls", "--json"] for command, _ in calls)
+    assert calls[-1][0][1:] == ["reshim"]
+    assert not shim.exists()
+
+
+def test_run_warns_without_deleting_orphaned_mise_launcher(
+    monkeypatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """再生成後も残る管理外の中継は直接削除せず警告する。"""
+    _isolate(monkeypatch, tmp_path, "linux")
+    launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
+    shim = tmp_path / "mise-data" / "shims" / "codex"
+    shim.parent.mkdir(parents=True)
+    shim.write_text("stale", encoding="utf-8")
+    monkeypatch.setenv("MISE_DATA_DIR", str(tmp_path / "mise-data"))
+    calls: list[_Call] = []
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        setup_codex_cli.claude_common,
+        "run_subprocess",
+        _make_fake_run(calls, launcher=launcher, mise_all="{}"),
+    )
+
+    client = _make_client()
+    try:
+        with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_codex_cli"):
+            assert setup_codex_cli.run(client)
+    finally:
+        client.close()
+
+    assert shim.is_file()
+    assert any(f"mise管理外の中継を保持: {shim}" in message for message in caplog.messages)
+
+
 def test_run_reshims_after_npm_migration_without_mise_versions(monkeypatch, tmp_path: Path) -> None:
     """mise管理版が無くてもnpm版の除去でshimが実体を失うため、移行後にreshimする。"""
     _isolate(monkeypatch, tmp_path, "linux")
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: True)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: True)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client()
@@ -673,7 +781,7 @@ def test_run_propagates_mise_failures(monkeypatch, tmp_path: Path, failing: str)
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         setup_codex_cli.claude_common,
         "run_subprocess",
@@ -696,7 +804,7 @@ def test_run_propagates_npm_migration_failure(monkeypatch, tmp_path: Path) -> No
     monkeypatch.setattr(
         setup_codex_cli.setup_cli_common,
         "migrate_npm_launchers",
-        lambda *args: (_ for _ in ()).throw(RuntimeError("旧npm版の削除に失敗")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("旧npm版の削除に失敗")),
     )
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
@@ -714,7 +822,7 @@ def test_run_skips_mise_removal_when_mise_is_absent(monkeypatch, tmp_path: Path)
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.claude_common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     client = _make_client()

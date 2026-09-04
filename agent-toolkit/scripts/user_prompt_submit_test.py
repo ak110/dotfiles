@@ -67,14 +67,14 @@ class TestSlashCommandDetection:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is True
 
-    def test_detects_short_skill_command_process_feedbacks(self, tmp_path: pathlib.Path):
-        sid = "short-process-feedbacks"
+    def test_detects_short_skill_command_process_wi(self, tmp_path: pathlib.Path):
+        sid = "short-process-wi"
         result = _run(
-            {"session_id": sid, "prompt": "/process-feedbacks"},
+            {"session_id": sid, "prompt": "/process-wi"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
 
 
 class TestNonMatchingPrompts:
@@ -102,7 +102,7 @@ class TestNonMatchingPrompts:
     def test_claude_ignores_codex_skill_command(self, tmp_path: pathlib.Path):
         sid = "claude-dollar-command"
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-feedbacks"},
+            {"session_id": sid, "prompt": "$agent-toolkit:process-wi"},
             state_dir=tmp_path,
         )
 
@@ -115,7 +115,7 @@ class TestNonMatchingPrompts:
         result = _run(
             {
                 "session_id": sid,
-                "prompt": "/agent-toolkit:process-feedbacks",
+                "prompt": "/agent-toolkit:process-wi",
                 "model": "gpt-5",
             },
             state_dir=tmp_path,
@@ -163,8 +163,8 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid)["plan_mode_skill_invoked"] is True
 
-    def test_codex_process_feedbacks_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
-        sid = "codex-process-feedbacks-keeps-unrelated"
+    def test_codex_process_wi_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
+        sid = "codex-process-wi-keeps-unrelated"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
             json.dumps({"plan_mode_skill_invoked": True}),
@@ -172,13 +172,13 @@ class TestNonMatchingPrompts:
         )
 
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-feedbacks", "model": "gpt-5"},
+            {"session_id": sid, "prompt": "$agent-toolkit:process-wi", "model": "gpt-5"},
             state_dir=tmp_path,
         )
 
         state = _read_state(tmp_path, sid)
         assert result.returncode == 0
-        assert state["process_feedbacks_skill_invoked"] is True
+        assert state["process_wi_skill_invoked"] is True
         assert state["plan_mode_skill_invoked"] is True
 
 
@@ -215,7 +215,7 @@ class TestClaudePlanSessionTitle:
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         sid = "plan-title-initial"
-        self._prepare_plan(tmp_path, monkeypatch, sid, "feedback-batch.md")
+        self._prepare_plan(tmp_path, monkeypatch, sid, "awi-batch.md")
 
         result = _run(
             {"session_id": sid, "prompt": "計画を続けます", "hook_event_name": "UserPromptSubmit"},
@@ -224,10 +224,10 @@ class TestClaudePlanSessionTitle:
 
         assert result.returncode == 0
         output = json.loads(result.stdout)
-        assert output["hookSpecificOutput"]["sessionTitle"] == "feedback-batch"
+        assert output["hookSpecificOutput"]["sessionTitle"] == "awi-batch"
         assert "last_hook_session_title" not in _read_state(tmp_path, sid)
         title_state = json.loads(self._title_state_path(tmp_path, sid).read_text(encoding="utf-8"))
-        assert title_state == {"last_hook_session_title": "feedback-batch"}
+        assert title_state == {"last_hook_session_title": "awi-batch"}
 
     def test_private_notes_plan_receives_current_plan_stem(
         self,
@@ -257,11 +257,11 @@ class TestClaudePlanSessionTitle:
 
     def test_same_session_does_not_emit_title_again(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         sid = "plan-title-repeat"
-        self._prepare_plan(tmp_path, monkeypatch, sid, "feedback-batch.md")
+        self._prepare_plan(tmp_path, monkeypatch, sid, "awi-batch.md")
 
         first = _run({"session_id": sid, "prompt": "最初の入力"}, state_dir=tmp_path)
         assert first.returncode == 0
-        assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "feedback-batch"
+        assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "awi-batch"
 
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 

@@ -5,7 +5,7 @@
 # ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
-計画メタ情報、見出し構造、関連フィードバックと提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
+計画メタ情報、見出し構造、`関連WI`と提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
 旧形式は読み取り互換で受理するが、新形式への移行をwarningで案内する。
 """
 
@@ -94,7 +94,7 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
 
 def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
     """コードフェンスを除く本文のスキル・専用agent参照を検査する。"""
-    inline_text = "\n".join(line for _, line in _plan_format.iter_markdown_body_lines(text))
+    inline_text = _plan_format.markdown_body_text(text)
     errors: list[str] = []
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
     skill_calls = _classify_skill_references(inline_text) - agent_calls
@@ -272,6 +272,14 @@ def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
     return warnings
 
 
+def _legacy_wi_origin_warnings(text: str) -> list[_ClassifiedWarning]:
+    """実施内容表の`由来`欄が改名前のWI区分を使っている場合の移行warningを返す。"""
+    return [
+        ("migration", f"`## 実施内容`の`由来`が旧形式である。新規作成・改訂では`{canonical}`へ移行する")
+        for canonical in _plan_format.legacy_wi_origins(text)
+    ]
+
+
 def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
     """読み取り互換で受理した旧形式の固定記法に移行警告を返す。"""
     warnings: list[_ClassifiedWarning] = []
@@ -280,6 +288,17 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
         field == _plan_format.PLAN_METADATA_LEGACY_DETAIL_FIELD for field, _value in metadata.entries
     ):
         warnings.append(("migration", "計画メタ情報の項目名が旧形式である。新規作成・改訂では`計画ファイル（詳細）`へ移行する"))
+    if metadata is not None and any(
+        field == _plan_format.PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD for field, _value in metadata.entries
+    ):
+        warnings.append(
+            (
+                "migration",
+                "計画メタ情報の項目名が旧形式である。新規作成・改訂では"
+                f"`{_plan_format.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する",
+            )
+        )
+    warnings.extend(_legacy_wi_origin_warnings(text))
     if metadata is not None and _plan_format.PLAN_METADATA_DETAIL_FIELD in metadata.values:
         warnings.append(
             (
@@ -292,7 +311,8 @@ def _legacy_fixed_notation_warnings(text: str) -> list[_ClassifiedWarning]:
         warnings.append(
             (
                 "migration",
-                "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+                "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の"
+                f"`{_plan_format.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する",
             )
         )
     if any(
@@ -366,7 +386,7 @@ def _check_new_format(
     warnings.extend(_legacy_fixed_notation_warnings(detail_text))
 
     materials = None
-    if parsed is None or _plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD not in parsed.values:
+    if parsed is None or _plan_format.PLAN_METADATA_RELATED_WI_FIELD not in parsed.values:
         materials, _material_errors = _plan_format.parse_plan_materials(text)
     warnings.extend(_legacy_h2_warnings(text))
     warnings.extend(_legacy_action_warnings(text))

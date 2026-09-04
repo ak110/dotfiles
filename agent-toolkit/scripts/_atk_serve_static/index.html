@@ -4,20 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#3157d5">
-  <title>フィードバック管理</title>
+  <title>WI管理</title>
   <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
   <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/shell.css">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
-<body data-screen="feedback">
+<body data-screen="wi">
   <header class="app-header">
     <div class="header-title">
-      <h1>フィードバック管理</h1>
+      <h1>WI管理</h1>
       <span id="connection-status" class="connection-status" role="status">接続中</span>
     </div>
     <nav class="app-nav" aria-label="画面">
-      <a href="__BASE_PATH_HTML__/" aria-current="page">フィードバック</a>
+      <a href="__BASE_PATH_HTML__/" aria-current="page">WI</a>
       <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
       <a href="__BASE_PATH_HTML__/sessions">セッション</a>
     </nav>
@@ -48,8 +48,8 @@
         <label for="kind-filter">種別</label>
         <select id="kind-filter">
           <option value="all">all</option>
-          <option value="feedback">feedback</option>
-          <option value="tbd">tbd</option>
+          <option value="awi">awi</option>
+          <option value="uwi">uwi</option>
         </select>
         <label for="state-filter">状態</label>
         <select id="state-filter">
@@ -57,9 +57,7 @@
           <option value="processable">processable</option>
           <option value="all">all</option>
           <option value="inbox">inbox</option>
-          <option value="planning">planning</option>
           <option value="processing">processing</option>
-          <option value="editing">editing</option>
           <option value="hold">hold</option>
           <option value="adopted">adopted</option>
           <option value="rejected">rejected</option>
@@ -89,7 +87,7 @@
     <section class="entry-pane card" aria-labelledby="entry-heading">
       <div class="pane-heading">
         <h2 id="entry-heading">一覧</h2>
-        <span id="entry-count" class="secondary-text">0件（未回答TBD 0件）</span>
+        <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
       </div>
       <div id="list-fallback-notice" class="list-fallback-notice" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
@@ -148,7 +146,7 @@
         <section id="answer-panel" class="answer-panel" hidden>
           <h3>回答</h3>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
-          <label for="answer-input">TBDへの回答（必須）</label>
+          <label for="answer-input">UWIへの回答（必須）</label>
           <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>
@@ -197,8 +195,8 @@
         <div class="dialog-form-fields">
           <label for="create-kind">種別（必須）</label>
           <select id="create-kind" name="type">
-            <option value="feedback">feedback</option>
-            <option value="tbd">tbd</option>
+            <option value="awi">awi</option>
+            <option value="uwi">uwi</option>
             <option value="batch">一括登録（show形式）</option>
           </select>
           <label id="create-content-label" for="create-content">本文（必須）</label>
@@ -212,7 +210,7 @@
             <label for="create-source">投入元（任意）</label>
             <input id="create-source" name="source">
           </div>
-          <div id="tbd-fields" class="dialog-form-fields" hidden>
+          <div id="uwi-fields" class="dialog-form-fields" hidden>
             <label for="create-scope">確認範囲（任意）</label>
             <input id="create-scope" name="scope">
             <label for="create-question-type">回答形式（必須）</label>

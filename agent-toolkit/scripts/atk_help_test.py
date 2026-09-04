@@ -63,7 +63,7 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
         assert all(line.startswith("  ") for line in examples.splitlines()), command
 
 
-@pytest.mark.parametrize("argv", [[], ["mq"], ["plans"], ["managed-temp"], ["review-table"]])
+@pytest.mark.parametrize("argv", [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"]])
 def test_command_without_subcommand_prints_help(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],
@@ -106,7 +106,7 @@ def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("COLUMNS", "60")
     commands = {command: parser for command, parser, _summary in _walk_commands()}
 
-    mq_add_help = commands["atk mq add"].format_help()
+    mq_add_help = commands["atk wi add"].format_help()
     assert "--question-type" in mq_add_help
     assert "--target-repo" in mq_add_help
     worktree_stash_help = commands["atk worktree-stash"].format_help()

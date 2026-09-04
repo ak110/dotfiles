@@ -35,9 +35,9 @@
 
 tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終了する。フラグファイルはchezmoi管理対象外でホスト固有運用とする。
 
-## 対話シェル起動時のTBD未回答表示
+## 対話シェル起動時のUWI未回答表示
 
-対話シェル起動時に`atk mq list --type=tbd --answered=no --skip-pull`を自動実行し、未回答TBDを1件1行で画面へ通知する。
+対話シェル起動時に`atk wi list --type=uwi --answered=no --skip-pull`を自動実行し、未回答UWIを1件1行で画面へ通知する。
 `--skip-pull`でログイン時のリポジトリアクセスを避け、0件時は出力なしで終了する。
 実行条件は、対話シェルかつ`atk`コマンド存在（`command -v atk`）とする。
 
@@ -102,7 +102,7 @@ Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.jso
 端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
 フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
 
-`atk mq process-loop`のClaude起動だけが`--settings`で値を明示する。
+`atk wi process-loop`のClaude起動だけが`--settings`で値を明示する。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
 TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_wait_schedule.py`の
 プロンプトキャッシュTTL判定を用いる。
@@ -114,7 +114,7 @@ Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス�
 
 ## mise latestの非ログイン再評価
 
-dotfilesリポジトリを対象とする`atk mq process-loop`は、miseの`latest`指定ツールを非ログイン経路で再評価する。
+dotfilesリポジトリを対象とする`atk wi process-loop`は、miseの`latest`指定ツールを非ログイン経路で再評価する。
 手動起動時に`mise install --quiet`を一度実行し、その成否後から24時間ごとに待機ループの復帰時に再実行する。
 
 `update-dotfiles`が成功した場合は、その完了時から24時間を数え直す。
@@ -162,7 +162,7 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 ## 特定ホストでの常駐サービス自動起動
 
 `euryale`でのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
-`atk serve`は「フィードバック」「計画ファイル」「セッション」の3画面を同じナビゲーションから提供する。
+`atk serve`は「AWI」「計画ファイル」「セッション」の3画面を同じナビゲーションから提供する。
 
 - 待受はローカルのみで、ポート28766を使う
   - ホスト上のブラウザーかSSHポート転送経由に加え、Apacheリバースプロキシ
@@ -191,7 +191,7 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 
 1. `/cpv/`の`ProxyPass`・`ProxyPassReverse`をポート28765からポート28766へ向け直し、
    `RequestHeader set X-Forwarded-Prefix /cpv`を維持したまま`/cpv/`を残すか、当該ブロックを削除する
-2. `/cpv/`を残す場合、`https://tqzh.tk/cpv/`は`atk serve`のフィードバック画面を表示する。
+2. `/cpv/`を残す場合、`https://tqzh.tk/cpv/`は`atk serve`のWI画面を表示する。
    計画ファイル画面は同じベースパス配下の`/cpv/plans`となる
 3. `/cpv/`を削除する場合、利用者は`https://tqzh.tk/atk/plans`へ移動する。
    既存の`/atk/`利用者の経路と表示は変わらない
@@ -252,12 +252,12 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 
 ## 日次リリースの自動実施
 
-dotfilesリポジトリを対象とする`agent-toolkit:process-feedbacks`は、③のpushとCI成功を確認した後に、`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
+dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、③のpushとCI成功を確認した後に、`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
 判定と実施はメインが担う。
 
 次の条件がともに成立する場合に実施する。
 
-- ①で処理対象へ固定した集合のうち、`atk mq list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力に残る項目が、`hold`のものと依存関係の未解決により`inbox`へ戻したものだけである
+- ①で処理対象へ固定した集合のうち、`atk wi list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力に残る項目が、`hold`のものと依存関係の未解決により`inbox`へ戻したものだけである
 - `git rev-parse origin/develop origin/master`が返す完全OIDが互いに異なる
 
 条件が成立しない場合は、成立しなかった条件と残る項目を報告し、PRを作成しない。
@@ -265,7 +265,7 @@ dotfilesリポジトリを対象とする`agent-toolkit:process-feedbacks`は、
 
 実施する場合は次の順で進める。
 
-1. 管理対象一時領域へPR本文のファイルを作成し、`gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>`でPRを作成する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したフィードバックの正本ファイル名と1行要約を列挙する
+1. 管理対象一時領域へPR本文のファイルを作成し、`gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>`でPRを作成する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したAWIの正本ファイル名と1行要約を列挙する
 2. `.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
 
 PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する。

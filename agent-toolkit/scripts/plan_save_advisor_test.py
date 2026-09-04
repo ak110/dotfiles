@@ -78,7 +78,7 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     assert str(first) in first_result["reason"]
     assert str(second) in first_result["reason"]
     assert "Leave the remaining bundles in place" in first_result["reason"]
-    assert "atk plans commit <relative main plan path>" in first_result["reason"]
+    assert "atk plans commit <main plan file name in the plan working root>" in first_result["reason"]
     assert not second_result
 
 

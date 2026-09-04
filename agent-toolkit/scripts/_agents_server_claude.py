@@ -16,6 +16,7 @@ import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+import _agents_server_state as shared_state
 import _plan_file
 from _agents_server_state import (
     DELEGATE_SYSTEM_PROMPT,
@@ -324,6 +325,8 @@ class ClaudeServerManager:
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
     ) -> None:
+        from claude_agent_sdk import TERMINAL_TASK_STATUSES
+
         client: Any = None
         session: SessionState | None = None
         channel = _CommandChannel()
@@ -341,12 +344,22 @@ class ClaudeServerManager:
                 await client.query(prompt)
             iterator = aiter(client.receive_messages())
             while True:
+                loop = asyncio.get_running_loop()
+                now = loop.time()
+                if session is not None and session.auto_resume_deadline is not None and session.auto_resume_deadline <= now:
+                    self._finalize_pending_result(session)
+                    iterator = None
+                    await self._notify_waiters()
+                    continue
                 timeout: float | None = None
                 if session is not None and session.retention_deadline is not None:
-                    timeout = session.retention_deadline - asyncio.get_running_loop().time()
+                    timeout = session.retention_deadline - now
                     if timeout <= 0:
                         self._expire_session(session.session_id)
                         break
+                if session is not None and session.auto_resume_deadline is not None:
+                    auto_resume_timeout = session.auto_resume_deadline - now
+                    timeout = auto_resume_timeout if timeout is None else min(timeout, auto_resume_timeout)
 
                 if iterator is not None and message_task is None:
                     message_task = asyncio.create_task(anext(iterator))
@@ -357,6 +370,11 @@ class ClaudeServerManager:
                     raise RuntimeError("Claude session has no message stream or command queue")
                 done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
                 if not done:
+                    if session is not None and session.auto_resume_deadline is not None:
+                        self._finalize_pending_result(session)
+                        iterator = None
+                        await self._notify_waiters()
+                        continue
                     if session is not None:
                         self._expire_session(session.session_id)
                     break
@@ -365,13 +383,17 @@ class ClaudeServerManager:
                     retrieved = command_task.result()
                     command_task = None
 
-                if message_task in done:
+                if message_task is not None and message_task in done:
                     completed_message_task = message_task
                     message_task = None
                     try:
                         message = completed_message_task.result()
                     except StopAsyncIteration:
-                        if session is not None and session.result_available:
+                        if session is not None and session.awaiting_auto_resume:
+                            self._finalize_pending_result(session)
+                            iterator = None
+                            await self._notify_waiters()
+                        elif session is not None and session.result_available:
                             iterator = None
                         else:
                             raise RuntimeError("Claude Agent SDK message stream ended before ResultMessage") from None
@@ -413,15 +435,46 @@ class ClaudeServerManager:
                             session.agent_message = text
                             session.set_progress(text)
                             await self._notify_waiters()
+                        elif name == "TaskStartedMessage" and session is not None:
+                            session.live_task_ids.add(message.task_id)
+                            session.touch()
+                            await self._notify_waiters()
+                        elif name in {"TaskUpdatedMessage", "TaskNotificationMessage"} and session is not None:
+                            if getattr(message, "status", None) in TERMINAL_TASK_STATUSES:
+                                session.live_task_ids.discard(message.task_id)
+                                session.touch()
+                                await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
-                            self._record_result(session, message)
-                            iterator = None
+                            result = self._result_values(session, message)
+                            if getattr(message, "origin", None) == {"kind": "task-notification"}:
+                                session.auto_resume_consumed = True
+                                self._finalize_turn(session, result)
+                                iterator = None
+                            elif session.live_task_ids and not session.auto_resume_consumed:
+                                session.pending_result = result
+                                session.awaiting_auto_resume = True
+                                session.auto_resume_deadline = (
+                                    asyncio.get_running_loop().time() + shared_state.RESULT_RETENTION_SECONDS
+                                )
+                                session.touch()
+                            else:
+                                self._finalize_turn(session, result)
+                                iterator = None
                             await self._notify_waiters()
 
                 if retrieved is not None:
                     command = retrieved
                     retrieved = None
                     active_future = command[2]
+                    if (
+                        command[0] == "prompt"
+                        and session is not None
+                        and session.awaiting_auto_resume
+                        and message_task is not None
+                    ):
+                        message_task.cancel()
+                        await asyncio.gather(message_task, return_exceptions=True)
+                        message_task = None
                     iterator = await self._handle_command(client, session, command, iterator)
                     active_future = None
         except Exception as exc:
@@ -462,6 +515,7 @@ class ClaudeServerManager:
                 future.set_exception(ValueError("Claude session initialization is incomplete"))
             return iterator
         if command_kind == "interrupt":
+            session.auto_resume_consumed = True
             if session.terminal:
                 if not future.done():
                     future.set_result(("interrupt_accepted", None))
@@ -480,6 +534,9 @@ class ClaudeServerManager:
             return iterator
         if future.cancelled():
             return iterator
+        if session.awaiting_auto_resume:
+            self._finalize_pending_result(session)
+            iterator = None
         kind = "reply" if session.terminal else "steer"
         previous_result = session.previous_result() if kind == "reply" else None
         try:
@@ -506,18 +563,19 @@ class ClaudeServerManager:
         return aiter(client.receive_messages()) if kind == "reply" else iterator
 
     @staticmethod
-    def _record_result(session: SessionState, message: Any) -> None:
+    def _result_values(session: SessionState, message: Any) -> dict[str, Any]:
         terminal_reason = getattr(message, "terminal_reason", None)
         if terminal_reason in {"aborted_streaming", "aborted_tools"}:
-            session.status = "interrupted"
+            status = "interrupted"
         else:
-            session.status = "failed" if bool(getattr(message, "is_error", False)) else "completed"
+            status = "failed" if bool(getattr(message, "is_error", False)) else "completed"
         result = getattr(message, "result", None)
-        session.agent_message = result if isinstance(result, str) else session.agent_message
+        agent_message = result if isinstance(result, str) else session.agent_message
+        error: dict[str, Any] | None = None
         errors = getattr(message, "errors", None)
-        if session.status == "failed":
+        if status == "failed":
             if isinstance(errors, list) and errors:
-                error: dict[str, Any] = {"message": "; ".join(str(item) for item in errors)}
+                error = {"message": "; ".join(str(item) for item in errors)}
             elif isinstance(result, str) and result:
                 error = {"message": result}
             else:
@@ -527,18 +585,36 @@ class ClaudeServerManager:
             api_error_status = getattr(message, "api_error_status", None)
             if isinstance(api_error_status, int):
                 error["apiErrorStatus"] = api_error_status
-            session.error = error
+        return {"status": status, "agent_message": agent_message, "error": error}
+
+    @staticmethod
+    def _finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
+        session.awaiting_auto_resume = False
+        session.auto_resume_deadline = None
+        session.pending_result = None
+        session.status = result["status"]
+        session.agent_message = result["agent_message"]
+        session.error = result["error"]
         session.turn_completed = True
         session.turn_start_ambiguous = False
         session.touch()
 
-    @staticmethod
-    def _record_failure(session: SessionState, error: BaseException) -> None:
-        session.status = "failed"
-        session.error = {"message": str(error) or error.__class__.__name__}
-        session.turn_completed = True
-        session.turn_start_ambiguous = False
-        session.touch()
+    @classmethod
+    def _finalize_pending_result(cls, session: SessionState) -> None:
+        if session.pending_result is None:
+            raise RuntimeError("Claude auto-resume wait has no pending result")
+        cls._finalize_turn(session, session.pending_result)
+
+    @classmethod
+    def _record_failure(cls, session: SessionState, error: BaseException) -> None:
+        cls._finalize_turn(
+            session,
+            {
+                "status": "failed",
+                "agent_message": session.agent_message,
+                "error": {"message": str(error) or error.__class__.__name__},
+            },
+        )
 
     async def _notify_waiters(self) -> None:
         async with self._condition:

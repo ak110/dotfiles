@@ -1570,7 +1570,7 @@ class TestStripStaleLabeledListItems:
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps(
-                {"autoMode": {"allow": ["Feedback-Originated Gate Revision: atk mq process-loop を使う新文面"]}},
+                {"autoMode": {"allow": ["AWI-Originated Gate Revision: atk wi process-loop を使う新文面"]}},
                 ensure_ascii=False,
             ),
             encoding="utf-8",
@@ -1582,7 +1582,7 @@ class TestStripStaleLabeledListItems:
                     "autoMode": {
                         "allow": [
                             "ak110の個人リポジトリでの利用者独自エントリ",
-                            "Feedback-Originated Gate Revision: atk fb process-loop を使う旧文面",
+                            "AWI-Originated Gate Revision: atk fb process-loop を使う旧文面",
                         ]
                     }
                 },
@@ -1596,7 +1596,7 @@ class TestStripStaleLabeledListItems:
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert result["autoMode"]["allow"] == [
             "ak110の個人リポジトリでの利用者独自エントリ",
-            "Feedback-Originated Gate Revision: atk mq process-loop を使う新文面",
+            "AWI-Originated Gate Revision: atk wi process-loop を使う新文面",
         ]
 
     def test_unlabeled_user_entry_is_preserved(self, tmp_path: Path):
@@ -1675,11 +1675,11 @@ class TestStripStaleLabeledListItems:
         assert result == {"language": "japanese", "autoMode": {"allow": ["Label: 現行文面"]}}
 
     def test_run_reproduces_and_fixes_prod_duplicate(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """`run()`経由で実際の重複事象（旧文面atk fbと新文面atk mqの共存）が解消される（再現テスト）。"""
+        """`run()`経由で実際の重複事象（旧文面atk fbと新文面atk wiの共存）が解消される（再現テスト）。"""
         managed_settings_path = tmp_path / "managed_settings.json"
         managed_settings_path.write_text(
             json.dumps(
-                {"autoMode": {"allow": ["Feedback-Originated Gate Revision: atk mq process-loop を使う新文面"]}},
+                {"autoMode": {"allow": ["AWI-Originated Gate Revision: atk wi process-loop を使う新文面"]}},
                 ensure_ascii=False,
             ),
             encoding="utf-8",
@@ -1693,8 +1693,8 @@ class TestStripStaleLabeledListItems:
                     "autoMode": {
                         "allow": [
                             "ak110の個人リポジトリでの利用者独自エントリ",
-                            "Feedback-Originated Gate Revision: atk fb process-loop を使う旧文面",
-                            "Feedback-Originated Gate Revision: atk mq process-loop を使う新文面",
+                            "AWI-Originated Gate Revision: atk fb process-loop を使う旧文面",
+                            "AWI-Originated Gate Revision: atk wi process-loop を使う新文面",
                         ]
                     }
                 },
@@ -1715,7 +1715,7 @@ class TestStripStaleLabeledListItems:
         result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert result["autoMode"]["allow"] == [
             "ak110の個人リポジトリでの利用者独自エントリ",
-            "Feedback-Originated Gate Revision: atk mq process-loop を使う新文面",
+            "AWI-Originated Gate Revision: atk wi process-loop を使う新文面",
         ]
 
 

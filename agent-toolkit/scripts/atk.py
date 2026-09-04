@@ -15,28 +15,29 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk mq <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk wait-schedule`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
-フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
+AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
   `mq add --batch`は`mq show --all`の出力形式を原文保持で一括取り込みする（移行・復元用途）
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
-- mq convert-to-plan/set-dependencies: 既存フィードバックの計画実装型への変換・明示依存の更新
+- mq convert-to-plan/set-dependencies: 既存AWIの計画実装型への変換・明示依存の更新
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
-- mq answer: TBDへの回答
+- mq answer: UWIへの回答
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
+  待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
+- mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans checkout/commit/migrate: 保存済み計画の取得、計画bundleの対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 
-ハンドラ実装は`_atk_mq_add`・`_atk_mq_batch`・`_atk_mq_list`・`_atk_mq_show`・`_atk_mq_mutations`・
-`_atk_mq_process_loop`・`_atk_mq_tbd`の各補助モジュールに分割し、
+ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
+`_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
 本モジュールはargparse定義・dispatch・エントリポイントを保持する。
 """
 
@@ -49,7 +50,7 @@ import subprocess
 import sys
 from typing import Any
 
-# 兄弟モジュール（_atk_mq_*.py）を絶対importで解決するためsys.pathへ同一ディレクトリを挿入する。
+# 兄弟モジュール（_atk_wi_*.py）を絶対importで解決するためsys.pathへ同一ディレクトリを挿入する。
 # sys.path挿入前の相対解決を避けるため、モジュール内importはこの下に配置する。
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
@@ -57,39 +58,37 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import _atk_config as _config_cmd  # noqa: E402
 import _atk_git_sync  # noqa: E402
 import _atk_help  # noqa: E402
-import _atk_mq_add as _add  # noqa: E402
-import _atk_mq_batch as _batch  # noqa: E402
-import _atk_mq_common as _common  # noqa: E402
-import _atk_mq_grep as _grep  # noqa: E402
-import _atk_mq_list as _list  # noqa: E402
-import _atk_mq_mutations as _mutations  # noqa: E402
-import _atk_mq_process_loop as _process_loop  # noqa: E402
-import _atk_mq_show as _show  # noqa: E402
-import _atk_mq_tbd as _tbd  # noqa: E402
 import _atk_plans as _plans  # noqa: E402
 import _atk_watch as _watch  # noqa: E402
+import _atk_wi_add as _add  # noqa: E402
+import _atk_wi_batch as _batch  # noqa: E402
+import _atk_wi_common as _common  # noqa: E402
+import _atk_wi_grep as _grep  # noqa: E402
+import _atk_wi_list as _list  # noqa: E402
+import _atk_wi_migrate as _migrate  # noqa: E402
+import _atk_wi_mutations as _mutations  # noqa: E402
+import _atk_wi_process_loop as _process_loop  # noqa: E402
+import _atk_wi_show as _show  # noqa: E402
+import _atk_wi_uwi as _uwi  # noqa: E402
 import _atk_worktree_stash as _worktree_stash  # noqa: E402
 import _managed_temp  # noqa: E402
 import _review_table  # noqa: E402
 import _wait_schedule  # noqa: E402
 
-_queue_filename_completer = _common.make_filename_completer(_common.MQ_STATES)
-_processable_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES)
+_queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
+_processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
 _convert_to_plan_filename_completer = _common.make_filename_completer(
-    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
+    (_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING, _common.WI_STATE_HOLD)
 )
-_removable_filename_completer = _common.make_filename_completer(
-    (_common.MQ_STATE_INBOX, _common.MQ_STATE_PROCESSING, _common.MQ_STATE_PLANNING)
-)
-_hold_filename_completer = _common.make_filename_completer((_common.MQ_STATE_HOLD,))
-_inbox_filename_completer = _common.make_filename_completer((_common.MQ_STATE_INBOX,))
-_processing_filename_completer = _common.make_filename_completer((_common.MQ_STATE_PROCESSING,))
-_tbd_filename_completer = _common.make_filename_completer(_common.MQ_PROCESSABLE_STATES, _common.MQ_TYPE_TBD)
+_removable_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING))
+_hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
+_inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
+_processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
+_uwi_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_UWI)
 
-_MQ_SYNC_MUTATIONS = frozenset(
+_WI_SYNC_MUTATIONS = frozenset(
     (
         "add",
-        "start-planning",
         "start-processing",
         "hold",
         "unhold",
@@ -117,15 +116,30 @@ def _cooldown_days(value: str) -> int:
     return days
 
 
+_LEGACY_TOP_LEVEL_COMMANDS = {"mq": "wi"}
+"""改名前のトップレベルコマンド名と現行名の対応。"""
+
+
+def _resolve_legacy_top_level_command(argv: list[str]) -> list[str]:
+    """先頭のトップレベルコマンド名が改名前の名前であれば現行名へ置き換える。
+
+    稼働中の常駐プロセスは起動時のコマンド行を保持するため、配布後も改名前の名前で起動する。
+    ヘルプと補完には現行名だけを載せ、解決は解析前の生argvで行う。
+    """
+    if argv and argv[0] in _LEGACY_TOP_LEVEL_COMMANDS:
+        return [_LEGACY_TOP_LEVEL_COMMANDS[argv[0]], *argv[1:]]
+    return argv
+
+
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
-    """`mq add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
+    """`wi add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
 
     REPO_PATH位置引数廃止後の後方互換のため、argparse解析前の生argvへ適用する。
     `messages`側のnargs="*"単一positionalでは、オプションで分断され前後2箇所に分かれた
     位置引数を一括で解決できない（argparseの既知の制約）ため、サブコマンド名直後という
     先頭位置に限定して抽出することで後続のオプション・MESSAGE位置を通常解析に委ねる。
     """
-    if len(argv) < 2 or (argv[0], argv[1]) != ("mq", "add"):
+    if len(argv) < 2 or (argv[0], argv[1]) != ("wi", "add"):
         return argv, None
     candidate_index = 2
     value_options = {
@@ -150,7 +164,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     candidate = argv[candidate_index]
     if candidate.startswith("-") or not candidate:
         # 空文字列は`Path("").expanduser()`がカレントディレクトリ（常に実在）へ解決され、
-        # 本文としての空メッセージ（TBDの空質問等）を誤ってREPO_PATHと誤認するため除外する。
+        # 本文としての空メッセージ（UWIの空質問等）を誤ってREPO_PATHと誤認するため除外する。
         return argv, None
     candidate_path = pathlib.Path(candidate).expanduser()
     if not _common.is_existing_dir(candidate_path):
@@ -237,15 +251,15 @@ def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_mq_add_parser(sub: Any) -> None:
+def _add_wi_add_parser(sub: Any) -> None:
     """投入サブコマンドを登録する。"""
-    add = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk mq add"])
+    add = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk wi add"])
     add.add_argument(
         "messages",
         metavar="MESSAGE",
         nargs="*",
         help=(
-            "投入する本文（省略時は$EDITORで編集する）。--type=feedback（既定）・tbdで種別を切り替える。"
+            "投入する本文（省略時は$EDITORで編集する）。--type=awi（既定）・uwiで種別を切り替える。"
             "対象リポジトリは省略時にカレントworktree、ローカルパス指定時に指定worktree、"
             "正規化リモートURL指定時にローカルHEADを持たないリポジトリ識別子として解決する。"
             "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
@@ -266,51 +280,51 @@ def _add_mq_add_parser(sub: Any) -> None:
         "--batch",
         action="store_true",
         help=(
-            "`atk mq show --all`の出力形式で複数エントリを一括登録する。"
+            "`atk wi show --all`の出力形式で複数エントリを一括登録する。"
             "移行・復元用途であり、frontmatter・本文を原文保持で取り込み"
-            "（target_commitの再取得・TBD見出しの再生成を行わない）、"
+            "（target_commitの再取得・UWI見出しの再生成を行わない）、"
             "ファイル名は取り込み先と衝突しない限り元名を維持する。"
             "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
             "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
             "--target-repo・--sourceとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
-            "構造見出し（`# feedback`・`# tbd`・`## target_repo: ...`）と同形の末尾行を"
+            "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
             "復元できない点は限界として許容する。"
             "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
         ),
     )
     add.add_argument(
         "--type",
-        choices=("feedback", "tbd"),
+        choices=_common.WI_TYPES,
         default=None,
-        help="投入する種別（既定: feedback）。tbdを指定すると確認事項として投入する。",
+        help="投入する種別（既定: awi）。uwiを指定すると確認事項として投入する。",
     )
     add.add_argument(
         "--scope",
         metavar="NAME",
         default=None,
-        help="TBDの適用範囲を表す識別子。`--type=tbd`でのみ指定できる。",
+        help="UWIの適用範囲を表す識別子。`--type=uwi`でのみ指定できる。",
     )
     add.add_argument(
         "--question-type",
         choices=("free-form", "yes-no", "choice"),
         default=None,
-        help="TBDの回答形式（既定: free-form）。`--type=tbd`でのみ指定できる。",
+        help="UWIの回答形式（既定: free-form）。`--type=uwi`でのみ指定できる。",
     )
     add.add_argument(
         "--choices",
         metavar="A,B,C",
         default=None,
-        help="TBDの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
+        help="UWIの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
     )
     add.add_argument(
         "--plan-file",
         metavar="PATH",
         default=None,
         help=(
-            "計画ファイルの絶対パス。指定するとフィードバックを計画実装型として確定記録する。"
-            "--type=feedback（既定）でのみ指定でき、指定したパスは実在を検証する。"
+            "計画ファイルの絶対パス。指定するとAWIを計画実装型として確定記録する。"
+            "--type=awi（既定）でのみ指定でき、指定したパスは実在を検証する。"
             "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
             "計画ファイルのベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない。"
         ),
@@ -320,7 +334,7 @@ def _add_mq_add_parser(sub: Any) -> None:
         metavar="FILENAME",
         action="append",
         default=None,
-        help="フィードバックが処理完了を待つキュー項目。--type=feedbackでのみ指定でき、複数回指定できる。",
+        help="AWIが処理完了を待つキュー項目。--type=awiでのみ指定でき、複数回指定できる。",
     )
     add.add_argument(
         "--source",
@@ -341,17 +355,16 @@ def _add_mq_add_parser(sub: Any) -> None:
 
 def _add_mq_read_parsers(sub: Any) -> None:
     """一覧・表示サブコマンドを登録する。"""
-    list_ = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk mq list"])
+    list_ = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk wi list"])
     _add_target_repo_arg(list_)
-    list_.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    list_.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     list_.add_argument(
         "--status",
-        choices=("all", "active", "processable", *_common.MQ_STATES),
+        choices=("all", "active", "processable", *_common.WI_STATES),
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active）。"
-            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
-            "`processable`は`inbox`・`processing`を指す。"
+            "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "回答状況での限定は`--answered`で別途行う。"
         ),
     )
@@ -359,7 +372,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
+        help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(list_)
     output = list_.add_mutually_exclusive_group()
@@ -380,7 +393,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     )
     _add_mq_read_sync_args(list_)
 
-    show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk mq show"])
+    show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk wi show"])
     show.add_argument(
         "filenames",
         metavar="FILENAME",
@@ -393,15 +406,14 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
     _add_target_repo_arg(show)
-    show.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    show.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
-        choices=("all", "active", "processable", *_common.MQ_STATES),
+        choices=("all", "active", "processable", *_common.WI_STATES),
         default="active",
         help=(
             "状態フォルダで表示範囲を限定する（既定: active、--all指定時のみ有効）。"
-            "`active`はフィードバックが`inbox`・`planning`・`processing`・`editing`・`hold`、TBDが`inbox`・`processing`、"
-            "`processable`は`inbox`・`processing`を指す。"
+            "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
             "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
         ),
     )
@@ -409,7 +421,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はフィードバックを除外する。",
+        help="UWIの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(show)
     _add_mq_read_sync_args(show)
@@ -418,16 +430,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 def _add_mq_transition_parsers(sub: Any) -> None:
     """状態遷移・削除サブコマンドを登録する。"""
-    start_planning = _atk_help.add_command(sub, "start-planning", **_atk_help.HELP["atk mq start-planning"])
-    start_planning.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="+",
-        help="計画作成を開始するinboxの通常型フィードバック名（1個以上）。",
-    ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
-    _add_target_repo_arg(start_planning, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
-
-    start_processing = _atk_help.add_command(sub, "start-processing", **_atk_help.HELP["atk mq start-processing"])
+    start_processing = _atk_help.add_command(sub, "start-processing", **_atk_help.HELP["atk wi start-processing"])
     start_processing.add_argument(
         "filenames",
         metavar="FILENAME",
@@ -436,19 +439,19 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
     _add_target_repo_arg(start_processing, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
-    hold = _atk_help.add_command(sub, "hold", **_atk_help.HELP["atk mq hold"])
+    hold = _atk_help.add_command(sub, "hold", **_atk_help.HELP["atk wi hold"])
     hold.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="保留するファイル名。"
     ).completer = _processable_filename_completer
     _add_target_repo_arg(hold, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
-    unhold = _atk_help.add_command(sub, "unhold", **_atk_help.HELP["atk mq unhold"])
+    unhold = _atk_help.add_command(sub, "unhold", **_atk_help.HELP["atk wi unhold"])
     unhold.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="保留を解除するファイル名。"
     ).completer = _hold_filename_completer
     _add_target_repo_arg(unhold, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
-    return_to_inbox = _atk_help.add_command(sub, "return-to-inbox", **_atk_help.HELP["atk mq return-to-inbox"])
+    return_to_inbox = _atk_help.add_command(sub, "return-to-inbox", **_atk_help.HELP["atk wi return-to-inbox"])
     return_to_inbox.add_argument(
         "filenames",
         metavar="FILENAME",
@@ -464,13 +467,13 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     )
     return_to_inbox.add_argument(
         "--state",
-        choices=("planning",),
+        choices=(_common.WI_STATE_REJECTED,),
         default=None,
-        help="planningから差し戻す場合に指定する。省略時はprocessingから差し戻す。",
+        help="rejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。",
     )
     _add_target_repo_arg(return_to_inbox, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
-    adopt = _atk_help.add_command(sub, "adopt", **_atk_help.HELP["atk mq adopt"])
+    adopt = _atk_help.add_command(sub, "adopt", **_atk_help.HELP["atk wi adopt"])
     adopt.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="採用するファイル名（1個以上。inbox・processingいずれも対象）。"
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
@@ -497,7 +500,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(adopt, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
-    reject = _atk_help.add_command(sub, "reject", **_atk_help.HELP["atk mq reject"])
+    reject = _atk_help.add_command(sub, "reject", **_atk_help.HELP["atk wi reject"])
     reject.add_argument(
         "filenames", metavar="FILENAME", nargs="+", help="不採用とするファイル名（1個以上。inbox・processingいずれも対象）。"
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
@@ -529,7 +532,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(reject, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
-    rm = _atk_help.add_command(sub, "rm", **_atk_help.HELP["atk mq rm"])
+    rm = _atk_help.add_command(sub, "rm", **_atk_help.HELP["atk wi rm"])
     rm.add_argument(
         "filenames",
         metavar="FILENAME",
@@ -539,17 +542,17 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     rm.add_argument(
         "--all",
         action="store_true",
-        help="--target-repoと完全一致するinbox・planning・processingの全項目を一覧表示後に削除する。",
+        help="--target-repoと完全一致するinbox・processingの全項目を一覧表示後に削除する。",
     )
     rm.add_argument(
         "--yes",
         action="store_true",
-        help="--allによる一括削除の確認入力を省略する。一覧表示とplanning・processing保護は維持する。",
+        help="--allによる一括削除の確認入力を省略する。一覧表示とprocessing保護は維持する。",
     )
     rm.add_argument(
         "--force",
         action="store_true",
-        help="planning・processing状態のファイルも削除する（既定では保護し拒否する）。",
+        help="processing状態のファイルも削除する（既定では保護し拒否する）。",
     )
     rm.add_argument(
         "--skip-pull",
@@ -571,7 +574,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
 
 def _add_mq_edit_parsers(sub: Any) -> None:
     """本文編集・計画変換・依存更新サブコマンドを登録する。"""
-    edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk mq edit"])
+    edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
     edit.add_argument(
         "filename",
         metavar="FILENAME",
@@ -596,36 +599,36 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     edit.add_argument(
         "--append",
         action="store_true",
-        help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。TBDは対象外。",
+        help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。UWIは対象外。",
     )
     edit.add_argument(
         "--plan-file",
         metavar="ABS_PATH",
         default=None,
-        help="planning項目を計画型feedbackへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
+        help="hold項目を計画型awiへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
     )
     edit.add_argument(
         "--depends-on",
         metavar="FILENAME",
         action="append",
         default=None,
-        help="計画型feedbackへ統合する外部依存先。複数回指定できる。",
+        help="計画型awiへ統合する外部依存先。複数回指定できる。",
     )
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
 
-    convert_to_plan = _atk_help.add_command(sub, "convert-to-plan", **_atk_help.HELP["atk mq convert-to-plan"])
+    convert_to_plan = _atk_help.add_command(sub, "convert-to-plan", **_atk_help.HELP["atk wi convert-to-plan"])
     convert_to_plan.add_argument(
         "filename",
         metavar="FILENAME",
         nargs="+",
-        help="変換する同一状態のフィードバックファイル名（1個以上）。planningでは--messageを指定する。",
+        help="変換する同一状態のAWIファイル名（1個以上）。holdでは--messageを指定する。",
     ).completer = _convert_to_plan_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--message",
         metavar="MESSAGE",
         default=None,
-        help="planning項目を統合する計画型フィードバック本文。inbox・processingでは指定しない。",
+        help="hold項目を統合する計画型AWI本文。inbox・processingでは指定しない。",
     )
     convert_to_plan.add_argument(
         "--plan-file",
@@ -650,11 +653,11 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(convert_to_plan, help_extra="省略時は現在の作業リポジトリと照合する。")
 
-    set_dependencies = _atk_help.add_command(sub, "set-dependencies", **_atk_help.HELP["atk mq set-dependencies"])
+    set_dependencies = _atk_help.add_command(sub, "set-dependencies", **_atk_help.HELP["atk wi set-dependencies"])
     set_dependencies.add_argument(
         "filename",
         metavar="FILENAME",
-        help="更新する`inbox`または`processing`のフィードバックファイル名。",
+        help="更新する`inbox`または`processing`のAWIファイル名。",
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     set_dependencies.add_argument(
         "--depends-on",
@@ -668,13 +671,13 @@ def _add_mq_edit_parsers(sub: Any) -> None:
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     """検索・回答・外部差分コミットサブコマンドを登録する。"""
-    grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk mq grep"])
+    grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk wi grep"])
     grep.add_argument("pattern", metavar="PATTERN", help="Pythonの正規表現（reモジュール）として解釈する検索パターン。")
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
-    grep.add_argument("--type", choices=("all", "feedback", "tbd"), default="all", help="出力対象種別（既定: all）。")
+    grep.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     grep.add_argument(
         "--status",
-        choices=("all", "active", "processable", *_common.MQ_STATES),
+        choices=("all", "active", "processable", *_common.WI_STATES),
         default="active",
         help="状態フォルダで検索範囲を限定する（既定: active）。`list`と同じ選択肢・既定値。",
     )
@@ -682,25 +685,32 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
+        help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_target_repo_arg(grep)
     _add_mq_read_sync_args(grep)
     grep.set_defaults(subparser=grep)
 
-    answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk mq answer"])
+    answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
     answer.add_argument(
-        "filename", nargs="?", help="回答対象のTBDファイル名（省略時は対話モード）"
-    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]
+        "filename", nargs="?", help="回答対象のUWIファイル名（省略時は対話モード）"
+    ).completer = _uwi_filename_completer  # type: ignore[attr-defined]
     answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
     _add_target_repo_arg(answer)
 
-    _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk mq commit"])
+    _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
+    migrate = _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk wi migrate"])
+    migrate.add_argument(
+        "--private-notes",
+        default=None,
+        help="変換対象のprivate-notesの絶対パス（既定: atk config get private_notesの値）。",
+    )
+    migrate.add_argument("--skip-push", action="store_true", help="commitまでを行い、pushを行わない。")
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
     """常駐処理サブコマンドを登録する。"""
-    loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk mq process-loop"])
+    loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
     loop.add_argument(
         "--target-repo",
         metavar="REPO",
@@ -760,18 +770,33 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
             "2回目以降は新規セッションとして起動する。"
         ),
     )
+    _atk_help.add_command(
+        sub,
+        "process-loop-abort",
+        **_atk_help.HELP["atk wi process-loop-abort"],
+    )
+    _atk_help.add_command(
+        sub,
+        "process-loop-abort-cancel",
+        **_atk_help.HELP["atk wi process-loop-abort-cancel"],
+    )
+    _atk_help.add_command(
+        sub,
+        "process-loop-status",
+        **_atk_help.HELP["atk wi process-loop-status"],
+    )
 
 
-def _build_mq_parser(mq: argparse.ArgumentParser) -> None:
+def _build_wi_parser(mq: argparse.ArgumentParser) -> None:
     """`mq`サブパーサ配下にメッセージキュー操作を登録する。"""
     sub = _atk_help.add_subcommands(
         mq,
-        dest="mq_subcommand",
+        dest="wi_subcommand",
         required=False,
         show_help_when_missing=True,
     )
     for register in (
-        _add_mq_add_parser,
+        _add_wi_add_parser,
         _add_mq_read_parsers,
         _add_mq_transition_parsers,
         _add_mq_edit_parsers,
@@ -794,8 +819,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=False,
         show_help_when_missing=True,
     )
-    mq = _atk_help.add_command(top, "mq", **_atk_help.HELP["atk mq"])
-    _build_mq_parser(mq)
+    wi = _atk_help.add_command(top, "wi", **_atk_help.HELP["atk wi"])
+    _build_wi_parser(wi)
     plans = _atk_help.add_command(top, "plans", **_atk_help.HELP["atk plans"])
     _plans.build_parser(plans)
     serve = _atk_help.add_command(top, "serve", **_atk_help.HELP["atk serve"])
@@ -830,8 +855,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _validate_rm_args(args: argparse.Namespace) -> None:
-    """`mq rm`の個別指定と一括指定が排他的であることを検証する。"""
-    if args.command != "mq" or args.mq_subcommand != "rm":
+    """`wi rm`の個別指定と一括指定が排他的であることを検証する。"""
+    if args.command != "wi" or args.wi_subcommand != "rm":
         return
     if args.all:
         if args.filenames:
@@ -848,10 +873,10 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:
-    """`mq add`の`--batch`併用制約を検証し、種別の既定値を確定する。
+    """`atk wi add`の`--batch`併用制約を検証し、種別の既定値を確定する。
 
     `--type`の既定値を`None`とすることで、`--batch`との併用判定で明示指定
-    （`--type=feedback`を含む）を区別する。検証後に通常add経路の既定値`feedback`へ正規化する。
+    （`--type=awi`を含む）を区別する。検証後に通常add経路の既定値`awi`へ正規化する。
     """
     if args.batch:
         conflicting = [
@@ -872,7 +897,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
         if conflicting:
             args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
     if args.type is None:
-        args.type = "feedback"
+        args.type = _common.WI_TYPE_AWI
 
 
 def _sync_exit_code(exit_code: int, private_notes: pathlib.Path, *, should_check: bool) -> int:
@@ -902,6 +927,7 @@ def main(
     argcomplete.autocomplete(parser)
     raw_argv = argv if argv is not None else sys.argv[1:]
     _common.warn_space_separated_option(raw_argv)
+    raw_argv = _resolve_legacy_top_level_command(raw_argv)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     args = parser.parse_args(raw_argv)
     if args._help_parser is not None:
@@ -928,10 +954,10 @@ def main(
                 )
     _validate_rm_args(args)
     args.repo_path_override = repo_path_override
-    if args.command == "mq" and args.mq_subcommand == "add":
+    if args.command == "wi" and args.wi_subcommand == "add":
         _validate_add_args(args)
-    if args.command == "mq" and args.mq_subcommand == "add" and args.type != "tbd":
-        tbd_only = [
+    if args.command == "wi" and args.wi_subcommand == "add" and args.type != _common.WI_TYPE_UWI:
+        uwi_only = [
             name
             for name, value in (
                 ("--scope", args.scope),
@@ -940,14 +966,14 @@ def main(
             )
             if value is not None
         ]
-        if tbd_only:
-            args.subparser.error(f"{'・'.join(tbd_only)}は--type=tbdでのみ指定できます。")
-    if args.command == "mq" and args.mq_subcommand == "add" and args.type == "tbd" and args.question_type is None:
+        if uwi_only:
+            args.subparser.error(f"{'・'.join(uwi_only)}は--type=uwiでのみ指定できます。")
+    if args.command == "wi" and args.wi_subcommand == "add" and args.type == _common.WI_TYPE_UWI and args.question_type is None:
         args.question_type = "free-form"
     if (
-        args.command == "mq"
-        and args.mq_subcommand == "add"
-        and args.type == "tbd"
+        args.command == "wi"
+        and args.wi_subcommand == "add"
+        and args.type == _common.WI_TYPE_UWI
         and args.question_type == "choice"
         and not args.choices
     ):
@@ -1005,9 +1031,17 @@ def main(
         except ValueError as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
-    if args.command != "mq":
+    if args.command != "wi":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
-    sub = args.mq_subcommand
+    sub = args.wi_subcommand
+    process_loop_state_dispatch = {
+        "process-loop-abort": _process_loop._cmd_process_loop_abort,
+        "process-loop-abort-cancel": _process_loop._cmd_process_loop_abort_cancel,
+        "process-loop-status": _process_loop._cmd_process_loop_status,
+    }
+    if sub in process_loop_state_dispatch:
+        process_loop_state_dispatch[sub]()
+        sys.exit(0)
     private_notes = _common._ensure_environment(home)
     dispatch = {
         "add": lambda: (
@@ -1017,7 +1051,6 @@ def main(
         ),
         "list": lambda: _list._cmd_list(args, private_notes),
         "show": lambda: _show._cmd_show(args, private_notes),
-        "start-planning": lambda: _mutations._cmd_start_planning(args, private_notes, now),
         "start-processing": lambda: _mutations._cmd_start_processing(args, private_notes, now),
         "hold": lambda: _mutations._cmd_hold(args, private_notes, now),
         "unhold": lambda: _mutations._cmd_unhold(args, private_notes, now),
@@ -1029,9 +1062,10 @@ def main(
         "convert-to-plan": lambda: _mutations._cmd_convert_to_plan(args, private_notes),
         "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
-        "answer": lambda: _tbd._cmd_answer(args, private_notes),
+        "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
+        "migrate": lambda: _migrate.cmd_migrate(args, private_notes),
     }
     try:
         exit_code = dispatch[sub]() or 0
@@ -1044,13 +1078,13 @@ def main(
     exit_code = _sync_exit_code(
         exit_code,
         private_notes,
-        should_check=sub in _MQ_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
+        should_check=sub in _WI_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
     )
-    suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
-        sub == "show" and _show._covers_unanswered_tbds(args)
+    suppress_notify = (sub == "list" and _list._covers_unanswered_uwis(args)) or (
+        sub == "show" and _show._covers_unanswered_uwis(args)
     )
     if not suppress_notify:
-        _common.notify_unanswered_tbds_if_any(private_notes, getattr(args, "target_repo", None))
+        _common.notify_unanswered_uwis_if_any(private_notes, getattr(args, "target_repo", None))
     sys.exit(exit_code)
 
 

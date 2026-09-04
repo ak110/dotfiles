@@ -46,54 +46,16 @@ def test_nonempty_report_does_not_require_legacy_labels(capsys: pytest.CaptureFi
     assert capsys.readouterr().out == ""
 
 
-def test_english_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
-    """英語主体の完了報告を日本語での再提出へ差し戻す。"""
+def test_english_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
+    """英語の完了報告も非空なら空stdoutで許可する。"""
     assert advisor.main(json.dumps(_payload("Done here."))) == 0
-
-    decision = json.loads(capsys.readouterr().out)
-    assert decision["decision"] == "block"
-    assert "日本語で書き直すこと" in decision["reason"]
-    assert "遮断された報告本文は呼び出し元へ保持されないため、報告全文を再掲すること" in decision["reason"]
+    assert capsys.readouterr().out == ""
 
 
 def test_japanese_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
     """日本語の完了報告は空stdoutで許可する。"""
     assert advisor.main(json.dumps(_payload("完了報告を確認した。"))) == 0
     assert capsys.readouterr().out == ""
-
-
-def test_single_english_word_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
-    """英単語1語だけの短文は空stdoutで許可する。"""
-    assert advisor.main(json.dumps(_payload("Done"))) == 0
-    assert capsys.readouterr().out == ""
-
-
-@pytest.mark.parametrize(
-    "report",
-    [
-        "status: checkpoint\ntype: review_round\nround: 2\nfindings_count: 3\nrequirement_spec_count: 0",
-        "status: checkpoint\ntype: merge_request",
-        (
-            "計画実行完了\n"
-            "merged_head: 0123456789abcdef0123456789abcdef01234567\n"
-            "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
-            "released: /home/u/repo/.claude/worktrees/lane-a, feedback-lane-a, /tmp/lane-a-xxxxxxxx"
-        ),
-        "needs_escalation",
-        "status: needs_escalation",
-    ],
-)
-def test_specified_return_formats_are_allowed(report: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """規範が固定書式として定める返却値は空stdoutで許可する。"""
-    assert advisor.main(json.dumps(_payload(report), ensure_ascii=False)) == 0
-    assert capsys.readouterr().out == ""
-
-
-def test_english_prose_after_machine_readable_lines_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
-    """機械可読な返却行に英語の地の文を加えた報告は遮断する。"""
-    report = "status: checkpoint\ntype: review_round\nI reviewed the plan and found three issues to fix."
-    assert advisor.main(json.dumps(_payload(report))) == 0
-    assert json.loads(capsys.readouterr().out)["decision"] == "block"
 
 
 def test_non_string_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
@@ -167,20 +129,6 @@ def test_codex_empty_report_is_blocked(capsys: pytest.CaptureFixture[str]) -> No
 def test_codex_normal_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
     """Codexの非空報告は空stdoutで許可する。"""
     assert advisor.main(json.dumps({**_payload(_minimal_report()), "turn_id": "turn-1"})) == 0
-    assert capsys.readouterr().out == ""
-
-
-def test_codex_english_report_skips_language_gate(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Codexの英語主体の報告では言語ゲートを実行せず許可する。"""
-
-    def _fail(_text: str) -> tuple[object, object]:
-        raise AssertionError("Codexでは言語ゲートを実行しない")
-
-    monkeypatch.setattr(advisor, "check_text", _fail)
-    assert advisor.main(json.dumps({**_payload("Done here."), "turn_id": "turn-1"})) == 0
     assert capsys.readouterr().out == ""
 
 

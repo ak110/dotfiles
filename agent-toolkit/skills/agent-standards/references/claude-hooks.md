@@ -96,6 +96,18 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 <https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
 本節は経路選択の方針だけを定める。
 
+イベントごとの出力契約の機械検査は`agent-toolkit/scripts/_hook_output_contract.py`を正本とする。
+同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
+`agent-toolkit/scripts/hook_output_contract_test.py`が登録済みの全hookの出力を当該契約へ照合する。
+フックを追加又は変更する場合は、当該契約と検体を同じ変更単位で更新する。
+
+Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器が
+モデルの応答をJSONとして解析できなかった場合に出る。コマンド型hookのJSON出力の検証経路では出ない。
+`/goal`はセッションの範囲で有効なプロンプト型Stop hookを登録する。
+`/goal`を設定したセッションでは、当該表示がコマンド型hookの出力形式とは無関係に現れる
+（2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。
+再検証は同じ2つの資料で当該文字列の出所を確認する）。
+
 PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。これらのイベントでは、`additionalContext`はターン継続を強制しない。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象には付けない。
@@ -104,7 +116,7 @@ Stop/SubagentStopで当該ターン継続を強制する用途は、エラーと
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | フィードバックを渡す主経路。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
+| `hookSpecificOutput.additionalContext` | コーディングエージェント | AWIを渡す主経路。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
 | `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
@@ -202,6 +214,22 @@ PreToolUse・PostToolUse・UserPromptSubmitの`additionalContext`はターンの
 コーディングエージェントへの誘導文の先頭に判定基準を事前チェックとして埋め込み、
 基準を満たさない場合は誘導内容に従わずターンを終了する設計を推奨する。
 
+`Stop`と`SubagentStop`の共通入力は`session_id`・`prompt_id`・`transcript_path`・`cwd`・`permission_mode`・`effort`・`hook_event_name`である。
+両イベントはこれに加えて`stop_hook_active`・`last_assistant_message`・`background_tasks`・`session_crons`を受け取る。
+`SubagentStop`はさらに`agent_id`・`agent_type`・`agent_transcript_path`を受け取る。
+`SubagentStop`の`background_tasks`と`session_crons`は親セッションの範囲を表す。
+`background_tasks`は実行中のタスクを1件ずつ表し、各要素は`id`・`type`・`status`・`description`を持つ。
+`type`は`shell`・`subagent`・`monitor`・`workflow`・`teammate`・`cloud session`・`MCP task`のいずれかを取る。
+値は当該タスクを生成した機能を示す。
+この配列は、セッションが完了した状態と、背景の作業による再開を待って停止している状態とをフックが区別する用途で使う。
+`PostToolUse`は背景実行への移行の時点で発火する。当該ジョブの完了時に再発火する旨の記載は公式ドキュメントに無い。
+
+2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節及び`SubagentStop`節で前段の入力仕様を確認した。
+同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。
+`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。
+再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
+現行版の入力に`background_tasks`が現れない場合は本項を失効させ、当該版の観測として書き直す。
+
 CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、許可時は空のJSONオブジェクトを返す。
 CodexのStopは`hookSpecificOutput`を受理しない。
 Codex固有の入力には`model`があり、Stopでは`stop_hook_active`と`last_assistant_message`も受け取る。
@@ -212,10 +240,10 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
 
 配布物完結の環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧と用途を示す。
 
-- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk mq`管理repoのroot（既定`~/private-notes/`）
+- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`管理repoのroot（既定`~/private-notes/`）
 - `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力
 - `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信payloadのダンプ先
-- `AGENT_TOOLKIT_RESTART_SPEC`: フィードバック処理の常駐実行で、次に起動するセッションの指定を
+- `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を
   起動側の処理へ渡す一時ファイルのパス
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: 委譲先として起動したセッションであることを示す印。常駐実行の終了保証を最上位セッションへ限定する判定に使う
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得又は作成した計画バンドルの所有として記録する、委譲元セッションの識別子

@@ -113,7 +113,7 @@ def test_allows_when_question_is_in_quote(tmp_path: pathlib.Path) -> None:
     """疑問符が引用行にだけある場合は通過する。"""
     transcript = _transcript_with_response(
         tmp_path,
-        "受領したフィードバックの本文を引用します。\n> この工程は必要ですか？\n該当箇所を修正しました。",
+        "受領したAWIの本文を引用します。\n> この工程は必要ですか？\n該当箇所を修正しました。",
     )
 
     result = _run({"session_id": "quote", "transcript_path": str(transcript)}, state_dir=tmp_path)

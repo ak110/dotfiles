@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import textwrap
 import time
+from collections.abc import Callable
 
 import _fork_runner
 import hook
@@ -1446,6 +1447,32 @@ class TestResponseLanguageCheck:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    @pytest.mark.parametrize(("delegated", "warns"), [(False, True), (True, False)])
+    def test_delegated_session_language_check_boundary(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        delegated: bool,
+        warns: bool,
+    ) -> None:
+        """agents_serverの委譲先だけを言語検査から除外する。"""
+        transcript = self._write_transcript(tmp_path, "This is a plain English status report for the current task.")
+        if delegated:
+            monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+        else:
+            monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+            }
+        )
+
+        assert result.returncode == 0
+        assert ("英語主体" in _additional_context(result)) is warns
+
     def test_no_warn_without_transcript_path(self):
         """transcript_path未指定なら検査スキップ。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})
@@ -1798,7 +1825,11 @@ class TestHookEntryPointsPep723Dependencies:
     """
 
     @pytest.mark.parametrize("script_name", _hook_entry_point_names())
-    def test_entry_point_starts_without_import_error(self, script_name: str) -> None:
+    def test_entry_point_starts_without_import_error(
+        self,
+        script_name: str,
+        host_environ: Callable[[], dict[str, str]],
+    ) -> None:
         script = _SCRIPTS_DIR_PATH / script_name
         # 空 JSON 入力（各 hook が最小限の tool_input を要求する場合の共通形）
         result = subprocess.run(
@@ -1808,6 +1839,7 @@ class TestHookEntryPointsPep723Dependencies:
             text=True,
             check=False,
             timeout=60,
+            env=host_environ(),
         )
         # ModuleNotFoundError 等の import 系失敗は stderr の Traceback として現れる。
         # hook 実装の内部エラー（キー不足等）は許容し、import 失敗のみを検出する。
@@ -1831,7 +1863,7 @@ class TestBashSleepPollPattern:
             ("sleep 10; git status --short", "sleep-poll-first-1"),
             ("sleep 5 && gh run view 123", "sleep-poll-first-2"),
             ("sleep 1; systemctl status example.service", "sleep-poll-first-3"),
-            ("echo start; sleep 2; atk mq list", "sleep-poll-first-4"),
+            ("echo start; sleep 2; atk wi list", "sleep-poll-first-4"),
             ("sleep 3; curl https://example.com/status", "sleep-poll-first-5"),
             ("sleep 3 && curl -D - https://example.com/status", "sleep-poll-first-6"),
             ("sleep 3; curl -XGET https://example.com/status", "sleep-poll-first-7"),
@@ -5409,8 +5441,8 @@ class TestWorkflowSkillInvocation:
         [
             "agent-toolkit:plan-mode",
             "plan-mode",
-            "agent-toolkit:process-feedbacks",
-            "process-feedbacks",
+            "agent-toolkit:process-wi",
+            "process-wi",
             "agent-toolkit:session-review",
             "session-review",
             "agent-toolkit:bugfix",

@@ -214,8 +214,8 @@ def test_save_refuses_queue_repository_worktree(
     assert stash.dispatch(args, private_notes=queue_repository) == 2
     error = capsys.readouterr().err
     assert "キュー管理リポジトリ" in error
-    assert "atk mq・atk plans・atk serve" in error
-    assert "atk mq commit" in error
+    assert "atk wi・atk plans・atk serve" in error
+    assert "atk wi commit" in error
     assert _git(["status", "--short"], queue_repository).stdout == queue_status
     assert _git(["show-ref", "--verify", "--quiet", "refs/worktree/queue-save"], queue_repository, check=False).returncode == 1
     monkeypatch.chdir(target_repository)
@@ -241,8 +241,8 @@ def test_drop_refuses_queue_repository_worktree(
     assert stash.dispatch(args, private_notes=queue_repository) == 2
     error = capsys.readouterr().err
     assert "キュー管理リポジトリ" in error
-    assert "atk mq・atk plans・atk serve" in error
-    assert "atk mq commit" in error
+    assert "atk wi・atk plans・atk serve" in error
+    assert "atk wi commit" in error
     assert _git(["show-ref", "--verify", "--quiet", ref], queue_repository).returncode == 0
     monkeypatch.chdir(target_repository)
     assert stash.dispatch(args, private_notes=queue_repository) == 0

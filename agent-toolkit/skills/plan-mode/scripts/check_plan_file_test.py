@@ -75,7 +75,7 @@ def _migration_legacy_action_input(repo: pathlib.Path) -> tuple[str, str]:
             f"| {_plan_fixture.USER_ACTION_SUBJECT} | 指示どおり | - |",
         ]
     )
-    return main.replace(_plan_fixture.human_action_table(feedback=False), new_table, 1), detail
+    return main.replace(_plan_fixture.human_action_table(wi=False), new_table, 1), detail
 
 
 def _migration_legacy_bug_table_input(repo: pathlib.Path) -> tuple[str, str]:
@@ -161,7 +161,7 @@ def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
     end = main.index(f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", start)
     main = main[:start] + main[end:]
     detail_field = f"- {_plan_format.PLAN_METADATA_DETAIL_FIELD}: `plan.detail.md`"
-    related_field = f"- {_plan_format.PLAN_METADATA_RELATED_FEEDBACK_FIELD}: なし"
+    related_field = f"- {_plan_format.PLAN_METADATA_RELATED_WI_FIELD}: なし"
     return main.replace(detail_field, related_field, 1), detail
 
 
@@ -170,7 +170,7 @@ def _migration_legacy_materials_input(repo: pathlib.Path) -> tuple[str, str]:
     main, detail = _new_format_plan(repo, _git(repo, "rev-parse", "HEAD"))
     main = main.replace(
         _plan_fixture.TWO_FILE_ACTION_TABLE,
-        _plan_fixture.human_action_table(feedback=False),
+        _plan_fixture.human_action_table(wi=False),
         1,
     )
     start = main.index(f"## {_plan_format.PLAN_H2_MATERIALS}")
@@ -243,7 +243,7 @@ def test_accepts_canonical_plan(repo: tuple[pathlib.Path, str], *, bug: bool, ex
     )
     if bug:
         expected.append("バグ調査結果が旧形式の本文内表である。新規作成・改訂ではバグ調査ファイルへ移行する")
-    expected.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する")
+    expected.append("`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する")
     assert warnings == expected
 
 
@@ -503,7 +503,7 @@ def test_accepts_canonical_new_format_plan(repo: tuple[pathlib.Path, str], *, bu
     )
     expected += [
         "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
-        "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+        "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する",
         "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
     ]
     assert warnings == expected, warnings
@@ -585,7 +585,7 @@ def test_accepts_human_readable_new_format_plan_without_migration_warning(
         ),
         (
             _migration_legacy_materials_heading_input,
-            "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+            "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する",
         ),
         (
             _migration_legacy_bug_reference_input,
@@ -671,7 +671,7 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
     main_content, detail_content = _new_format_plan(work_dir, base)
     expected = [
         "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
-        "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+        "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する",
         "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する",
     ]
 
@@ -746,13 +746,13 @@ def test_old_two_file_format_ignores_detail_reference_value(repo: tuple[pathlib.
     assert any("stemから対応付ける" in warning for warning in warnings), warnings
 
 
-def test_new_format_requires_related_feedback_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
-    """詳細参照を除いた新書式には関連フィードバックが必要である。"""
+def test_new_format_requires_related_wi_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
+    """詳細参照を除いた新書式には`関連WI`が必要である。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`\n", "")
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
-    assert any("`関連フィードバック`" in error for error in errors), errors
+    assert any("`関連WI`" in error for error in errors), errors
 
 
 def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
@@ -886,7 +886,7 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
     expected.extend(
         [
             "計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける",
-            "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する",
+            "`## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する",
         ]
     )
     expected.append("二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する")
@@ -989,7 +989,7 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stderr == (
         "[warn] 計画メタ情報の`計画ファイル（詳細）`が旧形式である。新規作成・改訂ではstemから対応付ける\n"
-        "[warn] `## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連フィードバック`へ移行する\n"
+        "[warn] `## 提示素材`が旧形式である。新規作成・改訂では計画メタ情報の`関連WI`へ移行する\n"
         "[warn] 二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する\n"
     )
 
@@ -1031,19 +1031,41 @@ def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path
     assert "二ファイル計画が旧ID形式である。新規作成・改訂では人間向け書式へ移行する" in warnings, warnings
 
 
+def test_legacy_wi_names_are_read_compatible_and_warned(repo: tuple[pathlib.Path, str]) -> None:
+    """改名前の項目名は読み取りで受理し、移行warningを返す。"""
+    work_dir, _base = repo
+    main_content, detail_content = human_new_format_plan(work_dir)
+    main_content = _plan_fixture.legacy_wi_names(main_content)
+    errors, warnings = _check_new(work_dir, main_content, detail_content)
+    assert not errors, errors
+    assert (
+        f"計画メタ情報の項目名が旧形式である。新規作成・改訂では`{_plan_format.PLAN_METADATA_RELATED_WI_FIELD}`へ移行する"
+        in warnings
+    ), warnings
+
+
+def test_legacy_wi_names_are_rejected_on_creation(repo: tuple[pathlib.Path, str]) -> None:
+    """新規作成・改訂の経路では改名前の項目名を拒否する。"""
+    work_dir, _base = repo
+    main_content, detail_content = human_new_format_plan(work_dir)
+    main_content = _plan_fixture.legacy_wi_names(main_content)
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, reject_legacy_format=True)
+    assert any(_plan_format.PLAN_METADATA_RELATED_WI_FIELD in error for error in errors), errors
+
+
 def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
     """由来照合の対象となる計画一式と正本を配置し、計画ファイル（メイン）のパスを返す。"""
-    main_content = _plan_fixture.human_main(repo=repo.resolve(), related_feedback=_plan_fixture.FEEDBACK_FILES)
+    main_content = _plan_fixture.human_main(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = repo / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
     (repo / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
     frontmatter = ["---", "status: inbox"]
     if source:
-        frontmatter.append(f"{_plan_format.PLAN_FEEDBACK_SOURCE_KEY}: agent-toolkit:session-review")
+        frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:session-review")
     frontmatter.append("---")
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True)
-    (inbox / _plan_fixture.FEEDBACK_FILES[0][0]).write_text(
+    (inbox / _plan_fixture.WI_FILES[0][0]).write_text(
         "\n".join([*frontmatter, "", "# 要求", "", "本文。", ""]), encoding="utf-8"
     )
     return main_path
@@ -1072,7 +1094,7 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
     """照合を省略した事実は助言に留め、新規作成を遮断しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "absent"
-    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_feedback=_plan_fixture.FEEDBACK_FILES)
+    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = work_dir / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
     (work_dir / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")

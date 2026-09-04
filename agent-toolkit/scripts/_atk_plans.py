@@ -22,10 +22,11 @@ from collections.abc import Iterable
 
 import _atk_git_sync
 import _atk_help
-import _atk_mq_common as _common
-import _atk_mq_frontmatter as _frontmatter
+import _atk_wi_common as _common
+import _atk_wi_frontmatter as _frontmatter
 import _git_command
 import _plan_file
+import _plan_format
 import platformdirs
 
 _MIGRATION_SECTION_NAMES = frozenset(("変更履歴（計画時）", "変更履歴"))
@@ -912,7 +913,7 @@ def _migrate_mq_contents(
 ) -> dict[pathlib.Path, bytes]:
     """全MQ状態の既知の計画参照と本文の旧パスをportable値へ移す。"""
     changes: dict[pathlib.Path, bytes] = {}
-    for state in _common.MQ_STATES:
+    for state in _common.WI_STATES:
         directory = private_notes / state
         if not directory.is_dir():
             continue
@@ -1124,7 +1125,11 @@ def _plan_stem(path: pathlib.Path) -> str:
 
 
 def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
-    """当該計画のstemで始まる可搬参照を新しい参照値へ書き換えた本文と件数を返す。"""
+    """当該計画のstemで始まる可搬参照を新しい参照値へ書き換えた本文と件数を返す。
+
+    書き換えるのはコードフェンスなどを除いたMarkdown本文の有効行に限る。
+    除外領域はユーザー発言の逐語引用と実行したコマンドの記録を含み、そこに現れる表記は参照ではないためである。
+    """
     count = 0
 
     def _replace(match: re.Match[str]) -> str:
@@ -1135,7 +1140,12 @@ def _rewritten_plan_text(text: str, stem: str) -> tuple[str, int]:
         count += 1
         return f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{name}"
 
-    return _PORTABLE_REFERENCE_RE.sub(_replace, text), count
+    body_linenos = {lineno for lineno, _line in _plan_format.iter_markdown_body_lines(text)}
+    lines = text.splitlines(keepends=True)
+    rewritten = [
+        _PORTABLE_REFERENCE_RE.sub(_replace, line) if index + 1 in body_linenos else line for index, line in enumerate(lines)
+    ]
+    return "".join(rewritten), count
 
 
 def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> dict[str, object]:

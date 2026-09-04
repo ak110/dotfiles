@@ -11,7 +11,7 @@ r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 `--force`指定時はapply直前に`chezmoi diff --no-pager`を追加し、差分表示後に
 `chezmoi apply --force`で確認入力を待たずに反映する。
 
-複数の`update-dotfiles`起動（`atk mq process-loop`の複数常駐・手動実行との重複等）が
+複数の`update-dotfiles`起動（`atk wi process-loop`の複数常駐・手動実行との重複等）が
 同時に`git pull`・`chezmoi apply`を実行するとpullとファイル操作の競合を招くため、
 `filelock`でプロセス間直列化する。ロック取得に失敗（タイムアウト）した場合は
 exit code 1で終了し、他プロセスの完了を待って再実行するよう促す。
