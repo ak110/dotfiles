@@ -102,6 +102,49 @@ def test_help_sections_and_builtin_help_are_japanese() -> None:
             assert "実行するサブコマンド" in help_text, command
 
 
+def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], argparse.ArgumentParser]:
+    arguments: list[str] = []
+    for action in parser._actions:  # pylint: disable=protected-access
+        if isinstance(action, argparse._SubParsersAction):  # pylint: disable=protected-access
+            if action.required:
+                name, child = next(iter(action.choices.items()))
+                child_arguments, target = _required_arguments(child)
+                arguments.extend((name, *child_arguments))
+                return arguments, target
+            continue
+        value = str(next(iter(action.choices))) if action.choices else "value"
+        if action.option_strings:
+            if action.required:
+                option = next(option for option in action.option_strings if option.startswith("--"))
+                arguments.extend((option, value))
+            continue
+        if action.nargs not in ("?", "*"):
+            arguments.append(value)
+    return arguments, parser
+
+
+def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    for command, parser, _summary in _walk_commands():
+        if command == "atk":
+            continue
+        arguments, target = _required_arguments(parser)
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args([*arguments, "--unsupported"])
+
+        assert exc_info.value.code == 2, command
+        error = capsys.readouterr().err
+        assert error.startswith(f"使い方: {target.prog}"), command
+        options = sorted(
+            option
+            for option in target._option_string_actions  # pylint: disable=protected-access
+            if option.startswith("--") and option != "--help"
+        )
+        accepted = "・".join(options) if options else "なし"
+        assert f"解釈できない引数: --unsupported。{target.prog}が受理するオプションは{accepted}" in error, command
+
+
 def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLUMNS", "60")
     commands = {command: parser for command, parser, _summary in _walk_commands()}

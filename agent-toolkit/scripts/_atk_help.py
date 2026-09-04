@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import textwrap
+import typing
+from collections.abc import Sequence
 from typing import Any
 
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、管理対象一時領域と委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとコーディングエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末は当該コマンドの`--help`に示す。"
@@ -282,6 +284,28 @@ class JapaneseHelpFormatter(argparse.HelpFormatter):
         return "\n".join(wrapper.fill(line) if line else "" for line in text.splitlines())
 
 
+class GuidedSubcommandParser(argparse.ArgumentParser):
+    """解釈できない引数を、当該サブコマンドの受理形式とともに拒否する。"""
+
+    @typing.override
+    def parse_known_args(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # ty: ignore[invalid-method-override]
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> tuple[argparse.Namespace, list[str]]:
+        parsed, remaining = super().parse_known_args(args, namespace)
+        assert parsed is not None
+        if remaining:
+            self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
+        return parsed, remaining
+
+    def _accepted_form(self) -> str:
+        """当該サブコマンドが受理する長いオプションを説明する。"""
+        options = sorted(option for option in self._option_string_actions if option.startswith("--") and option != "--help")
+        accepted = "・".join(options) if options else "なし"
+        return f"{self.prog}が受理するオプションは{accepted}"
+
+
 def _configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser._positionals.title = "位置引数"  # pylint: disable=protected-access
     parser._optionals.title = "オプション"  # pylint: disable=protected-access
@@ -308,7 +332,6 @@ def add_subcommands(
     dest: str,
     required: bool = True,
     show_help_when_missing: bool = False,
-    parser_class: type[argparse.ArgumentParser] | None = None,
 ) -> argparse._SubParsersAction:
     """日本語の説明を持つサブparser群を追加する。"""
     if show_help_when_missing and required:
@@ -318,9 +341,8 @@ def add_subcommands(
         "required": required,
         "title": "位置引数",
         "description": "実行するサブコマンド",
+        "parser_class": GuidedSubcommandParser,
     }
-    if parser_class is not None:
-        kwargs["parser_class"] = parser_class
     if show_help_when_missing:
         parser.set_defaults(_help_parser=parser)
     return parser.add_subparsers(**kwargs)
