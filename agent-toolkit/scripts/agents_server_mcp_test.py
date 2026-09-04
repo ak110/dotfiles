@@ -353,6 +353,7 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "unknown session" in tools["send_message"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
     assert "sessionとbackend processは破棄しない" in tools["kill"].description
+    assert "`status`へ`expired`" in tools["kill"].description
     assert "`send_message`による訂正では足りないこと" in tools["kill"].description
 
 
@@ -3068,6 +3069,37 @@ async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, t
             await manager.wait(session.session_id, timeout=0)
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("engine", "model_type"), (("codex", None), ("claude", "implementation_fast")))
+async def test_expired_session_kill_returns_success_response(
+    engine: str,
+    model_type: str | None,
+    tmp_path: pathlib.Path,
+) -> None:
+    """保持期限切れsessionへのkillは中断対象が無い成功応答を返す。"""
+    manager, backend = _manager_with_fake(engine)
+    session = subject.SessionState("expired", str(tmp_path), engine=engine, model_type=model_type)
+    _complete(session)
+    session.retention_deadline = asyncio.get_running_loop().time() - 1
+    manager.sessions[session.session_id] = session
+
+    response = await manager.kill(session.session_id, timeout=0)
+
+    expected: dict[str, object] = {
+        "session_id": "expired",
+        "engine": engine,
+        "status": "expired",
+        "progress": "",
+        "kill_requested": False,
+    }
+    if model_type is not None:
+        expected["model_type"] = model_type
+    assert response == expected
+    assert "expired" not in manager.sessions
+    assert manager.expired_sessions["expired"].session_id == "expired"
+    assert backend.interrupt_calls == 0
 
 
 @pytest.mark.asyncio

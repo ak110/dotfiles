@@ -159,6 +159,31 @@ class AgentsServerManager:
         if session is not None:
             self.expired_sessions[session_id] = SessionResumeState.from_session(session)
 
+    def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
+        """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        session = self.sessions.get(session_id)
+        if (
+            session is not None
+            and session.retention_deadline is not None
+            and asyncio.get_running_loop().time() >= session.retention_deadline
+        ):
+            self._expire_session(session_id)
+        resume_state = self.expired_sessions.get(session_id)
+        if resume_state is None:
+            return None
+        response: dict[str, Any] = {
+            "session_id": session_id,
+            "engine": resume_state.engine,
+            "status": "expired",
+            "progress": "",
+            "kill_requested": False,
+        }
+        if resume_state.model_type is not None:
+            response["model_type"] = resume_state.model_type
+        return response
+
     def _route_state(
         self,
         session_id: str,
@@ -644,6 +669,9 @@ class AgentsServerManager:
                 response["kill_requested"] = True
                 return response
         else:
+            expired_response = self._expired_kill_response(session_id)
+            if expired_response is not None:
+                return expired_response
             session = self._get_session(session_id)
         started_terminal = session.terminal
         requested_before_call = session.interrupt_requested
@@ -947,6 +975,7 @@ async def kill(
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。
+    終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`progress`へ空文字列、`kill_requested`へ`false`を設定した応答を返す。応答の項目は他の成功応答と同じとする。
     """
     return await _MANAGER.kill(session_id, timeout)
 

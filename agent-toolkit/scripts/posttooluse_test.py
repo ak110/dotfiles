@@ -5,6 +5,7 @@ plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`postto
 `session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へ分割している。
 """
 
+import asyncio
 import functools
 import importlib.util
 import json
@@ -16,7 +17,9 @@ import subprocess
 import types
 
 import _fork_runner
+import agents_server_mcp
 import pytest
+from _agents_server_state import SessionState
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
@@ -1481,6 +1484,45 @@ class TestAgentsServerSessionState:
         remote_session_id = "remote-kill"
         assert run_operation(sid, remote_session_id, "start", status="running") is True
         assert run_operation(sid, remote_session_id, "kill", status="interrupted") is False
+
+    @pytest.mark.asyncio
+    async def test_expired_kill_clears_pending_observation(self, tmp_path: pathlib.Path) -> None:
+        """期限切れsessionへのkill成功応答で未観測状態を解消する。"""
+        sid = "pending-expired-kill"
+        remote_session_id = "remote-expired-kill"
+        started = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"cwd": str(tmp_path), "prompt": "委譲する"},
+                "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "running"}},
+            },
+            state_dir=tmp_path,
+        )
+        assert started.returncode == 0
+
+        manager = agents_server_mcp.AgentsServerManager()
+        session = SessionState(remote_session_id, str(tmp_path), engine="codex")
+        session.status = "completed"
+        session.turn_completed = True
+        session.retention_deadline = asyncio.get_running_loop().time() - 1
+        manager.sessions[remote_session_id] = session
+        response = await manager.kill(remote_session_id, timeout=0)
+        killed = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
+                "tool_input": {"session_id": remote_session_id},
+                "tool_response": {"structuredContent": response},
+            },
+            state_dir=tmp_path,
+        )
+        assert killed.returncode == 0
+
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["status"] == "expired"
+        assert record["kill_requested"] is False
+        assert record["pending_observation"] is False
 
     def test_start_shell_records_pending_observation(self, tmp_path: pathlib.Path) -> None:
         """シェル実行委譲も観測を試みていない作業として記録する。"""

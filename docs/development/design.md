@@ -163,6 +163,7 @@ Stopフックによる継続の強制は採用しない。背景作業の完了�
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、
 正のtimeoutは中断後の終端と結果を待つ。timeout超過時もsessionまたはbackend processを強制終了せず、後続の`wait`または終端後の`send_message`を許可する。終端結果の30分保持を過ぎた場合は結果本文だけを破棄する。保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 成功応答は`status`・`progress`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終端を`interrupted`へ置き換えない。
+終端結果の保持期限を過ぎたsessionへの`kill`も同じ項目を持つ成功応答を返し、`status`は`expired`、`progress`は空文字列、`kill_requested`は偽とする。
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 steer拒否時は非終端通知を無視して完了・turn変更・client failure・timeoutだけを待ち、replyを自動再試行しない。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
