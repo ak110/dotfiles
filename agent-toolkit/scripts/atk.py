@@ -29,6 +29,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
+- mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans checkout/commit/migrate: 保存済み計画の取得、計画bundleの対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
@@ -769,6 +770,21 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
             "2回目以降は新規セッションとして起動する。"
         ),
     )
+    _atk_help.add_command(
+        sub,
+        "process-loop-abort",
+        **_atk_help.HELP["atk wi process-loop-abort"],
+    )
+    _atk_help.add_command(
+        sub,
+        "process-loop-abort-cancel",
+        **_atk_help.HELP["atk wi process-loop-abort-cancel"],
+    )
+    _atk_help.add_command(
+        sub,
+        "process-loop-status",
+        **_atk_help.HELP["atk wi process-loop-status"],
+    )
 
 
 def _build_wi_parser(mq: argparse.ArgumentParser) -> None:
@@ -1018,6 +1034,14 @@ def main(
     if args.command != "wi":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     sub = args.wi_subcommand
+    process_loop_state_dispatch = {
+        "process-loop-abort": _process_loop._cmd_process_loop_abort,
+        "process-loop-abort-cancel": _process_loop._cmd_process_loop_abort_cancel,
+        "process-loop-status": _process_loop._cmd_process_loop_status,
+    }
+    if sub in process_loop_state_dispatch:
+        process_loop_state_dispatch[sub]()
+        sys.exit(0)
     private_notes = _common._ensure_environment(home)
     dispatch = {
         "add": lambda: (

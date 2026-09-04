@@ -78,6 +78,39 @@ _CREATE_NEW_PROCESS_GROUP = 0x00000200
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
 _AVAILABILITY_PROBE_PROMPT = "応答できる場合はOKだけを返してください。"
 
+# 端末が連続するBELを1回へまとめないよう、鳴動の間に置く待機秒。
+_ABORT_BELL_INTERVAL_SEC = 0.1
+_PROCESS_LOOP_ABORT_FILENAME = "process-wi-abort"
+
+
+def _process_loop_abort_path() -> pathlib.Path:
+    """process-loopの中断要求を保持する状態ファイルのパスを返す。"""
+    return _process_loop_log.log_path().parent / _PROCESS_LOOP_ABORT_FILENAME
+
+
+def _cmd_process_loop_abort() -> None:
+    """process-loopへ現在のセッション終了後の中断を要求する。"""
+    path = _process_loop_abort_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    print("常駐処理へ中断を要求しました。")
+
+
+def _cmd_process_loop_abort_cancel() -> None:
+    """process-loopへの中断要求を解除する。"""
+    path = _process_loop_abort_path()
+    if not path.exists():
+        print("常駐処理への中断要求は設定されていません。")
+        return
+    path.unlink(missing_ok=True)
+    print("常駐処理への中断要求を解除しました。")
+
+
+def _cmd_process_loop_status() -> None:
+    """process-loopへの中断要求の有無を表示する。"""
+    status = "あり" if _process_loop_abort_path().exists() else "なし"
+    print(f"常駐処理への中断要求: {status}")
+
 
 def _ask_user_question_timeout_settings() -> str:
     """メイン会話のプロンプトキャッシュTTLに対応する質問タイムアウト設定を返す。"""
@@ -1019,6 +1052,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     Claude Codeは0・-15・15・143、POSIXのCodexは0・-15、WindowsのCodexは0を正常終了とする。
     正常終了した場合、
     `--no-update`未指定なら`_restart_process_loop`でランチャーへ再起動を要求する。
+    中断要求がある場合は再起動より先に端末ベルを3回鳴らし、要求を解除して正常終了する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
     秒間隔で実行し、新規アラートを検知した場合はAWIへ投入して即座に次反復へ進む。
@@ -1127,6 +1161,14 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                             resume_pending=current_resume_pending,
                             dotfiles_root=dotfiles_root,
                         )
+                        abort_path = _process_loop_abort_path()
+                        if abort_path.exists():
+                            for bell_index in range(3):
+                                print("\a", end="", file=sys.stderr, flush=True)
+                                if bell_index < 2:
+                                    time.sleep(_ABORT_BELL_INTERVAL_SEC)
+                            abort_path.unlink(missing_ok=True)
+                            return
                         continue
                     last_alert_check, submitted = _check_process_loop_alerts(
                         args,
