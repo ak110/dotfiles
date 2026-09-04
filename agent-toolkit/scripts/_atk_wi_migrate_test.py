@@ -205,6 +205,49 @@ def test_migrate_repairs_identifiers_broken_by_word_level_conversion(tmp_path: p
     assert "⎿  Stop hook feedback: uncommitted changes detected." in entry
 
 
+def test_migrate_repairs_underscore_identifiers_without_changing_current_identifiers(tmp_path: pathlib.Path) -> None:
+    """アンダースコア識別子を完全一致で修復し、現行の識別子を維持する。"""
+    notes = tmp_path / "private-notes"
+    _init_notes(notes, tmp_path / "origin.git")
+    (notes / "inbox" / "a.md").write_text(
+        "---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n"
+        "pick_awis\n"
+        "process_awis\n"
+        "process_awis_invoked\n"
+        "test_awis_planner_contract_separates_coordination_from_writes\n"
+        "test_awis_planner_uses_sender_selected_plan_path_and_uwi_boundary\n"
+        "test_integrated_plan_overview_lists_post_exclusion_awis\n"
+        "test_process_awis_preserves_codex_queue_and_process_loop_contracts\n"
+        "test_prompt_references_process_awis\n"
+        "_PROCESS_AWIS\n"
+        "awi_path _write_awi_file answer_uwi _uwi_scan _PROCESS_AWIS_SKILL_NAMES\n",
+        encoding="utf-8",
+    )
+    _commit_all(notes)
+
+    _atk_wi_migrate.migrate_queue(notes)
+
+    entry = (notes / "inbox" / "a.md").read_text(encoding="utf-8")
+    for expected in (
+        "pick_wi",
+        "process_wi",
+        "process_feedbacks_invoked",
+        "test_feedbacks_planner_contract_separates_coordination_from_writes",
+        "test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary",
+        "test_integrated_plan_overview_lists_post_exclusion_feedbacks",
+        "test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts",
+        "test_prompt_references_process_wi",
+        "_PROCESS_FEEDBACKS",
+        "awi_path _write_awi_file answer_uwi _uwi_scan _PROCESS_AWIS_SKILL_NAMES",
+    ):
+        assert expected in entry
+
+    head = _git(notes, "rev-parse", "HEAD").stdout.strip()
+    result = _atk_wi_migrate.migrate_queue(notes)
+    assert result == {"converted": 0, "moved": 0, "commit": None}
+    assert _git(notes, "rev-parse", "HEAD").stdout.strip() == head
+
+
 def test_migrate_is_idempotent_after_repairing_identifiers(tmp_path: pathlib.Path) -> None:
     """誤った識別子を直したprivate-notesへ再実行しても何も変更しない。"""
     notes = tmp_path / "private-notes"

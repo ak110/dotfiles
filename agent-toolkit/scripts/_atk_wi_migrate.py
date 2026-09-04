@@ -86,6 +86,28 @@ _REPAIRS: tuple[tuple[str, str], ...] = (
 ホストが出力した文面の逐語記録は、事象の再現条件を成すため原文へ戻す。
 """
 
+_IDENTIFIER_REPAIRS: dict[str, str] = {
+    "pick_awis": "pick_wi",
+    "process_awis": "process_wi",
+    "process_awis_invoked": "process_feedbacks_invoked",
+    "test_awis_planner_contract_separates_coordination_from_writes": (
+        "test_feedbacks_planner_contract_separates_coordination_from_writes"
+    ),
+    "test_awis_planner_uses_sender_selected_plan_path_and_uwi_boundary": (
+        "test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary"
+    ),
+    "test_integrated_plan_overview_lists_post_exclusion_awis": ("test_integrated_plan_overview_lists_post_exclusion_feedbacks"),
+    "test_process_awis_preserves_codex_queue_and_process_loop_contracts": (
+        "test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts"
+    ),
+    "test_prompt_references_process_awis": "test_prompt_references_process_wi",
+    "_PROCESS_AWIS": "_PROCESS_FEEDBACKS",
+}
+"""アンダースコア区切りの誤った識別子と、現行名または当時の名称の対応。
+
+完全一致で適用し、`_PROCESS_AWIS_SKILL_NAMES`のような現行識別子の部分文字列を変更しない。
+"""
+
 _REPAIR_WORDS: tuple[tuple[str, str], ...] = (
     ("awis", "feedbacks"),
     ("awi", "feedback"),
@@ -99,7 +121,12 @@ _REPAIR_WORDS: tuple[tuple[str, str], ...] = (
 """
 
 _PROTECTED_TOKENS = (
+    "test_feedbacks_planner_uses_sender_selected_plan_path_and_tbd_boundary",
+    "test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts",
+    "test_feedbacks_planner_contract_separates_coordination_from_writes",
+    "test_integrated_plan_overview_lists_post_exclusion_feedbacks",
     "agent-toolkit:plan-and-add-awi",
+    "process_feedbacks_invoked",
     "process_feedbacks_contract_test",
     "process-feedbacks-finish",
     "process-feedbacks-lane",
@@ -108,6 +135,7 @@ _PROTECTED_TOKENS = (
     "Stop hook feedback:",
     "エージェント由来のフィードバック",
     "人間由来のフィードバック",
+    "_PROCESS_FEEDBACKS",
     "_FEEDBACKS_PLANNER",
     "feedback/filename",
     "plan-and-add-awi",
@@ -180,6 +208,8 @@ def _protected(line: str, replace: collections.abc.Callable[[str], str]) -> str:
 def _repair_identifier(match: re.Match[str]) -> str:
     """複合識別子の内側にある誤った語を当時の名称へ戻す。"""
     identifier = match.group()
+    if identifier in _IDENTIFIER_REPAIRS:
+        return _IDENTIFIER_REPAIRS[identifier]
     if "-" not in identifier:
         return identifier
     for old, new in _REPAIR_WORDS:
@@ -238,13 +268,11 @@ def _remaining_old_names(text: str) -> tuple[str, ...]:
         for token, placeholder in placeholders.items():
             line = line.replace(token, placeholder)
         remaining.extend(old for old, _new in (*_REPLACEMENTS, *_REPAIRS) if old in line)
-        remaining.extend(
-            old
-            for identifier in _IDENTIFIER_RE.findall(line)
-            if "-" not in identifier
-            for old, _new in _WORD_REPLACEMENTS
-            if old in identifier
-        )
+        for identifier in _IDENTIFIER_RE.findall(line):
+            if identifier in _IDENTIFIER_REPAIRS:
+                remaining.append(identifier)
+            if "-" not in identifier:
+                remaining.extend(old for old, _new in _WORD_REPLACEMENTS if old in identifier)
     return tuple(dict.fromkeys(remaining))
 
 
