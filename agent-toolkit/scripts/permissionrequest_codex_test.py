@@ -157,7 +157,7 @@ def test_rejects_handmade_marker_without_external_state(
         "0" * 64,
         prefix="handmade",
         created_at="2026-08-30T00:00:00+00:00",
-        feedbacks=(),
+        awis=(),
     )
     _managed_temp._write_marker(target, marker)
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))

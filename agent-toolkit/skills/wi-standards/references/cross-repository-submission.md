@@ -8,7 +8,7 @@
 - 投入後は`atk mq set-dependencies <元項目ファイル名> --depends-on=<投入先ファイル名> --target-repo=<元項目のtarget_repo>`で元項目の依存を更新する。同コマンドは指定した値で依存を置き換えるため、保持する既存依存も同じ実行で指定する
 - 元項目が`processing`にある場合は`atk mq return-to-inbox <元項目ファイル名>`で`inbox`へ戻す。更新後は`atk mq list --target-repo=<元項目のtarget_repo>`で当該項目が`blocked_reason=dependency-unmet`となることを確認する
 - 上流項目の終端後は元項目が着手可能へ戻る。対象リポジトリ側の残作業を実施して終端し、残作業が無い場合は上流成果を確認して終端する
-- 別リポジトリへ移管する項目は、元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して`agent-toolkit:feedback-standards`で登録する
+- 別リポジトリへ移管する項目は、元項目のfrontmatterと本文を含むメッセージ全体を正しい`target_repo`へ移管して`agent-toolkit:wi-standards`で登録する
 - 投入前処理で入力メッセージの予約frontmatterキー`target_repo`だけを移管先の値へ一時的に置き換える
 - 通常の`atk mq add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する
 - `alert_keys`などの非予約frontmatterは元項目の値を保持する

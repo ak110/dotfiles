@@ -54,26 +54,26 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
             "path": str(target),
             "prefix": "publish-group",
             "created_at": created_at,
-            "feedbacks": [],
+            "awis": [],
         }
     ]
 
 
-def test_create_parser_passes_repeated_feedback_names(
+def test_create_parser_passes_repeated_awi_names(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`create --feedback`の複数指定を順序どおり作成処理へ渡す。"""
+    """`create --awi`の複数指定を順序どおり作成処理へ渡す。"""
     calls: list[tuple[str, pathlib.Path | str | None, tuple[str, ...]]] = []
     created = tmp_path / "created"
 
     def fake_create(
         prefix: str,
         root: pathlib.Path | str | None = None,
-        feedbacks: tuple[str, ...] = (),
+        awis: tuple[str, ...] = (),
     ) -> pathlib.Path:
-        calls.append((prefix, root, feedbacks))
+        calls.append((prefix, root, awis))
         return created
 
     monkeypatch.setattr(subject, "create_managed_temp", fake_create)
@@ -86,8 +86,8 @@ def test_create_parser_passes_repeated_feedback_names(
                 [
                     "create",
                     "--prefix=implementation",
-                    "--feedback=20260830-061344-001.md",
-                    "--feedback=20260830-143611-001.md",
+                    "--awi=20260830-061344-001.md",
+                    "--awi=20260830-143611-001.md",
                 ]
             )
         )
@@ -368,13 +368,13 @@ class TestManagedTempPosix:
 
         target = subject.create_managed_temp(
             "plan-review-snapshot",
-            feedbacks=("20260830-061344-001.md", "20260830-143611-001.md"),
+            awis=("20260830-061344-001.md", "20260830-143611-001.md"),
         )
 
         assert target.parent == tmp_path
         assert stat.S_IMODE(target.stat().st_mode) == 0o700
         assert subject.validate_managed_temp(target) == target
-        assert subject._load_private_json(subject._registry_path(target))["feedbacks"] == [
+        assert subject._load_private_json(subject._registry_path(target))["awis"] == [
             "20260830-061344-001.md",
             "20260830-143611-001.md",
         ]
@@ -518,7 +518,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
-            del record["feedbacks"]
+            del record["awis"]
 
         _replace_records(target, convert_to_v1)
 
@@ -535,26 +535,26 @@ class TestManagedTempPosix:
 
         def convert_to_v2(record: dict[str, object]) -> None:
             record["schema_version"] = 2
-            del record["feedbacks"]
+            del record["awis"]
 
         _replace_records(target, convert_to_v2)
 
         assert subject.validate_managed_temp(target) == target
 
-    @pytest.mark.parametrize("feedbacks", [("",), ("nested/name.md",), ("nested\\name.md",), ("line\nbreak.md",)])
-    def test_create_rejects_invalid_feedback_names(
+    @pytest.mark.parametrize("awis", [("",), ("nested/name.md",), ("nested\\name.md",), ("line\nbreak.md",)])
+    def test_create_rejects_invalid_awi_names(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        feedbacks: tuple[str, ...],
+        awis: tuple[str, ...],
     ) -> None:
-        """対応フィードバック名の空値、パス区切り文字及び制御文字を拒否する。"""
+        """対応するAWIのファイル名の空値、パス区切り文字及び制御文字を拒否する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
 
-        with pytest.raises(subject.ManagedTempError, match="feedback"):
-            subject.create_managed_temp("invalid-feedback", feedbacks=feedbacks)
+        with pytest.raises(subject.ManagedTempError, match="awi"):
+            subject.create_managed_temp("invalid-awi", awis=awis)
 
-        assert not list(tmp_path.glob("invalid-feedback-*"))
+        assert not list(tmp_path.glob("invalid-awi-*"))
 
     @pytest.mark.parametrize(
         ("field", "value"),
@@ -583,7 +583,7 @@ class TestManagedTempPosix:
 
         def set_invalid(record: dict[str, object]) -> None:
             record["schema_version"] = 2
-            del record["feedbacks"]
+            del record["awis"]
             if value is None:
                 del record[field]
             else:
@@ -595,21 +595,21 @@ class TestManagedTempPosix:
             subject.validate_managed_temp(target)
 
     @pytest.mark.parametrize(
-        "feedbacks",
+        "awis",
         [None, "20260830-061344-001.md", [""], ["nested/name.md"], ["nested\\name.md"], ["line\nbreak.md"], [1]],
     )
-    def test_validate_rejects_invalid_v3_feedbacks(
+    def test_validate_rejects_invalid_v4_awis(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        feedbacks: object,
+        awis: object,
     ) -> None:
-        """v3のfeedbacksは安全な空でないファイル名だけを含むリストに限定する。"""
+        """v4のawisは安全な空でないファイル名だけを含むリストに限定する。"""
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
-        target = subject.create_managed_temp("invalid-v3")
+        target = subject.create_managed_temp("invalid-v4")
 
         def set_invalid(record: dict[str, object]) -> None:
-            record["feedbacks"] = feedbacks
+            record["awis"] = awis
 
         _replace_records(target, set_invalid)
 
@@ -634,7 +634,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
-            del record["feedbacks"]
+            del record["awis"]
         else:
             del record["created_at"]
         changed.write_text(json.dumps(record), encoding="utf-8")
@@ -653,17 +653,17 @@ class TestManagedTempPosix:
         monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
         v1_target = subject.create_managed_temp("legacy")
         v2_target = subject.create_managed_temp("publish-group")
-        v3_target = subject.create_managed_temp("implementation", feedbacks=("20260830-061344-001.md",))
+        v3_target = subject.create_managed_temp("implementation", awis=("20260830-061344-001.md",))
 
         def convert_to_v1(record: dict[str, object]) -> None:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
-            del record["feedbacks"]
+            del record["awis"]
 
         def convert_to_v2(record: dict[str, object]) -> None:
             record["schema_version"] = 2
-            del record["feedbacks"]
+            del record["awis"]
 
         _replace_records(v1_target, convert_to_v1)
         _replace_records(v2_target, convert_to_v2)
@@ -676,16 +676,16 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 0
         lines = capsys.readouterr()
         assert [json.loads(line) for line in lines.out.splitlines()] == [
-            {"created_at": None, "feedbacks": [], "path": str(v1_target), "prefix": None},
+            {"created_at": None, "awis": [], "path": str(v1_target), "prefix": None},
             {
                 "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
-                "feedbacks": [],
+                "awis": [],
                 "path": str(v2_target),
                 "prefix": "publish-group",
             },
             {
                 "created_at": subject._load_private_json(subject._registry_path(v3_target))["created_at"],
-                "feedbacks": ["20260830-061344-001.md"],
+                "awis": ["20260830-061344-001.md"],
                 "path": str(v3_target),
                 "prefix": "implementation",
             },
@@ -711,7 +711,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 1
             del record["prefix"]
             del record["created_at"]
-            del record["feedbacks"]
+            del record["awis"]
 
         _replace_records(first, set_created_at)
         _replace_records(second, set_created_at)
@@ -917,7 +917,7 @@ class TestManagedTempPosix:
                 "path": str(valid),
                 "prefix": "valid",
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
-                "feedbacks": [],
+                "awis": [],
             }
         ]
         assert capsys.readouterr().err == ""
@@ -942,7 +942,7 @@ class TestManagedTempPosix:
                 "path": str(valid),
                 "prefix": "valid",
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
-                "feedbacks": [],
+                "awis": [],
             }
         ]
         assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
@@ -1264,7 +1264,7 @@ class TestManagedTempPosix:
             "nonce": "0" * 64,
             "prefix": "handmade",
             "created_at": "2026-08-31T00:00:00+00:00",
-            "feedbacks": [],
+            "awis": [],
         }
         subject._write_private_json(target / _MARKER_NAME, marker)
         (target / "keep.txt").write_text("keep", encoding="utf-8")

@@ -68,13 +68,13 @@ class TestSlashCommandDetection:
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is True
 
     def test_detects_short_skill_command_process_feedbacks(self, tmp_path: pathlib.Path):
-        sid = "short-process-feedbacks"
+        sid = "short-process-wi"
         result = _run(
-            {"session_id": sid, "prompt": "/process-feedbacks"},
+            {"session_id": sid, "prompt": "/process-wi"},
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert _read_state(tmp_path, sid).get("process_feedbacks_skill_invoked") is True
+        assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
 
 
 class TestNonMatchingPrompts:
@@ -102,7 +102,7 @@ class TestNonMatchingPrompts:
     def test_claude_ignores_codex_skill_command(self, tmp_path: pathlib.Path):
         sid = "claude-dollar-command"
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-feedbacks"},
+            {"session_id": sid, "prompt": "$agent-toolkit:process-wi"},
             state_dir=tmp_path,
         )
 
@@ -115,7 +115,7 @@ class TestNonMatchingPrompts:
         result = _run(
             {
                 "session_id": sid,
-                "prompt": "/agent-toolkit:process-feedbacks",
+                "prompt": "/agent-toolkit:process-wi",
                 "model": "gpt-5",
             },
             state_dir=tmp_path,
@@ -164,7 +164,7 @@ class TestNonMatchingPrompts:
         assert _read_state(tmp_path, sid)["plan_mode_skill_invoked"] is True
 
     def test_codex_process_feedbacks_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
-        sid = "codex-process-feedbacks-keeps-unrelated"
+        sid = "codex-process-wi-keeps-unrelated"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
             json.dumps({"plan_mode_skill_invoked": True}),
@@ -172,13 +172,13 @@ class TestNonMatchingPrompts:
         )
 
         result = _run(
-            {"session_id": sid, "prompt": "$agent-toolkit:process-feedbacks", "model": "gpt-5"},
+            {"session_id": sid, "prompt": "$agent-toolkit:process-wi", "model": "gpt-5"},
             state_dir=tmp_path,
         )
 
         state = _read_state(tmp_path, sid)
         assert result.returncode == 0
-        assert state["process_feedbacks_skill_invoked"] is True
+        assert state["process_wi_skill_invoked"] is True
         assert state["plan_mode_skill_invoked"] is True
 
 

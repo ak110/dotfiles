@@ -524,7 +524,7 @@ def edit_entry_content(
         target_repo=target_repo,
         lock_timeout=lock_timeout,
         expected_content=expected_content,
-        commit_message="chore: edit feedback item",
+        commit_message="chore: edit wi item",
         content_transformer=_invalidate_repo_bound_metadata,
         finalized_content=finalized_content,
     )
@@ -564,7 +564,7 @@ def append_entry_content(
         target_repo=target_repo,
         lock_timeout=lock_timeout,
         expected_content=expected_content,
-        commit_message="chore: append feedback item",
+        commit_message="chore: append wi item",
         content_validator=validate,
         finalized_content=finalized_content,
     )
@@ -871,7 +871,7 @@ def edit_entry_to_plan(
                 raise WebInputError(f"target_repoが一致しません: 期待={material_repo} 実際={updates['target_repo']}")
 
         updated_data = {**stored_data, **updates}
-        updated_data["source"] = "plan-and-add-feedback"
+        updated_data["source"] = "plan-and-add-awi"
         _store_plan_file(updated_data, stored_plan_file)
         updated_data["target_commit"] = target_commit
         updated_data.pop("queue_schedule", None)
@@ -906,7 +906,7 @@ def edit_entry_to_plan(
         held_path.unlink()
         _commit_and_push(
             private_notes,
-            "chore: convert feedback item to plan",
+            "chore: convert awi item to plan",
             [str(held_path.relative_to(private_notes)), str(inbox_path.relative_to(private_notes))],
         )
         return _add._read_saved_entry_details(  # pylint: disable=protected-access
@@ -1258,7 +1258,7 @@ def _convert_held_entries(
     oldest_path = min(snapshots, key=lambda item: item[0].name)[0]
     oldest_data, _oldest_body = parsed_entries[oldest_path]
     updated_data = {**oldest_data, **updates}
-    updated_data["source"] = "plan-and-add-feedback"
+    updated_data["source"] = "plan-and-add-awi"
     _store_plan_file(updated_data, stored_plan_file)
     updated_data["target_commit"] = target_commit
     updated_data.pop("queue_schedule", None)
@@ -1296,7 +1296,7 @@ def _convert_held_entries(
         try:
             _commit_and_push(
                 private_notes,
-                "chore: convert feedback items to plans",
+                "chore: convert awi items to plans",
                 commit_paths,
                 skip_push=skip_push,
             )
@@ -1473,7 +1473,7 @@ def convert_entries_to_plan(
             try:
                 _commit_and_push(
                     private_notes,
-                    "chore: convert feedback items to plans",
+                    "chore: convert awi items to plans",
                     relative_paths,
                     skip_push=skip_push,
                 )
@@ -1613,7 +1613,7 @@ def set_entry_dependencies(
         if updated_text != text:
             _atomic_write_text(path, updated_text)
             relative_path = str(path.relative_to(private_notes))
-            _commit_and_push(private_notes, "chore: update feedback dependencies", [relative_path])
+            _commit_and_push(private_notes, "chore: update awi dependencies", [relative_path])
         return _add._read_saved_entry_details(  # pylint: disable=protected-access
             path,
             expected_body=updated_text,
@@ -1776,7 +1776,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
-    （`agent-toolkit:process-feedbacks`のpicker起動契約「同一セッション中にTBDの回答を受領した場合」参照）。
+    （`agent-toolkit:process-wi`のpicker起動契約「同一セッション中にTBDの回答を受領した場合」参照）。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")

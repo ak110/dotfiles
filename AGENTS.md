@@ -27,7 +27,7 @@
   - 検証は変更ファイルに対応する近接検査を先に実行し、公開前に`make test`相当で全体を検査する。近接検査の成功だけを全体検査の代替にしない
   - worktreeで検査する前に、複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行しておく。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない。検査を`XDG_STATE_HOME`を差し替えた隔離環境で起動する場合は、同じ環境変数を与えて`mise trust`を実行する（信頼登録は状態ディレクトリ配下に保持され、既定の登録を参照しないため）。`MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - `agent-toolkit:process-feedbacks`の終端では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)の判定に従ってリリースPRを作成し、マージまで実施する
+  - `agent-toolkit:process-wi`の終端では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)の判定に従ってリリースPRを作成し、マージまで実施する
   - それ以外の経路では、リリースPRの作成を手動で行う。statusline（`rust/claude-statusline/`配下）を変更した場合はその版数更新も同じPRへ含める。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
 - 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
@@ -86,7 +86,7 @@
 適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
-`agent-toolkit:process-feedbacks`のセッションでは、当該セッションで処理する全フィードバックが確定した規範の変更を適用対象とする。
+`agent-toolkit:process-wi`のセッションでは、当該セッションで処理する全フィードバックが確定した規範の変更を適用対象とする。
 メインは全レーンの変更内容を把握するがサブエージェントは起動プロンプトと自ら読む文書からしか把握できないため、メインは他レーンで確定した変更のうち委譲先のふるまいへ影響するものを起動プロンプトへ含める。
 
 ## 固有差分

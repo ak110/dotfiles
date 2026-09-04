@@ -9,7 +9,7 @@
 （判定は`append`呼び出し時に行う）。
 
 ログパスは`platformdirs.user_state_dir("agent-toolkit", appauthor=False)`配下の
-`process-feedbacks.log`とする。排他ロックとサイズローテーションは`_file_lock.py`へ委譲する。
+`process-wi.log`とする。排他ロックとサイズローテーションは`_file_lock.py`へ委譲する。
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ def log_path() -> Path:
     """ログファイルのパスを返す。"""
     state_home = os.environ.get("XDG_STATE_HOME")
     if state_home:
-        return Path(state_home) / "agent-toolkit" / "process-feedbacks.log"
-    return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-feedbacks.log"
+        return Path(state_home) / "agent-toolkit" / "process-wi.log"
+    return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "process-wi.log"
 
 
 def _is_enabled() -> bool:

@@ -1277,7 +1277,7 @@ def test_convert_multiple_entries_uses_one_commit_in_input_order(
         skip_push=True,
     )
 
-    assert commit_calls == [(notes, "chore: convert feedback items to plans", ("inbox/second.md", "inbox/first.md"))]
+    assert commit_calls == [(notes, "chore: convert awi items to plans", ("inbox/second.md", "inbox/first.md"))]
     entries = result["entries"]
     assert isinstance(entries, list)
     assert len(entries) == 2
@@ -1361,7 +1361,7 @@ def test_convert_held_entries_integrates_all_materials_into_oldest_inbox_item(
     parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
     assert parsed is not None
     data, body = parsed
-    assert data["source"] == "plan-and-add-feedback"
+    assert data["source"] == "plan-and-add-awi"
     assert data["plan_file"] == f"$(atk config get private_notes)/{plan_relative}"
     assert result["plan_file"] == data["plan_file"]
     assert data["target_commit"] == "b" * 40
@@ -3180,7 +3180,7 @@ class TestEditWithChanges:
 
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: edit feedback item" in commit_cmd
+        assert "chore: edit wi item" in commit_cmd
 
     def test_processing_file_edited(
         self,
@@ -3984,7 +3984,7 @@ class TestEditNoArg:
 
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
-        assert "chore: edit feedback item" in commit_cmd
+        assert "chore: edit wi item" in commit_cmd
         add_cmd = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "add"]][0]
         assert str(latest.relative_to(notes)) in add_cmd
 
@@ -4139,7 +4139,7 @@ def test_edit_entry_to_plan_reads_table_materials_and_moves_atomically(
     parsed = frontmatter_parser.parse_frontmatter(output_path.read_text(encoding="utf-8"))
     assert parsed is not None
     data, body = parsed
-    assert data["source"] == "plan-and-add-feedback"
+    assert data["source"] == "plan-and-add-awi"
     assert data["plan_file"] == str(plan)
     assert data["target_commit"] == "a" * 40
     assert data["depends_on"] == ["external-a.md", "external-b.md"]

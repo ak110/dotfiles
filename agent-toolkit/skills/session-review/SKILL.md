@@ -78,9 +78,9 @@ uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <threa
 
 問題候補が1件以上なら`agent-toolkit:bugfix`を起動し、観測事象、2系統4段階の原因分析、原因分析の品質確認、原因起点の類似見直し、対策・横展開処置・再発防止策及び反映要否をメインが確定する。
 
-再発防止策の必須性、省略できる条件及び良い案を確定できない場合の終端は`agent-toolkit:bugfix`の再発防止策の必須性節に従う。`agent-toolkit:process-feedbacks`だけが起動理由で問題候補が無い場合は、対策なしで完了できる。
+再発防止策の必須性、省略できる条件及び良い案を確定できない場合の終端は`agent-toolkit:bugfix`の再発防止策の必須性節に従う。`agent-toolkit:process-wi`だけが起動理由で問題候補が無い場合は、対策なしで完了できる。
 
-採用した対策のフィードバック又はTBDは`agent-toolkit:feedback-standards`に従って起草・重複判定・投入する。本スキルは本文形式・CLI手順のいずれも定義しない。
+採用した対策のフィードバック又はTBDは`agent-toolkit:wi-standards`に従って起草・重複判定・投入する。本スキルは本文形式・CLI手順のいずれも定義しない。
 
 確定した内容は候補別の判定記録の表へ記録する。
 
@@ -124,7 +124,7 @@ uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <threa
 - `4案の評価`には維持、修正、置換及び撤去のそれぞれについて、採否と判断根拠を書く
 - `採用案`には採用した1案と、フィードバックへ登録した場合はそのファイル名を書く
 
-採用案が維持以外の場合は、`agent-toolkit:feedback-standards`に従って当該条文の改訂をフィードバックへ登録する。
+採用案が維持以外の場合は、`agent-toolkit:wi-standards`に従って当該条文の改訂をフィードバックへ登録する。
 `agent-toolkit:review-standards`の`review-standards/references/judgment-details.md`「規定の適用可否」が求める規定側の改訂の提案は、本節の登録により成立する。
 該当する候補が0件の場合は表を置かず、確認した範囲と0件と判断した理由を振り返りの成果へ含める。
 
@@ -132,6 +132,6 @@ uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <threa
 
 サブエージェント起動、親transcript解決又は証拠抽出が失敗した場合は、同じ実効設定で1回だけ自動再試行する。再失敗時は、推奨案「TBDへ記録して元作業を継続」と代替案「その場で再試行」を`AskUserQuestion`で確認する。
 
-回答期限超過時は`agent-toolkit:feedback-standards`に従い、セッションID、失敗事象、解除条件及び「当該セッションをresumeしてsession-reviewを再実行する」再開工程をTBDへ記録する。transcriptパスは保存しない。メインによる全量分析又は別モデルへのフォールバックは行わない。
+回答期限超過時は`agent-toolkit:wi-standards`に従い、セッションID、失敗事象、解除条件及び「当該セッションをresumeしてsession-reviewを再実行する」再開工程をTBDへ記録する。transcriptパスは保存しない。メインによる全量分析又は別モデルへのフォールバックは行わない。
 
-手動起動では分析未完了を報告できる。`agent-toolkit:process-feedbacks`から起動した場合は、分析未完了とTBDを`agent-toolkit:completion-report`へ返し、元作業の完了を妨げない。
+手動起動では分析未完了を報告できる。`agent-toolkit:process-wi`から起動した場合は、分析未完了とTBDを`agent-toolkit:completion-report`へ返し、元作業の完了を妨げない。

@@ -1,15 +1,15 @@
 ---
-name: plan-and-add-feedback
+name: plan-and-add-awi
 description: >
   計画作成からレビューまでを実施したうえで、実装の代わりにフィードバック投入で終える運用を実行するときに起動する。
-  `/agent-toolkit:plan-and-add-feedback`又は「計画してフィードバック投入で終えて」等の指示で起動する。
+  `/agent-toolkit:plan-and-add-awi`又は「計画してフィードバック投入で終えて」等の指示で起動する。
 ---
 
 # 計画作成とフィードバック投入による終了
 
 本スキルは、レビュー済み計画を後続処理へ引き継ぐ手順を提供する。本スキルはplan mode外で実行する。計画ファイルの作成・改訂と
 フィードバック投入以外の変更を対象リポジトリへ加えない。
-フィードバックの共通概念、本文、由来及び投入は`agent-toolkit:feedback-standards`を正本とする。本スキルが投入する項目の`source`値`plan-and-add-feedback`は投入したスキルの名前であり、由来の判定において人間由来を意味しない。ユーザー起動経路では条件付き重複判定を実行しない。
+フィードバックの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`を正本とする。本スキルが投入する項目の`source`値`plan-and-add-awi`は投入したスキルの名前であり、由来の判定において人間由来を意味しない。ユーザー起動経路では条件付き重複判定を実行しない。
 
 本スキルを起動したセッションの追加指示は、同一主題の計画本文又は計画型フィードバックへ反映する。
 対象リポジトリは実装しない。
@@ -27,41 +27,41 @@ description: >
 
 ## ファイル名モード
 
-通常型フィードバックのファイル名を1件以上明示した場合は、同一対象リポジトリの全対象を計画調査より前に`hold`へ一括移動する。同じ`hold`集合は再開できるが、`atk mq process-loop`の着手対象にはしない。全入力をファイル名昇順で1組の計画へ統合し、自然言語要件を受領した場合は新しい計画型フィードバックを追加する。
+通常型AWIのファイル名を1件以上明示した場合は、同一対象リポジトリの全対象を計画調査より前に`hold`へ一括移動する。同じ`hold`集合は再開できるが、`atk wi process-loop`の着手対象にはしない。全入力をファイル名昇順で1組の計画へ統合し、自然言語要件を受領した場合は新しい計画型AWIを追加する。
 
-1. 全入力をファイル名昇順に並べ、同一`target_repo`のinbox通常型feedbackで`plan_file`を持たないことを一括検証する。TBD、既存計画型、別対象リポジトリ、欠落又は混在状態があれば、追加調査と状態を変更せず入力エラーとして返す。
-2. 検証に成功した場合だけ、`atk mq hold <filename>... --target-repo=<repo>`を1回実行する。`hold`へ移す前後の対象集合、保存本文及び単一遷移commitを照合する。
+1. 全入力をファイル名昇順に並べ、同一`target_repo`のinbox通常型feedbackで`plan_file`を持たないことを一括検証する。UWI、既存計画型、別対象リポジトリ、欠落又は混在状態があれば、追加調査と状態を変更せず入力エラーとして返す。
+2. 検証に成功した場合だけ、`atk wi hold <filename>... --target-repo=<repo>`を1回実行する。`hold`へ移す前後の対象集合、保存本文及び単一遷移commitを照合する。
 3. 計画作成、レビュー及び確認待ちの再開では、入力として確定した対象worktreeの絶対パスを保持する。計画時の旧worktreeパスが本文に残っていても、実行時に渡された対象worktreeへ解決し、対象外のworktreeを操作しない。
 4. 計画レビューまで完了した後、`## 計画バンドルの保存`を実施し、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
    ```sh
-   atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
+   atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-feedback-body> --depends-on=<filename>... --target-repo=<repo>
    ```
 
    新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。
-   計画型本文、`source: plan-and-add-feedback`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
+   計画型本文、`source: plan-and-add-awi`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
    最古の項目だけを計画型`inbox`へ移し、残る統合元を同じcommitで除去する。
 5. 変換結果を再取得し、統合先の`source`、本文、`plan_file`、`target_commit`、依存及び`inbox`配置、統合元の不在、変換commit並びにremote設定時のupstream包含を照合する。単一入力でも標準出力から変換commitとpush結果を取得する。単一入力と複数入力は同じ経路で処理し、後続の`rm`を呼ばない。
-6. 変換開始前に中断した場合は、全対象を`atk mq unhold <filename>... --target-repo=<repo>`で一括して戻す。
+6. 変換開始前に中断した場合は、全対象を`atk wi unhold <filename>... --target-repo=<repo>`で一括して戻す。
    入力検証、書込み又はcommitに失敗した場合は全入力が元の`hold`内容へ復元されていることを確認する。
-   pushだけが失敗した場合は変換済みのcleanなローカルcommitと保存結果を保持し、`atk mq commit`で滞留commitをpushしてから保存結果とupstream包含を再検証する。
+   pushだけが失敗した場合は変換済みのcleanなローカルcommitと保存結果を保持し、`atk wi commit`で滞留commitをpushしてから保存結果とupstream包含を再検証する。
    変換操作を繰り返して新しいcommitを作成しない。
 
 ## 自然言語要件モード
 
 1. 作業途中で本スキルが起動された場合は、現時点までの調査結果を計画へ引き継ぎ、実装せずフィードバック投入でセッションを完了する意図として扱う。既存の未コミット差分を変更せず、確認済みの事実だけを計画へ再利用する。
-2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/feedback-standards/references/cross-repository-submission.md`も全文読む。
+2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/cross-repository-submission.md`も全文読む。
 3. 計画に使うworktreeの絶対パスとbase commitを保持する。
 4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
    起草完了後、`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って計画レビュー担当を起動する。
    渡す入力は、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と、計画メタ情報の関連フィードバックの出所・引用範囲とする。
    起動後は計画ファイルの書込所有権が、計画レビュー担当の指摘を反映する計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`計画レビュー完了`を受領したら次へ進む。
-5. 完成後、`## 計画バンドルの保存`を実施する。続けて実行主体が`agent-toolkit:feedback-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-feedback`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
+5. 完成後、`## 計画バンドルの保存`を実施する。続けて実行主体が`agent-toolkit:wi-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-awi`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のフィードバックを追加する。
 
-計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:feedback-standards`をSkill機能で起動し、source `plan-and-add-feedback`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
+計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:wi-standards`をSkill機能で起動し、source `plan-and-add-awi`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
-本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:feedback-standards`へ渡した後は問い直さない。
+本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:wi-standards`へ渡した後は問い直さない。
 
 ## 計画バンドルの保存
 
@@ -75,4 +75,4 @@ description: >
 
 ## 完了報告の形式
 
-手順6の完了報告は`agent-toolkit:completion-report`が定める形式を正本とし、`## 成果`へ`計画`と`吸収元`の2項目を加える。種別は`計画型`とする。投入したフィードバックについて`## 成果`へ書く項目は`../add-feedback/SKILL.md`「セッション境界」節の最終段が定めるものとし、本文全文は転記しない。
+手順6の完了報告は`agent-toolkit:completion-report`が定める形式を正本とし、`## 成果`へ`計画`と`吸収元`の2項目を加える。種別は`計画型`とする。投入したフィードバックについて`## 成果`へ書く項目は`../add-awi/SKILL.md`「セッション境界」節の最終段が定めるものとし、本文全文は転記しない。

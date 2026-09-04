@@ -488,7 +488,7 @@ class TestProcessLoopPromptAndEnv:
         assert len(claude_calls) == 1
         prompt = claude_calls[0]["cmd"][-1]
         assert prompt.startswith("/goal ")
-        assert "agent-toolkit:process-feedbacks" in prompt
+        assert "agent-toolkit:process-wi" in prompt
         # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
         assert claude_calls[0]["cwd"] == myrepo
         command = claude_calls[0]["cmd"]
@@ -655,7 +655,7 @@ class TestProcessLoopPromptAndEnv:
             "github.com/example/repo",
         )
         assert prompt == (
-            "/goal `agent-toolkit:process-feedbacks`を起動し、"
+            "/goal `agent-toolkit:process-wi`を起動し、"
             f"`{pathlib.Path('/repo')}`で対象リポジトリ`github.com/example/repo`の"
             "フィードバック処理を完遂したうえで、"
             "`agent-toolkit:exit-session`でセッションを終了してください。"
@@ -677,12 +677,12 @@ class TestProcessLoopPromptAndEnv:
         assert all(detail not in prompt for detail in forbidden_details)
 
     def test_prompt_references_process_feedbacks(self) -> None:
-        """プロンプトが後続工程の集約先としてprocess-feedbacksスキルを参照すること。"""
+        """プロンプトが後続工程の集約先としてprocess-wiスキルを参照すること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),
             "github.com/example/repo",
         )
-        assert "agent-toolkit:process-feedbacks" in prompt
+        assert "agent-toolkit:process-wi" in prompt
 
     def test_prompt_includes_target_repo(self) -> None:
         """プロンプトが`--target-repo`限定指示と正規化リモートURLを本文へ含める。

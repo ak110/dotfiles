@@ -181,17 +181,17 @@ HELP: dict[str, dict[str, str]] = {
     "atk managed-temp create": {
         "summary": "管理対象一時ディレクトリを作成する",
         "description": "目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: `atk wi show`の出力の保存など、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は必須とし、受理条件は当該オプションの説明に示す。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 使い終えたら`atk managed-temp cleanup --path <絶対パス>`を実行する。最終更新から7日を超えた領域は`atk`の実行時に自動で削除する。",
-        "epilog": "実行例:\n\n  atk managed-temp create --prefix=mq-show",
+        "epilog": "実行例:\n\n  atk managed-temp create --prefix=wi-show",
     },
     "atk managed-temp cleanup": {
         "summary": "管理対象一時ディレクトリを後始末する",
         "description": "目的: 指定した管理対象一時ディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。成功した場合は何も出力しない。\n前提: `--path`は作成時に返された絶対パスで指定する。実体と管理情報の双方が作成時の内容と一致することを検証する。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。",
-        "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/tmp/mq-show-abcd1234",
+        "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/tmp/wi-show-abcd1234",
     },
     "atk managed-temp list": {
         "summary": "管理対象一時ディレクトリを列挙する",
         "description": "目的: 検証を通過した管理対象一時領域を作成時刻の順に1件1行のJSONで列挙し、回収の候補を警告として報告する。\n利用場面: 残存している領域を把握するとき。登録と実体が一致しない領域の回収手順を確認するとき。\n対象と出力: 状態ディレクトリの登録と各領域を読み取り、標準出力へJSONを書く。実体の消滅を確定できた登録だけを削除し、確定できない登録は保持して標準エラーへ報告する。該当が0件のときは終了コード1を返す。\n前提: `--prefix`を指定すると、当該prefixの領域だけを対象にする。\n復元・後始末: 報告された領域は`atk managed-temp cleanup --path <絶対パス>`で後始末する。実体へ到達できない登録は、同じ絶対パスへ到達できる実行文脈で本コマンドを再実行すると回収する。",
-        "epilog": "実行例:\n\n  atk managed-temp list --prefix=mq-show",
+        "epilog": "実行例:\n\n  atk managed-temp list --prefix=wi-show",
     },
     "atk worktree-stash": {
         "summary": "worktree固有refへ変更を退避する",

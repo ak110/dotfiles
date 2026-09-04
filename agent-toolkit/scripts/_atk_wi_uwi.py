@@ -151,7 +151,7 @@ def warn_question_quality(filename: str, message: str, question_type: str | None
     if reason is not None:
         print(
             f"警告: {filename}の質問本文が単独で判断可能な情報を欠く可能性があります（{reason}）。"
-            "agent-toolkit:add-feedbackが定める自己完結要件を満たす形に見直してください。",
+            "agent-toolkit:add-awiが定める自己完結要件を満たす形に見直してください。",
             file=sys.stderr,
         )
 
@@ -260,7 +260,7 @@ def answer_tbd(
         if text == content:
             return False
         path.write_text(content, encoding="utf-8")
-        _commit_and_push(private_notes, "chore: answer tbd item", [str(path.relative_to(private_notes))])
+        _commit_and_push(private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))])
     return True
 
 

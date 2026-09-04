@@ -224,15 +224,15 @@ dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk mq pr
 | --- | --- |
 | `atk mq add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
 | `atk mq add --batch` | 別環境の`atk mq show --all`の出力を複数件まとめて移行・復元したい |
-| `/agent-toolkit:add-feedback` | 依頼内容を対話で確定してから登録したい |
-| `/agent-toolkit:plan-and-add-feedback` | 計画の作成とレビューまで先に済ませ、実装だけを自律実行へ渡したい |
+| `/agent-toolkit:add-awi` | 依頼内容を対話で確定してから登録したい |
+| `/agent-toolkit:plan-and-add-awi` | 計画の作成とレビューまで先に済ませ、実装だけを自律実行へ渡したい |
 
 ### 通常型ファイル名を指定した計画作成
 
 通常型フィードバックのファイル名を1件以上指定するときは、次の形式で計画作成を依頼する。
 
 ```text
-/agent-toolkit:plan-and-add-feedback <通常型フィードバックファイル名>...
+/agent-toolkit:plan-and-add-awi <通常型フィードバックファイル名>...
 ```
 
 指定した項目は、計画調査の前に同一対象リポジトリの`hold`状態へ一括移動する。
@@ -383,7 +383,7 @@ atk plans checkout yyyy/MM/dd-{名称}-{小文字16進数4桁}.md
 `atk plans checkout`は同じstemのメイン側、detail側、付属ファイル及びレビュー表を作業root直下へ複製し、取得時点の内容を保存の照合用に記録する。
 取得した計画は`atk plans commit`で取得元と同じ保存先へ戻す。
 取得の後に保存元が変わった場合は、保存先と作業側のいずれも変更せずに失敗する。
-`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。直下の正規作業バンドルと既存の日付階層の正規作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-feedbacks`は処理の開始時に同じ条件で実行する。
+`~/.claude/plans/`直下に残る旧形式計画を保存rootへ移す操作は次のコマンドから実行する。直下の正規作業バンドルと既存の日付階層の正規作業バンドルは対象外である。当該コマンドは移行対象の有無を判定する前にprivate-notesの作業ツリーがcleanであることを検査してremoteと同期するため、他にセッションが動いていない状態で実行する。`agent-toolkit:process-wi`は処理の開始時に同じ条件で実行する。
 
 ```bash
 atk plans migrate
@@ -444,13 +444,13 @@ Claude Codeで有効化する。
   - 実装単位は1計画1commitを既定とし、成果、commit、対象ファイル集合及び近接検証が独立し分割の利益がある場合だけ分割する。判断から一意に導出できる詳細手順は安全性・データ保全・公開契約に必要な場合だけ常設する
 - `agent-toolkit:review-standards`: コードレビュー・ドキュメントレビュー実施時の判断基準（レビュー担当側心得）
 - `agent-toolkit:reviewee-standards`: レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見について、修正要否の立証、安全な修正、自己点検と公開可能性を検証する判断基準
-- `agent-toolkit:feedback-standards`: フィードバックとTBDの本文、由来、状態、承認及び投入の共通規範
-- `agent-toolkit:add-feedback`: 利用者向け要件を対話で確定し、通常型フィードバック又はTBDを手動投入する
-- `agent-toolkit:process-feedbacks`: ①選定とレーン分け、②並列レーン実行、③全レーン後のpush・CI・終了の3段階でフィードバックを処理する。
+- `agent-toolkit:wi-standards`: フィードバックとTBDの本文、由来、状態、承認及び投入の共通規範
+- `agent-toolkit:add-awi`: 利用者向け要件を対話で確定し、通常型フィードバック又はTBDを手動投入する
+- `agent-toolkit:process-wi`: ①選定とレーン分け、②並列レーン実行、③全レーン後のpush・CI・終了の3段階でフィードバックを処理する。
   計画型は既存計画を、通常型は1レーン1計画を使い、全ての実装要求に計画・計画レビュー・実装・実装レビューを要求する。
   実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
   各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
-- `agent-toolkit:plan-and-add-feedback`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
+- `agent-toolkit:plan-and-add-awi`: 計画作成からレビューまでを実施し、実装の代わりにフィードバック投入で終える運用
 - `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス

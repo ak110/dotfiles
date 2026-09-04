@@ -44,7 +44,7 @@
 - `dotfiles_reference_docs_read`: dotfilesの個人PostToolUseフックが参照文書へのReadを解決済み絶対パスの一覧として記録し、
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない
-- `process_feedbacks_skill_invoked`: process-feedbacksスキルの起動を記録する。
+- `process_wi_skill_invoked`: process-wiスキルの起動を記録する。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に偽へ戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
   `agent-toolkit/scripts/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
@@ -64,7 +64,7 @@
 
 ## TBD系
 
-- `tbd_answered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの回答済みTBDファイル名を
+- `uwi_answered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの回答済みTBDファイル名を
   PostToolUseが記録する。値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とし、
   hook payloadの`agent_id`を持たないメイン会話は`main`をキーとする。
   cwdが空・保存先未解決・後述の指紋が前回と同一・リポジトリID未解決・走査不完全のいずれかの場合は
@@ -73,7 +73,7 @@
   メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
   エージェント識別子で分けないと一方の呼び出しが回答差分を消費し他方へ通知が届かない
 
-- `tbd_fingerprint_by_repo`: active状態ディレクトリ（`inbox`・`processing`）の内容変化指紋を
+- `uwi_fingerprint_by_repo`: active状態ディレクトリ（`inbox`・`processing`）の内容変化指紋を
   PostToolUseが記録する。値は`{エージェント識別子: {作業ディレクトリ: 指紋文字列}}`の2段辞書とする。
   前回観測時の指紋と同一の場合は走査と回答差分の検出をいずれも省略する用途に使う。
   回答済みファイル名一覧と同じ更新で記録し、セッション終了まで保持する

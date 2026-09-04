@@ -252,7 +252,7 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 
 ## 日次リリースの自動実施
 
-dotfilesリポジトリを対象とする`agent-toolkit:process-feedbacks`は、③のpushとCI成功を確認した後に、`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
+dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、③のpushとCI成功を確認した後に、`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
 判定と実施はメインが担う。
 
 次の条件がともに成立する場合に実施する。

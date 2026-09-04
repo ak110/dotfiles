@@ -5415,8 +5415,8 @@ class TestWorkflowSkillInvocation:
         [
             "agent-toolkit:plan-mode",
             "plan-mode",
-            "agent-toolkit:process-feedbacks",
-            "process-feedbacks",
+            "agent-toolkit:process-wi",
+            "process-wi",
             "agent-toolkit:session-review",
             "session-review",
             "agent-toolkit:bugfix",

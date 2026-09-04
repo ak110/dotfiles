@@ -40,7 +40,7 @@ class TestConfigShow:
         assert f"data_dir: {tmp_path / 'data'}" in out
         assert "private_notes:" in out
         for key in (
-            "pick_feedbacks_model",
+            "pick_wi_model",
             "plan_model",
             "plan_review_model",
             "execute_fast_model",

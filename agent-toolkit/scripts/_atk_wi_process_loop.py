@@ -451,12 +451,12 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
     """対象リポジトリのフィードバック処理の完遂と終了を依頼する短い目的文を構築する。
 
     目的文はスキルの完遂と`agent-toolkit:exit-session`による終了だけを求める。処理範囲、実行基盤の障害対応、再開条件は
-    `agent-toolkit:process-feedbacks`とその参照先が定める。目的文へ重ねて書くと、
+    `agent-toolkit:process-wi`とその参照先が定める。目的文へ重ねて書くと、
     スキル側の規範と目的文の記述が二重管理になり、目的文の記述がユーザー指示として
     扱われてスキル側の規範より優先される。
     """
     return (
-        "/goal `agent-toolkit:process-feedbacks`を起動し、"
+        "/goal `agent-toolkit:process-wi`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
         "フィードバック処理を完遂したうえで、"
         "`agent-toolkit:exit-session`でセッションを終了してください。"
@@ -1001,9 +1001,9 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     private-notesの再同期を終えてからセッションを起動する。同期失敗時は子を起動せず待機へ戻る。
     件数は選択したオーケストレーターのセッション起動要否だけに使う。
     分類結果の保存、依存判定、セッション上限、実行順、着手可否判定、バッチ選択は
-    process-feedbacksが担う。
+    process-wiが担う。
     初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力はユーザーへ委ねる。
-    新規起動は対象リポジトリでprocess-feedbacksを完遂する短い`/goal`条件を登録する。
+    新規起動は対象リポジトリでprocess-wiを完遂する短い`/goal`条件を登録する。
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
     オーケストレーター・model・effortは`orchestrate_model`設定（既定`claude:opus[1m]/medium`）から

@@ -29,7 +29,7 @@ from ctypes import wintypes
 import _atk_help
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _PREFIX_RULES = (
     ("空にできない", lambda value: value != ""),
@@ -80,7 +80,7 @@ class _ManagedTempEntry(typing.TypedDict):
     path: str
     prefix: str | None
     created_at: str | None
-    feedbacks: list[str]
+    awis: list[str]
 
 
 class _WindowsApiError(ManagedTempError):
@@ -825,7 +825,7 @@ def _record(
     *,
     prefix: str,
     created_at: str,
-    feedbacks: tuple[str, ...],
+    awis: tuple[str, ...],
     identity: tuple[int, int] | None = None,
 ) -> dict[str, typing.Any]:
     record = _record_base(path, nonce, identity=identity)
@@ -834,7 +834,7 @@ def _record(
             "schema_version": _SCHEMA_VERSION,
             "prefix": prefix,
             "created_at": created_at,
-            "feedbacks": list(feedbacks),
+            "awis": list(awis),
         }
     )
     return record
@@ -851,15 +851,15 @@ def _is_utc_iso8601(value: object) -> bool:
     return parsed.tzinfo is not None and parsed.utcoffset() == datetime.timedelta(0)
 
 
-def _feedbacks_are_valid(value: object) -> bool:
+def _awis_are_valid(value: object) -> bool:
     """対応フィードバック名の記録形式が安全なファイル名のリストか返す。"""
     return isinstance(value, list) and all(
-        isinstance(feedback, str)
-        and bool(feedback)
-        and "/" not in feedback
-        and "\\" not in feedback
-        and all(unicodedata.category(character) != "Cc" for character in feedback)
-        for feedback in value
+        isinstance(awi, str)
+        and bool(awi)
+        and "/" not in awi
+        and "\\" not in awi
+        and all(unicodedata.category(character) != "Cc" for character in awi)
+        for awi in value
     )
 
 
@@ -896,15 +896,16 @@ def _records_match(
                 "created_at": typing.cast(str, created_at),
             }
         )
-    elif schema_version == 3:
+    elif schema_version in (3, 4):
         prefix = registry.get("prefix")
         created_at = registry.get("created_at")
-        feedbacks = registry.get("feedbacks")
+        # 版数3は改名前のキー名で保存された既存の登録を読み取るための互換分岐とする。
+        awis = registry.get("awis") if schema_version == 4 else registry.get("feedbacks")
         if (
             not isinstance(prefix, str)
             or not is_valid_prefix(prefix)
             or not _is_utc_iso8601(created_at)
-            or not _feedbacks_are_valid(feedbacks)
+            or not _awis_are_valid(awis)
         ):
             return False
         expected = _record(
@@ -912,9 +913,12 @@ def _records_match(
             typing.cast(str, nonce),
             prefix=prefix,
             created_at=typing.cast(str, created_at),
-            feedbacks=tuple(typing.cast(list[str], feedbacks)),
+            awis=tuple(typing.cast(list[str], awis)),
             identity=identity,
         )
+        expected["schema_version"] = schema_version
+        if schema_version == 3:
+            expected["feedbacks"] = expected.pop("awis")
     else:
         return False
     return (
@@ -1039,13 +1043,13 @@ def _remove_created_target(
 def create_managed_temp(
     prefix: str,
     root: pathlib.Path | str | None = None,
-    feedbacks: tuple[str, ...] = (),
+    awis: tuple[str, ...] = (),
 ) -> pathlib.Path:
     """管理対象一時ディレクトリを指定root直下へ作成し、絶対パスを返す。"""
     if not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
-    if not _feedbacks_are_valid(list(feedbacks)):
-        raise ManagedTempError("feedbackはパス区切り文字と制御文字を含まない空でないファイル名で指定する")
+    if not _awis_are_valid(list(awis)):
+        raise ManagedTempError("awiはパス区切り文字と制御文字を含まない空でないファイル名で指定する")
     explicit_root = root is not None
     if root is None:
         root_path = _temp_root()
@@ -1100,7 +1104,7 @@ def create_managed_temp(
             nonce,
             prefix=prefix,
             created_at=datetime.datetime.now(datetime.UTC).isoformat(),
-            feedbacks=feedbacks,
+            awis=awis,
             identity=created_identity,
         )
         _validate_root(root_path, explicit=explicit_root, expected=validated_root)
@@ -1567,15 +1571,15 @@ def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: 
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
             schema_version = record.get("schema_version")
-            item_prefix = record.get("prefix") if schema_version in (2, 3) else None
-            created_at = record.get("created_at") if schema_version in (2, 3) else None
-            feedbacks = record.get("feedbacks") if schema_version == 3 else []
+            item_prefix = record.get("prefix") if schema_version in (2, 3, 4) else None
+            created_at = record.get("created_at") if schema_version in (2, 3, 4) else None
+            awis = record.get("awis") if schema_version == 4 else record.get("feedbacks") if schema_version == 3 else []
             if (
                 not (item_prefix is None or isinstance(item_prefix, str))
                 or not (created_at is None or isinstance(created_at, str))
-                or not _feedbacks_are_valid(feedbacks)
+                or not _awis_are_valid(awis)
             ):
-                raise ManagedTempError("管理情報のprefix、created_at又はfeedbacksが不正")
+                raise ManagedTempError("管理情報のprefix、created_at又はawisが不正")
             if prefix is not None and item_prefix != prefix:
                 continue
             if not os.path.lexists(path):
@@ -1595,7 +1599,7 @@ def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: 
                     "path": str(path),
                     "prefix": item_prefix,
                     "created_at": created_at,
-                    "feedbacks": typing.cast(list[str], feedbacks),
+                    "awis": typing.cast(list[str], awis),
                 }
             )
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
@@ -1996,9 +2000,9 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
         help=("作成先の一時root。別のnamespaceからも同じ絶対パスで到達できる既存ディレクトリを指定する場合だけ使う。"),
     )
     create_parser.add_argument(
-        "--feedback",
+        "--awi",
         action="append",
-        help="この領域が対応するフィードバックのファイル名。複数回指定できる",
+        help="この領域が対応するAWIのファイル名。複数回指定できる",
     )
     cleanup_parser = _atk_help.add_command(subparsers, "cleanup", **_atk_help.HELP["atk managed-temp cleanup"])
     cleanup_parser.add_argument(
@@ -2024,7 +2028,7 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                 create_managed_temp(
                     args.prefix,
                     getattr(args, "root", None),
-                    tuple(getattr(args, "feedback", None) or ()),
+                    tuple(getattr(args, "awi", None) or ()),
                 )
             )
         elif getattr(args, command_dest) == "cleanup":

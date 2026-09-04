@@ -48,8 +48,8 @@ pickerはフィードバック本文、対象実装、計画の先行成果依�
 ### 保留状態を経由する計画型変換
 
 通常型フィードバックをファイル名で計画化する間は、対象を`hold`へ置く。
-`processing`はprocess-loopが計画作成から実装までを所有する状態であり、`agent-toolkit:process-feedbacks`は①の選定を検収した直後に選定済み項目を一括で移す。
-`agent-toolkit:process-feedbacks`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、自動処理から除外する`hold`を用いる。
+`processing`はprocess-loopが計画作成から実装までを所有する状態であり、`agent-toolkit:process-wi`は①の選定を検収した直後に選定済み項目を一括で移す。
+`agent-toolkit:process-wi`の外で計画化する項目を同じ状態へ置くと、処理回に属さない項目まで所有済みとして観測されるため、自動処理から除外する`hold`を用いる。
 `hold`は一覧・詳細で確認でき、`active`表示に含む一方、`processable`の自動処理集合、readiness、process-loop及びユーザーコメントの対象から除外する。
 計画型へ変換する公開操作は、`atk mq edit`の`--plan-file`互換経路と`atk mq convert-to-plan`に限定する。
 `atk mq convert-to-plan`による`hold`統合は正規の計画変換として受理する。
@@ -70,7 +70,7 @@ atk mq convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --mes
 既存データが参照する絶対パスは読み取り互換として受理する。
 CLIは全入力が同一対象リポジトリの`hold`通常型feedbackであり、計画の全feedback素材と一致することを最初の書込み前に検証する。
 activeなTBD素材は状態を変更せず、統合依存へ保持できる。
-検証後は最古のfeedbackへ計画型本文、`source: plan-and-add-feedback`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
+検証後は最古のfeedbackへ計画型本文、`source: plan-and-add-awi`、`plan_file`、計画ベースの`target_commit`及び全統合元の外部依存を設定して`inbox`へ移し、残る統合元を同じcommitで除去する。
 
 入力検証、管理リポジトリのclean検査、対象の書込み、commit及びpushを分離する。入力検証、書込み又はcommitの失敗では、全統合元の作業ツリーとindexを開始時の`hold`内容へ戻し、部分変換を残さない。push失敗では変換済みのcleanなローカルcommitと保存結果を保持し、滞留commitのpushから再開する。`--skip-push`ではcommitを保持したままpushだけを省略する。単一入力と複数入力は同じ経路で処理し、変換後の別`rm`及びそのための前方回復状態を設けない。
 
@@ -117,7 +117,7 @@ processing、TBD、終端項目及び人間由来の項目はAPIと画面の両�
 sourceの原値と予約節は由来と確認境界を示す情報であり、利用者によるpush、公開、破壊的操作又は外部サービス変更の認可を証明しない。
 エージェント環境から起動した`atk`は、予約見出しを含む新規投入と、当該節を変更する編集の双方を拒否する。エージェントはユーザーの発言を本文中へ出所を示して引用し、予約見出しを生成しない。`atk serve`のブラウザー操作は人間の入力として扱い、拒否の対象にしない。
 
-`agent-toolkit:add-feedback`・`agent-toolkit:plan-and-add-feedback`・`agent-toolkit:process-feedbacks`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+`agent-toolkit:add-awi`・`agent-toolkit:plan-and-add-awi`・`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
 主題の継続又はフィードバック投入と直接実装の境界が不明な場合は、変更又は投入の前に確認する。
 
 会話内の作業一覧だけで進捗を管理する案は、中断後に依存関係と利用者回答を再現できないため採用しない。
@@ -345,7 +345,7 @@ pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上
 実装工程へ進む各レーンは担当工程に必要な正本だけを受け取り、最新ベースへのrebase、競合解消後の単一実装レビュー、メインから直列に許可されたffマージ、`adopt`、所有資源の回収までを完了する。上流要求と対象リポジトリ側の要求が混在する項目は`adopt`の対象から除く。
 全ての要求を充足済みと確定したレーンは、メインが計画レビュー後の計画証拠の保存、`adopt`、非マージ用の所有資源回収までを完了する。
 
-①の手順は`agent-toolkit:process-feedbacks`の`references/start-selection.md`へ置き、本体には目的と不変条件だけを残す。
+①の手順は`agent-toolkit:process-wi`の`references/start-selection.md`へ置き、本体には目的と不変条件だけを残す。
 ②と③が同じ構造を持つため、段ごとの読込契機をそろえる。
 `atk plans migrate`の実行可否は、他セッションの稼働状態の列挙ではなく、`atk plans`側が計画バンドルの所有記録の実在で判定する。
 常に別セッションのprocess-loopが並行稼働する運用では、稼働中の主体が0件であるという条件が成立しないためである。
@@ -360,7 +360,7 @@ pickerは`processable`一覧を自ら取得し、`processing`項目が1件以上
 自身のコンテキストを消費する調査と、稼働中のレーンから独立した割り込み作業を委譲先へ移す。
 フィードバック本文とレビュー指摘管理表を読む契機は、メイン自身が判断を確定する場面へ限る。
 知識境界として、委譲の要否判定は`agent-toolkit/rules/01-agent.md`が持ち、
-`agent-toolkit:process-feedbacks`は当該判定を適用する場面だけを定める。
+`agent-toolkit:process-wi`は当該判定を適用する場面だけを定める。
 工程別モデル設定を持つ委譲では、当該工程を定める節が用いるキーを指定する。
 却下した代替案は、割り込み作業の委譲先を一律に単一のキーへ固定する案である。
 工程ごとに適した委譲先が異なり、用途を定めたキーの適用範囲を越えるため採用しない。
@@ -396,7 +396,7 @@ Claude Codeの委譲・背景処理の待機は、機械的な完了通知を待
 調査・採否と通常型の計画化は、Claude CodeとCodexのいずれでもメインが下流担当を直接起動する共通経路を使う。
 委譲先の起動失敗を別経路へ迂回せず、失敗として返す。
 通常処理及び明示的な連続処理は、起動時に固定した項目だけを処理し、後始末後にready項目を再取得しない。
-`agent-toolkit:process-feedbacks`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
+`agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
 `agent-toolkit:exit-session`は起動時の判定を再利用せず停止直前にprobeを新規実行し、表示済みPIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
 本体停止は、現在のClaude Code又はCodex本体として安全に一意識別した自身か、自身が起動して停止識別子を保持した対象だけに行う。
 共用プロセス、識別不能な環境及び前記のどちらにも該当しない対象では終了案内で完了する。
@@ -451,7 +451,7 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 
 通常型のバッチでは、メインがprocessable一覧のうちready項目だけを固定し、pickerを設定モデルへ直接委譲する。
 pickerは項目別の原文、履歴及び投入元識別子を照合し、実装不要、処理中に新たに必要と判定した保留、計画型及び通常レーンを確定する。
-ファイル単位の終端、通常レーンとキュー操作の責務境界は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
+ファイル単位の終端、通常レーンとキュー操作の責務境界は`agent-toolkit/share/pick-wi.parent.md`と`agent-toolkit/share/pick-wi.subagent.md`を正本とする。
 
 選定担当は要求の採否と、既存の変更による充足を確定しない。いずれも対象実装を読解して初めて確定するため、判定を計画担当へ置き、計画レビューで裏付けを検証する。誤って充足済みと確定した要求は`adopt`で終端して検知手段を失う一方、充足済みを未充足と判定した損失は計画側で実装単位を計上しない工程だけであり、損失が非対称であるためである。全ての要求を充足済みと確定した計画へ実装単位0件を許す案は、計画構造検査が実装単位表へ1行以上を要求するため採用せず、充足の確認だけを行う1行を置く形とする。選定担当の挙動を検体で検証する契約テストを設ける案は、当該契約がタスク文書の文面として成立し機械検査の入力を持たないため採用せず、文書間の整合を検索で照合する。
 計画担当は実施内容へ担当フィードバックを原則1ファイル1行で記録し、採否、採用範囲、実施しない範囲、理由を同じ行へ統合する。
@@ -460,7 +460,7 @@ frontmatterの`source`からエージェント由来を判定し、それ以外�
 回答を得られない場合はTBDを保存して対象項目をholdとし、通常レーンから除外する。
 同一セッションで回答を受領した場合は、回答保存、TBD終端、依存解除を確認して、同じpicker又はレーンを一般継続契約で再開する。
 別リポジトリ項目の登録、照合及び元項目の終端順序は、
-`agent-toolkit/skills/feedback-standards/references/cross-repository-submission.md`を正本とする。
+`agent-toolkit/skills/wi-standards/references/cross-repository-submission.md`を正本とする。
 
 この境界では項目単位の永続的な由来スキーマを新設せず、既存のsourceを判定に用いる。
 sourceによる由来境界の判定と利用者認可の確認を分け、source又はフィードバック本文から利用者認可を推定しない。
@@ -468,8 +468,8 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 同じ採否記録を別状態で保持する恒常コストが増えるため採用しない。採否確定の事実と利用者判断の経路を既存の受渡しへ統合することで、
 全項目の可視性と個別判断を保ちながら、計画の実施内容では採用系の行だけを実装対象として扱える。
 
-エージェントが新規項目を投入する場合は、`agent-toolkit:feedback-standards`に従い投入したスキル名からプラグイン名の修飾を除いた値を`atk mq add --source`へ渡す。
-`agent-toolkit:add-feedback`は、利用者発話を原文とする手動起動を含む全ての新規項目へ`source: add-feedback`を保存する。
+エージェントが新規項目を投入する場合は、`agent-toolkit:wi-standards`に従い投入したスキル名からプラグイン名の修飾を除いた値を`atk mq add --source`へ渡す。
+`agent-toolkit:add-awi`は、利用者発話を原文とする手動起動を含む全ての新規項目へ`source: add-awi`を保存する。
 保存後は`atk mq show`でsourceの保存値を照合する。
 別リポジトリ項目の移管では新規起票の固定値を上書きせず、移管元に保存済みのsourceがある場合は同じ値を保持する。
 
@@ -515,7 +515,7 @@ agent-toolkitプラグイン内のタスク文書と作成規範の絶対パス�
 各レコードは種別、出所及び引用範囲をこの順で保持し、逐語本文・回答全文をレコードの末尾へ続ける。
 キューにない素材の逐語本文・回答全文は、計画外の明示入力として調査、起草、初回レビュー、再レビューへ渡し、計画本文へ転記しない。
 初回起動後の追送利用者発言は、起草担当が逐語本文、入力種別、出所、引用範囲を保持して真正性を保証し、レビュー担当は本文との整合だけを検収する。
-ファイル単位の分類、reject・hold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
+ファイル単位の分類、reject・hold判定は`agent-toolkit/share/pick-wi.parent.md`と`agent-toolkit/share/pick-wi.subagent.md`を正本とする。
 調査担当は同じキューCLI出力のfrontmatterから投入元識別子を取得し、文字列を改変せずメインへ渡す。
 `source`欄がない場合は値なしとして渡す。
 計画担当は全ての投入元で、原文が方針改訂を要求するか、明示した検証手段が現行方針に適合するかを先に検査する。
@@ -599,7 +599,7 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 
 委譲先の識別子は実行系をまたいで一意であるため、記録の所在は識別子だけで管理し、呼び出しに現れる実行系の指定は探索先を選ぶヒントとして扱う。指定が無い呼び出しで得た識別子も両方の実行系を探索して所在を確定する。実行系と識別子の組を必須キーとする案は、実行系の指定を伴わない継続・停止の呼び出しで所在を確定できず、解決済みの記録を未確認範囲として重複報告するため採用しない。Codexの記録では委譲の呼び出しが、JavaScript本文を評価してツールを呼び出すexecツールの入力へ埋め込まれるため、識別子の抽出母集団を当該呼び出しに対応する実行結果へ限定し、無関係な実行結果に現れる同形の構造化データを委譲先として採用しない。
 
-メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。`agent-toolkit:process-feedbacks`を実行した場合、ユーザーがエージェントの誤り等を指摘した場合、又は同じ成果物・責任範囲のレビューが第3ラウンドへ到達した場合に`agent-toolkit:session-review`を起動し、その結果を固定報告へ含める。個別スキルは共通形式を持たない。
+メインの作業完了報告は`agent-toolkit:completion-report`だけが所有する。`agent-toolkit:process-wi`を実行した場合、ユーザーがエージェントの誤り等を指摘した場合、又は同じ成果物・責任範囲のレビューが第3ラウンドへ到達した場合に`agent-toolkit:session-review`を起動し、その結果を固定報告へ含める。個別スキルは共通形式を持たない。
 
 工程別モデル設定は特定のagent名ではなく、委譲する工程に適用する。
 委譲主体は各起動の直前に設定を解決し、実行系に対応する起動ツールまで同じ判断として確定する。
@@ -763,13 +763,13 @@ rebase競合を解消した場合は同じexecutorと実装担当へ戻し、解
 
 ## 計画レビュー修正ループの制御
 
-`agent-toolkit:plan-and-add-feedback`は、計画の起草から計画レビューの収束までを実施したうえで、
+`agent-toolkit:plan-and-add-awi`は、計画の起草から計画レビューの収束までを実施したうえで、
 実装ではなくフィードバック投入で終える運用を担う。
 計画担当（`agent-toolkit:plan-mode`）が調査と計画ファイル初版の起草までを担い、
 以降のレビュー修正ループ（計画構造検査、自己監査、レビュー担当の起動、指摘の配送、修正の検収、収束判定）はメインが直接制御する。
 Claude CodeとCodexのいずれも同じ主体が制御し、ホストによる分岐を持たない。
 メインはレビュー担当を`plan_review_model`の`agents_server`別セッションへ委譲し、`plan_model`と`plan_review_model`の実効設定を自ら解決する。
-pickerによる分類、rejectとhold判定は`agent-toolkit/share/pick-feedbacks.parent.md`と`agent-toolkit/share/pick-feedbacks.subagent.md`を正本とする。
+pickerによる分類、rejectとhold判定は`agent-toolkit/share/pick-wi.parent.md`と`agent-toolkit/share/pick-wi.subagent.md`を正本とする。
 フィードバックの調査と項目別採否は計画担当が所有し、メインは計画ファイル初稿の確定後にレビュー修正ループへ入る。
 
 レビューの役割固有契約を各SSOTへ残したまま、表のライフサイクル、`track`による帰属、モデル解決及び収束判定だけを
@@ -903,7 +903,7 @@ Stopが扱う判定は4つに限る。
 計画作業rootの保存確認は、当該セッションが作成又は編集した計画ファイル（メイン）が計画作業rootへ現存する場合だけ発火し、セッションごとに1回だけ確認を促す。
 判定材料はセッション状態が記録する計画ファイル（メイン）の絶対パスのリストと、その実在に限り、実装レビューの収束有無を判定しない。
 移動の要否は、通知を受領した実行主体が計画の進行状況から決める。
-常駐実行の印があるセッションでは発火させない。当該経路は`agent-toolkit:process-feedbacks`のレーン契約が`atk plans commit`による最終化を定めており、同じStopで`autonomous_exit.py`が停止を拒否し得るためである。
+常駐実行の印があるセッションでは発火させない。当該経路は`agent-toolkit:process-wi`のレーン契約が`atk plans commit`による最終化を定めており、同じStopで`autonomous_exit.py`が停止を拒否し得るためである。
 セッション終了イベントで検出する案は、通知を受領する実行主体のターンが既に終わっており、対処へ接続できないため採用しない。
 実装レビューの収束状態をフックが判定する案も、フックが会話の意味と工程の妥当性を判断しない責務境界を越えるため採用しない。
 対象の計画は、編集ツールの処理と計画ファイル作成処理の実行結果の双方から、計画ファイル（メイン）の絶対パスとして蓄積する。作成処理はBashから実行され編集ツールを経由しないため、作成だけを行った計画は編集の記録契機に現れないためである。
@@ -1163,7 +1163,7 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインが版数・生成物同期、push、CI及び終端工程を1回だけ実行する。
 
-`agent-toolkit:process-feedbacks`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りが即時対応のcommitを生む場合は、固定報告の前に同じ版数判定・生成同期・push・CI確認を当該commitへ1巡だけ適用する。振り返りを再実施しないことで、公開経路と振り返りの相互再帰を避ける。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
+`agent-toolkit:process-wi`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りが即時対応のcommitを生む場合は、固定報告の前に同じ版数判定・生成同期・push・CI確認を当該commitへ1巡だけ適用する。振り返りを再実施しないことで、公開経路と振り返りの相互再帰を避ける。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
 
 本文の明示記載を不可逆操作の認可とし、明記のない操作はTBDへ送る。
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、
@@ -1176,7 +1176,7 @@ CI未通過と帰属判定を終端記録へ残す。
 この順序により、実装は公開操作と分離して進められ、公開対象を統合後の1つの変更集合へ固定できる。
 レーンへ公開を委譲する案は、公開の重複と認可の分散を生むため採用しない。
 明記のない不可逆操作を技術判断で補う案も、利用者の認可範囲を拡張するため採用しない。
-統括の詳細な手順は`agent-toolkit/skills/process-feedbacks/references/run-lanes.md`を正本とする。
+統括の詳細な手順は`agent-toolkit/skills/process-wi/references/run-lanes.md`を正本とする。
 
 ## 計画ファイルの領域構成と重複排除
 
@@ -1268,7 +1268,7 @@ TBD終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 
 ## 規範の正本集約と参照方向
 
-複数の実行主体が使う契約は、契約本文を1つの正本へ置き、各主体の文書には読む時点と経路固有の差分だけを残す。一括取得は`agent-toolkit:add-feedback`、採否レコードは`agent-toolkit:process-feedbacks`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`を正本とする。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
+複数の実行主体が使う契約は、契約本文を1つの正本へ置き、各主体の文書には読む時点と経路固有の差分だけを残す。一括取得は`agent-toolkit:add-awi`、採否レコードは`agent-toolkit:process-wi`、履歴書換えは`agent-toolkit:commit`、レビュー観点は`agent-toolkit:review-standards`を正本とする。スキル本体には起動判断、工程順序及び停止条件を残し、実施時だけ必要な表記規則や欄仕様は`references/`へ分離する。
 
 判断から一意に導出できる実装順序・分解粒度・コマンド列は、安全性、データ保全又は公開契約を保護する場合を除き、各エージェント文書へ常設しない。
 

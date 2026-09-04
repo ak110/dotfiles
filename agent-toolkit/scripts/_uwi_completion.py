@@ -17,7 +17,7 @@ import _uwi_scan
 from _hook_agent_id import MAIN_AGENT_ID
 from _session_state import update_state
 
-STATE_KEY_ANSWERED = "tbd_answered_by_repo"
+STATE_KEY_ANSWERED = "uwi_answered_by_repo"
 """エージェント別・対象リポジトリID別の回答済みTBDファイル名を保持する状態キー。
 
 値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とする。
@@ -26,7 +26,7 @@ STATE_KEY_ANSWERED = "tbd_answered_by_repo"
 他方へ通知が届かない。
 """
 
-STATE_KEY_FINGERPRINT = "tbd_fingerprint_by_repo"
+STATE_KEY_FINGERPRINT = "uwi_fingerprint_by_repo"
 """エージェント別・作業ディレクトリ別のactive状態ディレクトリ指紋を保持するセッション状態キー。
 
 値は`{エージェント識別子: {作業ディレクトリ: 指紋文字列}}`の2段辞書とする。
@@ -144,5 +144,5 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
         " read each entry with `atk wi show <filename>` and follow the recorded answer,"
         " revising any provisional decision that the answer contradicts."
         " If the answers are unrelated to the current task, leave them for the next"
-        " `agent-toolkit:process-feedbacks` run and continue."
+        " `agent-toolkit:process-wi` run and continue."
     )

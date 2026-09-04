@@ -163,7 +163,7 @@ def _summary(text: str, kind: str) -> str:
 def _source_kind(source: typing.Any) -> str:
     """保存された投入元を一覧フィルターの分類へ変換する。
 
-    `agent-toolkit:feedback-standards`の由来判定に従い、`source`の欠落だけを人間由来とし、
+    `agent-toolkit:wi-standards`の由来判定に従い、`source`の欠落だけを人間由来とし、
     値を持つ項目をすべてエージェント由来とする。
     既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
     """

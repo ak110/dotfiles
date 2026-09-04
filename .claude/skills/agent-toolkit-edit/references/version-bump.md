@@ -69,8 +69,8 @@ bumpの完了条件は、実装開始時点の版との増加比較で判定し�
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
 複数レーンを並列実装するフィードバック処理では、各レーンはbump種別（`bump不要`を含む）と選定根拠、MAJORの場合は認可根拠を計画へ記録するに留める。
 メインが本規定の適用対象となるレーンの記録から最も上位の種別を確定し、全レーンのマージ後に1回だけ実行する。
-統合ブランチのpush前に上流進行を観測してrebaseした場合は、`agent-toolkit:process-feedbacks`の
-`agent-toolkit:process-feedbacks`のレーン自己マージによる逐次統合契約に従う。
+統合ブランチのpush前に上流進行を観測してrebaseした場合は、`agent-toolkit:process-wi`の
+`agent-toolkit:process-wi`のレーン自己マージによる逐次統合契約に従う。
 rebase後の公開済み統合先と正本のversionを「競合解決と統合後の確認」節の基準で再比較する。
 未公開の振る舞い変更が公開済みと同じversionのまま残る場合は、メインが再bumpとmanifest同期を行う。
 

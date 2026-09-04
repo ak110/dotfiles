@@ -1,16 +1,16 @@
 # pickerの起動と受領
 
-①の開始時に、process-feedbacksのメインが本書を全文読み、選定モデルの起動、出力の検収及びキューの占有へ適用する。
+①の開始時に、process-wiのメインが本書を全文読み、選定モデルの起動、出力の検収及びキューの占有へ適用する。
 本書は全体の処理対象を選定させる契約であり、通常レーンの計画起草や実装の手順を定義しない。
 
 ## 起動
 
 メインはキュー一覧とフィードバック本文を自ら取得せず、pickerへ選定させる。
-`atk config get pick_feedbacks_model`を起動直前に実行し、候補列の先頭候補を`agent-toolkit:delegation`の工程別モデル設定に従って直接起動する。
+`atk config get pick_wi_model`を起動直前に実行し、候補列の先頭候補を`agent-toolkit:delegation`の工程別モデル設定に従って直接起動する。
 
 pickerへ次の入力だけを渡す。
 
-- `${CLAUDE_PLUGIN_ROOT}/share/pick-feedbacks.subagent.md`の絶対パス
+- `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`の絶対パス
 - 対象リポジトリの絶対パス
 - プロジェクト規範の絶対パス
 - ユーザーが処理対象のフィードバックを明示した場合は、当該ファイル名の一覧
@@ -20,7 +20,7 @@ pickerへ次の入力だけを渡す。
 
 ## 出力の受領
 
-pickerは`${CLAUDE_PLUGIN_ROOT}/share/pick-feedbacks.subagent.md`が定める形式で返す。
+pickerは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める形式で返す。
 メインは出力のファイル名、選定時点の状態、区分、レーン、計画ファイル、再開位置、確認境界、固有順序、上流投入の区分、投入先及び要求を検収してから「処理開始」節へ進む。
 確認境界には、充足済み候補で実在を確認したコミット又は実装箇所の最小情報を含めることができる。
 上流投入の区分が`なし`以外の場合は投入先と要求が`なし`でないこと、区分が`なし`の場合は両方が`なし`であることを確認する。
@@ -43,7 +43,7 @@ routeとtaskが有効なら同じpicker threadを再開し、その他は一般�
 実行後は`atk mq list --target-repo=<repo> --skip-pull`で対象の全件が`processing`へ配置されたことを確認して①を完了する。
 警告、失敗又は部分状態を検出した場合は対象を再取得し、意図した状態なら再実行せず、部分状態又は原因不明なら計画ファイル、managed-temp、worktree及び実装担当の起動を含む②へ進まない。
 
-②へ進まない場合は、`atk mq list --target-repo=<repo> --skip-pull`で再取得した各項目の保存状態と、`atk mq start-processing`へ渡したファイル名の一覧を対照し、`processing`へ遷移していない項目を確定する。当該項目のファイル名、観測した保存状態及び当該セッションで再実行しない理由を`agent-toolkit:feedback-standards`に従って登録し、①を終える。当該セッションでは②と③へ進まない。
+②へ進まない場合は、`atk mq list --target-repo=<repo> --skip-pull`で再取得した各項目の保存状態と、`atk mq start-processing`へ渡したファイル名の一覧を対照し、`processing`へ遷移していない項目を確定する。当該項目のファイル名、観測した保存状態及び当該セッションで再実行しない理由を`agent-toolkit:wi-standards`に従って登録し、①を終える。当該セッションでは②と③へ進まない。
 
 起動時に固定した集合だけを、そのセッションの処理対象とする。
 ②の全レーンが後始末まで完了した後もready一覧を再取得せず、③へ進む。

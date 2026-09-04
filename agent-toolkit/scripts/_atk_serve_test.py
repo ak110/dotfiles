@@ -497,12 +497,12 @@ fetchHandler = async url => {
   }
   return {ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: []})};
 };
-refreshKnownTbds = async () => { throw new Error('外部更新失敗'); };
+refreshKnownUwis = async () => { throw new Error('外部更新失敗'); };
 await reloadFromExternalChange();
 await Promise.resolve();
 const reloadError = elements['global-error-message'].textContent;
 setGlobalError('');
-refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
+refreshKnownUwis = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
 process.stdout.write(JSON.stringify({reloadError, initializationError: elements['global-error-message'].textContent}));
@@ -567,7 +567,7 @@ fetchHandler = async url => {
 };
 await reloadOpenDetailFromExternalChange();
 failures.push(elements['global-error-message'].textContent);
-refreshKnownTbds = async () => { throw new Error('SSE更新失敗'); };
+refreshKnownUwis = async () => { throw new Error('SSE更新失敗'); };
 fetchHandler = async () => ({
   ok: true, status: 200, statusText: 'OK', json: async () => ({entries: [], warnings: [], repos: []})
 });
@@ -576,7 +576,7 @@ await Promise.resolve();
 failures.push(elements['global-error-message'].textContent);
 deliverOperationMessage('ダイアログ外失敗', true);
 failures.push(elements['operation-notice-message'].textContent);
-refreshKnownTbds = async () => { throw new Error('初期化失敗'); };
+refreshKnownUwis = async () => { throw new Error('初期化失敗'); };
 initializeApp();
 await initialization;
 failures.push(elements['global-error-message'].textContent);
@@ -1038,13 +1038,13 @@ syncNotificationButton();
 const buttonVisibleBefore = !elements['notification-button'].hidden;
 await enableNotifications();
 const buttonHiddenAfter = elements['notification-button'].hidden;
-await refreshKnownTbds({notify: false});
+await refreshKnownUwis({notify: false});
 const afterBaseline = notifications.length;
-await refreshKnownTbds({notify: true});
-await refreshKnownTbds({notify: true});
+await refreshKnownUwis({notify: true});
+await refreshKnownUwis({notify: true});
 process.stdout.write(JSON.stringify({
   buttonVisibleBefore, buttonHiddenAfter, afterBaseline, notifications,
-  known: Array.from(knownTbdFilenames).sort()
+  known: Array.from(knownUwiFilenames).sort()
 }));
 """
     )

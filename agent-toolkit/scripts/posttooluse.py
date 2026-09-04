@@ -19,7 +19,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
 6. agents_server MCP呼び出し後のsession状態記録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
-   `process_feedbacks_skill_invoked`のリセット (Skill)
+   `process_wi_skill_invoked`のリセット (Skill)
 8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
    （pretooluse.py側の遡及スキャン記録検査が計画ファイル本文を再読み込みする際に使用）
 9. 編集ファイルパス蓄積（Write / Edit / MultiEdit、`session_edited_files`リストへ追記）
@@ -159,11 +159,11 @@ def _git_commit_is_amend_or_fixup(args: list[str]) -> bool:
 # ユーザーが手動で短縮名を渡すケースに備えてフルネームと短縮名の両方を許容する。
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
-# process-feedbacksスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
-_PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-feedbacks", "process-feedbacks"})
+# process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
+_PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 
-# exit-sessionスキル呼び出し検出。process-feedbacksのフラグリセット経路に使う
-# （`agent-toolkit:process-feedbacks`の`references/finish-session.md`がexit-sessionで終端する）。
+# exit-sessionスキル呼び出し検出。process-wiのフラグリセット経路に使う
+# （`agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端する）。
 _EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
@@ -225,25 +225,25 @@ def _check_conditional_prohibition(file_path: pathlib.Path, content: str) -> lis
 
 
 def _set_process_feedbacks_invoked(state: dict) -> dict | None:
-    """process-feedbacksスキル起動フラグを常時Trueへ上書きする。
+    """process-wiスキル起動フラグを常時Trueへ上書きする。
 
-    新規process-feedbacksラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
+    新規process-wiラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
     リセット経路は`_reset_process_feedbacks_invoked`（exit-session起動検知）と併用する。
     """
-    state["process_feedbacks_skill_invoked"] = True
+    state["process_wi_skill_invoked"] = True
     return state
 
 
 def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
-    """`process_feedbacks_skill_invoked`を偽へ戻す。既に偽ならNoneを返す（冪等）。"""
-    if not state.get("process_feedbacks_skill_invoked", False):
+    """`process_wi_skill_invoked`を偽へ戻す。既に偽ならNoneを返す（冪等）。"""
+    if not state.get("process_wi_skill_invoked", False):
         return None
-    state["process_feedbacks_skill_invoked"] = False
+    state["process_wi_skill_invoked"] = False
     return state
 
 
 def _record_exit_session_invoked(state: dict) -> dict | None:
-    """exit-session呼び出しを記録し、`process_feedbacks_skill_invoked`をリセットする。"""
+    """exit-session呼び出しを記録し、`process_wi_skill_invoked`をリセットする。"""
     changed = False
     if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
         state[_AUTONOMOUS_EXIT_STATE_KEY] = True
@@ -664,7 +664,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         _record_test_executed(session_id)
         return 0
 
-    # Skill: plan-modeスキル呼び出し検出とprocess-feedbacks起動検出
+    # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
     if tool_name == "Skill":
         _record_skill_use(session_id, tool_input.get("skill"))
         return 0

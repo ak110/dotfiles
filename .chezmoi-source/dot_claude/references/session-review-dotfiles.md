@@ -7,7 +7,7 @@
 
 ## セッションの所要時間目標
 
-本節は対象リポジトリ`github.com/ak110/dotfiles`で`agent-toolkit:process-feedbacks`を起動したセッションだけへ適用する。
+本節は対象リポジトリ`github.com/ak110/dotfiles`で`agent-toolkit:process-wi`を起動したセッションだけへ適用する。
 他のリポジトリの作業と、本リポジトリでの他の起動経路による作業へは適用しない。
 
 - 1セッションの所要時間は、セッション開始から`agent-toolkit:session-review`の完了までとする

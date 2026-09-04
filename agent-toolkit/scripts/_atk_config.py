@@ -24,7 +24,7 @@ _ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
 _MUTABLE_KEY_DEFAULTS = {
     "explore_model": _DEFAULT_STAGE_MODEL,
     "explore_fast_model": "codex:gpt-5.6-terra/medium",
-    "pick_feedbacks_model": _DEFAULT_STAGE_MODEL,
+    "pick_wi_model": _DEFAULT_STAGE_MODEL,
     "plan_model": _DEFAULT_STAGE_MODEL,
     "plan_review_model": _DEFAULT_STAGE_MODEL,
     "execute_fast_model": _DEFAULT_STAGE_MODEL,

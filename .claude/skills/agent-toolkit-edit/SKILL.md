@@ -71,7 +71,7 @@ description: >
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
-- レビュー工程の契約を変更する場合は、`agent-toolkit:process-feedbacks`側と`agent-toolkit:plan-and-add-feedback`側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
+- レビュー工程の契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-and-add-awi`側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
 
 ### プラグイン内リソースの参照書式
 
@@ -92,7 +92,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
 詳細手順は`references/version-bump.md`に集約する。
-全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-feedbacks/references/finish-session.md`を全文読む。
+全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
 `.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に同ファイルを全文読む。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
 実装資料の変更説明へ記載すべきファイル群を確定する。

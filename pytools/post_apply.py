@@ -91,14 +91,14 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先を削除する。
         Path("skills/session-review"),
         Path("skills/session-review-dotfiles"),
-        # 現在のスキル名は add-feedback。旧名 feedback-add の配布先ディレクトリを削除する。
+        # 現在のスキル名は add-awi。旧名 feedback-add の配布先ディレクトリを削除する。
         Path("skills/feedback-add"),
-        # 現在のスキル名は process-feedbacks。旧名 process-feedback の配布先ディレクトリを削除する。
+        # 現在のスキル名は process-wi。旧名 process-feedback の配布先ディレクトリを削除する。
         Path("skills/process-feedback"),
-        # 現在は atk mq process-loop CLI が常駐ループを担うため、
+        # 現在は atk wi process-loop CLI が常駐ループを担うため、
         # 旧 process-feedbacks-loop スキルの配布先ディレクトリを削除する。
         Path("skills/process-feedbacks-loop"),
-        # add-feedback・process-feedbacks スキルは agent-toolkit/skills/ 配下へ移設済み。
+        # add-awi・process-wi スキルは agent-toolkit/skills/ 配下へ移設済み。
         # 旧配布先 (dotfiles-fb 系スキル) の配布先ディレクトリを削除する。
         Path("skills/add-feedback"),
         Path("skills/process-feedbacks"),
@@ -142,9 +142,9 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 振り返りはagent-toolkit側のsession-reviewへ統合したため旧配布先リンクを除去する。
         Path("skills/session-review"),
         Path("skills/session-review-dotfiles"),
-        # 現在のスキル名は add-feedback。旧名 feedback-add の配布先リンクを除去する。
+        # 現在のスキル名は add-awi。旧名 feedback-add の配布先リンクを除去する。
         Path("skills/feedback-add"),
-        # 現在のスキル名は process-feedbacks。旧名 process-feedback の配布先リンクを除去する。
+        # 現在のスキル名は process-wi。旧名 process-feedback の配布先リンクを除去する。
         Path("skills/process-feedback"),
     ],
     Path.home() / ".config": [

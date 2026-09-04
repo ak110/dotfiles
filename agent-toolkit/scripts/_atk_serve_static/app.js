@@ -44,8 +44,8 @@ let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
 let currentPage = 1;
 let pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
-let knownTbdBaselineReady = false;
-const knownTbdFilenames = new Set();
+let knownUwiBaselineReady = false;
+const knownUwiFilenames = new Set();
 const pendingOperations = new Set();
 const dialogOrigins = new Map();
 const dialogStack = [];
@@ -477,14 +477,14 @@ function syncNotificationButton() {
   button.hidden = typeof Notification === 'undefined' || Notification.permission !== 'default';
 }
 
-async function refreshKnownTbds({notify = false} = {}) {
+async function refreshKnownUwis({notify = false} = {}) {
   const payload = await api('/api/entries?type=uwi&status=all&answered=all');
-  const allTbds = Array.isArray(payload.entries) ? payload.entries : [];
-  const newUnanswered = knownTbdBaselineReady && notify ? allTbds.filter(entry =>
-    !knownTbdFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
+  const allUwis = Array.isArray(payload.entries) ? payload.entries : [];
+  const newUnanswered = knownUwiBaselineReady && notify ? allUwis.filter(entry =>
+    !knownUwiFilenames.has(entry.filename) && PROCESSABLE_STATES.has(entry.state) && entry.answered === false
   ) : [];
-  allTbds.forEach(entry => knownTbdFilenames.add(entry.filename));
-  knownTbdBaselineReady = true;
+  allUwis.forEach(entry => knownUwiFilenames.add(entry.filename));
+  knownUwiBaselineReady = true;
   if (newUnanswered.length && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     const filenames = newUnanswered.map(entry => entry.filename);
     new Notification('新規未回答TBD', {
@@ -1227,7 +1227,7 @@ async function handleFilterChange({reloadRepos = false} = {}) {
 }
 
 async function reloadFromExternalChange() {
-  void refreshKnownTbds({notify: true}).catch((error) => {
+  void refreshKnownUwis({notify: true}).catch((error) => {
     setGlobalError(error.message);
   });
   await loadTargetRepos();
@@ -1312,7 +1312,7 @@ function initializeApp() {
   syncFilterDependencies();
   syncNotificationButton();
   initialization = synchronizeAndLoad()
-    .then(() => refreshKnownTbds({notify: false}))
+    .then(() => refreshKnownUwis({notify: false}))
     .catch((error) => {
       setGlobalError(error.message);
     });
@@ -1340,8 +1340,8 @@ function unmount() {
   detailOriginKey = '';
   currentPage = 1;
   pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
-  knownTbdBaselineReady = false;
-  knownTbdFilenames.clear();
+  knownUwiBaselineReady = false;
+  knownUwiFilenames.clear();
   pendingOperations.clear();
   dialogOrigins.clear();
   dialogStack.length = 0;
@@ -1349,5 +1349,5 @@ function unmount() {
 }
 
 window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.feedback = {mount, unmount};
+window.__atkScreens.wi = {mount, unmount};
 })();

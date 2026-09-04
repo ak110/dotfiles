@@ -8,7 +8,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し�
 検出対象スキルと対応フラグ:
 
 - plan-mode → `plan_mode_skill_invoked`
-- process-feedbacks → `process_feedbacks_skill_invoked`
+- process-wi → `process_wi_skill_invoked`
 
 例外時はfail-openで exit 0 を返す。
 """
@@ -73,9 +73,9 @@ def _set_plan_mode_invoked(state: dict) -> dict | None:
 
 
 def _set_process_feedbacks_invoked(state: dict) -> dict | None:
-    if state.get("process_feedbacks_skill_invoked", False):
+    if state.get("process_wi_skill_invoked", False):
         return None
-    state["process_feedbacks_skill_invoked"] = True
+    state["process_wi_skill_invoked"] = True
     return state
 
 

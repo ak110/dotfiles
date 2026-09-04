@@ -32,7 +32,7 @@
 既存の`hold`項目は、候補、優先度、依存判断又は固有指示の入力へ含めない。
 処理回の進行中に追加されたフィードバックを、確定済みの出力へ混ぜない。
 
-`processing`状態のフィードバックは、過去の`agent-toolkit:process-feedbacks`が中断して残した項目である。
+`processing`状態のフィードバックは、過去の`agent-toolkit:process-wi`が中断して残した項目である。
 選定時点の保存状態を`state`へ返したうえで、次を読み取り専用で調査し、中断地点から再開する位置を`resume_point`へ返す。
 
 - frontmatterの`plan_file`が指す計画ファイルの進捗ログと未完了の工程
@@ -40,7 +40,7 @@
 - レーン用worktreeとbranchの残存、及びそこに残る未コミットの差分
 
 保存済みのメタデータと入力の実在を確認する。保存済みのメタデータから`depends_on`、回答済みTBD、`cooldown_until`、frontmatter、計画ファイルの有効性を確認する。
-`depends_on`の意味と用途は`agent-toolkit:feedback-standards`を正本とする。日付境界、別リポジトリ候補探索、cycle再計算をせず、`queue_schedule`も移行しない。
+`depends_on`の意味と用途は`agent-toolkit:wi-standards`を正本とする。日付境界、別リポジトリ候補探索、cycle再計算をせず、`queue_schedule`も移行しない。
 
 CLI操作は実行前に検証する。警告又は失敗があれば対象を再取得し、意図した状態なら再実行せず、部分状態又は原因不明なら`needs_escalation`へ返す。
 private notesによるGit復旧、専用の失敗分類及び別の選定キューを作成しない。
@@ -125,12 +125,12 @@ frontmatterの`plan_file`が実在する計画ファイルを指し、当該計�
 
 ## 由来と確認境界
 
-`agent-toolkit:feedback-standards`の二層の由来を要求単位で適用する。`source`の原値を改変せず、`source`の欠落だけを既定で人間由来、値を持つ項目を既定でエージェント由来とする。
+`agent-toolkit:wi-standards`の二層の由来を要求単位で適用する。`source`の原値を改変せず、`source`の欠落だけを既定で人間由来、値を持つ項目を既定でエージェント由来とする。
 末尾の厳密なH2 `## ユーザーコメント`、TBD回答、関連計画の実施内容及び出所付き対話回答に記録された明示由来を既定分類より優先する。由来を分離できない要求は人間由来とする。
 
 `needs_escalation`は、キュー入力の不整合と、本文だけから明白なユーザー選好又は外部待ちに限定する。公開契約を変更するという理由だけで、本文で合意済みの要求を確認待ちへ戻さない。公開契約の変更を要するかの判定と、その確認の要否は計画担当が確定する。キューを変更しない。
 
-回答が得られない確認事項と外部待ちだけを、`agent-toolkit:feedback-standards`に従って1件のTBDへ保存する。元項目へ依存を追加し、`inbox`かつ`blocked`で保持する。
+回答が得られない確認事項と外部待ちだけを、`agent-toolkit:wi-standards`に従って1件のTBDへ保存する。元項目へ依存を追加し、`inbox`かつ`blocked`で保持する。
 技術的失敗専用TBD、共通失敗集約及びplanner失敗TBDを作成しない。
 選定範囲又は終了条件についてユーザー指示と工程内の判断が競合し、`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」で解消できない場合は、検出した時点で同ルール「協調と自律」の確認経路へ送る。
 回答を得られない場合だけ、その時点で未回答TBDを登録して暫定判断で続行する。

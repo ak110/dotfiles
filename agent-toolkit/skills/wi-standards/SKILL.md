@@ -1,5 +1,5 @@
 ---
-name: feedback-standards
+name: wi-standards
 description: >
   フィードバック又はTBDの起草、読解、採否、状態判断及び投入時に起動し、
   人間向けキュー項目の共通契約を提供する。
@@ -17,7 +17,7 @@ description: >
 
 - `normal`はレビュー済み計画が関連していないフィードバック、`plan`はレビュー済み計画が関連するフィードバックである。
 - 変更量にかかわらず、全ての実装要求は実装前に計画と計画レビューを完了する。`normal`を計画なしで実装しない。
-- `agent-toolkit:plan-and-add-feedback`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を`hold(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
+- `agent-toolkit:plan-and-add-awi`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を`hold(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
 - 計画ファイルと同じstemの付属ファイルは、実装レビューが収束するまで計画作業root`~/.claude/plans`の直下で更新する。private-notes配下の計画ファイルを編集せず、保存先への移動は`atk plans commit`だけが行う。
 - `plan_file`へは、計画の作成時点で保存先を指す可搬値`$(atk config get private_notes)/plans/yyyy/MM/<メイン計画ファイル名>`を書く。計画ファイルの実体が計画作業rootと保存先のどちらにあっても同じ値が同じ計画を指すため、保存先への移動後も値を書き換えない。
 
@@ -52,13 +52,13 @@ description: >
 
 本文の記載量は、次に当該項目を処理する主体が、当該項目を誤って不採用と判定せず、意図と異なる実装へ進まないために必要十分な情報を残すことを基準に決める。基準を満たす限りにおいて、同じ事実の再掲、経緯の説明及び他項目との関係の説明のうち、採否と実装の判断を変えないものは書かない。文字数の上限は定めず、項目ごとに必要な情報量を判定する。
 
-TBDを起草する場合は[references/tbd-format.md](references/tbd-format.md)を全文読み、現行の質問・回答欄契約を適用する。
+TBDを起草する場合は[references/uwi-format.md](references/uwi-format.md)を全文読み、現行の質問・回答欄契約を適用する。
 
 ## 由来と承認
 
 `source`は本文全体の既定由来を示す。`source`の欠落だけを既定で人間由来とし、値を持つ項目は全て既定でエージェント由来とする。保存済みの値は改変せず、過去の項目も移行しない。
 
-エージェントが投入する項目は`source`を必須とする。スキルを起動して投入する場合は、当該スキル名からプラグイン名の修飾を除いた値（`add-feedback`、`plan-and-add-feedback`、`process-feedbacks`、`session-review`など）を用いる。対応するスキルを持たない起票は`agent`を用いる。ユーザーの指示に基づいてエージェントが投入する項目にも同じ規則で値を付け、人間由来として扱う範囲は次の明示由来で示す。
+エージェントが投入する項目は`source`を必須とする。スキルを起動して投入する場合は、当該スキル名からプラグイン名の修飾を除いた値（`add-awi`、`plan-and-add-awi`、`process-wi`、`session-review`など）を用いる。対応するスキルを持たない起票は`agent`を用いる。ユーザーの指示に基づいてエージェントが投入する項目にも同じ規則で値を付け、人間由来として扱う範囲は次の明示由来で示す。
 
 要求単位に記録された次の明示由来は、本文全体の既定由来より優先する。
 
@@ -86,7 +86,7 @@ TBDの`## 回答`節とフィードバックの`## ユーザーコメント`節�
 | 分類 | 値 | 意味 |
 | --- | --- | --- |
 | 保存状態 | `inbox` | 次の処理主体による取得待ち。依存未解決なら`blocked` |
-| 保存状態 | `processing` | `agent-toolkit:process-feedbacks`が取得して処理中 |
+| 保存状態 | `processing` | `agent-toolkit:process-wi`が取得して処理中 |
 | 保存状態 | `hold` | ユーザー又はエージェントが編集中であり、自動処理の対象外 |
 | 保存状態 | `adopted` | 採用内容が完了した終端 |
 | 保存状態 | `rejected` | 全要求の不採用を確定した終端 |
@@ -101,20 +101,20 @@ TBDの`## 回答`節とフィードバックの`## ユーザーコメント`節�
 | --- | --- | --- |
 | `inbox`→`hold` | `atk mq hold` | 項目を編集する主体が、編集の開始時に自動処理から除外する |
 | `hold`→`inbox` | `atk mq unhold` | 編集した主体が、編集の完了時に自動処理へ戻す |
-| `inbox`→`processing` | `atk mq start-processing` | `agent-toolkit:process-feedbacks`のメインが、選定担当の出力を検収した直後に遷移させる |
-| `processing`→`adopted` | `atk mq adopt` | `agent-toolkit:process-feedbacks`のレーンが、ベースブランチへのマージ完了時に遷移させる |
-| `processing`→`rejected` | `atk mq reject` | `agent-toolkit:process-feedbacks`のメインが、計画工程で全要求の不採用を確定した時に遷移させる |
+| `inbox`→`processing` | `atk mq start-processing` | `agent-toolkit:process-wi`のメインが、選定担当の出力を検収した直後に遷移させる |
+| `processing`→`adopted` | `atk mq adopt` | `agent-toolkit:process-wi`のレーンが、ベースブランチへのマージ完了時に遷移させる |
+| `processing`→`rejected` | `atk mq reject` | `agent-toolkit:process-wi`のメインが、計画工程で全要求の不採用を確定した時に遷移させる |
 | `rejected`→`inbox` | `atk mq return-to-inbox --state=rejected` | TBDの回答が採用を示した項目を再処理へ戻す |
 | `processing`→`inbox` | `atk mq return-to-inbox` | 処理中に未回答TBDへの依存が生じた項目を`inbox`かつ`blocked`へ戻す |
 
 `inbox`と`hold`の項目は`atk mq rm`で削除できる。本文の編集は保存状態によらず行える。
-`agent-toolkit:process-feedbacks`は`processable`の項目だけを処理の対象とし、`hold`の項目を候補、優先度、依存判断及び固有指示の入力から除外する。
+`agent-toolkit:process-wi`は`processable`の項目だけを処理の対象とし、`hold`の項目を候補、優先度、依存判断及び固有指示の入力から除外する。
 
 `depends_on`は、当該項目より先に終端すべきキュー項目のファイル名を保持する。用途は、未回答TBDによる外部待ちと、先に終端すべきフィードバックへの先行成果依存の2つとする。依存先は`target_repo`が異なるキュー項目でもよく、着手可否はリポジトリを横断して判定する。値は保存済みのメタデータを正本とし、本文の記述から依存を再構築しない。
 
 `depends_on`は型によらず登録でき、`atk mq set-dependencies <filename> --depends-on <filename>`が`inbox`と`processing`の項目の依存だけを更新する。計画型への変換を伴う`atk mq edit --plan-file`と`atk mq convert-to-plan`を依存の登録手段として使わない。本文へ依存を記述してメタデータの代わりにしない。本文の記述は`ready`と`blocked`の導出判定へ反映されない。
 
-着手不能の要因は、解除される契機で分類する。時間経過だけで解除される要因は`cooldown_until`で表し、レート制限のバックオフ、再試行間隔及び期日到来待ちがこれに当たる。実在する先行キュー項目の終端で解除される要因は、当該項目のファイル名を`depends_on`へ直接加えて表す。他リポジトリの成果待ちも、待つ対象がキュー項目として実在する場合はこの直接依存で表す。人間の回答がなければ解除できない要因は、解除条件と再開工程を本文へ持つTBDを`depends_on`へ加えて表す。TBDへ分類する前に、回答者へ提示する問いを1文で記述できることを確認する。問いを記述できない要因をTBDにしない。外部環境の制約と別環境での実施は要因の発生場所を示すに過ぎず、それだけではTBDの根拠にならない。対処方針の選択若しくは実施可否の判断をユーザーへ求める場合だけTBDとし、必要な認可を既に得ている実施は`agent-toolkit:process-feedbacks`の外部操作の経路で扱う。`cooldown_until`を設定する主体は、当該要因が時間経過で解消することを実測又は公式一次資料で確認してから設定する。確認できない要因を`cooldown_until`で表さない（厳守規定。時間経過で解消しない要因を`cooldown_until`で表すと、選定側が期日まで当該項目を除外し続け、解除の契機が発生しない）。
+着手不能の要因は、解除される契機で分類する。時間経過だけで解除される要因は`cooldown_until`で表し、レート制限のバックオフ、再試行間隔及び期日到来待ちがこれに当たる。実在する先行キュー項目の終端で解除される要因は、当該項目のファイル名を`depends_on`へ直接加えて表す。他リポジトリの成果待ちも、待つ対象がキュー項目として実在する場合はこの直接依存で表す。人間の回答がなければ解除できない要因は、解除条件と再開工程を本文へ持つTBDを`depends_on`へ加えて表す。TBDへ分類する前に、回答者へ提示する問いを1文で記述できることを確認する。問いを記述できない要因をTBDにしない。外部環境の制約と別環境での実施は要因の発生場所を示すに過ぎず、それだけではTBDの根拠にならない。対処方針の選択若しくは実施可否の判断をユーザーへ求める場合だけTBDとし、必要な認可を既に得ている実施は`agent-toolkit:process-wi`の外部操作の経路で扱う。`cooldown_until`を設定する主体は、当該要因が時間経過で解消することを実測又は公式一次資料で確認してから設定する。確認できない要因を`cooldown_until`で表さない（厳守規定。時間経過で解消しない要因を`cooldown_until`で表すと、選定側が期日まで当該項目を除外し続け、解除の契機が発生しない）。
 
 TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してTBDを`depends_on`へ加え、`inbox`かつ`blocked`にする。`inbox`へ戻した後に着手可否が`blocked`であることを確認する。回答を保存したTBDを先に終端し、依存解除を確認した後に元項目を次の処理対象へ戻す。
 
@@ -130,7 +130,7 @@ TBD待ちは物理的な`hold`へ移さず、元項目の既存依存を保持�
 
 エージェントが新しい通常フィードバックを生成する場合だけ、投入前に同じ対象リポジトリのactive項目を取得し、対象、期待結果、観測事象、根本原因及び必要な処置を照合する。既存項目が全てを覆う場合は新規投入せず既存ファイル名を再利用し、部分的に覆う場合は未被覆部分だけを投入する。表現の類似又は最終結果の一致だけを重複の根拠にしない。
 
-ユーザーが手動起動した`agent-toolkit:add-feedback`、`agent-toolkit:plan-and-add-feedback`、TBD及び移行・復元では、この重複判定を実行しない。
+ユーザーが手動起動した`agent-toolkit:add-awi`、`agent-toolkit:plan-and-add-awi`、TBD及び移行・復元では、この重複判定を実行しない。
 
 ## 投入と取得
 
