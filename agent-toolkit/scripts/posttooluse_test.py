@@ -363,8 +363,8 @@ class TestDelegationStateRemoval:
         assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
 
 
-class TestTbdCompletionNotice:
-    """TBD回答差分をPostToolUseの追加contextへ接続する。"""
+class TestUwiCompletionNotice:
+    """UWI回答差分をPostToolUseの追加contextへ接続する。"""
 
     def test_dispatch_appends_answered_filename_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """回答差分通知をLLM向けnoticeとして蓄積する。"""
@@ -375,7 +375,7 @@ class TestTbdCompletionNotice:
         )
         notices: list[str] = []
         payload = {
-            "session_id": "tbd-answer",
+            "session_id": "uwi-answer",
             "hook_event_name": "PostToolUse",
             "tool_name": "Read",
             "tool_input": {"file_path": "README.md"},
@@ -391,7 +391,7 @@ class TestTbdCompletionNotice:
         assert "newly answered: answered.md" in notices[0]
 
     @pytest.mark.parametrize("hook_event_name", ["PostToolUseFailure", "PermissionDenied"])
-    def test_failure_events_skip_tbd_notice(
+    def test_failure_events_skip_uwi_notice(
         self,
         monkeypatch: pytest.MonkeyPatch,
         hook_event_name: str,
@@ -400,11 +400,11 @@ class TestTbdCompletionNotice:
         monkeypatch.setattr(
             _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
             "build_notice",
-            lambda *_args: pytest.fail("失敗イベントでTBD通知が呼ばれた"),
+            lambda *_args: pytest.fail("失敗イベントでUWI通知が呼ばれた"),
         )
         notices: list[str] = []
         payload = {
-            "session_id": "tbd-failure",
+            "session_id": "uwi-failure",
             "hook_event_name": hook_event_name,
             "tool_name": "Read",
             "tool_input": {"file_path": "README.md"},
@@ -938,7 +938,7 @@ class TestPlanFilePostWriteNotice:
         assert "post-write checks" not in result.stdout
 
 
-class TestFeedbackSkillFlags:
+class TestAwiSkillFlags:
     """自動振り返りの起点となるスキル呼び出しの状態フラグ記録。"""
 
     @pytest.mark.parametrize(
@@ -954,7 +954,7 @@ class TestFeedbackSkillFlags:
         assert _read_state(tmp_path, sid).get(flag) is True
 
 
-class TestExitSessionResetsProcessFeedbacksFlag:
+class TestExitSessionResetsProcessAwisFlag:
     """exit-sessionスキル起動検知時の自動振り返り起点フラグリセット。
 
     `agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端するため、
@@ -1030,7 +1030,7 @@ class TestExitSessionResetsProcessFeedbacksFlag:
         assert path.stat().st_mtime_ns == mtime_before
 
 
-class TestProcessFeedbacksInvokedNonIdempotent:
+class TestProcessAwisInvokedNonIdempotent:
     """process-wiスキル再起動時のフラグ強制上書き。"""
 
     def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:

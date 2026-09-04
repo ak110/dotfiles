@@ -27,8 +27,8 @@ from _atk_wi_formatters import _parse_source, _parse_target_repo, _source_matche
 from _atk_wi_repo import _resolve_repo_id
 
 
-def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
-    """`show --all`コマンドの出力が通知対象の未回答TBDを全て含むか判定する。
+def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
+    """`show --all`コマンドの出力が通知対象の未回答UWIを全て含むか判定する。
 
     次の全条件を満たす場合に`True`を返す:
     - `args.filenames`が空かつ`args.all`が`True`（ファイル指定は全集合対象外）
@@ -75,13 +75,13 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     値で対象を限定する。`--status`・`--answered`は迂回する（個別ファイル指定は明示的照会のため
     状態・回答有無フィルタを迂回する既定挙動であり、既定の`--status=active`によって
     adopted・rejected状態のエントリが参照不能になる事態を避けるためである）。
-    `--all`指定時のフィードバック・`tbd`双方の走査対象は`--status`と連動する
+    `--all`指定時のAWI・`uwi`双方の走査対象は`--status`と連動する
     （既定`active`はinbox・processing・hold、`processable`はinbox・processing、
     `all`は5状態フォルダ全連結、個別状態指定は当該状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
-    `--answered`は`--all`分岐でtbd側の回答状況（yes・no）を限定する（既定: all）。
+    `--answered`は`--all`分岐でuwi側の回答状況（yes・no）を限定する（既定: all）。
     """
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")

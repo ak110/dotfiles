@@ -24,8 +24,8 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
-    _write_feedback_file,
-    _write_tbd_file,
+    _write_awi_file,
+    _write_uwi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -40,7 +40,7 @@ class TestGrepBasic:
     ) -> None:
         """単一エントリ内の複数行マッチを`<ファイル名>:<行番号>:<該当行>`形式で出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="line1\nline2\nline3")
+        _write_awi_file(notes, "fb-001.md", body="line1\nline2\nline3")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -60,7 +60,7 @@ class TestGrepBasic:
     ) -> None:
         """該当0件時にexit 1で終了し標準出力が空であること。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="line1")
+        _write_awi_file(notes, "fb-001.md", body="line1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -78,7 +78,7 @@ class TestGrepBasic:
     ) -> None:
         """直近の同期形跡がある通常検索ではremote同期を省略して再利用を案内する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="searchword")
+        _write_awi_file(notes, "fb-001.md", body="searchword")
         git_dir = notes / ".git"
         git_dir.mkdir()
         (git_dir / "FETCH_HEAD").touch()
@@ -102,7 +102,7 @@ class TestGrepBasic:
     ) -> None:
         """--pull指定時は直近の同期形跡があってもfetch・mergeを実行する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="searchword")
+        _write_awi_file(notes, "fb-001.md", body="searchword")
         git_dir = notes / ".git"
         git_dir.mkdir()
         (git_dir / "FETCH_HEAD").touch()
@@ -140,7 +140,7 @@ class TestGrepIgnoreCase:
     ) -> None:
         """--ignore-case指定時に大文字小文字を無視して一致すること。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="Uppercase")
+        _write_awi_file(notes, "fb-001.md", body="Uppercase")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -158,7 +158,7 @@ class TestGrepIgnoreCase:
     ) -> None:
         """--ignore-case未指定時は大文字小文字を区別すること。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="Uppercase")
+        _write_awi_file(notes, "fb-001.md", body="Uppercase")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -172,16 +172,16 @@ class TestGrepIgnoreCase:
 class TestGrepFilters:
     """grepサブコマンド: 各フィルターが`list`と同じ意味で作用すること。"""
 
-    def test_type_filter_limits_to_feedback(
+    def test_type_filter_limits_to_awi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=awi`でフィードバック種別のみを対象とする。"""
+        """`--type=awi`でAWI種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="searchword")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
+        _write_awi_file(notes, "fb-001.md", body="searchword")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -202,7 +202,7 @@ class TestGrepFilters:
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
-        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo), body="searchword")
+        _write_awi_file(notes, "legacy.md", target_repo=str(local_repo), body="searchword")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -214,16 +214,16 @@ class TestGrepFilters:
         assert exc_info.value.code == 0
         assert "legacy.md" in capsys.readouterr().out
 
-    def test_type_filter_limits_to_tbd(
+    def test_type_filter_limits_to_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=uwiでtbd種別のみを対象とする。"""
+        """--type=uwiでuwi種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="searchword")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
+        _write_awi_file(notes, "fb-001.md", body="searchword")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -240,15 +240,15 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既定activeのgrepはhold配下のfeedbackとTBDをいずれも含める。"""
+        """既定activeのgrepはhold配下のawiとUWIをいずれも含める。"""
         notes = _setup_notes(tmp_path)
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
-        (hold_dir / "hold-feedback.md").write_text(
+        (hold_dir / "hold-awi.md").write_text(
             "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
-        (hold_dir / "hold-tbd.md").write_text(
+        (hold_dir / "hold-uwi.md").write_text(
             "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
@@ -259,8 +259,8 @@ class TestGrepFilters:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "hold-feedback.md" in captured.out
-        assert "hold-tbd.md" in captured.out
+        assert "hold-awi.md" in captured.out
+        assert "hold-uwi.md" in captured.out
 
     def test_answered_filter_limits_to_unanswered(
         self,
@@ -268,10 +268,10 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--answered=noで未回答TBDのみを対象とする。"""
+        """--answered=noで未回答UWIのみを対象とする。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="other", answer="回答あり\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="other", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -294,7 +294,7 @@ class TestGrepFrontmatter:
     ) -> None:
         """frontmatter内のtarget_repoフィールドも検索対象に含まれること。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/searchword", body="body")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/searchword", body="body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -316,7 +316,7 @@ class TestGrepInvalidRegex:
     ) -> None:
         """不正な正規表現指定時にexit 2で終了しエラーメッセージを標準エラーへ出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="text")
+        _write_awi_file(notes, "fb-001.md", body="text")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:

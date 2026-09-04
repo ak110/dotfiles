@@ -1,4 +1,4 @@
-"""`_uwi_scan.py`のTBD走査を検証する。"""
+"""`_uwi_scan.py`のUWI走査を検証する。"""
 
 import pathlib
 import subprocess
@@ -24,7 +24,7 @@ def _entry(*, entry_type: str = "uwi", target_repo: str = _REPO, answer: str = "
     )
 
 
-class TestIsTbdAnswered:
+class TestIsUwiAnswered:
     """回答節の有効な本文だけを回答として扱う。"""
 
     @pytest.mark.parametrize(
@@ -43,14 +43,14 @@ class TestIsTbdAnswered:
 
 
 class TestScanActiveUwis:
-    """active状態かつ対象リポジトリのTBDだけを走査する。"""
+    """active状態かつ対象リポジトリのUWIだけを走査する。"""
 
     def test_filters_and_orders_entries(self, tmp_path: pathlib.Path) -> None:
         for state in ("inbox", "processing", "adopted", "rejected"):
             (tmp_path / state).mkdir()
         (tmp_path / "inbox" / "b.md").write_text(_entry(answer="回答\n"), encoding="utf-8")
         (tmp_path / "inbox" / "a.md").write_text(_entry(), encoding="utf-8")
-        (tmp_path / "inbox" / "feedback.md").write_text(_entry(entry_type="awi"), encoding="utf-8")
+        (tmp_path / "inbox" / "awi.md").write_text(_entry(entry_type="awi"), encoding="utf-8")
         (tmp_path / "processing" / "c.md").write_text(_entry(), encoding="utf-8")
         (tmp_path / "processing" / "other.md").write_text(_entry(target_repo="example.com/x/y"), encoding="utf-8")
         (tmp_path / "adopted" / "done.md").write_text(_entry(), encoding="utf-8")

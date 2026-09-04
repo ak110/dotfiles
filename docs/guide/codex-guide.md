@@ -8,13 +8,13 @@ Codexはagent-toolkitの標準構成に含まれる。単体インストーラ�
 Codex向け`AGENTS.md`、共有ルール・スキルのリンク、プラグインを一括設定する。
 プラグイン導入後は、次の手順で更新を反映する。
 
-## フィードバックの常駐処理
+## AWIの常駐処理
 
-次のコマンドはCodexの対話UIを起動し、対象リポジトリのフィードバックを継続して処理する。
+次のコマンドはCodexの対話UIを起動し、対象リポジトリのAWIを継続して処理する。
 
 ```bash
 atk config set orchestrate_model codex:gpt-5.6-sol/medium
-atk mq process-loop
+atk wi process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。

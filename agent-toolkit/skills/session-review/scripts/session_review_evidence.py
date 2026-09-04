@@ -73,7 +73,7 @@ def _is_hook_record(value: dict[str, Any]) -> bool:
 
 _HOOK_NOTICE_MARKER = re.compile(r"\[auto-generated:\s*(?P<hook>[^\]]*?)\s*\](?:\s*\[(?P<tag>[^\]]*)\])?")
 _HOOK_NOTICE_KIND_LENGTH = 80
-# 通知本文の可変部（語頭から始まるパスと、TBD識別子・行番号などの数値）。種別キーの分裂を防ぐため置換する。
+# 通知本文の可変部（語頭から始まるパスと、UWI識別子・行番号などの数値）。種別キーの分裂を防ぐため置換する。
 # パスは語頭に限定するが、数値列は語頭・語中を問わず置換するため、`github.com/ak110/dotfiles`のような
 # 固定の識別子も数値部分が置換される。
 _HOOK_NOTICE_VARIABLE = re.compile(r"""(?<![^\s(\[<'"`])~?/[^\s`'"]+|\d+""")

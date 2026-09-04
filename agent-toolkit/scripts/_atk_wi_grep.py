@@ -22,7 +22,7 @@ def _cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     該当0件の場合は1、該当1件以上で0を返す。
     非エラーの真偽判定を終了コードで表現し、検索処理自体の失敗とは区別する。
     戻り値をそのまま`sys.exit`せず整数で返す設計は、`main`関数末尾の共通後処理
-    （`_covers_unanswered_tbds`による通知抑止判定・`notify_unanswered_tbds_if_any`呼び出し）が
+    （`_covers_unanswered_uwis`による通知抑止判定・`notify_unanswered_uwis_if_any`呼び出し）が
     `dispatch[sub]()`の直後で必ず実行される必要があるためである。ここで`sys.exit`すると
     `SystemExit`が`main`関数の呼び出し元まで伝播し、共通後処理が実行されずに終了してしまう。
     パターンが不正な正規表現の場合は`args.subparser.error()`でexit 2とする（既存の`edit`・

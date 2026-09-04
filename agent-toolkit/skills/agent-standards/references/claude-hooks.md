@@ -104,7 +104,7 @@ Stop/SubagentStopで当該ターン継続を強制する用途は、エラーと
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
-| `hookSpecificOutput.additionalContext` | コーディングエージェント | フィードバックを渡す主経路。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
+| `hookSpecificOutput.additionalContext` | コーディングエージェント | AWIを渡す主経路。PreToolUse・PostToolUse・UserPromptSubmitでは継続を強制せず、Stop/SubagentStopでは継続を強制する |
 | `reason` | コーディングエージェント（`decision: "block"`時のみ） | blockを併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はコーディングエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
 | `systemMessage`・`stopReason` | ユーザーのみ | 情報通知と`continue: false`時の終了メッセージ |
@@ -212,10 +212,10 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
 
 配布物完結の環境変数（`AGENT_TOOLKIT_<PURPOSE>`形式）の一覧と用途を示す。
 
-- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk mq`管理repoのroot（既定`~/private-notes/`）
+- `AGENT_TOOLKIT_PRIVATE_NOTES`: `atk wi`管理repoのroot（既定`~/private-notes/`）
 - `AGENT_TOOLKIT_STOP_GATE_DEBUG`: デバッグ出力
 - `AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`: 受信payloadのダンプ先
-- `AGENT_TOOLKIT_RESTART_SPEC`: フィードバック処理の常駐実行で、次に起動するセッションの指定を
+- `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を
   起動側の処理へ渡す一時ファイルのパス
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: 委譲先として起動したセッションであることを示す印。常駐実行の終了保証を最上位セッションへ限定する判定に使う
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得又は作成した計画バンドルの所有として記録する、委譲元セッションの識別子

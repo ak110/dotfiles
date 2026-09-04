@@ -7,7 +7,7 @@
       "$defaults",
       "Session-Owned Amend: transcript内に稼働中の別実装担当が現在のHEADを所有する記録がない場合、セッション開始前またはユーザー作成のコミットを含めて`git commit --amend`を許可する。",
       "Exit-Session Termination: transcriptの直前のツール呼び出しがこのエージェントによる`agent-toolkit:exit-session`のSkill呼び出しである場合、チェーン演算子（`&&`・`;`・`|`）や他の対象を含まない単独の`kill -TERM $PPID`だけを許可する。他プロセスへのシグナル送出には適用しない。",
-      "Feedback-Originated Gate Revision: transcriptに`agent-toolkit:process-wi`または`agent-toolkit:plan-and-add-awi`のSkill呼び出しがあり、処理対象がユーザー投入フィードバック（frontmatter `source`が`session-review`等の自己生成起点ではない）で、計画レビュー工程を完了している場合、`~/dotfiles`内のエージェント用規範・フック・検査・承認設定の配布原本の編集とコミットを許可する。hard_deny領域と配布先の直接変更は許可しない。",
+      "AWI-Originated Gate Revision: transcriptに`agent-toolkit:process-wi`または`agent-toolkit:plan-and-add-awi`のSkill呼び出しがあり、処理対象がユーザー投入AWI（frontmatter `source`が`session-review`等の自己生成起点ではない）で、計画レビュー工程を完了している場合、`~/dotfiles`内のエージェント用規範・フック・検査・承認設定の配布原本の編集とコミットを許可する。hard_deny領域と配布先の直接変更は許可しない。",
       "Background Operator Auto-Approval: `&`による背景実行自体は拒否理由とせず、各subcommandを個別に既存の許可条件で判定する。",
       "External Marketplace Registration: `claude plugin marketplace add u-ichi/compact-plus`による登録と、`compact-plus@compact-plus`のインストールを許可する。",
       "Agent Config Read: `atk config get <キー>...`は1件以上のagent-toolkit設定値を標準出力へ返すだけで副作用がないため、メイン・サブエージェントのいずれからの実行も許可する。値の変更を伴う`atk config set`等は許可しない。",
@@ -17,7 +17,7 @@
       "Merge Approval: MR/PRのマージ操作（`glab mr merge`・`gh pr merge`・API経由の同等のマージ実行を含む）を許可する。人間のレビュー・承認の証跡がtranscriptに無いことを拒否理由にしない。必須レビュー・必須チェックを迂回する形態（`--admin`・`--force`等）、branch protectionの変更、CIチェックの無効化・スキップには適用せず、hard_deny領域を上書きしない。",
       "Plan File Write: 新規計画root（`$(atk config get private_notes)/plans/`）配下および`~/.claude/plans/`配下のファイル（計画ファイル（メイン）と計画付随素材）の作成・追記・編集を、Write・Edit・Bashのいずれの経路でも許可する。承認ゲートの緩和・規範改訂を扱う計画本文を含む場合も拒否理由にしない。両root外への書き込みとhard_deny領域には適用しない。",
       "Reconsidered Retry Approval: transcript内で同一操作がauto mode classifierに拒否され、その拒否理由がtranscript内の利用者による当該操作の明示指示または承認を反映していない場合、エージェントが拒否メッセージ本文と該当する利用者メッセージを照合し、進行中の作業の遂行に必要と判断したうえで、同一のコマンド・引数・ツールによる1回の再発行を許可する。符号化・間接実行・改名・別経路への置き換えを伴う再発行と、同一操作への2回目以降の拒否には適用せず、hard_deny領域を上書きしない。",
-      "Feedback Queue State Transition: `atk mq`のキュー管理サブコマンド（`list`・`show`・`grep`・`add`・`edit`・`rm`・`answer`・`start-processing`・`return-to-inbox`・`adopt`・`reject`・`set-dependencies`・`convert-to-plan`・`commit`）を`--target-repo`の指定先を問わず許可する。対象は利用者個人のフィードバックキュー（private-notesリポジトリ）に限られ、キュー項目のファイル移動・削除と当該リポジトリへのコミット・pushを含む。"
+      "WI Queue State Transition: `atk wi`のキュー管理サブコマンド（`list`・`show`・`grep`・`add`・`edit`・`rm`・`answer`・`start-processing`・`return-to-inbox`・`adopt`・`reject`・`set-dependencies`・`convert-to-plan`・`commit`）を`--target-repo`の指定先を問わず許可する。対象は利用者個人のWIキュー（private-notesリポジトリ）に限られ、キュー項目のファイル移動・削除と当該リポジトリへのコミット・pushを含む。"
     ],
     "environment": [
       "$defaults",

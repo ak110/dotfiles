@@ -31,8 +31,8 @@ from atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _make_subprocess_fake,
     _setup_notes,
     _setup_notes_with_pending_commit,
-    _write_feedback_file,
-    _write_tbd_file,
+    _write_awi_file,
+    _write_uwi_file,
 )
 
 
@@ -267,8 +267,8 @@ def _write_adopted_file(
     return path
 
 
-class TestListFeedbackStatusDefaultAll:
-    """`list`サブコマンド既定: フィードバックは`inbox`・`processing`両方を表示する。"""
+class TestListAwiStatusDefaultAll:
+    """`list`サブコマンド既定: AWIは`inbox`・`processing`両方を表示する。"""
 
     def test_default_shows_inbox_and_processing(
         self,
@@ -276,9 +276,9 @@ class TestListFeedbackStatusDefaultAll:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、フィードバック側は`inbox`配下と`processing`配下の両方を出力する。"""
+        """`--status`省略時、AWI側は`inbox`配下と`processing`配下の両方を出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -291,8 +291,8 @@ class TestListFeedbackStatusDefaultAll:
         assert "fb-proc.md" in captured.out
 
 
-class TestListFeedbackStatusProcessing:
-    """listサブコマンド `--status=processing`: フィードバックは`processing`配下のみを表示する。"""
+class TestListAwiStatusProcessing:
+    """listサブコマンド `--status=processing`: AWIは`processing`配下のみを表示する。"""
 
     def test_processing_shows_processing_only(
         self,
@@ -300,9 +300,9 @@ class TestListFeedbackStatusProcessing:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=processing`指定時、フィードバック側は`processing`配下のみ出力する。"""
+        """`--status=processing`指定時、AWI側は`processing`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -315,8 +315,8 @@ class TestListFeedbackStatusProcessing:
         assert "fb-proc.md" in captured.out
 
 
-class TestListFeedbackStatusAdopted:
-    """listサブコマンド `--status=adopted`: フィードバックは`adopted`配下のみを表示する。"""
+class TestListAwiStatusAdopted:
+    """listサブコマンド `--status=adopted`: AWIは`adopted`配下のみを表示する。"""
 
     def test_adopted_shows_adopted_only(
         self,
@@ -324,9 +324,9 @@ class TestListFeedbackStatusAdopted:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=adopted`指定時、フィードバック側は`adopted`配下のみ出力する。"""
+        """`--status=adopted`指定時、AWI側は`adopted`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         _write_adopted_file(notes, "fb-adopted.md", body="adopted-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -341,8 +341,8 @@ class TestListFeedbackStatusAdopted:
         assert "fb-adopted.md" in captured.out
 
 
-class TestListFeedbackStatusAll:
-    """listサブコマンド `--status=all`: フィードバックは`inbox`・`processing`双方を表示する。"""
+class TestListAwiStatusAll:
+    """listサブコマンド `--status=all`: AWIは`inbox`・`processing`双方を表示する。"""
 
     def test_all_shows_both(
         self,
@@ -350,9 +350,9 @@ class TestListFeedbackStatusAll:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=all`指定時、フィードバック側は`inbox`・`processing`両方を出力する。"""
+        """`--status=all`指定時、AWI側は`inbox`・`processing`両方を出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -365,8 +365,8 @@ class TestListFeedbackStatusAll:
         assert "fb-proc.md" in captured.out
 
 
-class TestListFeedbackStatusActive:
-    """listサブコマンド `--status=active`: フィードバックのactive状態を表示し終端状態を除外する。"""
+class TestListAwiStatusActive:
+    """listサブコマンド `--status=active`: AWIのactive状態を表示し終端状態を除外する。"""
 
     def test_active_excludes_adopted_and_rejected(
         self,
@@ -374,9 +374,9 @@ class TestListFeedbackStatusActive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=active`指定時、フィードバック側は`adopted`・`rejected`配下を除外し`inbox`・`processing`のみ出力する。"""
+        """`--status=active`指定時、AWI側は`adopted`・`rejected`配下を除外し`inbox`・`processing`のみ出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
@@ -410,9 +410,9 @@ class TestListFeedbackStatusActive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、フィードバック側は`adopted`配下を除外し、`tbd`側は未回答を除外する（`--status=active`と同じ結果）。"""
+        """`--status`省略時、AWI側は`adopted`配下を除外し、`uwi`側は未回答を除外する（`--status=active`と同じ結果）。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
+        _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
@@ -420,8 +420,8 @@ class TestListFeedbackStatusActive:
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted本文")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -442,8 +442,8 @@ class TestListFeedbackStatusActive:
         assert f"{_FIXED_TIMESTAMP}-002.md" in default_out
 
 
-class TestListFeedbackStatusRejected:
-    """listサブコマンド `--status=rejected`: フィードバックは`rejected`配下のみを表示する。"""
+class TestListAwiStatusRejected:
+    """listサブコマンド `--status=rejected`: AWIは`rejected`配下のみを表示する。"""
 
     def test_rejected_shows_rejected_only(
         self,
@@ -451,9 +451,9 @@ class TestListFeedbackStatusRejected:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=rejected`指定時、フィードバック側は`rejected`配下のみ出力する。"""
+        """`--status=rejected`指定時、AWI側は`rejected`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="in-body")
+        _write_awi_file(notes, "fb-inbox.md", body="in-body")
         rejected_dir = notes / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
@@ -470,16 +470,16 @@ class TestListFeedbackStatusRejected:
         assert "fb-inbox.md" not in captured.out
         assert "fb-rejected.md: github.com/example/foo [rejected/normal/complete] rejected-body" in captured.out
 
-    def test_rejected_does_not_affect_tbd(
+    def test_rejected_does_not_affect_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=rejected`指定時、tbd側は状態フォルダを持たないため全件出力される。"""
+        """`--status=rejected`指定時、uwi側は状態フォルダを持たないため全件出力される。"""
         notes = _setup_notes(tmp_path)
         (notes / "inbox").mkdir(parents=True, exist_ok=True)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -530,7 +530,7 @@ class TestAddViaEditor:
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
     捕捉する。エラー経路のテストでは`_pull`等のgit呼び出しもfake_runへ吸収されるが、
     検証焦点は`_collect_message_via_editor`の早期None返却にあり、git経路到達有無は
-    別経路（フィードバックディレクトリへのファイル生成有無）で間接確認する。
+    別経路（AWIディレクトリへのファイル生成有無）で間接確認する。
     """
 
     def test_editor_path_generates_file_with_content(
@@ -539,7 +539,7 @@ class TestAddViaEditor:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """messages省略時にエディターが呼ばれ書き込み内容がフィードバックへ保存される。"""
+        """messages省略時にエディターが呼ばれ書き込み内容がAWIへ保存される。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -797,7 +797,7 @@ class TestAddTargetRepoOption:
         assert "target_repo: github.com/example/fmrepo" in content
 
 
-class TestTbdAddTargetRepoOption:
+class TestUwiAddTargetRepoOption:
     """`mq add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(

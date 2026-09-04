@@ -157,7 +157,7 @@ def _fixed_terminal_size(monkeypatch: pytest.MonkeyPatch) -> None:
     """`shutil.get_terminal_size`を固定幅へ差し替え、実行環境の端末幅に依存しない結果にする。
 
     `_atk_wi_list.py`・`_atk_wi_common.py`は`shutil.get_terminal_size()`から表示幅を算出し
-    `atk wi list`・未回答TBD通知の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
+    `atk wi list`・未回答UWI通知の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
     両モジュールおよびこのディレクトリ配下の全テストファイルへ一括で適用する
     （個別テストファイルごとの重複フィクスチャ定義を避けるSSOT化）。
     """

@@ -1,4 +1,4 @@
-"""フィードバックキューの実行可否判定エンジン。"""
+"""WIキューの実行可否判定エンジン。"""
 
 import dataclasses
 import datetime
@@ -41,7 +41,7 @@ class QueueEntry:
     text: str
     kind: str | None
     target_repo: str | None
-    tbd_answered: bool | None
+    uwi_answered: bool | None
     frontmatter_broken: bool
     plan_file: str | None
     cooldown_present: bool
@@ -58,9 +58,9 @@ class ReadinessResult:
     ready: tuple[str, ...] = ()
     blocked: tuple[str, ...] = ()
     frontmatter_broken: tuple[str, ...] = ()
-    frontmatter_broken_needs_tbd: tuple[str, ...] = ()
+    frontmatter_broken_needs_uwi: tuple[str, ...] = ()
     missing_plan_file: tuple[str, ...] = ()
-    missing_plan_file_needs_tbd: tuple[str, ...] = ()
+    missing_plan_file_needs_uwi: tuple[str, ...] = ()
     invalid_dependencies: tuple[str, ...] = ()
     missing_dependencies: tuple[str, ...] = ()
     self_dependencies: tuple[str, ...] = ()
@@ -73,8 +73,8 @@ class ReadinessResult:
     def actionable_count(self) -> int:
         """処理セッションを起動すべき項目数を返す。"""
         repair_targets = {
-            *self.frontmatter_broken_needs_tbd,
-            *self.missing_plan_file_needs_tbd,
+            *self.frontmatter_broken_needs_uwi,
+            *self.missing_plan_file_needs_uwi,
             *self.invalid_dependencies,
             *self.missing_dependencies,
             *self.self_dependencies,
@@ -149,7 +149,7 @@ def _load_queue_entries(
     states: tuple[str, ...],
     resolver_cache: dict[str, str | None] | None = None,
 ) -> tuple[QueueEntry, ...]:
-    """指定状態のフィードバック・TBDを着手可否判定用表現へ変換する。"""
+    """指定状態のAWI・UWIを着手可否判定用表現へ変換する。"""
     return tuple(
         _queue_entry(path, entry_repo, text, entry_type, resolver_cache)
         for path, entry_repo, text, _state, entry_type in _iter_entries(private_notes, states, target_repo)
@@ -186,7 +186,7 @@ def _queue_entry(
         text=text,
         kind=entry_type,
         target_repo=_normalized_repo_or_none(entry_repo, resolver_cache),
-        tbd_answered=_is_uwi_answered(text) if entry_type == WI_TYPE_UWI else None,
+        uwi_answered=_is_uwi_answered(text) if entry_type == WI_TYPE_UWI else None,
         frontmatter_broken=frontmatter_broken,
         plan_file=plan_file if isinstance(plan_file, str) else None,
         cooldown_present="cooldown_until" in data,
@@ -250,7 +250,7 @@ def _effective_dependencies(
                 return None
         return tuple(dict.fromkeys(value for value in filenames if isinstance(value, str)))
     if kind == "external-user":
-        filename = legacy.get("tbd_filename")
+        filename = legacy.get("uwi_filename")
         condition = legacy.get("condition")
         return (filename,) if isinstance(filename, str) and filename and isinstance(condition, str) and condition else None
     if kind == "external-upstream":
@@ -316,14 +316,14 @@ def _legacy_dependency_is_satisfied(
     if kind in (None, "none", "entries"):
         return None
     if kind == "external-user":
-        filename = legacy.get("tbd_filename")
+        filename = legacy.get("uwi_filename")
         if not isinstance(filename, str):
             return False
         target = next(
             (candidate for candidate in (*all_active, *terminal) if candidate.filename == filename),
             None,
         )
-        return target is not None and target.kind == WI_TYPE_UWI and target.tbd_answered is True
+        return target is not None and target.kind == WI_TYPE_UWI and target.uwi_answered is True
     if kind == "external-upstream":
         recheck_after = _parse_legacy_recheck_after(legacy.get("recheck_after"))
         return recheck_after is not None and recheck_after <= now
@@ -405,7 +405,7 @@ def calculate_readiness(
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)
         for entry in all_active
-        if entry.kind == WI_TYPE_UWI and entry.tbd_answered is False
+        if entry.kind == WI_TYPE_UWI and entry.uwi_answered is False
     }
     active_by_name = {entry.filename: entry for entry in all_active}
     terminal_names = {entry.filename for entry in terminal}
@@ -427,7 +427,7 @@ def calculate_readiness(
             cooldown_values[entry.filename] = entry.cooldown_until
 
     broken = tuple(sorted(entry.filename for entry in active if entry.frontmatter_broken))
-    broken_needs_tbd = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
+    broken_needs_uwi = tuple(name for name in broken if (name, "frontmatter") not in existing_repairs)
     missing_plan = tuple(
         sorted(
             entry.filename
@@ -435,7 +435,7 @@ def calculate_readiness(
             if entry.filename not in cooldown_pending and entry.plan_file is not None and not _plan_file_exists(entry.plan_file)
         )
     )
-    missing_plan_needs_tbd = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
+    missing_plan_needs_uwi = tuple(name for name in missing_plan if (name, "missing-plan-file") not in existing_repairs)
 
     dependency_map = {
         entry.filename: _effective_dependencies(entry, resolver_cache) for entry in active if not entry.frontmatter_broken
@@ -448,7 +448,7 @@ def calculate_readiness(
         legacy = entry.legacy_dependency
         if legacy is None or legacy.get("kind") != "external-user":
             continue
-        filename = legacy.get("tbd_filename")
+        filename = legacy.get("uwi_filename")
         target = all_entries_by_name.get(filename) if isinstance(filename, str) else None
         if target is not None and target.kind != WI_TYPE_UWI:
             invalid_external_user_targets.add(entry.filename)
@@ -481,7 +481,7 @@ def calculate_readiness(
         if entry.filename in cooldown_pending:
             blocked.append(entry.filename)
             continue
-        if entry.filename in permanently_blocked or (entry.kind == WI_TYPE_UWI and entry.tbd_answered is False):
+        if entry.filename in permanently_blocked or (entry.kind == WI_TYPE_UWI and entry.uwi_answered is False):
             blocked.append(entry.filename)
             continue
         dependencies = graph.get(entry.filename, ())
@@ -498,7 +498,7 @@ def calculate_readiness(
         else:
             waiting = legacy_satisfied is False or any(
                 dependency in active_by_name
-                and not (active_by_name[dependency].kind == WI_TYPE_UWI and active_by_name[dependency].tbd_answered is True)
+                and not (active_by_name[dependency].kind == WI_TYPE_UWI and active_by_name[dependency].uwi_answered is True)
                 for dependency in dependencies
             )
         if waiting:
@@ -509,9 +509,9 @@ def calculate_readiness(
         ready=tuple(sorted(ready)),
         blocked=tuple(sorted(blocked)),
         frontmatter_broken=broken,
-        frontmatter_broken_needs_tbd=broken_needs_tbd,
+        frontmatter_broken_needs_uwi=broken_needs_uwi,
         missing_plan_file=missing_plan,
-        missing_plan_file_needs_tbd=missing_plan_needs_tbd,
+        missing_plan_file_needs_uwi=missing_plan_needs_uwi,
         invalid_dependencies=invalid,
         missing_dependencies=missing_dependencies,
         self_dependencies=self_dependencies,

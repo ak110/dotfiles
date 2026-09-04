@@ -1,6 +1,6 @@
-"""atk (agent-toolkit `atk wi`) のtbd系サブコマンドのテスト。
+"""atk (agent-toolkit `atk wi`) のuwi系サブコマンドのテスト。
 
-TBD種別の投入・一覧・編集・回答・採用・削除の単体テストを集約する。
+UWI種別の投入・一覧・編集・回答・採用・削除の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に、拡張サブコマンド・オプションのテストは
 `_atk_wi_extras_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
@@ -18,7 +18,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_wi_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_wi_uwi as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_wi_uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_wi_common import _is_uwi_answered  # noqa: E402  # pylint: disable=wrong-import-position
@@ -32,8 +32,8 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
-    _write_feedback_file,
-    _write_tbd_file,
+    _write_awi_file,
+    _write_uwi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
@@ -46,8 +46,8 @@ def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """TBD投入検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
+def _make_uwi_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
+    """UWI投入検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
 
     def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
         if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
@@ -67,8 +67,8 @@ def _make_tbd_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Complet
     return fake_run
 
 
-def test_flat_tbd_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """平引数追加が生成名を返し、回答欄付きTBDを書き込む。"""
+def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """平引数追加が生成名を返し、回答欄付きUWIを書き込む。"""
     notes = tmp_path / "private-notes"
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
@@ -92,7 +92,7 @@ def test_flat_tbd_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
 
 
 class TestDetectSelfContainmentDeficiency:
-    """`_detect_self_containment_deficiency`単体テスト（FB2: TBD本文の自己完結性検査）。"""
+    """`_detect_self_containment_deficiency`単体テスト（FB2: UWI本文の自己完結性検査）。"""
 
     def test_temporary_identifier_alone(self) -> None:
         assert _detect_self_containment_deficiency("fb 090830 これでよいか") == "一時識別子の単独使用"
@@ -143,8 +143,8 @@ class TestDetectSelfContainmentDeficiency:
         assert _detect_self_containment_deficiency(body) == "一時識別子の単独使用"
 
 
-class TestCmdTbdAddSelfContainmentWarning:
-    """TBD投入: 自己完結性ヒューリスティック警告と疑問文警告の併存を検証する。"""
+class TestCmdUwiAddSelfContainmentWarning:
+    """UWI投入: 自己完結性ヒューリスティック警告と疑問文警告の併存を検証する。"""
 
     def test_warning_printed_for_short_body(
         self,
@@ -156,7 +156,7 @@ class TestCmdTbdAddSelfContainmentWarning:
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -170,8 +170,8 @@ class TestCmdTbdAddSelfContainmentWarning:
         assert "agent-toolkit:process-wi" not in stderr
 
 
-class TestTbdAdd:
-    """TBD投入の基本動作検証。"""
+class TestUwiAdd:
+    """UWI投入の基本動作検証。"""
 
     def test_single_message_generates_one_file(
         self,
@@ -182,7 +182,7 @@ class TestTbdAdd:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -244,7 +244,7 @@ class TestTbdAdd:
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -267,7 +267,7 @@ class TestTbdAdd:
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -295,7 +295,7 @@ class TestTbdAdd:
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -319,8 +319,8 @@ class TestTbdAdd:
         assert "警告" not in capsys.readouterr().err
 
 
-class TestTbdAddEditorBeforePull:
-    """TBD投入: `_collect_message_via_editor`を`_pull`より前に呼ぶ順序保証。
+class TestUwiAddEditorBeforePull:
+    """UWI投入: `_collect_message_via_editor`を`_pull`より前に呼ぶ順序保証。
 
     エディター起動はロック外・ロック取得前に行う設計であり、`_pull`失敗はエディターで
     確定済みの本文取得後（`_repo_lock`保持下）に発生する。
@@ -409,7 +409,7 @@ class TestTbdAddEditorBeforePull:
         assert not any(c[:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_cmds)
 
 
-class TestTbdAddRepoPathOverrideCli:
+class TestUwiAddRepoPathOverrideCli:
     """`mq add --type=uwi`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
@@ -480,7 +480,7 @@ class TestTbdAddRepoPathOverrideCli:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add", "--type=uwi", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
@@ -491,8 +491,8 @@ class TestTbdAddRepoPathOverrideCli:
         assert "この対応でよいか" in content
 
 
-class TestTbdAddSourceOption:
-    """TBD投入: `--source`指定時にfrontmatterへsource行を記録する。"""
+class TestUwiAddSourceOption:
+    """UWI投入: `--source`指定時にfrontmatterへsource行を記録する。"""
 
     def test_source_recorded_when_given(
         self,
@@ -503,7 +503,7 @@ class TestTbdAddSourceOption:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
@@ -526,7 +526,7 @@ class TestTbdAddSourceOption:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_tbd_add_fake(myrepo))
+        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add", "--type=uwi", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
@@ -537,20 +537,20 @@ class TestTbdAddSourceOption:
         assert "source:" not in content
 
 
-class TestTbdMutationTargetRepoVerification:
-    """TBDのedit・adopt・rm: `--target-repo`指定時のfrontmatter一致検証を検証する。
+class TestUwiMutationTargetRepoVerification:
+    """UWIのedit・adopt・rm: `--target-repo`指定時のfrontmatter一致検証を検証する。
 
-    既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_tbd_file`既定値）。
+    既定のfrontmatter`target_repo`は`github.com/example/foo`（`_write_uwi_file`既定値）。
     """
 
-    def test_tbd_edit_mismatch_exits_2(
+    def test_uwi_edit_mismatch_exits_2(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
         """mq edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "fake-editor")
         editor_calls: list[list[str]] = []
 
@@ -570,14 +570,14 @@ class TestTbdMutationTargetRepoVerification:
         assert exc_info.value.code == 2
         assert not editor_calls
 
-    def test_tbd_adopt_mismatch_exits_2(
+    def test_uwi_adopt_mismatch_exits_2(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
         """mq adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -590,14 +590,14 @@ class TestTbdMutationTargetRepoVerification:
         assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         assert not (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
 
-    def test_tbd_adopt_match_succeeds(
+    def test_uwi_adopt_match_succeeds(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
         """mq adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -609,14 +609,14 @@ class TestTbdMutationTargetRepoVerification:
         assert exc_info.value.code == 0
         assert (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
 
-    def test_tbd_rm_mismatch_exits_2(
+    def test_uwi_rm_mismatch_exits_2(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
         """mq rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -629,8 +629,8 @@ class TestTbdMutationTargetRepoVerification:
         assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
 
 
-class TestTbdList:
-    """TBD一覧のフィルター動作検証。"""
+class TestUwiList:
+    """UWI一覧のフィルター動作検証。"""
 
     def test_status_filter(
         self,
@@ -640,8 +640,8 @@ class TestTbdList:
     ) -> None:
         """--answered=noで未回答のみが1件1行（ファイル名・`target_repo`・要約）形式で出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -651,8 +651,8 @@ class TestTbdList:
         assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
 
 
-class TestTbdListSkipPull:
-    """TBD一覧: --skip-pull指定時はremote同期全体をスキップする。"""
+class TestUwiListSkipPull:
+    """UWI一覧: --skip-pull指定時はremote同期全体をスキップする。"""
 
     def test_skip_pull_omits_git_pull(
         self,
@@ -661,7 +661,7 @@ class TestTbdListSkipPull:
     ) -> None:
         """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -672,8 +672,8 @@ class TestTbdListSkipPull:
         assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
 
 
-class TestTbdEdit:
-    """TBD編集の境界条件検証。"""
+class TestUwiEdit:
+    """UWI編集の境界条件検証。"""
 
     def test_rejects_traversal(
         self,
@@ -697,7 +697,7 @@ class TestTbdEdit:
     ) -> None:
         """編集差分なしの場合はcommit・pushしない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "vi")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -711,7 +711,7 @@ class TestTbdEdit:
         assert commit_calls == []
 
 
-class TestTbdAnswer:
+class TestUwiAnswer:
     """answerサブコマンドの空集合・差分なし時の挙動検証。"""
 
     def test_no_unanswered_prints_message(
@@ -722,7 +722,7 @@ class TestTbdAnswer:
     ) -> None:
         """未回答ゼロ時は案内のみでcommitしない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="ans\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="ans\n")
         monkeypatch.setenv("EDITOR", "vi")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -731,12 +731,12 @@ class TestTbdAnswer:
             atk.main(["wi", "answer"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "未回答のTBDはありません" in captured.out
+        assert "未回答のUWIはありません" in captured.out
         commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert commit_calls == []
 
 
-class TestTbdAnswerEditorFailure:
+class TestUwiAnswerEditorFailure:
     """answerサブコマンド: エディター非ゼロ終了時にexit 0を返さないことを検証する。"""
 
     def test_nonzero_editor_exit_is_treated_as_failure(
@@ -747,7 +747,7 @@ class TestTbdAnswerEditorFailure:
     ) -> None:
         """エディターが非ゼロ終了コードで終了した場合、中断してexit 1を返しcommitしない。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer="")
         monkeypatch.setenv("EDITOR", "fake-editor")
         git_calls: list[_GitCall] = []
 
@@ -770,7 +770,7 @@ class TestTbdAnswerEditorFailure:
         assert commit_calls == []
 
 
-class TestTbdAnswerNonInteractive:
+class TestUwiAnswerNonInteractive:
     """answerサブコマンド: ファイル名と回答本文を引数で受け取る非対話経路を検証する。
 
     自律実行中のエージェントが`$EDITOR`を介さずに回答を記録できることを担保する。
@@ -785,7 +785,7 @@ class TestTbdAnswerNonInteractive:
         """ファイル名と回答本文の指定で回答欄が更新され、`$EDITOR`未設定でも成功する。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
-        path = _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+        path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
         monkeypatch.delenv("EDITOR", raising=False)
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -811,12 +811,12 @@ class TestTbdAnswerNonInteractive:
         """回答本文が回答欄マーカーを含む場合はexit 1となり、対象ファイルを変更しない。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
-        path = _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+        path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
         before = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "answer", filename, f"{tbd_module.ANSWER_MARKER}\n採用する"], home=tmp_path)
+            atk.main(["wi", "answer", filename, f"{uwi_module.ANSWER_MARKER}\n採用する"], home=tmp_path)
 
         assert exc_info.value.code == 1
         assert path.read_text(encoding="utf-8") == before
@@ -831,7 +831,7 @@ class TestTbdAnswerNonInteractive:
         """ファイル名のみの指定は対話モードへ移行せずexit 1で案内する。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
-        _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+        _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
         monkeypatch.setenv("EDITOR", "fake-editor")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -871,16 +871,16 @@ class TestTbdAnswerNonInteractive:
         assert exc_info.value.code == 1
         assert "inbox・processingのいずれにも存在しません" in capsys.readouterr().err
 
-    def test_non_tbd_entry_exits_1(
+    def test_non_uwi_entry_exits_1(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """対象がTBDでない場合はexit 1となり、対象ファイルを変更しない。"""
+        """対象がUWIでない場合はexit 1となり、対象ファイルを変更しない。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
-        path = _write_feedback_file(notes, filename)
+        path = _write_awi_file(notes, filename)
         before = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -889,20 +889,20 @@ class TestTbdAnswerNonInteractive:
 
         assert exc_info.value.code == 1
         assert path.read_text(encoding="utf-8") == before
-        assert "回答はTBDのエントリにのみ適用できます" in capsys.readouterr().err
+        assert "回答はUWIのエントリにのみ適用できます" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
-def test_agent_environment_rejects_tbd_answer_before_writing(
+def test_agent_environment_rejects_uwi_answer_before_writing(
     environment_name: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各エージェント環境ではTBD回答をCLI入口で拒否する。"""
+    """各エージェント環境ではUWI回答をCLI入口で拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = f"{_FIXED_TIMESTAMP}-001.md"
-    path = _write_tbd_file(notes, filename, question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+    path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
     before = path.read_bytes()
     for name in _AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
@@ -915,28 +915,28 @@ def test_agent_environment_rejects_tbd_answer_before_writing(
     assert path.read_bytes() == before
     assert (
         capsys.readouterr().err
-        == "TBDの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。\n"
+        == "UWIの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。\n"
     )
 
 
-def test_answer_tbd_common_core_accepts_agent_environment(
+def test_answer_uwi_common_core_accepts_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ブラウザー経路が使う共有中核はエージェント環境でも回答を保存する。"""
     notes = _setup_notes(tmp_path)
-    path = _write_tbd_file(notes, "tbd.md", question="q?", answer=f"{tbd_module.ANSWER_MARKER}\n")
+    path = _write_uwi_file(notes, "uwi.md", question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
     monkeypatch.setenv("AI_AGENT", "1")
-    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    assert tbd_module.answer_tbd(notes, filename=path.name, answer="採用する")
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer="採用する")
     assert path.read_text(encoding="utf-8").endswith("採用する\n")
 
 
-class TestTbdAdopt:
-    """TBD採用: inboxからadopted/へ移動しコミットする。"""
+class TestUwiAdopt:
+    """UWI採用: inboxからadopted/へ移動しコミットする。"""
 
     def test_single_file_adopted(
         self,
@@ -945,7 +945,7 @@ class TestTbdAdopt:
     ) -> None:
         """1件のtb adopt実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -967,7 +967,7 @@ class TestTbdAdopt:
     ) -> None:
         """--note・--commit指定時、adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -978,7 +978,7 @@ class TestTbdAdopt:
                     "adopt",
                     f"{_FIXED_TIMESTAMP}-001.md",
                     "--note",
-                    "TBD採用メモ",
+                    "UWI採用メモ",
                     "--commit",
                     "xyz9876",
                 ],
@@ -992,18 +992,18 @@ class TestTbdAdopt:
         assert "- 処理日時: " in adopted_text
         assert "- 対応commit: xyz9876" in adopted_text
         assert "未検証のまま記録" in capsys.readouterr().err
-        assert "- メモ: TBD採用メモ" in adopted_text
+        assert "- メモ: UWI採用メモ" in adopted_text
 
     def test_short_commit_is_resolved_with_explicit_worktree(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """明示作業ツリーに対応するTBDでは短縮revisionを完全OID化する。"""
+        """明示作業ツリーに対応するUWIでは短縮revisionを完全OID化する。"""
         notes = _setup_notes(tmp_path)
         worktree = tmp_path / "worktree"
         worktree.mkdir()
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         base_fake = _make_subprocess_fake(git_calls)
         full_oid = "c" * 40
@@ -1047,9 +1047,9 @@ class TestTbdAdopt:
     ) -> None:
         """3件のtb adoptで全件がadopted/へ移動し単一コミットが行われること。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="a2")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-003.md", question="q3", answer="a3")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="a2")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-003.md", question="q3", answer="a3")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -1079,9 +1079,9 @@ class TestTbdAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """TBD採用の実行後にgit pushが行われること。"""
+        """UWI採用の実行後にgit pushが行われること。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -1132,7 +1132,7 @@ class TestTbdAdopt:
     ) -> None:
         """複数ファイル指定時、一部が未存在ならどのファイルも移動されない（部分移動防止）。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1157,7 +1157,7 @@ class TestTbdAdopt:
         `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
         """
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -1177,8 +1177,8 @@ class TestTbdAdopt:
         assert "chore: process 1 entry (adopted)" in commit_calls[0]
 
 
-class TestTbdRm:
-    """TBD削除の単体テスト。"""
+class TestUwiRm:
+    """UWI削除の単体テスト。"""
 
     def test_single_file_removed(
         self,
@@ -1187,7 +1187,7 @@ class TestTbdRm:
     ) -> None:
         """1件のtb rm実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
@@ -1204,7 +1204,7 @@ class TestTbdRm:
     ) -> None:
         """`--note`指定時にcommit messageへ`(理由: <note>)`形式で追記されること。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
@@ -1223,8 +1223,8 @@ class TestTbdRm:
     ) -> None:
         """複数ファイル指定時に1コミットへまとめて削除されること。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
@@ -1267,7 +1267,7 @@ class TestTbdRm:
     ) -> None:
         """複数指定で一部欠損時に既存ファイルも削除されずcommitも発生しないこと。"""
         notes = _setup_notes(tmp_path)
-        existing = _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        existing = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit):
@@ -1295,7 +1295,7 @@ class TestTbdRm:
         `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
         """
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
         with pytest.raises(SystemExit) as exc_info:
@@ -1311,48 +1311,48 @@ class TestTbdRm:
         assert "chore: remove 1 entry" in " ".join(commit_cmd)
 
 
-def test_answer_tbd_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_answer_uwi_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """回答欄マーカーが重複するエントリでも最後のマーカー基準で分割し、見出しと質問本文を保全する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox" / "20260101-000000-001.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
-        f"{tbd_module.QUESTION_HEADING}\n\n"
-        f"前半の質問本文。\n\n{tbd_module.ANSWER_MARKER}\n\n"
-        f"後半の質問本文。\n\n{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n",
+        f"{uwi_module.QUESTION_HEADING}\n\n"
+        f"前半の質問本文。\n\n{uwi_module.ANSWER_MARKER}\n\n"
+        f"後半の質問本文。\n\n{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
         encoding="utf-8",
     )
-    assert tbd_module.answer_tbd(notes, filename=path.name, answer="採用する") is True
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer="採用する") is True
     content = path.read_text(encoding="utf-8")
-    assert tbd_module.ANSWER_HEADING in content
+    assert uwi_module.ANSWER_HEADING in content
     assert "前半の質問本文。" in content
     assert "後半の質問本文。" in content
     assert content.rstrip().endswith("採用する")
 
 
-def test_answer_tbd_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_answer_uwi_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """マーカーが1個の通常データでは従来と同じ結果になる。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     path = notes / "inbox" / "20260101-000000-002.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
-        f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n",
+        f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
         encoding="utf-8",
     )
-    assert tbd_module.answer_tbd(notes, filename=path.name, answer="不採用とする") is True
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer="不採用とする") is True
     content = path.read_text(encoding="utf-8")
-    assert content.count(tbd_module.ANSWER_MARKER) == 1
+    assert content.count(uwi_module.ANSWER_MARKER) == 1
     assert "質問本文。" in content
     assert content.rstrip().endswith("不採用とする")
 
 
-def test_answer_tbd_rejects_empty_answer_without_changing_existing_answer(
+def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
     tmp_path: pathlib.Path,
 ) -> None:
     """空回答は共有コア入口で拒否し、既存回答を1バイトも変更しない。"""
@@ -1360,31 +1360,31 @@ def test_answer_tbd_rejects_empty_answer_without_changing_existing_answer(
     path = notes / "inbox" / "20260101-000000-003.md"
     path.write_text(
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
-        f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n"
-        f"{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n既存回答\n",
+        f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n"
+        f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n既存回答\n",
         encoding="utf-8",
     )
     before = path.read_bytes()
 
-    with pytest.raises(tbd_module.WebInputError, match="回答本文が空です"):
-        tbd_module.answer_tbd(notes, filename=path.name, answer=" \n\t")
+    with pytest.raises(uwi_module.WebInputError, match="回答本文が空です"):
+        uwi_module.answer_uwi(notes, filename=path.name, answer=" \n\t")
 
     assert path.read_bytes() == before
 
 
-def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
+def test_answer_uwi_targets_explicit_state_and_keeps_legacy_priority(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """状態指定時は指定側へ回答し、省略時はprocessing優先を維持する。"""
     notes = _setup_notes(tmp_path)
-    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
     content = (
         "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
-        f"{tbd_module.QUESTION_HEADING}\n\n質問本文。\n\n"
-        f"{tbd_module.ANSWER_HEADING}\n\n{tbd_module.ANSWER_MARKER}\n"
+        f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n"
+        f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n"
     )
     inbox = notes / "inbox/same.md"
     processing = notes / "processing/same.md"
@@ -1392,34 +1392,34 @@ def test_answer_tbd_targets_explicit_state_and_keeps_legacy_priority(
     inbox.write_text(content, encoding="utf-8")
     processing.write_text(content, encoding="utf-8")
 
-    assert tbd_module.answer_tbd(notes, filename="same.md", state="inbox", answer="未処理側への回答") is True
+    assert uwi_module.answer_uwi(notes, filename="same.md", state="inbox", answer="未処理側への回答") is True
     assert inbox.read_text(encoding="utf-8").endswith("未処理側への回答\n")
     assert processing.read_text(encoding="utf-8") == content
 
-    assert tbd_module.answer_tbd(notes, filename="same.md", answer="従来経路の回答") is True
+    assert uwi_module.answer_uwi(notes, filename="same.md", answer="従来経路の回答") is True
     assert processing.read_text(encoding="utf-8").endswith("従来経路の回答\n")
 
 
-def test_answer_tbd_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """hold上のTBDへ明示状態指定で回答する。"""
+def test_answer_uwi_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """hold上のUWIへ明示状態指定で回答する。"""
     notes = _setup_notes(tmp_path)
-    held = _write_tbd_file(notes, "held.md")
-    held.write_text(held.read_text(encoding="utf-8") + f"{tbd_module.ANSWER_MARKER}\n", encoding="utf-8")
+    held = _write_uwi_file(notes, "held.md")
+    held.write_text(held.read_text(encoding="utf-8") + f"{uwi_module.ANSWER_MARKER}\n", encoding="utf-8")
     (notes / "hold").mkdir(exist_ok=True)
     held.rename(notes / "hold/held.md")
-    monkeypatch.setattr(tbd_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(tbd_module, "_pull", lambda _path: None)
-    monkeypatch.setattr(tbd_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(uwi_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(uwi_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(uwi_module, "_commit_and_push", lambda *_args, **_kwargs: None)
 
-    assert tbd_module.answer_tbd(notes, filename="held.md", state="hold", answer="回答") is True
+    assert uwi_module.answer_uwi(notes, filename="held.md", state="hold", answer="回答") is True
     assert (notes / "hold/held.md").read_text(encoding="utf-8").endswith("回答\n")
 
 
-def test_reject_reserved_tbd_markup_allows_plain_body() -> None:
+def test_reject_reserved_uwi_markup_allows_plain_body() -> None:
     """予約書式を含まない本文は拒否しない。"""
-    tbd_module.reject_reserved_tbd_markup("判定根拠を示したうえで、どちらの案を採用しますか？")
+    uwi_module.reject_reserved_uwi_markup("判定根拠を示したうえで、どちらの案を採用しますか？")
 
 
-def test_reject_reserved_tbd_markup_ignores_inline_heading_text() -> None:
+def test_reject_reserved_uwi_markup_ignores_inline_heading_text() -> None:
     """行頭以外に現れる見出し相当の文字列は拒否対象としない。"""
-    tbd_module.reject_reserved_tbd_markup(f"本文中で`{tbd_module.ANSWER_HEADING}`という語に言及するだけの記述は許容しますか？")
+    uwi_module.reject_reserved_uwi_markup(f"本文中で`{uwi_module.ANSWER_HEADING}`という語に言及するだけの記述は許容しますか？")

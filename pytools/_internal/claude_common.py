@@ -34,7 +34,7 @@ MARKETPLACE_NAME = "ak110-dotfiles"
 # GitHub からの初回 clone や install 処理で時間がかかる場合があるため余裕を持たせる
 CLAUDE_TIMEOUT = 30
 
-# バランスモード・フィードバック蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
+# バランスモード・AWI蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
 TARGET_HOSTS: tuple[str, ...] = ("stheno", "circe", "circe-container", "euryale", "euryale-container")
 _EURYALE_HOSTNAME = "euryale"
 

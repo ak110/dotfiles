@@ -49,7 +49,7 @@ review_contract:
 同worktreeだけへ単一の修正用の実装担当を割り当て、新規起動では`agents_server.start`へ`model_type="execute"`を渡す。継続接続では同じ`model_type`を保持する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
 新規起動では`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`と`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を渡す。
-あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、フィードバックファイル名一覧、複製元と対象外worktreeも渡す。
+あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、AWIファイル名一覧、複製元と対象外worktreeも渡す。
 起動文へ担当種別を`レビュー修正担当`として明示する。
 実装レビュー指摘管理表の絶対パスと`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
 ファイル名と配置は`agent-toolkit:plan-mode`の計画ファイル基準が定める。

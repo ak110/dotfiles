@@ -16,7 +16,7 @@ description: >
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保つ
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
-  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk mq`管理repoのroot、既定`~/private-notes/`）。
+  （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
   `<plugin root>/skills/agent-standards/references/claude-hooks.md`が扱う
 
@@ -110,7 +110,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
 
-- コーディングエージェント向け文書を編集する場合は、`AGENTS.md`が定めるフィードバック由来文書の参照・更新規範に従う
+- コーディングエージェント向け文書を編集する場合は、`AGENTS.md`が定めるAWI由来文書の参照・更新規範に従う
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・

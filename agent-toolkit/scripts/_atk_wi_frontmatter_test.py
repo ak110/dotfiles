@@ -209,7 +209,7 @@ metadata:
         original_text = """---
 target_repo: example
 type: normal
-source: feedback
+source: awi
 ---
 本文内容"""
         parsed = frontmatter.parse_frontmatter(original_text)

@@ -1,5 +1,5 @@
 /* カスタムプロパティー・ボタン・ナビゲーションの共通定義は`shell.css`が持つ。
-   本ファイルはフィードバック画面固有のレイアウトと部品だけを定義する。 */
+   本ファイルはWI画面固有のレイアウトと部品だけを定義する。 */
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -172,7 +172,7 @@ textarea { resize: vertical; }
   background: #eef2ff;
   box-shadow: 0 0 0 1px var(--color-primary);
 }
-.entry-select[data-unanswered-tbd="true"] {
+.entry-select[data-unanswered-uwi="true"] {
   border-left: 0.4rem solid var(--color-warning);
   background: #fffdf5;
 }

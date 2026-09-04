@@ -23,8 +23,8 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
-    _write_feedback_file,
-    _write_tbd_file,
+    _write_awi_file,
+    _write_uwi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -39,8 +39,8 @@ class TestShowSingleFile:
     ) -> None:
         """FILENAME指定時は当該1件のtarget_repoグループ・ファイル名・本文が出力され他件は出力されない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -79,7 +79,7 @@ class TestShowSingleFile:
     ) -> None:
         """FILENAME指定と--target-repo不一致時は次のkindへ進み、全kind該当なしでexit 2となる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -103,7 +103,7 @@ class TestShowSingleFile:
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
-        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo), body="旧形式")
+        _write_awi_file(notes, "legacy.md", target_repo=str(local_repo), body="旧形式")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -127,8 +127,8 @@ class TestShowMultipleFiles:
     ) -> None:
         """複数項目を指定順かつ空行区切りで表示し、pullを1回だけ実行する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
-        second = _write_feedback_file(notes, "fb-002.md", body="本文2")
+        _write_awi_file(notes, "fb-001.md", body="本文1")
+        second = _write_awi_file(notes, "fb-002.md", body="本文2")
         second.write_text(second.read_text(encoding="utf-8").rstrip("\n"), encoding="utf-8")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
@@ -151,9 +151,9 @@ class TestShowMultipleFiles:
     ) -> None:
         """同一対象リポジトリの複数指定は1回の取得で対象を絞り、`--skip-pull`では同期しない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2")
-        _write_feedback_file(notes, "other.md", target_repo="github.com/example/bar", body="対象外")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2")
+        _write_awi_file(notes, "other.md", target_repo="github.com/example/bar", body="対象外")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -185,8 +185,8 @@ class TestShowMultipleFiles:
     ) -> None:
         """複数指定の区切りは`--all`と同じく各項目の後の空行1行とする。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
-        _write_feedback_file(notes, "fb-002.md", body="本文2")
+        _write_awi_file(notes, "fb-001.md", body="本文1")
+        _write_awi_file(notes, "fb-002.md", body="本文2")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit):
@@ -210,7 +210,7 @@ class TestShowMultipleFiles:
     ) -> None:
         """1件だけ指定した場合は従来どおり末尾へ空行を足さない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        _write_awi_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit):
@@ -226,7 +226,7 @@ class TestShowMultipleFiles:
     ) -> None:
         """拡張子省略形と正規形の重複は初出1件へ集約し警告する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        _write_awi_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -245,8 +245,8 @@ class TestShowMultipleFiles:
     ) -> None:
         """欠落又はフィルター不一致が1件でもあれば全出力を抑制し該当名を全て列挙する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-ok.md", target_repo="github.com/example/foo", body="表示しない本文")
-        _write_feedback_file(notes, "fb-mismatch.md", target_repo="github.com/example/bar", body="不一致本文")
+        _write_awi_file(notes, "fb-ok.md", target_repo="github.com/example/foo", body="表示しない本文")
+        _write_awi_file(notes, "fb-mismatch.md", target_repo="github.com/example/bar", body="不一致本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -282,9 +282,9 @@ class TestShowAll:
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
-        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo), body="旧形式")
-        _write_feedback_file(notes, "current.md", target_repo="github.com/example/myrepo", body="現行形式")
-        _write_feedback_file(notes, "missing.md", target_repo=str(tmp_path / "missing"), body="対象外")
+        _write_awi_file(notes, "legacy.md", target_repo=str(local_repo), body="旧形式")
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo", body="現行形式")
+        _write_awi_file(notes, "missing.md", target_repo=str(tmp_path / "missing"), body="対象外")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -307,8 +307,8 @@ class TestShowAll:
     ) -> None:
         """--all指定時は複数target_repoの全件がグループ化されて出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar", body="本文2")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -335,7 +335,7 @@ class TestShowStatusAll:
     ) -> None:
         """`--all --status=all`指定時、inbox・processing・adopted・rejectedの全件が状態ラベル付きで出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
+        _write_awi_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
         adopted_dir = notes / "adopted"
         adopted_dir.mkdir(parents=True, exist_ok=True)
         (adopted_dir / "fb-adopted.md").write_text(
@@ -388,7 +388,7 @@ class TestShowRequiresFilenameOrAll:
 class TestShowTypeFilter:
     """showサブコマンド: --typeでFILENAME探索対象種別を限定する（探索範囲は4状態フォルダ全体）。"""
 
-    def test_type_tbd_finds_tbd_entry(
+    def test_type_uwi_finds_uwi_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -396,7 +396,7 @@ class TestShowTypeFilter:
     ) -> None:
         """--type=uwi指定時はinboxのみを探索しstatusラベル付きで出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -406,15 +406,15 @@ class TestShowTypeFilter:
         captured = capsys.readouterr()
         assert f"### {_FIXED_TIMESTAMP}-001.md [inbox/unanswered]" in captured.out
 
-    def test_type_feedback_excludes_tbd_entry(
+    def test_type_awi_excludes_uwi_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=awi指定時はtbdエントリを種別不一致として除外し該当なしでexit 2になる。"""
+        """--type=awi指定時はuwiエントリを種別不一致として除外し該当なしでexit 2になる。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -424,7 +424,7 @@ class TestShowTypeFilter:
         captured = capsys.readouterr()
         assert "全状態フォルダに存在しません" in captured.err
 
-    def test_type_all_searches_feedback_then_tbd(
+    def test_type_all_searches_awi_then_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -432,7 +432,7 @@ class TestShowTypeFilter:
     ) -> None:
         """--type=all（既定）は種別を問わず探索し該当エントリを表示する。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -454,8 +454,8 @@ class TestShowSourceFilter:
     ) -> None:
         """--all --source=NAME指定時、同一sourceのエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1", source="session-review")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2", source=None)
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1", source="session-review")
+        _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -473,7 +473,7 @@ class TestShowSourceFilter:
     ) -> None:
         """FILENAME指定＋--source=!NAME指定時、一致するsourceのファイルは未検出扱いになる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", source="session-review")
+        _write_awi_file(notes, "fb-001.md", source="session-review")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -481,16 +481,16 @@ class TestShowSourceFilter:
 
         assert exc_info.value.code == 2
 
-    def test_all_filter_matches_exact_source_for_tbd(
+    def test_all_filter_matches_exact_source_for_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all --source=NAME指定時、tbd側も同一sourceのエントリのみ出力される。"""
+        """--all --source=NAME指定時、uwi側も同一sourceのエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, "tbd-001.md", question="質問1", source="session-review")
-        _write_tbd_file(notes, "tbd-002.md", question="質問2", source=None)
+        _write_uwi_file(notes, "uwi-001.md", question="質問1", source="session-review")
+        _write_uwi_file(notes, "uwi-002.md", question="質問2", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -503,19 +503,19 @@ class TestShowSourceFilter:
 
 
 class TestShowStatusFilter:
-    """showサブコマンド: --answeredでTBDの回答状況を限定する（--all分岐のみ有効）。"""
+    """showサブコマンド: --answeredでUWIの回答状況を限定する（--all分岐のみ有効）。"""
 
-    def test_all_answered_excludes_unanswered_tbd_and_feedback(
+    def test_all_answered_excludes_unanswered_uwi_and_awi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all --answered=yesは回答済みTBDだけを表示する。"""
+        """--all --answered=yesは回答済みUWIだけを表示する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -533,9 +533,9 @@ class TestShowStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時は--answeredを迂回し、未回答tbdでも--answered=yesと無関係に表示される。"""
+        """FILENAME指定時は--answeredを迂回し、未回答uwiでも--answered=yesと無関係に表示される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -549,14 +549,14 @@ class TestShowStatusFilter:
         assert f"### {_FIXED_TIMESTAMP}-001.md [inbox/unanswered]" in captured.out
 
 
-def _write_feedback_state_file(
+def _write_awi_state_file(
     notes: pathlib.Path,
     state: str,
     filename: str,
     target_repo: str = "github.com/example/foo",
     body: str = "state本文",
 ) -> pathlib.Path:
-    """指定状態配下にフィードバックファイルを書き込み、絶対パスを返す。"""
+    """指定状態配下にAWIファイルを書き込み、絶対パスを返す。"""
     state_dir = notes / state
     state_dir.mkdir(parents=True, exist_ok=True)
     path = state_dir / filename
@@ -567,14 +567,14 @@ def _write_feedback_state_file(
     return path
 
 
-def _write_feedback_processing_file(
+def _write_awi_processing_file(
     notes: pathlib.Path,
     filename: str,
     target_repo: str = "github.com/example/foo",
     body: str = "processing本文",
 ) -> pathlib.Path:
-    """processing配下に1ファイルを書き込み、絶対パスを返す（`_write_feedback_state_file`の薄いラッパー）。"""
-    return _write_feedback_state_file(notes, "processing", filename, target_repo=target_repo, body=body)
+    """processing配下に1ファイルを書き込み、絶対パスを返す（`_write_awi_state_file`の薄いラッパー）。"""
+    return _write_awi_state_file(notes, "processing", filename, target_repo=target_repo, body=body)
 
 
 class TestShowProcessing:
@@ -588,7 +588,7 @@ class TestShowProcessing:
     ) -> None:
         """FILENAME指定時にinboxで見つからずprocessingで見つかる場合、当該本文が表示される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
+        _write_awi_processing_file(notes, "fb-processing.md", body="processing本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -607,8 +607,8 @@ class TestShowProcessing:
     ) -> None:
         """FILENAME指定時、inbox→processingの順で探索しinbox側が優先される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-dup.md", body="inbox側本文")
-        _write_feedback_processing_file(notes, "fb-dup.md", body="processing側本文")
+        _write_awi_file(notes, "fb-dup.md", body="inbox側本文")
+        _write_awi_processing_file(notes, "fb-dup.md", body="processing側本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -627,8 +627,8 @@ class TestShowProcessing:
     ) -> None:
         """--all指定時にactiveの3状態を型によらず出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
-        _write_feedback_processing_file(notes, "fb-processing.md", body="processing本文")
+        _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
+        _write_awi_processing_file(notes, "fb-processing.md", body="processing本文")
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
@@ -667,7 +667,7 @@ class TestShowProcessedStates:
     ) -> None:
         """adopted配下のFILENAMEを参照できる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -686,7 +686,7 @@ class TestShowProcessedStates:
     ) -> None:
         """rejected配下のFILENAMEを参照できる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
+        _write_awi_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -710,7 +710,7 @@ class TestShowProcessedStates:
         迂回する契約になっている（指摘2の修正と対で成立する）。
         """
         notes = _setup_notes(tmp_path)
-        _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -729,9 +729,9 @@ class TestShowProcessedStates:
     ) -> None:
         """--all --status=allは全状態を表示する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-inbox.md", body="inbox本文")
-        _write_feedback_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
-        _write_feedback_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
+        _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
+        _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        _write_awi_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -754,7 +754,7 @@ class TestShowSkipPull:
     ) -> None:
         """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -772,7 +772,7 @@ class TestShowSkipPull:
     ) -> None:
         """直近の同期形跡がある通常表示ではremote同期を省略して再利用を案内する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         git_dir = notes / ".git"
         git_dir.mkdir()
         (git_dir / "FETCH_HEAD").touch()
@@ -796,7 +796,7 @@ class TestShowSkipPull:
     ) -> None:
         """--pull指定時は直近の同期形跡があってもfetch・mergeを実行する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         git_dir = notes / ".git"
         git_dir.mkdir()
         (git_dir / "FETCH_HEAD").touch()

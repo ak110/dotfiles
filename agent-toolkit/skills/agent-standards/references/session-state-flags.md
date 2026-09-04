@@ -62,9 +62,9 @@
 - `task_stop_blocked_at`: PreToolUse(TaskStop)が遮断した時刻のPOSIX秒を記録し、同フックが再実行許可窓の判定に読む。
   セッション終了まで保持し、リセット経路は設けない
 
-## TBD系
+## UWI系
 
-- `uwi_answered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの回答済みTBDファイル名を
+- `uwi_answered_by_repo`: エージェント識別子ごと・対象リポジトリIDごとの回答済みUWIファイル名を
   PostToolUseが記録する。値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とし、
   hook payloadの`agent_id`を持たないメイン会話は`main`をキーとする。
   cwdが空・保存先未解決・後述の指紋が前回と同一・リポジトリID未解決・走査不完全のいずれかの場合は

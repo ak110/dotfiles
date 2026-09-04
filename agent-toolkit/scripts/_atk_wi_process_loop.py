@@ -46,7 +46,7 @@ _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 _CODEX_NORMAL_EXIT_CODES_POSIX: frozenset[int] = frozenset({0, -15})
 _CODEX_NORMAL_EXIT_CODES_WINDOWS: frozenset[int] = frozenset({0})
 
-# 主待機のタイムアウト秒（他端末からのフィードバック投入を`remote`同期で拾う間隔）。
+# 主待機のタイムアウト秒（他端末からのAWI投入を`remote`同期で拾う間隔）。
 _POLL_INTERVAL_SEC = 600.0
 
 # `latest`指定ツールを外部の登録簿に対して再評価する間隔と、導入処理の実行上限。
@@ -448,7 +448,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
 
 
 def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) -> str:
-    """対象リポジトリのフィードバック処理の完遂と終了を依頼する短い目的文を構築する。
+    """対象リポジトリのAWI処理の完遂と終了を依頼する短い目的文を構築する。
 
     目的文はスキルの完遂と`agent-toolkit:exit-session`による終了だけを求める。処理範囲、実行基盤の障害対応、再開条件は
     `agent-toolkit:process-wi`とその参照先が定める。目的文へ重ねて書くと、
@@ -458,7 +458,7 @@ def _build_process_loop_prompt(local_path: pathlib.Path, target_repo_id: str) ->
     return (
         "/goal `agent-toolkit:process-wi`を起動し、"
         f"`{local_path}`で対象リポジトリ`{target_repo_id}`の"
-        "フィードバック処理を完遂したうえで、"
+        "AWI処理を完遂したうえで、"
         "`agent-toolkit:exit-session`でセッションを終了してください。"
     )
 
@@ -1017,7 +1017,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     `--no-update`未指定なら`_restart_process_loop`でランチャーへ再起動を要求する。
     それ以外のexit codeで終了した場合は同じexit codeでCLI自体を終了する。
     件数0の間はアラート自動検出（既定有効、`--no-alerts`で無効化）を`--alert-interval`
-    秒間隔で実行し、新規アラートを検知した場合はフィードバックへ投入して即座に次反復へ進む。
+    秒間隔で実行し、新規アラートを検知した場合はAWIへ投入して即座に次反復へ進む。
     `--alert-forge`は検出対象（github/gitlab/auto）を指定する。
     件数0の間はwatchdogによる変更検知と10分間隔のremote同期を含む待機ループへ進み、
     待機に入った旨を1度出力する。
@@ -1111,7 +1111,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         orchestrator, model, effort = _select_available_orchestrator(
                             _resolve_orchestrator_specs(), env, session_path
                         )
-                        print(f"{count}件のフィードバック/回答済みTBDを検知。{orchestrator}へ委譲します。")
+                        print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")
                         _run_process_session(
                             args,
                             session_path,
@@ -1132,7 +1132,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
                         last_alert_check,
                     )
                     if submitted > 0:
-                        print(f"アラート監視により{submitted}件のフィードバックを投入しました。")
+                        print(f"アラート監視により{submitted}件のAWIを投入しました。")
                         refresh_before_session = True
                         continue
                     print("0件のため変更検知を待機します。")

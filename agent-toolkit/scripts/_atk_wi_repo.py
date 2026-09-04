@@ -203,7 +203,7 @@ def edit_entry(
     content_transformer: typing.Callable[[str, str], str] | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """フィードバック・TBD共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
+    """AWI・UWI共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
     `_atk_wi_mutations.edit_entry_content`が呼び出す。
     編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
@@ -259,7 +259,7 @@ def append_entry(
     content_validator: typing.Callable[[str, str], None] | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """フィードバック本文をraw bytesのまま追記し、競合を検出してcommitまで行う。
+    """AWI本文をraw bytesのまま追記し、競合を検出してcommitまで行う。
 
     `finalized_content`を渡した場合は、追記後の確定本文を`content`キーへ格納する。
     """

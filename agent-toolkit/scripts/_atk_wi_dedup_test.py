@@ -19,7 +19,7 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
-    _write_feedback_file,
+    _write_awi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -47,7 +47,7 @@ def test_duplicate_filenames_deduplicated_with_warning(
 ) -> None:
     """重複指定を除去し、各サブコマンドで対象を1回だけ処理して警告する。"""
     notes = _setup_notes(tmp_path)
-    _write_feedback_file(notes, "fb-001.md")
+    _write_awi_file(notes, "fb-001.md")
     git_calls: list[_GitCall] = []
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 

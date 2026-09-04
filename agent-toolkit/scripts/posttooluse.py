@@ -30,7 +30,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 12. PostToolUseFailure・PermissionDenied: 原則状態を変更せず終了
 13. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-14. 対象リポジトリで新たに回答されたTBDファイルの通知（全ツール共通）
+14. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 15. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`のBash標準出力）
 """
@@ -160,7 +160,7 @@ def _git_commit_is_amend_or_fixup(args: list[str]) -> bool:
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 # process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
-_PROCESS_FEEDBACKS_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
+_PROCESS_AWIS_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 
 # exit-sessionスキル呼び出し検出。process-wiのフラグリセット経路に使う
 # （`agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端する）。
@@ -224,17 +224,17 @@ def _check_conditional_prohibition(file_path: pathlib.Path, content: str) -> lis
 # --- plan file形式検査の定数 ---
 
 
-def _set_process_feedbacks_invoked(state: dict) -> dict | None:
+def _set_process_awis_invoked(state: dict) -> dict | None:
     """process-wiスキル起動フラグを常時Trueへ上書きする。
 
     新規process-wiラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
-    リセット経路は`_reset_process_feedbacks_invoked`（exit-session起動検知）と併用する。
+    リセット経路は`_reset_process_awis_invoked`（exit-session起動検知）と併用する。
     """
     state["process_wi_skill_invoked"] = True
     return state
 
 
-def _reset_process_feedbacks_invoked(state: dict) -> dict | None:
+def _reset_process_awis_invoked(state: dict) -> dict | None:
     """`process_wi_skill_invoked`を偽へ戻す。既に偽ならNoneを返す（冪等）。"""
     if not state.get("process_wi_skill_invoked", False):
         return None
@@ -248,7 +248,7 @@ def _record_exit_session_invoked(state: dict) -> dict | None:
     if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
         state[_AUTONOMOUS_EXIT_STATE_KEY] = True
         changed = True
-    if _reset_process_feedbacks_invoked(state) is not None:
+    if _reset_process_awis_invoked(state) is not None:
         changed = True
     return state if changed else None
 
@@ -490,8 +490,8 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
             return state
 
         update_state(session_id, _set_invoked)
-    if skill_name in _PROCESS_FEEDBACKS_SKILL_NAMES:
-        update_state(session_id, _set_process_feedbacks_invoked)
+    if skill_name in _PROCESS_AWIS_SKILL_NAMES:
+        update_state(session_id, _set_process_awis_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
         update_state(session_id, _record_exit_session_invoked)
 
@@ -651,12 +651,12 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         return 0
     payload, session_id, tool_name, tool_input, cwd = parsed
 
-    # 対象リポジトリで新たに回答されたTBDファイルがある場合に通知する。
+    # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
     if cwd:
-        tbd_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
-        if tbd_notice is not None:
-            notices.append(_llm_notice(tbd_notice, tag="notice"))
+        uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
+        if uwi_notice is not None:
+            notices.append(_llm_notice(uwi_notice, tag="notice"))
 
     # pyfltr MCPのrun_for_agentはPostToolUseへ到達した時点で成功済みである。
     # CLI経由と同じ検証完了契約として記録し、コミット前の未検証警告を抑制する。

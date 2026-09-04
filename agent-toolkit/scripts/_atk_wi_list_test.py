@@ -1,6 +1,6 @@
 """atk (agent-toolkit `atk wi`) のlistサブコマンドのテスト。
 
-フィードバック/`tbd`一覧出力・各種フィルター（target-repo・source・type・status・skip-pull・count）の
+AWI/`uwi`一覧出力・各種フィルター（target-repo・source・type・status・skip-pull・count）の
 単体テストを集約する。他サブコマンドの分割先はatk_test.pyの分割方針一覧docstringを参照する。
 共通ヘルパーは`atk_test.py`から再利用する。
 """
@@ -28,8 +28,8 @@ from atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
     _setup_notes,
-    _write_feedback_file,
-    _write_tbd_file,
+    _write_awi_file,
+    _write_uwi_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
@@ -64,7 +64,7 @@ class TestListEmpty:
 
 
 class TestListSingle:
-    """listサブコマンド: 1件のフィードバックを1行で出力する。"""
+    """listサブコマンド: 1件のAWIを1行で出力する。"""
 
     def test_single_entry(
         self,
@@ -72,9 +72,9 @@ class TestListSingle:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """1件のフィードバックがファイル名・`target_repo`・本文冒頭要約のタブ区切り1行で出力されること。"""
+        """1件のAWIがファイル名・`target_repo`・本文冒頭要約のタブ区切り1行で出力されること。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -92,8 +92,8 @@ class TestListSingle:
     ) -> None:
         """期限待ちと不正期限を安定した理由で表示する。"""
         notes = _setup_notes(tmp_path)
-        pending = _write_feedback_file(notes, "pending.md")
-        invalid = _write_feedback_file(notes, "invalid.md")
+        pending = _write_awi_file(notes, "pending.md")
+        invalid = _write_awi_file(notes, "invalid.md")
         pending.write_text(
             pending.read_text(encoding="utf-8").replace(
                 "type: awi\n",
@@ -236,7 +236,7 @@ class TestLegacyReservationMigration:
         """孤立した内部項目を削除し、通常依存を保持する。"""
         notes = _setup_notes(tmp_path)
         self._write_companion(notes, "orphan.md")
-        dependent = _write_feedback_file(notes, "dependent.md", body="本文")
+        dependent = _write_awi_file(notes, "dependent.md", body="本文")
         dependent.write_text(
             dependent.read_text(encoding="utf-8").replace(
                 "type: awi\n",
@@ -262,7 +262,7 @@ class TestLegacyReservationMigration:
     ) -> None:
         """内部repo以外の同名metadataを旧生成物と誤認しない。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "user.md", body="利用者本文")
+        path = _write_awi_file(notes, "user.md", body="利用者本文")
         original = path.read_text(encoding="utf-8").replace(
             "type: awi\n",
             "type: awi\nreservation_companion: {target_repo: github.com/example/foo}\n",
@@ -285,7 +285,7 @@ class TestLegacyReservationMigration:
     ) -> None:
         """旧companionが無い利用者metadataは移行対象にしない。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "user.md", body="利用者本文")
+        path = _write_awi_file(notes, "user.md", body="利用者本文")
         processing_path = notes / "processing" / path.name
         processing_path.parent.mkdir()
         path.rename(processing_path)
@@ -365,7 +365,7 @@ class TestListPlanImplementationClassification:
         """queue_schedule欠落時もトップレベルplan_fileを優先して計画実装型と表示する。"""
         notes = _setup_notes(tmp_path)
         plan = tmp_path / "plan.md"
-        path = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
+        path = _write_awi_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
         path.write_text(
             path.read_text(encoding="utf-8").replace("type: awi\n", f"type: awi\nplan_file: {plan}\n"),
             encoding="utf-8",
@@ -388,7 +388,7 @@ class TestListPlanImplementationClassification:
     ) -> None:
         """修復対象のblocked項目へ具体的な理由を表示する。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "feedback.md", target_repo="github.com/example/repo", body="本文")
+        path = _write_awi_file(notes, "awi.md", target_repo="github.com/example/repo", body="本文")
         path.write_text(
             path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"),
             encoding="utf-8",
@@ -410,7 +410,7 @@ class TestListPlanImplementationClassification:
         """本文ハッシュ不一致時もトップレベルplan_fileを優先して計画実装型と表示する。"""
         notes = _setup_notes(tmp_path)
         plan = tmp_path / "plan.md"
-        path = _write_feedback_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
+        path = _write_awi_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
         text = path.read_text(encoding="utf-8").replace(
             "type: awi\n",
             f"type: awi\nplan_file: {plan}\n",
@@ -475,10 +475,10 @@ class TestListMultipleRepos:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """target_repoが異なる複数のフィードバックがそれぞれ1行で出力される。"""
+        """target_repoが異なる複数のAWIがそれぞれ1行で出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -500,13 +500,13 @@ class TestListMultipleRepos:
     ) -> None:
         """種別見出しを維持し、各グループ内を状態によらずファイル名順に並べる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "z-feedback.md", body="フィードバック")
-        feedback_processing = _write_feedback_file(notes, "a-feedback.md", body="処理中フィードバック")
+        _write_awi_file(notes, "z-awi.md", body="AWI")
+        awi_processing = _write_awi_file(notes, "a-awi.md", body="処理中AWI")
         (notes / "processing").mkdir()
-        feedback_processing.replace(notes / "processing" / feedback_processing.name)
-        _write_tbd_file(notes, "z-tbd.md", question="未回答", answer="")
-        tbd_processing = _write_tbd_file(notes, "a-tbd.md", question="回答済み", answer="回答")
-        tbd_processing.replace(notes / "processing" / tbd_processing.name)
+        awi_processing.replace(notes / "processing" / awi_processing.name)
+        _write_uwi_file(notes, "z-uwi.md", question="未回答", answer="")
+        uwi_processing = _write_uwi_file(notes, "a-uwi.md", question="回答済み", answer="回答")
+        uwi_processing.replace(notes / "processing" / uwi_processing.name)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -517,11 +517,11 @@ class TestListMultipleRepos:
         lines = output.splitlines()
         assert [line.split(":", 1)[0] for line in lines] == [
             "# awi",
-            "a-feedback.md",
-            "z-feedback.md",
+            "a-awi.md",
+            "z-awi.md",
             "# uwi",
-            "a-tbd.md",
-            "z-tbd.md",
+            "a-uwi.md",
+            "z-uwi.md",
         ]
         assert "[processing/" in lines[1]
         assert "[inbox/" in lines[2]
@@ -540,8 +540,8 @@ class TestListTargetRepoFilter:
     ) -> None:
         """複数target_repo混在でも--target-repo指定値と一致するエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        _write_feedback_file(notes, "fb-002.md", target_repo="github.com/example/bar")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -562,9 +562,9 @@ class TestListTargetRepoFilter:
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
-        _write_feedback_file(notes, "legacy.md", target_repo=str(local_repo))
-        _write_feedback_file(notes, "current.md", target_repo="github.com/example/myrepo")
-        _write_feedback_file(notes, "missing.md", target_repo=str(tmp_path / "missing"))
+        _write_awi_file(notes, "legacy.md", target_repo=str(local_repo))
+        _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
+        _write_awi_file(notes, "missing.md", target_repo=str(tmp_path / "missing"))
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(local_repo))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -584,7 +584,7 @@ class TestListTargetRepoFilter:
     ) -> None:
         """~プレフィックスのローカルパスがgit remote get-urlで正規化され、対応するエントリが出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/myrepo")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/myrepo")
         monkeypatch.setenv("HOME", str(tmp_path))
 
         myrepo = tmp_path / "myrepo"
@@ -607,7 +607,7 @@ class TestListTargetRepoFilter:
     ) -> None:
         """一致するエントリが存在しない場合、標準出力は空になる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -639,8 +639,8 @@ class TestListSourceFilter:
     ) -> None:
         """--sourceの一致指定と否定指定が該当エントリだけを出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", source="session-review")
-        _write_feedback_file(notes, "fb-002.md", source=None)
+        _write_awi_file(notes, "fb-001.md", source="session-review")
+        _write_awi_file(notes, "fb-002.md", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -667,16 +667,16 @@ class TestListSourceFilter:
 
         assert exc_info.value.code == 2
 
-    def test_filter_matches_exact_source_for_tbd(
+    def test_filter_matches_exact_source_for_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--source=NAME指定時、tbd側も同一sourceのエントリのみ出力される。"""
+        """--source=NAME指定時、uwi側も同一sourceのエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, "tbd-001.md", source="session-review")
-        _write_tbd_file(notes, "tbd-002.md", source=None)
+        _write_uwi_file(notes, "uwi-001.md", source="session-review")
+        _write_uwi_file(notes, "uwi-002.md", source=None)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -684,8 +684,8 @@ class TestListSourceFilter:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "tbd-001.md" in captured.out
-        assert "tbd-002.md" not in captured.out
+        assert "uwi-001.md" in captured.out
+        assert "uwi-002.md" not in captured.out
 
 
 class TestListLegacyTypeValues:
@@ -747,18 +747,18 @@ class TestListLegacyTypeValues:
 
 
 class TestListTypeFilter:
-    """`list`サブコマンド: `--type`でフィードバック/`tbd`出力を限定する。"""
+    """`list`サブコマンド: `--type`でAWI/`uwi`出力を限定する。"""
 
-    def test_type_feedback_outputs_only_feedback_section(
+    def test_type_awi_outputs_only_awi_section(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=awi`指定時はフィードバック部のみ出力され`tbd`ヘッダは出力されない。"""
+        """`--type=awi`指定時はAWI部のみ出力され`uwi`ヘッダは出力されない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
+        _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -768,15 +768,15 @@ class TestListTypeFilter:
         captured = capsys.readouterr()
         assert captured.out == "# awi\nfb-001.md: github.com/example/foo [inbox/normal/ready] 本文1\n"
 
-    def test_type_tbd_outputs_status_label(
+    def test_type_uwi_outputs_status_label(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=uwi指定時はtbd部のみ出力され回答状況ラベルが付与される。"""
+        """--type=uwi指定時はuwi部のみ出力され回答状況ラベルが付与される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -786,15 +786,15 @@ class TestListTypeFilter:
         captured = capsys.readouterr()
         assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
 
-    def test_answered_tbd_displays_blocked_reason(
+    def test_answered_uwi_displays_blocked_reason(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """回答済みTBDが依存異常でblockedの場合は両状態を表示する。"""
+        """回答済みUWIが依存異常でblockedの場合は両状態を表示する。"""
         notes = _setup_notes(tmp_path)
-        path = _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答済み")
+        path = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答済み")
         path.write_text(
             path.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\ndepends_on: [missing.md]\n"),
             encoding="utf-8",
@@ -809,15 +809,15 @@ class TestListTypeFilter:
         assert "[inbox/answered/blocked]" in output
         assert "blocked_reason=missing-dependency" in output
 
-    def test_answered_tbd_status_label_omits_type(
+    def test_answered_uwi_status_label_omits_type(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """回答済みTBDの状態ラベルは種別を含まない従来形式である。"""
+        """回答済みUWIの状態ラベルは種別を含まない従来形式である。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -826,7 +826,7 @@ class TestListTypeFilter:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert f"{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/answered]" in captured.out
-        assert "[tbd/" not in captured.out
+        assert "[uwi/" not in captured.out
 
     def test_type_all_omits_empty_section_header(
         self,
@@ -834,9 +834,9 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=all（既定）でtbd側が0件の場合はtbd種別ヘッダを省略する。"""
+        """--type=all（既定）でuwi側が0件の場合はuwi種別ヘッダを省略する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
+        _write_awi_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -858,7 +858,7 @@ class TestListSkipPull:
     ) -> None:
         """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -876,7 +876,7 @@ class TestListSkipPull:
     ) -> None:
         """直近の同期形跡がある通常一覧ではremote同期を省略して再利用を案内する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         git_dir = notes / ".git"
         git_dir.mkdir()
         (git_dir / "FETCH_HEAD").touch()
@@ -901,7 +901,7 @@ class TestListSkipPull:
     ) -> None:
         """--pull指定時は直近の同期形跡があってもfetch・mergeを実行する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         git_dir = notes / ".git"
         git_dir.mkdir()
         (git_dir / "FETCH_HEAD").touch()
@@ -931,7 +931,7 @@ class TestListSkipPull:
 
 
 class TestListStatusFilter:
-    """listサブコマンド: --answeredでtbd側のみ回答状況を限定する。"""
+    """listサブコマンド: --answeredでuwi側のみ回答状況を限定する。"""
 
     @pytest.mark.parametrize(
         ("answered", "expected_suffix", "excluded_suffix"),
@@ -949,10 +949,10 @@ class TestListStatusFilter:
         expected_suffix: str,
         excluded_suffix: str,
     ) -> None:
-        """--answered=yes/noが回答状況と一致するTBDだけを出力する。"""
+        """--answered=yes/noが回答状況と一致するUWIだけを出力する。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -969,7 +969,7 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=activeがfeedbackとTBDのどちらでもholdを含む3状態を返す。"""
+        """--status=activeがawiとUWIのどちらでもholdを含む3状態を返す。"""
         notes = _setup_notes(tmp_path)
         hold_dir = notes / "hold"
         hold_dir.mkdir(parents=True, exist_ok=True)
@@ -977,7 +977,7 @@ class TestListStatusFilter:
             "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
-        (hold_dir / "tbd-hold.md").write_text(
+        (hold_dir / "uwi-hold.md").write_text(
             "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\nhold質問\n",
             encoding="utf-8",
         )
@@ -989,18 +989,18 @@ class TestListStatusFilter:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "fb-hold.md" in captured.out
-        assert "tbd-hold.md" in captured.out
+        assert "uwi-hold.md" in captured.out
 
-    def test_status_all_outputs_every_tbd(
+    def test_status_all_outputs_every_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=all指定時に全TBDが出力される。"""
+        """--status=all指定時に全UWIが出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1011,16 +1011,16 @@ class TestListStatusFilter:
         assert f"{_FIXED_TIMESTAMP}-001.md" in captured.out
         assert f"{_FIXED_TIMESTAMP}-002.md" in captured.out
 
-    def test_status_answered_does_not_affect_feedback(
+    def test_status_answered_does_not_affect_awi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--answered=yes指定時に回答概念を持たないフィードバックは除外される。"""
+        """--answered=yes指定時に回答概念を持たないAWIは除外される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md", body="本文1")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_awi_file(notes, "fb-001.md", body="本文1")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1050,17 +1050,17 @@ class TestListStatusFilter:
 class TestListCount:
     """listサブコマンド: --count指定時は種別ヘッダ・エントリ行を抑制し件数のみ出力する。"""
 
-    def test_count_outputs_total_of_feedback_and_tbd(
+    def test_count_outputs_total_of_awi_and_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--count`指定時にフィードバック件数とTBD件数の合計が整数1行で出力される。"""
+        """`--count`指定時にAWI件数とUWI件数の合計が整数1行で出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
-        _write_feedback_file(notes, "fb-002.md")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
+        _write_awi_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-002.md")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1078,7 +1078,7 @@ class TestListCount:
     ) -> None:
         """--count指定時は種別ヘッダ・エントリ行を出力しない。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "fb-001.md")
+        _write_awi_file(notes, "fb-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1096,8 +1096,8 @@ class TestListCount:
     ) -> None:
         """--countと--statusを併用すると、statusフィルター適用後の件数が出力される。"""
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_tbd_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1138,7 +1138,7 @@ class TestListJson:
         notes = _setup_notes(tmp_path)
         long_repo = "github.com/example/" + "repository-" * 12
         body = "本文の長い要約 " + "長文" * 100
-        path = _write_feedback_file(notes, "json.md", target_repo=long_repo, body=body)
+        path = _write_awi_file(notes, "json.md", target_repo=long_repo, body=body)
         path.write_text(
             path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"),
             encoding="utf-8",
@@ -1184,7 +1184,7 @@ class TestListJson:
     ) -> None:
         """各エージェント環境変数で明示指定なしの出力をJSON Linesにする。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "feedback.md", body="全文")
+        _write_awi_file(notes, "awi.md", body="全文")
         monkeypatch.setenv(environment_name, "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1192,7 +1192,7 @@ class TestListJson:
             atk.main(["wi", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert json.loads(capsys.readouterr().out)["filename"] == "feedback.md"
+        assert json.loads(capsys.readouterr().out)["filename"] == "awi.md"
 
     def test_no_json_overrides_agent_default_and_count_keeps_integer(
         self,
@@ -1202,7 +1202,7 @@ class TestListJson:
     ) -> None:
         """エージェント環境でも明示テキストと件数形式を優先する。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "feedback.md", body="全文")
+        _write_awi_file(notes, "awi.md", body="全文")
         monkeypatch.setenv("CODEX_CI", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1220,11 +1220,11 @@ class TestListJson:
 class TestMultipleFiltersCombinedAsAnd:
     """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
 
-    `--answered`はフィードバックを無条件除外する仕様（`_answered_matches`が`entry_type != WI_TYPE_UWI`時に
-    `False`を返す）のため、`--answered=no`とtype不一致（feedback）を1回の呼び出しへ同居させると
+    `--answered`はAWIを無条件除外する仕様（`_answered_matches`が`entry_type != WI_TYPE_UWI`時に
+    `False`を返す）のため、`--answered=no`とtype不一致（awi）を1回の呼び出しへ同居させると
     type条件の除外効果がanswered条件の除外効果と区別できなくなる。
     target-repo・source・type・statusの4条件は`--answered=all`（無効化）の下で検証し、
-    answered条件は同一の4条件（tbdのみ）を満たすエントリ同士の回答有無差分で別途検証する。
+    answered条件は同一の4条件（uwiのみ）を満たすエントリ同士の回答有無差分で別途検証する。
     """
 
     def test_target_repo_source_type_status_combined_narrows_to_intersection(
@@ -1233,26 +1233,26 @@ class TestMultipleFiltersCombinedAsAnd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """target-repo・source・type・statusの4条件全てに一致するtbdだけを出力する（answeredは無効化）。"""
+        """target-repo・source・type・statusの4条件全てに一致するuwiだけを出力する（answeredは無効化）。"""
         matching_repo = "github.com/example/matching"
         notes = _setup_notes(tmp_path)
-        # 4条件全てに一致する唯一のエントリ（tbd・inbox）。
-        _write_tbd_file(notes, "tbd-matching.md", target_repo=matching_repo, source="session-review")
+        # 4条件全てに一致する唯一のエントリ（uwi・inbox）。
+        _write_uwi_file(notes, "uwi-matching.md", target_repo=matching_repo, source="session-review")
         # target-repoのみ不一致。
-        _write_tbd_file(
+        _write_uwi_file(
             notes,
-            "tbd-other-repo.md",
+            "uwi-other-repo.md",
             target_repo="github.com/example/other",
             source="session-review",
         )
         # sourceのみ不一致。
-        _write_tbd_file(notes, "tbd-other-source.md", target_repo=matching_repo, source="user-issue")
-        # typeのみ不一致（`--answered=all`のためフィードバックも回答状況フィルターでは除外されない）。
-        _write_feedback_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
+        _write_uwi_file(notes, "uwi-other-source.md", target_repo=matching_repo, source="user-issue")
+        # typeのみ不一致（`--answered=all`のためAWIも回答状況フィルターでは除外されない）。
+        _write_awi_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
         # statusのみ不一致（processing配下、--status=inboxで除外される）。
         processing_dir = notes / "processing"
         processing_dir.mkdir(parents=True, exist_ok=True)
-        (processing_dir / "tbd-other-status.md").write_text(
+        (processing_dir / "uwi-other-status.md").write_text(
             f"---\ntarget_repo: {matching_repo}\ntype: uwi\nquestion_type: free-form\n"
             "source: session-review\n---\n\n## 質問\n\n本文\n\n## 回答\n\n",
             encoding="utf-8",
@@ -1275,11 +1275,11 @@ class TestMultipleFiltersCombinedAsAnd:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "tbd-matching.md" in captured.out
-        assert "tbd-other-repo.md" not in captured.out
-        assert "tbd-other-source.md" not in captured.out
+        assert "uwi-matching.md" in captured.out
+        assert "uwi-other-repo.md" not in captured.out
+        assert "uwi-other-source.md" not in captured.out
         assert "fb-other-type.md" not in captured.out
-        assert "tbd-other-status.md" not in captured.out
+        assert "uwi-other-status.md" not in captured.out
 
     def test_answered_narrows_within_already_matching_four_conditions(
         self,
@@ -1290,10 +1290,10 @@ class TestMultipleFiltersCombinedAsAnd:
         """target-repo・source・type・statusが一致する2エントリのうち、未回答のみが`--answered=no`で残る。"""
         matching_repo = "github.com/example/matching"
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(notes, "tbd-unanswered.md", target_repo=matching_repo, source="session-review", answer="")
-        _write_tbd_file(
+        _write_uwi_file(notes, "uwi-unanswered.md", target_repo=matching_repo, source="session-review", answer="")
+        _write_uwi_file(
             notes,
-            "tbd-answered.md",
+            "uwi-answered.md",
             target_repo=matching_repo,
             source="session-review",
             answer="回答済み",
@@ -1316,8 +1316,8 @@ class TestMultipleFiltersCombinedAsAnd:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "tbd-unanswered.md" in captured.out
-        assert "tbd-answered.md" not in captured.out
+        assert "uwi-unanswered.md" in captured.out
+        assert "uwi-answered.md" not in captured.out
 
 
 class TestListNonTtyTargetRepo:
@@ -1330,13 +1330,13 @@ class TestListNonTtyTargetRepo:
         """東アジア文字幅に基づく出力文字列の表示幅を返す。"""
         return sum(2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1 for char in text)
 
-    def test_feedback_non_tty_preserves_full_target_repo(
+    def test_awi_non_tty_preserves_full_target_repo(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非TTYのフィードバック行はtarget_repoを完全に保持する。"""
+        """非TTYのAWI行はtarget_repoを完全に保持する。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
@@ -1345,7 +1345,7 @@ class TestListNonTtyTargetRepo:
 
         notes = _setup_notes(tmp_path)
         body = "本文" * 80
-        _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
+        _write_awi_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         monkeypatch.setattr(shutil, "get_terminal_size", get_terminal_size)
 
@@ -1359,7 +1359,7 @@ class TestListNonTtyTargetRepo:
         assert body in captured.out
         assert any(self._display_width(line) > terminal_columns for line in output_lines)
 
-    def test_feedback_tty_shortens_to_terminal_width(
+    def test_awi_tty_shortens_to_terminal_width(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -1369,7 +1369,7 @@ class TestListNonTtyTargetRepo:
         terminal_columns = 70
         notes = _setup_notes(tmp_path)
         body = "本文" * 80
-        _write_feedback_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
+        _write_awi_file(notes, "fb-001.md", target_repo=self._LONG_REPO, body=body)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((terminal_columns, 24)))
         monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
@@ -1382,13 +1382,13 @@ class TestListNonTtyTargetRepo:
         assert self._LONG_REPO not in output_lines[-1]
         assert self._display_width(output_lines[-1]) <= terminal_columns
 
-    def test_tbd_non_tty_preserves_full_target_repo(
+    def test_uwi_non_tty_preserves_full_target_repo(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非TTYのTBD行はtarget_repoを完全に保持する。"""
+        """非TTYのUWI行はtarget_repoを完全に保持する。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
@@ -1396,7 +1396,7 @@ class TestListNonTtyTargetRepo:
             return os.terminal_size((terminal_columns, 24))
 
         notes = _setup_notes(tmp_path)
-        _write_tbd_file(
+        _write_uwi_file(
             notes,
             f"{_FIXED_TIMESTAMP}-001.md",
             question="q1",

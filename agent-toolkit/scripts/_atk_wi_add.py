@@ -13,7 +13,7 @@ import sys
 
 import _atk_wi_frontmatter as _frontmatter
 import _atk_wi_user_comment as _user_comment
-import _atk_wi_uwi as _tbd
+import _atk_wi_uwi as _uwi
 import _plan_file
 from _atk_wi_common import (
     WI_STATE_INBOX,
@@ -24,7 +24,7 @@ from _atk_wi_common import (
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
-    _count_feedback,
+    _count_awi,
     _max_existing_seq,
     _pull,
     _reject_bare_repo_path_override,
@@ -122,16 +122,16 @@ def _body_is_effectively_empty(body: str) -> bool:
     return all(line in ("-", "*", "+") for line in non_empty_lines)
 
 
-_EMPTY_FEEDBACK_ERROR = "フィードバック本文が実質空です"
+_EMPTY_AWI_ERROR = "AWI本文が実質空です"
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
     """先頭frontmatterと論理本文を返し、種別共通の本文契約を検証する。"""
     frontmatter, body = _parse_leading_frontmatter(message)
     if entry_type == WI_TYPE_AWI and _body_is_effectively_empty(body):
-        raise WebInputError(_EMPTY_FEEDBACK_ERROR)
+        raise WebInputError(_EMPTY_AWI_ERROR)
     if entry_type != WI_TYPE_AWI:
-        _tbd.reject_reserved_tbd_markup(body)
+        _uwi.reject_reserved_uwi_markup(body)
     return frontmatter, body
 
 
@@ -223,7 +223,7 @@ CLIオプションより優先して採用するが、`target_repo`は`_resolve_
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
 `reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
-CLIが管理する識別情報、依存、修復TBD、旧形式の内部metadataとして予約する。
+CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadataとして予約する。
 """
 
 
@@ -296,7 +296,7 @@ def _add_entries_locked(
             if repair_target is not None:
                 frontmatter_data["repair_target"] = repair_target
                 frontmatter_data["repair_kind"] = repair_kind
-            logical_body = f"\n{_tbd.QUESTION_HEADING}\n\n{body}\n\n{_tbd.ANSWER_HEADING}\n\n{_tbd.ANSWER_MARKER}\n"
+            logical_body = f"\n{_uwi.QUESTION_HEADING}\n\n{body}\n\n{_uwi.ANSWER_HEADING}\n\n{_uwi.ANSWER_MARKER}\n"
         else:
             logical_body = body if body.startswith("\n") else f"\n{body.rstrip()}\n"
             if plan_file is not None:
@@ -306,7 +306,7 @@ def _add_entries_locked(
         content = _frontmatter.serialize_frontmatter(frontmatter_data, logical_body)
         (inbox_dir / filename).write_text(content, encoding="utf-8")
         if entry_type != WI_TYPE_AWI:
-            _tbd.warn_question_quality(filename, body, question_type)
+            _uwi.warn_question_quality(filename, body, question_type)
         generated.append((filename, content))
         counter += 1
     return generated
@@ -332,8 +332,8 @@ def add_entries(
     """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
-    TBD種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
-    `_tbd.reject_reserved_tbd_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
+    UWI種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
+    `_uwi.reject_reserved_uwi_markup`が`WebInputError`を送出する（CLIとWeb UIの共通経路）。
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     """
@@ -350,7 +350,7 @@ def add_entries(
     plan_path: pathlib.Path | None = None
     if plan_file is not None:
         if entry_type != WI_TYPE_AWI:
-            raise WebInputError("plan_fileはfeedback種別でのみ指定できます")
+            raise WebInputError("plan_fileはawi種別でのみ指定できます")
         try:
             plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
             stored_plan_file = _plan_file.normalize_plan_file(plan_file, private_notes=private_notes)
@@ -487,7 +487,7 @@ def _cmd_add(
             )
             parse_entry_message(message, entry_type=args.type)
         except WebInputError as error:
-            if str(error) == _EMPTY_FEEDBACK_ERROR:
+            if str(error) == _EMPTY_AWI_ERROR:
                 preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"
                 print(
                     "投入を拒否しました: 本文が実質空です"
@@ -545,10 +545,10 @@ def _cmd_add(
     for filename in generated:
         print(f"  {_shorten_home(inbox_dir / filename, home)}")
         _print_entry_details(saved_details[filename])
-    print(f"inbox: 計{_count_feedback(inbox_dir)}件（processing: {_count_feedback(processing_dir)}件）")
+    print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")
     print(
-        f"  うち{target_repo}: {_count_feedback(inbox_dir, target_repo)}件"
-        f"（processing: {_count_feedback(processing_dir, target_repo)}件）"
+        f"  うち{target_repo}: {_count_awi(inbox_dir, target_repo)}件"
+        f"（processing: {_count_awi(processing_dir, target_repo)}件）"
     )
     print("編集する場合:")
     for filename in generated:

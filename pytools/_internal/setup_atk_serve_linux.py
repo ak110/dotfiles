@@ -38,7 +38,7 @@ exec "{uv}" run --no-project --script "$script" serve "$@"
 # 待受アドレス・ポートはホスト固有値であり、
 # `~/.config/agent-toolkit/serve.toml` 経由で指定する。
 _UNIT_CONTENT = """[Unit]
-Description=agent-toolkit feedback server
+Description=agent-toolkit work item server
 After=network.target
 
 [Service]

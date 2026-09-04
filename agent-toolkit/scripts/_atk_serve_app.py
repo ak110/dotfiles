@@ -20,14 +20,14 @@ import _atk_serve_config as serve_config
 import _atk_serve_plans as serve_plans
 import _atk_serve_sessions as serve_sessions
 import _atk_serve_state as serve_state
-import _atk_wi_add as feedback_add
-import _atk_wi_batch as feedback_batch
+import _atk_wi_add as awi_add
+import _atk_wi_batch as awi_batch
 import _atk_wi_common as common
 import _atk_wi_frontmatter as frontmatter
-import _atk_wi_mutations as feedback_mutations
-import _atk_wi_repo as feedback_repo
+import _atk_wi_mutations as awi_mutations
+import _atk_wi_repo as awi_repo
 import _atk_wi_user_comment as user_comment_mutations
-import _atk_wi_uwi as tbd_mutations
+import _atk_wi_uwi as uwi_mutations
 import _git_remote
 import filelock
 import markdown_it
@@ -321,7 +321,7 @@ def _render_body(text: str) -> str:
 
 
 def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str, list[str]]:
-    """TBDの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
+    """UWIの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
     if kind != common.WI_TYPE_UWI:
         return "free-form", []
     raw_type = metadata.get("question_type")
@@ -336,11 +336,11 @@ def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str,
     return question_type, []
 
 
-def _tbd_answer(text: str, kind: str) -> str | None:
-    """TBD回答欄の既存回答を編集用文字列として返す。"""
-    if kind != common.WI_TYPE_UWI or tbd_mutations.ANSWER_MARKER not in text:
+def _uwi_answer(text: str, kind: str) -> str | None:
+    """UWI回答欄の既存回答を編集用文字列として返す。"""
+    if kind != common.WI_TYPE_UWI or uwi_mutations.ANSWER_MARKER not in text:
         return None
-    return text.rsplit(tbd_mutations.ANSWER_MARKER, maxsplit=1)[1].strip() or None
+    return text.rsplit(uwi_mutations.ANSWER_MARKER, maxsplit=1)[1].strip() or None
 
 
 class BoundedWorkers:
@@ -396,7 +396,7 @@ class Operations:
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
 
-        未回答TBDを先頭に置き、残りは種別を混在させてファイル名の降順とする。
+        未回答UWIを先頭に置き、残りは種別を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
         warnings: list[dict[str, str]] = []
@@ -452,7 +452,7 @@ class Operations:
             if query and not any(query in str(value or "").casefold() for value in searchable):
                 continue
             result.append(item)
-        unanswered_tbd_items = sorted(
+        unanswered_uwi_items = sorted(
             [item for item in result if item["kind"] == common.WI_TYPE_UWI and item["answered"] is False],
             key=lambda item: str(item["filename"]),
             reverse=True,
@@ -462,7 +462,7 @@ class Operations:
             key=lambda item: str(item["filename"]),
             reverse=True,
         )
-        return unanswered_tbd_items + other_items, warnings
+        return unanswered_uwi_items + other_items, warnings
 
     def entries_with_warnings(
         self,
@@ -503,7 +503,7 @@ class Operations:
                 ),
                 "question_type": question_type,
                 "choices": choices,
-                "answer": _tbd_answer(text, kind or "unknown"),
+                "answer": _uwi_answer(text, kind or "unknown"),
                 "user_comment": extracted_comment,
                 "user_comment_editable": comment_editable,
             }
@@ -559,7 +559,7 @@ class Operations:
         expected_content: str | None = None,
     ) -> bool:
         try:
-            return feedback_mutations.edit_entry_content(
+            return awi_mutations.edit_entry_content(
                 self.private_notes,
                 state=state,
                 filename=filename,
@@ -587,14 +587,14 @@ class Operations:
             raise common.WebInputError(f"ユーザーコメントの対象は{common.WI_TYPE_AWI}だけです")
         if _source_kind(metadata.get("source")) != "agent":
             raise common.WebInputError(
-                "ユーザーコメントの対象はエージェント由来のfeedbackだけです。sourceが未設定の項目は対象になりません"
+                "ユーザーコメントの対象はエージェント由来のawiだけです。sourceが未設定の項目は対象になりません"
             )
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)
         except user_comment_mutations.UserCommentError as error:
             raise common.WebInputError(str(error)) from error
         try:
-            return feedback_mutations.edit_entry_content(
+            return awi_mutations.edit_entry_content(
                 self.private_notes,
                 state=state,
                 filename=filename,
@@ -635,10 +635,10 @@ class Operations:
         resolved_target_repo: str | None = None
         if target_repo is not None:
             try:
-                resolved_target_repo = feedback_repo.resolve_repo_id(target_repo)
+                resolved_target_repo = awi_repo.resolve_repo_id(target_repo)
             except SystemExit as error:
                 raise common.WebInputError("target_repoを解決できません") from error
-        return feedback_add.add_entries(
+        return awi_add.add_entries(
             self.private_notes,
             messages=messages,
             target_repo=resolved_target_repo,
@@ -656,7 +656,7 @@ class Operations:
 
         原文保持の契約はCLIと共通の`_atk_wi_batch.add_batch_entries`が担う。
         """
-        mapping, warnings = feedback_batch.add_batch_entries(
+        mapping, warnings = awi_batch.add_batch_entries(
             self.private_notes,
             texts=[text],
             now=datetime.datetime.now(),
@@ -668,15 +668,15 @@ class Operations:
             "warnings": warnings,
         }
 
-    def answer_tbd(
+    def answer_uwi(
         self,
         filename: str,
         answer: str,
         expected_content: str | None = None,
         state: str | None = None,
     ) -> bool:
-        """TBD回答欄を置換する。"""
-        return tbd_mutations.answer_tbd(
+        """UWI回答欄を置換する。"""
+        return uwi_mutations.answer_uwi(
             self.private_notes,
             filename=filename,
             answer=answer,
@@ -703,7 +703,7 @@ class Operations:
         processing状態のファイルへの既定保護（`atk wi rm`の`--force`と同義）を解除する。
         """
         try:
-            return feedback_mutations.transition_entries(
+            return awi_mutations.transition_entries(
                 self.private_notes,
                 action=action,
                 filenames=filenames,
@@ -721,7 +721,7 @@ class Operations:
 
     def commit(self) -> bool:
         """外部編集差分をcommitしてpushする。"""
-        return feedback_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
+        return awi_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
 
 class _ServeRuntime:
@@ -783,8 +783,8 @@ def _register_error_handlers(app: quart.Quart) -> None:
         return quart.jsonify(error="Git同期に失敗しました"), status
 
 
-def _register_feedback_asset_routes(app: quart.Quart) -> None:
-    """フィードバック画面のHTMLと静的資産のルートを登録する。"""
+def _register_awi_asset_routes(app: quart.Quart) -> None:
+    """WI画面のHTMLと静的資産のルートを登録する。"""
 
     @app.get("/")
     async def index() -> quart.Response:
@@ -821,7 +821,7 @@ def _register_shell_routes(app: quart.Quart) -> None:
         base_path = _safe_base_path(quart.request.root_path)
         root_url = f"{base_path}/"
         body = {
-            "name": "フィードバック管理",
+            "name": "WI管理",
             "short_name": "atk serve",
             "start_url": root_url,
             "scope": root_url,
@@ -1339,7 +1339,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         return quart.jsonify(**result), 201
 
     @app.post("/api/entries/answer")
-    async def answer_tbd() -> quart.Response:
+    async def answer_uwi() -> quart.Response:
         data = _json_object(
             await _request_json(),
             allowed={"filename", "state", "answer", "expected_content"},
@@ -1354,10 +1354,10 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         if state_name is not None and state_name not in (*common.WI_PROCESSABLE_STATES, common.WI_STATE_HOLD):
             raise common.WebInputError("stateはinbox、processing又はholdで指定してください")
         if state_name is None:
-            changed = await workers.run(ops.answer_tbd, data["filename"], data["answer"], expected_content)
+            changed = await workers.run(ops.answer_uwi, data["filename"], data["answer"], expected_content)
         else:
             changed = await workers.run(
-                ops.answer_tbd,
+                ops.answer_uwi,
                 data["filename"],
                 data["answer"],
                 expected_content,
@@ -1391,9 +1391,9 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         return quart.jsonify(changed=await workers.run(ops.commit))
 
 
-def _register_feedback_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
-    """フィードバック画面の資産・一覧・更新のルートをまとめて登録する。"""
-    _register_feedback_asset_routes(app)
+def _register_awi_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
+    """WI画面の資産・一覧・更新のルートをまとめて登録する。"""
+    _register_awi_asset_routes(app)
     _register_query_routes(app, runtime)
     _register_mutation_routes(app, runtime)
 
@@ -1439,7 +1439,7 @@ def create_app(
     app.config["SESSIONS_CONTEXT"] = sessions
     _register_error_handlers(app)
     _register_shell_routes(app)
-    _register_feedback_routes(app, runtime)
+    _register_awi_routes(app, runtime)
     _register_plan_routes(app, plans)
     _register_session_routes(app, sessions)
     _register_lifecycle(app, runtime, plans, sessions)

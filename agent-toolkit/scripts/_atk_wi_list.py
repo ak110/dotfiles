@@ -31,8 +31,8 @@ from _atk_wi_formatters import (
     _parse_source,
     _source_matches,
     _target_repo_budget,
-    _tbd_body_summary,
     _truncate_target_repo,
+    _uwi_body_summary,
 )
 from _atk_wi_frontmatter import parse_frontmatter
 from _atk_wi_repo import _resolve_repo_id
@@ -68,8 +68,8 @@ def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> s
     return "ready" if filename in readiness.ready else "blocked"
 
 
-def _covers_unanswered_tbds(args: argparse.Namespace) -> bool:
-    """`list`コマンドの出力が通知対象の未回答TBDを全て含むか判定する。
+def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
+    """`list`コマンドの出力が通知対象の未回答UWIを全て含むか判定する。
 
     次の全条件を満たす場合に`True`を返す:
     - `args.count`が`False`（整数のみ出力時は本文表示がないため対象外）
@@ -150,7 +150,7 @@ def _print_entries(selected: list[QueueEntryDisplay], readiness: ReadinessResult
                 shutil.get_terminal_size().columns - _display_width(prefix) if sys.stdout.isatty() else sys.maxsize
             )
             summary = (
-                _tbd_body_summary(text, available_width) if entry_type == WI_TYPE_UWI else _body_summary(text, available_width)
+                _uwi_body_summary(text, available_width) if entry_type == WI_TYPE_UWI else _body_summary(text, available_width)
             )
             print(f"{prefix}{summary}")
 
@@ -166,7 +166,7 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
             if state_readiness == "blocked" and (actual_type != WI_TYPE_UWI or answered)
             else None
         )
-        summary = _tbd_body_summary(text, sys.maxsize) if actual_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
+        summary = _uwi_body_summary(text, sys.maxsize) if actual_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
         record = {
             "filename": path.name,
             "type": actual_type,
@@ -181,19 +181,19 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
 
 
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """`list`サブコマンド: フィードバック/`tbd`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
+    """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
     `--type`指定で出力対象種別（awi・uwi・all）を限定する（既定: all）。
     `--status`指定で表示範囲を限定する（既定: active）。
     `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
     個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。
-    `tbd`側は`answered`・`unanswered`で回答状況を限定する。
-    `--source`指定時はフィードバック・`tbd`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
+    `uwi`側は`answered`・`unanswered`で回答状況を限定する。
+    `--source`指定時はAWI・`uwi`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
-    出力はフィードバック・`tbd`の種別でグループ化し、各グループ内を状態によらずファイル名の昇順で整列する。
+    出力はAWI・`uwi`の種別でグループ化し、各グループ内を状態によらずファイル名の昇順で整列する。
     該当エントリが1件以上ある種別だけ見出しを出力する。
-    `--count`指定時は、フィルター適用後のフィードバック件数とTBD件数の合計を整数のみで出力し、
+    `--count`指定時は、フィルター適用後のAWI件数とUWI件数の合計を整数のみで出力し、
     種別見出し・エントリ行は出力しない。
     """
     if not args.skip_pull:

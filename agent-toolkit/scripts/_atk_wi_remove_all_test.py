@@ -13,7 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_wi_remove_all as remove_all  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from atk_test import _setup_notes, _write_feedback_file  # noqa: E402  # pylint: disable=wrong-import-position
+from atk_test import _setup_notes, _write_awi_file  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 class _TtyInput(io.StringIO):
@@ -130,15 +130,15 @@ class TestRemoveAllArguments:
 class TestRemoveAllConfirmation:
     """一覧表示と1回確認の挙動を検証する。"""
 
-    def test_confirms_once_and_removes_feedback_and_tbd(
+    def test_confirms_once_and_removes_awi_and_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """フィードバックとTBDを一覧表示し、1回の承認で単一commitへまとめる。"""
+        """AWIとUWIを一覧表示し、1回の承認で単一commitへまとめる。"""
         notes = _setup_notes(tmp_path)
-        _write_feedback_file(notes, "feedback.md")
+        _write_awi_file(notes, "awi.md")
         _write_entry(notes, "inbox", "question.md", entry_type="uwi", body="## 質問\n\n確認事項\n\n## 回答\n")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
@@ -154,7 +154,7 @@ class TestRemoveAllConfirmation:
         assert "[inbox/unanswered]" in captured.out
         assert "上記2件を削除します" in captured.out
         assert stdin.tell() == 2
-        assert not (notes / "inbox/feedback.md").exists()
+        assert not (notes / "inbox/awi.md").exists()
         assert not (notes / "inbox/question.md").exists()
         assert commits == [("chore: remove 2 entries", ["inbox", "processing", "hold", "adopted", "rejected"])]
 
@@ -184,7 +184,7 @@ class TestRemoveAllConfirmation:
         """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
         notes = _setup_notes(tmp_path)
         (notes / "hold").rmdir()
-        _write_feedback_file(notes, "feedback.md")
+        _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
 
@@ -208,7 +208,7 @@ class TestRemoveAllConfirmation:
     ) -> None:
         """承認以外の入力では候補を保持し、commitしない。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "feedback.md")
+        path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
         monkeypatch.setattr(sys, "stdin", _TtyInput(answer))
@@ -227,7 +227,7 @@ class TestRemoveAllConfirmation:
     ) -> None:
         """非対話入力では`--yes`を案内して削除を拒否する。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "feedback.md")
+        path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
         monkeypatch.setattr(sys, "stdin", io.StringIO(""))
@@ -246,7 +246,7 @@ class TestRemoveAllConfirmation:
     ) -> None:
         """`--yes`でも一覧を表示し、標準入力を読まずに削除する。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "feedback.md")
+        path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
 
@@ -281,7 +281,7 @@ class TestRemoveAllScope:
     ) -> None:
         """一致するinbox・processingだけを種別横断で削除し、履歴と他リポジトリを保持する。"""
         notes = _setup_notes(tmp_path)
-        matching_inbox = _write_entry(notes, "inbox", "feedback.md")
+        matching_inbox = _write_entry(notes, "inbox", "awi.md")
         matching_processing = _write_entry(notes, "processing", "question.md", entry_type="uwi")
         other_repo = _write_entry(notes, "inbox", "other.md", target_repo="github.com/example/other")
         adopted = _write_entry(notes, "adopted", "adopted.md")
@@ -516,7 +516,7 @@ class TestRemoveAllSkipPull:
     ) -> None:
         """対話フローで`_pull`が削除フェーズの1回だけになる。"""
         notes = _setup_notes(tmp_path)
-        path = _write_feedback_file(notes, "feedback.md")
+        path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         tracker = _PullTracker()
         _patch_storage(monkeypatch, commits, on_pull=tracker)

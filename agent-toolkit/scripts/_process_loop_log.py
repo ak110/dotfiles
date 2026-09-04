@@ -1,6 +1,6 @@
 """Claude Code agent-toolkit: `atk wi process-loop`実行時の観測ログモジュール。
 
-目的は`process-loop`起動セッションのフィードバック件数・セッション全体の所要時間・
+目的は`process-loop`起動セッションのAWI件数・セッション全体の所要時間・
 計画実行系サブエージェントの所要時間を後から分析できるよう機械記録することにある。
 
 有効化条件は環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションに限定し、

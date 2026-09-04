@@ -45,10 +45,10 @@
 - リポジトリ全体の構成・配布対象と開発対象の区別・プラットフォーム対応・bash補完運用・
   PowerShellスクリプト注意事項・ホーム配下編集前の確認手順:
   [docs/development/architecture.md](docs/development/architecture.md)
-- 運用機能の詳細（`sync_generated_files.py`の起動形・tmux自動アタッチ・TBD未回答表示・
+- 運用機能の詳細（`sync_generated_files.py`の起動形・tmux自動アタッチ・UWI未回答表示・
   常駐サービス・Windows電源設定・post-applyキャッシュ・chezmoiの命名規則）:
   [docs/development/operations.md](docs/development/operations.md)
-- 過去のフィードバックから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
+- 過去のAWIから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる事故・欠陥: [docs/development/incidents.md](docs/development/incidents.md)
 
 ## 編集時に起動するスキル
@@ -86,7 +86,7 @@
 適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
-`agent-toolkit:process-wi`のセッションでは、当該セッションで処理する全フィードバックが確定した規範の変更を適用対象とする。
+`agent-toolkit:process-wi`のセッションでは、当該セッションで処理する全AWIが確定した規範の変更を適用対象とする。
 メインは全レーンの変更内容を把握するがサブエージェントは起動プロンプトと自ら読む文書からしか把握できないため、メインは他レーンで確定した変更のうち委譲先のふるまいへ影響するものを起動プロンプトへ含める。
 
 ## 固有差分

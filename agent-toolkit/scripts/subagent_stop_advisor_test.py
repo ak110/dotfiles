@@ -77,7 +77,7 @@ def test_single_english_word_report_is_allowed(capsys: pytest.CaptureFixture[str
             "計画実行完了\n"
             "merged_head: 0123456789abcdef0123456789abcdef01234567\n"
             "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
-            "released: /home/u/repo/.claude/worktrees/lane-a, feedback-lane-a, /tmp/lane-a-xxxxxxxx"
+            "released: /home/u/repo/.claude/worktrees/lane-a, awi-lane-a, /tmp/lane-a-xxxxxxxx"
         ),
         "needs_escalation",
         "status: needs_escalation",

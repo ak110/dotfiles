@@ -1,4 +1,4 @@
-"""`_uwi_completion.py`のTBD回答ファイル差分通知を検証する。"""
+"""`_uwi_completion.py`のUWI回答ファイル差分通知を検証する。"""
 
 import json
 import pathlib
@@ -14,7 +14,7 @@ _REPO = "github.com/ak110/dotfiles"
 
 
 def _entry(*, answer: str = "", target_repo: str = _REPO) -> str:
-    """テスト用TBDエントリ本文を返す。"""
+    """テスト用UWIエントリ本文を返す。"""
     return (
         "---\n"
         f"target_repo: {target_repo}\n"
@@ -35,7 +35,7 @@ def _make_private_notes(
     answered: int,
     other_repo: int = 0,
 ) -> pathlib.Path:
-    """一時保存先へ指定件数のTBDを配置する。"""
+    """一時保存先へ指定件数のUWIを配置する。"""
     root = tmp_path / "private-notes"
     inbox = root / "inbox"
     processing = root / "processing"
@@ -53,7 +53,7 @@ def _make_private_notes(
 
 
 def _answer_all(root: pathlib.Path) -> None:
-    """未回答TBDの回答欄へ回答本文を追記する。"""
+    """未回答UWIの回答欄へ回答本文を追記する。"""
     for path in (root / "inbox").glob("unanswered-*.md"):
         path.write_text(path.read_text(encoding="utf-8") + "回答\n", encoding="utf-8")
 
@@ -78,7 +78,7 @@ class TestBuildNotice:
         state = json.loads(state_path.read_text(encoding="utf-8"))
         assert state[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
 
-    def test_notifies_new_answer_while_another_tbd_remains_unanswered(
+    def test_notifies_new_answer_while_another_uwi_remains_unanswered(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)

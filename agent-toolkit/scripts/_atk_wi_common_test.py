@@ -46,7 +46,7 @@ def test_is_agent_environment_rejects_environment_without_supported_variables(
     assert not _common.is_agent_environment()
 
 
-def _write_tbd(
+def _write_uwi(
     private_notes: pathlib.Path,
     filename: str,
     *,
@@ -54,7 +54,7 @@ def _write_tbd(
     question: str = "確認事項",
     answer: str = "",
 ) -> None:
-    """テスト用TBDをinboxへ書き込む。"""
+    """テスト用UWIをinboxへ書き込む。"""
     inbox = private_notes / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / filename).write_text(
@@ -63,7 +63,7 @@ def _write_tbd(
     )
 
 
-def _write_feedback(
+def _write_awi(
     private_notes: pathlib.Path,
     filename: str,
     *,
@@ -74,7 +74,7 @@ def _write_feedback(
     target_repo: str = "github.com/example/repo",
     cooldown_until: object | None = None,
 ) -> pathlib.Path:
-    """着手可否用frontmatterを持つテスト用フィードバックを書き込む。"""
+    """着手可否用frontmatterを持つテスト用AWIを書き込む。"""
     directory = private_notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
@@ -98,8 +98,8 @@ def _write_feedback(
 def test_make_filename_completer_limits_states(tmp_path: pathlib.Path) -> None:
     """指定した状態のファイルだけを候補として返す。"""
     private_notes = tmp_path / "private-notes"
-    _write_feedback(private_notes, "inbox.md", state="inbox")
-    _write_feedback(private_notes, "processing.md", state="processing")
+    _write_awi(private_notes, "inbox.md", state="inbox")
+    _write_awi(private_notes, "processing.md", state="processing")
     completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
     assert completer("") == ["inbox.md"]
 
@@ -128,7 +128,7 @@ def test_state_sets_define_five_states_without_withdrawn_names() -> None:
     assert _common.WI_STATES == ("inbox", "processing", "hold", "adopted", "rejected")
     assert _common.WI_ACTIVE_STATES == ("inbox", "processing", "hold")
     assert _common.WI_PROCESSABLE_STATES == ("inbox", "processing")
-    assert not hasattr(_common, "WI_FEEDBACK_ACTIVE_STATES")
+    assert not hasattr(_common, "WI_AWI_ACTIVE_STATES")
     assert set(_common.WI_ACTIVE_STATES) <= set(_common.WI_STATES)
     assert set(_common.WI_PROCESSABLE_STATES) <= set(_common.WI_ACTIVE_STATES)
     for states in _common.TRANSITION_EXPLICIT_STATES.values():
@@ -138,31 +138,31 @@ def test_state_sets_define_five_states_without_withdrawn_names() -> None:
 def test_make_filename_completer_filters_entry_type(tmp_path: pathlib.Path) -> None:
     """種別を指定した場合はfrontmatterの種別が一致するものだけを返す。"""
     private_notes = tmp_path / "private-notes"
-    _write_feedback(private_notes, "feedback.md")
-    _write_tbd(private_notes, "tbd.md")
+    _write_awi(private_notes, "awi.md")
+    _write_uwi(private_notes, "uwi.md")
     completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES, _common.WI_TYPE_UWI)
-    assert completer("") == ["tbd.md"]
+    assert completer("") == ["uwi.md"]
 
 
 def test_make_filename_completer_matches_prefix_and_sorts(tmp_path: pathlib.Path) -> None:
     """prefix一致で限定し、結果をソートして返す。"""
     private_notes = tmp_path / "private-notes"
-    _write_feedback(private_notes, "pre-z.md")
-    _write_feedback(private_notes, "pre-a.md")
-    _write_feedback(private_notes, "other.md")
+    _write_awi(private_notes, "pre-z.md")
+    _write_awi(private_notes, "pre-a.md")
+    _write_awi(private_notes, "other.md")
     completer = _common.make_filename_completer(_common.WI_ACTIVE_STATES)
     assert completer("pre-") == ["pre-a.md", "pre-z.md"]
 
 
 class TestReadiness:
-    """明示依存、TBD、修復診断から着手可否を算出する。"""
+    """明示依存、UWI、修復診断から着手可否を算出する。"""
 
-    def test_ready_feedback_is_actionable(self, tmp_path: pathlib.Path) -> None:
-        _write_feedback(tmp_path, "feedback.md")
+    def test_ready_awi_is_actionable(self, tmp_path: pathlib.Path) -> None:
+        _write_awi(tmp_path, "awi.md")
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.ready == ("feedback.md",)
+        assert result.ready == ("awi.md",)
         assert result.actionable_count == 1
 
     def test_legacy_local_path_matches_canonical_readiness_target(self, tmp_path: pathlib.Path) -> None:
@@ -173,9 +173,9 @@ class TestReadiness:
             ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
             check=True,
         )
-        _write_feedback(tmp_path, "legacy.md", target_repo=str(local_repo))
-        _write_feedback(tmp_path, "current.md", target_repo="github.com/example/repo")
-        _write_feedback(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"))
+        _write_awi(tmp_path, "legacy.md", target_repo=str(local_repo))
+        _write_awi(tmp_path, "current.md", target_repo="github.com/example/repo")
+        _write_awi(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"))
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
@@ -184,8 +184,8 @@ class TestReadiness:
     def test_cooldown_uses_utc_boundary_and_does_not_block_other_ready_entries(self, tmp_path: pathlib.Path) -> None:
         """期限前だけ対象項目を抑制し、同値境界では通常の着手可否へ戻す。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
-        _write_feedback(tmp_path, "cooldown.md", cooldown_until="2026-08-12T09:00:00+09:00")
-        _write_feedback(tmp_path, "ready.md")
+        _write_awi(tmp_path, "cooldown.md", cooldown_until="2026-08-12T09:00:00+09:00")
+        _write_awi(tmp_path, "ready.md")
 
         before = _common.calculate_readiness(
             tmp_path,
@@ -206,7 +206,7 @@ class TestReadiness:
         value: object,
     ) -> None:
         """不正期限をblockedの単一修復対象として数える。"""
-        _write_feedback(tmp_path, "feedback.md", cooldown_until=value)
+        _write_awi(tmp_path, "awi.md", cooldown_until=value)
 
         result = _common.calculate_readiness(
             tmp_path,
@@ -214,14 +214,14 @@ class TestReadiness:
             now=datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC),
         )
 
-        assert result.invalid_cooldowns == ("feedback.md",)
-        assert result.blocked == ("feedback.md",)
+        assert result.invalid_cooldowns == ("awi.md",)
+        assert result.blocked == ("awi.md",)
         assert result.actionable_count == 1
 
-    def test_tbd_cooldown_is_invalid_instead_of_suppressing_user_decision(self, tmp_path: pathlib.Path) -> None:
-        """外部編集でTBDへ設定された期限はユーザー判断待ちへ適用しない。"""
-        _write_tbd(tmp_path, "tbd.md")
-        path = tmp_path / "inbox/tbd.md"
+    def test_uwi_cooldown_is_invalid_instead_of_suppressing_user_decision(self, tmp_path: pathlib.Path) -> None:
+        """外部編集でUWIへ設定された期限はユーザー判断待ちへ適用しない。"""
+        _write_uwi(tmp_path, "uwi.md")
+        path = tmp_path / "inbox/uwi.md"
         path.write_text(
             path.read_text(encoding="utf-8").replace(
                 "type: uwi\n",
@@ -236,21 +236,21 @@ class TestReadiness:
             now=datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC),
         )
 
-        assert result.invalid_cooldowns == ("tbd.md",)
+        assert result.invalid_cooldowns == ("uwi.md",)
         assert not result.cooldown_pending
         assert result.actionable_count == 1
 
     def test_pending_cooldown_suppresses_existing_repairs_until_deadline(self, tmp_path: pathlib.Path) -> None:
         """期限前は既存修復診断を抑制し、期限到達後に再び有効化する。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
-        _write_feedback(
+        _write_awi(
             tmp_path,
             "missing.md",
             cooldown_until="2026-08-15T00:00:00+00:00",
             plan_file=tmp_path / "missing-plan.md",
             depends_on=("absent.md",),
         )
-        invalid = _write_feedback(
+        invalid = _write_awi(
             tmp_path,
             "invalid.md",
             cooldown_until="2026-08-15T00:00:00+00:00",
@@ -259,19 +259,19 @@ class TestReadiness:
             invalid.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: malformed\n"),
             encoding="utf-8",
         )
-        _write_feedback(
+        _write_awi(
             tmp_path,
             "self.md",
             cooldown_until="2026-08-15T00:00:00+00:00",
             depends_on=("self.md",),
         )
-        _write_feedback(
+        _write_awi(
             tmp_path,
             "cycle.md",
             cooldown_until="2026-08-15T00:00:00+00:00",
             depends_on=("cycle-peer.md",),
         )
-        _write_feedback(
+        _write_awi(
             tmp_path,
             "cycle-peer.md",
             target_repo="github.com/example/other",
@@ -303,32 +303,32 @@ class TestReadiness:
         inbox = tmp_path / "inbox"
         inbox.mkdir()
         (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n", encoding="utf-8")
-        _write_feedback(tmp_path, "other.md", target_repo="github.com/example/other")
+        _write_awi(tmp_path, "other.md", target_repo="github.com/example/other")
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert result.frontmatter_broken == ("broken.md",)
-        assert result.frontmatter_broken_needs_tbd == ("broken.md",)
+        assert result.frontmatter_broken_needs_uwi == ("broken.md",)
         assert result.actionable_count == 1
         assert "other.md" not in (*result.ready, *result.blocked)
 
-    def test_unanswered_tbd_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
-        _write_tbd(tmp_path, "answer.md")
-        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+    def test_unanswered_uwi_blocks_explicit_dependency(self, tmp_path: pathlib.Path) -> None:
+        _write_uwi(tmp_path, "answer.md")
+        _write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.blocked == ("answer.md", "feedback.md")
+        assert result.blocked == ("answer.md", "awi.md")
         assert result.actionable_count == 0
 
-    def test_answered_tbd_does_not_satisfy_explicit_dependency_while_active(self, tmp_path: pathlib.Path) -> None:
-        _write_tbd(tmp_path, "answer.md", answer="回答済み")
-        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+    def test_answered_uwi_does_not_satisfy_explicit_dependency_while_active(self, tmp_path: pathlib.Path) -> None:
+        _write_uwi(tmp_path, "answer.md", answer="回答済み")
+        _write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert result.ready == ("answer.md",)
-        assert result.blocked == ("feedback.md",)
+        assert result.blocked == ("awi.md",)
         assert result.actionable_count == 1
 
     @pytest.mark.parametrize("relation", ["missing", "self", "cycle"])
@@ -338,12 +338,12 @@ class TestReadiness:
         relation: str,
     ) -> None:
         if relation == "missing":
-            _write_feedback(tmp_path, "first.md", depends_on=("absent.md",))
+            _write_awi(tmp_path, "first.md", depends_on=("absent.md",))
         elif relation == "self":
-            _write_feedback(tmp_path, "first.md", depends_on=("first.md",))
+            _write_awi(tmp_path, "first.md", depends_on=("first.md",))
         else:
-            _write_feedback(tmp_path, "first.md", depends_on=("second.md",))
-            _write_feedback(tmp_path, "second.md", depends_on=("first.md",))
+            _write_awi(tmp_path, "first.md", depends_on=("second.md",))
+            _write_awi(tmp_path, "second.md", depends_on=("first.md",))
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
@@ -351,17 +351,17 @@ class TestReadiness:
         assert not result.ready
 
     def test_legacy_entry_dependency_remains_readable(self, tmp_path: pathlib.Path) -> None:
-        _write_feedback(tmp_path, "dependency.md")
-        _write_feedback(
+        _write_awi(tmp_path, "dependency.md")
+        _write_awi(
             tmp_path,
-            "feedback.md",
+            "awi.md",
             legacy_dependency="    kind: entries\n    filenames:\n      - dependency.md",
         )
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert result.ready == ("dependency.md",)
-        assert result.blocked == ("feedback.md",)
+        assert result.blocked == ("awi.md",)
 
     def test_legacy_external_repo_dependencies_share_readiness_resolver_cache(
         self,
@@ -376,9 +376,9 @@ class TestReadiness:
             check=True,
         )
         legacy_dependency = f"    kind: external-repo-entry\n    filenames:\n      - done.md\n    target_repo: {external_repo}"
-        _write_feedback(tmp_path, "first.md", legacy_dependency=legacy_dependency)
-        _write_feedback(tmp_path, "second.md", legacy_dependency=legacy_dependency)
-        _write_feedback(
+        _write_awi(tmp_path, "first.md", legacy_dependency=legacy_dependency)
+        _write_awi(tmp_path, "second.md", legacy_dependency=legacy_dependency)
+        _write_awi(
             tmp_path,
             "done.md",
             state="adopted",
@@ -434,20 +434,20 @@ class TestReadiness:
         other_active: bool,
     ) -> None:
         """legacyの時刻条件とinbox空条件を無条件readyへ変換しない。"""
-        _write_feedback(tmp_path, "feedback.md", legacy_dependency=legacy_dependency)
+        _write_awi(tmp_path, "awi.md", legacy_dependency=legacy_dependency)
         if other_active:
-            _write_feedback(tmp_path, "other.md")
+            _write_awi(tmp_path, "other.md")
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert "feedback.md" in result.blocked
-        assert "feedback.md" not in result.ready
+        assert "awi.md" in result.blocked
+        assert "awi.md" not in result.ready
 
     def test_legacy_external_upstream_becomes_ready_after_recheck_time(self, tmp_path: pathlib.Path) -> None:
         """legacy外部条件は再評価時刻の到来後だけreadyとなる。"""
-        _write_feedback(
+        _write_awi(
             tmp_path,
-            "feedback.md",
+            "awi.md",
             legacy_dependency=(
                 "    kind: external-upstream\n"
                 "    condition: upstream待ち\n"
@@ -458,57 +458,57 @@ class TestReadiness:
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.ready == ("feedback.md",)
+        assert result.ready == ("awi.md",)
 
     @pytest.mark.parametrize(("answer", "expected_ready"), [("", False), ("回答済み", True)])
-    def test_legacy_external_user_requires_answered_tbd(
+    def test_legacy_external_user_requires_answered_uwi(
         self,
         tmp_path: pathlib.Path,
         answer: str,
         expected_ready: bool,
     ) -> None:
-        """legacyのユーザー依存は参照TBDの回答後だけ成立する。"""
-        _write_tbd(tmp_path, "answer.md", answer=answer)
-        _write_feedback(
+        """legacyのユーザー依存は参照UWIの回答後だけ成立する。"""
+        _write_uwi(tmp_path, "answer.md", answer=answer)
+        _write_awi(
             tmp_path,
-            "feedback.md",
-            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
+            "awi.md",
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    uwi_filename: answer.md"),
         )
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert ("feedback.md" in result.ready) is expected_ready
-        assert ("feedback.md" in result.blocked) is not expected_ready
+        assert ("awi.md" in result.ready) is expected_ready
+        assert ("awi.md" in result.blocked) is not expected_ready
 
     @pytest.mark.parametrize("state", ["inbox", "adopted"])
-    def test_legacy_external_user_rejects_non_tbd_target(self, tmp_path: pathlib.Path, state: str) -> None:
-        """旧形式のユーザー依存がフィードバックを参照した場合は修復対象として示す。"""
-        _write_feedback(tmp_path, "answer.md", state=state)
-        _write_feedback(
+    def test_legacy_external_user_rejects_non_uwi_target(self, tmp_path: pathlib.Path, state: str) -> None:
+        """旧形式のユーザー依存がAWIを参照した場合は修復対象として示す。"""
+        _write_awi(tmp_path, "answer.md", state=state)
+        _write_awi(
             tmp_path,
-            "feedback.md",
-            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
+            "awi.md",
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    uwi_filename: answer.md"),
         )
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.invalid_dependencies == ("feedback.md",)
-        assert "feedback.md" not in result.ready
+        assert result.invalid_dependencies == ("awi.md",)
+        assert "awi.md" not in result.ready
 
     @pytest.mark.parametrize("terminal_state", ["adopted", "rejected"])
-    def test_explicit_dependency_waits_for_answered_tbd_to_reach_terminal_state(
+    def test_explicit_dependency_waits_for_answered_uwi_to_reach_terminal_state(
         self,
         tmp_path: pathlib.Path,
         terminal_state: str,
     ) -> None:
-        """明示依存は回答済みTBDがactiveな間も成立せず、終端遷移後に成立する。"""
-        _write_tbd(tmp_path, "answer.md", answer="回答済み")
-        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+        """明示依存は回答済みUWIがactiveな間も成立せず、終端遷移後に成立する。"""
+        _write_uwi(tmp_path, "answer.md", answer="回答済み")
+        _write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
 
         active = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert active.ready == ("answer.md",)
-        assert active.blocked == ("feedback.md",)
+        assert active.blocked == ("awi.md",)
 
         terminal_dir = tmp_path / terminal_state
         terminal_dir.mkdir()
@@ -516,18 +516,18 @@ class TestReadiness:
 
         terminal = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert terminal.ready == ("feedback.md",)
+        assert terminal.ready == ("awi.md",)
         assert not terminal.blocked
 
     def test_explicit_dependency_blocks_again_when_terminal_target_is_retried(self, tmp_path: pathlib.Path) -> None:
         """終端依存先をprocessingへ戻した再試行では依存元を再びblockedにする。"""
-        _write_tbd(tmp_path, "answer.md", answer="回答済み")
-        _write_feedback(tmp_path, "feedback.md", depends_on=("answer.md",))
+        _write_uwi(tmp_path, "answer.md", answer="回答済み")
+        _write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
         adopted = tmp_path / "adopted"
         adopted.mkdir()
         answer = adopted / "answer.md"
         (tmp_path / "inbox" / "answer.md").rename(answer)
-        assert "feedback.md" in _common.calculate_readiness(tmp_path, "github.com/example/repo").ready
+        assert "awi.md" in _common.calculate_readiness(tmp_path, "github.com/example/repo").ready
 
         processing = tmp_path / "processing"
         processing.mkdir()
@@ -536,30 +536,30 @@ class TestReadiness:
         retried = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert retried.ready == ("answer.md",)
-        assert retried.blocked == ("feedback.md",)
+        assert retried.blocked == ("awi.md",)
 
     def test_explicit_dependency_ignores_legacy_external_user_target(self, tmp_path: pathlib.Path) -> None:
         """トップレベル依存がある場合は併存する旧ユーザー依存を検証対象にしない。"""
-        _write_feedback(tmp_path, "done.md", state="adopted")
-        _write_feedback(tmp_path, "not-tbd.md")
-        _write_feedback(
+        _write_awi(tmp_path, "done.md", state="adopted")
+        _write_awi(tmp_path, "not-uwi.md")
+        _write_awi(
             tmp_path,
-            "feedback.md",
+            "awi.md",
             depends_on=("done.md",),
-            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: not-tbd.md"),
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    uwi_filename: not-uwi.md"),
         )
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
         assert not result.invalid_dependencies
-        assert "feedback.md" in result.ready
+        assert "awi.md" in result.ready
 
     def test_malformed_explicit_dependency_is_invalid_even_with_valid_legacy_value(self, tmp_path: pathlib.Path) -> None:
         """正本の明示依存が不正な場合は旧依存へフォールバックせず修復対象にする。"""
-        path = _write_feedback(
+        path = _write_awi(
             tmp_path,
-            "feedback.md",
-            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    tbd_filename: answer.md"),
+            "awi.md",
+            legacy_dependency=("    kind: external-user\n    condition: 回答後\n    uwi_filename: answer.md"),
         )
         path.write_text(
             path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: answer.md\n"),
@@ -568,14 +568,14 @@ class TestReadiness:
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.invalid_dependencies == ("feedback.md",)
+        assert result.invalid_dependencies == ("awi.md",)
         assert not result.ready
 
     @pytest.mark.parametrize(
         "legacy_dependency",
         [
             "    kind: entries\n    filenames: []",
-            "    kind: external-user\n    tbd_filename: answer.md",
+            "    kind: external-user\n    uwi_filename: answer.md",
             "    kind: external-repo-entry\n    filenames: []\n    target_repo: github.com/example/other",
             "    kind: external-repo-entry\n    filenames: [other.md]\n    target_repo: invalid",
         ],
@@ -586,18 +586,18 @@ class TestReadiness:
         legacy_dependency: str,
     ) -> None:
         """旧schemaの必須値欠落を依存なしや恒久待機へ変換しない。"""
-        _write_feedback(tmp_path, "feedback.md", legacy_dependency=legacy_dependency)
+        _write_awi(tmp_path, "awi.md", legacy_dependency=legacy_dependency)
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.invalid_dependencies == ("feedback.md",)
+        assert result.invalid_dependencies == ("awi.md",)
         assert result.actionable_count == 1
         assert not result.ready
 
     def test_cross_repo_cycle_is_actionable_for_each_target_repo(self, tmp_path: pathlib.Path) -> None:
         """対象repoをまたぐ明示依存の循環も修復対象として検出する。"""
-        _write_feedback(tmp_path, "first.md", depends_on=("second.md",), target_repo="github.com/example/first")
-        _write_feedback(tmp_path, "second.md", depends_on=("first.md",), target_repo="github.com/example/second")
+        _write_awi(tmp_path, "first.md", depends_on=("second.md",), target_repo="github.com/example/first")
+        _write_awi(tmp_path, "second.md", depends_on=("first.md",), target_repo="github.com/example/second")
 
         first = _common.calculate_readiness(tmp_path, "github.com/example/first")
         second = _common.calculate_readiness(tmp_path, "github.com/example/second")
@@ -606,11 +606,11 @@ class TestReadiness:
         assert second.cyclic_dependencies == ("second.md",)
         assert first.actionable_count == second.actionable_count == 1
 
-    def test_missing_plan_file_requires_one_repair_tbd(self, tmp_path: pathlib.Path) -> None:
-        _write_feedback(tmp_path, "plan.md", plan_file=tmp_path / "missing.md")
+    def test_missing_plan_file_requires_one_repair_uwi(self, tmp_path: pathlib.Path) -> None:
+        _write_awi(tmp_path, "plan.md", plan_file=tmp_path / "missing.md")
 
         first = _common.calculate_readiness(tmp_path, "github.com/example/repo")
-        _write_tbd(tmp_path, "repair.md")
+        _write_uwi(tmp_path, "repair.md")
         repair = tmp_path / "inbox" / "repair.md"
         repair.write_text(
             repair.read_text(encoding="utf-8").replace(
@@ -621,14 +621,14 @@ class TestReadiness:
         )
         second = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert first.missing_plan_file_needs_tbd == ("plan.md",)
-        assert not second.missing_plan_file_needs_tbd
+        assert first.missing_plan_file_needs_uwi == ("plan.md",)
+        assert not second.missing_plan_file_needs_uwi
 
     def test_queue_entry_loader_reads_plan_and_repair_kind(self, tmp_path: pathlib.Path) -> None:
         plan = tmp_path / "plan.md"
         plan.write_text("# 計画\n", encoding="utf-8")
-        _write_feedback(tmp_path, "plan-item.md", plan_file=plan)
-        _write_tbd(tmp_path, "repair.md")
+        _write_awi(tmp_path, "plan-item.md", plan_file=plan)
+        _write_uwi(tmp_path, "repair.md")
         repair = tmp_path / "inbox" / "repair.md"
         repair.write_text(
             repair.read_text(encoding="utf-8").replace(
@@ -652,8 +652,8 @@ class TestReadiness:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """activeは1回だけ読み、未参照の終端項目はfrontmatter解析から除外する。"""
-        active_path = _write_feedback(tmp_path, "feedback.md", depends_on=("done.md",))
-        referenced = _write_feedback(tmp_path, "done.md", state="adopted")
+        active_path = _write_awi(tmp_path, "awi.md", depends_on=("done.md",))
+        referenced = _write_awi(tmp_path, "done.md", state="adopted")
         unreferenced = tmp_path / "rejected" / "unused.md"
         unreferenced.parent.mkdir(parents=True)
         unreferenced.write_text("frontmatterではない\n", encoding="utf-8")
@@ -670,7 +670,7 @@ class TestReadiness:
 
         result = _common.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.ready == ("feedback.md",)
+        assert result.ready == ("awi.md",)
         assert reads.count(active_path) == 1
         assert reads.count(referenced) == 1
         assert unreferenced not in reads
@@ -716,18 +716,18 @@ class TestWarnSpaceSeparatedOption:
         assert not capsys.readouterr().err
 
 
-class TestNotifyUnansweredTbdsIfAny:
-    """未回答TBD通知の件数・フィルター・形式を検証する。"""
+class TestNotifyUnansweredUwisIfAny:
+    """未回答UWI通知の件数・フィルター・形式を検証する。"""
 
     def test_does_not_notify_without_unanswered_entries(
         self,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """TBDが0件または全件回答済みの場合は何も通知しない。"""
-        _write_tbd(tmp_path, "answered.md", answer="回答済み")
+        """UWIが0件または全件回答済みの場合は何も通知しない。"""
+        _write_uwi(tmp_path, "answered.md", answer="回答済み")
 
-        _common.notify_unanswered_tbds_if_any(tmp_path, None)
+        _common.notify_unanswered_uwis_if_any(tmp_path, None)
 
         assert not capsys.readouterr().err
 
@@ -736,10 +736,10 @@ class TestNotifyUnansweredTbdsIfAny:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未回答TBDが1件の場合はヘッダと1行を通知する。"""
-        _write_tbd(tmp_path, "one.md", question="最初の質問")
+        """未回答UWIが1件の場合はヘッダと1行を通知する。"""
+        _write_uwi(tmp_path, "one.md", question="最初の質問")
 
-        _common.notify_unanswered_tbds_if_any(tmp_path, None)
+        _common.notify_unanswered_uwis_if_any(tmp_path, None)
 
         assert capsys.readouterr().err == "# uwi\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
 
@@ -749,11 +749,11 @@ class TestNotifyUnansweredTbdsIfAny:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """複数件では対象リポジトリの未回答項目だけをファイル名順で通知する。"""
-        _write_tbd(tmp_path, "002.md", question="質問2")
-        _write_tbd(tmp_path, "001.md", question="質問1")
-        _write_tbd(tmp_path, "003.md", target_repo="github.com/example/other", question="対象外")
+        _write_uwi(tmp_path, "002.md", question="質問2")
+        _write_uwi(tmp_path, "001.md", question="質問1")
+        _write_uwi(tmp_path, "003.md", target_repo="github.com/example/other", question="対象外")
 
-        _common.notify_unanswered_tbds_if_any(tmp_path, "github.com/example/repo")
+        _common.notify_unanswered_uwis_if_any(tmp_path, "github.com/example/repo")
 
         assert capsys.readouterr().err == (
             "# uwi\n001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
@@ -765,18 +765,18 @@ class TestNotifyUnansweredTbdsIfAny:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """生のローカルパス指定でも旧パス形とURL形の未回答TBDを通知する。"""
+        """生のローカルパス指定でも旧パス形とURL形の未回答UWIを通知する。"""
         local_repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(local_repo)], check=True, capture_output=True)
         subprocess.run(
             ["git", "-C", str(local_repo), "remote", "add", "origin", "git@github.com:example/repo.git"],
             check=True,
         )
-        _write_tbd(tmp_path, "legacy.md", target_repo=str(local_repo), question="旧形式")
-        _write_tbd(tmp_path, "current.md", target_repo="github.com/example/repo", question="現行形式")
-        _write_tbd(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"), question="対象外")
+        _write_uwi(tmp_path, "legacy.md", target_repo=str(local_repo), question="旧形式")
+        _write_uwi(tmp_path, "current.md", target_repo="github.com/example/repo", question="現行形式")
+        _write_uwi(tmp_path, "missing.md", target_repo=str(tmp_path / "missing"), question="対象外")
 
-        _common.notify_unanswered_tbds_if_any(tmp_path, str(local_repo))
+        _common.notify_unanswered_uwis_if_any(tmp_path, str(local_repo))
 
         error = capsys.readouterr().err
         assert "legacy.md" in error
@@ -789,8 +789,8 @@ class TestNotifyUnansweredTbdsIfAny:
         tmp_path: pathlib.Path,
     ) -> None:
         """1回の反復では同じ保存値を複数項目が持っても解決を1回に限定する。"""
-        _write_tbd(tmp_path, "first.md", target_repo="/legacy/repo")
-        _write_tbd(tmp_path, "second.md", target_repo="/legacy/repo")
+        _write_uwi(tmp_path, "first.md", target_repo="/legacy/repo")
+        _write_uwi(tmp_path, "second.md", target_repo="/legacy/repo")
         calls: list[str] = []
 
         def resolve(value: str) -> str | None:
@@ -818,10 +818,10 @@ class TestNotifyUnansweredTbdsIfAny:
         本関数も共有して適用していることを検証する。
         """
         long_repo = "github.com/organization-name/very-long-repository-name-example"
-        _write_tbd(tmp_path, "one.md", target_repo=long_repo, question="最初の質問")
+        _write_uwi(tmp_path, "one.md", target_repo=long_repo, question="最初の質問")
         monkeypatch.setattr(shutil, "get_terminal_size", lambda: os.terminal_size((50, 24)))
 
-        _common.notify_unanswered_tbds_if_any(tmp_path, None)
+        _common.notify_unanswered_uwis_if_any(tmp_path, None)
 
         line = capsys.readouterr().err.splitlines()[1]
         display_repo = line.split(": ", 1)[1].split(" [", 1)[0]
@@ -935,7 +935,7 @@ class TestAssertRepoLockHeld:
     def test_commit_and_push_raises_runtime_error_when_lock_not_held(self, tmp_path: pathlib.Path) -> None:
         """`_repo_lock`未保持で`_commit_and_push`を呼ぶと`RuntimeError`を送出する。"""
         with pytest.raises(RuntimeError, match="不変条件違反"):
-            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
+            _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
 
 class TestCommitAndPushRetry:
@@ -970,11 +970,11 @@ class TestCommitAndPushRetry:
         monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
+            _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
         assert calls == [
-            ["add", "--all", "--", "feedback"],
-            ["commit", "-m", "chore: test", "--", "feedback"],
+            ["add", "--all", "--", "inbox"],
+            ["commit", "-m", "chore: test", "--", "inbox"],
             ["push"],
             ["fetch"],
             ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
@@ -1001,7 +1001,7 @@ class TestCommitAndPushRetry:
             pytest.raises(subprocess.CalledProcessError),
             _common._repo_lock(tmp_path),  # pylint: disable=protected-access  # noqa: SLF001
         ):
-            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
+            _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
     def test_keeps_rebase_state_and_reports_manual_steps_when_rebase_fails(
         self,
@@ -1022,7 +1022,7 @@ class TestCommitAndPushRetry:
         monkeypatch.setattr(_common._atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
 
         with pytest.raises(subprocess.CalledProcessError), _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
+            _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
         error = capsys.readouterr().err
         assert "rebase状態を保持" in error
@@ -1052,7 +1052,7 @@ class TestCommitAndPushRetry:
             pytest.raises(subprocess.CalledProcessError),
             _common._repo_lock(tmp_path),  # pylint: disable=protected-access  # noqa: SLF001
         ):
-            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
+            _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
         assert "rebase状態を保持" in capsys.readouterr().err
 
@@ -1331,8 +1331,8 @@ class TestPrivateNotesAutoCreate:
         )
 
 
-_LEGACY_FEEDBACK = "---\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
-_LEGACY_TBD = "---\ntarget_repo: github.com/example/repo\nquestion_type: free-form\n---\n\n## 質問\n\nQ\n\n## 回答\n\n"
+_LEGACY_AWI = "---\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+_LEGACY_UWI = "---\ntarget_repo: github.com/example/repo\nquestion_type: free-form\n---\n\n## 質問\n\nQ\n\n## 回答\n\n"
 
 
 def _init_legacy_repo(root: pathlib.Path, entries: dict[str, str]) -> None:
@@ -1375,9 +1375,9 @@ class TestMigrateLegacyLayout:
         _init_legacy_repo(
             root,
             {
-                "feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK,
-                "feedback/adopted/20260101-000000-002.md": _LEGACY_FEEDBACK,
-                "tbd/inbox/20260102-000000-001.md": _LEGACY_TBD,
+                "feedback/inbox/20260101-000000-001.md": _LEGACY_AWI,
+                "feedback/adopted/20260101-000000-002.md": _LEGACY_AWI,
+                "tbd/inbox/20260102-000000-001.md": _LEGACY_UWI,
             },
         )
 
@@ -1400,7 +1400,7 @@ class TestMigrateLegacyLayout:
     def test_is_noop_after_migration(self, tmp_path: pathlib.Path) -> None:
         """移行後の再実行では追加のコミットを生成しない。"""
         root = tmp_path / "private-notes"
-        _init_legacy_repo(root, {"feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK})
+        _init_legacy_repo(root, {"feedback/inbox/20260101-000000-001.md": _LEGACY_AWI})
         _common._ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
         head = _git_stdout(root, "rev-parse", "HEAD")
 
@@ -1429,7 +1429,7 @@ class TestMigrateLegacyLayout:
         _init_legacy_repo(
             root,
             {
-                "feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK,
+                "feedback/inbox/20260101-000000-001.md": _LEGACY_AWI,
                 "feedback/inbox/20260101-000000-002.md": "frontmatterのない本文\n",
             },
         )
@@ -1448,8 +1448,8 @@ class TestMigrateLegacyLayout:
         _init_legacy_repo(
             root,
             {
-                "feedback/inbox/20260101-000000-001.md": _LEGACY_FEEDBACK,
-                "tbd/inbox/20260101-000000-001.md": _LEGACY_TBD,
+                "feedback/inbox/20260101-000000-001.md": _LEGACY_AWI,
+                "tbd/inbox/20260101-000000-001.md": _LEGACY_UWI,
             },
         )
 
@@ -1491,8 +1491,8 @@ class TestPullAndCommitPushSkipWithoutRemote:
         calls: list[list[str]] = []
         monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _common._commit_and_push(tmp_path, "chore: test", ["feedback"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert calls == [["add", "--all", "--", "feedback"], ["commit", "-m", "chore: test", "--", "feedback"]]
+            _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
+        assert calls == [["add", "--all", "--", "inbox"], ["commit", "-m", "chore: test", "--", "inbox"]]
 
 
 class TestPullIfStale:
@@ -1769,8 +1769,8 @@ class TestUpstreamCrossRepoDependency:
 
     def test_cross_repo_dependency_blocks_until_terminal(self, tmp_path: pathlib.Path) -> None:
         """別target_repoの依存先がactiveの間はblockedで、終端でreadyへ戻る。"""
-        _write_feedback(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
-        _write_feedback(tmp_path, "upstream.md", target_repo="github.com/example/upstream")
+        _write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
+        _write_awi(tmp_path, "upstream.md", target_repo="github.com/example/upstream")
         readiness = _common.calculate_readiness(tmp_path, "github.com/example/downstream")
         assert not readiness.ready
         assert readiness.blocked == ("downstream.md",)

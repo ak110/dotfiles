@@ -19,7 +19,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import _atk_wi_add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 import _atk_wi_frontmatter as frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_wi_uwi as tbd_module  # noqa: E402  # pylint: disable=wrong-import-position
+import _atk_wi_uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
@@ -361,7 +361,7 @@ def test_flat_add_operation_drops_input_repair_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """利用者入力の修復TBD予約キーを保存内容へ引き継がない。"""
+    """利用者入力の修復UWI予約キーを保存内容へ引き継がない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -486,8 +486,8 @@ def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Pat
     assert exc_info.value.code == 2
 
 
-def test_add_rejects_dependencies_for_tbd(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """TBDで保存されないdepends_on指定を成功扱いにしない。"""
+def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """UWIで保存されないdepends_on指定を成功扱いにしない。"""
     _setup_notes(tmp_path)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -499,7 +499,7 @@ def test_add_rejects_dependencies_for_tbd(tmp_path: pathlib.Path, capsys: pytest
                 "github.com/example/repo",
                 "--type=uwi",
                 "--depends-on",
-                "feedback.md",
+                "awi.md",
                 "確認しますか？",
             ],
             home=tmp_path,
@@ -534,11 +534,11 @@ def test_add_operation_rejects_invalid_plan_file(
         )
 
 
-def test_add_operation_rejects_plan_file_for_tbd(
+def test_add_operation_rejects_plan_file_for_uwi(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TBD種別とplan_fileの併用を拒否する。"""
+    """UWI種別とplan_fileの併用を拒否する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
@@ -1523,13 +1523,13 @@ def _prepare_notes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
     return notes
 
 
-def test_add_entries_rejects_answer_marker_in_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """TBD本文が回答欄マーカーを含む場合に投入を拒否する。"""
+def test_add_entries_rejects_answer_marker_in_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """UWI本文が回答欄マーカーを含む場合に投入を拒否する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     with pytest.raises(WebInputError):
         add_module.add_entries(
             notes,
-            messages=[f"この方針を採用しますか？\n\n{tbd_module.ANSWER_MARKER}\n"],
+            messages=[f"この方針を採用しますか？\n\n{uwi_module.ANSWER_MARKER}\n"],
             target_repo="github.com/example/repo",
             source=None,
             now=_FIXED_DT,
@@ -1538,13 +1538,13 @@ def test_add_entries_rejects_answer_marker_in_tbd_body(tmp_path: pathlib.Path, m
         )
 
 
-def test_add_entries_rejects_answer_heading_in_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """TBD本文が回答見出しを行頭に含む場合に投入を拒否する。"""
+def test_add_entries_rejects_answer_heading_in_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """UWI本文が回答見出しを行頭に含む場合に投入を拒否する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     with pytest.raises(WebInputError):
         add_module.add_entries(
             notes,
-            messages=[f"この方針を採用しますか？\n\n{tbd_module.ANSWER_HEADING}\n\n未記入\n"],
+            messages=[f"この方針を採用しますか？\n\n{uwi_module.ANSWER_HEADING}\n\n未記入\n"],
             target_repo="github.com/example/repo",
             source=None,
             now=_FIXED_DT,
@@ -1727,8 +1727,8 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
     assert list((notes / "inbox").iterdir())
 
 
-def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """予約書式を含まないTBD本文は投入され、見出しと回答欄が1組だけ生成される。"""
+def test_add_entries_accepts_plain_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """予約書式を含まないUWI本文は投入され、見出しと回答欄が1組だけ生成される。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     generated = add_module.add_entries(
         notes,
@@ -1740,9 +1740,9 @@ def test_add_entries_accepts_plain_tbd_body(tmp_path: pathlib.Path, monkeypatch:
         question_type="free-form",
     )
     content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
-    assert content.count(tbd_module.ANSWER_MARKER) == 1
-    assert content.count(f"\n{tbd_module.ANSWER_HEADING}\n") == 1
-    assert content.count(f"\n{tbd_module.QUESTION_HEADING}\n") == 1
+    assert content.count(uwi_module.ANSWER_MARKER) == 1
+    assert content.count(f"\n{uwi_module.ANSWER_HEADING}\n") == 1
+    assert content.count(f"\n{uwi_module.QUESTION_HEADING}\n") == 1
 
 
 def test_add_entries_uses_frontmatter_target_repo_when_omitted(

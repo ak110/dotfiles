@@ -75,7 +75,7 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch, batch)
     monkeypatch.setenv("AI_AGENT", "1")
-    text = _entry_text("feedback.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
+    text = _entry_text("awi.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
 
     with pytest.raises(SystemExit) as exc_info:
         batch._cmd_add_batch(_batch_args(text), notes, _FIXED_DT, tmp_path)
@@ -94,11 +94,11 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
     _patch_repo_operations(monkeypatch, batch)
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
-    text = _entry_text("feedback.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
+    text = _entry_text("awi.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
 
     batch._cmd_add_batch(_batch_args(text), notes, _FIXED_DT, tmp_path)
 
-    assert "## ユーザーコメント" in (notes / "inbox" / "feedback.md").read_text(encoding="utf-8")
+    assert "## ユーザーコメント" in (notes / "inbox" / "awi.md").read_text(encoding="utf-8")
 
 
 def test_parse_collects_entries_and_ignores_structural_headings() -> None:
@@ -112,8 +112,8 @@ def test_parse_collects_entries_and_ignores_structural_headings() -> None:
     assert entries[1].raw_text.endswith("\n\n本文2\n")
 
 
-def test_parse_ignores_answered_label_of_tbd() -> None:
-    """TBDの`[状態/回答状況]`ラベル付き見出しも境界として扱う。"""
+def test_parse_ignores_answered_label_of_uwi() -> None:
+    """UWIの`[状態/回答状況]`ラベル付き見出しも境界として扱う。"""
     text = (
         "# uwi\n## target_repo: github.com/example/foo\n"
         "### q.md [inbox/unanswered]\n"
@@ -168,8 +168,8 @@ def test_parse_rejects_invalid_frontmatter(frontmatter: str) -> None:
         batch.parse_show_batch(text)
 
 
-def test_parse_rejects_effectively_empty_feedback_body() -> None:
-    """実質空のフィードバック本文を拒否する。"""
+def test_parse_rejects_effectively_empty_awi_body() -> None:
+    """実質空のAWI本文を拒否する。"""
     with pytest.raises(WebInputError):
         batch.parse_show_batch(_entry_text("a.md", body="-"))
 
@@ -607,7 +607,7 @@ def test_show_all_output_round_trips_into_another_repository(
     monkeypatch.setattr(add_module, "_resolve_repo_id", lambda value, **_kwargs: value)
     generated = add_module.add_entries(
         source_notes,
-        messages=["フィードバック本文", "---\nsource: session-review\n---\n\n別の本文\n"],
+        messages=["AWI本文", "---\nsource: session-review\n---\n\n別の本文\n"],
         target_repo="github.com/example/foo",
         source=None,
         now=_FIXED_DT,

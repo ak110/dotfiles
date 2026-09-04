@@ -1,4 +1,4 @@
-"""対象リポジトリで新たに回答されたTBDを検出し、通知本文を組み立てる。
+"""対象リポジトリで新たに回答されたUWIを検出し、通知本文を組み立てる。
 
 PostToolUseフックから毎回呼ばれる。セッション状態へ対象リポジトリごとの回答済み
 ファイル名とactive状態ディレクトリの指紋を記録し、前回観測後に回答済みとなった
@@ -18,7 +18,7 @@ from _hook_agent_id import MAIN_AGENT_ID
 from _session_state import update_state
 
 STATE_KEY_ANSWERED = "uwi_answered_by_repo"
-"""エージェント別・対象リポジトリID別の回答済みTBDファイル名を保持する状態キー。
+"""エージェント別・対象リポジトリID別の回答済みUWIファイル名を保持する状態キー。
 
 値は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`の2段辞書とする。
 メインとサブエージェントのフック呼び出しは同一`session_id`で届くため、
@@ -30,7 +30,7 @@ STATE_KEY_FINGERPRINT = "uwi_fingerprint_by_repo"
 """エージェント別・作業ディレクトリ別のactive状態ディレクトリ指紋を保持するセッション状態キー。
 
 値は`{エージェント識別子: {作業ディレクトリ: 指紋文字列}}`の2段辞書とする。
-指紋が前回観測から変化していない間はTBDの回答状態も変化しないため、
+指紋が前回観測から変化していない間はUWIの回答状態も変化しないため、
 走査と`git remote get-url origin`をいずれも実行しない。
 """
 
@@ -122,7 +122,7 @@ def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint
 
 
 def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> str | None:
-    """前回観測後に回答されたTBDがあれば通知本文を返す。それ以外はNoneを返す。"""
+    """前回観測後に回答されたUWIがあれば通知本文を返す。それ以外はNoneを返す。"""
     if not cwd:
         return None
 
@@ -162,7 +162,7 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
 
     filenames = ", ".join(newly_answered)
     return (
-        f"newly answered TBD entries for repository {target_repo}: {filenames}."
+        f"newly answered UWI entries for repository {target_repo}: {filenames}."
         " Decide whether to take them into the current session before it ends:"
         " read each entry with `atk wi show <filename>` and follow the recorded answer,"
         " revising any provisional decision that the answer contradicts."

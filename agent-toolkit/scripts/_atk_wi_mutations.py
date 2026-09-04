@@ -20,7 +20,7 @@ import _atk_wi_add as _add
 import _atk_wi_frontmatter as _frontmatter
 import _atk_wi_remove_all as _remove_all
 import _atk_wi_user_comment as _user_comment
-import _atk_wi_uwi as _tbd
+import _atk_wi_uwi as _uwi
 import _plan_file
 import _plan_format
 from _atk_wi_common import (
@@ -60,7 +60,7 @@ from _atk_wi_repo import edit_entry as _edit_entry
 _GIT_TIMEOUT_SECONDS = 10.0
 
 
-class _PlanFeedbackValidationError(Exception):
+class _PlanAwiValidationError(Exception):
     """計画入力の参照元を付ける前の検証失敗。"""
 
 
@@ -264,13 +264,13 @@ def _resolve_transition_paths(
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
     if state is not None:
-        return _resolve_feedback_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
+        return _resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
     if action == "start-processing":
-        return _resolve_feedback_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
+        return _resolve_awi_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
     if action == "return-to-inbox":
-        return _resolve_feedback_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
+        return _resolve_awi_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
     if action == "unhold":
-        return _resolve_feedback_targets(
+        return _resolve_awi_targets(
             filenames,
             _subdir(private_notes, WI_STATE_HOLD),
             missing_is_conflict=missing_is_conflict,
@@ -314,9 +314,9 @@ def _validate_transition_targets(
             _entry_target_repo(path, content)
         _verify_target_repo_content(path, content, normalized_target_repo)
     if cooldown_days is not None:
-        non_feedback = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI]
-        if non_feedback:
-            raise WebInputError(f"--`cooldown-days`はフィードバック専用です: {', '.join(non_feedback)}")
+        non_awi = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI]
+        if non_awi:
+            raise WebInputError(f"--`cooldown-days`はAWI専用です: {', '.join(non_awi)}")
     if action == "remove" and not force:
         protected = [path.name for path in paths if path.parent.name == WI_STATE_PROCESSING]
         if protected:
@@ -508,7 +508,7 @@ def edit_entry_content(
     expected_content: str | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """平引数でフィードバック本文を更新する。
+    """平引数でAWI本文を更新する。
 
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
@@ -541,7 +541,7 @@ def append_entry_content(
     expected_content: bytes | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """フィードバック本文をraw bytesのまま追記する。TBDは拒否する。
+    """AWI本文をraw bytesのまま追記する。UWIは拒否する。
 
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
@@ -554,7 +554,7 @@ def append_entry_content(
     def validate(previous: str, updated: str) -> None:
         del updated
         if _require_type(path, previous) == WI_TYPE_UWI:
-            raise WebInputError("TBDには追記できません")
+            raise WebInputError("UWIには追記できません")
 
     return _append_entry(
         private_notes,
@@ -589,9 +589,9 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         )
         sys.exit(2)
     if entry_type != WI_TYPE_UWI:
-        tbd_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
-        if tbd_only_keys:
-            raise WebInputError(f"フィードバックでは指定できないメタデータです: {', '.join(tbd_only_keys)}")
+        uwi_only_keys = sorted({"scope", "question_type", "choices"} & message_frontmatter.keys())
+        if uwi_only_keys:
+            raise WebInputError(f"AWIでは指定できないメタデータです: {', '.join(uwi_only_keys)}")
 
     updates = dict(message_frontmatter)
     if "target_repo" in updates:
@@ -620,21 +620,21 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
 
     if not normalized_message_body.strip():
-        raise WebInputError("TBDの質問本文は空にできません")
+        raise WebInputError("UWIの質問本文は空にできません")
     question_type = updated_data.get("question_type")
     if question_type not in {"choice", "yes-no", "free-form"}:
         raise WebInputError("question_typeが不正です")
     if question_type == "choice" and not updated_data.get("choices"):
         raise WebInputError("choice形式にはchoicesが必要です")
 
-    marker_index = stored_body.rfind(_tbd.ANSWER_MARKER)
+    marker_index = stored_body.rfind(_uwi.ANSWER_MARKER)
     if marker_index < 0:
         raise WebInputError("回答欄マーカーがありません")
-    answer_heading_index = stored_body.rfind(_tbd.ANSWER_HEADING, 0, marker_index)
-    question_heading_index = stored_body.rfind(_tbd.QUESTION_HEADING, 0, answer_heading_index)
+    answer_heading_index = stored_body.rfind(_uwi.ANSWER_HEADING, 0, marker_index)
+    question_heading_index = stored_body.rfind(_uwi.QUESTION_HEADING, 0, answer_heading_index)
     if answer_heading_index < 0 or question_heading_index < 0:
-        raise WebInputError("TBDの質問見出しまたは回答見出しがありません")
-    question_heading_end = question_heading_index + len(_tbd.QUESTION_HEADING)
+        raise WebInputError("UWIの質問見出しまたは回答見出しがありません")
+    question_heading_end = question_heading_index + len(_uwi.QUESTION_HEADING)
     updated_body = (
         stored_body[:question_heading_end]
         + "\n\n"
@@ -676,49 +676,49 @@ def _read_plan_input_filenames(plan_path: pathlib.Path) -> tuple[tuple[str, ...]
     return tuple(sorted(filenames)), source_description
 
 
-def _validated_plan_feedback_paths(
+def _validated_plan_awi_paths(
     private_notes: pathlib.Path,
     filenames: tuple[str, ...],
 ) -> tuple[pathlib.Path, ...]:
     """計画入力を検証し、参照元を付ける前の失敗を送出する。"""
-    feedback_paths: list[pathlib.Path] = []
+    awi_paths: list[pathlib.Path] = []
     for filename in filenames:
         candidates = tuple((state, private_notes / state / filename) for state in WI_STATES)
         existing = tuple((state, path) for state, path in candidates if path.is_file())
         if len(existing) != 1:
-            raise _PlanFeedbackValidationError(f"を一意に特定できません: {filename}")
+            raise _PlanAwiValidationError(f"を一意に特定できません: {filename}")
         state, path = existing[0]
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
-            raise _PlanFeedbackValidationError(f"のfrontmatterが破損しています: {filename}")
+            raise _PlanAwiValidationError(f"のfrontmatterが破損しています: {filename}")
         entry_type = normalized_wi_type(parsed[0].get("type"))
         if entry_type == WI_TYPE_AWI:
             if state != WI_STATE_HOLD:
-                raise _PlanFeedbackValidationError(f"の変換元feedbackがholdに存在しません: {filename}")
+                raise _PlanAwiValidationError(f"の変換元awiがholdに存在しません: {filename}")
             if "plan_file" in parsed[0]:
-                raise _PlanFeedbackValidationError(f"が既に計画型です: {filename}")
-            feedback_paths.append(path)
+                raise _PlanAwiValidationError(f"が既に計画型です: {filename}")
+            awi_paths.append(path)
             continue
         if entry_type == WI_TYPE_UWI:
             if state not in WI_PROCESSABLE_STATES:
-                raise _PlanFeedbackValidationError(f"のTBDがactive状態ではありません: {filename}")
+                raise _PlanAwiValidationError(f"のUWIがactive状態ではありません: {filename}")
             continue
-        raise _PlanFeedbackValidationError(f"のtypeが不正です: {filename}")
-    if not feedback_paths:
-        raise _PlanFeedbackValidationError("に変換元feedbackがありません")
-    return tuple(feedback_paths)
+        raise _PlanAwiValidationError(f"のtypeが不正です: {filename}")
+    if not awi_paths:
+        raise _PlanAwiValidationError("に変換元awiがありません")
+    return tuple(awi_paths)
 
 
-def _plan_feedback_paths(
+def _plan_awi_paths(
     private_notes: pathlib.Path,
     filenames: tuple[str, ...],
     source_description: str,
 ) -> tuple[pathlib.Path, ...]:
-    """計画入力を検証し、holdにある変換元feedbackだけを返す。"""
+    """計画入力を検証し、holdにある変換元awiだけを返す。"""
     try:
-        return _validated_plan_feedback_paths(private_notes, filenames)
-    except _PlanFeedbackValidationError as error:
+        return _validated_plan_awi_paths(private_notes, filenames)
+    except _PlanAwiValidationError as error:
         raise WebInputError(f"{source_description}{error}") from error
 
 
@@ -786,7 +786,7 @@ def edit_entry_to_plan(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> dict[str, object | None]:
-    """holdの最古項目を計画型feedbackへ編集し、inboxへ原子的に移動する。"""
+    """holdの最古項目を計画型awiへ編集し、inboxへ原子的に移動する。"""
     try:
         plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
         stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
@@ -811,16 +811,16 @@ def edit_entry_to_plan(
         material_names, source_description = _read_plan_input_filenames(plan_path)
         normalized_material_names = tuple(dict.fromkeys(_validate_filename(name, inbox_dir).name for name in material_names))
         if not normalized_material_names:
-            raise WebInputError(f"{source_description}に変換元feedbackがありません")
+            raise WebInputError(f"{source_description}に変換元awiがありません")
         if normalized_filename not in normalized_material_names:
             raise WebInputError(f"指定項目が{source_description}に含まれません: {normalized_filename}")
-        material_paths = _plan_feedback_paths(private_notes, normalized_material_names, source_description)
-        feedback_names = tuple(path.name for path in material_paths)
-        if normalized_filename not in feedback_names:
-            raise WebInputError(f"指定項目が計画の変換元feedbackに含まれません: {normalized_filename}")
-        oldest_material = min(feedback_names)
+        material_paths = _plan_awi_paths(private_notes, normalized_material_names, source_description)
+        awi_names = tuple(path.name for path in material_paths)
+        if normalized_filename not in awi_names:
+            raise WebInputError(f"指定項目が計画の変換元awiに含まれません: {normalized_filename}")
+        oldest_material = min(awi_names)
         if normalized_filename != oldest_material:
-            raise WebInputError(f"計画型へ変換できるのは変換元feedbackの昇順最古だけです: {oldest_material}")
+            raise WebInputError(f"計画型へ変換できるのは変換元awiの昇順最古だけです: {oldest_material}")
         held_path = _validate_filename(normalized_filename, private_notes / WI_STATE_HOLD)
         previous = held_path.read_text(encoding="utf-8")
         if expected_content is not None and previous != expected_content:
@@ -831,7 +831,7 @@ def edit_entry_to_plan(
             raise WebInputError(f"frontmatterが破損しているため計画型へ編集できません: {held_path.name}")
         stored_data, _stored_body = parsed
         if _require_type(held_path, previous) != WI_TYPE_AWI:
-            raise WebInputError(f"フィードバックだけを計画型へ編集できます: {held_path.name}")
+            raise WebInputError(f"AWIだけを計画型へ編集できます: {held_path.name}")
         if "plan_file" in stored_data:
             raise WebInputError(f"既に計画型のため再変換できません: {held_path.name}")
 
@@ -841,7 +841,7 @@ def edit_entry_to_plan(
             material_text = material_path.read_text(encoding="utf-8")
             material_parsed = _frontmatter.parse_frontmatter(material_text)
             if material_parsed is None:
-                raise WebInputError(f"変換元feedbackのfrontmatterが破損しています: {material_path.name}")
+                raise WebInputError(f"変換元awiのfrontmatterが破損しています: {material_path.name}")
             material_data, _material_body = material_parsed
             material_repo = _entry_target_repo(material_path, material_text)
             material_repositories.add(material_repo)
@@ -878,7 +878,7 @@ def edit_entry_to_plan(
         updated_data.pop("cooldown_until", None)
         all_dependencies = dependencies + list(depends_on)
         canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in all_dependencies))
-        excluded_inputs = set(feedback_names)
+        excluded_inputs = set(awi_names)
         canonical_dependencies = tuple(
             value for value in canonical_dependencies if value not in excluded_inputs and value != held_path.name
         )
@@ -937,24 +937,24 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
     return True
 
 
-def _resolve_feedback_targets(
+def _resolve_awi_targets(
     filenames: list[str],
-    feedback_dir: pathlib.Path,
+    awi_dir: pathlib.Path,
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """`feedback_dir`配下のファイル名群を検証・解決し、未存在があればexit 2する。
+    """`awi_dir`配下のファイル名群を検証・解決し、未存在があればexit 2する。
 
-    `feedback_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
-    エラーメッセージは`feedback_dir.name`から動的に状態名を組み込み、呼び出し元の状態と一致させる。
+    `awi_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
+    エラーメッセージは`awi_dir.name`から動的に状態名を組み込み、呼び出し元の状態と一致させる。
     """
-    paths = [_validate_filename(f, feedback_dir) for f in filenames]
+    paths = [_validate_filename(f, awi_dir) for f in filenames]
     missing = [p for p in paths if not p.exists()]
     if missing:
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for p in missing:
-            print(f"{feedback_dir.name}に存在しません: {p.name}", file=sys.stderr)
+            print(f"{awi_dir.name}に存在しません: {p.name}", file=sys.stderr)
         sys.exit(2)
     return paths
 
@@ -1198,10 +1198,10 @@ def _convert_held_entries(
     normalized_material_names = tuple(_validate_filename(name, inbox_dir).name for name in material_names)
     if len(set(normalized_material_names)) != len(normalized_material_names):
         raise WebInputError(f"{source_description}に重複したファイル名があります")
-    material_paths = _plan_feedback_paths(private_notes, normalized_material_names, source_description)
+    material_paths = _plan_awi_paths(private_notes, normalized_material_names, source_description)
     input_names = tuple(path.name for path in paths)
-    feedback_names = tuple(path.name for path in material_paths)
-    if tuple(sorted(input_names)) != tuple(sorted(feedback_names)):
+    awi_names = tuple(path.name for path in material_paths)
+    if tuple(sorted(input_names)) != tuple(sorted(awi_names)):
         raise WebInputError(f"convert-to-planの入力と{source_description}が一致しません")
     if local_worktree is None:
         raise WebInputError("holdの変換には対象リポジトリのローカルworktreeが必要です")
@@ -1217,7 +1217,7 @@ def _convert_held_entries(
             raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
         data, body = parsed
         if _require_type(path, text) != WI_TYPE_AWI:
-            raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
+            raise WebInputError(f"AWIだけを計画実装型へ変換できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
             raise WebInputError(f"target_repoが不正です: {path.name}")
@@ -1347,7 +1347,7 @@ def convert_entries_to_plan(
     skip_push: bool = False,
     local_worktree: pathlib.Path | None = None,
 ) -> dict[str, object]:
-    """状態別のfeedbackを計画実装型へ変換し、holdは1件へ統合する。"""
+    """状態別のawiを計画実装型へ変換し、holdは1件へ統合する。"""
     if not filenames:
         raise WebInputError("変換するFILENAMEを1件以上指定してください")
     try:
@@ -1425,7 +1425,7 @@ def convert_entries_to_plan(
                 raise WebInputError(f"frontmatterが破損しているため変換できません: {path.name}")
             data, body = parsed
             if _require_type(path, text) != WI_TYPE_AWI:
-                raise WebInputError(f"フィードバックだけを計画実装型へ変換できます: {path.name}")
+                raise WebInputError(f"AWIだけを計画実装型へ変換できます: {path.name}")
             raw_entry_repo = data.get("target_repo")
             if not isinstance(raw_entry_repo, str):
                 raise WebInputError(f"target_repoが不正です: {path.name}")
@@ -1573,7 +1573,7 @@ def set_entry_dependencies(
     target_repo: str | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
-    """既存フィードバックの明示依存だけを更新し、保存済みメタデータを返す。"""
+    """既存AWIの明示依存だけを更新し、保存済みメタデータを返す。"""
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
     _validate_filenames_only([filename, *depends_on], inbox_dir)
@@ -1589,7 +1589,7 @@ def set_entry_dependencies(
             raise WebInputError(f"frontmatterが破損しているため依存を更新できません: {path.name}")
         data, body = parsed
         if _require_type(path, text) != WI_TYPE_AWI:
-            raise WebInputError(f"フィードバックだけ依存を更新できます: {path.name}")
+            raise WebInputError(f"AWIだけ依存を更新できます: {path.name}")
         raw_entry_repo = data.get("target_repo")
         if not isinstance(raw_entry_repo, str):
             raise WebInputError(f"target_repoが不正です: {path.name}")
@@ -1625,7 +1625,7 @@ def _active_dependency_graph(
     processing_dir: pathlib.Path,
     hold_dir: pathlib.Path | None = None,
 ) -> dict[str, set[str]]:
-    """ロック内で取得したactiveなフィードバックの依存グラフを返す。"""
+    """ロック内で取得したactiveなAWIの依存グラフを返す。"""
     entries: dict[str, pathlib.Path] = {}
     directories = (inbox_dir, processing_dir) if hold_dir is None else (inbox_dir, hold_dir, processing_dir)
     for directory in directories:
@@ -1776,7 +1776,7 @@ def _cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, 
     """return-to-inboxサブコマンド: processingからinbox/へ戻しcommit・push。
 
     保留判定でprocessing化済みの対象を未処理状態へ戻す用途で使う
-    （`agent-toolkit:process-wi`のpicker起動契約「同一セッション中にTBDの回答を受領した場合」参照）。
+    （`agent-toolkit:process-wi`のpicker起動契約「同一セッション中にUWIの回答を受領した場合」参照）。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     args.filenames = _dedup_positional_filenames(args.filenames, "return-to-inbox")

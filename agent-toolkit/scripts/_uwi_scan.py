@@ -1,9 +1,9 @@
-"""TBDエントリの回答状態を走査する共有モジュール。
+"""UWIエントリの回答状態を走査する共有モジュール。
 
 frontmatterはCLIと同じ`_atk_wi_frontmatter.parse_frontmatter`で解析し、
 YAML表現の違いによってCLIとフックの判定が分岐しないようにする。
 
-`is_uwi_answered`はTBD回答判定のSSOTとし、`_atk_wi_common`は本モジュールから
+`is_uwi_answered`はUWI回答判定のSSOTとし、`_atk_wi_common`は本モジュールから
 再エクスポートする。
 """
 
@@ -18,25 +18,25 @@ from _atk_wi_constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_
 from _atk_wi_frontmatter import parse_frontmatter
 
 _ANSWER_HEADING = "\n## 回答\n"
-"""TBD本文の回答節を示す見出し。`_atk_wi_add`が投入時に付与する。"""
+"""UWI本文の回答節を示す見出し。`_atk_wi_add`が投入時に付与する。"""
 
 
 class ActiveUwi(typing.NamedTuple):
-    """走査で見つかったactive状態のTBD1件。"""
+    """走査で見つかったactive状態のUWI1件。"""
 
     filename: str
     answered: bool
 
 
 class ActiveUwiScan(typing.NamedTuple):
-    """active状態のTBD走査結果。"""
+    """active状態のUWI走査結果。"""
 
     entries: list[ActiveUwi]
     complete: bool
 
 
 def is_uwi_answered(text: str) -> bool:
-    """TBD本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
+    """UWI本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
     idx = text.find(_ANSWER_HEADING)
     if idx < 0:
         return False
@@ -55,7 +55,7 @@ def is_uwi_answered(text: str) -> bool:
 
 
 def private_notes_root() -> pathlib.Path | None:
-    """フィードバック保存ディレクトリのrootを返す。解決できない場合はNoneを返す。
+    """WI保存ディレクトリのrootを返す。解決できない場合はNoneを返す。
 
     環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`を優先する。未設定時はCLIと同じ順序で
     `~/private-notes`、platformdirsのユーザーデータディレクトリを参照する。
@@ -82,7 +82,7 @@ def active_fingerprint(root: pathlib.Path) -> str | None:
     列挙に失敗した場合はNoneを返し、呼び出し側は指紋照合を行わず走査へ進む。
 
     最大`st_mtime_ns`だけでは、時刻の分解能より短い間隔で内容が書き換わった場合に
-    変化を検出できない。TBDの回答は既存ファイルへの追記であり件数も変えないため、
+    変化を検出できない。UWIの回答は既存ファイルへの追記であり件数も変えないため、
     取りこぼすと当該セッションへ通知が届かなくなる。サイズを併せることで、
     回答の追記のように内容長が変わる更新を分解能によらず検出する。
     """
@@ -106,7 +106,7 @@ def active_fingerprint(root: pathlib.Path) -> str | None:
 
 
 def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
-    """指定リポジトリのactive状態TBDを走査して回答状態とともに返す。
+    """指定リポジトリのactive状態UWIを走査して回答状態とともに返す。
 
     ディレクトリ列挙、ファイル読み取り、frontmatter解析のいずれかが失敗した場合は
     `complete=False`を返す。呼び出し側は不完全な走査結果で状態を更新してはならない。

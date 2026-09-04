@@ -1,6 +1,6 @@
 """agent-toolkitプラグイン配下の`atk wi`コマンド用補助モジュール。
 
-旧`pytools/dotfiles_fb/_tbd.py`からの移設。PEP 723 entrypoint
+旧`pytools/dotfiles_fb/_uwi.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 """
 
@@ -31,17 +31,17 @@ from _atk_wi_common import (
 from _atk_wi_repo import _resolve_repo_id
 
 ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
-"""TBDエントリの回答欄開始位置を示すHTMLコメント。
+"""UWIエントリの回答欄開始位置を示すHTMLコメント。
 
-`_atk_wi_add.add_entries`が投入時に付与し、`answer_tbd`・`_cmd_answer`が回答本文の切り出しに使う。
+`_atk_wi_add.add_entries`が投入時に付与し、`answer_uwi`・`_cmd_answer`が回答本文の切り出しに使う。
 本文字列を直接記述せず、常に本定数を参照する。
 """
 
 QUESTION_HEADING = "## 質問"
-"""TBDエントリの質問見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
+"""UWIエントリの質問見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
 
 ANSWER_HEADING = "## 回答"
-"""TBDエントリの回答見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
+"""UWIエントリの回答見出し。`_atk_wi_add.add_entries`が投入時に付与する。"""
 
 _RESERVED_MARKUP_HEADINGS = (QUESTION_HEADING, ANSWER_HEADING)
 
@@ -118,8 +118,8 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
     return None
 
 
-def reject_reserved_tbd_markup(body: str) -> None:
-    """TBD本文がツール側で自動付与する要素を含む場合に`WebInputError`を送出する。
+def reject_reserved_uwi_markup(body: str) -> None:
+    """UWI本文がツール側で自動付与する要素を含む場合に`WebInputError`を送出する。
 
     検査対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
     投入側が本文へ同じ要素を書くと`add_entries`が無検査で連結し二重生成となるため、
@@ -127,19 +127,19 @@ def reject_reserved_tbd_markup(body: str) -> None:
     CLIとWeb UIの双方が`add_entries`を経由するため、本検査1箇所で両経路を覆う。
     """
     if ANSWER_MARKER in body:
-        raise WebInputError("TBD本文に回答欄マーカーが含まれています。本文には質問内容のみを書いてください")
+        raise WebInputError("UWI本文に回答欄マーカーが含まれています。本文には質問内容のみを書いてください")
     for line in body.splitlines():
         if line.strip() in _RESERVED_MARKUP_HEADINGS:
             raise WebInputError(
-                f"TBD本文にツールが自動付与する見出し（{line.strip()}）が含まれています。本文には質問内容のみを書いてください"
+                f"UWI本文にツールが自動付与する見出し（{line.strip()}）が含まれています。本文には質問内容のみを書いてください"
             )
 
 
 def warn_question_quality(filename: str, message: str, question_type: str | None) -> None:
-    """TBD投入時の質問本文の品質警告を標準エラーへ出力する。
+    """UWI投入時の質問本文の品質警告を標準エラーへ出力する。
 
     書式上の予約要素（回答欄マーカー・自動付与の見出し）の混入は
-    `reject_reserved_tbd_markup`が拒否で扱い、本関数は内容面の品質のみを警告で扱う。
+    `reject_reserved_uwi_markup`が拒否で扱い、本関数は内容面の品質のみを警告で扱う。
     """
     if question_type != "choice" and not _looks_like_question(message):
         print(
@@ -180,23 +180,23 @@ def _resolve_active_entry(
     raise FileNotFoundError(filename)
 
 
-def require_tbd_entry(path: pathlib.Path, text: str) -> None:
-    """対象エントリの種別がTBDでない場合に`WebInputError`を送出する。
+def require_uwi_entry(path: pathlib.Path, text: str) -> None:
+    """対象エントリの種別がUWIでない場合に`WebInputError`を送出する。
 
     CLIとWeb APIの双方が呼び出す共通の検証とする。
     frontmatterの`type`のみを根拠とし、所在ディレクトリーは根拠にしない。
     """
     entry_type = _require_type(path, text)
     if entry_type != WI_TYPE_UWI:
-        raise WebInputError(f"回答はTBDのエントリにのみ適用できます（type={entry_type}）: {path.name}")
+        raise WebInputError(f"回答はUWIのエントリにのみ適用できます（type={entry_type}）: {path.name}")
 
 
 def _answer_noninteractive(private_notes: pathlib.Path, *, filename: str, answer: str) -> None:
-    """引数で受け取った回答本文をTBDの回答欄へ非対話で反映する。
+    """引数で受け取った回答本文をUWIの回答欄へ非対話で反映する。
 
     回答本文は回答欄マーカー以降へ置く本文だけを受け取る。
     マーカー自体を含む本文は、反映後にマーカーが二重化するため拒否する。
-    対象解決・種別検証・commit・pushは`answer_tbd`が担う。
+    対象解決・種別検証・commit・pushは`answer_uwi`が担う。
     対象不在時に`_resolve_active_entry`が送出する`FileNotFoundError`は、
     Tracebackを露出させず他サブコマンドと同じ文面の案内へ変換する。
     """
@@ -207,7 +207,7 @@ def _answer_noninteractive(private_notes: pathlib.Path, *, filename: str, answer
         )
         sys.exit(1)
     try:
-        changed = answer_tbd(private_notes, filename=filename, answer=answer)
+        changed = answer_uwi(private_notes, filename=filename, answer=answer)
     except FileNotFoundError:
         print(f"inbox・processingのいずれにも存在しません: {filename}", file=sys.stderr)
         sys.exit(1)
@@ -220,7 +220,7 @@ def _answer_noninteractive(private_notes: pathlib.Path, *, filename: str, answer
         print("差分なし。")
 
 
-def answer_tbd(
+def answer_uwi(
     private_notes: pathlib.Path,
     *,
     filename: str,
@@ -229,7 +229,7 @@ def answer_tbd(
     lock_timeout: float = -1,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でTBD回答欄を更新する。対象はinbox・processing・holdのTBDに限る。
+    """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
 
     呼び出し元に依存せず、共有コア入口で空回答を拒否する。
     """
@@ -251,7 +251,7 @@ def answer_tbd(
             raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
         if expected_content is not None and text != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        require_tbd_entry(path, text)
+        require_uwi_entry(path, text)
         if ANSWER_MARKER not in text:
             raise WebInputError("回答欄マーカーがありません")
         # 既存データにマーカーが重複するエントリが存在するため最後のマーカーを基準に分割する。
@@ -265,17 +265,17 @@ def answer_tbd(
 
 
 def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """answerサブコマンド: TBDへ回答する。
+    """answerサブコマンド: UWIへ回答する。
 
-    `filename`と`answer_body`の双方を指定した場合は非対話で当該TBDの回答欄を更新する。
-    いずれかを省略した場合は、active状態（inbox・processing）のうちfrontmatterの`type`が`tbd`かつ
+    `filename`と`answer_body`の双方を指定した場合は非対話で当該UWIの回答欄を更新する。
+    いずれかを省略した場合は、active状態（inbox・processing）のうちfrontmatterの`type`が`uwi`かつ
     未回答のエントリを1件ずつ画面表示し`$EDITOR`で回答する。
     エディターが非ゼロ終了コードで終了した場合、以降の対象を中断してexit 1を返す
     （エディター起動失敗・ユーザーによる強制終了などを成功として扱わないため）。
     """
     if is_agent_environment():
         print(
-            "TBDの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。",
+            "UWIの回答はユーザーだけが書き込みます。エージェント環境から起動したatkでは回答できません。",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -302,7 +302,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 continue
             targets.append(path)
     if not targets:
-        print("未回答のTBDはありません。")
+        print("未回答のUWIはありません。")
         return
     edited: list[str] = []
     had_conflict = False
@@ -335,7 +335,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             tmp_path.unlink(missing_ok=True)
             continue
         try:
-            answer_tbd(
+            answer_uwi(
                 private_notes,
                 filename=path.name,
                 answer=edited_text.rsplit(ANSWER_MARKER, maxsplit=1)[1],

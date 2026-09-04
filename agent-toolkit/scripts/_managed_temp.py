@@ -852,7 +852,7 @@ def _is_utc_iso8601(value: object) -> bool:
 
 
 def _awis_are_valid(value: object) -> bool:
-    """対応フィードバック名の記録形式が安全なファイル名のリストか返す。"""
+    """対応AWI名の記録形式が安全なファイル名のリストか返す。"""
     return isinstance(value, list) and all(
         isinstance(awi, str)
         and bool(awi)

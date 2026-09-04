@@ -125,7 +125,7 @@ def test_collect_new_alerts_filters_keys_per_repository(tmp_path: pathlib.Path) 
 def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.Path) -> None:
     """`alert_keys`未指定・カンマ区切り複数・空文字列の各書式を公開関数経由で検証する。
 
-    `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つフィードバックファイルを
+    `_parse_alert_keys`はモジュール非公開のため、フロントマターを持つAWIファイルを
     実際に配置して`existing_alert_keys`経由で検証する
     （`agent-toolkit:coding-standards`の`references/testing.md`「private関数の直接テスト禁止」節に従う）。
     """
@@ -158,7 +158,7 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
 
 def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Path) -> None:
-    """外部更新を無効化し、保存本文を検査できるフィードバック領域を準備する。"""
+    """外部更新を無効化し、保存本文を検査できるAWI領域を準備する。"""
     (notes / "inbox").mkdir(parents=True)
 
     def no_repo_lock(*_args: object, **_kwargs: object) -> contextlib.AbstractContextManager[None]:
@@ -180,18 +180,18 @@ def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Pa
     )
 
 
-def _saved_feedbacks_by_heading(notes: pathlib.Path) -> dict[str, str]:
-    """保存された通常フィードバックをH1ごとに返す。"""
-    feedbacks: dict[str, str] = {}
+def _saved_awis_by_heading(notes: pathlib.Path) -> dict[str, str]:
+    """保存された通常AWIをH1ごとに返す。"""
+    awis: dict[str, str] = {}
     for path in (notes / "inbox").iterdir():
         content = path.read_text(encoding="utf-8")
         heading = next(line for line in content.splitlines() if line.startswith("# "))
-        feedbacks[heading] = content
-    return feedbacks
+        awis[heading] = content
+    return awis
 
 
 def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """新規アラートをフィードバックへ投入し、件数とfrontmatterを返す。"""
+    """新規アラートをAWIへ投入し、件数とfrontmatterを返す。"""
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
     payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]
@@ -253,7 +253,7 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
 
     assert github_count == 2
     assert gitlab_count == 1
-    feedbacks = _saved_feedbacks_by_heading(notes)
+    awis = _saved_awis_by_heading(notes)
     workflow_completion = (
         "- 完成条件: 対象ワークフロー`CI`の失敗が解消し、ブランチ`main`で当該ワークフローが成功する。"
         "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
@@ -267,9 +267,9 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
         "ロック済みバージョンが修正版以上の場合は、依存を変更せずアラートを棄却する。"
         "修正版未満の場合は依存を更新する"
     )
-    assert workflow_completion in feedbacks["# ワークフローCI失敗"]
-    assert pipeline_completion in feedbacks["# パイプライン200失敗"]
-    assert dependabot_completion in feedbacks["# Dependabot未解決アラート1件"]
+    assert workflow_completion in awis["# ワークフローCI失敗"]
+    assert pipeline_completion in awis["# パイプライン200失敗"]
+    assert dependabot_completion in awis["# Dependabot未解決アラート1件"]
     assert dependabot_completion != workflow_completion
 
 

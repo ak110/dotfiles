@@ -1,6 +1,6 @@
 """計画ファイルの構造検査の共通モジュール。
 
-構造検査（`check_plan_file.py`）、フィードバック登録（`_atk_wi_add.py`）、
+構造検査（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
 2系統のPreToolUse（`pretooluse.py`・`scripts/claude_hook_pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
@@ -1308,7 +1308,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
     nonempty = [(lineno, line.strip()) for lineno, line in section if line.strip()]
     if not nonempty:
         return PlanMaterials(frozenset(), frozenset(), False, is_human_readable=True), [
-            "新規書式の`## 提示素材`はフィードバック又はTBDのファイル名を1件以上、または`なし`と記載する"
+            "新規書式の`## 提示素材`はAWI又はUWIのファイル名を1件以上、または`なし`と記載する"
         ]
 
     if len(nonempty) == 1 and nonempty[0][1] == "なし":
@@ -1328,7 +1328,7 @@ def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterial
             errors.append(f"提示素材のファイル名を重複させない: {path}")
         paths.append(path)
     if not paths:
-        errors.append("提示素材にフィードバック又はTBDのファイル名が1件以上必要")
+        errors.append("提示素材にAWI又はUWIのファイル名が1件以上必要")
     return PlanMaterials(
         frozenset(),
         frozenset(),

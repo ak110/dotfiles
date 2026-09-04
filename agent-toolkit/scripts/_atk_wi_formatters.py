@@ -87,7 +87,7 @@ def _truncate_target_repo(target_repo: str, max_width: int = _TARGET_REPO_MAX_WI
 
 
 def _parse_target_repo(text: str) -> str:
-    """フィードバックファイル本文先頭のfrontmatterからtarget_repoを抽出する。"""
+    """AWIファイル本文先頭のfrontmatterからtarget_repoを抽出する。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return "(unknown)"
@@ -96,7 +96,7 @@ def _parse_target_repo(text: str) -> str:
 
 
 def _parse_source(text: str) -> str | None:
-    """フィードバック/TBDファイル本文先頭のfrontmatterからsourceを抽出する。未指定時はNoneを返す。"""
+    """AWI/UWIファイル本文先頭のfrontmatterからsourceを抽出する。未指定時はNoneを返す。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
@@ -105,7 +105,7 @@ def _parse_source(text: str) -> str | None:
 
 
 def _parse_alert_keys(text: str) -> list[str]:
-    """フィードバックファイル本文先頭のfrontmatterからalert_keys（カンマ区切り）を抽出する。
+    """AWIファイル本文先頭のfrontmatterからalert_keys（カンマ区切り）を抽出する。
 
     未指定・空文字列時は空リストを返す。各要素の前後空白は除去する。
     """
@@ -151,7 +151,7 @@ def _truncate_summary(line: str, available_width: int = _SUMMARY_MAX_LEN) -> str
 
 
 def _body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
-    """フィードバック本文からfrontmatterを除いた先頭要約を1行で返す。
+    """AWI本文からfrontmatterを除いた先頭要約を1行で返す。
 
     本文先頭行の表示幅が`available_width`を超える場合は切り詰めて`...`を付与する。
     """
@@ -167,8 +167,8 @@ def _body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
     return _truncate_summary(first_line, available_width)
 
 
-def _tbd_body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
-    r"""TBD本文（`## 質問\n\n{message}\n\n## 回答\n\n`形式）から質問本文の先頭要約を1行で返す。
+def _uwi_body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
+    r"""UWI本文（`## 質問\n\n{message}\n\n## 回答\n\n`形式）から質問本文の先頭要約を1行で返す。
 
     frontmatterと`## 質問`見出し行をスキップし、質問本文の先頭行を`_body_summary`と同じ
     切り詰めルールで返す。

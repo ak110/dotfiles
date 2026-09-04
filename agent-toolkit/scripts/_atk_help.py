@@ -14,18 +14,18 @@ import argparse
 import textwrap
 from typing import Any
 
-ROOT_DESCRIPTION = "目的: agent-toolkitのフィードバックキュー、計画ファイル、レビュー指摘管理表、管理対象一時領域と委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとコーディングエージェントが、フィードバックの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末は当該コマンドの`--help`に示す。"
+ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、管理対象一時領域と委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとコーディングエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末は当該コマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 
 HELP: dict[str, dict[str, str]] = {
     "atk wi": {
-        "summary": "フィードバックとTBDのキューを操作する",
-        "description": "目的: 対象リポジトリごとのフィードバックとTBDを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",
+        "summary": "AWIとUWIのキューを操作する",
+        "description": "目的: 対象リポジトリごとのAWIとUWIを、投入、参照、状態遷移、編集、常駐処理の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。コーディングエージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",
         "epilog": "実行例:\n\n  atk wi list\n  atk wi show 20260901-072734-001",
     },
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: フィードバック又はTBDをinboxへ1件以上投入し、保存本文を標準出力へ表示する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書くため、送信元本文との照合に追加の`atk wi show`を要しない。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
+        "description": "目的: AWI又はUWIをinboxへ1件以上投入し、保存本文を標準出力へ表示する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書くため、送信元本文との照合に追加の`atk wi show`を要しない。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
         "epilog": '実行例:\n\n  atk wi add "認証エラーの再現手順を整理する"',
     },
     "atk wi list": {
@@ -44,8 +44,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": '実行例:\n\n  atk wi grep "worktree-stash" --status=all',
     },
     "atk wi start-processing": {
-        "summary": "フィードバックをprocessingへ移して処理中にする",
-        "description": "目的: inboxのフィードバックをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "summary": "AWIをprocessingへ移して処理中にする",
+        "description": "目的: inboxのAWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
@@ -60,7 +60,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi return-to-inbox": {
         "summary": "processingまたはrejectedの項目をinboxへ戻す",
-        "description": "目的: processing又はrejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。不採用とした項目をTBDの回答により再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。rejectedから戻す場合は`--state=rejected`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
+        "description": "目的: processing又はrejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。不採用とした項目をUWIの回答により再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、commitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。rejectedから戻す場合は`--state=rejected`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
         "epilog": "実行例:\n\n  atk wi return-to-inbox 20260901-072734-001.md --cooldown-days=3",
     },
     "atk wi adopt": {
@@ -80,22 +80,22 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`はTBDを対象にしない。コーディングエージェントの実行環境から起動した場合、MESSAGEへ`## ユーザーコメント`節を含めると編集を拒否する。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--append`はUWIを対象にしない。コーディングエージェントの実行環境から起動した場合、MESSAGEへ`## ユーザーコメント`節を含めると編集を拒否する。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": '実行例:\n\n  atk wi edit 20260901-072734-001.md "更新後の本文"',
     },
     "atk wi convert-to-plan": {
-        "summary": "フィードバックを計画実装型へ変換する",
-        "description": "目的: 既存フィードバックを計画実装型へ変換し、hold入力では全件を最古の1件へ統合する。\n利用場面: 計画ファイルの作成とレビューが収束し、実装へ引き渡すとき。\n対象と出力: private-notesの対象ファイルへ計画ファイルの参照と依存を記録する。hold入力では統合元を同じcommitで除去してinboxへ移す。1回のcommitと任意のpushで処理する。\n前提: `--plan-file`へ`$(atk config get private_notes)/plans/`から始まる可搬表記を指定する。入力の状態を混在させない。hold入力では`--message`を指定する。\n復元・後始末: commitの前に失敗した場合は部分的な変換を残さない。pushだけが失敗した場合はcleanなローカルcommitが残るため、pushから再開する。",
+        "summary": "AWIを計画実装型へ変換する",
+        "description": "目的: 既存AWIを計画実装型へ変換し、hold入力では全件を最古の1件へ統合する。\n利用場面: 計画ファイルの作成とレビューが収束し、実装へ引き渡すとき。\n対象と出力: private-notesの対象ファイルへ計画ファイルの参照と依存を記録する。hold入力では統合元を同じcommitで除去してinboxへ移す。1回のcommitと任意のpushで処理する。\n前提: `--plan-file`へ`$(atk config get private_notes)/plans/`から始まる可搬表記を指定する。入力の状態を混在させない。hold入力では`--message`を指定する。\n復元・後始末: commitの前に失敗した場合は部分的な変換を残さない。pushだけが失敗した場合はcleanなローカルcommitが残るため、pushから再開する。",
         "epilog": "実行例:\n\n  atk wi convert-to-plan 20260901-072734-001.md --plan-file='$(atk config get private_notes)/plans/2026/09/01-example-1a2b.md'",
     },
     "atk wi set-dependencies": {
-        "summary": "フィードバックの明示依存だけを更新する",
-        "description": "目的: 既存フィードバックの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
+        "summary": "AWIの明示依存だけを更新する",
+        "description": "目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
     },
     "atk wi answer": {
-        "summary": "TBDへ回答する",
-        "description": "目的: TBDへ回答を記録し、回答待ちの依存を解除できる状態にする。\n利用場面: ユーザーが確認事項へ回答するとき。\n対象と出力: private-notesの対象TBDの回答節へ本文を書き込み、commitとpushを行う。引数を省略すると、未回答のTBDを1件ずつ表示して$EDITORで開く。\n前提: 回答欄はユーザーだけが書き込む。エージェント環境から起動した場合は書き込みを拒否する。\n復元・後始末: 記録した回答はprivate-notesのGit履歴に残る。",
+        "summary": "UWIへ回答する",
+        "description": "目的: UWIへ回答を記録し、回答待ちの依存を解除できる状態にする。\n利用場面: ユーザーが確認事項へ回答するとき。\n対象と出力: private-notesの対象UWIの回答節へ本文を書き込み、commitとpushを行う。引数を省略すると、未回答のUWIを1件ずつ表示して$EDITORで開く。\n前提: 回答欄はユーザーだけが書き込む。エージェント環境から起動した場合は書き込みを拒否する。\n復元・後始末: 記録した回答はprivate-notesのGit履歴に残る。",
         "epilog": '実行例:\n\n  atk wi answer 20260901-072734-001.md "案1を採用する"',
     },
     "atk wi commit": {
@@ -109,8 +109,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi migrate",
     },
     "atk wi process-loop": {
-        "summary": "フィードバック消化の常駐処理を開始する",
-        "description": "目的: 対象リポジトリのフィードバック消化を、オーケストレーターの新規セッション起動で反復実行する常駐処理を開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗とDependabotのアラートを検出してフィードバックを投入する。対象リポジトリの作業ツリーは起動したセッションが変更する。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。\n復元・後始末: 前景で動作するため、停止は当該プロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
+        "summary": "AWI消化の常駐処理を開始する",
+        "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行する常駐処理を開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_model設定で決まるオーケストレーターを起動する。待機中はCIの失敗とDependabotのアラートを検出してAWIを投入する。対象リポジトリの作業ツリーは起動したセッションが変更する。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。\n復元・後始末: 前景で動作するため、停止は当該プロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
         "epilog": "実行例:\n\n  atk wi process-loop --worktree",
     },
     "atk plans": {
@@ -144,8 +144,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
-        "summary": "フィードバック管理Web UIを起動する",
-        "description": "目的: private-notesのキューをブラウザーから閲覧して操作するWebサーバーを起動する。\n利用場面: ユーザーがフィードバックの投入、編集、採否をブラウザーで行うとき。\n対象と出力: 指定したホストとポートで待機し、private-notesを読み書きする。前景で動作し、停止の要求を受領するまで終了しない。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。\n復元・後始末: 停止は当該プロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
+        "summary": "WI管理Web UIを起動する",
+        "description": "目的: private-notesのキューをブラウザーから閲覧して操作するWebサーバーを起動する。\n利用場面: ユーザーがAWIの投入、編集、採否をブラウザーで行うとき。\n対象と出力: 指定したホストとポートで待機し、private-notesを読み書きする。前景で動作し、停止の要求を受領するまで終了しない。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。\n復元・後始末: 停止は当該プロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
         "epilog": "実行例:\n\n  atk serve --port=28766",
     },
     "atk config": {

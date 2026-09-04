@@ -17,18 +17,18 @@
 
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
-フィードバックとTBDを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
+AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
   `mq add --batch`は`mq show --all`の出力形式を原文保持で一括取り込みする（移行・復元用途）
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
-- mq convert-to-plan/set-dependencies: 既存フィードバックの計画実装型への変換・明示依存の更新
+- mq convert-to-plan/set-dependencies: 既存AWIの計画実装型への変換・明示依存の更新
 - mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
-- mq answer: TBDへの回答
+- mq answer: UWIへの回答
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
-  待機中は既定でCI失敗・Dependabotアラートを自動検出しフィードバック投入する（`--no-alerts`で無効化）
+  待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
 - plans checkout/commit/migrate: 保存済み計画の取得、計画bundleの対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
@@ -83,9 +83,9 @@ _removable_filename_completer = _common.make_filename_completer((_common.WI_STAT
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
-_tbd_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_UWI)
+_uwi_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES, _common.WI_TYPE_UWI)
 
-_MQ_SYNC_MUTATIONS = frozenset(
+_WI_SYNC_MUTATIONS = frozenset(
     (
         "add",
         "start-processing",
@@ -163,7 +163,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     candidate = argv[candidate_index]
     if candidate.startswith("-") or not candidate:
         # 空文字列は`Path("").expanduser()`がカレントディレクトリ（常に実在）へ解決され、
-        # 本文としての空メッセージ（TBDの空質問等）を誤ってREPO_PATHと誤認するため除外する。
+        # 本文としての空メッセージ（UWIの空質問等）を誤ってREPO_PATHと誤認するため除外する。
         return argv, None
     candidate_path = pathlib.Path(candidate).expanduser()
     if not _common.is_existing_dir(candidate_path):
@@ -281,14 +281,14 @@ def _add_wi_add_parser(sub: Any) -> None:
         help=(
             "`atk wi show --all`の出力形式で複数エントリを一括登録する。"
             "移行・復元用途であり、frontmatter・本文を原文保持で取り込み"
-            "（target_commitの再取得・TBD見出しの再生成を行わない）、"
+            "（target_commitの再取得・UWI見出しの再生成を行わない）、"
             "ファイル名は取り込み先と衝突しない限り元名を維持する。"
             "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
             "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
             "--target-repo・--sourceとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
-            "構造見出し（`# feedback`・`# tbd`・`## target_repo: ...`）と同形の末尾行を"
+            "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
             "復元できない点は限界として許容する。"
             "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
         ),
@@ -371,7 +371,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
+        help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(list_)
     output = list_.add_mutually_exclusive_group()
@@ -420,7 +420,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はフィードバックを除外する。",
+        help="UWIの回答状況で限定する（既定: all、--all指定時のみ有効）。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(show)
     _add_mq_read_sync_args(show)
@@ -598,20 +598,20 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     edit.add_argument(
         "--append",
         action="store_true",
-        help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。TBDは対象外。",
+        help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。UWIは対象外。",
     )
     edit.add_argument(
         "--plan-file",
         metavar="ABS_PATH",
         default=None,
-        help="hold項目を計画型feedbackへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
+        help="hold項目を計画型awiへ編集しinboxへ移す実在する計画ファイルの絶対パス。",
     )
     edit.add_argument(
         "--depends-on",
         metavar="FILENAME",
         action="append",
         default=None,
-        help="計画型feedbackへ統合する外部依存先。複数回指定できる。",
+        help="計画型awiへ統合する外部依存先。複数回指定できる。",
     )
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
@@ -621,13 +621,13 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "filename",
         metavar="FILENAME",
         nargs="+",
-        help="変換する同一状態のフィードバックファイル名（1個以上）。holdでは--messageを指定する。",
+        help="変換する同一状態のAWIファイル名（1個以上）。holdでは--messageを指定する。",
     ).completer = _convert_to_plan_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--message",
         metavar="MESSAGE",
         default=None,
-        help="hold項目を統合する計画型フィードバック本文。inbox・processingでは指定しない。",
+        help="hold項目を統合する計画型AWI本文。inbox・processingでは指定しない。",
     )
     convert_to_plan.add_argument(
         "--plan-file",
@@ -656,7 +656,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     set_dependencies.add_argument(
         "filename",
         metavar="FILENAME",
-        help="更新する`inbox`または`processing`のフィードバックファイル名。",
+        help="更新する`inbox`または`processing`のAWIファイル名。",
     ).completer = _processable_filename_completer  # type: ignore[attr-defined]
     set_dependencies.add_argument(
         "--depends-on",
@@ -684,7 +684,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         "--answered",
         choices=("all", "yes", "no"),
         default="all",
-        help="TBDの回答状況で限定する（既定: all）。`yes`・`no`指定時はフィードバックを除外する。",
+        help="UWIの回答状況で限定する（既定: all）。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_target_repo_arg(grep)
     _add_mq_read_sync_args(grep)
@@ -692,8 +692,8 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
     answer.add_argument(
-        "filename", nargs="?", help="回答対象のTBDファイル名（省略時は対話モード）"
-    ).completer = _tbd_filename_completer  # type: ignore[attr-defined]
+        "filename", nargs="?", help="回答対象のUWIファイル名（省略時は対話モード）"
+    ).completer = _uwi_filename_completer  # type: ignore[attr-defined]
     answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
     _add_target_repo_arg(answer)
 
@@ -1054,13 +1054,13 @@ def main(
     exit_code = _sync_exit_code(
         exit_code,
         private_notes,
-        should_check=sub in _MQ_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
+        should_check=sub in _WI_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
     )
-    suppress_notify = (sub == "list" and _list._covers_unanswered_tbds(args)) or (
-        sub == "show" and _show._covers_unanswered_tbds(args)
+    suppress_notify = (sub == "list" and _list._covers_unanswered_uwis(args)) or (
+        sub == "show" and _show._covers_unanswered_uwis(args)
     )
     if not suppress_notify:
-        _common.notify_unanswered_tbds_if_any(private_notes, getattr(args, "target_repo", None))
+        _common.notify_unanswered_uwis_if_any(private_notes, getattr(args, "target_repo", None))
     sys.exit(exit_code)
 
 

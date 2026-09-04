@@ -18,7 +18,7 @@ class TestTargetHosts:
     """``TARGET_HOSTS``定数の内容検証。"""
 
     def test_contains_expected_hostnames(self):
-        """バランスモード・フィードバック蓄積が対象とする5ホストを含む。"""
+        """バランスモード・AWI蓄積が対象とする5ホストを含む。"""
         assert claude_common.TARGET_HOSTS == ("stheno", "circe", "circe-container", "euryale", "euryale-container")
 
 

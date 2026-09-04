@@ -336,7 +336,7 @@ function renderList(warnings = [], announce = false, searchFallback = false) {
   const list = byId('entry-list');
   list.replaceChildren(...entries.map(renderEntry));
   const unanswered = entries.filter(entry => entry.kind === 'uwi' && entry.answered === false).length;
-  byId('entry-count').textContent = `${entries.length}件（未回答TBD ${unanswered}件）`;
+  byId('entry-count').textContent = `${entries.length}件（未回答UWI ${unanswered}件）`;
   renderPagination();
   setTextMessage('list-fallback-notice', searchFallback ? SEARCH_FALLBACK_NOTICE : '');
   renderWarnings(warnings);
@@ -487,7 +487,7 @@ async function refreshKnownUwis({notify = false} = {}) {
   knownUwiBaselineReady = true;
   if (newUnanswered.length && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
     const filenames = newUnanswered.map(entry => entry.filename);
-    new Notification('新規未回答TBD', {
+    new Notification('新規未回答UWI', {
       body: filenames.length === 1 ? filenames[0] : `${filenames.length}件: ${filenames.join('、')}`
     });
   }

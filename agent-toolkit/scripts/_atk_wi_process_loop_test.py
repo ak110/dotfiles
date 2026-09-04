@@ -109,7 +109,7 @@ def _raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:  # os.execvの
 
 
 class TestProcessLoopIncludesProcessingInCount:
-    """`process-loop`がフィードバックの`inbox`・`processing`双方を検知件数に含めることを公開CLI経由で検証する。"""
+    """`process-loop`がAWIの`inbox`・`processing`双方を検知件数に含めることを公開CLI経由で検証する。"""
 
     def test_inbox_and_processing_entries_are_both_counted(
         self,
@@ -118,7 +118,7 @@ class TestProcessLoopIncludesProcessingInCount:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """inbox・processing双方に`.md`を配置した状態でprocess-loopを起動し、
-        検知メッセージ`{count}件のフィードバック/回答済みTBDを検知`の件数が合算値になること。
+        検知メッセージ`{count}件のAWI/回答済みUWIを検知`の件数が合算値になること。
         """
         _setup_notes(tmp_path)
         private_notes = tmp_path / "private-notes"
@@ -162,7 +162,7 @@ class TestProcessLoopIncludesProcessingInCount:
             )
 
         captured = capsys.readouterr()
-        assert "2件のフィードバック/回答済みTBDを検知" in captured.out
+        assert "2件のAWI/回答済みUWIを検知" in captured.out
 
     def test_cooldown_only_waits_without_starting_child_cli(
         self,
@@ -657,7 +657,7 @@ class TestProcessLoopPromptAndEnv:
         assert prompt == (
             "/goal `agent-toolkit:process-wi`を起動し、"
             f"`{pathlib.Path('/repo')}`で対象リポジトリ`github.com/example/repo`の"
-            "フィードバック処理を完遂したうえで、"
+            "AWI処理を完遂したうえで、"
             "`agent-toolkit:exit-session`でセッションを終了してください。"
         )
         assert "agent-toolkit:exit-session" in prompt
@@ -676,7 +676,7 @@ class TestProcessLoopPromptAndEnv:
         )
         assert all(detail not in prompt for detail in forbidden_details)
 
-    def test_prompt_references_process_feedbacks(self) -> None:
+    def test_prompt_references_process_awis(self) -> None:
         """プロンプトが後続工程の集約先としてprocess-wiスキルを参照すること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),

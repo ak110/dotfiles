@@ -2,7 +2,7 @@
 
 `atk wi show --all`の出力形式を入力として、複数エントリをinboxへ原文保持で取り込む。
 別環境からの移行・復元用途であり、通常の投入経路（`_atk_wi_add.add_entries`）が行う
-`target_commit`の再取得・TBD見出しと回答欄の再生成・予約frontmatterキーの破棄を適用しない。
+`target_commit`の再取得・UWI見出しと回答欄の再生成・予約frontmatterキーの破棄を適用しない。
 取り込みが保存内容へ加える変更は次の2点だけとする。
 
 1. 改行の正規化（CRLF・単独CRをLFへ揃え、`show`が付加する区切りの空行を除去して末尾改行1つへ揃える）。
@@ -42,7 +42,7 @@ from _atk_wi_common import (
     WebInputError,
     _collect_message_via_editor,
     _commit_and_push,
-    _count_feedback,
+    _count_awi,
     _max_existing_seq,
     _pull,
     _repo_lock,
@@ -473,4 +473,4 @@ def _cmd_add_batch(
         print(f"  {_shorten_home(inbox_dir / saved, home)}{renamed}")
     for warning in warnings:
         print(f"警告: {warning}", file=sys.stderr)
-    print(f"inbox: 計{_count_feedback(inbox_dir)}件（processing: {_count_feedback(processing_dir)}件）")
+    print(f"inbox: 計{_count_awi(inbox_dir)}件（processing: {_count_awi(processing_dir)}件）")

@@ -3,19 +3,19 @@
 旧`pytools/dotfiles_fb/_common.py`からの移設。PEP 723 entrypoint
 `atk.py`と同一ディレクトリに配置され、`sys.path`挿入で相互import可能。
 
-不変条件: フィードバック保存リポジトリ（`private_notes`）へのgit操作・ファイル変更は、
+不変条件: WI保存リポジトリ（`private_notes`）へのgit操作・ファイル変更は、
 `_repo_lock(private_notes)`保持下でのみ行う。複数プロセスが同一クローンへ並行アクセスする
 運用（`atk wi process-loop`の複数常駐等）を前提とし、当該不変条件を破ると
 remote同期とファイル操作・commitの交錯によるfast-forward失敗を招く。
-`_repo_lock`はロックファイル名を対象パスから導出するため、フィードバック保存リポジトリ以外の
+`_repo_lock`はロックファイル名を対象パスから導出するため、WI保存リポジトリ以外の
 git作業コピー（`atk wi process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
 計画ロックの除外設定はGitの版管理の対象外へ書くため、当該不変条件の対象に当たらない。
 
-不変条件: `list`のような読み取り専用のサブコマンドは、フィードバック保存リポジトリの版管理を
+不変条件: `list`のような読み取り専用のサブコマンドは、WI保存リポジトリの版管理を
 書き換えない。前段の環境準備は対話シェルの起動ごとにも実行されるため、当該不変条件を破ると
 利用者の操作と無関係なcommitとpushが起動のたびに発生し、他cloneとの競合を招く。
 
-TBDの回答判定`_is_uwi_answered`は`_uwi_scan`が実体を持つ。PostToolUseフックが
+UWIの回答判定`_is_uwi_answered`は`_uwi_scan`が実体を持つ。PostToolUseフックが
 依存パッケージなしで同じ判定を利用するため、本モジュールは再エクスポートのみを行う。
 """
 
@@ -57,8 +57,8 @@ from _atk_wi_formatters import (
     _display_width,
     _parse_target_repo,
     _target_repo_budget,
-    _tbd_body_summary,
     _truncate_target_repo,
+    _uwi_body_summary,
 )
 from _atk_wi_frontmatter import parse_frontmatter
 from _atk_wi_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
@@ -89,7 +89,7 @@ _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AG
 """コーディングエージェントの実行環境を示す環境変数。
 
 いずれか1つでも設定されていればエージェント環境とみなす。
-`atk wi list`の既定出力形式と、TBD回答・ユーザーコメントの書き込み拒否が同じ判定を使う。
+`atk wi list`の既定出力形式と、UWI回答・ユーザーコメントの書き込み拒否が同じ判定を使う。
 """
 
 
@@ -153,7 +153,7 @@ def _subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
 
 
 def _private_notes_path(home: pathlib.Path) -> pathlib.Path:
-    """フィードバック保存ディレクトリのroot絶対パスを返す。
+    """WI保存ディレクトリのroot絶対パスを返す。
 
     環境変数`AGENT_TOOLKIT_PRIVATE_NOTES`が設定されていれば当該値を優先する。
     未設定時は`~/private-notes/`へフォールバックし、当該パスが不在の場合は
@@ -228,7 +228,7 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
 
 
 def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
-    """フィードバック保存ディレクトリの存在を確認し、rootパスを返す。
+    """WI保存ディレクトリの存在を確認し、rootパスを返す。
 
     `AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定されたパスが不在の場合はexit 1で原因を案内する。
     未指定かつ既定パスも不在の場合は`_init_local_private_notes_repo`でローカルリポジトリを自動生成する。
@@ -237,7 +237,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     root = _private_notes_path(home)
     if not root.exists():
         if os.environ.get("AGENT_TOOLKIT_PRIVATE_NOTES"):
-            print(f"フィードバック保存ディレクトリが見つかりません: {root}", file=sys.stderr)
+            print(f"WI保存ディレクトリが見つかりません: {root}", file=sys.stderr)
             sys.exit(1)
         _init_local_private_notes_repo(root)
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
@@ -381,7 +381,7 @@ def _redundant_terminal_divergence(private_notes: pathlib.Path) -> bool:
 
 
 def _pull(private_notes: pathlib.Path) -> None:
-    """フィードバック保存リポジトリを明示したupstreamへfast-forward同期する。
+    """WI保存リポジトリを明示したupstreamへfast-forward同期する。
 
     不変条件表明: `_repo_lock`保持下でのみ呼び出す。
     remote未設定（`_init_local_private_notes_repo`が生成したローカル管理リポジトリ等）の場合は
@@ -440,7 +440,7 @@ def _repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     配置先は`platformdirs.user_state_dir("agent-toolkit")`配下`locks/`ディレクトリとし、
     ファイル名は、同じGitリポジトリに属するworktree間で共有されるGit common directoryの
     SHA-1ハッシュ値とする。対象リポジトリからロックファイル名を導出するため、
-    フィードバック保存リポジトリに限らず任意のgit作業コピーへ同一の仕組みを適用できる。
+    WI保存リポジトリに限らず任意のgit作業コピーへ同一の仕組みを適用できる。
     取得時にロック用ディレクトリを自動作成する。
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     """
@@ -450,7 +450,7 @@ def _repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
 def _repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
     """指定したgit作業コピーへのgit操作・ファイル変更を排他するプロセス間ロックを返す。
 
-    フィードバック保存リポジトリ（`private_notes`）のほか、`atk wi process-loop`が
+    WI保存リポジトリ（`private_notes`）のほか、`atk wi process-loop`が
     上流差分を確認するdotfiles作業コピーも対象とする。
     `filelock.FileLock`は同一インスタンス内で再入可能（スレッドローカル＋カウンタ管理）だが、
     現行のロック区間分割設計では同一関数内のネスト`with`は発生しない。
@@ -738,8 +738,8 @@ def _iter_entries(
             yield path, target_repo, text, state, actual_type
 
 
-def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
-    """未回答TBDが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
+def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
+    """未回答UWIが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
         (path, entry_repo, text, state)
         for path, entry_repo, text, state, _ in _iter_entries(private_notes, WI_PROCESSABLE_STATES, target_repo, WI_TYPE_UWI)
@@ -754,20 +754,20 @@ def notify_unanswered_tbds_if_any(private_notes: pathlib.Path, target_repo: str 
         display_repo = _truncate_target_repo(entry_repo, max_width=repo_budget)
         prefix = f"{path.name}: {display_repo} [{label}] "
         available_width = shutil.get_terminal_size().columns - _display_width(prefix)
-        print(f"{prefix}{_tbd_body_summary(text, available_width)}", file=sys.stderr)
+        print(f"{prefix}{_uwi_body_summary(text, available_width)}", file=sys.stderr)
 
 
-def _count_feedback(feedback_dir: pathlib.Path, target_repo: str | None = None) -> int:
+def _count_awi(awi_dir: pathlib.Path, target_repo: str | None = None) -> int:
     """指定ディレクトリ配下の`*.md`ファイル件数を返す。
 
     `target_repo`指定時はfrontmatterの`target_repo`が一致するエントリのみ数える。
     未指定時は全リポジトリ分を数える。
     """
-    if not feedback_dir.exists():
+    if not awi_dir.exists():
         return 0
     if target_repo is None:
-        return sum(1 for p in feedback_dir.iterdir() if p.suffix == ".md")
-    return sum(1 for _ in _iter_inbox_entries(feedback_dir, target_repo))
+        return sum(1 for p in awi_dir.iterdir() if p.suffix == ".md")
+    return sum(1 for _ in _iter_inbox_entries(awi_dir, target_repo))
 
 
 def _max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
@@ -811,7 +811,7 @@ def _resolve_repo_path_override(
         return messages, pre_parse_override
     if not messages or not messages[0]:
         # 空文字列は`Path("").expanduser()`がカレントディレクトリ（常に実在）へ解決され、
-        # 本文としての空メッセージ（TBDの空質問等）を誤ってREPO_PATHと誤認するため除外する。
+        # 本文としての空メッセージ（UWIの空質問等）を誤ってREPO_PATHと誤認するため除外する。
         return messages, None
     candidate = pathlib.Path(messages[0]).expanduser()
     if not is_existing_dir(candidate):
@@ -898,7 +898,7 @@ def _pulled_recently(private_notes: pathlib.Path) -> bool:
 
     `.git`がファイルの場合（worktree形式）は`stat`が失敗し偽を返すため、
     レート制限が無効化されてremote同期を実行する側へ倒れる。
-    フィードバック保存リポジトリは通常のクローンであり該当しない。
+    WI保存リポジトリは通常のクローンであり該当しない。
     ローカル管理リポジトリは再利用対象外とする。
 
     `FETCH_HEAD`のmtimeだけではfetch後の統合失敗を検出できないため、
@@ -927,7 +927,7 @@ def repo_lock(private_notes: pathlib.Path, *, timeout: float = -1) -> filelock.F
 
 
 def is_uwi_answered(text: str) -> bool:
-    """TBD本文が回答済みか判定する。"""
+    """UWI本文が回答済みか判定する。"""
     return _is_uwi_answered(text)
 
 

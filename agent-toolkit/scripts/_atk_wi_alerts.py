@@ -1,7 +1,7 @@
 """agent-toolkitプラグイン配下の`atk wi process-loop`アラート自動検出補助モジュール。
 
 対象リポジトリのCI失敗（GitHub Actions run失敗・GitLabパイプライン失敗）とGitHub
-Dependabotアラートの未解決分を収集し、フィードバックへの重複投入を防いだうえで
+Dependabotアラートの未解決分を収集し、AWIへの重複投入を防いだうえで
 `add_entries`へ引き渡す本文を組み立てる。GitLabの脆弱性アラート（Dependency Scanning等）は
 GitLab Ultimateプラン限定機能のため対象外とする。
 """
@@ -25,7 +25,7 @@ _GH_SUBPROCESS_TIMEOUT = 30.0
 _GLAB_SUBPROCESS_TIMEOUT = 30.0
 _GIT_SUBPROCESS_TIMEOUT = 10.0
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
-_ALL_FEEDBACK_STATES = WI_STATES
+_ALL_AWI_STATES = WI_STATES
 """重複投入の判定で走査する保存状態。全ての保存状態を対象とする。"""
 
 GhRunListFn = Callable[[str, str], list[dict]]
@@ -236,7 +236,7 @@ def collect_github_dependabot_alerts(repo: str, *, alerts_fn: GhDependabotAlerts
         "(1) 対象パッケージのロック済みバージョンと表の修正版を突き合わせ、既に修正版以上であれば依存更新は不要である。\n"
         "(2) 修正版以上の場合はアラートが実態より遅れて未クローズになっている状態であるため、"
         f"`gh api --method PATCH /repos/{repo}/dependabot/alerts/<番号> -f state=dismissed "
-        "-f dismissed_reason=inaccurate`に突合結果を記したコメントを添えてdismissし、フィードバックは採用として処理する。\n"
+        "-f dismissed_reason=inaccurate`に突合結果を記したコメントを添えてdismissし、AWIは採用として処理する。\n"
         "(3) 修正版未満の場合のみ依存を更新して解消する。更新できない場合は理由を記録して不採用とする。\n"
         f"詳細は`gh api /repos/{repo}/dependabot/alerts/<番号>`で取得できる。"
     )
@@ -290,10 +290,10 @@ def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiList
 
 
 def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
-    """対象リポジトリに限定したフィードバック全状態の`alert_keys`を集合として返す。"""
+    """対象リポジトリに限定したAWI全状態の`alert_keys`を集合として返す。"""
     keys: set[str] = set()
     for _path, _entry_repo, text, _state, _entry_type in _iter_entries(
-        private_notes, _ALL_FEEDBACK_STATES, target_repo, WI_TYPE_AWI
+        private_notes, _ALL_AWI_STATES, target_repo, WI_TYPE_AWI
     ):
         keys.update(_parse_alert_keys(text))
     return keys
@@ -370,7 +370,7 @@ def check_and_submit_alerts(
     dependabot_fn: GhDependabotAlertsFn = _run_gh_dependabot_alerts,
     ci_list_fn: GlabCiListFn = _run_glab_ci_list,
 ) -> int:
-    """アラートを収集・重複除外し、新規分をフィードバックへ投入した件数を返す。"""
+    """アラートを収集・重複除外し、新規分をAWIへ投入した件数を返す。"""
     alerts = collect_new_alerts(
         repo_id,
         resolve_target_branch(local_path, git_fn=git_fn),
