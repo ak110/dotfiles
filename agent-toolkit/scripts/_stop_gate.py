@@ -97,6 +97,27 @@ _TASK_STOP_SUCCESS_PREFIX = "Successfully stopped task"
 # `AGENT_TOOLKIT_STOP_GATE_DEBUG`環境変数の真値集合。小文字一致で判定する。
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
+# 同一hookプロセスで複数判定が同じStop入力を参照する場合に、transcriptの全走査を再利用する。
+_PENDING_ASYNC_WORK_CACHE: dict[tuple[object, ...], bool] = {}
+
+
+def _pending_cache_key(
+    transcript_path: str,
+    session_id: str,
+    background_tasks: object,
+) -> tuple[object, ...]:
+    """入力とtranscriptの現行状態を表すキャッシュキーを返す。"""
+    try:
+        stat = pathlib.Path(transcript_path).stat()
+        transcript_state: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        transcript_state = None
+    try:
+        background_state = json.dumps(background_tasks, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        background_state = repr(background_tasks)
+    return transcript_path, session_id, background_state, transcript_state
+
 
 def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
     """Stop入力の有効task件数、非`teammate`件数及び一覧の権威性を返す。"""
@@ -168,7 +189,12 @@ def is_pending_async_work(
     transcriptを読み取れない異常系では偽を返す（Stopを抑止しない方向で動作する）。
     `session_id`は常時ログ（`append_stop_log`）の宛先ファイル特定にのみ使う。
     """
+    cache_key = _pending_cache_key(transcript_path, session_id, background_tasks)
+    if cache_key in _PENDING_ASYNC_WORK_CACHE:
+        return _PENDING_ASYNC_WORK_CACHE[cache_key]
+
     _wait_for_end_turn(transcript_path)
+    cache_key = _pending_cache_key(transcript_path, session_id, background_tasks)
     entries = _read_transcript_entries(transcript_path)
     last_tool_use = _get_last_tool_use_block(entries)
     last_async = _last_tool_use_is_async_wait(last_tool_use)
@@ -221,6 +247,8 @@ def is_pending_async_work(
             "source": source,
         },
     )
+    _PENDING_ASYNC_WORK_CACHE.clear()
+    _PENDING_ASYNC_WORK_CACHE[cache_key] = pending
     return pending
 
 

@@ -2,7 +2,7 @@
 
 フック共通エントリポイントが、モジュール読込段階の失敗と`main()`実行中の例外を
 区別して扱うことを検証する。読込失敗では素のtracebackだけを標準エラー出力へ書き、
-`main()`実行中の例外では要約1行とtracebackを書いたうえでStop系サブコマンドの空JSON応答を返す。
+`main()`実行中の例外では要約1行とtracebackを書いたうえでStop共通入口の空JSON応答を返す。
 """
 
 # pylint: disable=duplicate-code  # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
@@ -21,6 +21,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 _SUBCOMMANDS = (
     "pretooluse",
     "posttooluse",
+    "stop",
     "autonomous_exit",
     "plan_save_advisor",
     "agents_server_session_advisor",
@@ -44,21 +45,17 @@ class TestEntrypointExceptionStages:
         shutil.copy2(_SCRIPT, entrypoint)
         return entrypoint
 
-    @pytest.mark.parametrize(
-        "subcommand",
-        ["autonomous_exit", "plan_save_advisor", "agents_server_session_advisor", "pending_question_advisor"],
-    )
+    @pytest.mark.parametrize("subcommand", ["stop"])
     def test_main_import_error_emits_summary_traceback_and_empty_json(
         self,
         tmp_path: pathlib.Path,
         subcommand: str,
     ) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        approve_body = "    return None\n" if subcommand == "agents_server_session_advisor" else "    print(json.dumps({}))\n"
         (tmp_path / f"{subcommand}.py").write_text(
             "import json\n\n"
             "def _approve() -> None:\n"
-            f"{approve_body}\n"
+            "    print(json.dumps({}))\n\n"
             "def main(payload_text: str) -> int:\n"
             "    del payload_text\n"
             "    raise ImportError('main failure')\n",
@@ -74,8 +71,7 @@ class TestEntrypointExceptionStages:
         )
 
         assert result.returncode == 0
-        expected_stdout = "" if subcommand == "agents_server_session_advisor" else "{}\n"
-        assert result.stdout == expected_stdout
+        assert result.stdout == "{}\n"
         assert result.stderr.startswith(f"[{subcommand}] 想定外エラー: ImportError: main failure")
         assert "Traceback (most recent call last):" in result.stderr
 

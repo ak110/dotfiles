@@ -56,30 +56,37 @@ def _pending_session_ids(state: dict, owner_agent_id: str) -> list[str]:
     )
 
 
-def main(payload_text: str) -> int:
-    """Stop payloadとセッション状態から未観測作業を警告する。"""
-    resolved = parse_stop_session(payload_text, _approve)
+def evaluate(payload_text: str) -> tuple[str, str]:
+    """未観測作業の判定結果と、警告する場合の本文を返す。"""
+    resolved = parse_stop_session(payload_text, lambda: None)
     if resolved is None:
-        return 0
+        return "approve", ""
     session_id, payload = resolved
     if payload.get("stop_hook_active") is True:
-        return 0
+        return "approve", ""
 
     owner_agent_id = resolve_hook_agent_id(payload)
     pending_session_ids = _pending_session_ids(read_state(session_id), owner_agent_id)
     if not pending_session_ids:
-        return 0
+        return "approve", ""
 
     body = f"{_WARNING_BODY}\n対象session: {', '.join(pending_session_ids)}"
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "Stop",
-                    "additionalContext": _notice(body),
-                }
-            },
-            ensure_ascii=False,
+    return "notify", _notice(body)
+
+
+def main(payload_text: str) -> int:
+    """Stop payloadとセッション状態から未観測作業を警告する。"""
+    decision, body = evaluate(payload_text)
+    if decision == "notify":
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "Stop",
+                        "additionalContext": body,
+                    }
+                },
+                ensure_ascii=False,
+            )
         )
-    )
     return 0

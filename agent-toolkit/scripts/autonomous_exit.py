@@ -67,36 +67,27 @@ def _approve() -> None:
     print(json.dumps({}, ensure_ascii=False))
 
 
-def _emit_block(body: str, *, fix: str) -> None:
-    """Stop hookで当該ターン継続を強制する誘導を返す。"""
-    reason = _block_notice(body, fix=fix)
-    print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
-
-
-def main(payload_text: str) -> int:
-    """`agent-toolkit:exit-session`呼び忘れを検知し再促するエントリポイント。"""
-    resolved = _parse_stop_session(payload_text, _approve)
+def evaluate(payload_text: str) -> tuple[str, str]:
+    """自律終了の判定結果と、遮断する場合の理由を返す。"""
+    resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
-        return 0
+        return "approve", ""
     session_id, payload = resolved
 
     # 常駐ループ外のセッションでは本hookの誘導対象外とする。
     if os.environ.get(_ENV_REQUIRED) != "1" and os.environ.get(_LEGACY_ENV_REQUIRED) != "1":
         append_stop_log(session_id, "approve_no_env", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
         append_stop_log(session_id, "approve_delegated_session", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     # Stop hookが直前のターンで既にブロック済みの再呼び出し。
     # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、即座にapproveする。
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
-        _approve()
-        return 0
+        return "approve", ""
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
@@ -106,18 +97,26 @@ def main(payload_text: str) -> int:
         background_tasks=payload.get("background_tasks"),
     ):
         append_stop_log(session_id, "approve_pending_async", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     state = read_state(session_id)
     if state.get(_STATE_KEY) is True:
         append_stop_log(session_id, "approve_exit_invoked", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     append_stop_log(session_id, "block_autonomous_exit", {})
-    _emit_block(
+    reason = _block_notice(
         _REASON_BODY,
         fix="Complete all listed prerequisites, then invoke /agent-toolkit:exit-session.",
     )
+    return "block", reason
+
+
+def main(payload_text: str) -> int:
+    """`agent-toolkit:exit-session`呼び忘れを検知し再促するエントリポイント。"""
+    decision, body = evaluate(payload_text)
+    if decision == "block":
+        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
+    else:
+        _approve()
     return 0
