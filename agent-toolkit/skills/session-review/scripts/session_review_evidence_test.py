@@ -1551,6 +1551,41 @@ def test_warn_mode_reports_matches_found_only_in_tool_use_result(
     assert [event["line"] for event in events] == [1, 1]
 
 
+def test_warn_mode_ignores_read_result_body_and_keeps_hook_notice(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """読み取り結果の本文を除外し、同じレコードのフック通知だけを警告として返す。"""
+    file_body = 'warning: 文書内の例示\n{"warning_message": "文書内の構造化警告"}'
+    notice = "[auto-generated: agent-toolkit/posttooluse][warn] 読み取り後の通知"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {
+                    "type": "text",
+                    "file": {"filePath": "/tmp/rules.md", "content": file_body, "numLines": 2},
+                },
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "read-1", "content": file_body}],
+                },
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PostToolUse:Read",
+                    "toolUseID": "read-1",
+                    "content": [notice],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert [event["text"] for event in _read_jsonl(capsys)] == [notice]
+
+
 def test_warn_mode_does_not_duplicate_tool_use_result_already_visible(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

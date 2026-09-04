@@ -1608,13 +1608,15 @@ def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
 def _warning_result_values(entry: dict[str, Any]) -> list[Any]:
     """構造化警告を抽出できる実行結果領域の値だけを返す。"""
     values: list[Any] = []
+    tool_use_result = entry.get("toolUseResult")
+    is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
 
-    if "toolUseResult" in entry:
-        values.append(entry["toolUseResult"])
+    if "toolUseResult" in entry and not is_read_result:
+        values.append(tool_use_result)
 
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
-    if isinstance(content, list):
+    if isinstance(content, list) and not is_read_result:
         values.extend(block for block in content if isinstance(block, dict) and block.get("type") == "tool_result")
 
     payload = entry.get("payload")
