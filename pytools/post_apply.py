@@ -5,7 +5,9 @@
 
 import logging
 import sys
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from pytools._internal import (
     install_codex_plugins,
     install_libarchive_windows,
     log_format,
+    migrate_atk_queue,
     post_apply_outcome,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
@@ -226,6 +229,13 @@ class _StepResult:
     notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
 
 
+@dataclass(frozen=True)
+class _StepSpec:
+    name: str
+    run: Callable[[], "StepReturn"]
+    background: bool = False
+
+
 def _cleanup_removed_paths() -> bool:
     """`_REMOVED_PATHS` / `_REMOVED_PATHS_IF_CONTENT` に従って旧配布物を削除する。"""
     total_removed = 0
@@ -259,37 +269,38 @@ def _cleanup_removed_paths() -> bool:
 # ステップ関数の戻り値型。通常ステップは bool、個別の出力を持つステップは構造化した値を返す。
 StepReturn = bool | tuple[bool, list[str]] | post_apply_outcome.PostApplyOutcome
 
-_DEFAULT_STEPS: list[tuple[str, Callable[[], StepReturn]]] = [
-    ("bin PATH 登録 (Windows)", setup_bin_path.run),
-    ("MSYS 環境変数 (Windows)", setup_msys_env.run),
-    ("VSCode 設定", update_vscode_settings.run),
-    ("SSH config", update_ssh_config.run),
-    ("旧配布物の削除", _cleanup_removed_paths),
-    ("npm/pnpm サプライチェーン対策", update_npmrc.run),
-    ("mise セットアップ", setup_mise.run),
-    ("Codex CLI の導入と更新", setup_codex_cli.run),
-    ("Codex の Claude MCP 登録削除", remove_codex_claude_mcp.run),
-    ("Claude Code CLI の導入と更新", setup_claude_cli.run),
-    ("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run),
-    ("Codex リンクの同期", setup_codex_links.run),
-    ("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),
-    ("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
-    ("Claude Code plugin のインストール", install_claude_plugins.run),
-    ("Codex plugin のインストール", install_codex_plugins.run),
-    ("agents_serverのuv環境ウォームアップ", warm_agents_server.run),
+_DEFAULT_STEPS: list[_StepSpec] = [
+    _StepSpec("bin PATH 登録 (Windows)", setup_bin_path.run),
+    _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run),
+    _StepSpec("VSCode 設定", update_vscode_settings.run),
+    _StepSpec("SSH config", update_ssh_config.run),
+    _StepSpec("旧配布物の削除", _cleanup_removed_paths),
+    _StepSpec("npm/pnpm サプライチェーン対策", update_npmrc.run),
+    _StepSpec("mise セットアップ", setup_mise.run),
+    _StepSpec("Codex CLI の導入と更新", setup_codex_cli.run),
+    _StepSpec("Codex の Claude MCP 登録削除", remove_codex_claude_mcp.run),
+    _StepSpec("Claude Code CLI の導入と更新", setup_claude_cli.run),
+    _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run),
+    _StepSpec("Codex リンクの同期", setup_codex_links.run),
+    _StepSpec("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),
+    _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
+    _StepSpec("Claude Code plugin のインストール", install_claude_plugins.run),
+    _StepSpec("Codex plugin のインストール", install_codex_plugins.run),
+    _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, background=True),
     # hookが参照するインストール先を対象にするため、両プラグインの導入・更新の後に実行する。
-    ("hookスクリプトのuv環境ウォームアップ", warmup_hook_scripts.run),
-    ("旧Codex User scope MCP登録の移行", remove_legacy_codex_mcp_from_claude.run),
-    ("Claude 設定", update_claude_settings.run),
-    ("libarchive (Windows)", install_libarchive_windows.run),
-    ("claude-statusline バイナリの取得", setup_statusline_binary.run),
-    ("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
-    ("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
-    ("Windowsレジストリ設定", setup_registry.run),
-    ("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
-    ("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
+    _StepSpec("hookスクリプトのuv環境ウォームアップ", warmup_hook_scripts.run, background=True),
+    _StepSpec("旧Codex User scope MCP登録の移行", remove_legacy_codex_mcp_from_claude.run),
+    _StepSpec("Claude 設定", update_claude_settings.run),
+    _StepSpec("libarchive (Windows)", install_libarchive_windows.run),
+    _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run),
+    _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
+    _StepSpec("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
+    _StepSpec("atkキューの移行", migrate_atk_queue.run),
+    _StepSpec("Windowsレジストリ設定", setup_registry.run),
+    _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
+    _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
     # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
-    ("ユーザー PATH 整理 (Windows)", cleanup_user_path.run),
+    _StepSpec("ユーザー PATH 整理 (Windows)", cleanup_user_path.run),
 ]
 
 
@@ -353,37 +364,105 @@ def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice])
             print(notice.command, file=sys.stderr, flush=True)
 
 
-def run(steps: list[tuple[str, Callable[[], StepReturn]]] | None = None) -> tuple[list[_StepResult], list[str]]:
+_background_log_state = threading.local()
+
+
+class _BackgroundLogFilter(logging.Filter):
+    """背景ステップのログを通常handlerから除外する。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        del record
+        return not getattr(_background_log_state, "active", False)
+
+
+class _BackgroundLogCapture(logging.Handler):
+    """背景ステップのログレコードを投入順に保持する。"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if getattr(_background_log_state, "active", False):
+            _background_log_state.records.append(record)
+
+
+def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str]]:
+    """1ステップを実行し、例外と戻り値を共通形式へ変換する。"""
+    try:
+        ret = step.run()
+    except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
+        logger.exception("    %s: 失敗", step.name)
+        return _StepResult(name=step.name, ok=False, changed=False), []
+    notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
+    recommendations: list[str] = []
+    if isinstance(ret, post_apply_outcome.PostApplyOutcome):
+        changed = ret.changed
+        notices = ret.notices
+    elif isinstance(ret, tuple):
+        changed, recommendations = ret
+    else:
+        changed = ret
+    return _StepResult(name=step.name, ok=True, changed=changed, notices=notices), recommendations
+
+
+def _execute_background_step(step: _StepSpec) -> tuple[_StepResult, list[str], list[logging.LogRecord]]:
+    records: list[logging.LogRecord] = []
+    _background_log_state.active = True
+    _background_log_state.records = records
+    try:
+        result, recommendations = _execute_step(step)
+        return result, recommendations, records
+    finally:
+        _background_log_state.active = False
+
+
+def _normalize_step(step: _StepSpec | tuple[str, Callable[[], StepReturn]]) -> _StepSpec:
+    if isinstance(step, _StepSpec):
+        return step
+    name, step_runner = step
+    return _StepSpec(name, step_runner)
+
+
+def run(
+    steps: Sequence[_StepSpec | tuple[str, Callable[[], StepReturn]]] | None = None,
+) -> tuple[list[_StepResult], list[str]]:
     """各ステップを順に実行し、`(results, recommendations)` を返す。
 
     `recommendations` は ``install_claude_plugins.run()`` が算出した推奨コマンド列。
     ``install_claude_plugins.run`` は ``tuple[bool, list[str]]`` を返すため、
     タプルの戻り値を持つステップは推奨コマンドとして収集する。
     """
-    effective_steps = steps if steps is not None else _DEFAULT_STEPS
+    selected_steps = _DEFAULT_STEPS if steps is None else steps
+    effective_steps = [_normalize_step(step) for step in selected_steps]
     results: list[_StepResult] = []
     recommendations: list[str] = []
     total = len(effective_steps)
-    for index, (name, func) in enumerate(effective_steps, start=1):
-        logger.info("[%d/%d] %s", index, total, name)
-        try:
-            ret = func()
-        except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
-            logger.exception("    %s: 失敗", name)
-            results.append(_StepResult(name=name, ok=False, changed=False))
-            continue
-        # install_claude_plugins.run() は (changed, recommendations) を返す。
-        # 構造化結果、推奨コマンドを持つタプル、bool の順に振り分ける。
-        notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
-        if isinstance(ret, post_apply_outcome.PostApplyOutcome):
-            changed = ret.changed
-            notices = ret.notices
-        elif isinstance(ret, tuple):
-            changed, step_recs = ret
-            recommendations.extend(step_recs)
-        else:
-            changed = ret
-        results.append(_StepResult(name=name, ok=True, changed=changed, notices=notices))
+    root_logger = logging.getLogger()
+    exclusion = _BackgroundLogFilter()
+    capture = _BackgroundLogCapture()
+    original_handlers = root_logger.handlers.copy()
+    for handler in original_handlers:
+        handler.addFilter(exclusion)
+    root_logger.addHandler(capture)
+    pending: list[tuple[int, _StepSpec, Future[tuple[_StepResult, list[str], list[logging.LogRecord]]]]] = []
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            for index, step in enumerate(effective_steps, start=1):
+                if step.background:
+                    pending.append((index, step, executor.submit(_execute_background_step, step)))
+                    continue
+                logger.info("[%d/%d] %s", index, total, step.name)
+                result, step_recommendations = _execute_step(step)
+                results.append(result)
+                recommendations.extend(step_recommendations)
+            for index, step, future in pending:
+                logger.info("[%d/%d] %s", index, total, step.name)
+                result, step_recommendations, records = future.result()
+                for record in records:
+                    root_logger.handle(record)
+                results.append(result)
+                recommendations.extend(step_recommendations)
+    finally:
+        root_logger.removeHandler(capture)
+        for handler in original_handlers:
+            handler.removeFilter(exclusion)
     return results, recommendations
 
 
