@@ -220,7 +220,7 @@ def test_migrate_repairs_underscore_identifiers_without_changing_current_identif
         "test_process_awis_preserves_codex_queue_and_process_loop_contracts\n"
         "test_prompt_references_process_awis\n"
         "_PROCESS_AWIS\n"
-        "awi_path _write_awi_file answer_uwi _uwi_scan _PROCESS_AWIS_SKILL_NAMES\n",
+        "awi_path _write_awi_file answer_uwi _uwi_scan _PROCESS_WI_SKILL_NAMES\n",
         encoding="utf-8",
     )
     _commit_all(notes)
@@ -238,7 +238,7 @@ def test_migrate_repairs_underscore_identifiers_without_changing_current_identif
         "test_process_feedbacks_preserves_codex_queue_and_process_loop_contracts",
         "test_prompt_references_process_wi",
         "_PROCESS_FEEDBACKS",
-        "awi_path _write_awi_file answer_uwi _uwi_scan _PROCESS_AWIS_SKILL_NAMES",
+        "awi_path _write_awi_file answer_uwi _uwi_scan _PROCESS_WI_SKILL_NAMES",
     ):
         assert expected in entry
 

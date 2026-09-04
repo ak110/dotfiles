@@ -160,7 +160,7 @@ def _git_commit_is_amend_or_fixup(args: list[str]) -> bool:
 _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 
 # process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
-_PROCESS_AWIS_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
+_PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 
 # exit-sessionスキル呼び出し検出。process-wiのフラグリセット経路に使う
 # （`agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端する）。
@@ -490,7 +490,7 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
             return state
 
         update_state(session_id, _set_invoked)
-    if skill_name in _PROCESS_AWIS_SKILL_NAMES:
+    if skill_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
         update_state(session_id, _record_exit_session_invoked)

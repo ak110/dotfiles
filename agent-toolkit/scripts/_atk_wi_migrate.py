@@ -105,7 +105,7 @@ _IDENTIFIER_REPAIRS: dict[str, str] = {
 }
 """アンダースコア区切りの誤った識別子と、現行名または当時の名称の対応。
 
-完全一致で適用し、`_PROCESS_AWIS_SKILL_NAMES`のような現行識別子の部分文字列を変更しない。
+完全一致で適用し、`_PROCESS_WI_SKILL_NAMES`のような現行識別子の部分文字列を変更しない。
 """
 
 _REPAIR_WORDS: tuple[tuple[str, str], ...] = (

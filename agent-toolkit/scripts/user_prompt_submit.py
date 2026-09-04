@@ -31,7 +31,7 @@ from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-posit
 )
 from posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
-    _PROCESS_AWIS_SKILL_NAMES,
+    _PROCESS_WI_SKILL_NAMES,
 )
 
 
@@ -48,7 +48,7 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 
 # スラッシュコマンド起動時にも検出できるように、フルネームと短縮名の両方を含む拡張集合を組み立てる。
 _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
-_PROCESS_AWIS_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_AWIS_SKILL_NAMES)
+_PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 
 # ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
@@ -150,7 +150,7 @@ def main(payload_text: str) -> int:
     # 対応スキル別にフラグを設定する。
     if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
         update_state(session_id, _set_plan_mode_invoked)
-    if name in _PROCESS_AWIS_NAMES_EXTENDED or full_name in _PROCESS_AWIS_SKILL_NAMES:
+    if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
 
     if plan_session_title is not None:
