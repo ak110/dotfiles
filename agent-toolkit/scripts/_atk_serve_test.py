@@ -4086,7 +4086,7 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
 
 
 def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態監視は7状態フォルダを対象とし、旧awi/uwi階層を生成しない。"""
+    """状態監視は7状態フォルダを対象とし、旧feedback/tbd階層を生成しない。"""
     current = state.ServeState(tmp_path)
     scheduled: list[str] = []
     monkeypatch.setattr(

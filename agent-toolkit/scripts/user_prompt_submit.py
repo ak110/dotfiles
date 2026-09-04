@@ -72,7 +72,7 @@ def _set_plan_mode_invoked(state: dict) -> dict | None:
     return state
 
 
-def _set_process_awis_invoked(state: dict) -> dict | None:
+def _set_process_wi_invoked(state: dict) -> dict | None:
     if state.get("process_wi_skill_invoked", False):
         return None
     state["process_wi_skill_invoked"] = True
@@ -151,7 +151,7 @@ def main(payload_text: str) -> int:
     if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
         update_state(session_id, _set_plan_mode_invoked)
     if name in _PROCESS_AWIS_NAMES_EXTENDED or full_name in _PROCESS_AWIS_SKILL_NAMES:
-        update_state(session_id, _set_process_awis_invoked)
+        update_state(session_id, _set_process_wi_invoked)
 
     if plan_session_title is not None:
         _emit_hook_output(session_title_output=plan_session_title)

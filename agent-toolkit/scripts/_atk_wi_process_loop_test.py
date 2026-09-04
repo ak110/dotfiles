@@ -676,7 +676,7 @@ class TestProcessLoopPromptAndEnv:
         )
         assert all(detail not in prompt for detail in forbidden_details)
 
-    def test_prompt_references_process_awis(self) -> None:
+    def test_prompt_references_process_wi(self) -> None:
         """プロンプトが後続工程の集約先としてprocess-wiスキルを参照すること。"""
         prompt = _process_loop._build_process_loop_prompt(  # pylint: disable=protected-access  # noqa: SLF001
             pathlib.Path("/repo"),

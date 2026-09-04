@@ -224,17 +224,17 @@ def _check_conditional_prohibition(file_path: pathlib.Path, content: str) -> lis
 # --- plan file形式検査の定数 ---
 
 
-def _set_process_awis_invoked(state: dict) -> dict | None:
+def _set_process_wi_invoked(state: dict) -> dict | None:
     """process-wiスキル起動フラグを常時Trueへ上書きする。
 
     新規process-wiラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
-    リセット経路は`_reset_process_awis_invoked`（exit-session起動検知）と併用する。
+    リセット経路は`_reset_process_wi_invoked`（exit-session起動検知）と併用する。
     """
     state["process_wi_skill_invoked"] = True
     return state
 
 
-def _reset_process_awis_invoked(state: dict) -> dict | None:
+def _reset_process_wi_invoked(state: dict) -> dict | None:
     """`process_wi_skill_invoked`を偽へ戻す。既に偽ならNoneを返す（冪等）。"""
     if not state.get("process_wi_skill_invoked", False):
         return None
@@ -248,7 +248,7 @@ def _record_exit_session_invoked(state: dict) -> dict | None:
     if state.get(_AUTONOMOUS_EXIT_STATE_KEY) is not True:
         state[_AUTONOMOUS_EXIT_STATE_KEY] = True
         changed = True
-    if _reset_process_awis_invoked(state) is not None:
+    if _reset_process_wi_invoked(state) is not None:
         changed = True
     return state if changed else None
 
@@ -491,7 +491,7 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
 
         update_state(session_id, _set_invoked)
     if skill_name in _PROCESS_AWIS_SKILL_NAMES:
-        update_state(session_id, _set_process_awis_invoked)
+        update_state(session_id, _set_process_wi_invoked)
     if skill_name in _EXIT_SESSION_SKILL_NAMES:
         update_state(session_id, _record_exit_session_invoked)
 

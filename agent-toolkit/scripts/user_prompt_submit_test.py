@@ -67,7 +67,7 @@ class TestSlashCommandDetection:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid).get("plan_mode_skill_invoked") is True
 
-    def test_detects_short_skill_command_process_awis(self, tmp_path: pathlib.Path):
+    def test_detects_short_skill_command_process_wi(self, tmp_path: pathlib.Path):
         sid = "short-process-wi"
         result = _run(
             {"session_id": sid, "prompt": "/process-wi"},
@@ -163,7 +163,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid)["plan_mode_skill_invoked"] is True
 
-    def test_codex_process_awis_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
+    def test_codex_process_wi_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
         sid = "codex-process-wi-keeps-unrelated"
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_path.write_text(
