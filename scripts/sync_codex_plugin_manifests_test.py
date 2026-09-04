@@ -86,7 +86,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                     ],
                     "PermissionRequest": [
                         {
-                            "matcher": "Write|Edit|MultiEdit|Bash",
+                            "matcher": "*",
                             "hooks": [
                                 {
                                     "type": "command",
@@ -94,10 +94,6 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                                     "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py permissionrequest",
                                 }
                             ],
-                        },
-                        {
-                            "matcher": "Bash",
-                            "hooks": [{"type": "command", "command": subject.CODEX_PERMISSION_REQUEST_COMMAND}],
                         },
                     ],
                     "UserPromptSubmit": [
@@ -261,6 +257,22 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
+
+
+def test_codex_projection_replaces_output_command() -> None:
+    projection = subject.CodexHookProjection(("source",), output_command="target")
+
+    assert projection.project({"hooks": []}, [{"type": "command", "command": "source"}]) == {
+        "hooks": [{"type": "command", "command": "target"}]
+    }
+
+
+def test_codex_projection_preserves_command_without_replacement() -> None:
+    projection = subject.CodexHookProjection(("source",))
+
+    assert projection.project({"hooks": []}, [{"type": "command", "command": "source"}]) == {
+        "hooks": [{"type": "command", "command": "source"}]
+    }
 
 
 def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root: Path) -> None:
@@ -458,7 +470,7 @@ def test_main_rejects_unknown_arguments() -> None:
 
 def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
-    hooks["hooks"]["PermissionRequest"] = hooks["hooks"]["PermissionRequest"][:1]
+    hooks["hooks"]["PermissionRequest"][0]["hooks"][0]["command"] = "unknown"
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
     with pytest.raises(ValueError, match="許可済みハンドラー"):
         subject.sync(manifest_root)

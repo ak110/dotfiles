@@ -28,7 +28,6 @@ _FIXTURES: dict[tuple[str, str], tuple[str, bool]] = {
     ("SessionEnd", "session_end_cleanup"): ("empty", False),
     ("StopFailure", "stopfailure_notifier"): ("empty", False),
     ("PermissionRequest", "permissionrequest"): ("permissionrequest", True),
-    ("PermissionRequest", "permissionrequest_codex"): ("permissionrequest_codex", True),
     ("UserPromptSubmit", "user_prompt_submit"): ("user_prompt_submit", True),
 }
 

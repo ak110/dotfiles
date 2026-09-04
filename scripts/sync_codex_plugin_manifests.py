@@ -58,10 +58,18 @@ class CodexHookProjection(NamedTuple):
     commands: tuple[str, ...]
     matcher: str | None = None
     timeout: int | None = None
+    output_command: str | None = None
 
     def project(self, group: dict[str, Any], handlers: list[dict[str, Any]]) -> dict[str, Any]:
         """正本のmatcher groupへ上書き値を適用した射影結果を返す。"""
-        chosen = [{**handler, "timeout": self.timeout} if self.timeout is not None else handler for handler in handlers]
+        chosen = []
+        for handler in handlers:
+            projected_handler = dict(handler)
+            if self.output_command is not None:
+                projected_handler["command"] = self.output_command
+            if self.timeout is not None:
+                projected_handler["timeout"] = self.timeout
+            chosen.append(projected_handler)
         projected = {**group, "hooks": chosen}
         if self.matcher is not None:
             projected["matcher"] = self.matcher
@@ -77,7 +85,11 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
         (CODEX_POST_TOOL_USE_COMMAND,),
         matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill",
     ),
-    "PermissionRequest": CodexHookProjection((CODEX_PERMISSION_REQUEST_COMMAND,)),
+    "PermissionRequest": CodexHookProjection(
+        (_hook_command("permissionrequest"),),
+        matcher="Bash",
+        output_command=CODEX_PERMISSION_REQUEST_COMMAND,
+    ),
     "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
     "SubagentStop": CodexHookProjection((CODEX_SUBAGENT_STOP_COMMAND,)),
     "SessionEnd": CodexHookProjection((CODEX_SESSION_END_COMMAND,), timeout=CODEX_SESSION_END_TIMEOUT_SECONDS),
