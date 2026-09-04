@@ -19,6 +19,7 @@ from typing import Any, Literal, cast
 import _agents_server_state as shared_state
 import _plan_file
 from _agents_server_state import (
+    AUTO_RESUME_NOTICE,
     DELEGATE_SYSTEM_PROMPT,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
@@ -117,9 +118,13 @@ def _build_options(
         "env": env,
         "setting_sources": [] if lightweight else ["user", "project"],
         "system_prompt": (
-            LAUNCH_SYSTEM_PROMPTS[launch_kind]
+            f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
             if lightweight
-            else {"type": "preset", "preset": "claude_code", "append": DELEGATE_SYSTEM_PROMPT}
+            else {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": f"{DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}",
+            }
         ),
     }
     if lightweight:

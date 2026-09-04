@@ -40,6 +40,13 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "explore": EXPLORE_SYSTEM_PROMPT,
     "shell": SHELL_SYSTEM_PROMPT,
 }
+AUTO_RESUME_NOTICE = (
+    "この実行経路は、あなたが起動した委譲先（サブエージェント）の完了通知により、"
+    "同じsessionを一度だけ自動的に再開する。\n"
+    "当該委譲先の完了を待つ場合は`待機中: <待機対象>`の1行だけを出力して当該ターンを終え、"
+    "再開したターンで所定の返却形式を返す。\n"
+    "背景ジョブはこの自動再開の対象ではない。背景ジョブの終了状態は同じターンの中で確定してから報告する。"
+)
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
 

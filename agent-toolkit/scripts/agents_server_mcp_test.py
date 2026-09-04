@@ -1561,6 +1561,13 @@ def test_explore_system_prompt_contains_delegate_notice() -> None:
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
 
 
+def test_auto_resume_notice_limits_waiting_exception_to_child_agents() -> None:
+    """自動再開の判定入力は子の完了待ちだけを例外とし、背景ジョブを除外する。"""
+    assert "あなたが起動した委譲先（サブエージェント）の完了通知" in state.AUTO_RESUME_NOTICE
+    assert "同じsessionを一度だけ自動的に再開する" in state.AUTO_RESUME_NOTICE
+    assert "背景ジョブはこの自動再開の対象ではない" in state.AUTO_RESUME_NOTICE
+
+
 def test_shell_system_prompt_requires_background_result_collection() -> None:
     """シェル実行担当は背景移行を終端とせず、出力ファイルから終了状態を確定する。"""
     assert "背景実行へ移行した場合は、移行の通知を結果として報告しない" in state.SHELL_SYSTEM_PROMPT
@@ -1598,6 +1605,8 @@ async def test_codex_explore_changes_thread_start_only(
     assert normal_thread["developerInstructions"] == state.DELEGATE_SYSTEM_PROMPT
     assert explore_thread["config"] == {"project_doc_max_bytes": 0}
     assert explore_thread["developerInstructions"] == state.EXPLORE_SYSTEM_PROMPT
+    assert state.AUTO_RESUME_NOTICE not in normal_thread["developerInstructions"]
+    assert state.AUTO_RESUME_NOTICE not in explore_thread["developerInstructions"]
     assert normal_client.requests[1][1] == explore_client.requests[1][1]
 
 
@@ -1619,6 +1628,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
     thread_params = client.requests[0][1]
     assert thread_params["config"] == {"project_doc_max_bytes": 0}
     assert thread_params["developerInstructions"] == state.SHELL_SYSTEM_PROMPT
+    assert state.AUTO_RESUME_NOTICE not in thread_params["developerInstructions"]
 
 
 @pytest.mark.asyncio
@@ -2583,7 +2593,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.system_prompt == {
         "type": "preset",
         "preset": "claude_code",
-        "append": state.DELEGATE_SYSTEM_PROMPT,
+        "append": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
     }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
@@ -2614,7 +2624,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
-    assert options.system_prompt == state.EXPLORE_SYSTEM_PROMPT
+    assert options.system_prompt == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert options.tools == {"type": "preset", "preset": "claude_code"}
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"}
 
@@ -2630,7 +2640,7 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_pa
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     }
-    assert options.system_prompt == state.SHELL_SYSTEM_PROMPT
+    assert options.system_prompt == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert set(options.allowed_tools) == {"Bash", "Read"}
 
 
