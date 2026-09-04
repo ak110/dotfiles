@@ -214,6 +214,22 @@ PreToolUse・PostToolUse・UserPromptSubmitの`additionalContext`はターンの
 コーディングエージェントへの誘導文の先頭に判定基準を事前チェックとして埋め込み、
 基準を満たさない場合は誘導内容に従わずターンを終了する設計を推奨する。
 
+`Stop`と`SubagentStop`の共通入力は`session_id`・`prompt_id`・`transcript_path`・`cwd`・`permission_mode`・`effort`・`hook_event_name`である。
+両イベントはこれに加えて`stop_hook_active`・`last_assistant_message`・`background_tasks`・`session_crons`を受け取る。
+`SubagentStop`はさらに`agent_id`・`agent_type`・`agent_transcript_path`を受け取る。
+`SubagentStop`の`background_tasks`と`session_crons`は親セッションの範囲を表す。
+`background_tasks`は実行中のタスクを1件ずつ表し、各要素は`id`・`type`・`status`・`description`を持つ。
+`type`は`shell`・`subagent`・`monitor`・`workflow`・`teammate`・`cloud session`・`MCP task`のいずれかを取る。
+値は当該タスクを生成した機能を示す。
+この配列は、セッションが完了した状態と、背景の作業による再開を待って停止している状態とをフックが区別する用途で使う。
+`PostToolUse`は背景実行への移行の時点で発火する。当該ジョブの完了時に再発火する旨の記載は公式ドキュメントに無い。
+
+2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節及び`SubagentStop`節で前段の入力仕様を確認した。
+同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。
+`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。
+再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
+現行版の入力に`background_tasks`が現れない場合は本項を失効させ、当該版の観測として書き直す。
+
 CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、許可時は空のJSONオブジェクトを返す。
 CodexのStopは`hookSpecificOutput`を受理しない。
 Codex固有の入力には`model`があり、Stopでは`stop_hook_active`と`last_assistant_message`も受け取る。
