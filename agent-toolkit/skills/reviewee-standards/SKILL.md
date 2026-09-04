@@ -117,7 +117,7 @@ description: >
 説明できない場合は修正を確定せず、不足する検証又は判断を呼び出し元へ返す。
 
 レビュー表が指定された場合は、渡された修正対象の`track`集合だけを扱う。
-渡された集合の外に属する`track`の行を採否判断と更新の対象にせず、`atk review-table`の公開CLI契約に従って応答と検証を完了する。記録した後は`atk review-table show`で保存本文を取得し、記録した本文と照合する。出力の書式は同コマンドのヘルプを正本とする。欠落又は不一致を検出した場合は、同じ経路で修復してから照合をやり直す。
+渡された集合の外に属する`track`の行を採否判断と更新の対象にしない。応答は`atk review-table respond <表の絶対パス> --round <ラウンド番号> --track <区分> --response-needed <yes|no>`の形式で実行する。対応要では`--response <対応内容>`を、対応不要では`--no-response-reason <理由>`を添える。同じ`round`と`track`で行を一意に特定できない場合は`--location`と`--issue`も指定する。本文にバッククォートと改行のいずれかを含む場合は、対応する`--response-file`、`--no-response-reason-file`、`--location-file`及び`--issue-file`でファイル経由に渡す。記録した後は`atk review-table show`で保存本文を取得し、記録した本文と照合する。受理形式と出力の書式は同コマンドのヘルプを正本とする。欠落又は不一致を検出した場合は、同じ経路で修復してから照合をやり直す。
 検証は表全体を対象とし、扱う`track`集合による限定は採否判断と更新にだけ適用する。
 実装レビューでは、修正対象を`implementation-review`の単一trackに限定する。
 実装レビュー担当へ渡す情報は、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の生成契約に従って呼び出し元が渡した`review_contract`と直接影響範囲を超えて自ら拡張しない。

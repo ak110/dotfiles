@@ -4,12 +4,155 @@ import argparse
 import json
 import os
 import pathlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import _review_table as table
 import pytest
 
 _TRACK = "implementation-review"
+
+_ADD_NAMESPACE_DEFAULTS = {
+    "command": "review-table",
+    "review_table_subcommand": "add",
+    "_help_parser": None,
+    "path": "review.tsv",
+    "round": "1",
+    "track": _TRACK,
+    "level": "実装",
+    "location_arg": None,
+    "location": None,
+    "location_file": None,
+    "issue_arg": None,
+    "issue": None,
+    "issue_file": None,
+}
+
+_RESPOND_NAMESPACE_DEFAULTS = {
+    "command": "review-table",
+    "review_table_subcommand": "respond",
+    "_help_parser": None,
+    "path": "review.tsv",
+    "round": "1",
+    "track": _TRACK,
+    "location_arg": None,
+    "location": None,
+    "location_file": None,
+    "issue_arg": None,
+    "issue": None,
+    "issue_file": None,
+    "response_needed": "yes",
+    "response": None,
+    "response_file": None,
+    "no_response_reason": None,
+    "no_response_reason_file": None,
+}
+
+_CLI_ACCEPTED_CASES = (
+    (
+        ["review-table", "add", "review.tsv", "--round", "1", f"--track={_TRACK}", "--level", "実装", "位置", "指摘"],
+        {**_ADD_NAMESPACE_DEFAULTS, "location_arg": "位置", "issue_arg": "指摘"},
+    ),
+    (
+        [
+            "review-table",
+            "add",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--level=詳細",
+            "--location-file=location.txt",
+            "--issue-file=issue.txt",
+        ],
+        {
+            **_ADD_NAMESPACE_DEFAULTS,
+            "level": "詳細",
+            "location_file": "location.txt",
+            "issue_file": "issue.txt",
+        },
+    ),
+    (
+        ["review-table", "respond", "review.tsv", "--round=1", f"--track={_TRACK}", "--response-needed=yes", "--response=対応"],
+        {**_RESPOND_NAMESPACE_DEFAULTS, "response": "対応"},
+    ),
+    (
+        [
+            "review-table",
+            "respond",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--response-needed=no",
+            "--no-response-reason=対象外",
+        ],
+        {
+            **_RESPOND_NAMESPACE_DEFAULTS,
+            "response_needed": "no",
+            "no_response_reason": "対象外",
+        },
+    ),
+    (
+        [
+            "review-table",
+            "respond",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--location=位置",
+            "--issue=指摘",
+            "--response-needed=yes",
+            "--response=対応",
+        ],
+        {**_RESPOND_NAMESPACE_DEFAULTS, "location": "位置", "issue": "指摘", "response": "対応"},
+    ),
+    (
+        [
+            "review-table",
+            "respond",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--response-needed=yes",
+            "--response-file=response.txt",
+        ],
+        {**_RESPOND_NAMESPACE_DEFAULTS, "response_file": "response.txt"},
+    ),
+    (
+        [
+            "review-table",
+            "respond",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--location-file=location.txt",
+            "--issue-file=issue.txt",
+            "--response-needed=yes",
+            "--response-file=response.txt",
+        ],
+        {
+            **_RESPOND_NAMESPACE_DEFAULTS,
+            "location_file": "location.txt",
+            "issue_file": "issue.txt",
+            "response_file": "response.txt",
+        },
+    ),
+    (
+        [
+            "review-table",
+            "respond",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--response-needed=no",
+            "--no-response-reason-file=reason.txt",
+        ],
+        {
+            **_RESPOND_NAMESPACE_DEFAULTS,
+            "response_needed": "no",
+            "no_response_reason_file": "reason.txt",
+        },
+    ),
+)
 
 
 @pytest.fixture(name="isolated_home", autouse=True)
@@ -448,6 +591,70 @@ def test_parser_rejects_invalid_track(argv: list[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(argv)
     assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(("argv", "expected"), _CLI_ACCEPTED_CASES)
+def test_skill_documented_review_table_commands_are_accepted(
+    argv: list[str],
+    expected: dict[str, object],
+) -> None:
+    """スキルが指示するadd・respondの全形式を公開parserが受理する。"""
+    args = _parser().parse_args(argv)
+
+    assert vars(args) == expected
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ["review-table", "add", "review.tsv", f"--track={_TRACK}", "--level=詳細", "位置", "指摘"],
+        ["review-table", "add", "review.tsv", "--round=1", "--level=詳細", "位置", "指摘"],
+        ["review-table", "add", "review.tsv", "--round=1", f"--track={_TRACK}", "位置", "指摘"],
+        ["review-table", "add", "review.tsv", "--round=1", f"--track={_TRACK}", "--level=重大", "位置", "指摘"],
+        ["review-table", "respond", "review.tsv", "--round=1", f"--track={_TRACK}"],
+        ["review-table", "respond", "review.tsv", "--round=1", f"--track={_TRACK}", "--response-needed=maybe"],
+        [
+            "review-table",
+            "respond",
+            "review.tsv",
+            "--round=1",
+            f"--track={_TRACK}",
+            "--response-needed=yes",
+            "--file=response.txt",
+        ],
+    ),
+)
+def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv: list[str]) -> None:
+    """必須値の欠落、不正値及び旧`--file`形式を終了コード2で拒否する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(argv)
+    assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("skill", "marker", "subcommand"),
+    (
+        ("review-standards", "レビュー指摘管理表への記録は", "add"),
+        ("reviewee-standards", "応答は`atk review-table respond", "respond"),
+    ),
+)
+def test_skill_review_table_options_match_accepted_cli_vectors(
+    skill: str,
+    marker: str,
+    subcommand: str,
+) -> None:
+    """スキル本文のオプション集合を受理ケースの仕様集合へ固定する。"""
+    skill_path = pathlib.Path(__file__).parents[1] / "skills" / skill / "SKILL.md"
+    paragraph = next(line for line in skill_path.read_text(encoding="utf-8").splitlines() if marker in line)
+    documented = set(re.findall(r"--[a-z-]+", paragraph))
+    accepted = {
+        token.split("=", maxsplit=1)[0]
+        for argv, _expected in _CLI_ACCEPTED_CASES
+        if argv[1] == subcommand
+        for token in argv
+        if token.startswith("--")
+    }
+    assert documented == accepted
 
 
 @pytest.mark.parametrize(

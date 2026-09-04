@@ -51,6 +51,13 @@
 - 過去のAWIから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる事故・欠陥: [docs/development/incidents.md](docs/development/incidents.md)
 
+## 振り返りの参照文書
+
+`agent-toolkit:session-review`が読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/references/session-review-dotfiles.md`とする。
+Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
+同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
+配布元は`.chezmoi-source/dot_claude/references/session-review-dotfiles.md`である。
+
 ## 編集時に起動するスキル
 
 本節の`agent-toolkit-edit`・`pytools-edit`・`sync-platform-pair`は、リポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
