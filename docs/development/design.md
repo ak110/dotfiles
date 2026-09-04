@@ -1119,6 +1119,9 @@ MQ、CI及びpublishの補助領域は同一namespaceの既定rootを使い、�
 
 共通Git同期層はfetch後に祖先関係を確認し、分岐を自動回復できない場合は双方のcommit件数、
 確認コマンド、rebase・重複commitのskip・abort・pushの手順を表示する。
+HEADとupstreamの木が一致する分岐は、作業ツリーとindexの状態によらず`reset --soft @{u}`でupstreamへ揃える。
+木が一致する条件では作業ツリーへ書き戻す内容がなく、`--soft`はindexを変更しないため、stage済みを含む未コミット差分を保存できる。
+`reset --keep`はstage済みの差分を未stageへ戻すため、この経路では採用しない。
 MQ層は、ローカル側の全commitについて、管理CLIが生成する終端commitの件名、active状態から
 `adopted`又は`rejected`への同名ファイル移動、対象件数、upstream上の移動済み状態及び
 処理日時以外のファイル内容一致を確認する。作業ツリーとindexがcleanであり、全条件を満たす場合だけ、

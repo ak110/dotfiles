@@ -256,6 +256,12 @@ def _pull_impl(
         raise merge_error from None
     if not diverged:
         raise merge_error
+    if _recover_matching_tree_divergence(
+        private_notes,
+        run_git=run_git,
+        result_runner=result_runner,
+    ):
+        return
     if _recover_redundant_divergence(
         private_notes,
         redundant_divergence=redundant_divergence,
@@ -350,6 +356,24 @@ def _recover_redundant_divergence(
     return True
 
 
+def _recover_matching_tree_divergence(
+    private_notes: pathlib.Path,
+    *,
+    run_git: _GitRunner,
+    result_runner: _GitResultRunner,
+) -> bool:
+    """HEADとupstreamの木が一致する分岐をindexを保ったまま解消する。"""
+    result = result_runner(["diff", "--quiet", "HEAD", "@{u}"], private_notes)
+    if result.returncode != 0:
+        return False
+    run_git(["reset", "--soft", "@{u}"], private_notes)
+    print(
+        "HEADとupstreamの内容が一致するため、冗長なローカルcommitを除外して自動同期しました。",
+        file=sys.stderr,
+    )
+    return True
+
+
 def _report_divergence(
     private_notes: pathlib.Path,
     *,
@@ -366,6 +390,13 @@ def _report_divergence(
     except (OSError, subprocess.SubprocessError):
         pass
     print(f"Git履歴が分岐しています（{count_text}）: {private_notes}", file=sys.stderr)
+    try:
+        differences = result_runner(["diff", "--name-status", "HEAD", "@{u}"], private_notes)
+        if differences.returncode == 0 and differences.stdout.strip():
+            print("内容差のあるファイル:", file=sys.stderr)
+            print(differences.stdout.rstrip(), file=sys.stderr)
+    except (OSError, subprocess.SubprocessError):
+        pass
     print(
         "ローカルの未push commitを残した間に、別のcloneからupstreamが更新された状態です。",
         file=sys.stderr,
@@ -473,6 +504,13 @@ def _push_pending_commits_impl(
         return
     if remote_is_ancestor or (local_is_ancestor and remote_is_ancestor):
         raise original_error
+
+    if _recover_matching_tree_divergence(
+        private_notes,
+        run_git=run_git,
+        result_runner=result_runner,
+    ):
+        return
 
     if is_worktree_dirty(private_notes, result_runner=result_runner):
         _report_divergence(private_notes, result_runner=result_runner)
