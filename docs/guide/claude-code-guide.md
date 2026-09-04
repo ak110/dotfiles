@@ -337,12 +337,11 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。ユーザーが直接読む質問本文と計画本文にも同じ本文検査を適用する。Bashでは`uv run python`の誤用とパターン一致によるプロセス終了をブロックし、`sleep`直後の状態確認連結と検証コマンド出力の切り詰めを同一セッション内の再検出でブロックし、高容量のユーザー領域を無限定に対象とする再帰検索・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・否定規定表現・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。ユーザーが直接読む本文の検査は、対応する入力を持たないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みUWIの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
 | plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
-| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告と英語主体の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する。言語検査は`reason`の配送先と再提出の成立を確認できないため非対応 |
+| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/autonomous_exit` | process-loop環境で`agent-toolkit:completion-report`後の`agent-toolkit:exit-session`呼び出し漏れをblockする | 対応 | 非対応 |
-| plugin `Stop/agents_server_session_advisor` | 観測を試みていない作業が残る`agents_server` sessionがある状態での終了を警告する | 対応 | 非対応。CodexのStopは`hookSpecificOutput`を受理しない |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`及び問いかけに関する終了判定を行う | 対応 | 非対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルに必要な状態だけを記録する | 対応 | 対応 |
-| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 対応 | 対応 |
+| plugin `PermissionRequest/permissionrequest_codex` | BashからのCodex起動条件を検査する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |
 | plugin `PostToolUseFailure/posttooluse` | ツール失敗時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |

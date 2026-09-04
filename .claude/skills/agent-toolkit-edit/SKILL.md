@@ -223,6 +223,10 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
   確認できた場合だけ行う。確認できない場合は残置を維持する
 - PEP 723スクリプト（`agent-toolkit/scripts/atk.py`等）の`dependencies`へパッケージを追加・更新する場合、
   リポジトリ本体の`pyproject.toml`にも同一制約で登録する（テスト実行が間接依存で偶然解決する状態を防ぐため）
+- 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
+  `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、当該イベントの既存の入口へ相乗りさせる。
+  matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
+  入口の実装契約は`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`が定める
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。

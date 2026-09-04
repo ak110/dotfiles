@@ -51,6 +51,31 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
   シェルの`kill`等でPIDを推測して停止しない
   （タスクIDとPIDの対応を取得できないため、推測は無関係なプロセスの終了を招き得る）
 
+## 役割上の区分と実行環境上の区分
+
+規範が役割として定める委譲元と委譲先の区分は、Claude Codeがターン終端イベントと設定の継承を決める区分と一致しない。
+フックの実装と改訂、及び規範の適用範囲を判定する場面では、どちらの区分を基準にするかを先に確定する。
+
+- `agents_server`の`start`で起動した委譲先は、独立したClaude Agent SDKセッションとして動く。
+  当該セッション自身のターン終端では`SubagentStop`ではなく`Stop`が発火する。
+  `Agent`ツールで起動したサブエージェントのターン終端では`SubagentStop`が発火し、
+  当該サブエージェント内で発火するフックの入力には共通入力の`agent_id`が入る
+- `agents_server`の通常起動（`start`）は`setting_sources`へ`user`と`project`を渡すため、
+  ユーザー設定、プロジェクト設定及びそこで有効なプラグインのフックが委譲先セッションでも読み込まれる。
+  軽量起動（`start_explore`と`start_shell`）は`setting_sources`が空であり、これらを読み込まない
+- 規範上は委譲先である主体が、実行環境上は`Stop`側のフックの対象になる。
+  `Stop`側のフックを実装又は改訂する場合は、当該フックが求める処置を委譲先が実行できるかを個別に判定する。
+  実行できない処置を求めるフックは、環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`であることを条件に委譲先を対象から除く
+- 規範が最上位セッションへ限定する工程は、`Stop`が発火したことを自身が最上位である根拠にしない。
+  `agent-toolkit:session-review`の起動と`SendMessage`の`to: "main"`による通知の宛先が該当する。
+  判定には当該環境変数と自身の起動経路を用いる
+
+2026年9月4日、agent-toolkit 2.94.0で次を実測した。
+`agents_server`の`start`で起動した委譲先のプロセス環境に`AGENT_TOOLKIT_DELEGATED_SESSION=1`が入る。
+`agent-toolkit/scripts/_agents_server_claude.py`の`_build_options`は、通常起動で`setting_sources`へ`user`と`project`を渡し、軽量起動で空リストを渡す。
+`agent-toolkit/hooks/hooks.json`は`Stop`側と`SubagentStop`側へ別のフックを登録し、委譲先セッションでは`Stop`側のフックが判定を記録する。
+再検証は`agents_server`の通常起動で委譲先を1件起動し、当該委譲先のセッション記録に`Stop`側フックの結果が現れることと、`SubagentStop`側フックの記録が現れないことを対にして確認する。
+
 ## 委譲起動時の厳守事項
 
 Claude Codeの基本的な委譲起動では、`02-agent-operations.md`「基本委譲契約」節を適用する。
