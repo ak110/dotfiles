@@ -896,6 +896,8 @@ async def wait(
 
     `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
+    委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
+    呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
     `session retention expired: <session_id>`は終端結果の保持期限が過ぎたことだけを示し、会話再開用の最小状態は保持されている。
     """

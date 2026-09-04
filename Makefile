@@ -72,4 +72,10 @@ test-browser:
 		uv run pytest agent-toolkit/scripts/_atk_serve_browser_test.py \
 		-o addopts='' -p no:cacheprovider
 
-.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser
+# agents_serverの実backendを使うライブ一体テスト
+test-agents-live:
+	AGENT_TOOLKIT_LIVE_AGENTS_TEST=1 \
+		uv run pytest agent-toolkit/scripts/agents_server_live_test.py \
+		-o addopts='' -p no:cacheprovider
+
+.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser test-agents-live

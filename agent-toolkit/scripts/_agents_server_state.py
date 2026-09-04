@@ -190,6 +190,11 @@ class SessionState:
     interrupt_requested: bool = False
     turn_completed: bool = False
     failure_pending_completion: bool = False
+    live_task_ids: set[str] = dataclasses.field(default_factory=set)
+    awaiting_auto_resume: bool = False
+    auto_resume_consumed: bool = False
+    auto_resume_deadline: float | None = None
+    pending_result: dict[str, Any] | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
@@ -304,6 +309,10 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.interrupt_requested = False
     session.turn_completed = False
     session.failure_pending_completion = False
+    session.awaiting_auto_resume = False
+    session.auto_resume_consumed = False
+    session.auto_resume_deadline = None
+    session.pending_result = None
     session.retention_deadline = None
     if reset_progress:
         session.reset_progress()
