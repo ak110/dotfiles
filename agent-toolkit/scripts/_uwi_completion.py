@@ -34,6 +34,19 @@ STATE_KEY_FINGERPRINT = "uwi_fingerprint_by_repo"
 走査と`git remote get-url origin`をいずれも実行しない。
 """
 
+_LEGACY_STATE_KEYS = {
+    STATE_KEY_ANSWERED: "tbd_answered_by_repo",
+    STATE_KEY_FINGERPRINT: "tbd_fingerprint_by_repo",
+}
+"""改名前の状態キーとの対応。
+
+配布をまたいで稼働し続けるセッションは、改名前のキーで基準値を記録した状態ファイルを持つ。
+新しいキーだけを読むと当該セッションの1回分がセッション開始直後と同じ扱いになり、
+回答済みのUWIが通知されないまま基準値へ取り込まれる。
+読み取りだけが本表を参照し、書き込みは常に現行のキーへ行う。
+改名前のキーを持つセッションが全て終了した後の版数更新以降に撤去できる。
+"""
+
 _GIT_TIMEOUT_SEC = 5.0
 """`git remote get-url origin`の実行上限。フックの滞留を防ぐ。"""
 
@@ -66,17 +79,25 @@ def _nested(state: dict, key: str, agent_id: str) -> dict:
     """2段辞書`state[key][agent_id]`を必要に応じて用意して返す。
 
     過去の版が記録した1段辞書や不正な型が残っていた場合は破棄して初期化する。
-    セッション状態は同一セッション内でのみ意味を持つため、移行処理は設けない。
+    現行のキーが無い場合だけ`_LEGACY_STATE_KEYS`が示す改名前のキーの内容を引き継ぐ。
     """
     outer = state.get(key)
     if not isinstance(outer, dict):
-        outer = {}
+        outer = _legacy_outer(state, key)
         state[key] = outer
     inner = outer.get(agent_id)
     if not isinstance(inner, dict):
         inner = {}
         outer[agent_id] = inner
     return inner
+
+
+def _legacy_outer(state: dict, key: str) -> dict:
+    """現行のキーが無い場合に、改名前のキーが持つ2段辞書の写しを返す。"""
+    legacy = state.get(_LEGACY_STATE_KEYS[key])
+    if not isinstance(legacy, dict):
+        return {}
+    return {agent: dict(value) for agent, value in legacy.items() if isinstance(value, dict)}
 
 
 def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint: str) -> bool:
@@ -91,7 +112,9 @@ def _fingerprint_unchanged(session_id: str, agent_id: str, cwd: str, fingerprint
     def _read(state: dict) -> None:
         nonlocal previous
         outer = state.get(STATE_KEY_FINGERPRINT)
-        inner = outer.get(agent_id) if isinstance(outer, dict) else None
+        if not isinstance(outer, dict):
+            outer = _legacy_outer(state, STATE_KEY_FINGERPRINT)
+        inner = outer.get(agent_id)
         previous = inner.get(cwd) if isinstance(inner, dict) else None
 
     update_state(session_id, _read)
