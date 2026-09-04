@@ -68,13 +68,15 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 
 ## matcher設定
 
-`hooks.json`の`PreToolUse` / `PostToolUse`の`matcher`（ツール名への正規表現評価、
-空文字列で全ツール対象）は公式ドキュメント<https://code.claude.com/docs/ja/hooks.md>の
-matcher仕様を一次資料として参照する。
+ツール名で`matcher`を評価するイベントは`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`PermissionDenied`の5つとする。
+これらのイベントの`matcher`は3通りに解釈する。`"*"`、空文字列及びキーの省略は全ツールへ一致する。英数字、`_`、`-`、空白、`,`、`|`だけからなる値は、`|`又は`,`で区切ったツール名の完全一致とする。それ以外の文字を含む値は、先頭と末尾を固定しないJavaScriptの正規表現として評価する。
+全ツールへ一致させる登録には`"*"`を書き、空文字列とキーの省略を新規記述へ用いない。ツール名で`matcher`を評価しないイベントには`matcher`キーを置かない。
+一次資料は公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節とする。
+2026年9月4日、Claude Code 2.1.260の実行ファイルへ埋め込まれた照合関数が、値が空文字列と`"*"`のいずれかのときに正規表現へ変換せず一致を返すことと、同ドキュメントが同じ3分類を記載することを確認した。再検証は、当該ドキュメントの`Matcher patterns`節を取得し、`strings`で抽出した当該関数が空値と`"*"`を短絡することを確認する。
 
 - 個別の早期returnガード: `matcher`を広げた場合、hookスクリプト側で`tool_name`を
   確認し対象外を早期returnすることで処理コストと誤検出を抑える
-- ホスト間でmatcherを共有しない: Claude Code向けの空matcher（全ツール対象）をCodexへそのまま配布すると、
+- ホスト間でmatcherを共有しない: Claude Code向けの全ツール一致のmatcherをCodexへそのまま配布すると、
   入力契約を確認していないツールでもhandlerが起動する。Codexへ射影する場合はツール名を明示して限定する
 
 ## Codexの編集ツール入力

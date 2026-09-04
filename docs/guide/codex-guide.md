@@ -80,7 +80,8 @@ daemonを利用しない既存のCLI・IDEセッションは、作業完了後�
 ## agents_serverによる委譲
 
 `agents_server`はCodex pluginから利用できる共有MCPである。`start(model_type, prompt, cwd)`は対応する工程別モデル設定からengine、model及びeffortを解決する。
-CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値のengine部が`claude`ならサーバーがClaude backendを選ぶ。調査専用の軽量起動には`start_explore(prompt, cwd)`を使い、出力量が大きいコマンドの実行には`start_shell(command, cwd, summary_policy)`を使う。
+CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値のengine部が`claude`ならサーバーがClaude backendを選ぶ。調査専用の軽量起動には`start_explore(prompt, cwd, fast)`を使い、出力量が大きいコマンドの実行には`start_shell(command, cwd, summary_policy)`を使う。
+`fast`の既定は真であり、より軽量な探索の起動条件を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は既定のまま使い、軽量な探索では判断材料が不足する調査だけ偽を指定して通常の探索の起動条件へ切り替える。
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`の6つである。`start`、`start_explore`及び`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、

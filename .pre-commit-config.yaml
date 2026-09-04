@@ -2,6 +2,9 @@
 # prekはhookリポジトリの`pyproject.toml`からしか`requires-python`を解決しないため、
 # 本リポジトリの`pyproject.toml`の`requires-python`を正本として同じ下限をここへ再掲する。
 # どちらかを変更する場合は両方をそろえる。
+# prekはこの値をバージョン要求として解釈し、`>=3.13`のような範囲指定を受理する。
+# 上流のpre-commitは同じ値を実行可能ファイル名として解釈するため、上流向けの書式へそろえない。
+# 典拠: prek 0.4.14での実測と、prekの`docs/languages.md`の`language_version`節（2026-09-04取得）。
 default_language_version:
   python: ">=3.13"
 
