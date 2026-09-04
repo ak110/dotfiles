@@ -60,6 +60,46 @@ def test_migrate_npm_launchers_removes_only_owned_symlink(monkeypatch, tmp_path:
     assert calls[-1] == [str(npm), "uninstall", "--global", "@openai/codex"]
 
 
+def test_migrate_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_path: Path) -> None:
+    """PATH外の明示した配置先を走査し、重複指定しても同じnpm版を一度だけ除去する。"""
+    canonical_prefix = tmp_path / "canonical"
+    canonical = canonical_prefix / "bin" / "codex"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("", encoding="utf-8")
+    nvm_bin = tmp_path / ".nvm" / "versions" / "node" / "v24" / "bin"
+    package_root = nvm_bin.parent / "lib" / "node_modules"
+    package = package_root / "@openai" / "codex"
+    entrypoint = package / "bin" / "codex.js"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("", encoding="utf-8")
+    nvm_bin.mkdir(exist_ok=True)
+    (nvm_bin / "codex").symlink_to(entrypoint)
+    npm = nvm_bin / "npm"
+    npm.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(canonical.parent))
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        if command[1:3] == ["prefix", "--global"]:
+            return subprocess.CompletedProcess(command, 0, f"{nvm_bin.parent}\n", "")
+        if command[1:3] == ["root", "--global"]:
+            return subprocess.CompletedProcess(command, 0, f"{package_root}\n", "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(setup_cli_common.claude_common, "run_subprocess", fake_run)
+
+    assert setup_cli_common.migrate_npm_launchers(
+        "codex",
+        "@openai/codex",
+        canonical,
+        canonical_prefix,
+        extra_search_directories=(nvm_bin, nvm_bin),
+    )
+    assert sum(command[1:3] == ["uninstall", "--global"] for command in calls) == 1
+
+
 def test_migrate_npm_launchers_keeps_unknown_launcher(monkeypatch, tmp_path: Path) -> None:
     canonical_prefix = tmp_path / "canonical"
     canonical = canonical_prefix / "bin" / "codex"

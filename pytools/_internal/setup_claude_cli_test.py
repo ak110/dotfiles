@@ -23,8 +23,8 @@ def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch
     def fake_prepend(path: Path) -> None:
         events.append(f"path:{path}")
 
-    def fake_migrate(*args: object) -> bool:
-        del args
+    def fake_migrate(*args: object, **kwargs: object) -> bool:
+        del args, kwargs
         events.append("migrate")
         return True
 
@@ -45,6 +45,35 @@ def test_run_updates_existing_native_and_migrates_after_verification(monkeypatch
     assert setup_claude_cli.run()
     assert calls == [[str(launcher), "update"], [str(launcher), "--version"]]
     assert events == [f"path:{launcher.parent}", "migrate"]
+
+
+def test_run_does_not_search_for_claude_outside_path(monkeypatch, tmp_path: Path) -> None:
+    """Codex用の追加走査先に相当する場所のClaude Codeは削除対象へ含めない。"""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    launcher = tmp_path / ".local" / "bin" / "claude"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("native", encoding="utf-8")
+    outside = tmp_path / ".nvm" / "versions" / "node" / "v24" / "bin"
+    outside.mkdir(parents=True)
+    legacy = outside / "claude"
+    legacy.write_text("legacy", encoding="utf-8")
+    path_entry = tmp_path / "path"
+    path_entry.mkdir()
+    monkeypatch.setenv("PATH", str(path_entry))
+    monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
+    monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(setup_claude_cli.claude_common, "run_subprocess", fake_run)
+
+    assert setup_claude_cli.run()
+    assert legacy.read_text(encoding="utf-8") == "legacy"
+    assert calls == [[str(launcher), "update"], [str(launcher), "--version"]]
 
 
 def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:

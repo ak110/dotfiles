@@ -62,12 +62,27 @@ def run(client: httpx.Client | None = None) -> bool:
     failures, removed = _remove_mise_versions()
     migrated = False
     try:
-        migrated = setup_cli_common.migrate_npm_launchers("codex", _PACKAGE, launcher, _standalone_root())
+        migrated = setup_cli_common.migrate_npm_launchers(
+            "codex",
+            _PACKAGE,
+            launcher,
+            _standalone_root(),
+            extra_search_directories=_nvm_bin_directories(),
+        )
     except RuntimeError as error:
         failures.append(str(error))
-    # 旧版の除去でmise shimが実体を失うため、除去を伴った場合だけ最後にshimを再生成する。
-    if removed or migrated:
-        failures.extend(_reshim_mise())
+    orphaned_shims: list[Path] = []
+    if not removed and not failures:
+        orphan_failures, orphaned_shims = _find_orphaned_mise_shims()
+        failures.extend(orphan_failures)
+    # 自身の除去履歴だけでなく、miseの申告と中継の実在が一致しない場合も再生成する。
+    if removed or migrated or orphaned_shims:
+        reshim_failures = _reshim_mise()
+        failures.extend(reshim_failures)
+        if not reshim_failures:
+            for shim in orphaned_shims:
+                if shim.is_file():
+                    logger.warning(log_format.format_status("codex", f"mise管理外の中継を保持: {shim}"))
     if failures:
         message = " / ".join(failures)
         logger.warning(log_format.format_status("codex", message))
@@ -191,6 +206,15 @@ def _visible_bin_dir() -> Path:
     return Path.home() / ".local" / "bin"
 
 
+def _nvm_bin_directories() -> tuple[Path, ...]:
+    """nvmがバージョン別にnpmの実行ファイルを置く、実在するディレクトリを返す。"""
+    nvm_dir = Path(os.environ.get("NVM_DIR", Path.home() / ".nvm"))
+    versions = nvm_dir / "versions" / "node"
+    if not versions.is_dir():
+        return ()
+    return tuple(sorted(path for path in versions.glob("*/bin") if path.is_dir()))
+
+
 def _find_mise() -> Path | None:
     """PATH上のmiseの絶対パスを返す。"""
     mise_name = shutil.which("mise")
@@ -224,6 +248,32 @@ def _remove_mise_versions() -> tuple[list[str], bool]:
     if removal is None or removal.returncode != 0:
         return [f"mise版の削除に失敗: {claude_common.format_cli_error(removal)}"], False
     return [], True
+
+
+def _find_orphaned_mise_shims() -> tuple[list[str], list[Path]]:
+    """miseがCodexを提供していない状態で実在するCodex中継を返す。"""
+    mise = _find_mise()
+    if mise is None:
+        return [], []
+    listing = claude_common.run_subprocess([str(mise), "ls", "--json"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise")
+    if listing is None or listing.returncode != 0:
+        return [f"mise全体の一覧取得に失敗: {claude_common.format_cli_error(listing)}"], []
+    try:
+        listed = json.loads(listing.stdout or "")
+    except json.JSONDecodeError as error:
+        return [f"mise全体の一覧解析に失敗: {error}"], []
+    if not isinstance(listed, dict):
+        return ["mise全体の一覧がオブジェクトではない"], []
+    if f"npm:{_PACKAGE}" in listed:
+        return [], []
+    names = ("codex", "codex.exe") if sys.platform == "win32" else ("codex",)
+    shims = [
+        shim
+        for directory in setup_cli_common._mise_shim_directories()  # pylint: disable=protected-access
+        for name in names
+        if (shim := directory / name).is_file()
+    ]
+    return [], shims
 
 
 def _reshim_mise() -> list[str]:

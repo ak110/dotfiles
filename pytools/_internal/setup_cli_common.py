@@ -31,10 +31,17 @@ def migrate_npm_launchers(
     package_name: str,
     canonical_launcher: Path,
     canonical_prefix: Path,
+    *,
+    extra_search_directories: Iterable[Path] = (),
 ) -> bool:
-    """PATH上の帰属確認済み非正規npmパッケージを削除する。"""
+    """PATHと追加の配置先にある帰属確認済み非正規npmパッケージを削除する。"""
     changed = False
-    for launcher in _iter_noncanonical_launchers(cli_name, canonical_launcher, canonical_prefix):
+    for launcher in _iter_noncanonical_launchers(
+        cli_name,
+        canonical_launcher,
+        canonical_prefix,
+        extra_search_directories=extra_search_directories,
+    ):
         npm = _adjacent_npm(launcher.parent)
         if npm is None:
             logger.warning(log_format.format_status(cli_name, f"同じディレクトリにnpmがないため保持: {launcher}"))
@@ -116,8 +123,10 @@ def _iter_noncanonical_launchers(
     cli_name: str,
     canonical_launcher: Path,
     canonical_prefix: Path,
+    *,
+    extra_search_directories: Iterable[Path] = (),
 ) -> Iterable[Path]:
-    """PATH上の非正規ランチャーのうち、npmが導入しうるものを列挙する。
+    """PATHと追加の配置先にある、npmが導入しうる非正規ランチャーを列挙する。
 
     miseのshimディレクトリにある実行ファイルは除外する。shimはnpmのグローバル導入物では
     ないため帰属判定が成立せず、対象へ含めると保持の警告だけが毎回出力される。
@@ -128,11 +137,15 @@ def _iter_noncanonical_launchers(
     canonical_real = _safe_resolve(canonical_launcher)
     prefix_real = _safe_resolve(canonical_prefix)
     shim_directories = _mise_shim_directories()
-    for entry in os.environ.get("PATH", "").split(os.pathsep):
-        if not entry:
+    path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
+    seen_directories: set[str] = set()
+    for directory in (*path_directories, *extra_search_directories):
+        directory_real = _safe_resolve(directory)
+        directory_key = os.path.normcase(str(directory_real))
+        if directory_key in seen_directories:
             continue
-        directory = Path(entry)
-        if _safe_resolve(directory) in shim_directories:
+        seen_directories.add(directory_key)
+        if directory_real in shim_directories:
             continue
         for name in names:
             launcher = directory / name
