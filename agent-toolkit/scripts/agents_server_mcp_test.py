@@ -1560,6 +1560,13 @@ def test_explore_system_prompt_contains_delegate_notice() -> None:
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
 
 
+def test_shell_system_prompt_requires_background_result_collection() -> None:
+    """シェル実行担当は背景移行を終端とせず、出力ファイルから終了状態を確定する。"""
+    assert "背景実行へ移行した場合は、移行の通知を結果として報告しない" in state.SHELL_SYSTEM_PROMPT
+    assert "起動結果が返す出力ファイルを読み" in state.SHELL_SYSTEM_PROMPT
+    assert "終了状態を確定してから報告する" in state.SHELL_SYSTEM_PROMPT
+
+
 @pytest.mark.asyncio
 async def test_codex_explore_changes_thread_start_only(
     monkeypatch: pytest.MonkeyPatch,
