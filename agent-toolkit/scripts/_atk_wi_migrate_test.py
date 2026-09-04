@@ -152,3 +152,69 @@ def test_migrate_fails_without_changes_when_destination_name_exists(tmp_path: pa
     assert "移動先。" in (notes / "hold" / "a.md").read_text(encoding="utf-8")
     assert _git(notes, "rev-parse", "HEAD").stdout.strip() == head
     assert _git(notes, "status", "--porcelain").stdout == ""
+
+
+def test_migrate_converts_current_names_and_keeps_withdrawn_identifiers(tmp_path: pathlib.Path) -> None:
+    """現行の実体を持つ識別子だけを変換し、廃止済みの複合識別子は当時の名称で残す。"""
+    notes = tmp_path / "private-notes"
+    _init_notes(notes, tmp_path / "origin.git")
+    (notes / "inbox" / "a.md").write_text(
+        _legacy_entry(
+            "feedback",
+            "process-feedbacksでagent-toolkit:add-feedbackを起動する。\n"
+            "feedbacks-plannerとapply-feedbackは廃止済み。\n"
+            "計画ファイルはfeedback-batch-20260818-9c4e.mdを参照する。\n",
+        ),
+        encoding="utf-8",
+    )
+    _commit_all(notes)
+
+    _atk_wi_migrate.migrate_queue(notes)
+
+    entry = (notes / "inbox" / "a.md").read_text(encoding="utf-8")
+    assert "process-wiでagent-toolkit:add-awiを起動する。" in entry
+    assert "feedbacks-plannerとapply-feedbackは廃止済み。" in entry
+    assert "feedback-batch-20260818-9c4e.mdを参照する。" in entry
+
+
+def test_migrate_repairs_identifiers_broken_by_word_level_conversion(tmp_path: pathlib.Path) -> None:
+    """概念語として複合識別子を置き換えた時期の変換が残した誤った識別子を直す。"""
+    notes = tmp_path / "private-notes"
+    _init_notes(notes, tmp_path / "origin.git")
+    (notes / "inbox" / "a.md").write_text(
+        "---\ntarget_repo: github.com/example/repo\ntype: awi\nsource: process-awis\n---\n\n"
+        "process-awisのレーンをprocess-awis-loopが起動し、awis-plannerが計画する。\n"
+        "作業ツリーは/tmp/merge-awis-fxg0fhvb/wtへ作成する。\n"
+        "計画ファイルは/plans/2026/08/23-awis-batch-20260823-h3vq.mdを参照する。\n"
+        "agent-toolkit:add-awiとawi_pathは現行の識別子なので変えない。\n",
+        encoding="utf-8",
+    )
+    _commit_all(notes)
+
+    _atk_wi_migrate.migrate_queue(notes)
+
+    entry = (notes / "inbox" / "a.md").read_text(encoding="utf-8")
+    assert "source: process-wi\n" in entry
+    assert "process-wiのレーンをprocess-feedbacks-loopが起動し、feedbacks-plannerが計画する。" in entry
+    assert "/tmp/merge-feedbacks-fxg0fhvb/wt" in entry
+    assert "/plans/2026/08/23-feedbacks-batch-20260823-h3vq.md" in entry
+    assert "agent-toolkit:add-awiとawi_pathは現行の識別子なので変えない。" in entry
+
+
+def test_migrate_is_idempotent_after_repairing_identifiers(tmp_path: pathlib.Path) -> None:
+    """誤った識別子を直したprivate-notesへ再実行しても何も変更しない。"""
+    notes = tmp_path / "private-notes"
+    _init_notes(notes, tmp_path / "origin.git")
+    (notes / "inbox" / "a.md").write_text(
+        _legacy_entry("feedback", "process-awisとawis-plannerとawis-normal-wave-m3q9.mdのAWI。\n"),
+        encoding="utf-8",
+    )
+    _commit_all(notes)
+    _atk_wi_migrate.migrate_queue(notes)
+    head = _git(notes, "rev-parse", "HEAD").stdout.strip()
+
+    result = _atk_wi_migrate.migrate_queue(notes)
+
+    assert result == {"converted": 0, "moved": 0, "commit": None}
+    assert _git(notes, "rev-parse", "HEAD").stdout.strip() == head
+    assert _git(notes, "status", "--porcelain").stdout == ""

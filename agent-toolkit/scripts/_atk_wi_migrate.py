@@ -6,6 +6,7 @@
 """
 
 import argparse
+import collections.abc
 import pathlib
 import re
 import subprocess
@@ -22,14 +23,18 @@ _PLANS_DIRECTORY = "plans"
 """変換対象へ含める計画ファイルの保存rootのディレクトリ名。"""
 
 _REPLACEMENTS: tuple[tuple[str, str], ...] = (
-    ("agent-toolkit:feedback-standards", "agent-toolkit:wi-standards"),
-    ("agent-toolkit:plan-and-add-feedback", "agent-toolkit:plan-and-add-awi"),
-    ("agent-toolkit:process-feedbacks", "agent-toolkit:process-wi"),
-    ("agent-toolkit:add-feedback", "agent-toolkit:add-awi"),
+    ("plan-and-add-feedback", "plan-and-add-awi"),
     ("process_feedbacks_skill_invoked", "process_wi_skill_invoked"),
-    ("process-feedbacks.log", "process-wi.log"),
+    ("Feedback-Originated", "AWI-Originated"),
+    ("feedback-standards", "wi-standards"),
+    ("plan-feedback-body", "plan-awi-body"),
+    ("process-feedbacks", "process-wi"),
     ("pick_feedbacks_model", "pick_wi_model"),
     ("pick-feedbacks", "pick-wi"),
+    ("tbd-format", "uwi-format"),
+    ("z-feedback.md", "z-awi.md"),
+    ("add-feedback", "add-awi"),
+    ("--feedback", "--awi"),
     ("通常型フィードバック", "通常型AWI"),
     ("計画型フィードバック", "計画型AWI"),
     ("通常フィードバック", "通常AWI"),
@@ -38,21 +43,81 @@ _REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("mq-show", "wi-show"),
     ("MQ_", "WI_"),
     ("フィードバック", "AWI"),
+)
+"""現行の呼称を持つ複合識別子と日本語の呼称の対応。長い語から順に適用する。
+
+`feedbacks-planner`のように現行の実体を持たない廃止済みの複合識別子はここへ載せない。
+`_IDENTIFIER_RE`の判定により概念語としての置換の対象にもならず、当時の名称のまま残る。
+"""
+
+_IDENTIFIER_RE = re.compile(r"[0-9A-Za-z_.:/-]+")
+"""識別子として一続きに扱う範囲。
+
+ハイフンを含む範囲は`feedbacks-planner`や`~/private-notes/feedback/inbox/`のように
+当時の実体を指す複合識別子とみなし、概念語の置換と修復のいずれも適用しない。
+"""
+
+_WORD_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("feedbacks", "awis"),
+    ("feedback", "awi"),
+    ("FEEDBACKS", "AWIS"),
     ("FEEDBACK", "AWI"),
     ("Feedback", "Awi"),
-    ("feedback", "awi"),
     ("TBD", "UWI"),
     ("Tbd", "Uwi"),
     ("tbd", "uwi"),
 )
-"""旧称と現行の呼称の対応。長い語から順に適用する。"""
+"""概念語として現れる旧称と現行の呼称の対応。複数形を単数形より先に適用する。"""
+
+_REPAIRS: tuple[tuple[str, str], ...] = (
+    ("process_awis_contract_test", "process_feedbacks_contract_test"),
+    ("process-wi-finish", "process-feedbacks-finish"),
+    ("process-wi-lane", "process-feedbacks-lane"),
+    ("process-wi-loop", "process-feedbacks-loop"),
+    ("_AWIS_PLANNER", "_FEEDBACKS_PLANNER"),
+    ("awi/filename", "feedback/filename"),
+)
+"""複合識別子を概念語として置き換えた時期の変換が生んだ誤った識別子と、当時の名称の対応。
+
+ハイフンを含まないため`_REPAIR_WORDS`の対象にならないものと、廃止済みの実体を指すために
+現行の呼称へ変換してはならないものを個別に列挙する。長い語から順に適用する。
+"""
+
+_REPAIR_WORDS: tuple[tuple[str, str], ...] = (
+    ("awis", "feedbacks"),
+    ("awi", "feedback"),
+    ("Awi", "Feedback"),
+    ("uwi", "tbd"),
+    ("Uwi", "Tbd"),
+)
+"""複合識別子の内側で当時の名称へ戻す語の対応。複数形を単数形より先に適用する。
+
+戻した名称は続く変換で改めて判定されるため、現行の実体を持つものは現行の呼称になる。
+"""
 
 _PROTECTED_TOKENS = (
-    "関連フィードバック",
-    "人間由来のフィードバック",
+    "agent-toolkit:plan-and-add-awi",
+    "process_feedbacks_contract_test",
+    "process-feedbacks-finish",
+    "process-feedbacks-lane",
+    "process-feedbacks-loop",
+    "agent-toolkit:add-awi",
     "エージェント由来のフィードバック",
+    "人間由来のフィードバック",
+    "_FEEDBACKS_PLANNER",
+    "feedback/filename",
+    "plan-and-add-awi",
+    "関連フィードバック",
+    "plan-awi-body",
+    "z-awi.md",
+    "add-awi",
+    "--awi",
 )
-"""保存済みの計画ファイルで読み取り互換の対象となり、置換しない文字列。"""
+"""変換も修復もしない文字列。長い語から順に退避する。
+
+保存済みの計画ファイルで読み取り互換の対象となる語、現行の実体を持たない廃止済みの識別子、
+および旧称を含まないため修復の対象にならない現行の識別子を含む。
+"""
 
 _PROTECTED_HEADINGS = ("ユーザーコメント", "回答")
 """ユーザーだけが書き込む節の見出し。配下の本文を置換しない。"""
@@ -97,16 +162,57 @@ def _protected_lines(text: str) -> set[int]:
     return protected
 
 
-def _replace_line(line: str) -> str:
-    """1行の旧称を現行の呼称へ置き換える。"""
+def _protected(line: str, replace: collections.abc.Callable[[str], str]) -> str:
+    """保護対象の文字列を退避したうえで`replace`を適用する。"""
     placeholders = {token: f"\x00{index}\x00" for index, token in enumerate(_PROTECTED_TOKENS)}
     for token, placeholder in placeholders.items():
         line = line.replace(token, placeholder)
-    for old, new in _REPLACEMENTS:
-        line = line.replace(old, new)
+    line = replace(line)
     for token, placeholder in placeholders.items():
         line = line.replace(placeholder, token)
     return line
+
+
+def _repair_identifier(match: re.Match[str]) -> str:
+    """複合識別子の内側にある誤った語を当時の名称へ戻す。"""
+    identifier = match.group()
+    if "-" not in identifier:
+        return identifier
+    for old, new in _REPAIR_WORDS:
+        identifier = identifier.replace(old, new)
+    return identifier
+
+
+def _repair_line(line: str) -> str:
+    """複合識別子を概念語として置き換えた時期の変換が生んだ誤った識別子を戻す。"""
+    for old, new in _REPAIRS:
+        line = line.replace(old, new)
+    return _IDENTIFIER_RE.sub(_repair_identifier, line)
+
+
+def _convert_identifier(match: re.Match[str]) -> str:
+    """複合識別子でない範囲の概念語を現行の呼称へ置き換える。"""
+    identifier = match.group()
+    if "-" in identifier:
+        return identifier
+    for old, new in _WORD_REPLACEMENTS:
+        identifier = identifier.replace(old, new)
+    return identifier
+
+
+def _convert_line(line: str) -> str:
+    """1行の旧称を現行の呼称へ置き換える。"""
+    for old, new in _REPLACEMENTS:
+        line = line.replace(old, new)
+    return _IDENTIFIER_RE.sub(_convert_identifier, line)
+
+
+def _replace_line(line: str) -> str:
+    """誤った識別子を戻してから、1行の旧称を現行の呼称へ置き換える。
+
+    修復で当時の名称へ戻した識別子が変換の対象になるため、保護対象の退避は各段で行う。
+    """
+    return _protected(_protected(line, _repair_line), _convert_line)
 
 
 def _converted_text(text: str) -> str:
@@ -118,7 +224,7 @@ def _converted_text(text: str) -> str:
 
 
 def _remaining_old_names(text: str) -> tuple[str, ...]:
-    """保護範囲外に残る旧称を返す。"""
+    """保護範囲外に残る旧称と、修復されなかった誤った識別子を返す。"""
     protected = _protected_lines(text)
     placeholders = {token: f"\x00{index}\x00" for index, token in enumerate(_PROTECTED_TOKENS)}
     remaining: list[str] = []
@@ -127,7 +233,14 @@ def _remaining_old_names(text: str) -> tuple[str, ...]:
             continue
         for token, placeholder in placeholders.items():
             line = line.replace(token, placeholder)
-        remaining.extend(old for old, _new in _REPLACEMENTS if old in line)
+        remaining.extend(old for old, _new in (*_REPLACEMENTS, *_REPAIRS) if old in line)
+        remaining.extend(
+            old
+            for identifier in _IDENTIFIER_RE.findall(line)
+            if "-" not in identifier
+            for old, _new in _WORD_REPLACEMENTS
+            if old in identifier
+        )
     return tuple(dict.fromkeys(remaining))
 
 
