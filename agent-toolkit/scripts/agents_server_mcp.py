@@ -396,7 +396,7 @@ class AgentsServerManager:
                     return self._pending_resume_status(pending)
                 session = self.sessions.get(session_id)
                 if session is not None:
-                    return session.public_status(include_result=session.result_available)
+                    return self._result_response(session)
                 return self._get_session(session_id).public_status()
         session = self._get_session(session_id)
         if not session.result_available:
@@ -411,13 +411,21 @@ class AgentsServerManager:
             except TimeoutError:
                 pass
         session = self._get_session(session_id)
-        return session.public_status(include_result=session.result_available)
+        return self._result_response(session)
+
+    @staticmethod
+    def _result_response(session: SessionState) -> dict[str, Any]:
+        """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。"""
+        response = session.public_status(include_result=session.result_available)
+        if "agent_message" in response:
+            session.result_delivered = True
+        return response
 
     def _pending_resume_status(self, pending: _PendingResume) -> dict[str, Any]:
         """進行中の再開操作を通常のrunning状態として射影する。"""
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
-            return session.public_status(include_result=session.result_available)
+            return self._result_response(session)
         result: dict[str, Any] = {
             "session_id": pending.state.session_id,
             "engine": pending.state.engine,
@@ -504,7 +512,7 @@ class AgentsServerManager:
             **session.public_status(include_result=session.result_available),
         }
         previous_result = pending.take_previous_result()
-        if previous_result is not None:
+        if previous_result:
             response["previous_result"] = previous_result
         return response
 
@@ -641,7 +649,9 @@ class AgentsServerManager:
                         session.reset_progress()
                     response: dict[str, Any] = {"delivery": delivery, **session.public_status()}
                     if delivery in REPLY_DELIVERIES:
-                        response["previous_result"] = result["previous_result"]
+                        previous_result = result["previous_result"]
+                        if previous_result:
+                            response["previous_result"] = previous_result
                     return response
         except TimeoutError as exc:
             raise TimeoutError(
@@ -665,7 +675,7 @@ class AgentsServerManager:
             except TimeoutError as exc:
                 raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
             if interrupt_requested:
-                response = session.public_status(include_result=True)
+                response = self._result_response(session)
                 response["kill_requested"] = True
                 return response
         else:
@@ -676,7 +686,7 @@ class AgentsServerManager:
         started_terminal = session.terminal
         requested_before_call = session.interrupt_requested
         if started_terminal:
-            response = session.public_status(include_result=True)
+            response = self._result_response(session)
             response["kill_requested"] = False
             return response
 
@@ -708,7 +718,7 @@ class AgentsServerManager:
                     except TimeoutError as exc:
                         raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
                     if session.terminal:
-                        response = session.public_status(include_result=True)
+                        response = self._result_response(session)
                         response["kill_requested"] = False
                         return response
                 session.interrupt_requested = True
@@ -735,7 +745,7 @@ class AgentsServerManager:
             session.turn_control_lock.release()
 
         if not requested:
-            response = session.public_status(include_result=True)
+            response = self._result_response(session)
             response["kill_requested"] = False
             return response
         if timeout > 0:
@@ -750,7 +760,7 @@ class AgentsServerManager:
                 raise TimeoutError(
                     f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate"
                 ) from exc
-        response = session.public_status(include_result=session.result_available)
+        response = self._result_response(session)
         response["kill_requested"] = True
         return response
 
@@ -950,7 +960,7 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`で配送結果を示し、保持中のreply開始時は直前結果を`previous_result`へ含める。
+    応答は`delivery`で配送結果を示す。直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
     `configuration changed: <session_id>`は工程別モデル設定の候補列が変わったことを示すため、検収済み状態を渡して新規起動する。
     `unknown session: <session_id>`だけが継続不能を示す。
     """

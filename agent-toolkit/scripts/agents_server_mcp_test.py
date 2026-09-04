@@ -215,6 +215,23 @@ class BlockingResumeBackend(FakeBackend):
             self.resume_finished.set()
 
 
+class FailedResumeBackend(FakeBackend):
+    """再開turnを結果本文付きの失敗として確定する偽バックエンド。"""
+
+    async def resume(
+        self,
+        session_id: str,
+        prompt: state.ResumePrompt,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        **kwargs: Any,
+    ) -> subject.SessionState:
+        session = await super().resume(session_id, prompt, cwd, model, effort, **kwargs)
+        _complete(session, message="reply失敗結果", error={"message": "reply failed"})
+        return session
+
+
 class ConcurrentOwnerGoneBackend(FakeBackend):
     """2件の継続要求へ同時に所有主体終了を返す偽バックエンド。"""
 
@@ -1214,6 +1231,92 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
         "agent_message": "直前の結果",
     }
     _assert_no_forbidden_keys(response)
+
+
+@pytest.mark.asyncio
+async def test_send_message_omits_previous_result_after_wait_returned_result(tmp_path: pathlib.Path) -> None:
+    """waitで回収した結果本文を継続入力の応答へ再送しない。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="回収済み結果")
+    manager.sessions[session.session_id] = session
+
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "回収済み結果"
+    response = await manager.send_message(session.session_id, "続行")
+
+    assert "previous_result" not in response
+
+
+@pytest.mark.asyncio
+async def test_send_message_omits_previous_result_after_kill_returned_result(tmp_path: pathlib.Path) -> None:
+    """killで回収した結果本文を継続入力の応答へ再送しない。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="回収済み結果")
+    manager.sessions[session.session_id] = session
+
+    assert (await manager.kill(session.session_id, timeout=0))["agent_message"] == "回収済み結果"
+    response = await manager.send_message(session.session_id, "続行")
+
+    assert "previous_result" not in response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["codex", "claude"])
+async def test_send_message_keeps_previous_result_for_unwaited_second_turn(
+    engine: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """前turnの回収状態を次turnへ持ち越さず、未回収結果を返す。"""
+    manager, _ = _manager_with_fake(engine)
+    session = subject.SessionState("thread-1", str(tmp_path), engine=engine)
+    _complete(session, message="結果A")
+    manager.sessions[session.session_id] = session
+
+    await manager.wait(session.session_id, timeout=0)
+    first = await manager.send_message(session.session_id, "1回目")
+    assert "previous_result" not in first
+
+    _complete(session, message="結果B")
+    second = await manager.send_message(session.session_id, "2回目")
+    assert second["previous_result"]["agent_message"] == "結果B"
+
+
+@pytest.mark.asyncio
+async def test_send_message_keeps_previous_result_after_wait_without_result(tmp_path: pathlib.Path) -> None:
+    """結果本文を含まないwaitは後続の終端結果を回収済みにしない。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+
+    assert "agent_message" not in await manager.wait(session.session_id, timeout=0)
+    _complete(session, message="未回収結果")
+    response = await manager.send_message(session.session_id, "続行")
+
+    assert response["previous_result"]["agent_message"] == "未回収結果"
+
+
+@pytest.mark.asyncio
+async def test_send_message_keeps_previous_result_after_reply_failed_response(tmp_path: pathlib.Path) -> None:
+    """send_messageのreply_failed応答だけでは結果本文を回収済みにしない。"""
+    manager = subject.AgentsServerManager()
+    backend = FailedResumeBackend(manager.sessions, "codex")
+    manager._codex = backend
+    session_id = "thread-1"
+    manager.expired_sessions[session_id] = state.SessionResumeState(
+        session_id=session_id,
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="codex",
+    )
+
+    first = await manager.send_message(session_id, "1回目")
+    assert first["delivery"] == "reply_failed"
+    assert first["agent_message"] == "reply失敗結果"
+
+    second = await manager.send_message(session_id, "2回目")
+    assert second["previous_result"]["agent_message"] == "reply失敗結果"
 
 
 @pytest.mark.asyncio
@@ -3018,8 +3121,8 @@ async def test_claude_server_close_disconnects_and_retains_result(
 
 
 @pytest.mark.asyncio
-async def test_claude_finished_task_send_message_resumes_with_retained_result(tmp_path: pathlib.Path) -> None:
-    """所有タスク終了後の継続入力は保持済み結果を退避して会話を再開する。"""
+async def test_claude_finished_task_send_message_omits_previous_result_after_wait(tmp_path: pathlib.Path) -> None:
+    """所有タスク終了後もwaitで回収済みの結果本文を再送しない。"""
     manager = subject.AgentsServerManager()
     clients = [
         FailingClaudeClient([]),
@@ -3044,6 +3147,45 @@ async def test_claude_finished_task_send_message_resumes_with_retained_result(tm
 
     result = await manager.wait(session.session_id, timeout=0)
     assert result["error"] == {"message": "stream failed"}
+    response = await manager.send_message(session.session_id, "続行")
+
+    assert response == {
+        "delivery": "reply_started",
+        "session_id": "claude-failed",
+        "engine": "claude",
+        "status": "running",
+        "progress": "",
+    }
+    assert not manager.expired_sessions
+    assert manager.sessions[session.session_id].status == "running"
+    await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_finished_task_send_message_keeps_previous_result_without_wait(tmp_path: pathlib.Path) -> None:
+    """所有タスク終了後も未回収の結果本文を退避して会話を再開する。"""
+    manager = subject.AgentsServerManager()
+    clients = [
+        FailingClaudeClient([]),
+        FakeClaudeClient([[SystemMessage("claude-failed")]]),
+    ]
+
+    def client_factory(_options: Any) -> FakeClaudeClient:
+        return clients.pop(0)
+
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        manager._condition,
+        client_factory=client_factory,
+        expire_session=manager._expire_session,
+    )
+    manager._claude = backend
+    session = await backend.start("調査", str(tmp_path))
+    for _ in range(20):
+        if session.result_available and session.session_id not in backend._channels:
+            break
+        await asyncio.sleep(0.01)
+
     response = await manager.send_message(session.session_id, "続行")
 
     assert response == {

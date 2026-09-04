@@ -190,6 +190,7 @@ class SessionState:
     diff_changed: bool = False
     error: Any = None
     agent_message: str = ""
+    result_delivered: bool = False
     protocol_warnings: list[str] = dataclasses.field(default_factory=list)
     reply_attempted: bool = False
     reply_turn_started: bool = False
@@ -262,6 +263,8 @@ class SessionState:
 
     def previous_result(self) -> dict[str, Any]:
         """継続入力の応答へ退避する直前turnの結果を返す。"""
+        if self.result_delivered:
+            return {}
         result: dict[str, Any] = {
             "session_id": self.session_id,
             "engine": self.engine,
@@ -311,6 +314,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.diff_changed = False
     session.error = None
     session.agent_message = ""
+    session.result_delivered = False
     session.protocol_warnings = []
     session.reply_retryable = False
     session.turn_start_sent = False
