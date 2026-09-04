@@ -1,4 +1,4 @@
-"""計画ファイルのcheckout・commitと旧保存先からの移行を提供するCLI補助。
+"""計画ファイルと独立CI実装レビュー表のcheckout・commit、旧保存先からの移行を提供するCLI補助。
 
 checkout記録は取得からcommit成功まで保持し、取得元と取得時点の内容を更新時の
 競合検出に使う。commit又はpush失敗後の再実行と、作業バンドルを削除して取得を
@@ -34,6 +34,8 @@ _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]
 _HEADING_RE = re.compile(r"^\s*(?P<marks>#{1,6})\s+(?P<title>.*?)\s*#*\s*$")
 _PATH_TOKEN_CHARACTER_CLASS = r"[A-Za-z0-9_./\\~+%@-]"
 _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaround-check.md", ".codex.log")
+_CI_REVIEW_DIRECTORY = pathlib.Path("ci")
+_CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{40}\.exec-review\.tsv$")
 _SAVED_BUNDLE_CONFLICT_MESSAGE = (
     "保存先に内容の異なる計画ファイルがあります: {destination}。"
     "保存済みの計画を更新する場合は、作業側のファイルを作業root外へ退避し、"
@@ -55,7 +57,8 @@ def build_parser(parser) -> None:
         metavar="PLAN_FILE",
         help=(
             "計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
-            "または保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md。"
+            "保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md、または"
+            "ci-{原因commit完全OID}.exec-review.tsv。"
         ),
     )
     commit_parser.add_argument(
@@ -67,7 +70,7 @@ def build_parser(parser) -> None:
     checkout_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
-        help="plans rootからの相対メイン計画パス。",
+        help=("plans rootからの相対メイン計画パス、またはci/ci-{原因commit完全OID}.exec-review.tsv。"),
     )
     _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
     _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
@@ -257,6 +260,35 @@ def _validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
             raise _common.WebInputError(str(canonical_error)) from migrated_error
 
 
+def _validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path:
+    """計画作業root直下の独立CI実装レビュー表名を返す。"""
+    if "\0" in review_table or "\\" in review_table or "$(" in review_table:
+        raise _common.WebInputError("独立CI実装レビュー表のパスが不正です")
+    relative = pathlib.Path(review_table)
+    if relative.parent != pathlib.Path() or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
+        raise _common.WebInputError("独立CI実装レビュー表はci-{原因commit完全OID}.exec-review.tsvで指定してください")
+    return relative
+
+
+def _validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
+    """Plans root相対の独立CI実装レビュー表パスを返す。"""
+    if "\0" in review_table or "\\" in review_table or "$(" in review_table:
+        raise _common.WebInputError("独立CI実装レビュー表のパスが不正です")
+    relative = pathlib.Path(review_table)
+    if relative.parent != _CI_REVIEW_DIRECTORY or _CI_REVIEW_NAME_RE.fullmatch(relative.name) is None:
+        raise _common.WebInputError(
+            "保存済みの独立CI実装レビュー表はci/ci-{原因commit完全OID}.exec-review.tsvで指定してください"
+        )
+    return relative
+
+
+def _validate_saved_checkout_relative_path(path: str) -> pathlib.Path:
+    """checkout記録が受理する計画又は独立CI実装レビュー表の相対パスを返す。"""
+    if path.endswith(".exec-review.tsv"):
+        return _validate_saved_ci_review_relative_path(path)
+    return _validate_saved_plan_relative_path(path)
+
+
 def _read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, dict[str, bytes]] | None:
     """checkout記録を検証して読み込む。"""
     root = _checkout_record_root(relative_main)
@@ -266,7 +298,7 @@ def _read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, di
         raise _common.WebInputError(f"計画の取得記録が不正です: {root}")
     try:
         raw_metadata = json.loads((root / "meta.json").read_text(encoding="utf-8"))
-        recorded_relative = _validate_saved_plan_relative_path(raw_metadata["relative_main"])
+        recorded_relative = _validate_saved_checkout_relative_path(raw_metadata["relative_main"])
     except (OSError, KeyError, TypeError, _common.WebInputError, json.JSONDecodeError) as error:
         raise _common.WebInputError(f"計画の取得記録を読み取れません: {root}") from error
     if recorded_relative.stem != relative_main.stem:
@@ -329,6 +361,8 @@ def checkout_plan(
     home: pathlib.Path | str | None = None,
 ) -> tuple[pathlib.Path, ...]:
     """保存済み計画バンドルを作業rootへ取得し、取得時点と所有セッションを記録する。"""
+    if plan_file.endswith(".exec-review.tsv"):
+        return checkout_ci_review(private_notes, plan_file, home=home)
     relative_main = _validate_saved_plan_relative_path(plan_file)
     if _checkout_record_root(relative_main).exists():
         raise _common.WebInputError(f"同じ計画を取得済みです: {relative_main}")
@@ -356,6 +390,35 @@ def checkout_plan(
         raise
     _plan_file.record_plan_owner(working_root / relative_main.name)
     return destinations
+
+
+def checkout_ci_review(
+    private_notes: pathlib.Path,
+    review_table: str,
+    *,
+    home: pathlib.Path | str | None = None,
+) -> tuple[pathlib.Path, ...]:
+    """保存済みの独立CI実装レビュー表を計画作業rootへ取得する。"""
+    relative = _validate_saved_ci_review_relative_path(review_table)
+    if _checkout_record_root(relative).exists():
+        raise _common.WebInputError(f"同じ独立CI実装レビュー表を取得済みです: {relative}")
+    saved = _plan_file.new_plans_root(private_notes) / relative
+    if saved.is_symlink() or not saved.is_file():
+        raise _common.WebInputError(f"指定した独立CI実装レビュー表が見つかりません: {relative}")
+    working = _plan_file.working_plans_root(home) / relative.name
+    if working.exists():
+        raise _common.WebInputError(f"作業rootに同名ファイルがあります: {working}")
+    content = saved.read_bytes()
+    working.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(working, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(content)
+        _write_checkout_record(relative, {relative.name: content})
+    except Exception:
+        working.unlink(missing_ok=True)
+        raise
+    return (working,)
 
 
 def _copy_working_bundle(
@@ -569,6 +632,14 @@ def commit_plan(
 
     作業バンドルを回収する時点で当該計画の所有記録も回収し、計画作業rootへ記録だけが残らないようにする。
     """
+    if plan_file.endswith(".exec-review.tsv"):
+        return commit_ci_review(
+            private_notes,
+            plan_file,
+            home=home,
+            lock_timeout=lock_timeout,
+            skip_push=skip_push,
+        )
     working_relative: pathlib.Path | None = None
     try:
         working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
@@ -649,6 +720,83 @@ def commit_plan(
             _remove_finalized_working_bundle(working_bundle, snapshots, bundle, relative_main, home)
             _plan_file.remove_owner_record(working_main)
     return {"plan_file": relative_main.as_posix(), "paths": relative_paths, "message": message}
+
+
+def commit_ci_review(
+    private_notes: pathlib.Path,
+    review_table: str,
+    *,
+    home: pathlib.Path | str | None = None,
+    lock_timeout: float = -1,
+    skip_push: bool = False,
+) -> dict[str, object]:
+    """独立CI実装レビュー表を対象限定でcommitし、成功後に作業側を回収する。"""
+    try:
+        working_relative = _validate_working_ci_review_relative_path(review_table)
+        requested_relative = working_relative
+    except _common.WebInputError as working_error:
+        try:
+            saved_relative = _validate_saved_ci_review_relative_path(review_table)
+        except _common.WebInputError as saved_error:
+            raise working_error from saved_error
+        requested_relative = saved_relative
+        working_relative = pathlib.Path(saved_relative.name)
+    checkout_record = _read_checkout_record(requested_relative)
+    recorded_contents: dict[str, bytes] = {}
+    relative = _CI_REVIEW_DIRECTORY / working_relative.name
+    if checkout_record is not None:
+        relative, recorded_contents = checkout_record
+    working = _plan_file.working_plans_root(home) / working_relative.name
+    if checkout_record is not None and not working.exists():
+        _remove_checkout_record(requested_relative)
+        return {"plan_file": relative.as_posix(), "paths": (), "message": "", "kind": "ci-review"}
+    if working.is_symlink() or not working.is_file():
+        raise _common.WebInputError(f"指定した独立CI実装レビュー表が見つかりません: {working_relative}")
+    snapshots = _working_snapshots((working,))
+    working_contents = {working.name: snapshots[working][1]}
+    with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
+        saved = _plan_file.new_plans_root(private_notes) / relative
+        if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
+            _git_command.run(["fetch"], cwd=private_notes, check=True)
+        elif not saved.exists():
+            if not skip_push:
+                _atk_git_sync.push_pending_commits(private_notes)
+            _atk_git_sync.pull(private_notes)
+        if saved.exists() and (saved.is_symlink() or not saved.is_file()):
+            raise _common.WebInputError(f"保存先の独立CI実装レビュー表が通常ファイルではありません: {saved}")
+        saved_contents = {saved.name: saved.read_bytes()} if saved.is_file() else {}
+        if checkout_record is not None:
+            remote_contents = (
+                _bundle_contents_at_ref(private_notes, relative, "@{u}")
+                if _atk_git_sync.has_remote(private_notes)
+                else saved_contents
+            )
+            if saved_contents not in (recorded_contents, working_contents) or remote_contents not in (
+                recorded_contents,
+                working_contents,
+            ):
+                raise _common.WebInputError(f"取得後に保存元の独立CI実装レビュー表が変更されています: {relative}")
+        elif saved_contents and saved_contents != working_contents:
+            raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=saved))
+        if saved_contents != working_contents:
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            if saved_contents:
+                saved.write_bytes(working_contents[working.name])
+            else:
+                descriptor = os.open(saved, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(working_contents[working.name])
+        if saved.read_bytes() != working_contents[working.name]:
+            raise _common.WebInputError(f"保存した独立CI実装レビュー表の読戻し内容が一致しません: {saved}")
+        relative_path = _as_relative_notes_path(saved, private_notes)
+        message = f"chore: update CI review {working.stem}"
+        _atk_git_sync.commit_and_push(private_notes, message, (relative_path,), skip_push=skip_push)
+        if not skip_push and _atk_git_sync.has_remote(private_notes) and not _atk_git_sync.remote_contains_head(private_notes):
+            raise _common.WebInputError("独立CI実装レビュー表のcommitがremote branchへ到達したことを確認できません")
+        _remove_checked_out_working_bundle((working,), snapshots, working_relative)
+        if checkout_record is not None:
+            _remove_checkout_record(requested_relative)
+    return {"plan_file": relative.as_posix(), "paths": (relative_path,), "message": message, "kind": "ci-review"}
 
 
 def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str, object], ...]:
@@ -1221,7 +1369,8 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     if args.plans_subcommand == "commit":
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
         action = "commitしました" if args.skip_push else "commit・pushしました"
-        print(f"計画bundleを保存rootへ移動して{action}: {result['plan_file']}")
+        subject = "独立CI実装レビュー表" if result.get("kind") == "ci-review" else "計画bundle"
+        print(f"{subject}を保存rootへ移動して{action}: {result['plan_file']}")
         return 0
     if args.plans_subcommand == "list":
         for entry in list_working_plans(home):
@@ -1242,5 +1391,6 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
 # テスト・既存呼び出し向けの短い別名。
 commit = commit_plan
 checkout = checkout_plan
+checkout_review = checkout_ci_review
 migrate = migrate_plans
 rewrite_references = rewrite_plan_references

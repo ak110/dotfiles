@@ -115,6 +115,33 @@ class TestListSingle:
         assert "blocked_reason=cooldown-until cooldown_until=2999-01-01T00:00:00+00:00" in output
         assert "blocked_reason=invalid-cooldown" in output
 
+    def test_working_plan_without_saved_copy_is_blocked(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """作業rootにだけ実体があるplan_fileをmissing-plan-fileとして表示する。"""
+        notes = _setup_notes(tmp_path)
+        entry = _write_awi_file(notes, "plan.md")
+        working = pathlib.Path.home() / ".claude/plans/30-working-plan-a1b2.md"
+        working.parent.mkdir(parents=True)
+        working.write_text("# 計画\n", encoding="utf-8")
+        entry.write_text(
+            entry.read_text(encoding="utf-8").replace(
+                "type: awi\n",
+                "type: awi\nplan_file: $(atk config get private_notes)/plans/2026/08/30-working-plan-a1b2.md\n",
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert "blocked_reason=missing-plan-file" in capsys.readouterr().out
+
 
 class TestLegacyReservationMigration:
     """通常読取前の旧予約移行と軽量読取での延期を検証する。"""

@@ -29,7 +29,9 @@ SHELL_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
 指示された操作だけを実行し、指示にない操作を追加しない。
 コマンドの生出力を呼び出し元へ転記せず、終了状態、警告、依頼で指定された値、及び後続の判断に必要な要約を報告する。
 失敗原因の特定に必要な行だけを原文のまま添える。
-コマンドが失敗した場合は出力をそのまま報告し、独自の回避策を試みない。"""
+コマンドが失敗した場合は出力をそのまま報告し、独自の回避策を試みない。
+実行したコマンドが実行環境の判断で背景実行へ移行した場合は、移行の通知を結果として報告しない。
+起動結果が返す出力ファイルを読み、終了状態を確定してから報告する。"""
 ModelCandidate = tuple[str, str, str]
 LaunchKind = Literal["delegate", "explore", "shell"]
 # 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
@@ -38,6 +40,13 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "explore": EXPLORE_SYSTEM_PROMPT,
     "shell": SHELL_SYSTEM_PROMPT,
 }
+AUTO_RESUME_NOTICE = (
+    "この実行経路は、あなたが起動した委譲先（サブエージェント）の完了通知により、"
+    "同じsessionを一度だけ自動的に再開する。\n"
+    "当該委譲先の完了を待つ場合は`待機中: <待機対象>`の1行だけを出力して当該ターンを終え、"
+    "再開したターンで所定の返却形式を返す。\n"
+    "背景ジョブはこの自動再開の対象ではない。背景ジョブの終了状態は同じターンの中で確定してから報告する。"
+)
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
 
@@ -181,6 +190,7 @@ class SessionState:
     diff_changed: bool = False
     error: Any = None
     agent_message: str = ""
+    result_delivered: bool = False
     protocol_warnings: list[str] = dataclasses.field(default_factory=list)
     reply_attempted: bool = False
     reply_turn_started: bool = False
@@ -253,6 +263,8 @@ class SessionState:
 
     def previous_result(self) -> dict[str, Any]:
         """継続入力の応答へ退避する直前turnの結果を返す。"""
+        if self.result_delivered:
+            return {}
         result: dict[str, Any] = {
             "session_id": self.session_id,
             "engine": self.engine,
@@ -302,6 +314,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.diff_changed = False
     session.error = None
     session.agent_message = ""
+    session.result_delivered = False
     session.protocol_warnings = []
     session.reply_retryable = False
     session.turn_start_sent = False

@@ -67,6 +67,16 @@ def _finish_entry(repo: pathlib.Path, timestamp: str, *, note: str | None = None
     _git(repo, "commit", "-m", "chore: process 1 entry (adopted)")
 
 
+def _create_matching_tree_divergence(local: pathlib.Path, peer: pathlib.Path) -> str:
+    """異なるcommitで同じ木を持つ分岐を作成する。"""
+    for repo, message in ((local, "local equivalent"), (peer, "peer equivalent")):
+        (repo / "equivalent.txt").write_text("same\n", encoding="utf-8")
+        _git(repo, "add", "equivalent.txt")
+        _git(repo, "commit", "-m", message)
+    _git(peer, "push")
+    return _git(peer, "rev-parse", "HEAD").stdout.strip()
+
+
 def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -173,6 +183,8 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
 
     def result_runner(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
         del cwd
+        if args == ["diff", "--quiet", "HEAD", "@{u}"]:
+            return subprocess.CompletedProcess(["git", *args], 1, "", "")
         if args == ["status", "--porcelain"]:
             return subprocess.CompletedProcess(["git", *args], 0, " M unrelated.txt\n", "")
         return subprocess.CompletedProcess(["git", *args], 0, "", "")
@@ -184,6 +196,35 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐しています" in stderr
     assert stderr.endswith(_atk_git_sync.PUSH_DEFERRED_MESSAGE + "\n")
+
+
+@pytest.mark.parametrize("operation", ["pull", "push"])
+@pytest.mark.parametrize("dirty", [False, True])
+def test_sync_recovers_matching_tree_divergence(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+    dirty: bool,
+) -> None:
+    """木が一致する分岐は未コミット差分を保ってpull・pushできる。"""
+    local, peer = _init_diverged_mq_repos(tmp_path)
+    upstream = _create_matching_tree_divergence(local, peer)
+    if dirty:
+        source = local / "processing" / "20260831-101752-001.md"
+        source.write_text(source.read_text(encoding="utf-8") + "\nstaged\n", encoding="utf-8")
+        _git(local, "add", str(source.relative_to(local)))
+        (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+    status_before = _git(local, "status", "--porcelain").stdout
+
+    with _atk_git_sync.repo_lock(local):
+        if operation == "pull":
+            _atk_wi_common.pull(local)
+        else:
+            _atk_git_sync.push_pending_commits(local)
+
+    assert _git(local, "rev-parse", "HEAD").stdout.strip() == upstream
+    assert _git(local, "status", "--porcelain").stdout == status_before
+    assert "HEADとupstreamの内容が一致" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("operation", ["pull", "push"])
@@ -255,6 +296,8 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     assert not _atk_git_sync.is_rebase_in_progress(local)
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐しています（ローカルのみ1件、upstreamのみ1件）" in stderr
+    assert "local.txt" in stderr
+    assert "remote.txt" in stderr
     assert "git rebase @{u}" in stderr
     assert "git rebase --skip" in stderr
     assert "git rebase --abort" in stderr

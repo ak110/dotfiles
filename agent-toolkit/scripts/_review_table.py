@@ -14,9 +14,8 @@ import contextlib
 import hashlib
 import json
 import re
-import typing
 import unicodedata
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import _atk_help
@@ -44,7 +43,8 @@ _RECOVERY_GUIDANCE = (
     "保存済み7列形式はlevelを空として読み込み、更新時に8列形式へ書き戻す"
 )
 _INPUT_GUIDANCE = (
-    "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
+    "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`、または原因commit完全OID由来の"
+    "`ci-<OID>.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
     "標準入力、パイプ及びプロセス置換は受理しない"
 )
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
@@ -337,34 +337,6 @@ def show(path: str | Path, track: str | None = None) -> int:
     return 0
 
 
-class _GuidedSubcommandParser(argparse.ArgumentParser):
-    """解釈できない引数を、当該サブコマンドの受理形式を示して拒否するサブパーサー。
-
-    `argparse`の既定では、サブコマンドが解釈できない引数はトップレベルの
-    `unrecognized arguments`として報告され、当該サブコマンドのusageも受理形式も表示されない。
-    受理しない名前を個別に登録する方式では、未登録の名前をトップレベルのエラーとして報告するため、
-    残余引数を一律に捕捉して受理形式を返す。
-    """
-
-    @typing.override
-    def parse_known_args(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # ty: ignore[invalid-method-override]
-        self,
-        args: Sequence[str] | None = None,
-        namespace: argparse.Namespace | None = None,
-    ) -> tuple[argparse.Namespace, list[str]]:
-        parsed, remaining = super().parse_known_args(args, namespace)
-        assert parsed is not None
-        if remaining:
-            self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
-        return parsed, remaining
-
-    def _accepted_form(self) -> str:
-        """当該サブコマンドが受理するオプションと表のパスの指定方法を説明する。"""
-        options = sorted(option for option in self._option_string_actions if option.startswith("--") and option != "--help")
-        accepted = "・".join(options) if options else "なし"
-        return f"{self.prog}が受理するオプションは{accepted}で、表のパスは位置引数で指定する"
-
-
 def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
     """セル本文を受け取るオプションと、同じ本文をファイルから読むオプションを対で登録する。
 
@@ -421,10 +393,12 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         dest="review_table_subcommand",
         required=False,
         show_help_when_missing=True,
-        parser_class=_GuidedSubcommandParser,
     )
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
-    path_help = "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`を指定する。"
+    path_help = (
+        "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か"
+        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
+    )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk review-table add"])
     add_command_parser.add_argument("path", help=path_help)

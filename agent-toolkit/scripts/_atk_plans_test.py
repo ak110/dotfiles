@@ -11,6 +11,7 @@ import _atk_git_sync
 import _atk_plans
 import _atk_wi_common as _common
 import _plan_file
+import _review_table
 import atk
 import pytest
 
@@ -166,6 +167,118 @@ def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) 
     recorded_relative, snapshots = record
     assert recorded_relative == relative
     assert snapshots == {detail.name: detail.read_bytes(), main.name: main.read_bytes()}
+
+
+def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
+    """計画契約なしの再帰的CI失敗で同じ表を取得、更新、再保存できる。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "private-notes.git"
+    clone = tmp_path / "private-notes-clone"
+    _init_remote_notes(notes, remote)
+    first_cause_oid = "0123456789abcdef0123456789abcdef01234567"
+    second_cause_oid = "89abcdef0123456789abcdef0123456789abcdef"
+    name = f"ci-{first_cause_oid}.exec-review.tsv"
+    working = _plan_file.working_plans_root(home) / name
+    working.parent.mkdir(parents=True)
+    _review_table.init(working)
+    _review_table.add(working, "1", "implementation-review", "sample.py:1", "初回指摘", "仕様")
+
+    first = _atk_plans.commit_plan(notes, name, home=home)
+
+    saved_relative = pathlib.Path("ci") / name
+    saved = _plan_file.new_plans_root(notes) / saved_relative
+    assert first["plan_file"] == saved_relative.as_posix()
+    assert first["kind"] == "ci-review"
+    assert saved.is_file()
+    assert not working.exists()
+    assert _git(notes, "status", "--short").stdout == ""
+    _clone_notes(remote, clone)
+    assert (clone / "plans" / saved_relative).read_bytes() == saved.read_bytes()
+
+    assert _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home) == (working,)
+    assert _review_table.validate(working, require_responses=False) == 0
+    _review_table.respond(
+        working,
+        "1",
+        "implementation-review",
+        "sample.py:1",
+        "初回指摘",
+        "yes",
+        "修正済み",
+        "",
+    )
+    _review_table.add(
+        working,
+        "2",
+        "implementation-review",
+        "sample.py:2",
+        f"再帰失敗の指摘（原因commit: {second_cause_oid}）",
+        "仕様",
+    )
+    _review_table.respond(
+        working,
+        "2",
+        "implementation-review",
+        "sample.py:2",
+        f"再帰失敗の指摘（原因commit: {second_cause_oid}）",
+        "yes",
+        "2回目の修正済み",
+        "",
+    )
+    assert _review_table.validate(working) == 0
+
+    second = _atk_plans.commit_plan(notes, name, home=home)
+
+    assert second["plan_file"] == saved_relative.as_posix()
+    assert not working.exists()
+    assert _atk_plans._read_checkout_record(pathlib.Path(name)) is None  # pylint: disable=protected-access
+    assert _git(notes, "status", "--short").stdout == ""
+    _git(clone, "pull", "--ff-only")
+    assert (clone / "plans" / saved_relative).read_bytes() == saved.read_bytes()
+    assert saved.read_text().count("implementation-review") == 2
+    assert saved.name == f"ci-{first_cause_oid}.exec-review.tsv"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ci-0123456789abcdef.exec-review.tsv",
+        "ci-0123456789ABCDEF0123456789ABCDEF01234567.exec-review.tsv",
+        "other-0123456789abcdef0123456789abcdef01234567.exec-review.tsv",
+        "nested/ci-0123456789abcdef0123456789abcdef01234567.exec-review.tsv",
+    ],
+)
+def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Path, name: str) -> None:
+    """完全OIDから一意に決まらない独立表名を拒否する。"""
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+
+    with pytest.raises(_common.WebInputError):
+        _atk_plans.commit_plan(notes, name, home=tmp_path / "home")
+
+
+def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.Path) -> None:
+    """独立表の取得後に保存元が変わった場合は作業側を保持して拒否する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    name = "ci-fedcba9876543210fedcba9876543210fedcba98.exec-review.tsv"
+    saved_relative = pathlib.Path("ci") / name
+    saved = _plan_file.new_plans_root(notes) / saved_relative
+    saved.parent.mkdir(parents=True)
+    _review_table.init(saved)
+    _git(notes, "add", saved.relative_to(notes).as_posix())
+    _git(notes, "commit", "-m", "add review")
+    (working,) = _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home)
+    _review_table.add(working, "1", "implementation-review", "sample.py:1", "作業側", "詳細")
+    _review_table.add(saved, "1", "implementation-review", "sample.py:2", "保存側", "詳細")
+
+    with pytest.raises(_common.WebInputError, match="取得後に保存元"):
+        _atk_plans.commit_plan(notes, name, home=home)
+
+    assert working.is_file()
+    assert _atk_plans._read_checkout_record(pathlib.Path(name)) is not None  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("conflict", ["working", "record", "missing-main"])

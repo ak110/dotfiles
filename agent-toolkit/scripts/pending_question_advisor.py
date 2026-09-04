@@ -11,9 +11,12 @@
 記録の引用と実行例の中の疑問符は遮断の対象にならない。
 判断を求めていない応答が遮断された場合は、当該問いかけを本文から除いて応答を
 書き直すことで通過する。
+
+委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、環境変数による除外が必要である。
 """
 
 import json
+import os
 import re
 from collections.abc import Iterator
 
@@ -23,6 +26,7 @@ from _stop_gate import append_stop_log
 from _stop_gate import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "agent-toolkit/pending_question_advisor"
+_ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
@@ -116,32 +120,42 @@ def _latest_response(transcript_path: str) -> tuple[str, bool]:
     return ("\n".join(texts), used_ask_user_question)
 
 
-def main(payload_text: str) -> int:
-    """地の文の問いかけでターンを終えようとした応答を遮断する。"""
-    resolved = _parse_stop_session(payload_text, _approve)
+def evaluate(payload_text: str) -> tuple[str, str]:
+    """問いかけの判定結果と、遮断する場合の理由を返す。"""
+    resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         append_stop_log("", "approve_invalid_payload", {})
-        return 0
+        return "approve", ""
     session_id, payload = resolved
+
+    if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
+        append_stop_log(session_id, "approve_delegated_session", {})
+        return "approve", ""
 
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
-        _approve()
-        return 0
+        return "approve", ""
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     text, used_ask_user_question = _latest_response(transcript_path)
     if used_ask_user_question:
         append_stop_log(session_id, "approve_ask_user_question_used", {})
-        _approve()
-        return 0
+        return "approve", ""
     if not _asks_user(_plain_text(text)):
         append_stop_log(session_id, "approve_no_pending_question", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     reason = _block_notice(BLOCK_BODY, fix=_BLOCK_FIX)
     append_stop_log(session_id, "block_pending_question", {})
-    print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+    return "block", reason
+
+
+def main(payload_text: str) -> int:
+    """地の文の問いかけでターンを終えようとした応答を遮断する。"""
+    decision, body = evaluate(payload_text)
+    if decision == "block":
+        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
+    else:
+        _approve()
     return 0

@@ -746,9 +746,39 @@ def test_convert_to_plan_help_describes_portable_and_legacy_paths(capsys: pytest
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
+    normalized_output = " ".join(output.split())
     assert "--plan-file PLAN_FILE" in output
     assert "$(atk config get private_notes)/plans/から始まるportable値" in output
     assert "既存の絶対パスも読み取り互換として受理する" in output
+    assert "保存先の実体の実在を検証する" in output
+    assert "atk plans commit" in normalized_output
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("add", "保存先の実体の実在を検証する"),
+        ("edit", "保存先に実体を持つ計画だけを受理する"),
+    ],
+)
+def test_plan_file_help_describes_saved_copy_requirement(
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    expected: str,
+) -> None:
+    """plan_fileを記録する公開helpが保存先の受理条件を案内する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["wi", command, "--help"])
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    normalized_output = " ".join(output.split())
+    assert "--plan-file" in output
+    assert expected in output
+    if command == "add":
+        assert "atk plans commit" in normalized_output
 
 
 def test_convert_to_plan_parser_accepts_multiple_filenames_and_skip_push() -> None:

@@ -55,9 +55,12 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `plan_review_model` | 計画レビュー | 計画レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及び即時対応の修正 | 引継ぎ修正、レビュー修正、CI失敗修正及び即時対応を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及び即時対応の修正 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正及び即時対応を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実装レビュー | 実装レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
+
+`execute_fast_model`と`execute_model`のどちらを初回実装へ用いるかは、計画ファイル（詳細）の`### 実装担当のモデル区分`の`判定`から確定する。
+`判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/implementation.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試し、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
@@ -88,9 +91,9 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    engine、model及びeffortの実効値はサーバーが保持し、継続時に、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補と一致するかをサーバーが判定する。
    一致しない場合は`send_message`が`configuration changed: <session_id>`を返すため、呼び出し側は検収済み状態を渡して新規起動する。
    この判定により、設定が変わらない限り可用性の失敗で後続候補へ切り替わった担当へは継続を送り、保存済み設定又は環境変数オーバーライドで候補列の内容若しくは順序が変わった場合は新規起動する。
-   fast担当へfix担当の作業を移す場合は、`execute_model`の`model_type`を`execute_fast_model`で起動した現在のthreadの`model_type`と比較し、
+   fast担当へfix担当の作業を移す場合は、`execute_model`の`model_type`を現在のthreadの起動に用いた`model_type`と比較し、
    継続本文へ担当種別を`fix担当`へ切り替える旨と、エスカレーション内容かレビュー指摘の所在を含める。
-   fix担当が完了した後に残りの実装単位へ進む場合は、最初の単位の開始前に保持した`execute_fast_model`の`model_type`を現在のfix担当threadの`model_type`と比較する。
+   fix担当が完了した後に残りの実装単位へ進む場合は、最初の単位の開始前に保持した`model_type`を現在のfix担当threadの`model_type`と比較する。
    一致する場合は継続本文へ担当種別を`fast担当`へ戻す旨と次の実装単位を含める。一致しない場合はfix担当を終端し、検収済みの先行commitと残りの実装単位を新規fast担当へ渡す。
    実際の起動routeが`agents_server`の場合は、engineと実行ホストによらず`send_message(session_id, prompt, timeout)`で同じ担当へ追加指示を返す。実際の起動routeがClaude CodeのAgentツールの場合だけ、`SendMessage`で同じ担当へ追加指示を返す。`agents_server`では実行中turnへのsteer・終端後のreply・保持期限後の暗黙再開から状態に合う操作を選択する。終端後のreply開始に結果回収の前提条件は設けない。所有する実行主体が終了している場合も同じ呼び出しが暗黙に再開する。
    `model_type`の不一致、異なる担当又はタスクへの切替、中断済み・完了配送不能・前提無効化のいずれかに該当する場合は、同一threadを継続しない。
@@ -145,7 +148,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
 工程別モデル設定のキーを持たない名前付きagentの呼び出しは、「工程別モデル設定」及び「modelとreasoning effort」の対象外とし、当該定義のfrontmatterが指定する既定に従って起動する。
-同じ計画に複数の実装単位がある場合、メインは最初の単位へ着手する直前に`execute_fast_model`を1回だけ解決し、
+同じ計画に複数の実装単位がある場合、メインは最初の単位へ着手する直前に当該計画のモデル区分が指すキーを1回だけ解決し、
 先行依存と統合順に従って残りの単位を同じfast担当へ順に渡す。単位ごとに実効値を解決し直さず、単位ごとの都合だけでは新規threadを起動しない。
 同じ計画の実装単位は同一worktreeへ書込主体を1つだけ置くため逐次実行され、分割しても並列化の利益が無い一方、
 規範、計画並びに対象コードの読み込みが単位数だけ重複するためである。実装単位ごとのcommit境界は計画の実装単位表のとおり維持する。
@@ -208,7 +211,7 @@ fix担当が実装単位を完了した後に残りの単位がある場合は�
 
 - 1つのworktreeへ同時に起動する実装担当は1つだけとする
 - 実装担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
-  ただし、`execute_fast_model`から`execute_model`への引継ぎだけはclean開始契約の例外とする。
+  ただし、fast担当からfix担当への引継ぎだけはclean開始契約の例外とする。
   新規fix担当を起動する場合はfast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合して渡し、同一threadを継続する場合は書込主体が変わらないため終端確認を要さない
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない

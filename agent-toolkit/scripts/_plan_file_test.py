@@ -261,6 +261,33 @@ def test_portable_plan_file_resolves_working_copy_before_saved_copy(tmp_path: pa
     assert _plan_file.to_portable_plan_file(working, private_notes=private_notes, home=home) == portable
 
 
+def test_require_saved_plan_file_rejects_working_copy(tmp_path: pathlib.Path) -> None:
+    """保存先に実体が無い記録値は、作業実体があっても保存を促して拒否する。"""
+    home = tmp_path / "home"
+    private_notes = tmp_path / "private-notes"
+    working = home / ".claude/plans/2026/08/30-計画保存先移行-d4f9.md"
+    working.parent.mkdir(parents=True)
+    working.write_text("# 作業中\n", encoding="utf-8")
+    portable = "$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md"
+
+    with pytest.raises(ValueError, match="atk plans commit"):
+        _plan_file.require_saved_plan_file(portable, private_notes=private_notes, home=home)
+
+
+def test_require_saved_plan_file_accepts_saved_and_legacy_absolute_paths(tmp_path: pathlib.Path) -> None:
+    """保存先の可搬値と許可root外の既存絶対パスを受理する。"""
+    private_notes = tmp_path / "private-notes"
+    saved = private_notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
+    legacy = tmp_path / "legacy-plan.md"
+    saved.parent.mkdir(parents=True)
+    for path in (saved, legacy):
+        path.write_text("# 計画\n", encoding="utf-8")
+    portable = "$(atk config get private_notes)/plans/2026/08/30-計画保存先移行-d4f9.md"
+
+    assert _plan_file.require_saved_plan_file(portable, private_notes=private_notes) == saved.resolve()
+    assert _plan_file.require_saved_plan_file(legacy, private_notes=private_notes) == legacy.resolve()
+
+
 def test_portable_plan_file_round_trips_direct_working_copy(tmp_path: pathlib.Path) -> None:
     """直下の作業実体を作成月付きportable参照へ変換し、同じ実体へ復元する。"""
     home = tmp_path / "home"

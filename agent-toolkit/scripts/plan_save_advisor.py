@@ -6,6 +6,8 @@ r"""計画作業rootに残る計画バンドルの保存確認Stopフック。
 他のセッションを示す計画と所有記録を持たない計画は、当該セッションでは処置できないため通知しない。
 これらの滞留は`atk plans list`の一覧で判別する。
 実装レビューの収束有無は会話の意味に属するためフックでは判定せず、通知を受領した実行主体へ判断を委ねる。
+
+委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、環境変数による除外が必要である。
 """
 
 import json
@@ -54,28 +56,25 @@ def _mark_notified(state: dict) -> dict | None:
     return state
 
 
-def main(payload_text: str) -> int:
-    """所有記録が当該セッションを示す計画バンドルの保存確認を1回だけ促す。"""
-    resolved = _parse_stop_session(payload_text, _approve)
+def evaluate(payload_text: str) -> tuple[str, str]:
+    """計画バンドルの保存判定結果と、遮断する場合の理由を返す。"""
+    resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         append_stop_log("", "approve_invalid_payload", {})
-        return 0
+        return "approve", ""
     session_id, payload = resolved
 
     if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
         append_stop_log(session_id, "approve_delegated_session", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     if os.environ.get(_ENV_PROCESS_LOOP_SESSION) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP_SESSION) == "1":
         append_stop_log(session_id, "approve_process_loop_session", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
-        _approve()
-        return 0
+        return "approve", ""
 
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
@@ -85,20 +84,17 @@ def main(payload_text: str) -> int:
         background_tasks=payload.get("background_tasks"),
     ):
         append_stop_log(session_id, "approve_pending_async", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     state = read_state(session_id)
     if state.get(_NOTIFIED_STATE_KEY) is True:
         append_stop_log(session_id, "approve_already_notified", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     paths = _owned_working_plan_paths(session_id)
     if not paths:
         append_stop_log(session_id, "approve_no_working_plans", {})
-        _approve()
-        return 0
+        return "approve", ""
 
     update_state(session_id, _mark_notified)
     path_list = ", ".join(str(path) for path in paths)
@@ -112,5 +108,14 @@ def main(payload_text: str) -> int:
         ),
     )
     append_stop_log(session_id, "block_working_plan_save", {"paths": len(paths)})
-    print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+    return "block", reason
+
+
+def main(payload_text: str) -> int:
+    """所有記録が当該セッションを示す計画バンドルの保存確認を1回だけ促す。"""
+    decision, body = evaluate(payload_text)
+    if decision == "block":
+        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
+    else:
+        _approve()
     return 0

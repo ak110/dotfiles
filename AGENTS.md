@@ -51,6 +51,13 @@
 - 過去のAWIから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる事故・欠陥: [docs/development/incidents.md](docs/development/incidents.md)
 
+## 振り返りの参照文書
+
+`agent-toolkit:session-review`が読む本リポジトリ固有の参照文書は、Claude Codeでは`~/.claude/references/session-review-dotfiles.md`とする。
+Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
+同文書はセッションの所要時間目標と本リポジトリ固有の振り返り観点を保持する。
+配布元は`.chezmoi-source/dot_claude/references/session-review-dotfiles.md`である。
+
 ## 編集時に起動するスキル
 
 本節の`agent-toolkit-edit`・`pytools-edit`・`sync-platform-pair`は、リポジトリ直下の`.claude/skills/`配下にあり、配布対象外である。
@@ -84,6 +91,7 @@
 対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`・`agent-toolkit/skills/`・`agent-toolkit/share/`配下、`.claude/skills/`配下である。
 規範文書はセッション開始時点の版が読み込まれており作業ツリーの変更は自動では反映されないため、変更を確定した主体が変更後の文面を自身の以降の判断へ適用し、影響する委譲先の起動プロンプトへ当該文面を明示して渡す。
 適用対象は実行主体が文書を読んで従える規範の文面に限り、フック、MCPサーバー、スクリプト及び権限設定の変更は配布と再起動を経るまで当該セッションへ反映されないため対象から除く。
+除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
 `agent-toolkit:process-wi`のセッションでは、当該セッションで処理する全AWIが確定した規範の変更を適用対象とする。

@@ -647,6 +647,43 @@ class TestIsPendingAsyncWork:
         )
         assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
 
+    def test_empty_background_tasks_do_not_hide_mcp_background_remainder(self, tmp_path: pathlib.Path) -> None:
+        """申告対象外のMCP背景移行は空の`background_tasks`でも未完了と判定する。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _assistant_entry([{"type": "tool_use", "id": "toolu_mcp", "name": "mcp__agents_server__wait", "input": {}}]),
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_mcp",
+                                "content": "Tool use moved to the background as task task-1",
+                            }
+                        ],
+                    },
+                },
+                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+            ],
+        )
+
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is True
+
+    def test_empty_background_tasks_hide_agent_remainder(self, tmp_path: pathlib.Path) -> None:
+        """申告対象の背景Agent残差は空の`background_tasks`を正本として打ち消す。"""
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _user_async_launched_entry("toolu_bg1"),
+                _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
+            ],
+        )
+
+        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
+
     @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
     def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
         """`<status>`の値が`completed`／`failed`／`cancelled`のいずれでも完了扱い。"""

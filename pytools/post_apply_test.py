@@ -4,6 +4,8 @@
 失敗時の exit code を検証する。
 """
 
+import logging
+import threading
 from pathlib import Path
 
 import pytest
@@ -279,6 +281,55 @@ class TestRun:
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
+    def test_background_step_overlaps_foreground_and_appends_result_after_it(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """背景ログを結合時まで保持し、前景結果の後へ投入順で追加する。"""
+        started = threading.Event()
+        released = threading.Event()
+
+        def background() -> bool:
+            started.set()
+            assert released.wait(timeout=2)
+            logging.getLogger("background-test").info("背景ログ")
+            return True
+
+        def foreground() -> bool:
+            assert started.wait(timeout=2)
+            logging.getLogger("foreground-test").info("前景ログ")
+            released.set()
+            return False
+
+        caplog.set_level(logging.INFO)
+        results, _ = post_apply.run(
+            [
+                post_apply._StepSpec("背景", background, background=True),  # noqa: SLF001
+                post_apply._StepSpec("前景", foreground),  # noqa: SLF001
+            ]
+        )
+
+        assert [result.name for result in results] == ["前景", "背景"]
+        messages = [record.getMessage() for record in caplog.records]
+        assert messages.index("前景ログ") < messages.index("[1/2] 背景") < messages.index("背景ログ")
+
+    def test_background_step_failure_does_not_discard_other_results(self) -> None:
+        """背景ステップの例外を当該結果へ局所化し、他の結果を保持する。"""
+        calls: list[str] = []
+        results, recommendations = post_apply.run(
+            [
+                post_apply._StepSpec("背景", _make_broken_step("background", calls), background=True),  # noqa: SLF001
+                post_apply._StepSpec("前景", _make_step("foreground", calls, changed=True)),  # noqa: SLF001
+            ]
+        )
+
+        assert sorted(calls) == ["background", "foreground"]
+        assert [(result.name, result.ok, result.changed) for result in results] == [
+            ("前景", True, True),
+            ("背景", False, False),
+        ]
+        assert not recommendations
+
     def test_main_exits_1_on_failure(self):
         """失敗があれば main() は SystemExit(1) で終了する。"""
         calls: list[str] = []
@@ -430,13 +481,13 @@ class TestDefaultSteps:
 
     def test_statusline_binary_step_registered(self):
         """claude-statuslineバイナリ取得ステップが登録され、libarchiveステップの後に続く。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert "claude-statusline バイナリの取得" in names
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
 
     def test_codex_plugin_step_order(self):
         """Codex pluginはリンクとClaude pluginの後、旧User scope移行の前に導入する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert names.index("Codex リンクの同期") < names.index("Codex plugin のインストール")
         assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin のインストール")
         assert names.index("Codex plugin のインストール") < names.index("旧Codex User scope MCP登録の移行")
@@ -444,12 +495,12 @@ class TestDefaultSteps:
 
     def test_codex_logs_step_registered_after_links(self):
         """Codex診断ログの通常ストレージ復元をリンク同期の直後に実行する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert names.index("Codex 診断ログの通常ストレージ復元 (Linux)") == names.index("Codex リンクの同期") + 1
 
     def test_cli_setup_precedes_dependent_steps(self):
         """CLI本体をplugin、リンク、旧User scope移行より前に準備する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         remove_name = "Codex の Claude MCP 登録削除"
         codex_name = "Codex CLI の導入と更新"
         claude_name = "Claude Code CLI の導入と更新"
@@ -475,21 +526,21 @@ class TestDefaultSteps:
 
     def test_warmup_hook_scripts_follows_codex_plugin_install(self) -> None:
         """hookスクリプトのuv環境ウォームアップをCodex plugin導入の直後に1回登録する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         warmup_name = "hookスクリプトのuv環境ウォームアップ"
         assert names.count(warmup_name) == 1
         assert names.index(warmup_name) == names.index("agents_serverのuv環境ウォームアップ") + 1
 
     def test_agents_server_warmup_follows_codex_plugin_install(self) -> None:
         """agents_serverのuv環境ウォームアップをCodex plugin導入直後に登録する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         warmup_name = "agents_serverのuv環境ウォームアップ"
         assert names.count(warmup_name) == 1
         assert names.index(warmup_name) == names.index("Codex plugin のインストール") + 1
 
     def test_atk_serve_follows_statusline_before_windows_steps(self) -> None:
         """atk serveセットアップをstatusline取得直後かつWindows固有処理前に1回登録する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         serve_name = "atk serve 自動起動セットアップ (Linux)"
         assert names.count(serve_name) == 1
         assert names.index(serve_name) == names.index("claude-statusline バイナリの取得") + 1
@@ -499,12 +550,25 @@ class TestDefaultSteps:
 
     def test_dotfiles_autoupdate_follows_atk_serve_before_windows_steps(self) -> None:
         """dotfiles自動更新timerをatk serve直後かつWindows固有処理前に1回登録する。"""
-        names = [name for name, _ in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
+        names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         timer_name = "dotfiles自動更新タイマー セットアップ (Linux)"
         serve_name = "atk serve 自動起動セットアップ (Linux)"
         assert names.count(timer_name) == 1
         assert names.index(timer_name) == names.index(serve_name) + 1
         assert names.index(timer_name) < names.index("Windowsレジストリ設定")
+
+    def test_queue_migration_follows_autoupdate_before_windows_steps(self) -> None:
+        """atkキュー移行をLinux自動更新タイマーの直後かつWindows処理前に登録する。"""
+        steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
+        names = [step.name for step in steps]
+        migration = "atkキューの移行"
+        assert names.count(migration) == 1
+        assert names.index(migration) == names.index("dotfiles自動更新タイマー セットアップ (Linux)") + 1
+        assert names.index(migration) < names.index("Windowsレジストリ設定")
+        assert [step.name for step in steps if step.background] == [
+            "agents_serverのuv環境ウォームアップ",
+            "hookスクリプトのuv環境ウォームアップ",
+        ]
 
 
 class TestPluginRecommendations:

@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 import _managed_temp
-import _plan_file
 import pytest
 from _hook_output_contract import HOOK_OUTPUT_SCHEMAS, validate_hook_output
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
@@ -24,15 +23,11 @@ _FIXTURES: dict[tuple[str, str], tuple[str, bool]] = {
     ("PostToolUse", "posttooluse"): ("posttooluse", True),
     ("PostToolUseFailure", "posttooluse"): ("empty", False),
     ("PermissionDenied", "posttooluse"): ("empty", False),
-    ("Stop", "autonomous_exit"): ("autonomous_exit", True),
-    ("Stop", "plan_save_advisor"): ("plan_save_advisor", True),
-    ("Stop", "agents_server_session_advisor"): ("agents_server_session_advisor", True),
-    ("Stop", "pending_question_advisor"): ("pending_question_advisor", True),
+    ("Stop", "stop"): ("stop", True),
     ("SubagentStop", "subagent_stop_advisor"): ("subagent_stop_advisor", True),
     ("SessionEnd", "session_end_cleanup"): ("empty", False),
     ("StopFailure", "stopfailure_notifier"): ("empty", False),
     ("PermissionRequest", "permissionrequest"): ("permissionrequest", True),
-    ("PermissionRequest", "permissionrequest_codex"): ("permissionrequest_codex", True),
     ("UserPromptSubmit", "user_prompt_submit"): ("user_prompt_submit", True),
 }
 
@@ -72,42 +67,15 @@ def _build_fixture(
         )
     elif fixture_name == "posttooluse":
         payload["tool_name"] = "mcp__plugin_agent-toolkit_agents_server__wait"
-    elif fixture_name == "autonomous_exit":
+    elif fixture_name == "stop":
         payload["background_tasks"] = []
-        env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = "1"
-        env.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
-        env.pop("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", None)
-    elif fixture_name == "plan_save_advisor":
-        home = tmp_path / "home-plan"
-        plan = home / ".claude" / "plans" / "draft.md"
-        plan.parent.mkdir(parents=True)
-        plan.write_text("# 計画\n", encoding="utf-8")
-        _plan_file.write_owner_record(plan, session_id=session_id)
         payload["transcript_path"] = str(_write_transcript(tmp_path, []))
-        env.update({"HOME": str(home), "USERPROFILE": str(home)})
         for name in (
             "AGENT_TOOLKIT_DELEGATED_SESSION",
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
             "DOTFILES_AUTONOMOUS_EXIT_REQUIRED",
         ):
             env.pop(name, None)
-    elif fixture_name == "agents_server_session_advisor":
-        _state_path(tmp_path, session_id).write_text(
-            json.dumps({"agents_server_sessions": {"remote": {"pending_observation": True, "owner_agent_id": "main"}}}),
-            encoding="utf-8",
-        )
-    elif fixture_name == "pending_question_advisor":
-        payload["transcript_path"] = str(
-            _write_transcript(
-                tmp_path,
-                [
-                    {
-                        "type": "assistant",
-                        "message": {"content": [{"type": "text", "text": "どちらですか？"}]},
-                    }
-                ],
-            )
-        )
     elif fixture_name == "subagent_stop_advisor":
         payload["last_assistant_message"] = ""
     elif fixture_name == "permissionrequest_codex":

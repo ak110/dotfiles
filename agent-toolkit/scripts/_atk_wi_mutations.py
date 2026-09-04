@@ -788,13 +788,10 @@ def edit_entry_to_plan(
 ) -> dict[str, object | None]:
     """holdの最古項目を計画型awiへ編集し、inboxへ原子的に移動する。"""
     try:
-        plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
         stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
+        plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
     except ValueError as error:
         raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
-    try:
-        if not plan_path.is_file():
-            raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
     except OSError as error:
         raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
@@ -1351,7 +1348,6 @@ def convert_entries_to_plan(
     if not filenames:
         raise WebInputError("変換するFILENAMEを1件以上指定してください")
     try:
-        plan_path = _plan_file.resolve_plan_file(plan_file, private_notes=private_notes)
         stored_plan_file = _normalize_stored_plan_file(plan_file, private_notes=private_notes)
     except ValueError as error:
         raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
@@ -1367,8 +1363,9 @@ def convert_entries_to_plan(
         _push_pending_commits(private_notes)
         _pull(private_notes)
         try:
-            if not plan_path.is_file():
-                raise WebInputError(f"plan_fileが実在する通常ファイルではありません: {plan_file}")
+            plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
+        except ValueError as error:
+            raise WebInputError(f"plan_fileを解決できません: {plan_file}（{error}）") from error
         except OSError as error:
             raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
         hold_dir = _subdir(private_notes, WI_STATE_HOLD)
@@ -1847,9 +1844,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 raise WebInputError("計画型編集には対象リポジトリのローカルworktreeが必要です")
             if _local_worktree_repo_id(local_worktree) != target_repo:
                 raise WebInputError("計画型編集の対象repoとローカルworktreeが一致しません")
-            plan_path = _plan_file.resolve_plan_file(args.plan_file, private_notes=private_notes)
+            stored_plan_file = _normalize_stored_plan_file(args.plan_file, private_notes=private_notes)
+            plan_path = _plan_file.require_saved_plan_file(stored_plan_file, private_notes=private_notes)
             target_commit = _resolve_plan_base_commit(plan_path, local_worktree)
-        except WebInputError as error:
+        except (OSError, ValueError, WebInputError) as error:
             print(f"計画型編集を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
 

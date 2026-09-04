@@ -26,11 +26,12 @@ type RepairKind = Literal["frontmatter", "missing-plan-file"]
 
 
 def _plan_file_exists(value: str) -> bool:
-    """保存済みplan_fileを解決して実在通常ファイルか判定する。"""
+    """保存済みplan_fileが指す保存先に実在通常ファイルがあるか判定する。"""
     try:
-        return _plan_file.resolve_plan_file(value).is_file()
+        _plan_file.require_saved_plan_file(value)
     except (OSError, ValueError):
         return False
+    return True
 
 
 @dataclasses.dataclass(frozen=True)
