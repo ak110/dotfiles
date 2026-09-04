@@ -14,11 +14,12 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, NoReturn, cast
 
 import pytest
 import watchdog.events
+import watchdog.observers
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -289,6 +290,47 @@ class TestWaitForChanges:
         (private_notes / "inbox").mkdir(parents=True)
         return private_notes
 
+    @staticmethod
+    def _use_synchronous_observer(
+        monkeypatch: pytest.MonkeyPatch,
+        initial_event_path: pathlib.Path,
+    ) -> Callable[[pathlib.Path], None]:
+        observers: list[Any] = []
+
+        class SynchronousObserver:
+            def __init__(self) -> None:
+                self._handlers: dict[pathlib.Path, watchdog.events.FileSystemEventHandler] = {}
+                observers.append(self)
+
+            def schedule(
+                self,
+                handler: watchdog.events.FileSystemEventHandler,
+                path: str,
+                *,
+                recursive: bool,
+            ) -> None:
+                del recursive
+                self._handlers[pathlib.Path(path)] = handler
+
+            def emit(self, path: pathlib.Path) -> None:
+                self._handlers[path.parent].on_any_event(watchdog.events.FileCreatedEvent(str(path)))
+
+            def start(self) -> None:
+                self.emit(initial_event_path)
+
+            def stop(self) -> None:
+                pass
+
+            def join(self) -> None:
+                pass
+
+        monkeypatch.setattr(watchdog.observers, "Observer", SynchronousObserver)
+
+        def emit(path: pathlib.Path) -> None:
+            observers[0].emit(path)
+
+        return emit
+
     def test_missing_inbox_dirs_are_created(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -360,20 +402,14 @@ class TestWaitForChanges:
         """タイムアウト前に`.md`ファイル変更を検知した場合、`_pull`が呼ばれないこと。"""
         private_notes = self._make_private_notes(tmp_path)
         inbox = private_notes / "inbox"
-        # 並列実行時のCPU競合でタイマー発火とイベント配送が遅延してもタイムアウト経路へ移らないよう、
-        # 待機上限（10秒）をタイマーの発火時刻（0.05秒）より十分大きく取る。
-        # 変更を検知した時点で戻るため、上限を大きくしても通常の所要時間は延びない。
-        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 10.0)
+        entry = inbox / "entry.md"
+        self._use_synchronous_observer(monkeypatch, entry)
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
         pull_calls: list[pathlib.Path] = []
         monkeypatch.setattr(_process_loop, "_pull", pull_calls.append)
 
-        timer = threading.Timer(0.05, lambda: (inbox / "entry.md").write_text("x", encoding="utf-8"))
-        timer.start()
-        try:
-            _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
-        finally:
-            timer.cancel()
+        _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
         assert not pull_calls
 
@@ -385,10 +421,11 @@ class TestWaitForChanges:
         """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで畳み込まれること。"""
         private_notes = self._make_private_notes(tmp_path)
         inbox = private_notes / "inbox"
-        # 並列実行時のCPU競合でタイマー発火が遅延してもデバウンス窓内へ収まるよう、
-        # 窓幅（1.5秒）を2本のタイマーの発火間隔（0.4秒）より十分大きく取る。
-        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 10.0)
-        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 1.5)
+        entry1 = inbox / "entry1.md"
+        entry2 = inbox / "entry2.md"
+        emit = self._use_synchronous_observer(monkeypatch, entry1)
+        monkeypatch.setattr(_process_loop, "_POLL_INTERVAL_SEC", 0.2)
+        monkeypatch.setattr(_process_loop, "_DEBOUNCE_SEC", 0.1)
         monkeypatch.setattr(
             _process_loop,
             "_pull",
@@ -400,21 +437,15 @@ class TestWaitForChanges:
 
         def counting_wait(self: threading.Event, timeout: float | None = None) -> bool:
             wait_calls.append(timeout)
+            if timeout == 0.1 and 0.1 not in wait_calls[:-1]:
+                emit(entry2)
             return real_wait(self, timeout)
 
         monkeypatch.setattr(threading.Event, "wait", counting_wait)
 
-        timer1 = threading.Timer(0.1, lambda: (inbox / "entry1.md").write_text("x", encoding="utf-8"))
-        timer2 = threading.Timer(0.5, lambda: (inbox / "entry2.md").write_text("y", encoding="utf-8"))
-        timer1.start()
-        timer2.start()
-        try:
-            _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
-        finally:
-            timer1.cancel()
-            timer2.cancel()
+        _process_loop._wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
-        debounce_waits = [t for t in wait_calls if t == 1.5]
+        debounce_waits = [t for t in wait_calls if t == 0.1]
         assert len(debounce_waits) >= 2
 
 
