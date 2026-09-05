@@ -58,8 +58,8 @@ _GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
 # --- Bash: 実行位置のトークン列抽出（助言用検査の共通入口）---
 
 # 本ヘルパーはPreToolUseの助言用検査とPostToolUseの実行済みコマンド記録が共有する。
-# 遮断を伴う`_check_bash_process_kill_by_pattern`は、コマンド置換・サブシェル・オプション終端まで
-# 解決できる解析を用意できるまで現行のコマンド文字列全体への一致判定を維持し、本ヘルパーを使わない
+# 遮断を伴う`_check_bash_process_kill_by_pattern`は、コマンド置換・サブシェル・改行・未知の前置語を
+# 保持しない本解析を使わない。入力文字列上で安全な検索リテラルと確定できる場合だけ遮断を緩める
 # （解析の不足で既存の保護を外さないため）。
 
 _EXEC_PREFIX_WITH_ENV_ASSIGNMENTS: frozenset[str] = frozenset({"sudo", "env"})

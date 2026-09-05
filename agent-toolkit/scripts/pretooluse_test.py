@@ -2403,6 +2403,31 @@ class TestBashGitLogDecorate:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ('echo "git log"', None),
+            ("cat <<'EOF'\ngit log\nEOF", None),
+            ('grep -rn "git log" docs && git log -3', 'grep -rn "git log" docs && git log --decorate -3'),
+            (
+                'git show --format="git log" && git log -3',
+                'git show --format="git log" && git log --decorate -3',
+            ),
+            ("sudo git log --decorate; git log -3", "sudo git log --decorate; git log --decorate -3"),
+            ("git -C /tmp log --decorate; git log -3", "git -C /tmp log --decorate; git log --decorate -3"),
+            ("git log --decorate=full", None),
+            ("git -C /tmp log -3", "git -C /tmp log --decorate -3"),
+            ("git log -3", "git log --decorate -3"),
+        ],
+    )
+    def test_updates_only_unquoted_git_log_at_execution_position(self, command: str, expected: str | None) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        if expected is None:
+            assert result.stdout == ""
+        else:
+            assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == expected
+
 
 class TestBashCodexExecNudge:
     """codex exec未決事項の念押し。"""
@@ -4116,6 +4141,52 @@ class TestBashProcessKillByPattern:
     def test_unrelated_command_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo killall-report"}})
         assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'grep -rn "killall" /tmp/x',
+            'grep -n "pkill\\|kill" /tmp/x',
+            "rg -n pkill agent-toolkit/",
+            "rg -g '*.{md,py}' pkill .",
+            "echo killall-report",
+            "kill 12345",
+            "cat <<'EOF'\npkill -f worker\nEOF",
+        ],
+    )
+    def test_allows_literal_argument_matches(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'pkill -f "codex exec"',
+            "killall python",
+            'sh -c "pkill -f worker"',
+            "sh -c 'sh -c \"pkill x\"'",
+            '/bin/sh -c "pkill -f worker"',
+            "xargs pkill",
+            "timeout 5 pkill x",
+            "env FOO=1 killall python",
+            "sudo -n pkill x",
+            "/usr/bin/pkill -f x",
+            "$(echo pkill) -f worker",
+            "echo $(pkill -f worker)",
+            "echo $( pkill -f worker )",
+            'rg "$(pkill -f worker)" .',
+            "echo ok\npkill -f worker",
+            "/usr/bin/env pkill -f worker",
+            "echo <( pkill -f worker )",
+            "(pkill -f worker)",
+            "if pkill -f worker; then echo done; fi",
+            'git add -A; pkill -f "worker"',
+        ],
+    )
+    def test_blocks_indirect_or_executable_matches(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "パターン一致によるプロセス終了" in result.stderr
 
 
 class TestBashBlockBeforeAccumulatedWarnings:

@@ -104,10 +104,13 @@ import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-po
 import _scratchpad_path  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _GLOBAL_OPTIONS_WITH_VALUE,
+    _GLOBAL_OPTIONS_WITHOUT_VALUE,
     CwdResolution,
     GitEvent,
     extract_git_events,
     resolve_cwd_change,
+    resolve_execution_segment,
     split_bash_segments,
 )
 from _file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -1675,20 +1678,6 @@ def _reset_plan_mode_state(session_id: str) -> None:
     update_state(session_id, _reset)
 
 
-# --- Bash: heredoc内のパターンを除外するヘルパー ---
-
-
-def _likely_real_command(command: str, pos: int) -> bool:
-    """マッチ位置がシェルコマンド文脈にあるかヒューリスティックで判定する。
-
-    heredoc（`<<`）がマッチ位置より前にある場合、マッチはリテラル文字列の
-    一部である可能性が高いため偽を返す。
-    `python3 -c` / `cat <<`等でファイル内容を書き込むケースの誤検出を防ぐ。
-    """
-    prefix = command[:pos]
-    return "<<" not in prefix
-
-
 def _contains_heredoc(command: str) -> bool:
     """コマンド本文がヒアドキュメント（`<<`）を含むかを返す。
 
@@ -2590,6 +2579,50 @@ def _check_bash_sleep_poll_pattern(
 # --- Bash: パターン一致によるプロセス終了の検出 ---
 
 _PROCESS_KILL_BY_PATTERN_RE = re.compile(r"(?<![\w-])(pkill|killall)(?![\w-])")
+_PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
+_PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
+
+
+def _has_active_process_kill_syntax(segment: str) -> bool:
+    """区間に引用で無効化されていないシェル構文があれば真を返す。"""
+    quote: str | None = None
+    escaped = False
+    for character in segment:
+        if escaped:
+            escaped = False
+            continue
+        if quote != "'" and character == "\\":
+            escaped = True
+            continue
+        if quote == "'":
+            if character == "'":
+                quote = None
+            continue
+        if quote == '"':
+            if character == '"':
+                quote = None
+            elif character in "$`":
+                return True
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character in _PROCESS_KILL_UNSAFE_MARKERS or character in "\n\r":
+            return True
+    return False
+
+
+def _has_unsafe_process_kill_match(segment: str) -> bool:
+    """禁止語を含む区間が、既知の検索コマンドのリテラル引数でなければ真を返す。"""
+    try:
+        raw_tokens = shlex.split(segment, posix=True)
+    except ValueError:
+        return True
+    if not raw_tokens or _has_active_process_kill_syntax(segment):
+        return True
+    command_name = pathlib.PurePosixPath(raw_tokens[0]).name
+    if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS:
+        return True
+    return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
 
 
 def _check_bash_process_kill_by_pattern(command: str) -> bool:
@@ -2597,9 +2630,12 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 
     対象の所有権を確認できないパターン一致の一括終了は事故の危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文へ書き込むリテラルとしての一致は`_likely_real_command`で対象から外す。
+    ヒアドキュメント本文は解析対象から外す。禁止語が実行位置ではなく、安全な引数位置の
+    リテラルだと確定できる区間だけを許可する。
     """
-    if not any(_likely_real_command(command, match.start()) for match in _PROCESS_KILL_BY_PATTERN_RE.finditer(command)):
+    analysis = command.split("<<", 1)[0]
+    matching_segments = [segment for segment in split_bash_segments(analysis) if _PROCESS_KILL_BY_PATTERN_RE.search(segment)]
+    if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
         return False
     print(
         _block_notice(
@@ -3193,38 +3229,102 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
 
 # --- Bash: git log --decorate自動付与 ---
 
-_GIT_LOG_INSERT_REGEX = re.compile(r"\bgit\s+log\b")
+
+def _mask_quoted_text(segment: str) -> str:
+    """引用符とその内側を同じ長さのNUL文字へ置換する。"""
+    masked = list(segment)
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(segment):
+        if quote is not None:
+            masked[index] = "\x00"
+            if escaped and quote == '"':
+                escaped = False
+            elif character == "\\" and quote == '"':
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            masked[index] = "\x00"
+    return "".join(masked)
+
+
+def _git_subcommand_index(tokens: tuple[str, ...]) -> int | None:
+    """実行位置以降のgitトークン列からサブコマンド位置を返す。"""
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("--") and "=" in token:
+            key = token.partition("=")[0]
+            if key in _GLOBAL_OPTIONS_WITH_VALUE:
+                index += 1
+                continue
+            return None
+        if token in _GLOBAL_OPTIONS_WITH_VALUE:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if token in _GLOBAL_OPTIONS_WITHOUT_VALUE:
+            index += 1
+            continue
+        if token.startswith("-"):
+            return None
+        return index
+    return None
 
 
 def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
     r"""Git logに--decorateがない場合、自動で挿入したupdatedInputを返す。
 
-    `extract_git_events`の結果から`subcommand == "log"`かつ`subcommand_args`に
-    `--decorate`を含まない最初のイベントを対象とする。
-    コマンド本文上の挿入位置は同順に並ぶ`git\\s+log`マッチから取得する。
-    heredoc内のリテラル一致は`_likely_real_command`で除外する。
+    ヒアドキュメント本文を除く各区間について、実行位置のgitサブコマンドと元コマンド上の
+    語の位置を同時に解決する。引用符内の字面や位置対応を確定できない区間は変更しない。
     """
-    log_events = [event for event in extract_git_events(command, "") if event.subcommand == "log"]
-    target_index = next(
-        (i for i, event in enumerate(log_events) if "--decorate" not in event.subcommand_args),
-        None,
-    )
-    if target_index is None:
-        return None
-    matches = [m for m in _GIT_LOG_INSERT_REGEX.finditer(command) if _likely_real_command(command, m.start())]
-    if target_index >= len(matches):
-        return None
-    match = matches[target_index]
-    updated_command = command[: match.end()] + " --decorate" + command[match.end() :]
-    updated_input = dict(tool_input)
-    updated_input["command"] = updated_command
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "updatedInput": updated_input,
-        },
-    }
+    analysis = command.split("<<", 1)[0]
+    previous_end = 0
+    for segment in split_bash_segments(analysis):
+        segment_start = analysis.find(segment, previous_end)
+        if segment_start < 0:
+            continue
+        previous_end = segment_start + len(segment)
+        try:
+            raw_tokens = shlex.split(segment, posix=True)
+        except ValueError:
+            continue
+        execution = resolve_execution_segment(raw_tokens)
+        if not execution.resolved or not execution.tokens:
+            continue
+        command_token = execution.tokens[0]
+        if any(marker in command_token for marker in _PROCESS_KILL_UNSAFE_MARKERS):
+            continue
+        if pathlib.PurePosixPath(command_token).name != "git":
+            continue
+        words = list(re.finditer(r"\S+", _mask_quoted_text(segment)))
+        if len(words) != len(raw_tokens):
+            continue
+        subcommand_index = _git_subcommand_index(execution.tokens)
+        if subcommand_index is None or execution.tokens[subcommand_index] != "log":
+            continue
+        raw_subcommand_index = len(raw_tokens) - len(execution.tokens) + subcommand_index
+        subcommand_word = words[raw_subcommand_index]
+        if "\x00" in subcommand_word.group():
+            continue
+        subcommand_args = execution.tokens[subcommand_index + 1 :]
+        if any(token in {"--decorate", "--no-decorate"} or token.startswith("--decorate=") for token in subcommand_args):
+            continue
+        insertion = segment_start + subcommand_word.end()
+        updated_input = dict(tool_input)
+        updated_input["command"] = command[:insertion] + " --decorate" + command[insertion:]
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "updatedInput": updated_input,
+            },
+        }
+    return None
 
 
 # --- Bash: codex exec未決事項の念押し ---
