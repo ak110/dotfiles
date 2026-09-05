@@ -584,6 +584,9 @@
 - 2026年8月: process-loopの子セッション正常終了後に、開始前更新と同じ`update-dotfiles --force`が同一反復で二重実行された。
   直接原因: 開始前更新を残したまま正常終了後の配布反映経路を追加していた。
   対策: 反復内は開始前更新1回に限定し、正常終了後の2回目を削除する
+- 2026年9月: process-loopがセッション終了後に`update-dotfiles --force`を2回連続で実行した。
+  直接原因: 開始前更新が`agent-toolkit/scripts/`配下のハッシュ変化を検知して自己再起動し、再起動先が同じ上流状態に対して開始前更新を再実行した。
+  対策: 更新成功を契機とする再起動へ1回限りの内部指定を渡し、再起動先の開始前更新を抑止する
 - 2026年9月: euryaleの`dotfiles-autoupdate.service`が10分ごとに起動しながら毎回1段目で失敗した。
   直接原因: systemdユーザーunitへ`Environment=PATH`が無く、`update-dotfiles`が実行ファイル名で起動する`chezmoi`を解決できなかった。
   対策: unit生成側でPATHを明示し、`~/.local/bin`とmiseのshimsを既定PATHの前へ置く

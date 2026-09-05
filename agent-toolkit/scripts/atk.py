@@ -744,6 +744,11 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help=argparse.SUPPRESS,
     )
     loop.add_argument(
+        "--internal-dotfiles-updated",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    loop.add_argument(
         "--no-alerts",
         action="store_true",
         help="CI失敗・Dependabotアラートの自動検出を無効化する（既定は有効）。",

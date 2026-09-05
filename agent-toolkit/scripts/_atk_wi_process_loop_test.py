@@ -1692,6 +1692,52 @@ class TestProcessLoopSessionPreparation:
         assert exc_info.value.code == 7
         assert events == ["pull", "count", "update", "repull", "count", "session"]
 
+    def test_successful_ready_update_restart_skips_duplicate_update(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """開始前更新で再起動しても、同じ上流状態への更新は1回に限定する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "repo"
+        myrepo.mkdir()
+        dotfiles_root = tmp_path / "dotfiles"
+        canonical_script = dotfiles_root / "agent-toolkit" / "scripts" / "atk.py"
+        canonical_script.parent.mkdir(parents=True)
+        canonical_script.write_text("", encoding="utf-8")
+        monkeypatch.setattr(_process_loop, "_resolve_dotfiles_root", lambda: dotfiles_root)
+        hashes = iter(("before-update", "after-update", "after-update"))
+        monkeypatch.setattr(_process_loop, "_code_hash", lambda _path: next(hashes))
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_args, **_kwargs: 1)
+        update_calls: list[list[str]] = []
+        base_fake_run = _fake_run_with_remote_url(myrepo, [], 7)
+
+        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+            if pathlib.Path(cmd[0]).stem.lower() == "update-dotfiles":
+                update_calls.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return base_fake_run(cmd, *_args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        restart_spec = tmp_path / "restart-spec"
+        monkeypatch.setenv("AGENT_TOOLKIT_RESTART_SPEC", str(restart_spec))
+        initial_argv = [str(canonical_script), "wi", "process-loop", f"--target-repo={myrepo}", "--no-alerts"]
+        monkeypatch.setattr(sys, "argv", initial_argv)
+
+        with pytest.raises(SystemExit) as restart_exit:
+            atk.main(initial_argv[1:], home=tmp_path)
+
+        assert restart_exit.value.code == _process_loop._RESTART_EXIT_CODE  # pylint: disable=protected-access  # noqa: SLF001
+        restart_argv = restart_spec.read_text(encoding="utf-8").splitlines()
+        assert "--internal-dotfiles-updated" in restart_argv
+        monkeypatch.setattr(sys, "argv", restart_argv)
+
+        with pytest.raises(SystemExit) as session_exit:
+            atk.main(restart_argv[1:], home=tmp_path)
+
+        assert session_exit.value.code == 7
+        assert len(update_calls) == 1
+
     def test_worktree_preparation_failure_returns_to_wait(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1752,6 +1798,17 @@ def test_process_loop_internal_mise_refreshed_contract(capsys: pytest.CaptureFix
         parser.parse_args(["wi", "process-loop", "--help"])
     assert help_exit.value.code == 0
     assert "--internal-mise-refreshed" not in capsys.readouterr().out
+
+
+def test_process_loop_internal_dotfiles_updated_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    """更新済み内部指定の既定値・指定時の値・help非露出をargparse境界で固定する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+    assert parser.parse_args(["wi", "process-loop"]).internal_dotfiles_updated is False
+    assert parser.parse_args(["wi", "process-loop", "--internal-dotfiles-updated"]).internal_dotfiles_updated is True
+    with pytest.raises(SystemExit) as help_exit:
+        parser.parse_args(["wi", "process-loop", "--help"])
+    assert help_exit.value.code == 0
+    assert "--internal-dotfiles-updated" not in capsys.readouterr().out
 
 
 def test_process_loop_worktree_option_reaches_public_handler(
