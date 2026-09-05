@@ -361,7 +361,7 @@ def _check_new_format(
         home=home,
     )
     errors.extend(main_errors)
-    # 由来の不一致は移行を促す指摘とし、環境要因の省略は現行形式でも成立する助言とする。
+    # 実施内容表の移行を促す指摘とし、環境要因の省略は現行形式でも成立する助言とする。
     warnings.extend(("migration", notice) for notice in origin_notices)
     warnings.extend(("advisory", skip) for skip in origin_skips)
 
@@ -440,7 +440,8 @@ def check(
     *,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
-    reject_legacy_format: bool = False,
+    reject_migration_warnings: bool = False,
+    reject_progress_log_rows: bool = False,
 ) -> tuple[list[str], list[str]]:
     """計画ファイルを検査し、エラーと警告を返す。
 
@@ -449,7 +450,8 @@ def check(
     二ファイル形式ではメインのcanonical固定H2により新規書式と旧二ファイル形式を分ける。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
     種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
-    `## 進捗ログ`の内容行は実装工程の記録であり、起草時には置かないため、新規作成でだけ拒否する。
+    移行警告の拒否と、起草時の`## 進捗ログ`内容行の拒否は呼び出し側が独立に指定する。
+    既存計画の改訂では移行警告を拒否し、実装工程が記録した進捗行は保持するためである。
     """
     text = plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -463,11 +465,11 @@ def check(
     else:
         format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
-    if reject_legacy_format and _plan_format.has_progress_log_rows(text):
+    if reject_progress_log_rows and _plan_format.has_progress_log_rows(text):
         errors.append(f"`## {_plan_format.PLAN_H2_PROGRESS}`は起草時に内容行を置かない")
     warnings: list[str] = []
     for kind, message in classified_warnings:
-        if reject_legacy_format and kind == "migration":
+        if reject_migration_warnings and kind == "migration":
             errors.append(message)
         else:
             warnings.append(message)
@@ -479,9 +481,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan_file", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument(
+        "--reject-migration-warnings",
+        action="store_true",
+        help="旧形式からの移行警告をエラーとして扱う",
+    )
     try:
         args = parser.parse_args(argv)
-        errors, warnings = check(args.plan_file, args.work_dir)
+        errors, warnings = check(
+            args.plan_file,
+            args.work_dir,
+            reject_migration_warnings=args.reject_migration_warnings,
+        )
     except (OSError, UnicodeDecodeError) as error:
         print(f"計画ファイルを読み込めない: {error}", file=sys.stderr)
         return 2
