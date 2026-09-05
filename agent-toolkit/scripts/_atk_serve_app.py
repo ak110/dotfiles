@@ -160,6 +160,8 @@ def _without_source_frontmatter(message: str) -> str:
     metadata, body = parsed
     normalized_metadata = dict(metadata)
     normalized_metadata.pop("source", None)
+    if not normalized_metadata:
+        return body
     return frontmatter.serialize_frontmatter(normalized_metadata, body)
 
 

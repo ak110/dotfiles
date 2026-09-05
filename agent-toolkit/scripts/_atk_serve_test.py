@@ -4407,6 +4407,29 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     assert "source:" not in content
 
 
+def test_add_omits_frontmatter_when_source_is_the_only_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """投入元だけのfrontmatterを除いた本文へ空の区切りを残さない。"""
+    captured: dict[str, object] = {}
+
+    def add_entries(_private_notes: pathlib.Path, **kwargs: typing.Any) -> list[str]:
+        captured.update(kwargs)
+        return ["entry.md"]
+
+    monkeypatch.setattr(serve_app.awi_add, "add_entries", add_entries)
+
+    result = serve_app.Operations(tmp_path).add(
+        ["---\nsource: add-awi\n---\n\n本文"],
+        entry_type="awi",
+        target_repo="github.com/example/repo",
+    )
+
+    assert result == ["entry.md"]
+    assert captured["messages"] == ["\n本文"]
+
+
 def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
     """解決済み設定と状態をapp.configへ保持する。"""
     resolved = config.ServeConfig("127.0.0.1", 28766)
