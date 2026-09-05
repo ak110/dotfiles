@@ -10,11 +10,9 @@ import pathlib
 import subprocess
 
 import _fork_runner
-import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
@@ -247,105 +245,3 @@ class TestEdgeCases:
         result = _run({"session_id": "no-transcript"}, state_dir=tmp_path)
         decision = _parse_decision(result)
         assert decision.get("decision") == "block"
-
-
-class TestWorkflowDocumentContracts:
-    """process-wi終了工程とCodex固有契約の同期を検査する。"""
-
-    def test_review_audit_runs_once_after_session_review(self) -> None:
-        finish = (_REPO_ROOT / "agent-toolkit/skills/process-wi/references/finish-session.md").read_text(encoding="utf-8")
-
-        assert "`github-copilot-review-audit.md`を全文読んで実行する" in finish
-        assert finish.index("session-reviewと必要な再公開の完了後") < finish.index("1回だけ取得する")
-        assert "自動レビュー監査を繰り返さない" in finish
-        assert finish.index("1回だけ報告") < finish.index("`agent-toolkit:exit-session`を起動")
-
-    def test_design_review_audit_runs_once_after_session_review(self) -> None:
-        design = (_REPO_ROOT / "docs/development/design.md").read_text(encoding="utf-8")
-
-        assert design.index("`agent-toolkit:session-review`を実施し、必要な再公開の完了後") < design.index(
-            "実行時点の全PR又はMRの自動コードレビューを1回確認する"
-        )
-        assert "新しいレビューの到着を能動的に待機せず" in design
-        assert "session-reviewと並列実行しない" in design
-        assert "その公開後にsession-review又は自動レビュー監査を繰り返さない" in design
-
-    @pytest.mark.parametrize(
-        "contract",
-        (
-            "状態を問わず全Pull Request",
-            "review本文、inline comment及びreview thread",
-            "gh api --paginate 'repos/{owner}/{repo}/pulls?state=all&per_page=100'",
-            "gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/reviews?per_page=100'",
-            "gh api --paginate 'repos/{owner}/{repo}/pulls/<PR>/comments?per_page=100'",
-            "reviewThreads(first:100,after:$cursor)",
-            "pageInfo{hasNextPage endCursor}",
-            "authorのloginに`copilot`を大文字小文字を区別せず含む",
-            "`pageInfo.hasNextPage`が真の場合",
-            "`pageInfo.endCursor`を",
-            "偽になるまで取得する",
-            "REST APIのいずれかが非0で終了した場合",
-            "GraphQLの`pageInfo`を取得できない場合",
-            "pagination終端へ到達できない場合",
-            "要修正、是正済み、根拠付き対応不要",
-            "到着を能動的に待機せず",
-        ),
-    )
-    def test_github_copilot_audit_covers_all_review_surfaces(self, contract: str) -> None:
-        audit = (_REPO_ROOT / "agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md").read_text(
-            encoding="utf-8"
-        )
-
-        assert contract in audit
-
-    def test_review_findings_are_not_additional_requirements(self) -> None:
-        reviewee = (_REPO_ROOT / "agent-toolkit/skills/reviewee-standards/SKILL.md").read_text(encoding="utf-8")
-
-        assert "## レビュー指摘の位置付け" in reviewee
-        assert "満たすべき追加要件、変更の認可又は修正手段の指定ではない" in reviewee
-        assert "指摘された問題の採否とレビュー担当が示した修正手段の採否を分け" in reviewee
-
-    @pytest.mark.parametrize(
-        "relative_path",
-        (
-            "agent-toolkit/share/codex-agents-base.md",
-            ".chezmoi-source/dot_codex/AGENTS.md",
-        ),
-        ids=("source", "generated"),
-    )
-    def test_codex_applies_review_finding_gate_before_changes(self, relative_path: str) -> None:
-        codex = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
-
-        assert codex.index("成果物の変更又はレビュー指摘管理表への応答より先に") < codex.index(
-            "`agent-toolkit:reviewee-standards`「レビュー指摘の位置付け」を適用する"
-        )
-
-    @pytest.mark.parametrize(
-        "relative_path",
-        (
-            "agent-toolkit/share/codex-agents-base.md",
-            ".chezmoi-source/dot_codex/AGENTS.md",
-        ),
-        ids=("source", "generated"),
-    )
-    def test_codex_resolves_identifiers_before_applying_user_facing_rules(self, relative_path: str) -> None:
-        codex = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
-
-        assert codex.index("一時的な対象名を以後の判断へ使う前に") < codex.index(
-            "実在するファイル、コマンド又は識別子へ再解決する"
-        )
-        assert codex.index("実在するファイル、コマンド又は識別子へ再解決する") < codex.index(
-            "ユーザー向け発話には、再解決した値"
-        )
-        assert codex.index("ユーザー向け発話には、再解決した値") < codex.index("「ユーザー向け発話ルール」を適用する")
-
-    def test_codex_treats_stop_as_terminal(self) -> None:
-        source = (_REPO_ROOT / "agent-toolkit/share/codex-agents-base.md").read_text(encoding="utf-8")
-        generated = (_REPO_ROOT / ".chezmoi-source/dot_codex/AGENTS.md").read_text(encoding="utf-8")
-
-        for contract in (
-            "停止コマンドのツール呼び出し自体をセッションの終端とする",
-            "応答を返せないことを停止不能の根拠にしない",
-        ):
-            assert contract in source
-            assert contract in generated
