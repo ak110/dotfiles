@@ -57,14 +57,15 @@ def run(client: httpx.Client | None = None) -> bool:
     それ以外の場合はGitHub Releaseから取得する。開発版のビルドまたは配置に失敗した場合は
     例外を送出し、`post_apply`がステップ失敗として記録できるようにする。
     """
-    working_tree = _find_development_tree()
-    if working_tree is not None:
-        return _install_development_binary(working_tree)
+    development_tree = _find_development_tree()
+    if development_tree is not None:
+        working_tree, mise_bin = development_tree
+        return _install_development_binary(working_tree, mise_bin)
     return _download_release(client)
 
 
-def _find_development_tree() -> pathlib.Path | None:
-    """ローカルstatuslineを使うGit作業ツリーを返す。"""
+def _find_development_tree() -> tuple[pathlib.Path, pathlib.Path] | None:
+    """ローカルstatuslineを使うGit作業ツリーとmiseを返す。"""
     working_tree_value = os.environ.get("CHEZMOI_WORKING_TREE")
     if not working_tree_value:
         return None
@@ -87,13 +88,20 @@ def _find_development_tree() -> pathlib.Path | None:
     tracked_diff = _run_git(working_tree, ["diff", "--quiet", "origin/master", "--", str(_STATUSLINE_DIR)])
     if tracked_diff is None or tracked_diff.returncode not in (0, 1):
         raise RuntimeError(f"statusline差分の確認に失敗: {claude_common.format_cli_error(tracked_diff)}")
-    if tracked_diff.returncode == 1:
-        return working_tree
+    if tracked_diff.returncode == 0:
+        untracked = _run_git(working_tree, ["ls-files", "--others", "--exclude-standard", "--", str(_STATUSLINE_DIR)])
+        if untracked is None or untracked.returncode != 0:
+            raise RuntimeError(f"statuslineの未追跡ファイル確認に失敗: {claude_common.format_cli_error(untracked)}")
+        if not (untracked.stdout or "").strip():
+            return None
 
-    untracked = _run_git(working_tree, ["ls-files", "--others", "--exclude-standard", "--", str(_STATUSLINE_DIR)])
-    if untracked is None or untracked.returncode != 0:
-        raise RuntimeError(f"statuslineの未追跡ファイル確認に失敗: {claude_common.format_cli_error(untracked)}")
-    return working_tree if (untracked.stdout or "").strip() else None
+    mise_bin = setup_mise.find_mise_binary()
+    if mise_bin is None:
+        logger.info(
+            log_format.format_status("statusline", "開発版のビルドに必要なmiseが見つからないため、リリース版を取得します")
+        )
+        return None
+    return working_tree, mise_bin
 
 
 def _run_git(
@@ -109,12 +117,8 @@ def _run_git(
     )
 
 
-def _install_development_binary(working_tree: pathlib.Path) -> bool:
+def _install_development_binary(working_tree: pathlib.Path, mise_bin: pathlib.Path) -> bool:
     """miseからビルドしたstatuslineを原子的に配置する。"""
-    mise_bin = setup_mise.find_mise_binary()
-    if mise_bin is None:
-        raise RuntimeError("statusline開発版のビルドに必要なmiseが見つからない")
-
     build = claude_common.run_subprocess(
         [
             str(mise_bin),
