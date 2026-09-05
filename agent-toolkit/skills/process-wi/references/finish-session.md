@@ -34,7 +34,7 @@ AWIが明示するPR又はMR、release、tag、配布等の終端工程は、①
 
 最後に`agent-toolkit:completion-report`を起動する。同スキルは`agent-toolkit:process-wi`実行条件により`agent-toolkit:session-review`を必ず実施する。振り返りの即時対応でcommitした場合は、同スキルの報告前に「生成物とpush」節の版数判定、生成同期、push及びCI確認を完了する。この再公開でsession-reviewを再実施しない。
 
-session-reviewと必要な再公開の完了後、completion-reportが固有成果と振り返り結果を報告する前に、対象リポジトリのホスティングサービス上の自動コードレビューを確認する。この確認をsession-reviewと並列実行しない。GitHub Copilotの取得と判定は`github-copilot-review-audit.md`を全文読んで実行する。
+session-reviewと必要な再公開の完了後、completion-reportが固有成果と振り返り結果を報告する前に、対象リポジトリがGitHub上にある場合だけ自動コードレビューを確認する。この確認をsession-reviewと並列実行しない。GitHub Copilotの取得と判定は`github-copilot-review-audit.md`を全文読んで実行する。GitHub以外の対象リポジトリでは、以降の自動コードレビュー確認を行わない。
 
 新しい自動レビューの到着を能動的に待機せず、session-reviewに要した自然な経過時間の後に1回だけ取得する。未対応の指摘ごとに、当該セッションで是正するか`agent-toolkit:wi-standards`に従ってAWIを登録するかを確定する。既に是正済み又は根拠付きで対応不要と確定した指摘の未解決threadは解決する。取得に失敗した場合は完了として報告せず、必須の外部資料を取得できない場合の確認経路へ送る。
 
