@@ -25,7 +25,12 @@ fi
 # シムが欠落したまま再インストールが永久にスキップされる事象が発生するため、
 # post-apply 処理継続に必須のシムの実在もキャッシュキーへ組み込む。
 expected_shim_dir="$HOME/.local/bin"
-expected_shims=("dotfiles-post-apply")
+# {{ $pyproject := include (joinPath .chezmoi.workingTree "pyproject.toml") | fromToml }}
+expected_shims=(
+    # {{ range $name, $_ := $pyproject.project.scripts }}
+    "{{ $name }}"
+    # {{ end }}
+)
 test_expected_shims() {
     for name in "${expected_shims[@]}"; do
         if [ ! -x "$expected_shim_dir/$name" ]; then
@@ -38,6 +43,8 @@ test_expected_shims() {
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 needs_reinstall=0
 reason=""
+DOTFILES_PYTOOLS_INSTALL_STATE=""
+DOTFILES_PYTOOLS_INSTALL_DETAIL=""
 if [ "$current_hash" != "$cached_hash" ]; then
     needs_reinstall=1
     reason="pyproject.toml に変更あり"
@@ -53,6 +60,8 @@ if [ "$needs_reinstall" = 1 ]; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" >"$hash_file"
     else
+        DOTFILES_PYTOOLS_INSTALL_STATE="failed"
+        DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install または期待シム検査が失敗しました"
         echo "  [pytools] インストールに失敗しました (後続処理は継続)"
     fi
 else
@@ -63,6 +72,7 @@ post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"
 if [ -x "$post_apply_bin" ]; then
     # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す
     export CHEZMOI_WORKING_TREE='{{ .chezmoi.workingTree }}'
+    export DOTFILES_PYTOOLS_INSTALL_STATE DOTFILES_PYTOOLS_INSTALL_DETAIL
     # post-applyの案内を更新処理全体の最終出力にするため、後続処理を置かずexecする。
     exec "$post_apply_bin"
 else

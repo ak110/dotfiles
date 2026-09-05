@@ -4,6 +4,7 @@
 """
 
 import logging
+import os
 import sys
 import threading
 import time
@@ -314,7 +315,7 @@ def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
-        notices = [notice for result in results for notice in result.notices]
+        notices = _pytools_install_notices() + [notice for result in results for notice in result.notices]
         # logger.info("") だと format により末尾空白が付与されるため、stdout に直接出力する。
         print(flush=True)
         logger.info("完了: 更新 %d 件 / スキップ %d 件 / 失敗 %d 件", len(updated), len(skipped), len(failed))
@@ -363,6 +364,25 @@ def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice])
         logger.warning(notice.message)
         if notice.command is not None:
             print(notice.command, file=sys.stderr, flush=True)
+
+
+def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
+    """テンプレートから渡されたpytools再導入状態を最終案内へ変換する。"""
+    state = os.environ.get("DOTFILES_PYTOOLS_INSTALL_STATE", "")
+    if not state:
+        return []
+    messages = {
+        "deferred": "pytoolsの再インストールを延期しました。",
+        "failed": "pytoolsの再インストールに失敗しました。",
+    }
+    try:
+        message = messages[state]
+    except KeyError as error:
+        raise ValueError(f"未知のpytools再導入状態です: {state}") from error
+    detail = os.environ.get("DOTFILES_PYTOOLS_INSTALL_DETAIL", "")
+    if detail:
+        message = f"{message} 詳細: {detail}"
+    return [post_apply_outcome.PostApplyNotice(message)]
 
 
 _background_log_state = threading.local()

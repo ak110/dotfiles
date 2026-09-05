@@ -498,6 +498,85 @@ class TestRun:
         assert captured.err.count(notice.command) == 1
 
 
+class TestPytoolsInstallNotices:
+    """テンプレートから渡されたpytools再導入状態の最終案内。"""
+
+    def test_unset_state_does_not_print_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """状態が未設定なら案内を表示しない。"""
+        monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_STATE", raising=False)
+        monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: ([], []))
+
+        assert exc_info.value.code == 0
+        assert "pytoolsの再インストール" not in capsys.readouterr().err
+
+    def test_empty_state_does_not_print_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """状態が空文字列なら案内を表示しない。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "")
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", "ignored")
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: ([], []))
+
+        assert exc_info.value.code == 0
+        assert "pytoolsの再インストール" not in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ("state", "expected"),
+        [
+            ("deferred", "pytoolsの再インストールを延期しました。"),
+            ("failed", "pytoolsの再インストールに失敗しました。"),
+        ],
+    )
+    def test_known_state_prints_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        state: str,
+        expected: str,
+    ) -> None:
+        """延期と失敗を最終案内へ表示する。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", state)
+        monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: ([], []))
+
+        assert exc_info.value.code == 0
+        assert expected in capsys.readouterr().err
+
+    def test_notice_includes_detail(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """補足がある場合は状態案内の本文へ含める。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "failed")
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", "uv tool install error")
+
+        with pytest.raises(SystemExit):
+            post_apply.main(runner=lambda: ([], []))
+
+        assert "詳細: uv tool install error" in capsys.readouterr().err
+
+    def test_unknown_state_raises_value_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """送信契約にない状態を黙って無視しない。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "unknown")
+
+        with pytest.raises(ValueError, match="未知のpytools再導入状態"):
+            post_apply.main(runner=lambda: ([], []))
+
+
 class TestDefaultSteps:
     """`_DEFAULT_STEPS`に想定ステップが登録されていることを検証する。"""
 

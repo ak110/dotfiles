@@ -590,6 +590,9 @@
 - 2026年9月: euryaleの`dotfiles-autoupdate.service`が10分ごとに起動しながら毎回1段目で失敗した。
   直接原因: systemdユーザーunitへ`Environment=PATH`が無く、`update-dotfiles`が実行ファイル名で起動する`chezmoi`を解決できなかった。
   対策: unit生成側でPATHを明示し、`~/.local/bin`とmiseのshimsを既定PATHの前へ置く
+- 2026年9月: Windowsのpytools再導入が2026年8月10日以降毎回延期され、`sonnet`・`opus`・`fable`が導入されなかった。
+  直接原因: 常駐プロセスの復元可否分類を正規の起動経路が生成しないプロセス属性で記述し、延期を終了コード0の通常出力で終端していた。
+  対策: 分類条件を正規の起動経路から導出し、延期と失敗を`update-dotfiles`の最終出力へ表示する
 - 2026年8月28日: process-loopのCodex起動文が開始後のready項目も同じセッションで処理するよう明示していた一方、
   `agent-toolkit:process-feedbacks`が起動時の対象集合を固定し、追加分を次回セッションへ送る逆の契約を持っていた。
   直接原因: `agent-toolkit:process-feedbacks`の処理集合変更時に呼出元のprocess-loop起動文と既存設計の連続処理条件を照合せず、
