@@ -151,13 +151,12 @@ class _BrowserOperations(serve_app.Operations):
         *,
         entry_type: str,
         target_repo: str | None,
-        source: str | None,
         scope: str | None = None,
         question_type: str | None = None,
         choices: list[str] | None = None,
     ) -> list[str]:
         """Gitを使わず、対象リポジトリの必須検証と一時リポジトリへの書込みだけを行う。"""
-        del source, scope, question_type, choices
+        del scope, question_type, choices
         self.add_calls.append({"messages": messages, "target_repo": target_repo})
         filenames: list[str] = []
         for index, message in enumerate(messages):
@@ -381,12 +380,20 @@ async def _open_question(page: playwright.async_api.Page) -> playwright.async_ap
     return row
 
 
+async def _open_filters(page: playwright.async_api.Page) -> None:
+    """既定で閉じているWI一覧のフィルターを利用者操作で開く。"""
+    details = page.locator(".filters details")
+    if not await details.evaluate("element => element.open"):
+        await details.locator("summary").click()
+
+
 @pytest.mark.asyncio
 async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _BrowserHarness) -> None:
     """代表3画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
 
     for width, height, columns_visible in [(390, 844, False), (768, 1024, False), (1280, 800, True)]:
         await page.set_viewport_size({"width": width, "height": height})
@@ -433,6 +440,33 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
             assert header_box["height"] < 150
         await page.keyboard.press("Escape")
         await playwright.async_api.expect(row).to_be_focused()
+
+
+@pytest.mark.asyncio
+async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harness: _BrowserHarness) -> None:
+    """390px幅では閉じたフィルターより一覧を先に示し、各項目を2段で描画する。"""
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(browser_harness.base_url + "/")
+    row = page.locator("#entry-list .entry-row").first
+    await row.wait_for(state="visible")
+
+    assert not await page.locator(".filters details").evaluate("element => element.open")
+    cells = row.locator(".entry-cell")
+    pseudo_content = await cells.evaluate_all(
+        "elements => elements.map(element => getComputedStyle(element, '::before').content)"
+    )
+    assert pseudo_content == ["none"] * await cells.count()
+    summary_box = await row.locator(".summary-cell").bounding_box()
+    status_box = await row.locator(".status-cell").bounding_box()
+    row_box = await row.bounding_box()
+    assert summary_box is not None
+    assert status_box is not None
+    assert row_box is not None
+    assert summary_box["y"] < status_box["y"]
+    assert row_box["height"] <= 96
+    assert row_box["y"] >= 0
+    assert row_box["y"] + row_box["height"] <= 844
 
 
 @pytest.mark.asyncio
@@ -585,6 +619,8 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    assert not await page.locator(".filters details").evaluate("element => element.open")
+    await _open_filters(page)
 
     warning = page.get_by_role("alert").filter(has_text="invalid.md")
     await warning.wait_for(state="visible")
@@ -706,6 +742,7 @@ async def test_search_fallback_shows_limited_terminal_matches_and_keeps_filters(
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
     notice = page.locator("#list-fallback-notice")
     expected_notice = (
         "状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。"
@@ -785,6 +822,7 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     question_path = harness.root / "inbox" / "question.md"
     question_path.write_text(question_path.read_text(encoding="utf-8") + "既存回答\n", encoding="utf-8")
     await page.goto(harness.base_url + "/")
+    await _open_filters(page)
 
     question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
     await question_row.click()
@@ -822,6 +860,7 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
         encoding="utf-8",
     )
     await page.goto(browser_harness.base_url + "/")
+    await _open_filters(page)
     await page.locator("#state-filter").select_option("all")
     detail = page.get_by_role("dialog", name="詳細")
 
@@ -1027,6 +1066,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_text("自動更新に接続済み")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await _open_filters(page)
 
     await page.locator("#answer-filter").select_option("no")
     question_row = page.locator('#entry-list .entry-select[data-kind="uwi"]')
@@ -1249,6 +1289,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("4件を表示")
     await playwright.async_api.expect(page.locator('#target-filter option[value="example/repo"]')).to_have_count(1)
+    await _open_filters(page)
     first_started = asyncio.Event()
     release_first = asyncio.Event()
     request_count = 0
@@ -1871,7 +1912,8 @@ async def _remote_sessions_runner(host: str, op: str, _args: list[str]) -> str:
                 "entries": [
                     {
                         "engine": "claude",
-                        "project": "-home-remote-proj",
+                        "cwd": "/home/remote/proj",
+                        "first_user_message": "リモートの最初の発話",
                         "session_id": f"{host}-session",
                         "path": _REMOTE_RECORD_PATH,
                         "updated_at": 1_800_000_000,
@@ -2006,7 +2048,9 @@ def _write_session_records(root: Path) -> None:
                     "usage": {"input_tokens": 12, "output_tokens": 3},
                     "content": [
                         {"type": "thinking", "thinking": "Claudeの思考"},
-                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls\npwd"}},
+                        {"type": "tool_use", "name": "Read", "input": {"file_path": "/tmp/input.md"}},
+                        {"type": "tool_use", "name": "Search", "input": {"pattern": "needle", "count": 1}},
                     ],
                 },
             },
@@ -2061,6 +2105,24 @@ def _write_session_records(root: Path) -> None:
                 "type": "response_item",
                 "timestamp": "2026-09-01T01:00:01Z",
                 "payload": {"type": "message", "role": "user", "content": [{"text": "Codexの発話"}]},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T01:00:02Z",
+                "payload": {"type": "function_call", "name": "shell", "arguments": '{"cmd":"pwd"}'},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T01:00:03Z",
+                "payload": {"type": "function_call", "name": "broken", "arguments": "{invalid-json"},
             },
             ensure_ascii=False,
         )
@@ -2172,6 +2234,7 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list").wait_for(state="visible")
+    await _open_filters(page)
     initial_font_size = await page.locator("body").evaluate("element => getComputedStyle(element).fontSize")
     await page.locator("#search-input").fill("ワークアイテム条件")
 
@@ -2714,7 +2777,7 @@ async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _
 
 @pytest.mark.asyncio
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
-    """左ペインでホスト・プロジェクト・識別子により一覧を限定し、右ペインへ発話を時系列に表示する。"""
+    """左ペインを内容と非表示の識別子で限定し、右ペインへ発話とツール入力を表示する。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
 
@@ -2723,7 +2786,9 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert await items.count() == 2
     listing = await harness.page.locator("#sessions").inner_text()
     assert "browser-test" in listing
-    assert "-home-aki-proj" in listing
+    assert "/home/aki/proj" in listing
+    assert "Claudeの発話" in listing
+    assert "11111111-2222-3333-4444-555555555555" not in listing
     # 実行系による限定の操作、実行系のバッジ、ホストの接続状態及び件数の表示は画面へ現れない。
     for selector in ("#sessions .engine-badge", ".engine-filter", "#host-status", "#list-status"):
         assert await harness.page.locator(selector).count() == 0, selector
@@ -2737,6 +2802,21 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
     assert "Codexの発話" in await harness.page.locator("#detail").inner_text()
     assert "/home/aki/other" in await harness.page.locator("#detail-title").inner_text()
+    shell_summary = harness.page.locator("#detail .kind-tool_call", has_text="shell").locator("summary")
+    assert "pwd" in await shell_summary.inner_text()
+    broken_summary = harness.page.locator("#detail .kind-tool_call", has_text="broken").locator("summary")
+    assert "invalid-json" not in await broken_summary.inner_text()
+
+    await harness.page.locator("#filter").fill("Claudeの発話")
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
+    assert await harness.page.locator('#sessions .session-item[data-engine="claude"]').count() == 1
+
+    await harness.page.locator("#filter").fill("/home/aki/proj")
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
+    assert await harness.page.locator('#sessions .session-item[data-engine="claude"]').count() == 1
+
+    await harness.page.locator("#filter").fill("browser-test")
+    await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
 
     await harness.page.locator("#filter").fill("")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
@@ -2748,6 +2828,10 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "Claudeの発話" in detail_text
     assert "Claudeの思考" in detail_text
     assert "Bash" in detail_text
+    tool_summaries = await harness.page.locator("#detail .kind-tool_call summary").all_inner_texts()
+    assert any("Bash" in summary and "ls" in summary and "pwd" not in summary for summary in tool_summaries)
+    assert any("Read" in summary and "/tmp/input.md" in summary for summary in tool_summaries)
+    assert any("Search" in summary and "needle" in summary for summary in tool_summaries)
     assert "入力: 12" in await harness.page.locator("#detail-usage").inner_text()
     # 破損した行は該当セッションの警告として示し、他の発話を失わせない。
     assert "解析できない行が1件あります" in detail_text
@@ -2792,6 +2876,59 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     assert scroll_top > 0
     assert after is not None
     assert after["y"] < before["y"]
+
+
+@pytest.mark.asyncio
+async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _ScreenHarness) -> None:
+    """390px幅の計画画面で本文とパスのコピー操作を1行の高さに保つ。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 390, "height": 844})
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#files .file").first.click()
+    await page.locator("#preview h1").wait_for(state="visible")
+
+    for selector in ("#copy-btn", "#copy-path-btn"):
+        button = page.locator(selector)
+        line_metrics = await button.evaluate(
+            """element => {
+              const style = getComputedStyle(element);
+              return {
+                contentHeight: element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+                lineHeight: parseFloat(style.lineHeight),
+              };
+            }"""
+        )
+        assert line_metrics["contentHeight"] <= line_metrics["lineHeight"] + 1
+        assert await button.locator(".short-label").evaluate("element => element.getClientRects().length") == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
+    """700・701・768pxでは一覧を初期表示し、769pxから通常配置へ戻す。"""
+    page = screen_harness.page
+    for width in (700, 701, 768, 769):
+        mobile = width <= 768
+        await page.set_viewport_size({"width": width, "height": 800})
+
+        await page.goto(screen_harness.base_url + "/plans")
+        await page.locator("#files .file").first.wait_for(state="visible")
+        assert await page.locator("body").evaluate("element => element.classList.contains('drawer-open')") is mobile
+        if mobile:
+            assert await page.locator("#copy-btn .short-label").is_visible()
+            assert not await page.locator("#copy-btn .wide-label").is_visible()
+            assert await page.locator("main .toolbar").evaluate("element => getComputedStyle(element).flexWrap") == "nowrap"
+            await page.locator("#files .file").first.click()
+            await page.locator("#preview h1").wait_for(state="visible")
+            assert not await page.locator("body").evaluate("element => element.classList.contains('drawer-open')")
+        else:
+            await page.locator("#preview h1").wait_for(state="visible")
+
+        await page.goto(screen_harness.base_url + "/sessions")
+        await page.locator("#sessions .session-item").first.wait_for(state="visible")
+        assert await page.locator("body").evaluate("element => element.classList.contains('drawer-open')") is mobile
+        await page.locator("#sessions .session-item").first.click()
+        await page.locator("#detail .event").first.wait_for(state="visible")
+        assert not await page.locator("body").evaluate("element => element.classList.contains('drawer-open')")
 
 
 @pytest.mark.asyncio
@@ -2898,6 +3035,36 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
     harness.legacy_plan.write_text("# 旧root更新\n\nold needle\n", encoding="utf-8")
     await serve_plans.schedule_broadcast(harness.plans_state)
     await harness.page.locator("#preview h1", has_text="旧root更新").wait_for(state="visible")
+
+
+@pytest.mark.asyncio
+async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_harness: _ScreenHarness) -> None:
+    """結果表示中に再度コピーしても両ボタンの幅別操作名を復元する。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/plans")
+    await page.locator("#preview h1").wait_for(state="visible")
+    await page.evaluate(
+        """() => {
+          window.copyLabelTimers = [];
+          window.setTimeout = callback => {
+            window.copyLabelTimers.push(callback);
+            return window.copyLabelTimers.length;
+          };
+        }"""
+    )
+
+    for selector, wide, short in (
+        ("#copy-btn", "Markdownをコピー", "本文"),
+        ("#copy-path-btn", "計画ファイルのパスをコピー", "パス"),
+    ):
+        button = page.locator(selector)
+        await button.click()
+        await playwright.async_api.expect(button.locator(".short-label")).to_have_text("完了")
+        await button.click()
+        await page.wait_for_function("window.copyLabelTimers.length >= 2")
+        await page.evaluate("() => window.copyLabelTimers.splice(0).forEach(callback => callback())")
+        assert await button.locator(".wide-label").inner_text() == wide
+        assert await button.locator(".short-label").inner_text() == short
 
 
 @pytest.mark.asyncio

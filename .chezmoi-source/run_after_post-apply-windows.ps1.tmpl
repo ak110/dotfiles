@@ -24,7 +24,12 @@ if (Test-Path $hashFile) {
 # シムが欠落したまま再インストールが永久にスキップされる事象が発生するため、
 # post-apply 処理継続に必須のシムの実在もキャッシュキーへ組み込む。
 $expectedShimDir = Join-Path $env:USERPROFILE '.local\bin'
-$expectedShims = @('dotfiles-post-apply.exe')
+# {{ $pyproject := include (joinPath .chezmoi.workingTree "pyproject.toml") | fromToml }}
+$expectedShims = @(
+# {{ range $name, $_ := $pyproject.project.scripts }}
+    '{{ $name }}.exe'
+# {{ end }}
+)
 function Test-ExpectedShims {
     foreach ($name in $expectedShims) {
         if (-not (Test-Path (Join-Path $expectedShimDir $name))) { return $false }
@@ -33,8 +38,18 @@ function Test-ExpectedShims {
 }
 $needsReinstall = ($currentHash -ne $cachedHash) -or (-not (Test-ExpectedShims))
 
-$viewerBin = Join-Path $env:USERPROFILE '.local\bin\claude-plans-viewer.exe'
 $mediaRemoteBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-media-remote.exe'
+$escapedMediaRemoteBin = [System.Management.Automation.WildcardPattern]::Escape($mediaRemoteBin)
+function Test-MediaRemoteProcess {
+    param([object] $Process)
+    if ($Process.ExecutablePath -and
+        $Process.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if (-not $Process.CommandLine) { return $false }
+    return ($Process.CommandLine -like "*$escapedMediaRemoteBin*") -or
+        ($Process.CommandLine -like '*pytools.media_remote*')
+}
 # uv tool venvの場所はOSと環境変数（UV_TOOL_DIR等）で変動する。
 # `uv tool dir`の出力を一次情報源とし、取得失敗時はWindows既定配置へフォールバックする。
 $uvToolBaseDir = $null
@@ -51,31 +66,27 @@ if (-not $uvToolBaseDir) {
     $uvToolBaseDir = Join-Path $env:APPDATA 'uv\tools'
 }
 $uvToolDir = Join-Path $uvToolBaseDir 'pytools'
-$mediaRemotePythonw = Join-Path $uvToolDir 'Scripts\pythonw.exe'
 
 # 再インストール時にuv tool venv配下のexeが起動中だと、uvはディレクトリ削除に
 # アクセス拒否で失敗する。更新対象を保持するプロセスを停止前に分類し、
 # 再起動できる既知プロセスだけなら停止・再導入・復元する。
 # 再起動できないプロセスが含まれる場合は一切停止せず、既存版とハッシュを温存して次回へ延期する。
-$viewerWasRunning = $false
 $mediaRemoteWasRunning = $false
 $reinstallDeferred = $false
+$env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
+$env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
 if ($needsReinstall) {
     $prefix = $uvToolDir.TrimEnd('\') + '\'
     $lockingProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         if (-not $_.ExecutablePath) { return $false }
         if ($_.ExecutablePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-        if ($_.ExecutablePath.Equals($viewerBin, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         if ($_.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
         return $false
     })
     $restorableProcs = @()
     $unrestorableProcs = @()
     foreach ($p in $lockingProcs) {
-        if ($p.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase) -or
-            $p.CommandLine -like '*pytools.media_remote*') {
-            $restorableProcs += $p
-        } elseif ($p.Name -eq 'claude-plans-viewer.exe' -or $p.CommandLine -like '*claude_plans_viewer*') {
+        if (Test-MediaRemoteProcess $p) {
             $restorableProcs += $p
         } else {
             $unrestorableProcs += $p
@@ -83,14 +94,13 @@ if ($needsReinstall) {
     }
     if ($unrestorableProcs.Count -gt 0) {
         $reinstallDeferred = $true
+        $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
+        $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ($unrestorableProcs | ForEach-Object { "$($_.Name) (PID=$($_.ProcessId))" }) -join ', '
         Write-Host '  [pytools] 再起動できないプロセスが更新対象を使用中 → 再インストールを次回へ延期'
     } else {
         foreach ($p in $restorableProcs) {
-            if ($p.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase) -or
-                $p.CommandLine -like '*pytools.media_remote*') {
+            if (Test-MediaRemoteProcess $p) {
                 $mediaRemoteWasRunning = $true
-            } else {
-                $viewerWasRunning = $true
             }
             Write-Host "  [pytools] $($p.Name) (PID=$($p.ProcessId)) を一時停止"
             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
@@ -125,6 +135,8 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         }
         Set-Content -Path $hashFile -Value $currentHash -Encoding UTF8 -NoNewline
     } catch {
+        $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'failed'
+        $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = $_.Exception.Message
         Write-Host "  [pytools] インストールに失敗しました (後続処理は継続): $_"
     }
 } elseif ($reinstallDeferred) {
@@ -153,21 +165,14 @@ if (Test-Path $userEnvFile) {
     }
 }
 
-# 再インストール前に停止した viewer を再起動する。
-# post-apply 側に Windows 用のレストアステップは存在しないため、
-# 本節が「停止済み → 明示的に再開」を単独で担う。
-if ($viewerWasRunning -and (Test-Path $viewerBin)) {
-    Write-Host '  [pytools] claude-plans-viewer を再起動'
-    Start-Process -FilePath $viewerBin -WindowStyle Hidden
-}
-
 # 再インストール前に停止した media-remote を再起動する（stheno のみ）。
 # 自動起動は post-apply 側のショートカット配置に委ねるが、再インストール中の停止からの
 # 復帰だけは本節で担当する。
 if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno') {
     Write-Host '  [pytools] dotfiles-media-remote を再起動'
-    if (Test-Path $mediaRemotePythonw) {
-        Start-Process -FilePath $mediaRemotePythonw -WindowStyle Hidden -ArgumentList @('-m', 'pytools.media_remote', 'serve')
+    $vbsPath = Join-Path $env:LOCALAPPDATA 'dotfiles\media-remote\launch.vbs'
+    if (Test-Path $vbsPath) {
+        Start-Process -FilePath 'wscript.exe' -ArgumentList @("`"$vbsPath`"") -WindowStyle Hidden
     } elseif (Test-Path $mediaRemoteBin) {
         Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')
     }
@@ -179,8 +184,7 @@ if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno') {
 # dotfiles-media-remote.exe のハング原因は未特定のため対症療法とする。
 if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {
     $mediaRemoteProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        if (-not $_.CommandLine) { return $false }
-        return $_.CommandLine -like '*pytools.media_remote*'
+        return (Test-MediaRemoteProcess $_)
     })
     foreach ($p in $mediaRemoteProcs) {
         Write-Host "  [pytools] dotfiles-media-remote (PID=$($p.ProcessId)) を停止"

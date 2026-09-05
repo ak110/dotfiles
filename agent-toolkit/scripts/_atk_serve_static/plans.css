@@ -80,8 +80,11 @@
     border-bottom: 1px solid #e6e6e6;
   }
   /* 配色・境界・角丸・無効時表示・寸法は`shell.css`の共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
+  main .toolbar { flex-wrap: nowrap; }
   main .toolbar .spacer { flex: 1; }
+  main .toolbar button { white-space: nowrap; }
   main .toolbar .nav-btn { min-width: 36px; }
+  .short-label { display: none; }
   /* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */
   #menu-btn { display: none; }
   #meta-mobile { display: none; }
@@ -110,7 +113,7 @@
     font-weight: 600;
   }
   /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
-  @media (max-width: 700px) {
+  @media (max-width: 768px) {
     #app { grid-template-columns: 1fr; }
     aside {
       position: fixed;
@@ -124,7 +127,7 @@
       transition: transform 0.2s ease-out;
       box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
     }
-    aside.open { transform: translateX(0); }
+    body.drawer-open aside { transform: translateX(0); }
     #drawer-backdrop {
       display: none;
       position: fixed;
@@ -135,8 +138,10 @@
       background: rgba(0, 0, 0, 0.4);
       z-index: 10;
     }
-    #drawer-backdrop.open { display: block; }
+    body.drawer-open #drawer-backdrop { display: block; }
     #menu-btn { display: inline-flex; align-items: center; justify-content: center; }
+    .wide-label { display: none; }
+    .short-label { display: inline; }
     #meta-mobile {
       display: block;
       padding: 8px 16px;

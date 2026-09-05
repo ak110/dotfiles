@@ -35,13 +35,11 @@ description: >
 
 - BOMなしUTF-8で出力する場合は`System.Text.UTF8Encoding`のインスタンスを使う
   （既存`install-claude.ps1`の`$script:utf8NoBom`を参照する）
-- `$HOME`と`$env:USERPROFILE`のどちらを使うかをスクリプト内で統一し、両者を併用しない
 
 ## Bash / `.sh.tmpl` 側の対応
 
 記述作法は`<plugin root>/skills/coding-standards/references/bash.md`に従う。
 ただし`.sh.tmpl`では既存スクリプトに合わせて`set -eux`を使う。
-Windows版と同じ処理を別の記法で書いているだけの場合、両方に同一のコメントを付けて対応関係を示す。
 
 ## ローカル検査とCIジョブの対応
 
@@ -60,7 +58,7 @@ Linux側とWindows側で分岐するコードを変更した場合、Windows側�
 
 ## 変更フロー
 
-1. 編集対象がfrontmatterのファイル名規則に該当するか確認し、対応するもう一方のパスを特定する
+1. 「ペアファイルの判別」に従い、対応するもう一方のパスを特定する
 2. 意味的な変更を両方に適用する
 3. プラットフォーム固有の書き方の違いのみ確認する
 4. 可能であれば両方を実行して動作確認する（Linuxでのみ実行可能な環境では最低限syntax check）

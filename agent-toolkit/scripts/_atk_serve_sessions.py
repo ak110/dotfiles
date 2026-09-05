@@ -78,7 +78,8 @@ class SessionSummary:
 
     engine: str
     host: str
-    project: str | None
+    cwd: str | None
+    first_user_message: str | None
     session_id: str
     path: str
     started_at: str | None
@@ -465,15 +466,64 @@ def create_context(
     )
 
 
-def _local_entry(path: pathlib.Path, engine: str, session_id: str, project: str | None, host: str) -> SessionSummary:
+def _first_line(value: typing.Any) -> str | None:
+    """本文として解釈できる値の先頭1行を返す。"""
+    text = _as_text(value)
+    if text is None:
+        return None
+    lines = text.splitlines()
+    return lines[0] if lines else None
+
+
+def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None]:
+    """一覧の識別に使う作業ディレクトリと最初のユーザー発話を先頭から取得する。"""
+    cwd: str | None = None
+    first_user_message: str | None = None
+    first_user_seen = False
+    try:
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                if engine == "claude":
+                    if cwd is None and isinstance(record.get("cwd"), str):
+                        cwd = record["cwd"]
+                    if not first_user_seen and record.get("type") == "user":
+                        first_user_seen = True
+                        message = record.get("message")
+                        if isinstance(message, dict):
+                            first_user_message = _first_line(message.get("content"))
+                else:
+                    payload = record.get("payload")
+                    if not isinstance(payload, dict):
+                        continue
+                    if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
+                        cwd = payload["cwd"]
+                    if not first_user_seen and payload.get("role") == "user":
+                        first_user_seen = True
+                        first_user_message = _first_line(payload.get("content"))
+                if cwd is not None and first_user_seen:
+                    break
+    except OSError:
+        pass
+    return cwd, first_user_message
+
+
+def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) -> SessionSummary:
     """ローカルの記録1件を一覧の項目へ変換する。"""
+    cwd, first_user_message = _summary_fields(path, engine)
     try:
         st = path.stat()
     except OSError as error:
         return SessionSummary(
             engine=engine,
             host=host,
-            project=project,
+            cwd=cwd,
+            first_user_message=first_user_message,
             session_id=session_id,
             path=str(path),
             started_at=None,
@@ -484,7 +534,8 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, project: str 
     return SessionSummary(
         engine=engine,
         host=host,
-        project=project,
+        cwd=cwd,
+        first_user_message=first_user_message,
         session_id=session_id,
         path=str(path),
         started_at=None,
@@ -508,12 +559,12 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
                 continue
             for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
                 if path.is_file():
-                    entries.append(_local_entry(path, "claude", path.stem, project_dir.name, context.hostname))
+                    entries.append(_local_entry(path, "claude", path.stem, context.hostname))
     sessions = context.codex_home / "sessions"
     if sessions.is_dir():
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
             if path.is_file():
-                entries.append(_local_entry(path, "codex", codex_session_id(path), None, context.hostname))
+                entries.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
     entries.sort(key=lambda entry: entry.updated_at or "", reverse=True)
     return entries[:MAX_LIST_ENTRIES]
 
@@ -884,7 +935,10 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
             SessionSummary(
                 engine=str(item.get("engine", "")),
                 host=host,
-                project=item.get("project") if isinstance(item.get("project"), str) else None,
+                cwd=item.get("cwd") if isinstance(item.get("cwd"), str) else None,
+                first_user_message=(
+                    item.get("first_user_message") if isinstance(item.get("first_user_message"), str) else None
+                ),
                 session_id=str(item.get("session_id", "")),
                 path=str(item["path"]),
                 started_at=None,

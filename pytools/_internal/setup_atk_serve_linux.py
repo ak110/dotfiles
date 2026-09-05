@@ -37,13 +37,13 @@ exec "{uv}" run --no-project --script "$script" serve "$@"
 # post_apply 実行時の Path.home() を埋め込まない。
 # 待受アドレス・ポートはホスト固有値であり、
 # `~/.config/agent-toolkit/serve.toml` 経由で指定する。
-_UNIT_CONTENT = """[Unit]
+_UNIT_CONTENT = f"""[Unit]
 Description=agent-toolkit work item server
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/atk-serve
+{systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT}ExecStart=%h/.local/bin/atk-serve
 Restart=on-failure
 RestartSec=5
 KillMode=mixed

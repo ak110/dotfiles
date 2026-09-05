@@ -207,7 +207,8 @@ def _check_structure(
         work_dir,
         private_notes=private_notes,
         home=home,
-        reject_legacy_format=True,
+        reject_migration_warnings=True,
+        reject_progress_log_rows=True,
     )
     if errors:
         raise PlanCreationError("計画構造検査に失敗しました: " + " / ".join(errors))

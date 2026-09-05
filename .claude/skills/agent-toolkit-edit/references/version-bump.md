@@ -1,8 +1,7 @@
 # バージョン更新の詳細手順
 
 `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節の詳細手順を集約する。
-本節のバージョン更新規定は`agent-toolkit/`配下（agent-toolkitプラグイン配布物）のみを対象とする。
-`.chezmoi-source/`配下のchezmoi配布物・`bin/`配下のCLIラッパー・`scripts/`配下のヘルパースクリプトは
+対象範囲は同節が定める。`.chezmoi-source/`配下のchezmoi配布物・`bin/`配下のCLIラッパー・`scripts/`配下のヘルパースクリプトは
 本規定の対象外とし、`agent_toolkit_bump.py`も更新しない。
 
 ## 判定基準
@@ -17,6 +16,7 @@
   既存の見出し配下への規範文追記・条件補強・例示追加など）
 - MINOR（`+0.1.0`）: 機能追加・検出範囲の大幅拡大・description変更・節新設など、規模の大きい変更
 - MAJOR（`+1.0.0`）: ユーザーからの明示的な指示がない限り行わない
+  （規定の正本は`agent-toolkit:commit`の`references/push-and-ci.md`「リリースバージョン指定」）
 - 現行版が`major.minor.patch`の数値3要素で表せない非SemVerの場合は、文字列の辞書順・
 桁数・接尾辞からPATCH/MINOR/MAJORを推測しない。プロジェクト固有の対応表又はユーザーの
   明示指定がある場合だけその区分を適用し、どちらも無い場合はbumpを行わず判定不能として報告する
@@ -69,8 +69,7 @@ bumpの完了条件は、実装開始時点の版との増加比較で判定し�
 既存の未プッシュbumpが要求種別以上であり`scripts/agent_toolkit_bump.py`が無変更で終了コード0を返す場合は、完了条件を満たす正常結果として扱う。
 複数レーンを並列実装するAWI処理では、各レーンはbump種別（`bump不要`を含む）と選定根拠、MAJORの場合は認可根拠を計画へ記録するに留める。
 メインが本規定の適用対象となるレーンの記録から最も上位の種別を確定し、全レーンのマージ後に1回だけ実行する。
-統合ブランチのpush前に上流進行を観測してrebaseした場合は、`agent-toolkit:process-wi`の
-`agent-toolkit:process-wi`のレーン自己マージによる逐次統合契約に従う。
+統合ブランチのpush前に上流進行を観測してrebaseした場合は、
 rebase後の公開済み統合先と正本のversionを「競合解決と統合後の確認」節の基準で再比較する。
 未公開の振る舞い変更が公開済みと同じversionのまま残る場合は、メインが再bumpとmanifest同期を行う。
 

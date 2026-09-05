@@ -31,6 +31,7 @@ _restart_process_loop = _process_loop._restart_process_loop  # pylint: disable=p
 _RESTART_SPEC_ENV = _process_loop._RESTART_SPEC_ENV  # pylint: disable=protected-access
 _RESTART_EXIT_CODE = _process_loop._RESTART_EXIT_CODE  # pylint: disable=protected-access
 _INTERNAL_MISE_REFRESHED_ARG = _process_loop._INTERNAL_MISE_REFRESHED_ARG  # pylint: disable=protected-access
+_INTERNAL_DOTFILES_UPDATED_ARG = _process_loop._INTERNAL_DOTFILES_UPDATED_ARG  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
@@ -208,6 +209,23 @@ class TestWaitLoopAutoRestart:
         )
         assert _command_was_called(subprocess_calls, "update-dotfiles")
 
+    def test_successful_update_restart_marks_dotfiles_updated(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """待機中の更新成功による再起動へ更新済み指定を渡す。"""
+        _, execv_calls = self._run_until_stop(
+            monkeypatch,
+            tmp_path,
+            wait_return=False,
+            has_upstream_diff=True,
+            changed_file_name="a.py",
+        )
+
+        assert execv_calls
+        assert _INTERNAL_DOTFILES_UPDATED_ARG in execv_calls[0][1]
+
     def test_no_upstream_diff_skips_update_dotfiles(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """上流差分なしの場合は`update-dotfiles`が実行されないこと。"""
         subprocess_calls, _ = self._run_until_stop(
@@ -322,6 +340,7 @@ class TestWaitLoopAutoRestart:
         _, restart_argv = execv_calls[0]
         assert not any(arg.startswith("--resume") for arg in restart_argv)
         assert "00000000-0000-0000-0000-000000000000" not in restart_argv
+        assert _INTERNAL_DOTFILES_UPDATED_ARG not in restart_argv
         assert "--target-repo" in restart_argv
 
     def test_codex_session_restart_uses_configuration_without_removed_options(
@@ -464,6 +483,32 @@ def test_direct_restart_carries_refreshed_marker_once(monkeypatch: pytest.Monkey
         )
 
     assert calls[0].count(_INTERNAL_MISE_REFRESHED_ARG) == 1
+
+
+def test_restart_spec_carries_updated_marker_once_and_next_restart_drops_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """更新成功の内部指定を一回だけ渡し、次の再起動へ持ち越さない。"""
+    first_spec = tmp_path / "first-restart-spec"
+    script = tmp_path / "atk.py"
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(first_spec))
+
+    with pytest.raises(SystemExit):
+        _restart_process_loop(
+            [str(script), "wi", "process-loop", _INTERNAL_DOTFILES_UPDATED_ARG],
+            dotfiles_updated=True,
+        )
+
+    first_lines = first_spec.read_text(encoding="utf-8").splitlines()
+    assert first_lines.count(_INTERNAL_DOTFILES_UPDATED_ARG) == 1
+
+    second_spec = tmp_path / "second-restart-spec"
+    monkeypatch.setenv(_RESTART_SPEC_ENV, str(second_spec))
+    with pytest.raises(SystemExit):
+        _restart_process_loop(first_lines, dotfiles_updated=False)
+
+    assert _INTERNAL_DOTFILES_UPDATED_ARG not in second_spec.read_text(encoding="utf-8").splitlines()
 
 
 def test_restart_spec_targets_dotfiles_checkout_entry_point(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

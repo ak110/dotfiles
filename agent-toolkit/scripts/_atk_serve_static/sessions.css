@@ -69,17 +69,14 @@ aside input {
 .session-item:hover { background: #eef2ff; }
 .session-item[aria-current="true"] { background: #e0e7ff; }
 
-.session-item .session-line {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-}
-
-.session-item .session-project {
+.session-item .session-cwd,
+.session-item .session-message {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.session-item .session-message { color: #374151; }
 
 .session-item .session-meta {
   color: #6b7280;
@@ -209,6 +206,12 @@ main .spacer { flex: 1; }
 .event.kind-compact_boundary .event-kind { background: #b91c1c; }
 
 .event .event-time { color: #6b7280; }
+.event .event-input-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .event pre {
   margin: 0;
@@ -228,7 +231,7 @@ main .spacer { flex: 1; }
 #menu-btn { display: none; }
 #drawer-backdrop { display: none; }
 
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   #app { grid-template-columns: 1fr; }
 
   /* 一覧のドロワーは計画ファイル画面と同じく画面全体を覆う。 */

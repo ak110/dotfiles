@@ -115,8 +115,8 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
 
 @pytest.mark.asyncio
 async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """期限前のsessionを表示し、call_atで期限到達後に再出力して除く。"""
-    session = state.SessionState("retained", str(tmp_path), announced=True)
+    """期限前のsessionと結果を書き、call_atで期限到達後に両方を除く。"""
+    session = state.SessionState("retained", str(tmp_path), announced=True, turn_seq=1)
     session.status = "completed"
     session.agent_message = "完了"
     session.turn_completed = True
@@ -131,10 +131,46 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
     writer.activate()
 
     assert json.loads(writer.path.read_text(encoding="utf-8"))["sessions"][0]["session_id"] == "retained"
+    result_path = subject.results_directory("root", tmp_path) / "retained.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["agent_message"] == "完了"
+    assert result["turn_seq"] == 1
+    datetime.datetime.fromisoformat(result["finalized_at"])
     assert writer._retention_handle is not None
     await asyncio.sleep(0.05)
     assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    assert not result_path.exists()
     writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: pathlib.Path) -> None:
+    """wait後に表示対象から外れた結果も保持期限で削除する。"""
+    session = state.SessionState("waited", str(tmp_path), announced=True, turn_seq=1)
+    session.status = "completed"
+    session.agent_message = "完了"
+    session.turn_completed = True
+    session.touch()
+    session.retention_deadline = asyncio.get_running_loop().time() + 0.03
+    writer = subject.StatusFileWriter(
+        {session.session_id: session},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = agents_server_mcp.AgentsServerManager(writer)
+    writer.activate()
+
+    result_path = subject.results_directory("root", tmp_path) / "waited.json"
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
+    writer.flush()
+    assert result_path.exists()
+    assert writer._retention_handle is not None
+
+    await asyncio.sleep(0.05)
+
+    assert not result_path.exists()
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -160,6 +196,10 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
     directory.mkdir(parents=True)
     (directory / "stale.json").write_text("{}", encoding="utf-8")
     (directory / ".stale.json.token.tmp").write_text("temporary", encoding="utf-8")
+    results = directory / "results"
+    results.mkdir()
+    (results / "stale-session.json").write_text("{}", encoding="utf-8")
+    (results / ".stale-session.json.token.tmp").write_text("temporary", encoding="utf-8")
     writer = subject.StatusFileWriter(
         {},
         subject.StatusFileIdentity("root", "root.json", None),
@@ -229,9 +269,12 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     session.touch()
     await manager.wait(session.session_id, timeout=0)
     writer.flush()
+    result_path = subject.results_directory("root", tmp_path) / f"{session.session_id}.json"
+    assert json.loads(result_path.read_text(encoding="utf-8"))["agent_message"] == "完了"
     remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert session.session_id not in {item["session_id"] for item in remaining}
     await manager.close()
+    assert not subject.status_directory("root", tmp_path).exists()
 
 
 @pytest.mark.asyncio
@@ -327,6 +370,9 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
     writer.flush()
 
     assert response["agent_message"] == "完了"
+    results = subject.results_directory("root", tmp_path)
+    assert (results / f"{killed['session_id']}.json").exists()
+    assert (results / f"{uncollected['session_id']}.json").exists()
     sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert [item["session_id"] for item in sessions] == [uncollected["session_id"]]
     await manager.close()
@@ -389,6 +435,7 @@ class _FakeStatusBackend:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            turn_seq=1,
         )
         self.sessions[session.session_id] = session
         state._initialize_turn(session)

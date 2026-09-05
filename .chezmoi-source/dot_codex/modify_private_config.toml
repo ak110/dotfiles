@@ -1,9 +1,10 @@
 {{- /* chezmoi:modify-template */ -}}
+{{- $codexConfig := include (joinPath .chezmoi.workingTree "scripts/codex_config.toml") | fromToml -}}
 {{- $config := dict -}}
 {{- if ne (trim .chezmoi.stdin) "" -}}
 {{-   $config = fromToml .chezmoi.stdin -}}
 {{- end -}}
-{{- $config = setValueAtPath "project_doc_max_bytes" 131072 $config -}}
+{{- $config = setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes $config -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
 {{- $config = setValueAtPath "model_reasoning_summary" "auto" $config -}}

@@ -15,5 +15,5 @@ pickerの起動契約、渡す入力と出力の検収は`${CLAUDE_PLUGIN_ROOT}/
 
 ## ①の完了
 
-選定時に`inbox`だった全項目を`processing`へ移すまでを①の完了条件とする。
-`processing`へ遷移していない項目が残る場合の扱いは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「処理開始」節が定める。
+選定時に`inbox`だった全項目が`processing`へ移り、メインが当該配置を確認するまでを①の完了条件とする。
+遷移はpickerが実行する。メインによる確認と、`processing`へ遷移していない項目が残る場合の扱いは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「①の完了」節が定める。

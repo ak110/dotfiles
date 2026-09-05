@@ -1962,7 +1962,9 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
 
     `人間由来のWI`と記載した行は、`origin_notices`と`origin_skips`を渡した場合だけ
     正本のfrontmatterと本文へ照合する。`[対話由来]`注記のある行は機械判定できない明示由来を
-    根拠とするため照合の対象から除く。改名前の由来は読み取り互換で受理する。
+    根拠とするため照合の対象から除く。`エージェント由来のWI`は採否にかかわらず根拠を必要とし、
+    採用行の根拠が`-`の場合は`origin_notices`を渡した場合だけ移行の指摘を積む。
+    改名前の由来は読み取り互換で受理する。
     """
     errors: list[str] = []
     if not table.rows:
@@ -1977,6 +1979,8 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
         origin = row[origin_index]
         canonical_origin = canonical_wi_origin(origin)
         review_origin = PLAN_HUMAN_REVIEW_ORIGIN_PATTERN.fullmatch(origin)
+        wi_origin_match = PLAN_WI_ORIGIN_PATTERN.fullmatch(origin)
+        wi_origin_kind = canonical_wi_origin(wi_origin_match.group("kind")) if wi_origin_match is not None else None
         if canonical_origin in PLAN_HUMAN_ORIGINS:
             if canonical_origin in PLAN_WI_ORIGIN_ALIASES:
                 errors.append(
@@ -1985,20 +1989,19 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
                     f"（例: `{PLAN_AGENT_WI_ORIGIN} (20260831-000000-001.md)`）: {origin}"
                 )
         elif any(origin.startswith(f"{alias} (") for alias in _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS):
-            match = PLAN_WI_ORIGIN_PATTERN.fullmatch(origin)
-            if match is None:
+            if wi_origin_match is None:
                 errors.append(f"`## {PLAN_H2_ACTION}`の`由来`は正本ファイル名付きの4値にする: {origin}")
-            elif match.group("name") not in related_wi and (
-                materials is None or match.group("name") not in materials.material_paths
+            elif wi_origin_match.group("name") not in related_wi and (
+                materials is None or wi_origin_match.group("name") not in materials.material_paths
             ):
-                errors.append(f"`## {PLAN_H2_ACTION}`のWI由来が`関連WI`に無い: {match.group('name')}")
+                errors.append(f"`## {PLAN_H2_ACTION}`のWI由来が`関連WI`に無い: {wi_origin_match.group('name')}")
             elif (
                 origin_notices is not None
                 and origin_skips is not None
-                and canonical_wi_origin(match.group("kind")) == PLAN_HUMAN_WI_ORIGIN
-                and match.group("note") is None
+                and wi_origin_kind == PLAN_HUMAN_WI_ORIGIN
+                and wi_origin_match.group("note") is None
             ):
-                _collect_origin_notices(match.group("name"), origin_notices, origin_skips, private_notes, home)
+                _collect_origin_notices(wi_origin_match.group("name"), origin_notices, origin_skips, private_notes, home)
         elif review_origin is None:
             errors.append(
                 f"`## {PLAN_H2_ACTION}`の`由来`は{list(PLAN_HUMAN_ORIGINS)}、計画レビュー第nラウンド、又は"
@@ -2015,6 +2018,16 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
         elif origin == "エージェント提案":
             if not root or root == "-":
                 errors.append(f"`## {PLAN_H2_ACTION}`のエージェント提案行には観測可能な根拠を記載する: {root}")
+        elif wi_origin_kind == PLAN_AGENT_WI_ORIGIN:
+            if not root or root == "-":
+                if decision == "採用":
+                    if origin_notices is not None:
+                        origin_notices.append(
+                            f"`## {PLAN_H2_ACTION}`の`{PLAN_AGENT_WI_ORIGIN}`の採用行の`根拠`へ、"
+                            "適用範囲を再導出した結果と根拠を記載する"
+                        )
+                else:
+                    errors.append(f"`## {PLAN_H2_ACTION}`の採用以外の`根拠`は理由を自足して記載する: {root}")
         elif decision == "採用":
             if root != "-":
                 errors.append(f"`## {PLAN_H2_ACTION}`の採用行の`根拠`は`-`にする: {root}")

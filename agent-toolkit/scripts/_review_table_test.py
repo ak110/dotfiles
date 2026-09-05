@@ -269,6 +269,54 @@ def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.Capture
     assert "盲検指摘" not in output
 
 
+def test_show_jsonl_decodes_control_characters_and_quotes(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """jsonl出力は制御文字と引用符を含むセルを保存前の本文へ復号する。"""
+    path = tmp_path / "review.tsv"
+    issue = '改行\nタブ\t二重引用符"と`backtick`'
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", issue)
+    capsys.readouterr()
+
+    assert table.show(path, output_format="jsonl") == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    expected = ["1", _TRACK, "module.py:10", issue, "詳細", "", "", ""]
+    assert rows == [dict(zip(table.COLUMNS, expected, strict=True))]
+
+
+def test_show_jsonl_supplies_empty_level_for_legacy_row(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存済み7列行のjsonl出力は空のlevelを補う。"""
+    path = tmp_path / "review.tsv"
+    legacy = ("1", _TRACK, "位置", "指摘", "", "", "")
+    path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in legacy) + "\n", encoding="utf-8")
+
+    assert table.show(path, output_format="jsonl") == 0
+    row = json.loads(capsys.readouterr().out)
+    assert row["level"] == ""
+    assert list(row) == list(table.COLUMNS)
+
+
+def test_show_jsonl_filters_decoded_rows_by_track(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """jsonl出力でも指定したtrackの復号済み行だけを表示する。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "統合後指摘")
+    table.add(path, "1", "independent", "module.py:20", "盲検指摘")
+    capsys.readouterr()
+
+    assert table.show(path, track=_TRACK, output_format="jsonl") == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["issue"] for row in rows] == ["統合後指摘"]
+
+
 def test_locked_update_does_not_create_sidecar_lock(tmp_path: pathlib.Path) -> None:
     """行追加の排他は、表と同じディレクトリではなくロック格納先へロックを置く。"""
     path = tmp_path / "review.tsv"
@@ -674,7 +722,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
 @pytest.mark.parametrize(
     ("subcommand", "arguments", "accepted_options"),
     (
-        ("show", ["review.tsv", "--round", "1"], ("--track",)),
+        ("show", ["review.tsv", "--round", "1"], ("--format", "--track")),
         ("validate", ["review.tsv", "--round", "1"], ("--allow-unanswered",)),
         ("init", ["review.tsv", "--track", "plan-review"], ()),
         (
@@ -699,7 +747,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
                 "--track",
             ),
         ),
-        ("show", ["review.tsv", "--all"], ("--track",)),
+        ("show", ["review.tsv", "--all"], ("--format", "--track")),
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
@@ -757,7 +805,13 @@ def test_cell_file_options_are_shown_in_help(
                 "対応不要とした指摘へ記録する理由",
             ),
         ),
-        ("show", ("表示対象を指定したレビュー区分の行だけに限定する",)),
+        (
+            "show",
+            (
+                "表示対象を指定したレビュー区分の行だけに限定する",
+                "出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する",
+            ),
+        ),
         ("validate", ("未応答行を許容し、8列と複合キーなどの構造だけを検証する",)),
     ),
 )

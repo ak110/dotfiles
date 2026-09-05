@@ -36,54 +36,6 @@
   </div>
 
   <main class="app-layout">
-    <aside class="filters card" aria-label="フィルター条件">
-      <div class="pane-heading">
-        <h2>フィルター</h2>
-        <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
-      </div>
-      <label for="search-input">検索</label>
-      <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
-
-      <div class="filter-grid">
-        <label for="kind-filter">種別</label>
-        <select id="kind-filter">
-          <option value="all">all</option>
-          <option value="awi">awi</option>
-          <option value="uwi">uwi</option>
-        </select>
-        <label for="state-filter">状態</label>
-        <select id="state-filter">
-          <option value="active">active</option>
-          <option value="processable">processable</option>
-          <option value="all">all</option>
-          <option value="inbox">inbox</option>
-          <option value="processing">processing</option>
-          <option value="hold">hold</option>
-          <option value="adopted">adopted</option>
-          <option value="rejected">rejected</option>
-        </select>
-        <label for="answer-filter">回答状況</label>
-        <select id="answer-filter">
-          <option value="all">すべて</option>
-          <option value="no">未回答</option>
-          <option value="yes">回答済み</option>
-        </select>
-      </div>
-
-      <section class="additional-filters" aria-label="追加のフィルター条件">
-        <div class="filter-grid">
-          <label for="target-filter">対象リポジトリ</label>
-          <select id="target-filter"><option value="">すべて</option></select>
-          <label for="source-filter">投入元</label>
-          <select id="source-filter">
-            <option value="">すべて</option>
-            <option value="human">human</option>
-            <option value="agent">agent</option>
-          </select>
-        </div>
-      </section>
-    </aside>
-
     <section class="entry-pane card" aria-labelledby="entry-heading">
       <div class="pane-heading">
         <h2 id="entry-heading">一覧</h2>
@@ -112,6 +64,58 @@
         <button id="empty-create-button" class="button-primary" type="button" hidden>項目を追加</button>
       </div>
     </section>
+
+    <aside class="filters card" aria-label="フィルター条件">
+      <details>
+        <summary>フィルター</summary>
+        <div class="filters-body">
+          <div class="pane-heading">
+            <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
+          </div>
+          <label for="search-input">検索</label>
+          <input id="search-input" type="search" placeholder="本文・ファイル名・対象・投入元を検索">
+
+          <div class="filter-grid">
+            <label for="kind-filter">種別</label>
+            <select id="kind-filter">
+              <option value="all">all</option>
+              <option value="awi">awi</option>
+              <option value="uwi">uwi</option>
+            </select>
+            <label for="state-filter">状態</label>
+            <select id="state-filter">
+              <option value="active">active</option>
+              <option value="processable">processable</option>
+              <option value="all">all</option>
+              <option value="inbox">inbox</option>
+              <option value="processing">processing</option>
+              <option value="hold">hold</option>
+              <option value="adopted">adopted</option>
+              <option value="rejected">rejected</option>
+            </select>
+            <label for="answer-filter">回答状況</label>
+            <select id="answer-filter">
+              <option value="all">すべて</option>
+              <option value="no">未回答</option>
+              <option value="yes">回答済み</option>
+            </select>
+          </div>
+
+          <section class="additional-filters" aria-label="追加のフィルター条件">
+            <div class="filter-grid">
+              <label for="target-filter">対象リポジトリ</label>
+              <select id="target-filter"><option value="">すべて</option></select>
+              <label for="source-filter">投入元</label>
+              <select id="source-filter">
+                <option value="">すべて</option>
+                <option value="human">human</option>
+                <option value="agent">agent</option>
+              </select>
+            </div>
+          </section>
+        </div>
+      </details>
+    </aside>
   </main>
 
   <!-- ダイアログ内は確定操作と［×］だけを置き、終了時の一時入力は破棄する。 -->
@@ -207,8 +211,6 @@
             <input id="create-target" name="target_repo" list="repo-options" aria-describedby="create-target-error">
             <datalist id="repo-options"></datalist>
             <p id="create-target-error" class="inline-error" hidden></p>
-            <label for="create-source">投入元（任意）</label>
-            <input id="create-source" name="source">
           </div>
           <div id="uwi-fields" class="dialog-form-fields" hidden>
             <label for="create-scope">確認範囲（任意）</label>

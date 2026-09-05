@@ -1,4 +1,4 @@
-"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録。
+"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録と応答契約注入。
 
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
 Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し、
@@ -19,9 +19,11 @@ import json
 import pathlib
 import re
 import sys
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+from _hook_notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hook_tool_input import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan_file import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -55,6 +57,14 @@ _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
+_VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
+_LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
+_VERIFICATION_NOTICE_BODY = (
+    "発話が示す事実と是正要求は現物（原文・実装・規範・実行結果）で照合してから応答する。"
+    "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
+    "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
+)
+_llm_notice = _notice_formatter("agent-toolkit/user_prompt_submit")
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -90,12 +100,29 @@ def _plan_session_title(session_id: str) -> str | None:
     return plan_stem
 
 
-def _emit_hook_output(*, session_title_output: str) -> None:
-    """UserPromptSubmitのsessionTitleを応答JSONとして出力する。"""
-    hook_specific_output: dict[str, str] = {
-        "hookEventName": "UserPromptSubmit",
-        "sessionTitle": session_title_output,
-    }
+def _claim_verification_notice(session_id: str, now: float) -> bool:
+    """通常発話の時刻を更新し、照合指示を注入する場合に真を返す。"""
+    claimed = False
+
+    def update_timestamp(state: dict) -> dict:
+        nonlocal claimed
+        previous = state.get(_LAST_USER_PROMPT_AT_KEY)
+        if isinstance(previous, (int, float)) and not isinstance(previous, bool):
+            claimed = now - previous >= _VERIFICATION_NOTICE_INTERVAL_SECONDS
+        state[_LAST_USER_PROMPT_AT_KEY] = now
+        return state
+
+    update_state(session_id, update_timestamp)
+    return claimed
+
+
+def _emit_hook_output(*, session_title_output: str | None, additional_context: str | None) -> None:
+    """UserPromptSubmitの値を持つ応答欄を1つのJSONとして出力する。"""
+    hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
+    if session_title_output is not None:
+        hook_specific_output["sessionTitle"] = session_title_output
+    if additional_context is not None:
+        hook_specific_output["additionalContext"] = additional_context
     print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
 
 
@@ -123,6 +150,12 @@ def main(payload_text: str) -> int:
         return 0
 
     is_codex = "model" in payload or is_codex_payload(payload)
+    first_line = prompt.split("\n", 1)[0].strip()
+    command_prefix = "$" if is_codex else "/"
+    is_normal_prompt = not first_line.startswith(command_prefix)
+    additional_context = None
+    if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
+        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag="warn")
 
     # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
     # Codexはスキル起動の状態記録だけを行い、計画名を出力しない。
@@ -130,18 +163,18 @@ def main(payload_text: str) -> int:
     if not is_codex:
         plan_session_title = _plan_session_title(session_id)
 
-    # 先頭行のみを取り出して照合する（先頭行以外は無視）。
-    first_line = prompt.split("\n", 1)[0].strip()
-    command_prefix = "$" if is_codex else "/"
-    if not first_line.startswith(command_prefix):
-        if plan_session_title is not None:
-            _emit_hook_output(session_title_output=plan_session_title)
+    if is_normal_prompt:
+        if plan_session_title is not None or additional_context is not None:
+            _emit_hook_output(
+                session_title_output=plan_session_title,
+                additional_context=additional_context,
+            )
         return 0
 
     match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
     if match is None:
         if plan_session_title is not None:
-            _emit_hook_output(session_title_output=plan_session_title)
+            _emit_hook_output(session_title_output=plan_session_title, additional_context=None)
         return 0
 
     name = match.group(1)
@@ -154,6 +187,6 @@ def main(payload_text: str) -> int:
         update_state(session_id, _set_process_wi_invoked)
 
     if plan_session_title is not None:
-        _emit_hook_output(session_title_output=plan_session_title)
+        _emit_hook_output(session_title_output=plan_session_title, additional_context=None)
 
     return 0

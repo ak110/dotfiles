@@ -1,6 +1,6 @@
 # 実行経路の選択
 
-委譲の起動直前に、実際に利用できる経路へ該当する節だけを読む。
+委譲先とモデルを選ぶ直前に本文書を全文読み、実際に利用できる経路の節を適用する。
 受信者固有の作業手順は本文書へ置かない。
 
 ## Codex後続操作の共通先行条件
@@ -24,22 +24,23 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、当該定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
 - Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、「工程別モデル設定」の表が定めるキーを持つ工程の委譲先は、engineの別によらず`agents_server`で起動する。当該工程は同表のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けず、当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
-- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない
   - `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
   - 起動直後にモデル実行環境の可用性で終端した候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ再起動を重ねない
   - 起動後の実行中にモデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start(model_type, prompt, cwd, exclude_session_id=<失敗したsession_id>)`を呼ぶ。サーバーは当該sessionが使った候補を除外集合へ加え、残る候補の先頭で新しいsessionを開始する。次の候補を使うかどうかは呼び出し側が`wait`の状態とエラー本文から判断する。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない
   - `start`・`start_explore`・`start_shell`が`no model candidates remain for model_type: <model_type>`を返した場合は、`exclude_session_id`の累積で当該起動条件の候補が尽きた状態であり、設定の不備ではない。同じ起動条件で`start`・`start_explore`・`start_shell`を再発行しない。委譲せずに当該作業を自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合は当該工程を`needs_escalation`または未完了として呼び出し元へ返す。設定キーの変更と実行環境の切り替えは行わない
   - `exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。`start_explore`では、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件が一致しないsession IDを渡すと、サーバーはbackendの起動前にエラーを返す。別の設定キーの候補が除外集合へ混入して候補順序が崩れることを防ぐためである
-  - 調査だけを委譲する場合は`start_explore(prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。`fast`の既定は真であり、軽量側の候補で判断材料が不足する調査だけ偽を指定する。書込は機械的に禁止されないため、対象ファイルを変更しない旨を`prompt`へ明示する
-  - 出力量が大きいコマンドの実行だけを委譲する場合は`start_shell(command, cwd, summary_policy)`を使う。`start_explore`と同じ軽量な起動条件で開始し、終了状態と要約だけを受け取る。読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる
+  - 調査だけを委譲する場合は`start_explore(prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。`fast`の既定は真であり、軽量側の候補で判断材料が不足する調査だけ偽を指定する。委譲先は起動時のシステム指示でファイルを作成、変更及び削除しない契約を受領するため、成果ファイルの出力を依頼せず、結論と根拠を完了報告で受領する。成果をファイルへ残す調査は`start`で起動し、書込先とする管理対象一時領域の絶対パスを`prompt`へ渡す
+  - 出力量が大きいコマンドの実行だけを委譲する場合は`start_shell(command, cwd, summary_policy)`を使う。`start_explore`と同じ軽量な起動条件で開始し、終了状態と要約だけを受け取る。委譲先は起動時のシステム指示で指示にない操作を追加しない契約を受領する。読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる
   - `start_explore`と`start_shell`のどちらを使う場合も、委譲と直接実行の分岐は各ツールの説明が示す採算の目安で判定する
   - `wait`で進捗を観測し、終端時は結果本文を同じ応答から取得する。固有のtimeout要件がなければ`timeout`を省略し、サブエージェントは`request_bucket`へ`subagent`を渡す。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。`wait`が`session retention expired: <session_id>`を返した場合は終端結果の保持期限が過ぎただけであり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない
   - 同じ担当へ追加指示を返す場合は`send_message`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。固有のtimeout要件がなければ`timeout`を省略する。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
   - 実行中turnを明示的に中断する場合は`kill`を使う。停止は最終手段とし、`send_message`による訂正では足りないことと、当該作業の継続自体が不要であることを確認してから発行する。`TimeoutError`が返った場合もsessionとbackend processは破棄されないため、`wait`で状態を確認してから次の操作を選ぶ
+  - 保持中のsessionの状態をまとめて確認する場合は`list`を使う。開始順に並べたsessionごとの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返し、結果本文は返さない。終端結果の保持期限を過ぎたsessionは`status`へ`expired`を設定して含める。保持していた`session_id`を失った場合の回復と、複数の委譲先を並行させたときの残作業の把握へ用いる。個別sessionの終端の観測は`wait`で行う
   - 計画の最初のfast担当とCI修正は新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。fast担当からfix担当への引継ぎと通常実装モードのレビュー修正は、後段の継続条件で継続又は新規起動を確定する
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合と、同じworktreeを所有するthreadの担当種別をfast担当とfix担当の間で切り替える場合だけ使う
-  - 旧blocking MCPの「作業ディレクトリの絶対パスと`sandbox: danger-full-access`を例外なく渡す」という入力契約は新経路へ適用しない
+
 - Codexから実際の別主体へ委譲するときは、`agents_server`を利用できる環境では同経路を使う
 - 専用定義もCodex経路も利用できない場合だけ汎用Agentを使う
 - 起動結果として返されたrouteと識別子を保持し、予定した経路を実績として記録しない
@@ -55,9 +56,15 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `plan_review_model` | 計画レビュー | 計画レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正及び即時対応の修正 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正及び即時対応を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の③の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び③の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実装レビュー | 実装レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
+
+`model_type`へは、`atk config`が持つ`<種別>_model`のキー名から`_model`を除いた種別を渡せる。上表が対応工程を定めるのは`pick_wi`、`plan`、`plan_review`、`execute_fast`、`execute`、`execute_review`及び`session_review`である。
+これに加えて`orchestrate`も受理する。当該種別は`atk wi process-loop`がオーケストレーターの新しいセッションを起動する設定であり、本節の委譲工程では渡さない。
+`start_explore`が使う`explore`と`explore_fast`は`fast`引数が選ぶため、`model_type`へ渡さない。
+各工程の起動を定める文書は、当該工程が渡す`model_type`の値を当該起動節へ明記する。起動する主体は、担当の名称又は工程名から値を組み立てず、明記が無い場合は`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」に従って本節を読んでから確定する。
+現に保存されているキーと実効値は`atk config show`で確認する。
 
 `execute_fast_model`と`execute_model`のどちらを初回実装へ用いるかは、計画ファイル（詳細）の`### 実装担当のモデル区分`の`判定`から確定する。
 `判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/implementation.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。
@@ -143,7 +150,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 残る全ての組合せで可用性に起因する失敗を観測したか利用不能と判定した場合は代替を打ち切り、手順4の経路へ戻る。
 代替を試みた場合は、観測した失敗、`atk config get`で取得した設定値、実際に用いた組合せ、対象工程、利用不能と判定して試行しなかった組合せとその理由の5項目を当該工程の報告へ記録する。
 委譲先は、可用性に起因する失敗を観測した場合も、設定と異なるengineとモデルのどちらへも自身の判断で切り替えず、手順4のとおり`needs_escalation`または未完了として呼び出し元へ返す。
-代替の判断と起動は委譲を起動した主体が行う。
+
 初回生成前失敗に該当しないCodexの代替起動は、`Codex後続操作の共通先行条件`を適用してから行う。
 
 工程別モデル設定の適用範囲は表に記載した工程に限定し、他の委譲には「modelとreasoning effort」を適用する。
@@ -156,10 +163,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 Codexで最初のfast担当を起動する場合は、工程別モデル設定の通常起動契約に従う。
 
 fast担当がエスカレーションを返した場合だけfix担当の作業へ移す。
-`execute_model`の`model_type`が現在のfast担当threadの`model_type`と一致する場合は、同じthreadを継続してfix担当の作業を指示する。
-一致しない場合はfast担当を終端し、元の実装入力、同じworktreeの作業状態及びエスカレーション内容を新規fix担当へ渡す。
-Codexで新規fix担当を起動して役割を引き継ぐ場合は、`Codex後続操作の共通先行条件`を適用してから行う。同一threadを継続する場合は元担当が変わらないため同条件を適用しない。
-fix担当が実装単位を完了した後に残りの単位がある場合は、手順6に従って担当種別をfast担当へ戻す。同一threadを継続できない場合はfix担当を終端し、検収済みの先行commitと残りの実装単位を新規fast担当へ渡す。Codexで新規fast担当を起動する場合は、`Codex後続操作の共通先行条件`を適用する。
+担当種別の切替え、同一threadの継続と新規起動の確定、及び役割引継ぎの先行条件は手順6と`Codex後続操作の共通先行条件`に従う。
 
 ## modelとreasoning effort
 
@@ -194,7 +198,7 @@ fix担当が実装単位を完了した後に残りの単位がある場合は�
 - 代替起動では、まず同じ行のもう一方のengineを試す（起動順の正本は「工程別モデル設定」の代替起動の規定とする）
 - 上位の行を既定とし、中位・軽量の行は内容が確定済みで低リスクな機械作業に限って選ぶ
 - レビュー工程では上位の行を用い、中位・軽量の行へ下げない
-- 上表に無いモデルは候補を増やす用途では使わない。上表のある組合せを、同等以上と確認できる別の組合せへ置き換える用途にだけ使う
+- 上表に無いモデルは候補を増やす用途では使わない。上表のある組合せを、同等以上と確認できる別の組合せへ置き換える用途にだけ使う（本表はユーザーが運用上の目安として指定した対応関係であり、表外のモデルを候補へ加えると当該目安の外で組合せが選ばれるため）
 - effortを指定できない経路で上表の組合せを満たせない場合は、`codex`の列へ切り替えるか、より上位の行を選ぶ。
   Claude経路のeffortはエージェント定義のfrontmatterで確定し、frontmatterを持たない経路では指定できない（`agent-toolkit:delegation`のClaude Code経路契約）
 - 細部の欠陥検出は`codex`、設計判断は`claude`を優先する
@@ -209,7 +213,7 @@ fix担当が実装単位を完了した後に残りの単位がある場合は�
 
 ## 実装担当とworktree
 
-- 1つのworktreeへ同時に起動する実装担当は1つだけとする
+- 1つのworktreeへ書き込む主体を1つに保つ規定は`agent-toolkit/rules/02-agent-operations.md`「委譲時の厳守事項」が定める
 - 実装担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
   ただし、fast担当からfix担当への引継ぎだけはclean開始契約の例外とする。
   新規fix担当を起動する場合はfast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合して渡し、同一threadを継続する場合は書込主体が変わらないため終端確認を要さない

@@ -34,6 +34,8 @@ _SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
 
 # 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review.subagent.md",)
+_NOTICE_PREFIX = "[auto-generated: agent-toolkit/pretooluse][warn] "
+_NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
 
 
 def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -63,6 +65,13 @@ def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
         return ""
     context = payload.get("hookSpecificOutput", {}).get("additionalContext")
     return context if isinstance(context, str) else ""
+
+
+def _notice_body(context: str) -> str:
+    """標準プレフィックスとサフィックスを検証し、通知本文を返す。"""
+    assert context.startswith(_NOTICE_PREFIX)
+    assert context.endswith(_NOTICE_SUFFIX)
+    return context.removeprefix(_NOTICE_PREFIX).removesuffix(_NOTICE_SUFFIX)
 
 
 def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:
@@ -947,6 +956,118 @@ class TestUserFacingTextChecks:
 
         assert result.returncode == 0
         assert "口語的な日本語表現" in _additional_context(result)
+
+
+class TestUserFacingPreambleLength:
+    """ユーザー向け本文と直前の地の文の文字数比較を検証する。"""
+
+    @staticmethod
+    def _write_transcript(tmp_path: pathlib.Path, text: str) -> pathlib.Path:
+        entry = {
+            "type": "assistant",
+            "message": {
+                "id": "preamble-message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}],
+                "stop_reason": "end_turn",
+            },
+        }
+        path = tmp_path / "preamble-transcript.jsonl"
+        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _question_payload(transcript: pathlib.Path | None = None, *, preview: str | None = None) -> dict:
+        option = {"label": "案", "description": "説明"}
+        if preview is not None:
+            option["preview"] = preview
+        payload = {
+            "tool_name": "AskUserQuestion",
+            "tool_input": {"questions": [{"question": "質問", "header": "確認", "options": [option]}]},
+        }
+        if transcript is not None:
+            payload["transcript_path"] = str(transcript)
+        return payload
+
+    def test_warns_when_preamble_longer_than_user_facing_body(self, tmp_path: pathlib.Path) -> None:
+        transcript = self._write_transcript(tmp_path, "これは十分に長い直前の地の文です。")
+
+        result = _run(self._question_payload(transcript))
+
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert _notice_body(context) == (
+            "AskUserQuestionの直前に出力した地の文が、ユーザーが読む本文（`questions[].question`と"
+            "`options[]`の`label`・`description`・`preview`）より長い。"
+            "地の文はハーネスが要約へ置換することがあり、ユーザーへ届かない場合がある。"
+            "判断材料を地の文へ置かず、ユーザーが読む本文へ自己完結で含める。"
+        )
+
+    def test_no_warning_when_body_longer_than_preamble(self, tmp_path: pathlib.Path) -> None:
+        transcript = self._write_transcript(tmp_path, "短文")
+        payload = self._question_payload(transcript, preview="判断材料をここへ十分な長さで記載します。")
+
+        result = _run(payload)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_warning_when_preview_holds_context(self, tmp_path: pathlib.Path) -> None:
+        transcript = self._write_transcript(tmp_path, "質問本文より長い地の文です。")
+        payload = self._question_payload(transcript, preview="選択に必要な判断材料を詳細かつ自己完結で記載します。")
+
+        result = _run(payload)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_warning_on_equal_length(self, tmp_path: pathlib.Path) -> None:
+        transcript = self._write_transcript(tmp_path, "あいうえおかきく")
+        tool_input = {"questions": [{"question": "あいうえおかきく", "options": []}]}
+        payload = {
+            "transcript_path": str(transcript),
+            "tool_input": tool_input,
+        }
+
+        notice = pretooluse._check_user_facing_preamble(  # noqa: SLF001  # pylint: disable=protected-access
+            "AskUserQuestion", tool_input, payload
+        )
+
+        assert notice is None
+
+    def test_warns_when_preamble_longer_than_plan(self, tmp_path: pathlib.Path) -> None:
+        transcript = self._write_transcript(tmp_path, "これは計画本文より長い直前の地の文です。")
+        result = _run(
+            {
+                "tool_name": "ExitPlanMode",
+                "tool_input": {"plan": "計画"},
+                "transcript_path": str(transcript),
+            }
+        )
+
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert _notice_body(context) == (
+            "ExitPlanModeの直前に出力した地の文が、ユーザーが読む本文（`plan`）より長い。"
+            "地の文はハーネスが要約へ置換することがあり、ユーザーへ届かない場合がある。"
+            "判断材料を地の文へ置かず、ユーザーが読む本文へ自己完結で含める。"
+        )
+
+    def test_no_warning_without_transcript_path(self) -> None:
+        result = _run(self._question_payload())
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_no_warning_for_sidechain(self, tmp_path: pathlib.Path) -> None:
+        transcript = self._write_transcript(tmp_path, "これは十分に長い直前の地の文です。")
+        payload = self._question_payload(transcript)
+        payload["isSidechain"] = True
+
+        result = _run(payload)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
 
 
 def _plan_file_state_env(
@@ -2281,6 +2402,31 @@ class TestBashGitLogDecorate:
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git status"}})
         assert result.returncode == 0
         assert result.stdout == ""
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ('echo "git log"', None),
+            ("cat <<'EOF'\ngit log\nEOF", None),
+            ('grep -rn "git log" docs && git log -3', 'grep -rn "git log" docs && git log --decorate -3'),
+            (
+                'git show --format="git log" && git log -3',
+                'git show --format="git log" && git log --decorate -3',
+            ),
+            ("sudo git log --decorate; git log -3", "sudo git log --decorate; git log --decorate -3"),
+            ("git -C /tmp log --decorate; git log -3", "git -C /tmp log --decorate; git log --decorate -3"),
+            ("git log --decorate=full", None),
+            ("git -C /tmp log -3", "git -C /tmp log --decorate -3"),
+            ("git log -3", "git log --decorate -3"),
+        ],
+    )
+    def test_updates_only_unquoted_git_log_at_execution_position(self, command: str, expected: str | None) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        if expected is None:
+            assert result.stdout == ""
+        else:
+            assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == expected
 
 
 class TestBashCodexExecNudge:
@@ -3995,6 +4141,52 @@ class TestBashProcessKillByPattern:
     def test_unrelated_command_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo killall-report"}})
         assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'grep -rn "killall" /tmp/x',
+            'grep -n "pkill\\|kill" /tmp/x',
+            "rg -n pkill agent-toolkit/",
+            "rg -g '*.{md,py}' pkill .",
+            "echo killall-report",
+            "kill 12345",
+            "cat <<'EOF'\npkill -f worker\nEOF",
+        ],
+    )
+    def test_allows_literal_argument_matches(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'pkill -f "codex exec"',
+            "killall python",
+            'sh -c "pkill -f worker"',
+            "sh -c 'sh -c \"pkill x\"'",
+            '/bin/sh -c "pkill -f worker"',
+            "xargs pkill",
+            "timeout 5 pkill x",
+            "env FOO=1 killall python",
+            "sudo -n pkill x",
+            "/usr/bin/pkill -f x",
+            "$(echo pkill) -f worker",
+            "echo $(pkill -f worker)",
+            "echo $( pkill -f worker )",
+            'rg "$(pkill -f worker)" .',
+            "echo ok\npkill -f worker",
+            "/usr/bin/env pkill -f worker",
+            "echo <( pkill -f worker )",
+            "(pkill -f worker)",
+            "if pkill -f worker; then echo done; fi",
+            'git add -A; pkill -f "worker"',
+        ],
+    )
+    def test_blocks_indirect_or_executable_matches(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "パターン一致によるプロセス終了" in result.stderr
 
 
 class TestBashBlockBeforeAccumulatedWarnings:

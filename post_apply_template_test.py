@@ -1,8 +1,10 @@
 """post-applyテンプレートの最終実行順序を検証する。"""
 
 import json
-import os
+import re
+import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent
 LINUX_TEMPLATE = REPO_ROOT / ".chezmoi-source/run_after_post-apply.sh.tmpl"
 WINDOWS_TEMPLATE = REPO_ROOT / ".chezmoi-source/run_after_post-apply-windows.ps1.tmpl"
+POWERSHELL = shutil.which("powershell.exe") or shutil.which("pwsh")
 
 
 def _read(path: Path) -> str:
@@ -61,6 +64,8 @@ def test_windows_media_remote_has_pre_post_apply_fallback() -> None:
     assert "$mediaRemoteBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-media-remote.exe'" in before
     assert before.count("elseif (Test-Path $mediaRemoteBin)") == 2
     assert before.count("Start-Process -FilePath $mediaRemoteBin -WindowStyle Hidden -ArgumentList @('serve')") == 2
+    assert before.count("Start-Process -FilePath 'wscript.exe'") == 2
+    assert before.index("Start-Process -FilePath 'wscript.exe'") < before.index("elseif (Test-Path $mediaRemoteBin)")
 
 
 def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> None:
@@ -77,17 +82,34 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
 
     assert classification < guard < stop_loop < stop_process < install_guard < install < deferred
     assert "$reinstallDeferred = $true" in text[guard:stop_loop]
+    assert "$env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'" in text[guard:stop_loop]
+    assert "$env:DOTFILES_PYTOOLS_INSTALL_DETAIL" in text[guard:stop_loop]
     assert "Stop-Process" not in text[guard:stop_loop]
     assert "再インストールを次回へ延期" in text[guard:stop_loop]
     assert "既存版で後続処理を継続" in text[deferred:]
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows固有のPowerShellプロセス分類検証")
+def test_windows_install_failure_records_state_and_detail() -> None:
+    """Windows側の導入失敗を例外メッセージ付きでpost-applyへ渡す。"""
+    text = _read(WINDOWS_TEMPLATE)
+    catch = text.index("    } catch {")
+    failure = text.index("インストールに失敗しました", catch)
+
+    assert "$env:DOTFILES_PYTOOLS_INSTALL_STATE = 'failed'" in text[catch:failure]
+    assert "$env:DOTFILES_PYTOOLS_INSTALL_DETAIL = $_.Exception.Message" in text[catch:failure]
+
+
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が見つからない")
 def test_windows_locking_processes_classify_and_record_restart_state(
     tmp_path: Path,
 ) -> None:
     """配布exeとmoduleを分類し、停止前の再起動対象を正しく記録する。"""
+    powershell = POWERSHELL
+    assert powershell is not None
     text = _read(WINDOWS_TEMPLATE)
+    classifier_start = text.index("$escapedMediaRemoteBin =")
+    classifier_end = text.index("\n# uv tool venv", classifier_start)
+    classifier = text[classifier_start:classifier_end]
     start = text.index("if ($needsReinstall) {")
     end = text.index("\n\n# post-apply 配下の出力", start)
     process_handling = text[start:end]
@@ -98,12 +120,12 @@ def test_windows_locking_processes_classify_and_record_restart_state(
             """Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $needsReinstall = $true
-$viewerWasRunning = $false
 $mediaRemoteWasRunning = $false
 $reinstallDeferred = $false
 $uvToolDir = 'C:\\tools\\pytools'
-$viewerBin = 'C:\\Users\\test\\.local\\bin\\claude-plans-viewer.exe'
 $mediaRemoteBin = 'C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe'
+$env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
+$env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
 $stopped = @()
 $fixtures = @(
 """
@@ -124,6 +146,8 @@ function Start-Sleep {
     param([int] $Milliseconds)
 }
 """
+            + classifier
+            + "\n"
             + process_handling
             + """
 [pscustomobject]@{
@@ -132,14 +156,13 @@ function Start-Sleep {
     Unrestorable = @($unrestorableProcs | ForEach-Object { $_.ProcessId })
     Stopped = @($stopped)
     MediaRemoteWasRunning = $mediaRemoteWasRunning
-    ViewerWasRunning = $viewerWasRunning
     ReinstallDeferred = $reinstallDeferred
 } | ConvertTo-Json -Compress
 """,
             encoding="utf-8-sig",
         )
         completed = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+            [powershell, "-NoProfile", "-NonInteractive", "-File", str(script)],
             capture_output=True,
             text=True,
             check=False,
@@ -164,7 +187,6 @@ function Start-Sleep {
         "Unrestorable": [],
         "Stopped": [1],
         "MediaRemoteWasRunning": True,
-        "ViewerWasRunning": False,
         "ReinstallDeferred": False,
     }
 
@@ -172,9 +194,9 @@ function Start-Sleep {
         "mixed-locking-processes",
         """    [pscustomobject]@{
         ProcessId = 2
-        Name = 'claude-plans-viewer.exe'
-        ExecutablePath = 'C:\\Users\\test\\.local\\bin\\claude-plans-viewer.exe'
-        CommandLine = 'claude-plans-viewer.exe'
+        Name = 'pythonw.exe'
+        ExecutablePath = 'C:\\tools\\pytools\\Scripts\\pythonw.exe'
+        CommandLine = 'pythonw.exe C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe serve'
     },
     [pscustomobject]@{
         ProcessId = 3
@@ -196,9 +218,40 @@ function Start-Sleep {
         "Unrestorable": [4],
         "Stopped": [],
         "MediaRemoteWasRunning": False,
-        "ViewerWasRunning": False,
         "ReinstallDeferred": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("template", "suffix", "pattern"),
+    [
+        (WINDOWS_TEMPLATE, ".exe", r"^    '([^']+)'$"),
+        (LINUX_TEMPLATE, "", r'^    "([^"]+)"$'),
+    ],
+)
+def test_expected_shims_cover_project_scripts(template: Path, suffix: str, pattern: str) -> None:
+    """両テンプレートの期待シムをproject.scriptsの全キーから導出する。"""
+    completed = subprocess.run(
+        [
+            "chezmoi",
+            "--source",
+            str(REPO_ROOT / ".chezmoi-source"),
+            "--working-tree",
+            str(REPO_ROOT),
+            "execute-template",
+            "--file",
+            str(template),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    scripts = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
+    expected = {f"{name}{suffix}" for name in scripts}
+    actual = set(re.findall(pattern, completed.stdout, flags=re.MULTILINE))
+    assert actual == expected
 
 
 def test_linux_install_failure_preserves_hash_and_continues() -> None:
@@ -210,3 +263,5 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
 
     assert "プロセスを停止せず" in text[:install]
     assert install < hash_write < failure
+    assert 'DOTFILES_PYTOOLS_INSTALL_STATE="failed"' in text[hash_write:failure]
+    assert "export DOTFILES_PYTOOLS_INSTALL_STATE DOTFILES_PYTOOLS_INSTALL_DETAIL" in text[failure:]

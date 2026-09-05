@@ -7,16 +7,13 @@ description: >
   プロンプトやskillを新規作成・大幅改訂した直後、
   またはエージェントの挙動が期待通りにならない原因を指示側の曖昧さに求めたい場合に使用する。
 # 元ネタ: https://zenn.dev/mizchi/articles/empirical-prompt-tuning
-# （自動採点・収束判定を廃止し改善提案ドリブンに簡素化）
 ---
 
 # Refine Prompt
 
 ## 使用条件
 
-- skill・slash command・タスクプロンプトを新規作成・大幅改訂した直後
-- エージェントが期待通りに動作せず、原因を指示側の曖昧さに求めたい場合
-- 頻繁に使うskillや自動化の中核プロンプトを堅牢化したい場合
+frontmatterの発火条件に加えて、頻繁に使うskillや自動化の中核プロンプトを堅牢化したい場合にも使う。
 
 ## 使用しない条件
 
@@ -28,7 +25,8 @@ description: >
 ## ワークフロー
 
 plan modeになっている場合はExitPlanModeを呼び出してから開始する。
-本スキルは通常モードで実行し、`agent-toolkit:plan-mode`スキルは呼び出さない。
+本スキルは通常モードで実行し、`agent-toolkit:plan-mode`スキルは呼び出さない
+（ユーザーが提示された改善案の採否を対話的に判断する前提であり、計画ファイル化が必要な場合はユーザーが別途指示するため）。
 
 1. メインは`agent-toolkit:writing-standards`スキルを呼び出す。
    対象がコーディングエージェント向け文書の場合は`agent-toolkit:agent-standards`も併用する。

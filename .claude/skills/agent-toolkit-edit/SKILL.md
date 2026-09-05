@@ -15,6 +15,9 @@ description: >
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保つ
+  （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
+  - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
+  - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
@@ -50,15 +53,14 @@ description: >
 - 仕様参照としてのルール名・設定キー名・選択肢の説明は記述してよい
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
-- 配布物の出力文字列・フックメッセージ・docstringにリポジトリ管理外の個人メモファイル名を含めない
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
 - 配布物文面は実ファイル編集時に`scripts/claude_hook_pretooluse.py`の固有名検査を適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文でhook内部の実装挙動
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
   エンドユーザーには挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
-  - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する節
-    （`<plugin root>/skills/agent-standards/SKILL.md`「セッション状態フラグ」節等）は本規定の対象外とする
+  - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
+    （`<plugin root>/skills/agent-standards/references/session-state-flags.md`等）は本規定の対象外とする
 
 スキル・サブエージェント編集時は次を守る。
 
@@ -110,7 +112,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 複数ファイルへまたがる機構又は委譲構造を新設又は変更する実装では、`docs/development/design.md`へ目的、構造の理由、知識境界及び却下した代替案を追加又は更新する。
 
-- コーディングエージェント向け文書を編集する場合は、`AGENTS.md`が定めるAWI由来文書の参照・更新規範に従う
+- コーディングエージェント向け文書を編集する場合は、`AGENTS.md`「編集時に起動するスキル」が定める
+  `docs/development/concepts.md`・`docs/development/incidents.md`の確認と更新に従う
 - `docs/guide/claude-code-guide.md`「設定確認」節のチェック内容要約は、要約が変わる変更時に更新する。
   対象は新しいcheck追加・既存check削除・検出範囲の大きな変更・依存ツールの変更・新規プラグイン追加を含む
 - `install-claude.sh`の`FILES`・`install-claude.ps1`の`$files`・
@@ -134,8 +137,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 ## セッション状態フラグ
 
-`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:agent-standards`スキル本体（SKILL.md）
-「セッション状態フラグ」節に置く。フラグを追加・変更する際は当該節を更新する。
+`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:agent-standards`の
+`references/session-state-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
 
 SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず
 警告が返るため、必ずSkillツールで起動する。
@@ -205,7 +208,9 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 ## フック実装の配置先（個人フックと配布物）
 
 PreToolUseフックの配置先は複数ある。汎用機能はプラグインへ、dotfiles固有の前提に依存する機能は個人フックへ配置する。
-類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。判断に迷う場合はユーザーへ確認する。
+類似チェックが既に片方に存在する場合はそちらへ統合する（SSOT原則）。
+両方に該当すると判断した場合は、当該チェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
+依存するかで判定し、依存しないものをプラグインへ置く。
 
 - `scripts/claude_hook_pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
   dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け。

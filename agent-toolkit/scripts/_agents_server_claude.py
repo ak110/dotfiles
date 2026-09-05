@@ -197,6 +197,7 @@ class ClaudeServerManager:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            turn_seq=1,
         )
 
     async def resume(
@@ -210,6 +211,7 @@ class ClaudeServerManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        turn_seq: int = 0,
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。"""
         await self._stop_owned_task(session_id)
@@ -222,6 +224,7 @@ class ClaudeServerManager:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            turn_seq=turn_seq + 1,
         )
 
     async def _stop_owned_task(self, session_id: str) -> None:
@@ -244,6 +247,7 @@ class ClaudeServerManager:
         model_type: str | None,
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
+        turn_seq: int,
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
         options = _build_options(cwd, model, effort, session_id, launch_kind=launch_kind)
@@ -261,6 +265,7 @@ class ClaudeServerManager:
                 model_type=model_type,
                 launch_kind=launch_kind,
                 excluded_candidates=excluded_candidates,
+                turn_seq=turn_seq,
             )
         )
         self._tasks.add(task)
@@ -329,6 +334,7 @@ class ClaudeServerManager:
         model_type: str | None,
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
+        turn_seq: int,
     ) -> None:
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
 
@@ -425,6 +431,7 @@ class ClaudeServerManager:
                                     model=model,
                                     effort=effort,
                                     engine="claude",
+                                    turn_seq=turn_seq,
                                 )
                                 self.sessions[session_id] = session
                                 self._channels[session_id] = channel

@@ -427,6 +427,7 @@ class AppServerManager:
             model=model,
             effort=effort,
             engine="codex",
+            turn_seq=1,
         )
         self.sessions[session_id] = session
         _initialize_turn(session)
@@ -451,6 +452,7 @@ class AppServerManager:
         model_type: str | None = None,
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        turn_seq: int = 0,
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
         _validate_cwd(cwd)
@@ -465,6 +467,7 @@ class AppServerManager:
             model=model,
             effort=effort,
             engine="codex",
+            turn_seq=turn_seq + 1,
         )
         self.sessions[session_id] = session
         _initialize_turn(session)

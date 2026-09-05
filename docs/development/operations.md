@@ -136,8 +136,11 @@ working treeにだけ定義したツールが更新を繰り返しても未導�
 現在のブランチが`develop`で、`rust/claude-statusline/`に`origin/master`との差分がある場合は、解決済みのmiseから開発版をビルドする。
 差分にはコミット済み、ステージ済み、未ステージの変更と、Gitのignore対象外である同じパス配下の未追跡ファイルを含める。
 
-作業ツリーを解決できない場合、Git管理下でない場合、`develop`以外のブランチである場合、又は差分がない場合は、
-従来どおりGitHub Releaseから取得する。`develop`で`origin/master`を解決できない場合は取得へ切り替えず、後処理を失敗させる。
+作業ツリーを解決できない場合、Git管理下でない場合、`develop`以外のブランチである場合、差分がない場合、
+又は開発版のビルドに必要なmiseが見つからない場合は、GitHub Releaseから取得する。
+miseが見つからない場合は、その旨を記録してから取得へ切り替える。
+Gitの状態だけで開発ツリーと判定すると、ビルド手段を持たない環境で同じ状態が成立したときにstatuslineの導入そのものが止まるためである。
+`develop`で`origin/master`を解決できない場合は取得へ切り替えず、後処理を失敗させる。
 ビルド、成果物の読込、既存バイナリの原子的な置換に失敗した場合も、既存バイナリを保持したまま後処理を失敗させる。
 
 開発版へ置き換える前に、リリース取得用のETagを無効化する。次回のリリース取得が`304 Not Modified`になっても、開発版を
@@ -172,6 +175,9 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
     転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
   - ホスト固有の待受設定と、計画ファイル・セッションの参照元はunitへ書かず
     `~/.config/agent-toolkit/serve.toml`で与える
+- unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdの既定PATHをこの順に指定する
+  - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
+  - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
   - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
   - ランチャーが最新バージョンの`scripts/atk.py`を実行時に解決する
@@ -207,10 +213,13 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
   upstreamが`origin/develop`であることを検証したうえで、`git ls-remote`で取得した`origin/develop`のcommit IDを
   ローカル`HEAD`と比較する
   - 一致する場合は何もせず正常終了し、`update-dotfiles`を起動しない
-  - 一致しない場合だけ`bin/update-dotfiles`を絶対パスで起動し、その終了コードを引き継ぐ
+  - 一致しない場合だけ`bin/update-dotfiles`を絶対パスかつ`--force`付きで起動し、その終了コードを引き継ぐ
+    - euryaleでは利用者が配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する
   - 作業ツリーのstash、reset及びcleanは行わない。手動実行との重複は`update-dotfiles`の排他ロックへ委ねる
-- systemdユーザーマネージャーのPATHにはdotfilesの`bin`と`uv`が含まれないため、unitのExecStartには
-  導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込む
+- systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
+  導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込み、あわせて`Environment=PATH`を指定する
+  - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
+  - 指定順は`~/.local/bin`、miseのshims、systemdの既定PATHとし、実体を持つコマンドをshimより優先する
 - GitHubへの接続失敗、対象refの欠落、branch又はupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
 - dotfilesの作業ツリーに追跡済みの未コミット差分がある場合、`update-dotfiles`の`git pull --rebase`が失敗して
@@ -231,8 +240,9 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる。
 
 - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
-- `pyproject.toml`の`[project.scripts]`にpost-apply処理継続に必須のCLIを追加・改名した場合は、
-  両テンプレートの変数定義節にある`$expectedShims`・`expected_shims`定数を同一値に更新する
+- 期待シムは`pyproject.toml`の`[project.scripts]`から両テンプレートが展開時に導出する。定数の手動更新は不要とする
+- 再インストールを延期又は失敗した場合は、テンプレートが当該状態を環境変数で`dotfiles-post-apply`へ渡し、
+  `update-dotfiles`の最終出力へ案内として表示する
 - Windowsで実行ファイル、DLL、仮想環境などを更新する場合は、対象を保持するプロセスの所有者と再起動可否を更新前に分類する
 - 更新処理が所有し、元の稼働状態へ復元できるプロセスだけを停止する
 - 更新対象の実行ファイル・DLL・仮想環境を、所有しないか復元できないプロセスが保持する場合は、次回への延期、既存版の温存、補助更新の非致命化から処置を選ぶ。

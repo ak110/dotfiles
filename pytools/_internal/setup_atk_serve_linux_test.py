@@ -27,6 +27,7 @@ def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) 
 
 def test_unit_excludes_host_specific_args() -> None:
     """ユニット本文が待受アドレス・ポートを固定しないことを検証する。"""
+    assert systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT in setup_atk_serve_linux._UNIT_CONTENT
     assert "ExecStart=%h/.local/bin/atk-serve\n" in setup_atk_serve_linux._UNIT_CONTENT
     assert "--host" not in setup_atk_serve_linux._UNIT_CONTENT
     assert "--port" not in setup_atk_serve_linux._UNIT_CONTENT

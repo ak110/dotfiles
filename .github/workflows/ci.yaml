@@ -37,11 +37,6 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
-        with:
-          install: false
-          cache: false
       - name: PowerShell + PSScriptAnalyzer インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: make -C "$HOME/dotfiles" setup-pwsh
@@ -224,6 +219,24 @@ jobs:
           set -euo pipefail
           apt-get update
           apt-get install -y --no-install-recommends poppler-utils libarchive13 make zstd
+
+      - name: chezmoi インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: |
+          set -euo pipefail
+          install_chezmoi() {
+            local attempt=1
+            local installer
+            until installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
+              sh -c "$installer" -- -b /usr/local/bin; do
+              if [ "$attempt" -ge 3 ]; then
+                return 1
+              fi
+              attempt=$((attempt + 1))
+              sleep 2
+            done
+          }
+          install_chezmoi
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'

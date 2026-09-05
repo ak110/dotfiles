@@ -202,6 +202,12 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 この契約はClaude Code専用であり、Codex payload（`model`又はCodexのターン識別子を持つ入力）では
 `sessionTitle`を出力しない。
 
+ユーザー発話への応答契約を注入するhookは、同一セッションの直前の通常発話からの経過時間を状態として保持し、
+閾値以上経過した通常発話にだけ`additionalContext`を返す。
+初回の通常発話は注入の対象から除くが、経過時間の基準となる時刻を記録する。
+初回を含む通常発話では当該時刻を更新し、ハーネスが挿入した通知及びコマンド起動では記録も注入もしない。
+この注入はホストを問わず有効であり、Codex payloadでも同じ`additionalContext`を返す。
+
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
 Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、
@@ -219,11 +225,8 @@ Stop/SubagentStopの`decision: "block"`は、対象主体が同一ターン内�
 上限に達すると警告とともにフックの判定が無視されてターンが終了する。
 上限値は`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`環境変数で変更できる。
 
-Stop・SubagentStopでは、`hookSpecificOutput.additionalContext`も`decision: "block"`と同じく当該ターンを継続させる。
-いずれも`stop_hook_active`と連続継続上限による同じループ保護を通る。
-両者の違いは、`additionalContext`がフックの想定内の助言としてtranscriptへ表示され、フックのエラー通知を伴わない点である。
-このため前段の厳守規定は両経路へ等しく適用し、対象主体が同一ターン内の行動で解消できる条件だけを警告と遮断の条件にする。
-PreToolUse・PostToolUse・UserPromptSubmitの`additionalContext`はターンの継続を強制せず、本項の対象外とする。
+Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは、`additionalContext`がフックの想定内の助言としてtranscriptへ表示され、フックのエラー通知を伴わない点である。
+いずれも`stop_hook_active`と連続継続上限による同じループ保護を通るため、前段の厳守規定を両経路へ等しく適用し、対象主体が同一ターン内の行動で解消できる条件だけを警告と遮断の条件にする。
 
 ターン終了の言語的判定（完了文言・質問・待機表明の判別）をフック側のコードで
 正規表現等により行うと誤検知が生じやすい。

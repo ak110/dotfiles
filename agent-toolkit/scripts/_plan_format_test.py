@@ -210,6 +210,34 @@ def test_human_readable_agent_proposal_requires_reason_for_every_decision(decisi
     assert any("エージェント提案行" in error for error in errors), errors
 
 
+def test_agent_wi_adopted_action_accepts_rederived_scope() -> None:
+    """エージェント由来のWIの採用行は再導出した適用範囲と根拠を受理する。"""
+    row = (
+        f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | "
+        "入力経路全体へ適用する。誤りの機構が由来の種類に依存しないため。 |"
+    )
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
+    assert not _plan_format.check_plan_main_structure(content)[1]
+
+
+def test_agent_wi_adopted_action_without_reason_yields_migration_notice() -> None:
+    """エージェント由来のWIの旧採用行は読み取り時に移行の指摘を返す。"""
+    row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | - |"
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
+    notices: list[str] = []
+    _work_type, errors = _plan_format.check_plan_main_structure(content, origin_notices=notices)
+    assert not errors, errors
+    assert any("適用範囲を再導出した結果と根拠" in notice for notice in notices), notices
+
+
+def test_agent_wi_non_adopted_action_requires_reason() -> None:
+    """エージェント由来のWIの採用以外は自足した根拠を必要とする。"""
+    row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 部分採用 | - |"
+    content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
+    errors = _plan_format.check_plan_main_structure(content)[1]
+    assert any("採用以外の`根拠`" in error for error in errors), errors
+
+
 @pytest.mark.parametrize("decision", _plan_format.PLAN_ACTION_DECISIONS)
 def test_human_readable_user_origin_applies_general_decision_rule(decision: str) -> None:
     """一般由来は採用だけハイフンとし、ほかの採否では理由を要求する。"""

@@ -23,7 +23,7 @@ def test_all_chezmoi_install_paths_share_bounded_retry_contract() -> None:
     workflow_functions = _extract_install_functions(workflow)
     install_functions = _extract_install_functions(install_script)
 
-    assert len(workflow_functions) == 2
+    assert len(workflow_functions) == 3
     assert len(install_functions) == 1
     for function in [*workflow_functions, *install_functions]:
         assert function.count(DOWNLOAD_COMMAND) == 1

@@ -44,8 +44,8 @@ def _codex_home() -> pathlib.Path:
     return pathlib.Path.home() / ".codex"
 
 
-def _iter_claude_records() -> typing.Iterator[tuple[pathlib.Path, str]]:
-    """Claude Codeのセッション本体の記録を`(パス, プロジェクト表記)`として返す。
+def _iter_claude_records() -> typing.Iterator[pathlib.Path]:
+    """Claude Codeのセッション本体の記録を返す。
 
     記録階層は深さ2（`<project>/<session-uuid>.jsonl`）をセッション本体とする。
     サブエージェント記録は深さ4に置かれ、一覧では本体へまとめるため列挙しない。
@@ -58,7 +58,7 @@ def _iter_claude_records() -> typing.Iterator[tuple[pathlib.Path, str]]:
             continue
         for path in project_dir.glob(f"*{_CLAUDE_SUFFIX}"):
             if path.is_file():
-                yield path, project_dir.name
+                yield path
 
 
 def _iter_codex_records() -> typing.Iterator[pathlib.Path]:
@@ -82,8 +82,68 @@ def _codex_session_id(path: pathlib.Path) -> str:
     return "-".join(parts[-5:]) if len(parts) >= 5 else stem
 
 
-def _entry(path: pathlib.Path, engine: str, session_id: str, project: str | None) -> dict[str, typing.Any]:
+def _as_text(value: typing.Any) -> str | None:
+    """記録の本文欄を表示用の文字列へ正規化する。"""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = [
+            block["text"] for block in value if isinstance(block, dict) and isinstance(block.get("text"), str) and block["text"]
+        ]
+        return "\n".join(parts) if parts else None
+    return None
+
+
+def _first_line(value: typing.Any) -> str | None:
+    """本文として解釈できる値の先頭1行を返す。"""
+    text = _as_text(value)
+    if text is None:
+        return None
+    lines = text.splitlines()
+    return lines[0] if lines else None
+
+
+def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None]:
+    """一覧の識別に使う作業ディレクトリと最初のユーザー発話を先頭から取得する。"""
+    cwd: str | None = None
+    first_user_message: str | None = None
+    first_user_seen = False
+    try:
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                if engine == "claude":
+                    if cwd is None and isinstance(record.get("cwd"), str):
+                        cwd = record["cwd"]
+                    if not first_user_seen and record.get("type") == "user":
+                        first_user_seen = True
+                        message = record.get("message")
+                        if isinstance(message, dict):
+                            first_user_message = _first_line(message.get("content"))
+                else:
+                    payload = record.get("payload")
+                    if not isinstance(payload, dict):
+                        continue
+                    if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
+                        cwd = payload["cwd"]
+                    if not first_user_seen and payload.get("role") == "user":
+                        first_user_seen = True
+                        first_user_message = _first_line(payload.get("content"))
+                if cwd is not None and first_user_seen:
+                    break
+    except OSError:
+        pass
+    return cwd, first_user_message
+
+
+def _entry(path: pathlib.Path, engine: str, session_id: str) -> dict[str, typing.Any]:
     """一覧の1件を組み立てる。読み取れない情報は`None`のままとする。"""
+    cwd, first_user_message = _summary_fields(path, engine)
     try:
         st = path.stat()
         size = st.st_size
@@ -92,7 +152,8 @@ def _entry(path: pathlib.Path, engine: str, session_id: str, project: str | None
         return {
             "engine": engine,
             "session_id": session_id,
-            "project": project,
+            "cwd": cwd,
+            "first_user_message": first_user_message,
             "path": None,
             "size": None,
             "updated_at": None,
@@ -101,7 +162,8 @@ def _entry(path: pathlib.Path, engine: str, session_id: str, project: str | None
     return {
         "engine": engine,
         "session_id": session_id,
-        "project": project,
+        "cwd": cwd,
+        "first_user_message": first_user_message,
         "path": str(path),
         "size": size,
         "updated_at": updated_at,
@@ -112,10 +174,10 @@ def _entry(path: pathlib.Path, engine: str, session_id: str, project: str | None
 def _list_payload() -> dict[str, typing.Any]:
     """ローカルの保存済みセッション一覧を返す。"""
     entries: list[dict[str, typing.Any]] = []
-    for path, project in _iter_claude_records():
-        entries.append(_entry(path, "claude", path.stem, project))
+    for path in _iter_claude_records():
+        entries.append(_entry(path, "claude", path.stem))
     for path in _iter_codex_records():
-        entries.append(_entry(path, "codex", _codex_session_id(path), None))
+        entries.append(_entry(path, "codex", _codex_session_id(path)))
     entries.sort(key=lambda item: (item["updated_at"] is not None, item["updated_at"] or 0.0), reverse=True)
     return {"host": socket.gethostname(), "entries": entries[:MAX_LIST_ENTRIES]}
 

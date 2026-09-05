@@ -5,7 +5,9 @@
 """
 
 import logging
+import re
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -281,6 +283,21 @@ class TestRun:
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
+    def test_foreground_completion_reports_step_duration(self, caplog: pytest.LogCaptureFixture) -> None:
+        """前景ステップの完了行へステップ本体の所要時間を表示する。"""
+
+        def foreground() -> bool:
+            time.sleep(0.3)
+            return False
+
+        caplog.set_level(logging.INFO)
+        post_apply.run([post_apply._StepSpec("前景", foreground)])  # noqa: SLF001
+
+        completion = next(record.getMessage() for record in caplog.records if record.getMessage().startswith("[1/1] 前景 ("))
+        match = re.fullmatch(r"\[1/1] 前景 \(([0-9]+\.[0-9])秒\)", completion)
+        assert match is not None
+        assert float(match.group(1)) >= 0.2
+
     def test_background_step_overlaps_foreground_and_appends_result_after_it(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -291,14 +308,15 @@ class TestRun:
 
         def background() -> bool:
             started.set()
-            assert released.wait(timeout=2)
+            time.sleep(0.3)
+            released.set()
             logging.getLogger("background-test").info("背景ログ")
             return True
 
         def foreground() -> bool:
             assert started.wait(timeout=2)
+            assert released.wait(timeout=2)
             logging.getLogger("foreground-test").info("前景ログ")
-            released.set()
             return False
 
         caplog.set_level(logging.INFO)
@@ -311,7 +329,11 @@ class TestRun:
 
         assert [result.name for result in results] == ["前景", "背景"]
         messages = [record.getMessage() for record in caplog.records]
-        assert messages.index("前景ログ") < messages.index("[1/2] 背景") < messages.index("背景ログ")
+        background_completion = next(message for message in messages if message.startswith("[1/2] 背景 ("))
+        match = re.fullmatch(r"\[1/2] 背景 \(([0-9]+\.[0-9])秒\)", background_completion)
+        assert match is not None
+        assert float(match.group(1)) >= 0.2
+        assert messages.index("前景ログ") < messages.index(background_completion) < messages.index("背景ログ")
 
     def test_background_step_failure_does_not_discard_other_results(self) -> None:
         """背景ステップの例外を当該結果へ局所化し、他の結果を保持する。"""
@@ -474,6 +496,85 @@ class TestRun:
         captured = capsys.readouterr()
         assert captured.err.count(notice.message) == 1
         assert captured.err.count(notice.command) == 1
+
+
+class TestPytoolsInstallNotices:
+    """テンプレートから渡されたpytools再導入状態の最終案内。"""
+
+    def test_unset_state_does_not_print_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """状態が未設定なら案内を表示しない。"""
+        monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_STATE", raising=False)
+        monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: ([], []))
+
+        assert exc_info.value.code == 0
+        assert "pytoolsの再インストール" not in capsys.readouterr().err
+
+    def test_empty_state_does_not_print_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """状態が空文字列なら案内を表示しない。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "")
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", "ignored")
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: ([], []))
+
+        assert exc_info.value.code == 0
+        assert "pytoolsの再インストール" not in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ("state", "expected"),
+        [
+            ("deferred", "pytoolsの再インストールを延期しました。"),
+            ("failed", "pytoolsの再インストールに失敗しました。"),
+        ],
+    )
+    def test_known_state_prints_notice(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        state: str,
+        expected: str,
+    ) -> None:
+        """延期と失敗を最終案内へ表示する。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", state)
+        monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            post_apply.main(runner=lambda: ([], []))
+
+        assert exc_info.value.code == 0
+        assert expected in capsys.readouterr().err
+
+    def test_notice_includes_detail(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """補足がある場合は状態案内の本文へ含める。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "failed")
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", "uv tool install error")
+
+        with pytest.raises(SystemExit):
+            post_apply.main(runner=lambda: ([], []))
+
+        assert "詳細: uv tool install error" in capsys.readouterr().err
+
+    def test_unknown_state_raises_value_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """送信契約にない状態を黙って無視しない。"""
+        monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "unknown")
+
+        with pytest.raises(ValueError, match="未知のpytools再導入状態"):
+            post_apply.main(runner=lambda: ([], []))
 
 
 class TestDefaultSteps:

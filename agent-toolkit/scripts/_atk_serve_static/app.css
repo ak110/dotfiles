@@ -122,10 +122,14 @@ textarea { resize: vertical; }
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
-.filters, .dialog-form-fields, .edit-panel, .answer-panel, .user-comment-panel {
+.filters-body, .dialog-form-fields, .edit-panel, .answer-panel, .user-comment-panel {
   display: grid;
   gap: var(--space-2);
 }
+.filters { order: -1; }
+.filters summary { cursor: pointer; font-weight: 700; }
+.filters-body { margin-top: var(--space-3); }
+.filters-body > .pane-heading { justify-content: flex-end; }
 .filter-grid {
   display: grid;
   grid-template-columns: minmax(7rem, auto) 1fr;
@@ -417,20 +421,17 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
 @media (max-width: 1279px) {
   .entry-columns { display: none; }
   .entry-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .entry-select { grid-column: 1; grid-template-columns: 1fr; gap: var(--space-1); padding: var(--space-3); }
+  .entry-select {
+    grid-column: 1;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
   .entry-copy { grid-column: 2; }
-  .entry-cell {
-    display: grid;
-    grid-template-columns: minmax(7rem, 35%) minmax(0, 1fr);
-    gap: var(--space-2);
-  }
-  .entry-cell::before {
-    display: inline;
-    color: var(--color-secondary-text);
-    content: attr(data-label);
-    font-size: var(--font-size-secondary);
-    font-weight: 700;
-  }
+  .filename-cell, .target-repo-cell { display: none; }
+  .summary-cell { grid-row: 1; }
+  .status-cell { grid-row: 2; }
 }
 @media (max-width: 700px) {
   /* 狭い画面では中央寄せの余地が無いため、水平方向の余白も`shell.css`の共通値へそろえる。 */
@@ -442,6 +443,7 @@ dialog::backdrop { background: rgb(15 23 42 / 0.55); }
   }
   #sync-result { font-size: 0.75rem; line-height: 1.25; }
   .app-layout { grid-template-columns: 1fr; padding: var(--space-2); }
+  .filters { order: initial; }
   .entry-pane { min-height: 0; }
   .filter-grid { grid-template-columns: 1fr; }
   dialog.dialog-shell { width: calc(100% - 1rem); max-height: calc(100svh - 1rem); }

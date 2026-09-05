@@ -196,6 +196,7 @@ class SessionState:
     announced: bool = False
     started_at: str = dataclasses.field(default_factory=_utc_now)
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
+    turn_seq: int = 0
     turn_id: str = ""
     status: str = "running"
     plan: list[dict[str, Any]] = dataclasses.field(default_factory=list)
@@ -219,6 +220,7 @@ class SessionState:
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
     pending_result: dict[str, Any] | None = None
+    finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
@@ -254,6 +256,8 @@ class SessionState:
         """状態の更新時刻を現在時刻へ更新する。"""
         self.updated_at = _utc_now()
         if self.result_available:
+            if self.finalized_at is None:
+                self.finalized_at = _utc_now()
             if self.retention_deadline is None:
                 self.retention_deadline = asyncio.get_running_loop().time() + RESULT_RETENTION_SECONDS
         else:
@@ -268,6 +272,7 @@ class SessionState:
             "engine": self.engine,
             "status": self.status,
             "progress": self.progress,
+            "turn_seq": self.turn_seq,
         }
         if self.model_type is not None:
             result["model_type"] = self.model_type
@@ -286,6 +291,7 @@ class SessionState:
             "engine": self.engine,
             "status": self.status,
             "agent_message": self.agent_message,
+            "turn_seq": self.turn_seq,
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
@@ -303,6 +309,10 @@ class SessionResumeState:
     engine: str
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
+    label: str = ""
+    started_at: str = dataclasses.field(default_factory=_utc_now)
+    updated_at: str = dataclasses.field(default_factory=_utc_now)
+    turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
 
     @classmethod
@@ -313,6 +323,10 @@ class SessionResumeState:
             cwd=session.cwd,
             model_type=session.model_type,
             launch_kind=session.launch_kind,
+            label=session.label,
+            started_at=session.started_at,
+            updated_at=session.updated_at,
+            turn_seq=session.turn_seq,
             excluded_candidates=session.excluded_candidates,
             model=session.model,
             effort=session.effort,
@@ -342,6 +356,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.auto_resume_consumed = False
     session.auto_resume_deadline = None
     session.pending_result = None
+    session.finalized_at = None
     session.retention_deadline = None
     session.started_at = _utc_now()
     if reset_progress:
@@ -351,6 +366,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
 
 def _begin_reply(session: SessionState) -> None:
     """終端済みsessionの新しいturnを開始する準備をする。"""
+    session.turn_seq += 1
     _initialize_turn(session, reset_progress=False)
     session.reply_attempted = True
     session.reply_turn_started = False

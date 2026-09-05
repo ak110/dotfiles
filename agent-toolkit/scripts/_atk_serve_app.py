@@ -152,6 +152,17 @@ def _specified_text(data: JsonObject, name: str) -> str | None:
     return value
 
 
+def _without_source_frontmatter(message: str) -> str:
+    """通常Web登録の本文から投入元を除いて返す。"""
+    parsed = frontmatter.parse_frontmatter(message)
+    if parsed is None:
+        return message
+    metadata, body = parsed
+    normalized_metadata = dict(metadata)
+    normalized_metadata.pop("source", None)
+    return frontmatter.serialize_frontmatter(normalized_metadata, body)
+
+
 def _summary(text: str, kind: str) -> str:
     body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
@@ -611,7 +622,6 @@ class Operations:
         *,
         entry_type: str,
         target_repo: str | None,
-        source: str | None,
         scope: str | None = None,
         question_type: str | None = None,
         choices: list[str] | None = None,
@@ -640,9 +650,9 @@ class Operations:
                 raise common.WebInputError("target_repoを解決できません") from error
         return awi_add.add_entries(
             self.private_notes,
-            messages=messages,
+            messages=[_without_source_frontmatter(message) for message in messages],
             target_repo=resolved_target_repo,
-            source=source,
+            source=None,
             now=datetime.datetime.now(),
             entry_type=entry_type,
             scope=scope,
@@ -1312,13 +1322,13 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
     async def add_entry() -> tuple[quart.Response, int]:
         data = _json_object(
             await _request_json(),
-            allowed={"type", "messages", "source", "target_repo", "scope", "question_type", "choices"},
+            allowed={"type", "messages", "target_repo", "scope", "question_type", "choices"},
             required={"type", "messages"},
         )
         if data["type"] not in common.WI_TYPES:
             raise common.WebInputError("typeが不正です")
         messages = _strings(data["messages"], "messages")
-        for key in ("source", "target_repo"):
+        for key in ("target_repo",):
             if key in data and (not isinstance(data[key], str) or not data[key]):
                 raise common.WebInputError(f"{key}は空でない文字列で指定してください")
         question_type = data.get("question_type")
@@ -1329,7 +1339,6 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
             messages,
             entry_type=data["type"],
             target_repo=data.get("target_repo"),
-            source=_optional_string(data, "source"),
             scope=data.get("scope"),
             question_type=question_type,
             choices=_strings(data["choices"], "choices") if "choices" in data else None,

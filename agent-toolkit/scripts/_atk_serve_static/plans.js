@@ -100,11 +100,7 @@ function isMobileViewport() {
 }
 
 function setDrawerOpen(open) {
-  const aside = document.querySelector("aside");
-  const backdrop = document.getElementById("drawer-backdrop");
-  if (!aside || !backdrop) return;
-  aside.classList.toggle("open", open);
-  backdrop.classList.toggle("open", open);
+  document.body.classList.toggle("drawer-open", open);
 }
 
 function updateMetaMobile() {
@@ -590,8 +586,12 @@ async function copySelectedRaw() {
   if (!selectedPath || !selectedHost) return;
   const currentMount = isCurrentMount;
   const btn = document.getElementById("copy-btn");
-  const originalLabel = btn.dataset.label || btn.textContent;
-  btn.dataset.label = originalLabel;
+  const wideLabel = btn.querySelector(".wide-label");
+  const shortLabel = btn.querySelector(".short-label");
+  const originalWide = btn.dataset.wideLabel || wideLabel.textContent;
+  const originalShort = btn.dataset.shortLabel || shortLabel.textContent;
+  btn.dataset.wideLabel = originalWide;
+  btn.dataset.shortLabel = originalShort;
   try {
     const res = await currentMount.wait(
       fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource)),
@@ -599,11 +599,16 @@ async function copySelectedRaw() {
     if (!res.ok) throw new Error("status " + res.status);
     const text = await currentMount.wait(res.text());
     await currentMount.wait(navigator.clipboard.writeText(text));
-    btn.textContent = "コピーしました";
+    wideLabel.textContent = "コピーしました";
+    shortLabel.textContent = "完了";
   } catch (e) {
-    btn.textContent = "コピーに失敗しました";
+    wideLabel.textContent = "コピーに失敗しました";
+    shortLabel.textContent = "失敗";
   }
-  setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+  setTimeout(() => {
+    wideLabel.textContent = originalWide;
+    shortLabel.textContent = originalShort;
+  }, 2000);
 }
 
 async function copySelectedPath() {
@@ -612,8 +617,12 @@ async function copySelectedPath() {
   const info = rootInfo(selectedHost, selectedSource);
   if (!info) return;
   const btn = document.getElementById("copy-path-btn");
-  const originalLabel = btn.dataset.label || btn.textContent;
-  btn.dataset.label = originalLabel;
+  const wideLabel = btn.querySelector(".wide-label");
+  const shortLabel = btn.querySelector(".short-label");
+  const originalWide = btn.dataset.wideLabel || wideLabel.textContent;
+  const originalShort = btn.dataset.shortLabel || shortLabel.textContent;
+  btn.dataset.wideLabel = originalWide;
+  btn.dataset.shortLabel = originalShort;
   // ホスト種別に応じてチルダ表記（POSIX）または%USERPROFILE%表記（Windows）へ変換する。
   // 置換基準はinfo.homeとする（info.rootはplansディレクトリ等のroot直下パスであり
   // ホームディレクトリと一致しない場合があるため）。
@@ -630,11 +639,16 @@ async function copySelectedPath() {
   }
   try {
     await currentMount.wait(navigator.clipboard.writeText(absolutePath));
-    btn.textContent = "コピーしました";
+    wideLabel.textContent = "コピーしました";
+    shortLabel.textContent = "完了";
   } catch (e) {
-    btn.textContent = "コピーに失敗しました";
+    wideLabel.textContent = "コピーに失敗しました";
+    shortLabel.textContent = "失敗";
   }
-  setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+  setTimeout(() => {
+    wideLabel.textContent = originalWide;
+    shortLabel.textContent = originalShort;
+  }, 2000);
 }
 
 // SSE接続はpagehideで能動的にcloseする。
@@ -759,8 +773,7 @@ function bindScreenEvents() {
   document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
   document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
   document.getElementById("menu-btn").addEventListener("click", () => {
-    const aside = document.querySelector("aside");
-    setDrawerOpen(!(aside && aside.classList.contains("open")));
+    setDrawerOpen(!document.body.classList.contains("drawer-open"));
   });
   document.getElementById("drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
   document.getElementById("preview").addEventListener("click", (event) => {
@@ -795,10 +808,11 @@ async function mount(currentMount) {
   if (!currentMount()) return;
   await currentMount.wait(refreshFiles());
   if (!currentMount()) return;
-  if (!selectedPath && files.length > 0) {
+  if (!selectedPath && files.length > 0 && !isMobileViewport()) {
     await currentMount.wait(openFile(files[0].host, files[0].path, fileSource(files[0])));
   }
   if (!currentMount()) return;
+  setDrawerOpen(isMobileViewport());
   setupSentinelObserver();
 
   eventSource = connectEvents();
@@ -806,6 +820,7 @@ async function mount(currentMount) {
 
 function unmount() {
   isCurrentMount = () => false;
+  setDrawerOpen(false);
   previewGeneration += 1;
   searchGeneration += 1;
   window.removeEventListener("pagehide", handlePageHide);

@@ -54,6 +54,7 @@ _POLL_INTERVAL_SEC = 600.0
 _MISE_REFRESH_INTERVAL_SEC = 24 * 60 * 60
 _MISE_INSTALL_TIMEOUT_SEC = 600
 _INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
+_INTERNAL_DOTFILES_UPDATED_ARG = "--internal-dotfiles-updated"
 
 # 変更検知後、追加イベント発火が無くなるまでの畳み込み待機秒
 # （1回のファイル操作で複数イベントが連続発火する実測を吸収する）。
@@ -732,12 +733,18 @@ def _without_internal_mise_refreshed(argv: list[str]) -> list[str]:
     return [arg for arg in argv if arg != _INTERNAL_MISE_REFRESHED_ARG]
 
 
+def _without_internal_dotfiles_updated(argv: list[str]) -> list[str]:
+    """一回限りのdotfiles更新済み指定を再起動引数から除去する。"""
+    return [arg for arg in argv if arg != _INTERNAL_DOTFILES_UPDATED_ARG]
+
+
 def _build_restart_target(
     argv: list[str],
     dotfiles_root: pathlib.Path | None = None,
     *,
     resume_consumed: bool = False,
     mise_refreshed: bool = False,
+    dotfiles_updated: bool = False,
 ) -> tuple[pathlib.Path, list[str]]:
     """再起動対象のスクリプトパスと引数列を返す。
 
@@ -751,11 +758,13 @@ def _build_restart_target(
         canonical = dotfiles_root / "agent-toolkit" / "scripts" / "atk.py"
         if canonical.exists():
             script = canonical
-    rest = _without_internal_mise_refreshed(argv[1:])
+    rest = _without_internal_dotfiles_updated(_without_internal_mise_refreshed(argv[1:]))
     if resume_consumed:
         rest = _without_resume_args(rest)
     if mise_refreshed:
         rest.append(_INTERNAL_MISE_REFRESHED_ARG)
+    if dotfiles_updated:
+        rest.append(_INTERNAL_DOTFILES_UPDATED_ARG)
     return script, rest
 
 
@@ -765,6 +774,7 @@ def _restart_process_loop(
     *,
     resume_consumed: bool = False,
     mise_refreshed: bool = False,
+    dotfiles_updated: bool = False,
 ) -> None:
     """次に起動するスクリプトと引数をランチャーへ渡して再起動を要求する。
 
@@ -779,6 +789,7 @@ def _restart_process_loop(
         dotfiles_root,
         resume_consumed=resume_consumed,
         mise_refreshed=mise_refreshed,
+        dotfiles_updated=dotfiles_updated,
     )
     spec_path = os.environ.get(_RESTART_SPEC_ENV)
     if spec_path:
@@ -897,6 +908,7 @@ def _check_and_restart_on_update(
             argv,
             dotfiles_root,
             mise_refreshed=mark_mise_refreshed and update_succeeded,
+            dotfiles_updated=update_succeeded,
         )
     return update_succeeded
 
@@ -913,6 +925,7 @@ def _update_before_session(
     """ready項目の処理前にdotfilesとprivate-notesを同期する。
 
     戻り値は、子セッションを起動できるかと`update-dotfiles`が成功したかの組とする。
+    更新による再起動先には一回限りの指定を渡し、同じ上流状態への開始前更新を抑止する。
     """
     executable = _resolve_executable("update-dotfiles")
     if executable is None:
@@ -931,7 +944,12 @@ def _update_before_session(
         if current_hash != startup_hash:
             print("処理開始前に常駐コードの更新を検知したためprocess-loopを再起動します。")
             _process_loop_log.append("restart_before_session_update")
-            _restart_process_loop(argv, dotfiles_root, mise_refreshed=mark_mise_refreshed)
+            _restart_process_loop(
+                argv,
+                dotfiles_root,
+                mise_refreshed=mark_mise_refreshed,
+                dotfiles_updated=True,
+            )
     return _pull_private_notes(private_notes), True
 
 
@@ -1007,6 +1025,7 @@ def _run_process_session(
         dotfiles_root,
         resume_consumed=True,
         mise_refreshed=False,
+        dotfiles_updated=False,
     )
     return False
 
@@ -1090,6 +1109,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     待機ループ復帰時に自己コード更新を検知して再起動した場合は`restart_on_wait_loop_update`を記録する。
     dotfilesを対象とし、更新を有効にした起動ではmiseのlatest指定ツールを起動時と24時間ごとに再評価する。
     成功した`update-dotfiles`直後は再評価時刻を更新し、正常再起動先へ一回限りの内部指定を渡して重複を避ける。
+    更新成功による再起動先は、同じ上流状態への開始前更新を一回だけ抑止する。
     """
     _resolve_orchestrator_specs()
     local_path = _resolve_local_worktree(args.target_repo)
@@ -1116,7 +1136,7 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     os.environ[_LEGACY_PROCESS_LOOP_SESSION_ENV] = "1"
     env = _child_env()
     resume_pending = args.resume is not None
-    refresh_before_session = True
+    refresh_before_session = not args.internal_dotfiles_updated
     with _console_title.console_title("atk wi process-loop"):
         try:
             try:

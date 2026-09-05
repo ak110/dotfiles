@@ -191,7 +191,8 @@ def _check_new(
     plan_name: str = "plan.md",
     create_bug_file: bool = True,
     bug_file_content: str | None = None,
-    reject_legacy_format: bool = False,
+    reject_migration_warnings: bool = False,
+    reject_progress_log_rows: bool = False,
 ) -> tuple[list[str], list[str]]:
     """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存して検査する。"""
     path = repo / plan_name
@@ -205,7 +206,12 @@ def _check_new(
         else:
             bug_path = pathlib.Path(reference)
         bug_path.write_text(bug_file_content or _plan_fixture.bug_file(), encoding="utf-8")
-    return check_plan_file.check(path, repo, reject_legacy_format=reject_legacy_format)
+    return check_plan_file.check(
+        path,
+        repo,
+        reject_migration_warnings=reject_migration_warnings,
+        reject_progress_log_rows=reject_progress_log_rows,
+    )
 
 
 def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
@@ -615,7 +621,7 @@ def test_rejects_each_migration_warning_for_new_creation(
         main_content,
         detail_content,
         plan_name="migration.md",
-        reject_legacy_format=True,
+        reject_migration_warnings=True,
     )
 
     assert message in errors
@@ -636,7 +642,8 @@ def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Pat
         main_content,
         detail_content,
         plan_name="progress-create.md",
-        reject_legacy_format=True,
+        reject_migration_warnings=True,
+        reject_progress_log_rows=True,
     )
 
     assert not read_errors, read_errors
@@ -644,7 +651,7 @@ def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Pat
     assert any("起草時に内容行を置かない" in error for error in create_errors), create_errors
 
 
-def test_keeps_plan_size_advisory_when_rejecting_legacy_format(repo: tuple[pathlib.Path, str]) -> None:
+def test_keeps_plan_size_advisory_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
     """旧形式を拒否する場合も行数の助言を警告に残す。"""
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
@@ -657,7 +664,7 @@ def test_keeps_plan_size_advisory_when_rejecting_legacy_format(repo: tuple[pathl
         main_content,
         detail_content,
         plan_name="advisory.md",
-        reject_legacy_format=True,
+        reject_migration_warnings=True,
     )
 
     assert not errors, errors
@@ -679,7 +686,7 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
         work_dir,
         main_content,
         detail_content,
-        reject_legacy_format=True,
+        reject_migration_warnings=True,
     )
 
     assert errors == expected
@@ -825,7 +832,7 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str]) 
         main_content,
         detail_content,
         bug_file_content=legacy_bug_file,
-        reject_legacy_format=True,
+        reject_migration_warnings=True,
     )
     assert any("統廃合前の行構成" in error for error in errors), errors
 
@@ -994,6 +1001,64 @@ def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
     )
 
 
+def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, str]) -> None:
+    """改訂用CLI入力では読み取り互換の移行警告をエラーとして返す。"""
+    work_dir, base = repo
+    main_content, detail_content = _new_format_plan(work_dir, base, detail_name="revision-plan.detail.md")
+    path = work_dir / "revision-plan.md"
+    path.write_text(main_content, encoding="utf-8")
+    (work_dir / "revision-plan.detail.md").write_text(detail_content, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(check_plan_file.__file__)),
+            "--reject-migration-warnings",
+            "--work-dir",
+            str(work_dir),
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "[warn]" not in result.stderr
+    assert "二ファイル計画が旧ID形式である" in result.stderr
+
+
+def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
+    """改訂用CLI入力は移行警告を拒否しても実装工程の進捗行を保持する。"""
+    work_dir, _base = repo
+    main_content, detail_content = human_new_format_plan(work_dir)
+    main_content = main_content.replace(
+        _plan_fixture.PROGRESS_TABLE,
+        _plan_fixture.PROGRESS_TABLE + _plan_fixture.PROGRESS_ROW,
+        1,
+    )
+    path = work_dir / "progress-revision.md"
+    path.write_text(main_content, encoding="utf-8")
+    (work_dir / "progress-revision.detail.md").write_text(detail_content, encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(check_plan_file.__file__)),
+            "--reject-migration-warnings",
+            "--work-dir",
+            str(work_dir),
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+
+
 @pytest.mark.skipif(
     not (_REAL_LEGACY_TWO_FILE_PLAN.is_file() and _REAL_LEGACY_TWO_FILE_DETAIL.is_file()),
     reason="実在する旧二ファイル計画がこの環境に無い",
@@ -1049,7 +1114,7 @@ def test_legacy_wi_names_are_rejected_on_creation(repo: tuple[pathlib.Path, str]
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     main_content = _plan_fixture.legacy_wi_names(main_content)
-    errors, _warnings = _check_new(work_dir, main_content, detail_content, reject_legacy_format=True)
+    errors, _warnings = _check_new(work_dir, main_content, detail_content, reject_migration_warnings=True)
     assert any(_plan_format.PLAN_METADATA_RELATED_WI_FIELD in error for error in errors), errors
 
 
@@ -1086,8 +1151,39 @@ def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tm
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     main_path = _origin_plan(work_dir, private_notes, source=True)
-    errors, _warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, reject_legacy_format=True)
+    errors, _warnings = check_plan_file.check(
+        main_path,
+        work_dir,
+        private_notes=private_notes,
+        reject_migration_warnings=True,
+    )
     assert any("正本の由来と一致しない" in error for error in errors), errors
+
+
+def test_agent_wi_adopted_action_without_reason_is_error_on_creation(repo: tuple[pathlib.Path, str]) -> None:
+    """エージェント由来のWIの旧採用行は新規作成でエラーに移す。"""
+    work_dir, _base = repo
+    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
+    detail_content = _plan_fixture.human_detail()
+    row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | - |"
+    main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
+    read_errors, read_warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        plan_name="agent-wi-read.md",
+    )
+    errors, warnings = _check_new(
+        work_dir,
+        main_content,
+        detail_content,
+        plan_name="agent-wi.md",
+        reject_migration_warnings=True,
+    )
+    assert not read_errors, read_errors
+    assert any("適用範囲を再導出した結果と根拠" in warning for warning in read_warnings), read_warnings
+    assert any("適用範囲を再導出した結果と根拠" in error for error in errors), errors
+    assert not any("適用範囲を再導出した結果と根拠" in warning for warning in warnings), warnings
 
 
 def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
@@ -1098,6 +1194,11 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
     main_path = work_dir / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
     (work_dir / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
-    errors, warnings = check_plan_file.check(main_path, work_dir, private_notes=private_notes, reject_legacy_format=True)
+    errors, warnings = check_plan_file.check(
+        main_path,
+        work_dir,
+        private_notes=private_notes,
+        reject_migration_warnings=True,
+    )
     assert not errors, errors
     assert any("由来照合を省略した" in warning for warning in warnings), warnings

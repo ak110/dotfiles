@@ -208,6 +208,28 @@ def test_develop_without_statusline_diff_uses_release_download(monkeypatch: pyte
     assert requested_urls
 
 
+def test_develop_without_mise_uses_release_download(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """statusline差分があってもmiseが無ければRelease downloadを使う。"""
+    repo = _make_git_repo(tmp_path)
+    _write_statusline_change(repo)
+    _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"RELEASE")
+
+    monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
+    monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: None)
+
+    assert mod.run(client=_client(handler)) is True
+
+    assert install_path.read_bytes() == b"RELEASE"
+    assert "開発版のビルドに必要なmiseが見つからないため、リリース版を取得します" in caplog.text
+
+
 def test_ignored_untracked_file_uses_release_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """ignore対象のuntrackedファイルだけではRelease downloadを維持する。"""
     repo = _make_git_repo(tmp_path)
