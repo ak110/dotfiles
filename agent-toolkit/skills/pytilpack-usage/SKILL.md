@@ -43,12 +43,7 @@ extrasが必要なモジュールは`pyproject.toml`の依存指定時にextras�
 
 ## APIドキュメントの参照方法
 
-pytilpackのAPIの詳細情報が必要な場合は、llms.txtをWebFetchで取得する。
-llms.txtはモジュール別のリンク集であり、必要なモジュールのページだけ個別に取得する。
+pytilpackのAPIの詳細情報が必要な場合は、次のllms.txtをWebFetchで取得する。
+モジュール一覧と各ページのURLを確認し、必要なモジュールのURLだけを個別に取得する（例: `https://ak110.github.io/pytilpack/api/functools/index.md`）。
 
 <https://ak110.github.io/pytilpack/llms.txt>
-
-### 段階的な取得手順
-
-1. まず上記のllms.txtを取得してモジュール一覧と各ページのURLを確認する
-2. 必要なモジュールのURLだけを個別に取得する（例: `https://ak110.github.io/pytilpack/api/functools/index.md`）

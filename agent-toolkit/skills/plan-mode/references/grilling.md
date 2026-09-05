@@ -1,7 +1,7 @@
 # grilling
 
 `agent-toolkit:plan-mode`又は`agent-toolkit:plan-and-add-awi`の直接起動で、実装前に必要な共通理解へ到達するためのユーザー確認手順。
-`agent-toolkit:process-wi`経路では本書を適用せず、確認事項をUWIへ登録する。
+`agent-toolkit:process-wi`経路では本書を適用しない。当該経路と計画担当としての起動における確認事項の扱いは`../SKILL.md`が定める。
 
 ## 確認対象
 

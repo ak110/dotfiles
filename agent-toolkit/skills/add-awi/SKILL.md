@@ -11,7 +11,7 @@ description: >
 
 ## 手順
 
-1. `agent-toolkit:wi-standards`を起動する。本文の起草前に`agent-toolkit:writing-standards`をSkill機能で起動する。該当する本文形式、投入及び保存照合の契約を適用し、手動起動ではactive項目との条件付き重複判定を実行しない。
+1. `agent-toolkit:wi-standards`を起動する。本文の起草前に`agent-toolkit:writing-standards`をSkill機能で起動する。該当する本文形式、投入及び保存照合の契約を適用する。
 2. 完成済み本文は問い直さず、本文、対象リポジトリ、`source`、plan file及び依存を受け取る。計画実装型の`plan_file`を保存する場合、
    新規計画は`$(atk config get private_notes)/plans/`から始まるportable値を使い、実在確認・構造検査など実体が必要な時だけ共通resolverで絶対パスへ解決する。
    既存計画に残る旧root又は絶対パスは読み書き互換として受理する。
