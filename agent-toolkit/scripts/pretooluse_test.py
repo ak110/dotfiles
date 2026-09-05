@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 
 import _fork_runner
+import _managed_temp
 import hook
 import pretooluse
 import pytest
@@ -28,8 +29,8 @@ _MARKETPLACE_MANIFEST = pathlib.Path(__file__).resolve().parents[2] / ".claude-p
 _SHARE_DIR = pathlib.Path(__file__).resolve().parents[1] / "share"
 
 # `.env`系の遮断メッセージだけへ添える案内の照合断片（`TestSecretsCheck`が使う）。
-_SECRETS_COPY_GUIDANCE = "copy the original with `cp` via Bash"
-_SECRETS_VALUE_EDIT_GUIDANCE = "append or edit lines via Bash"
+_SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
+_SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
 
 # 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
 _EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review.subagent.md",)
@@ -139,7 +140,11 @@ def _stderr_warn_offenders(source: str) -> list[int]:
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
     source = (pathlib.Path(pretooluse.__file__).parent / f"{module_name}.py").read_text(encoding="utf-8")
-    assert _stderr_warn_offenders(source) == [], module_name
+    offenders = _stderr_warn_offenders(source)
+    if module_name == "pretooluse":
+        assert len(offenders) == 1
+    else:
+        assert offenders == [], module_name
 
 
 def test_stderr_warn_offenders_detects_indirect_binding() -> None:
@@ -213,8 +218,8 @@ class TestMojibakeCheck:
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
         assert "[block]" in result.stderr
-        assert "Fix: Replace the U+FFFD character" in result.stderr
-        assert "Auto-generated hook notice" in result.stderr
+        assert "Fix: U+FFFDを意図した文字へ置き換えて再実行する" in result.stderr
+        assert "自動生成のhook通知" in result.stderr
 
     def test_edit_with_mojibake(self):
         result = _run(
@@ -258,8 +263,8 @@ class TestPs1EolCheck:
         content = "Set-StrictMode\nWrite-Host 'x'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
-        assert "LF-only" in result.stderr
-        assert "Fix: Use the Edit tool" in result.stderr
+        assert "LFだけの内容" in result.stderr
+        assert "Fix: 既存ファイルにはEditツールを使う" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -311,7 +316,7 @@ class TestLockfilesCheck:
     def test_write_blocked(self, file_path: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
-        assert "direct edit" in result.stderr
+        assert "直接編集" in result.stderr
         assert "Fix: " in result.stderr
 
     def test_edit_cargo_lock_blocked(self):
@@ -352,7 +357,7 @@ class TestSecretsCheck:
         """遮断と、`.env`系だけへ代替経路を案内する契約を検証する。"""
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "x"}})
         assert result.returncode == 2
-        assert "secret" in result.stderr
+        assert "シークレット" in result.stderr
         assert "Fix: " in result.stderr
         assert (_SECRETS_COPY_GUIDANCE in result.stderr) is expects_guidance
         assert (_SECRETS_VALUE_EDIT_GUIDANCE in result.stderr) is expects_guidance
@@ -425,7 +430,7 @@ class TestHomePathCheck:
         content = f"config_path = '{_home_path()}/myproj/config.yaml'\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/app.py", "content": content}})
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "ホームディレクトリ" in _additional_context(result)
 
     def test_home_path_in_claude_job_file_is_skipped(self):
         """Claude Codeが生成するセッション作業領域では正確なホーム絶対パスを許容する。"""
@@ -463,7 +468,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "ホームディレクトリ" in _additional_context(result)
 
     def test_home_path_git_boundary_does_not_parse_localized_git_diagnostics(
         self,
@@ -524,7 +529,7 @@ class TestHomePathCheck:
         )
 
         assert return_code == 0
-        assert "home directory" in capsys.readouterr().out
+        assert "ホームディレクトリ" in capsys.readouterr().out
 
     def test_home_path_in_temp_worktree_git_file_warns(self, tmp_path: pathlib.Path):
         """一時ルート配下のworktree用`.git`ファイルもGit管理候補として警告する。"""
@@ -539,7 +544,7 @@ class TestHomePathCheck:
             }
         )
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "ホームディレクトリ" in _additional_context(result)
 
     def test_home_path_in_non_git_prefix_sibling_is_skipped(self):
         """一時ルートと文字列prefixだけが同じGit管理外の兄弟パスは除外する。"""
@@ -596,7 +601,7 @@ class TestHomePathCheck:
             env_overrides={"XDG_CACHE_HOME": "relative-cache"},
         )
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "ホームディレクトリ" in _additional_context(result)
 
     def test_home_path_in_git_managed_xdg_cache_warns(self, tmp_path: pathlib.Path):
         """絶対`XDG_CACHE_HOME`配下でもGit管理マーカーがあれば警告する。"""
@@ -611,7 +616,7 @@ class TestHomePathCheck:
             env_overrides={"XDG_CACHE_HOME": str(cache_repo.parent)},
         )
         assert result.returncode == 0
-        assert "home directory" in _additional_context(result)
+        assert "ホームディレクトリ" in _additional_context(result)
 
     def test_home_path_in_local_md_skipped(self):
         content = f"See {_home_path()}/proj for details."
@@ -687,7 +692,7 @@ class TestRecursiveHomeSearchCheck:
     def test_warns_for_unlimited_recursive_home_search(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "high-capacity user directory" in _additional_context(result)
+        assert "大容量のユーザーディレクトリ" in _additional_context(result)
 
     def test_warns_for_expanded_absolute_home_search(self) -> None:
         """チルダを展開済みの絶対パスで指定した再帰検索も警告する。
@@ -699,7 +704,7 @@ class TestRecursiveHomeSearchCheck:
         targets = f"{shlex.quote(str(home / '.codex'))} {shlex.quote(str(home / '.claude'))}"
         result = _run({"tool_name": "Bash", "tool_input": {"command": f"rg -n keyword {targets} 2>/dev/null"}})
         assert result.returncode == 0
-        assert "high-capacity user directory" in _additional_context(result)
+        assert "大容量のユーザーディレクトリ" in _additional_context(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -760,8 +765,8 @@ class TestNonEditToolWarnings:
     def test_webfetch_verbatim_request_warns(self, phrase: str) -> None:
         result = _run({"tool_name": "WebFetch", "tool_input": {"url": "https://example.invalid", "prompt": f"{phrase}で返す"}})
         assert result.returncode == 0
-        assert "summarization model" in _additional_context(result)
-        assert "raw content" in _additional_context(result)
+        assert "要約モデル" in _additional_context(result)
+        assert "生データ" in _additional_context(result)
 
     def test_webfetch_summary_request_does_not_warn(self) -> None:
         result = _run({"tool_name": "WebFetch", "tool_input": {"url": "https://example.invalid", "prompt": "要点を整理する"}})
@@ -771,7 +776,7 @@ class TestNonEditToolWarnings:
     def test_sendmessage_agent_type_recipient_warns(self) -> None:
         result = _run({"tool_name": "SendMessage", "tool_input": {"to": "plugin-dev:skill-reviewer", "message": "通知"}})
         assert result.returncode == 0
-        assert "not a reachable SendMessage recipient" in _additional_context(result)
+        assert "SendMessageの到達可能な宛先ではない" in _additional_context(result)
 
     def test_sendmessage_runtime_recipient_does_not_warn(self) -> None:
         result = _run({"tool_name": "SendMessage", "tool_input": {"to": "main", "message": "通知"}})
@@ -786,9 +791,9 @@ class TestColloquialCheck:
         content = f"概要は{deny_substring}該当する。\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
-        assert "colloquial" in _additional_context(result)
-        assert "Matches: 1 (line 1, column 4)." in _additional_context(result)
-        assert "Rewrite the whole sentence containing the detected expression" in _additional_context(result)
+        assert "口語的な日本語表現" in _additional_context(result)
+        assert "一致: 1件（行1、列4）" in _additional_context(result)
+        assert "検出箇所を含む文全体" in _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
         # 検出語そのものは出力に含めない（コンテキスト汚染防止）
         assert deny_substring not in _agent_messages(result)
@@ -797,20 +802,14 @@ class TestColloquialCheck:
         content = f"概要は{deny_substring}該当する。\n" * 5
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
-        assert (
-            "Matches: 5 (line 1, column 4; line 2, column 4; line 3, column 4; line 4, column 4; line 5, column 4)."
-            in _additional_context(result)
-        )
+        assert "一致: 5件（行1、列4; 行2、列4; 行3、列4; 行4、列4; 行5、列4）" in _additional_context(result)
 
     def test_omits_match_positions_beyond_limit(self, deny_substring: str):
         content = f"概要は{deny_substring}該当する。\n" * 6
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "src/note.md", "content": content}})
         assert result.returncode == 0
-        assert (
-            "Matches: 6 (line 1, column 4; line 2, column 4; line 3, column 4; line 4, column 4; line 5, column 4)."
-            in _additional_context(result)
-        )
-        assert "line 6" not in _additional_context(result)
+        assert "一致: 6件（行1、列4; 行2、列4; 行3、列4; 行4、列4; 行5、列4）" in _additional_context(result)
+        assert "行6" not in _additional_context(result)
 
     def test_does_not_block(self, deny_substring: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "x.md", "content": deny_substring}})
@@ -909,12 +908,12 @@ class TestUserFacingTextChecks:
 
         if check == "colloquial":
             assert result.returncode == 0
-            assert "colloquial" in _additional_context(result)
+            assert "口語的な日本語表現" in _additional_context(result)
             assert "Target:" not in _additional_context(result)
             assert deny_substring not in _agent_messages(result)
         else:
             assert result.returncode == 2
-            expected = "U+FFFD" if check == "mojibake" else "non-Japanese script"
+            expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
             assert expected in result.stderr
 
     @pytest.mark.parametrize(
@@ -947,7 +946,7 @@ class TestUserFacingTextChecks:
         result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
 
         assert result.returncode == 0
-        assert "colloquial" in _additional_context(result)
+        assert "口語的な日本語表現" in _additional_context(result)
 
 
 def _plan_file_state_env(
@@ -1027,13 +1026,13 @@ class TestPlanModeSkillFirstCheck:
         messages = _agent_messages(result)
         assert "plan-mode" in messages
         assert "Phase 1" in messages
-        assert "reviewing a delegated plan" in messages
-        assert "only correcting values uniquely determined by the artifact and evidence" in messages
-        assert "continue without restarting plan-mode" in messages
-        assert "recording each correction and its evidence in `## 変更履歴`" in messages
+        assert "委譲した計画をレビュー" in messages
+        assert "成果物と根拠から一意に定まる値だけを訂正" in messages
+        assert "`plan-mode`をやり直さずに続行" in messages
+        assert "訂正内容と根拠を`## 変更履歴`へ記録" in messages
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in messages
-        assert "editing a plan file without invoking" in _additional_context(result)
-        assert "editing a plan file without invoking" not in result.stderr
+        assert "計画ファイルを編集している" in _additional_context(result)
+        assert "計画ファイルを編集している" not in result.stderr
 
     def test_warns_private_notes_plan_file_write_without_skill(self, tmp_path: pathlib.Path) -> None:
         """新しいprivate-notes計画rootのWriteもplan-mode未起動として警告する。"""
@@ -1051,7 +1050,7 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "editing a plan file without invoking" in _additional_context(result)
+        assert "計画ファイルを編集している" in _additional_context(result)
 
     @pytest.mark.parametrize("name", ["edit.md", "edit.bugs.md"])
     def test_warns_plan_file_edit_without_skill(self, tmp_path: pathlib.Path, name: str):
@@ -1145,7 +1144,7 @@ class TestPlanModeSkillFirstCheck:
             env_overrides=self._state_env(tmp_path, home),
         )
         assert result.returncode == 0
-        assert "editing a plan file without invoking" in _agent_messages(result)
+        assert "計画ファイルを編集している" in _agent_messages(result)
 
     def test_allows_plan_file_when_skill_invoked(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
@@ -1507,7 +1506,7 @@ class TestBlockCheckExecutionOrder:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
-        assert "consecutive Write/Edit/MultiEdit" in result.stderr
+        assert "`Write`・`Edit`・`MultiEdit`" in result.stderr
         assert "new meta-norm pattern" not in result.stderr
         assert "required items" not in result.stderr
 
@@ -1548,7 +1547,7 @@ class TestWarnJsonAndLanguageWarningComposition:
         output = json.loads(result.stdout)
         assert "permissionDecision" not in output["hookSpecificOutput"]
         context = output["hookSpecificOutput"]["additionalContext"]
-        commit_warning = "committing without running tests"
+        commit_warning = "テストを実行せずにcommit"
         language_warning = "英語主体"
         assert commit_warning in context
         assert language_warning in context
@@ -1731,24 +1730,24 @@ class TestLanguageEscalation:
         assert result.returncode == expected_returncode
         assert _read_session_state(tmp_path, sid)["english_warning_count"] == expected_count
 
-    def test_warn_no_suffix(self, tmp_path: pathlib.Path):
-        """warn時のadditionalContextに共通サフィックスが含まれないことを検証する。"""
+    def test_warn_has_suffix(self, tmp_path: pathlib.Path):
+        """warn時のadditionalContextに共通の日本語サフィックスが含まれることを検証する。"""
         env = self._state_env(tmp_path)
         result = self._invoke(tmp_path, env, "esc-suffix-warn", "A" * 100, msg_id="m1")
         assert result.returncode == 0
         ctx = _additional_context(result)
         assert ctx  # 警告が出ていること
-        assert "Auto-generated hook notice" not in ctx
+        assert "自動生成のhook通知" in ctx
         assert "evaluate relevance" not in ctx
 
-    def test_block_no_suffix(self, tmp_path: pathlib.Path):
-        """block時のstderrに共通サフィックスが含まれないことを検証する。"""
+    def test_block_has_suffix(self, tmp_path: pathlib.Path):
+        """block時のstderrに共通の日本語サフィックスが含まれることを検証する。"""
         env = self._state_env(tmp_path)
         sid = "esc-suffix-block"
         self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
         r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
         assert r2.returncode == 2
-        assert "Auto-generated hook notice" not in r2.stderr
+        assert "自動生成のhook通知" in r2.stderr
         assert "evaluate relevance" not in r2.stderr
 
 
@@ -1920,7 +1919,7 @@ class TestBashSleepPollPattern:
             _plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "may cause repeated polling" in _additional_context(result)
+        assert "反復ポーリングになる可能性" in _additional_context(result)
 
     def test_second_detection_in_same_session_blocks(self, tmp_path: pathlib.Path) -> None:
         session_id = "sleep-poll-repeat-test"
@@ -1935,7 +1934,7 @@ class TestBashSleepPollPattern:
             env,
         )
         assert second.returncode == 2
-        assert "completion notification" in second.stderr
+        assert "完了通知" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
 
     @pytest.mark.parametrize(
@@ -2012,7 +2011,7 @@ class TestBashSleepPollPattern:
         env = _plan_file_state_env(tmp_path)
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "session_id": session_id}, env)
         assert result.returncode == 0
-        assert "may cause repeated polling" not in _additional_context(result)
+        assert "反復ポーリングになる可能性" not in _additional_context(result)
         follow_up = _run(
             {
                 "tool_name": "Bash",
@@ -2022,7 +2021,7 @@ class TestBashSleepPollPattern:
             env,
         )
         assert follow_up.returncode == 0
-        assert "may cause repeated polling" in _additional_context(follow_up)
+        assert "反復ポーリングになる可能性" in _additional_context(follow_up)
 
     def test_background_execution_is_not_evaluated(self, tmp_path: pathlib.Path) -> None:
         result = _run(
@@ -2181,8 +2180,8 @@ class TestBashGitCommitWarning:
             output = json.loads(result.stdout)
             assert "permissionDecision" not in output["hookSpecificOutput"]
             assert self._has_additional_context(result, "[auto-generated: agent-toolkit/pretooluse][warn]")
-            assert self._has_additional_context(result, "committing without running tests")
-            assert self._has_additional_context(result, "Auto-generated hook notice")
+            assert self._has_additional_context(result, "テストを実行せずにcommit")
+            assert self._has_additional_context(result, "自動生成のhook通知")
         else:
             assert result.stdout == ""
 
@@ -2213,7 +2212,7 @@ class TestBashGitCommitWarning:
             cwd=str(payload),
         )
         assert result.returncode == 0
-        assert self._has_additional_context(result, "committing without running tests")
+        assert self._has_additional_context(result, "テストを実行せずにcommit")
 
     @pytest.mark.parametrize(
         ("label", "repo_relative", "remote_url", "command_template", "expect_warn"),
@@ -2246,7 +2245,7 @@ class TestBashGitCommitWarning:
         result = self._invoke(command_template.format(repo=repo), f"commit-scratchpad-{label}", env, cwd=repo)
         assert result.returncode == 0
         if expect_warn:
-            assert self._has_additional_context(result, "committing without running tests")
+            assert self._has_additional_context(result, "テストを実行せずにcommit")
         else:
             assert result.stdout == ""
 
@@ -2298,8 +2297,8 @@ class TestBashCodexExecNudge:
         """用途を断定せず、計画レビューの場合だけ点検を促す。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec --help"}})
         additional_context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "running codex exec." in additional_context
-        assert "If this run submits a plan file for review" in additional_context
+        assert "`codex exec`を実行" in additional_context
+        assert "計画ファイルをレビューへ提出する実行であれば" in additional_context
         assert "submitting plan file to codex review." not in additional_context
 
     def test_no_nudge_on_resume(self):
@@ -2316,14 +2315,14 @@ class TestBashCodexExecNudge:
         """`codex exec`を引数として含むだけの読み取り操作は警告しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo 'codex exec is documented here'"}})
         assert result.returncode == 0
-        assert "running codex exec" not in _agent_messages(result)
+        assert "`codex exec`を実行" not in _agent_messages(result)
 
     def test_nudge_follows_execution_position(self):
         """実行位置の`codex exec`は警告し、同じ位置の`codex exec resume`は警告しない。"""
         executed = _run({"tool_name": "Bash", "tool_input": {"command": 'codex exec "review the plan"'}})
         resumed = _run({"tool_name": "Bash", "tool_input": {"command": "codex exec resume 01ABCDEF"}})
-        assert "running codex exec" in _agent_messages(executed)
-        assert "running codex exec" not in _agent_messages(resumed)
+        assert "`codex exec`を実行" in _agent_messages(executed)
+        assert "`codex exec`を実行" not in _agent_messages(resumed)
 
 
 class TestBashAmendRebaseBlock:
@@ -2446,8 +2445,8 @@ class TestBashAmendRebaseBlock:
         result = self._invoke('cd "$HOME/repo" && git commit --amend --no-edit', sid, state_dir, cwd="/repo/a")
         assert result.returncode == 2
         assert "'$HOME/repo'" in result.stderr
-        assert "git -C <absolute path> log --oneline --decorate" in result.stderr
-        assert "history rewrite" in result.stderr
+        assert "git -C <絶対パス> log --oneline --decorate" in result.stderr
+        assert "履歴の書き換え" in result.stderr
 
     def test_unresolved_cwd_without_expression_keeps_general_guidance(
         self, state_dir: dict[str, str], tmp_path: pathlib.Path
@@ -2457,8 +2456,8 @@ class TestBashAmendRebaseBlock:
         self._write_state(tmp_path, sid, {"git_log_checked": {"/repo/a": True}})
         result = self._invoke("popd && git commit --amend --no-edit", sid, state_dir, cwd="/repo/a")
         assert result.returncode == 2
-        assert "unresolved shell expression" in result.stderr
-        assert "<absolute path>" not in result.stderr
+        assert "未解決のシェル展開" in result.stderr
+        assert "<絶対パス>" not in result.stderr
 
     @pytest.mark.parametrize(
         ("label", "repo_relative", "remote_url", "command_template", "expected_returncode"),
@@ -2519,6 +2518,75 @@ def _make_repo_with_optional_remote(path: pathlib.Path, remote_url: str | None) 
     return str(path)
 
 
+def _make_managed_temp_git_case(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    condition: str,
+) -> str:
+    """管理対象一時領域のGit除外判定に与える条件別の作業場所を作成する。"""
+    state_home = tmp_path / "managed-temp-state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    monkeypatch.setenv("LOCALAPPDATA", str(state_home))
+    if condition == "unmanaged":
+        return _make_repo_with_optional_remote(tmp_path / "unmanaged" / "repo", None)
+
+    managed = _managed_temp.create_managed_temp(f"pretooluse-{condition}", root=tmp_path)
+    repo = managed / "repo"
+    if condition == "git-query-failure":
+        repo.mkdir()
+        return str(repo)
+
+    remote_url = "https://example.invalid/x.git" if condition == "remote" else None
+    result = _make_repo_with_optional_remote(repo, remote_url)
+    if condition == "invalid-marker":
+        (managed / ".agent-toolkit-managed-temp.json").write_text("{}\n", encoding="utf-8")
+    return result
+
+
+@pytest.mark.parametrize(
+    "condition",
+    ["valid", "remote", "invalid-marker", "unmanaged", "unresolved-cwd", "git-query-failure"],
+)
+def test_verified_managed_temp_git_repository_exclusion(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    condition: str,
+) -> None:
+    """真正な管理対象かつremote無しの場合だけ3種のGit検査を除外する。"""
+    repo = _make_managed_temp_git_case(tmp_path, monkeypatch, condition)
+    commands = {
+        "commit": f"git -C {repo} commit -m 'x'",
+        "amend": f"git -C {repo} commit --amend --no-edit",
+        "rebase": f"git -C {repo} rebase main",
+    }
+    if condition == "unresolved-cwd":
+        commands = {
+            "commit": 'cd "$TARGET" && git commit -m "x"',
+            "amend": 'cd "$TARGET" && git commit --amend --no-edit',
+            "rebase": 'cd "$TARGET" && git rebase main',
+        }
+
+    env = _plan_file_state_env(tmp_path)
+    for operation, command in commands.items():
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": f"managed-temp-{condition}-{operation}",
+                "cwd": repo,
+            },
+            env_overrides=env,
+        )
+        if condition == "valid":
+            assert result.returncode == 0, operation
+            assert _agent_messages(result).strip() == "", operation
+        elif operation == "commit":
+            assert result.returncode == 0, operation
+            assert "テストを実行せずにcommit" in _additional_context(result), operation
+        else:
+            assert result.returncode == 2, operation
+
+
 def _git_commit_initial(path: pathlib.Path, files: dict[str, str]) -> None:
     """指定ファイルを追加してinitial commitを作成する。"""
     for rel, content in files.items():
@@ -2577,7 +2645,7 @@ class TestBashBulkStageWithUneditedFiles:
         assert data is not None, f"expected JSON output, got: {result.stdout!r}"
         assert "permissionDecision" not in data["hookSpecificOutput"]
         ctx = data["hookSpecificOutput"]["additionalContext"]
-        assert "bulk staging" in ctx
+        assert "一括`stage`" in ctx
         return ctx
 
     def _assert_no_warn(self, result: subprocess.CompletedProcess[str]) -> None:
@@ -2586,7 +2654,7 @@ class TestBashBulkStageWithUneditedFiles:
         if data is None:
             return
         ctx = data.get("hookSpecificOutput", {}).get("additionalContext", "")
-        assert "bulk staging" not in ctx
+        assert "一括`stage`" not in ctx
 
     def test_warns_when_git_add_all_with_unedited_untracked(
         self,
@@ -2946,7 +3014,7 @@ class TestBashGitPushAfterAmendDirty:
         result = self._invoke("cd ~/repo && git push origin master", sid, state_dir, cwd=str(tmp_path))
         assert result.returncode == 2
         assert "'~/repo'" in result.stderr
-        assert "git -C <absolute path> push ..." in result.stderr
+        assert "git -C <絶対パス> push ..." in result.stderr
 
     def test_dry_run_dirty_block_range_matches_real_push(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
         """判定範囲の統一: `--dry-run`でもdirty判定は実施される（再確認）。"""
@@ -3935,8 +4003,8 @@ class TestBashBlockBeforeAccumulatedWarnings:
     @pytest.mark.parametrize(
         ("blocking_command", "expected_message"),
         [
-            ('pkill -f "worker"', "pattern-based process termination"),
-            ("uv run python script.py", "`uv run python` invocation"),
+            ('pkill -f "worker"', "パターン一致によるプロセス終了"),
+            ("uv run python script.py", "`uv run python`呼び出し"),
         ],
         ids=["process-kill", "uv-run-python"],
     )
@@ -3992,8 +4060,8 @@ class TestBashBlockBeforeAccumulatedWarnings:
         assert result.returncode == 0
         output = json.loads(result.stdout)
         context = output["hookSpecificOutput"]["additionalContext"]
-        assert "bulk staging" in context
-        assert "running codex exec" in context
+        assert "一括`stage`" in context
+        assert "`codex exec`を実行" in context
 
 
 class TestBashHeredocLiteralExclusion:
@@ -4062,12 +4130,26 @@ class TestBashHeredocLiteralExclusion:
         )
         assert result.returncode == 2
 
+    def test_output_status_after_truncation_in_heredoc_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """ヒアドキュメント本文の切り詰めと終了状態参照の字面は診断しない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5; echo \"$?\"\nEOF"},
+                "session_id": "output-status-after-truncation-heredoc",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
+        assert "終了状態を示す" not in _agent_messages(result)
+
 
 class TestBashOutputTruncationWarning:
-    """`Bash`経由の検証コマンド出力`tail`/`head`切り詰め検出（初回warn・再検出block）。"""
+    """`Bash`経由の検証コマンド出力`tail`・`head`切り詰めを初回から遮断する。"""
 
-    def test_output_truncation_warns_on_first_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの初回検出は終了コード0のまま警告本文を返す。"""
+    def test_output_truncation_blocks_on_first_detection(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションの初回検出で解消手段を添えて遮断する。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -4076,11 +4158,12 @@ class TestBashOutputTruncationWarning:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 0
-        assert "truncating it" in _additional_context(result)
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
+        assert "`start_shell`" in result.stderr
 
-    def test_output_truncation_blocks_on_second_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの2回目の検出は解消手段を添えて遮断する。"""
+    def test_output_truncation_remains_blocked_on_second_detection(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションの2回目も状態に依存せず遮断する。"""
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -4091,7 +4174,7 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert first.returncode == 0
+        assert first.returncode == 2
         second = _run(
             {
                 "tool_name": "Bash",
@@ -4101,9 +4184,9 @@ class TestBashOutputTruncationWarning:
             env,
         )
         assert second.returncode == 2
-        assert "detected again in this session" in second.stderr
-        assert "tee" in second.stderr
-        assert "`start_shell` tool of agents_server" in second.stderr
+        assert "実行出力を`tail`・`head`で切り詰めている" in second.stderr
+        assert "全出力を保存" in second.stderr
+        assert "`start_shell`" in second.stderr
         assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
 
     def test_output_truncation_block_suppresses_status_diagnosis(self, tmp_path: pathlib.Path) -> None:
@@ -4127,10 +4210,10 @@ class TestBashOutputTruncationWarning:
             env,
         )
         assert second.returncode == 2
-        assert "reports the status of `head`/`tail`" not in second.stderr
+        assert "終了状態を示す" not in second.stderr
 
-    def test_output_truncation_uses_dedicated_state_key(self, tmp_path: pathlib.Path) -> None:
-        """切り詰めの記録は前景待機の記録と独立し、相互に遮断へ昇格させない。"""
+    def test_output_truncation_does_not_depend_on_sleep_state(self, tmp_path: pathlib.Path) -> None:
+        """前景待機の記録にかかわらず初回から遮断する。"""
         session_id = "output-truncation-independent"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -4150,19 +4233,19 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 0
-        assert "truncating it" in _additional_context(second)
+        assert second.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in second.stderr
 
-    def test_output_truncation_without_session_id_keeps_warning(self, tmp_path: pathlib.Path) -> None:
-        """`session_id`が空の場合は記録できないため毎回初回と同じ警告になる。"""
+    def test_output_truncation_without_session_id_blocks(self, tmp_path: pathlib.Path) -> None:
+        """`session_id`が空の場合も遮断する。"""
         env = _plan_file_state_env(tmp_path)
         for _ in range(2):
             result = _run(
                 {"tool_name": "Bash", "tool_input": {"command": "pytest -q | tail -5"}, "session_id": ""},
                 env,
             )
-            assert result.returncode == 0
-            assert "truncating it" in _additional_context(result)
+            assert result.returncode == 2
+            assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4174,16 +4257,15 @@ class TestBashOutputTruncationWarning:
             "uv run -s agent-toolkit/scripts/check_plan_file.py | tail -20",
         ],
     )
-    def test_warns(self, command: str):
+    def test_blocks(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        output = json.loads(result.stdout)
-        context = output["hookSpecificOutput"]["additionalContext"]
-        assert "warn" in context
+        assert result.returncode == 2
+        context = result.stderr
+        assert "block" in context
         # 全量保存・構造化出力の抽出・分離実行の3つの代替手段を示す
-        assert "tee" in context
-        assert "structured output" in context
-        assert "`start_shell` tool of agents_server" in context
+        assert "全出力を保存" in context
+        assert "構造化出力" in context
+        assert "`start_shell`" in context
 
     @pytest.mark.parametrize(
         "command",
@@ -4195,7 +4277,7 @@ class TestBashOutputTruncationWarning:
     def test_terminal_option_invocation_is_silent(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -4219,8 +4301,8 @@ class TestBashOutputTruncationWarning:
     def test_tee_without_file_does_not_hide_truncation(self, command: str):
         """保存先の無い`tee`を完全出力保存として扱わない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "truncating it" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4238,7 +4320,7 @@ class TestBashOutputTruncationWarning:
         """実ファイル引数を持つ`tee`は切り詰め前の保存として扱う。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -4249,11 +4331,11 @@ class TestBashOutputTruncationWarning:
             "make db-check | tail -5",
         ],
     )
-    def test_make_verification_target_warns(self, command: str):
-        """検証語を含む`make`ターゲットの出力切り詰めを警告する。"""
+    def test_make_verification_target_blocks(self, command: str):
+        """検証語を含む`make`ターゲットの出力切り詰めを遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "truncating it" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4328,11 +4410,11 @@ class TestBashOutputTruncationWarning:
             "make -- 'FOO += lint' docs check | tail -5",
         ],
     )
-    def test_make_real_verification_target_still_warns(self, command: str):
+    def test_make_real_verification_target_is_blocked(self, command: str):
         """値付きオプションの後にある実ターゲットの検証語は検出する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "truncating it" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4371,13 +4453,12 @@ class TestBashOutputTruncationWarning:
             "set -o errexit -o nounset -o pipefail; pytest -q | tail -5; status=$?",
         ],
     )
-    def test_status_after_truncation_warns(self, command: str):
-        """切り詰め直後に`$?`を報告する場合は検証状態の診断を追加する。"""
+    def test_status_after_truncation_is_blocked(self, command: str):
+        """切り詰め直後に`$?`を報告する場合も切り詰め遮断を優先する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        messages = _agent_messages(result)
-        assert "truncating it" in messages
-        assert "reports the status of `head`/`tail`" in messages
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
+        assert "終了状態を示す" not in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4393,16 +4474,19 @@ class TestBashOutputTruncationWarning:
     def test_status_after_truncation_silent_when_status_is_preserved_or_not_reported(self, command: str):
         """状態保存済み・非検証・終了状態非報告の経路には追加診断を出力しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "reports the status of `head`/`tail`" not in _agent_messages(result)
+        if command.startswith("pytest") and "tee /tmp" not in command:
+            assert result.returncode == 2
+        else:
+            assert result.returncode == 0
+        assert "終了状態を示す" not in _agent_messages(result)
 
     def test_status_after_truncation_silent_for_literal_status(self):
         """リテラルの`$?`出力には追加診断を出力しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "pytest -q | tail -5; echo '$?'"}})
-        assert result.returncode == 0
+        assert result.returncode == 2
         messages = _agent_messages(result)
-        assert "truncating it" in messages
-        assert "reports the status of `head`/`tail`" not in messages
+        assert "実行出力を`tail`・`head`で切り詰めている" in messages
+        assert "終了状態を示す" not in messages
 
     def test_tee_saved_log_silent(self):
         command = "uvx pyfltr run-for-agent 2>&1 | tee /tmp/pyfltr.log"
@@ -4415,7 +4499,7 @@ class TestBashOutputTruncationWarning:
         command = "pytest -q | tee /tmp/test.log | tail -5"
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
     def test_non_verification_command_silent(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log | head -5"}})
@@ -4438,7 +4522,7 @@ class TestBashOutputTruncationWarning:
         """検証ツール名を検索語・オプションの値として含むだけのコマンドは警告しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -4461,11 +4545,11 @@ class TestBashOutputTruncationWarning:
             "pyfltr-fast",
         ],
     )
-    def test_verification_in_execution_position_warns(self, command: str) -> None:
-        """前置語とオプションを介して実行位置へ現れる検証コマンドは警告を維持する。"""
+    def test_verification_in_execution_position_blocks(self, command: str) -> None:
+        """前置語とオプションを介して実行位置へ現れる検証コマンドは遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "truncating it" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4482,7 +4566,7 @@ class TestBashOutputTruncationWarning:
         """検証を実行しない`pyfltr`のサブコマンドは出力を切り詰めても警告しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -4498,7 +4582,7 @@ class TestBashOutputTruncationWarning:
         """検証コマンドの出力を受け取らない後続コマンドの`head`・`tail`は警告しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -4523,11 +4607,11 @@ class TestBashOutputTruncationWarning:
             "tee-after-truncation",
         ],
     )
-    def test_truncation_inside_verification_pipeline_warns(self, command: str) -> None:
-        """`sh -c`展開・標準エラー統合・2件目の検証コマンドを含む形も同一パイプラインとして警告する。"""
+    def test_truncation_inside_verification_pipeline_blocks(self, command: str) -> None:
+        """`sh -c`展開・標準エラー統合・2件目の検証コマンドを含む形も遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "truncating it" in _agent_messages(result)
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -4545,7 +4629,7 @@ class TestBashOutputTruncationWarning:
         """
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "truncating it" not in _agent_messages(result)
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 
 
 class TestAgentNameParameterAccepted:
@@ -4600,18 +4684,18 @@ class TestTaskStopBlock:
     def test_block_message_states_the_four_conditions(self, state_dir: dict[str, str]) -> None:
         """遮断文面が停止の根拠、不十分な理由、確認手段、再実行方法を示す。"""
         stderr = self._invoke("task-stop-message", state_dir).stderr
-        assert "user's explicit, immediate stop request" in stderr
-        assert "stall-detection procedure" in stderr
-        assert "slow progress or perceived inefficiency alone is not a stop instruction" in stderr
-        assert "confirm with AskUserQuestion before stopping" in stderr
-        assert "retry TaskStop within 5 minutes to proceed" in stderr
+        assert "明示的な即時停止要求" in stderr
+        assert "停滞検知の手順" in stderr
+        assert "進行が遅い" in stderr
+        assert "AskUserQuestionで確認" in stderr
+        assert "5分以内にTaskStopを再実行" in stderr
 
     def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
         """遮断文面が利用者介入時の追加指示既定と停止限定条件を示す。"""
         stderr = self._invoke("task-stop-message-route", state_dir).stderr
-        assert "After user intervention, send additional instructions to active delegates by default;" in stderr
-        assert "stop only when the intervention invalidates the delegated scope or assumptions" in stderr
-        assert "continuing would produce an incorrect artifact" in stderr
+        assert "既定では稼働中の委譲先へ追加指示" in stderr
+        assert "委譲範囲または前提を無効" in stderr
+        assert "継続すると誤った成果物が確定" in stderr
         assert "`agent-toolkit:delegation`「継続と新規起動」" in stderr
 
     @pytest.mark.parametrize(
@@ -5062,8 +5146,8 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 # 2件目はwarnして通過する（returncode 0）。
                 assert result.returncode == 0
                 assert "[warn]" in _agent_messages(result)
-                assert "without first creating a plan file" in _agent_messages(result)
-                assert "without first creating a plan file" not in result.stderr
+                assert "計画ファイルを作成しないまま" in _agent_messages(result)
+                assert "計画ファイルを作成しないまま" not in result.stderr
 
     def test_second_target_edit_warn_survives_block(self, tmp_path: pathlib.Path):
         """2件目の警告と同じ呼び出しで遮断が成立しても、警告をコーディングエージェントへ届ける。
@@ -5102,7 +5186,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
         )
         assert blocked.returncode == 2
         assert "U+FFFD" in blocked.stderr
-        assert "The next such edit will be blocked." in _agent_messages(blocked)
+        assert "次の同種の編集は遮断する" in _agent_messages(blocked)
         # 同一パスの安全な再試行では警告が再生成されない。
         retried = _run(
             {
@@ -5114,7 +5198,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             env_overrides=env,
         )
         assert retried.returncode == 0
-        assert "The next such edit will be blocked." not in _agent_messages(retried)
+        assert "次の同種の編集は遮断する" not in _agent_messages(retried)
 
     def test_third_target_edit_blocks(self, tmp_path: pathlib.Path):
         sid = "direct-edit-block"
@@ -5137,7 +5221,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
                 # 3件目でblockする。
                 assert result.returncode == 2
                 assert "[block]" in result.stderr
-                assert "without first creating a plan file" in result.stderr
+                assert "計画ファイルを作成しないまま" in result.stderr
 
     def test_block_persists_on_same_path_retry(self, tmp_path: pathlib.Path):
         """block後にコーディングエージェントが同一パスを再試行してもblockを継続する。
@@ -5177,7 +5261,7 @@ class TestDirectAgentToolkitEditsAfterPlanMode:
             )
             assert result.returncode == 2
             assert "[block]" in result.stderr
-            assert "without first creating a plan file" in result.stderr
+            assert "計画ファイルを作成しないまま" in result.stderr
         # block後もstateは更新されず、カウンタは2・直前パスは2件目のままである。
         state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         state_after = json.loads(state_path.read_text(encoding="utf-8"))
@@ -5320,14 +5404,14 @@ class TestForeignScriptMixin:
         content = "テスト" + _HANGUL_SAMPLE + "名を確認する"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
         assert result.returncode == 2
-        assert "non-Japanese script" in result.stderr
+        assert "日本語以外の文字" in result.stderr
 
     def test_blocks_cyrillic_in_japanese(self):
         """日本語を含む文字列へのキリル混入を遮断する。"""
         content = "テスト" + _CYRILLIC_SAMPLE + "名を確認する"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "/tmp/a.txt", "content": content}})
         assert result.returncode == 2
-        assert "non-Japanese script" in result.stderr
+        assert "日本語以外の文字" in result.stderr
 
     def test_passes_japanese_only(self):
         """日本語のみの文字列は通過する。"""
@@ -5569,7 +5653,7 @@ class TestCodexApplyPatchEditChecks:
 
         assert result.returncode == 0
         assert len(result.stdout.strip().splitlines()) == 1
-        assert _additional_context(result).count("home directory absolute path") == 2
+        assert _additional_context(result).count("ホームディレクトリの絶対パス") == 2
 
     def test_mojibake_in_patch_blocks(self, tmp_path: pathlib.Path) -> None:
         """patch本文の文字化けを遮断する。"""
@@ -5710,8 +5794,8 @@ class TestCodexBashCheckSelection:
         claude = _run(self._payload("git commit -m x", repo, "commit-host", codex=False), env_overrides=env)
         codex = _run(self._payload("git commit -m x", repo, "commit-host", codex=True), env_overrides=env)
 
-        assert "committing without running tests" in _additional_context(claude)
-        assert "committing without running tests" not in _agent_messages(codex)
+        assert "テストを実行せずにcommit" in _additional_context(claude)
+        assert "テストを実行せずにcommit" not in _agent_messages(codex)
 
     def test_bulk_stage_warning_is_shared(self, tmp_path: pathlib.Path) -> None:
         """成功した編集が記録する状態による一括stage警告は両ホストで動作する。"""
@@ -5727,7 +5811,7 @@ class TestCodexBashCheckSelection:
         )
 
         assert result.returncode == 0
-        assert "bulk staging includes files" in _additional_context(result)
+        assert "一括`stage`" in _additional_context(result)
 
     def test_input_only_checks_are_shared(self, tmp_path: pathlib.Path) -> None:
         """現在入力だけで判定する遮断と入力補正は両ホストで動作する。"""

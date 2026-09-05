@@ -73,7 +73,7 @@ class TestHomeClaudeEditWarning:
         assert ".chezmoi-source/dot_claude/" in msg
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
-        assert "Auto-generated hook notice" in msg
+        assert "自動生成のhook通知" in msg
 
     def test_edit_warns(self):
         target = str(_HOME / ".claude" / "CLAUDE.md")
@@ -317,7 +317,7 @@ class TestPersonalFileMentionWarning:
         assert "warn" in msg.lower()
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
-        assert "Auto-generated hook notice" in msg
+        assert "自動生成のhook通知" in msg
 
     def test_edit_reference_warns_but_passes(self):
         result = _run(
@@ -639,7 +639,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "Fix: " in result.stderr
         # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
         assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
-        assert "Auto-generated hook notice" in result.stderr
+        assert "自動生成のhook通知" in result.stderr
 
     def test_block_in_agent_toolkit_rules(self):
         target = str(_AT_RULES_DIR / "01-agent.md")

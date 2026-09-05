@@ -162,10 +162,9 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
 
     filenames = ", ".join(newly_answered)
     return (
-        f"newly answered UWI entries for repository {target_repo}: {filenames}."
-        " Decide whether to take them into the current session before it ends:"
-        " read each entry with `atk wi show <filename>` and follow the recorded answer,"
-        " revising any provisional decision that the answer contradicts."
-        " If the answers are unrelated to the current task, leave them for the next"
-        " `agent-toolkit:process-wi` run and continue."
+        f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
+        "セッションを終える前に、現在の作業へ取り込むかを判断する。"
+        "各項目を`atk wi show <ファイル名>`で読み、記録された回答に従う。"
+        "回答と矛盾する暫定判断があれば改める。"
+        "回答が現在の作業と無関係であれば、次回の`agent-toolkit:process-wi`実行に残して続行する。"
     )

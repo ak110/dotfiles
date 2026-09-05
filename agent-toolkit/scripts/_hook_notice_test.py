@@ -20,4 +20,4 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
     message = format_block("blocked", fix="retry")
 
     assert message.startswith("[auto-generated: test/hook][block] blocked\nFix: retry ")
-    assert message.endswith("(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)")
+    assert message.endswith("（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）")

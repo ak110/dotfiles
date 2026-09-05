@@ -83,6 +83,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 """
 
 import datetime
+import importlib
 import json
 import os
 import pathlib
@@ -167,15 +168,6 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
 
-def _language_notice(body: str) -> str:
-    """言語警告専用の整形ヘルパー。
-
-    共通サフィックスの関連性評価を促す英語文が英語化を助長し
-    警告効果を弱めるため、プレフィックスのみ付与してサフィックスを省く。
-    """
-    return f"[auto-generated: {_HOOK_ID}][warn] {body}"
-
-
 def main(payload_text: str) -> int:
     """エントリポイント。
 
@@ -215,7 +207,7 @@ def main(payload_text: str) -> int:
     # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
     pending_notices: list[str] = []
     if language_warning_body is not None:
-        pending_notices.append(_language_notice(language_warning_body))
+        pending_notices.append(_llm_notice(language_warning_body, tag="warn"))
 
     def emit_json(result: dict) -> None:
         for notice in pending_notices:
@@ -619,7 +611,7 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
             return current
 
         update_state(session_id, _set_threshold)
-        print(_language_notice(_response_language_check.BLOCK_BODY), file=sys.stderr)
+        print(_llm_notice(_response_language_check.BLOCK_BODY, tag="warn"), file=sys.stderr)
         return (2, None)
 
     return (None, body)
@@ -660,9 +652,9 @@ def _check_foreign_script_mixin(tool_name: str, fields: list[tuple[str, str]]) -
         end = min(len(value), match.end() + 10)
         print(
             _block_notice(
-                f"blocked: non-Japanese script (Hangul/Cyrillic) mixed into Japanese text"
-                f" in {tool_name}.{field}. Context: {ascii(value[start:end])}.",
-                fix="Replace it with the intended Japanese characters.",
+                f"blocked: 日本語本文の`{tool_name}.{field}`に日本語以外の文字（ハングル／キリル文字）が混入している。"
+                f"文脈: {ascii(value[start:end])}。",
+                fix="意図した日本語の文字へ置き換える。",
             ),
             file=sys.stderr,
         )
@@ -681,8 +673,8 @@ def _check_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> bool:
         sample = value[start:end]
         print(
             _block_notice(
-                f"blocked: U+FFFD (mojibake) detected in {tool_name}.{field}. Context: {sample!r}",
-                fix="Replace the U+FFFD character with the intended character and retry.",
+                f"blocked: `{tool_name}.{field}`にU+FFFD（文字化け）を検出した。文脈: {sample!r}",
+                fix="U+FFFDを意図した文字へ置き換えて再実行する。",
             ),
             file=sys.stderr,
         )
@@ -705,13 +697,11 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
             continue
         print(
             _block_notice(
-                f"blocked: LF-only content detected in {tool_name}.{field}."
-                f" PowerShell 5.1 cannot parse .ps1 files with LF line endings; CRLF is required."
-                f" Target: {file_path}",
+                f"blocked: `{tool_name}.{field}`にLFだけの内容を検出した。"
+                f"PowerShell 5.1はLF改行の`.ps1`を解析できないため、CRLFが必要である。対象: {file_path}",
                 fix=(
-                    "Use the Edit tool for existing files (it preserves CRLF transparently)."
-                    " For new files, write via Bash with a UTF-8 BOM and CRLF line endings"
-                    " (e.g., printf '\\xEF\\xBB\\xBF' > file.ps1 && ... | sed 's/$/\\r/' >> file.ps1)."
+                    "既存ファイルにはEditツールを使う（CRLFを透過的に維持する）。"
+                    "新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。"
                 ),
             ),
             file=sys.stderr,
@@ -724,25 +714,25 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
 
 # （label, regex, hint）のタプル。regexはfile_path全体に対するマッチ。
 _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
-    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "Use `uv add` to add dependencies and `uv remove` to remove them."),
+    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存の追加には`uv add`、削除には`uv remove`を使う。"),
     (
         "pnpm-lock.yaml",
         re.compile(r"(^|/)pnpm-lock\.yaml$"),
-        "Use `pnpm add` to add dependencies and `pnpm remove` to remove them.",
+        "依存の追加には`pnpm add`、削除には`pnpm remove`を使う。",
     ),
-    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "Use `npm install <pkg>` to add dependencies."),
-    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "Use `yarn add` to add dependencies."),
-    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "Use `cargo add` to add dependencies."),
-    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "Use `mise use` / `mise install` for tool management."),
+    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "依存の追加には`npm install <pkg>`を使う。"),
+    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "依存の追加には`yarn add`を使う。"),
+    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "依存の追加には`cargo add`を使う。"),
+    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "ツール管理には`mise use`・`mise install`を使う。"),
     (
         ".venv/",
         re.compile(r"(^|/)\.venv/"),
-        "Do not edit virtual environment files directly; rebuild with uv or similar.",
+        "仮想環境のファイルを直接編集せず、`uv`などで再構築する。",
     ),
     (
         "node_modules/",
         re.compile(r"(^|/)node_modules/"),
-        "node_modules is a generated directory; do not edit it directly.",
+        "`node_modules`は生成ディレクトリであるため、直接編集しない。",
     ),
 )
 
@@ -754,14 +744,10 @@ def _check_lockfiles(tool_name: str, file_path: str) -> bool:
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _LOCKFILE_RULES:
         if pattern.search(normalized):
-            fix = (
-                "Do not edit this path; regenerate it with the package manager instead."
-                if label in {".venv/", "node_modules/"}
-                else hint
-            )
+            fix = "このパスを直接編集せず、パッケージ管理ツールで再生成する。" if label in {".venv/", "node_modules/"} else hint
             print(
                 _block_notice(
-                    f"blocked: direct edit of {label} is prohibited by {tool_name}. Target: {file_path}",
+                    f"blocked: {tool_name}による{label}の直接編集は禁止されている。対象: {file_path}",
                     fix=fix,
                 ),
                 file=sys.stderr,
@@ -791,9 +777,9 @@ _ENV_FILE_PATTERN = re.compile(r"(^|/)\.env(\..+)?$")
 # `.env`系の遮断時だけ添える代替経路の案内。
 # 対象を`.env`系へ限定するのは、鍵・証明書へBash経由の改変経路を案内しないためである。
 _ENV_FILE_GUIDANCE = (
-    " To make a git worktree runnable, copy the original with `cp` via Bash."
-    " To add, change, or remove a value for a quick check, append or edit lines via Bash"
-    " (`echo ... >>`, `sed -i`) instead of rewriting the file through an edit tool."
+    "Git worktreeを実行可能にする場合は、Bashの`cp`で原本を複製する。"
+    "簡易確認のために値を追加・変更・削除する場合は、編集ツールでファイル全体を書き換えず、"
+    "Bashの`echo ... >>`または`sed -i`で行を操作する。"
 )
 
 
@@ -813,12 +799,12 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
         guidance = (
             _ENV_FILE_GUIDANCE.strip()
             if _ENV_FILE_PATTERN.search(normalized)
-            else "Do not edit key or certificate files; abandon this edit."
+            else "鍵または証明書ファイルを編集せず、この編集を中止する。"
         )
         print(
             _block_notice(
-                f"blocked: direct edit of secret / key files is prohibited by {tool_name}."
-                f" Accidental edits can cause service outages or data leaks. Target: {file_path}",
+                f"blocked: {tool_name}によるシークレット・鍵ファイルの直接編集は禁止されている。"
+                f"誤編集はサービス停止や情報漏洩を招く。対象: {file_path}",
                 fix=guidance,
             ),
             file=sys.stderr,
@@ -834,17 +820,17 @@ _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "pyproject.toml",
         re.compile(r"(^|/)pyproject\.toml$"),
         (
-            "For [project.dependencies] / [project.optional-dependencies],"
-            " use `uv add` / `uv remove` (to keep uv.lock in sync)."
-            " For [tool.*] or version edits, proceed as-is."
+            "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
+            "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
+            "`[tool.*]`と版数の編集はそのまま進めてよい。"
         ),
     ),
     (
         "package.json",
         re.compile(r"(^|/)package\.json$"),
         (
-            "For dependency edits, use `pnpm add` / `pnpm remove`"
-            " (to keep pnpm-lock.yaml in sync). For scripts or metadata edits, proceed as-is."
+            "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
+            "`scripts`とメタデータの編集はそのまま進めてよい。"
         ),
     ),
 )
@@ -857,7 +843,7 @@ def _check_manifest(tool_name: str, file_path: str) -> str | None:
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _MANIFEST_RULES:
         if pattern.search(normalized):
-            return _llm_notice(f"editing {label} via {tool_name}. {hint}", tag="warn")
+            return _llm_notice(f"`{tool_name}`で`{label}`を編集しようとしている。{hint}", tag="warn")
     return None
 
 
@@ -938,10 +924,9 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
             end = min(len(value), position + len(home) + 20)
             sample = value[start:end]
             return _llm_notice(
-                f"home directory absolute path ({home}) detected in {tool_name}.{field}."
-                f" In version-controlled files, use `~`, `$HOME`, or `pathlib.Path.home()`"
-                f" instead to avoid environment-dependent paths."
-                f" Context: {sample!r}",
+                f"`{tool_name}.{field}`にホームディレクトリの絶対パス（{home}）を検出した。"
+                "版管理対象のファイルでは、環境依存のパスを避けるため`~`、`$HOME`、"
+                f"または`pathlib.Path.home()`を使う。文脈: {sample!r}",
                 tag="warn",
             )
     return None
@@ -975,6 +960,24 @@ def _is_in_managed_temp(file_path: str) -> bool:
         return False
 
 
+def _is_in_verified_managed_temp(file_path: str) -> bool:
+    """真正性を検証できた管理対象一時領域の配下であれば真を返す。"""
+    try:
+        managed_temp = importlib.import_module("_managed_temp")
+    except ImportError:
+        return False
+    try:
+        current = pathlib.Path(file_path).expanduser().resolve(strict=False)
+        current = current if current.is_dir() else current.parent
+        for directory in (current, *current.parents):
+            if not (directory / _MANAGED_TEMP_MARKER).is_file():
+                continue
+            return managed_temp.validate_managed_temp(directory) == directory
+        return False
+    except (OSError, ValueError, managed_temp.ManagedTempError):
+        return False
+
+
 def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
     """口語的な日本語表現の混入を検出して警告本文を返す（warn）。
 
@@ -993,19 +996,14 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
             continue
         hits = _colloquial_check.scan_text(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
         if hits:
-            target = f" Target: {file_path}" if file_path else ""
-            listed = "; ".join(
-                f"line {line_no}, column {column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES]
-            )
+            target = f" 対象: {file_path}" if file_path else ""
+            listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
             return _llm_notice(
-                f"colloquial Japanese expressions detected in {tool_name}.{field}."
-                f" Matches: {len(hits)} ({listed})."
-                f" Rewrite the whole sentence containing the detected expression"
-                f" using formal written-style expressions"
-                f" (standard technical terminology, dictionary form,"
-                f" no metaphorical verbs) per agent-toolkit/rules/01-agent.md '日本語' section."
-                f" Do not just swap the detected word for a synonym; restructure the sentence."
-                f"{target}",
+                f"`{tool_name}.{field}`に口語的な日本語表現を検出した。"
+                f"一致: {len(hits)}件（{listed}）。"
+                "検出箇所を含む文全体を、正式な書き言葉（標準的な技術用語、辞書形、比喩的な動詞を使わない表現）へ"
+                "`agent-toolkit/rules/01-agent.md`「日本語」節に従って書き換える。"
+                f"単語だけを同義語へ置き換えず、文全体を組み直す。{target}",
                 tag="warn",
             )
     return None
@@ -1051,12 +1049,9 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
     if not increased:
         return None
     return _llm_notice(
-        f"detected an increase in meta-norm phrases of the form '`X`を根拠に`Y`しない' / '`X`を理由に`Y`しない'"
-        f" via {tool_name}. Target: {file_path}."
-        " Such phrasing risks being misread as 'if not X, then it is fine to Y'."
-        " Consider rewriting to the universal-negation form"
-        " ('いかなる理由（例: X）があっても`Y`しない')."
-        " See agent-toolkit/rules/01-agent.md '日本語' section.",
+        f"{tool_name}による編集で「`X`を根拠に`Y`しない」「`X`を理由に`Y`しない」形のメタ規範表現が増加した。"
+        f"対象: {file_path}。この形は「`X`でなければ`Y`してよい」と読み違えられる。"
+        "全称否定形（「いかなる理由（例: `X`）があっても`Y`しない」）への書き換えを検討する。",
         tag="warn",
     )
 
@@ -1156,9 +1151,9 @@ def _check_body_section_reference_exists(tool_name: str, content: str, file_path
     if not reasons:
         return None
     return _llm_notice(
-        "the section reference in the body of the normative document may not exist"
-        f" ({tool_name}, target: {file_path}): {'; '.join(reasons)}."
-        " Verify that the reference matches the target file and section name.",
+        "規範文書の本文が持つ節参照が実在しない可能性がある"
+        f"（{tool_name}、対象: {file_path}）: {'; '.join(reasons)}。"
+        "参照先のファイルと節名が一致することを確認する。",
         tag="warn",
     )
 
@@ -1226,15 +1221,11 @@ def _check_plan_mode_skill_first(
     if tool_name in {"Edit", "MultiEdit"} and _is_progress_log_only_edit(tool_name, tool_input, file_path_raw):
         return None
     return _llm_notice(
-        "warning: editing a plan file without invoking `agent-toolkit:plan-mode` skill first."
-        " If you are authoring the plan yourself, invoke the skill and restart from"
-        " Phase 1 (Initial Understanding)"
-        " before continuing the plan file edit."
-        " If you are reviewing a delegated plan and only correcting values uniquely"
-        " determined by the artifact and evidence, continue without restarting plan-mode"
-        " after recording each correction and its evidence in `## 変更履歴`."
-        " Resolve and verify this warning through the plan-mode direct delegation workflow"
-        " before finalizing the plan.",
+        "warning: `agent-toolkit:plan-mode`スキルを起動せずに計画ファイルを編集している。"
+        "自身で計画を起草する場合は、同スキルを起動し、計画ファイルの編集を続ける前に`Phase 1`（初期理解）からやり直す。"
+        "委譲した計画をレビューし、成果物と根拠から一意に定まる値だけを訂正する場合は、"
+        "訂正内容と根拠を`## 変更履歴`へ記録したうえで、`plan-mode`をやり直さずに続行する。"
+        "計画を確定する前に、`plan-mode`の直接委譲の手順でこの警告を解消して検証する。",
         tag="warn",
     )
 
@@ -1445,19 +1436,18 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
     if new_count >= 3:
         print(
             _block_notice(
-                f"blocked: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
-                f" operations targeted files under agent-toolkit/ without first creating a plan file.",
-                fix=("Create a plan file under `~/.claude/plans/` before editing any file under agent-toolkit/."),
+                f"blocked: `plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
+                f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。",
+                fix="agent-toolkit配下のファイルを編集する前に`~/.claude/plans/`配下へ計画ファイルを作成する。",
             ),
             file=sys.stderr,
         )
         return True, None
     if new_count == 2:
         return False, _llm_notice(
-            f"warn: after invoking the plan-mode skill, {new_count} consecutive Write/Edit/MultiEdit"
-            f" operations targeted files under agent-toolkit/ without first creating a plan file."
-            " The next such edit will be blocked."
-            " Create a plan file under `~/.claude/plans/` first.",
+            f"warn: `plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
+            f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。次の同種の編集は遮断する。"
+            "先に`~/.claude/plans/`配下へ計画ファイルを作成する。",
             tag="warn",
         )
     return False, None
@@ -1514,9 +1504,9 @@ def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
     if not isinstance(prompt, str) or _WEBFETCH_VERBATIM_RE.search(prompt) is None:
         return None
     return _llm_notice(
-        "WebFetch uses a summarization model and is not evidence for verbatim quotation."
-        " Save the raw content from the same URL in an agent-toolkit managed temporary directory,"
-        " then quote only the relevant passage from the saved raw content.",
+        "WebFetchは要約モデルを経由するため、その出力は逐語引用の根拠にならない。"
+        "逐語で引用する場合は、同じURLの生データをagent-toolkitの管理対象一時領域へ保存し、"
+        "保存した本文から該当箇所だけを引用する。",
         tag="warn",
     )
 
@@ -1527,9 +1517,8 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
     if not isinstance(recipient, str) or ":" not in recipient:
         return None
     return _llm_notice(
-        "An agent type name is not a reachable SendMessage recipient."
-        " Return the normal completion report through the tool result once;"
-        " send an immediate notification only to the caller identifier supplied by the runtime.",
+        "エージェント種別名はSendMessageの到達可能な宛先ではない。"
+        "通常の完了報告はツール結果として1回返し、即時通知は実行環境が渡した呼び出し元識別子へだけ送る。",
         tag="warn",
     )
 
@@ -1586,16 +1575,13 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     update_state(session_id, _mark_blocked)
     print(
         _block_notice(
-            "blocked: TaskStop."
-            " Only stop a background task on the user's explicit, immediate stop request,"
-            " or after completing the stall-detection procedure;"
-            " slow progress or perceived inefficiency alone is not a stop instruction."
-            " If more than one interpretation of intent remains, confirm with AskUserQuestion before stopping."
-            " After user intervention, send additional instructions to active delegates by default;"
-            " stop only when the intervention invalidates the delegated scope or assumptions"
-            " and continuing would produce an incorrect artifact, as specified by"
-            " `agent-toolkit:delegation`「継続と新規起動」.",
-            fix="If the basis for stopping is already confirmed, retry TaskStop within 5 minutes to proceed.",
+            "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
+            "停滞検知の手順を完了した場合に限る。進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
+            "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
+            "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。"
+            "停止するのは、当該介入が委譲範囲または前提を無効にし、継続すると誤った成果物が確定する場合に限る。"
+            "詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
+            fix="停止の根拠を確認済みであれば、5分以内にTaskStopを再実行すると続行できる。",
         ),
         file=sys.stderr,
     )
@@ -1685,20 +1671,11 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     if unresolved is not None:
         event, op = unresolved
         if event.unresolved_expression is not None:
-            reason = (
-                f"blocked: {op}. The working directory expression"
-                f" {event.unresolved_expression!r} cannot be resolved statically."
-            )
-            fix = (
-                "Run `git -C <absolute path> log --oneline --decorate` first, then retry the history rewrite"
-                " with `git -C <absolute path>`."
-            )
+            reason = f"blocked: {op}。作業ディレクトリを表す式{event.unresolved_expression!r}を静的に解決できない。"
+            fix = "先に`git -C <絶対パス> log --oneline --decorate`を実行し、履歴の書き換えを`git -C <絶対パス>`で再実行する。"
         else:
-            reason = f"blocked: {op}. The command changes its working directory through an unresolved shell expression."
-            fix = (
-                "Run `git log --oneline --decorate` from the target repository first,"
-                " then retry with a statically resolvable working directory."
-            )
+            reason = f"blocked: {op}。コマンドが未解決のシェル展開によって作業ディレクトリを変更している。"
+            fix = "先に対象リポジトリで`git log --oneline --decorate`を実行し、静的に解決できる作業ディレクトリで再実行する。"
         print(
             _block_notice(
                 reason,
@@ -1711,7 +1688,9 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
     log_state = state.get("git_log_checked", False)
     for event, op in targets:
         event_cwd = event.cwd
-        if event_cwd and _scratchpad_path.is_scratchpad_path(pathlib.Path(event_cwd)):
+        if event_cwd and (
+            _scratchpad_path.is_scratchpad_path(pathlib.Path(event_cwd)) or _is_in_verified_managed_temp(event_cwd)
+        ):
             remotes = _git_status.run_git_lines(["git", "remote"], event_cwd)
             if remotes == []:
                 continue
@@ -1722,12 +1701,11 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
             continue
         print(
             _block_notice(
-                f"blocked: {op}. Commit state must be confirmed before amend/rebase.",
+                f"blocked: {op}。`amend`・`rebase`の前に`commit`の状態を確認する必要がある。",
                 fix=(
-                    "Run `git log --oneline --decorate` first to confirm commit state before amend/rebase"
-                    " (especially, do NOT amend/rebase commits that have already been pushed)."
-                    " A `git log` in the same Bash command does not satisfy this check;"
-                    " run it in a preceding Bash call against the same effective working directory."
+                    "amend・rebaseの前に`git log --oneline --decorate`を実行してcommitの状態を確認する"
+                    "（特にpush済みのcommitをamend・rebaseしない）。同じBashコマンド内の`git log`はこの検査を満たさない。"
+                    "同じ実効作業ディレクトリに対して、先行する別のBash呼び出しで実行する。"
                 ),
             ),
             file=sys.stderr,
@@ -1765,13 +1743,13 @@ def _check_bash_git_push_after_amend_with_dirty_status(command: str, session_id:
             if any(value is True for value in flags.values()):
                 if event.unresolved_expression is not None:
                     reason = (
-                        "blocked: git push after an amend/fixup could not resolve the working directory expression"
-                        f" {event.unresolved_expression!r}."
+                        "blocked: `amend`・`fixup`の後の`git push`で、作業ディレクトリを表す式"
+                        f"{event.unresolved_expression!r}を解決できない。"
                     )
-                    fix = "Retry the push as `git -C <absolute path> push ...` after confirming the target repository."
+                    fix = "対象リポジトリを確認したうえで、`git -C <絶対パス> push ...`の形で再実行する。"
                 else:
-                    reason = "blocked: git push after an amend/fixup could not resolve its working directory."
-                    fix = "Review the amend state and retry with a statically resolvable working directory."
+                    reason = "blocked: `amend`・`fixup`の後の`git push`で、作業ディレクトリを解決できない。"
+                    fix = "amendの状態を確認し、静的に解決できる作業ディレクトリで再実行する。"
                 print(
                     _block_notice(
                         reason,
@@ -1789,12 +1767,11 @@ def _check_bash_git_push_after_amend_with_dirty_status(command: str, session_id:
         if dirty:
             print(
                 _block_notice(
-                    f"blocked: git push after `git commit --amend` / `--fixup` with uncommitted tracked changes"
-                    f" in {event.cwd}.",
+                    f"blocked: {event.cwd}に追跡対象の未コミット変更が残ったまま、"
+                    "`git commit --amend`・`--fixup`の後に`git push`しようとしている。",
                     fix=(
-                        "Run `git status` to review, then either `git add` + `git commit --amend`"
-                        " (or `--fixup=<sha>`) to fold the residual diff into the amended commit,"
-                        " or create a follow-up commit before pushing."
+                        "`git status`で内容を確認し、`git add`と`git commit --amend`（または`--fixup=<sha>`）で"
+                        "残りの差分をamend済みcommitへ取り込むか、pushの前に後続のcommitを作成する。"
                     ),
                 ),
                 file=sys.stderr,
@@ -1945,11 +1922,10 @@ def _check_bash_bulk_stage_with_unedited_files(
             continue
         sample = sorted(unedited)[:5]
         return _llm_notice(
-            "warn: bulk staging includes files with no recorded edit by the file edit tools"
-            " in this session. Files changed by shell commands or generators are not recorded,"
-            " so confirm ownership before staging."
-            f" Candidates: {sample}."
-            " Consider switching to per-file staging (`git add <file>`).",
+            "warn: 一括`stage`に、当該セッションのファイル編集ツールによる編集記録が無いファイルが含まれている。"
+            "シェルコマンドや生成器が変更したファイルは記録されないため、"
+            f"`stage`の前に所有を確認する。候補: {sample}。"
+            "ファイル単位の`stage`（`git add <file>`）への切り替えを検討する。",
             tag="warn",
         )
     return None
@@ -1980,20 +1956,18 @@ def _check_bash_bulk_stage_with_unedited_files(
 # 利用頻度が低く実装コストに見合わないため対応スコープ外とする。
 
 _UV_RUN_PYTHON_BLOCK_MSG = (
-    "blocked: `uv run python` invocation without `--script` or `--no-project`"
-    " before the `python` token"
-    " (applies regardless of whether a path or `-c` follows `python`)."
-    " In a non-Python project (pyproject.toml without a [project] section, or absent),"
-    " uv treats the cwd as a project and generates `.venv` and `uv.lock` as a side effect."
-    " The invocation cannot safely continue without an explicit project-independent form."
+    "blocked: `python`トークンの前に`--script`も`--no-project`も指定しない`uv run python`呼び出しである"
+    "（`python`の後にパスが続く場合も`-c`が続く場合も同じ）。"
+    "Pythonプロジェクトでない場所では、`uv`がカレントディレクトリをプロジェクトとして扱い、"
+    "副作用として`.venv`と`uv.lock`を生成する。プロジェクトに依存しない形を明示しない限り安全に続行できない。"
 )
 
 _UV_RUN_PYTHON_FIX = (
-    "For a PEP 723 script, use `uv run --script <path>` or invoke the executable shebang directly;"
-    " to skip cwd project resolution, use `uv run --no-project python ...`;"
-    " otherwise run it from a directory where the first `pyproject.toml` found in the cwd or its ancestors"
-    " has a `[project]` section. A statically resolvable `cd` target is evaluated as the effective working directory."
-    " An unresolved shell expansion in a cwd change blocks this invocation because the project type cannot be confirmed."
+    "PEP 723スクリプトは`uv run --script <パス>`を使うか、実行可能なshebangを直接呼び出す。"
+    "カレントディレクトリのプロジェクト解決を省く場合は`uv run --no-project python ...`を使う。"
+    "いずれでもない場合は、カレントディレクトリまたはその祖先で最初に見つかる`pyproject.toml`が"
+    "`[project]`節を持つディレクトリで実行する。静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。"
+    "作業ディレクトリの変更に未解決のシェル展開があると、プロジェクト種別を確認できないため遮断する。"
 )
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
@@ -2532,20 +2506,20 @@ def _check_bash_sleep_poll_pattern(
 
     already_detected = _record_repeat_detection(session_id, "sleep_poll_detected")
     guidance = (
-        "Receive the completion notification, use a background job's machine-readable completion marker,\n"
-        "or observe delegated work with `atk watch`, then end the turn with a waiting status."
+        "完了通知を受領するか、背景ジョブの機械可読な完了標識を使うか、`atk watch`で委譲作業を観測し、\n"
+        "待機状態を示してターンを終了する。"
     )
     if already_detected:
         print(
             _block_notice(
-                "block: foreground sleep followed by another command was detected again in this session.",
+                "block: 前景の`sleep`に別のコマンドが続く呼び出しを、当該セッションで再び検出した。",
                 fix=guidance,
             ),
             file=sys.stderr,
         )
         return "block"
     return _llm_notice(
-        f"warn: foreground sleep followed by another command may cause repeated polling.\n{guidance}",
+        f"warn: 前景の`sleep`の後に別のコマンドが続いており、反復ポーリングになる可能性がある。\n{guidance}",
         tag="warn",
     )
 
@@ -2566,9 +2540,8 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
         return False
     print(
         _block_notice(
-            "blocked: pattern-based process termination (pkill/killall) is prohibited because"
-            " process ownership cannot be verified.",
-            fix="Use `kill <PID>` for a process you started and identified by PID instead.",
+            "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
+            fix="自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使う。",
         ),
         file=sys.stderr,
     )
@@ -2787,14 +2760,10 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
 
 
 def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
-    """検証コマンドの出力を`tail`・`head`で切り詰める指定を初回warn、同一セッション内再検出でblockする。
+    """検証コマンドの出力を`tail`・`head`で切り詰める指定を初回から遮断する。
 
-    初回は全量をファイルへ保存してから必要部分を抽出する形、または構造化出力をレコード種別で
-    抽出する形を促す警告だけを返し、実行は止めない。同じセッションで再び検出した場合は、
-    実行主体が是正するまで当該操作を継続できないよう遮断する。
-    警告だけを返す検査を遮断へ昇格させる対象は、検査が実行位置と対象コマンドで限定済みであり、
-    かつ警告本文が同じ目的を達成する代替手段を示しているものに限る。本検査は実行位置で判定し、
-    全量保存と分離実行の代替手段を本文が示すため当該基準を満たす。
+    全量をファイルへ保存してから必要部分を抽出する形、構造化出力をレコード種別で抽出する形、
+    または分離したコンテキストで実行する形を解消手段として示す。
     全パイプラインの全検証コマンド区間を対象とし、1件でも切り詰めに該当すれば1回だけ通知する。
     `;`・`&&`・`||`・`&`で連結した後続コマンドは検証コマンドの出力を受け取らないため対象外とする。
     判定は`_extract_execution_pipelines`が返す実行位置で行うため、検証ツール名を検索語・引数として
@@ -2805,25 +2774,19 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
         return None
     if not any(_pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
         return None
-    guidance = (
-        "Save the full output first (e.g. `tee /tmp/<name>.log`) and extract from the saved file,"
-        " select the required record type from structured output, or run the command in a"
-        " separated context with the `start_shell` tool of agents_server."
-    )
-    if _record_repeat_detection(session_id, "output_truncation_detected"):
-        print(
-            _block_notice(
-                "block: verification command output truncation was detected again in this session.",
-                fix=guidance,
+    del session_id
+    print(
+        _block_notice(
+            "block: 検証コマンドの実行出力を`tail`・`head`で切り詰めている。",
+            fix=(
+                "最初に全出力を保存し、保存済みファイルから抽出するか、構造化出力から必要なレコード種別を選ぶか、"
+                "agents_serverの`start_shell`ツールを使って分離したコンテキストでコマンドを実行する。"
+                "実行中の出力を切り詰めない。"
             ),
-            file=sys.stderr,
-        )
-        return "block"
-    return _llm_notice(
-        f"warn: verification command output is piped through `tail`/`head`, truncating it. {guidance}"
-        " Do not truncate the live output.",
-        tag="warn",
+        ),
+        file=sys.stderr,
     )
+    return "block"
 
 
 def _contains_unquoted_status_expansion(token: str) -> bool:
@@ -2883,8 +2846,8 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
             continue
         if _status_report_follows_truncation(serial_commands[index + 1]):
             return _llm_notice(
-                "warn: `$?` after a truncating verification pipeline reports the status of `head`/`tail`,"
-                " not the verification command. Preserve the verification status before truncating output.",
+                "warn: 出力を切り詰める検証パイプラインの後にある`$?`は、検証コマンドではなく"
+                "`head`・`tail`の終了状態を示す。出力を切り詰める前に検証コマンドの終了状態を保持する。",
                 tag="warn",
             )
     return None
@@ -2996,9 +2959,9 @@ def _check_bash_recursive_home_search(command: str) -> str | None:
     ):
         return None
     return _llm_notice(
-        "warn: recursive search targets a high-capacity user directory. "
-        "Narrow the target directory, exclude unnecessary areas, bound the searched targets and output, "
-        "or run the search in a separated execution context before using `rg`/recursive `grep`.",
+        "warn: 再帰検索が大容量のユーザーディレクトリを対象としている。"
+        "対象ディレクトリを狭め、不要領域を除外し、検索対象と出力に上限を設けるか、"
+        "`rg`・再帰`grep`を使う前に分離した実行コンテキストで検索する。",
         tag="warn",
     )
 
@@ -3069,7 +3032,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
         for event in commit_events
         if not (
             event.cwd_resolved
-            and _scratchpad_path.is_scratchpad_path(pathlib.Path(event.cwd))
+            and (_scratchpad_path.is_scratchpad_path(pathlib.Path(event.cwd)) or _is_in_verified_managed_temp(event.cwd))
             and _git_status.run_git_lines(["git", "remote"], event.cwd) == []
         )
     ]
@@ -3080,14 +3043,14 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
         return None
     if any(not event.cwd_resolved for event in commit_events):
         return _llm_notice(
-            "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
+            "テストを実行せずにcommitしようとしている。`01-agent.md`の検証後commit手順に従い、先にテストを実行する。",
             tag="warn",
         )
     commit_event = commit_events[0]
     if _is_docs_only_commit(commit_event, commit_event.cwd):
         return None
     return _llm_notice(
-        "committing without running tests. Follow the verify-then-commit procedure in 01-agent.md and run tests first.",
+        "テストを実行せずにcommitしようとしている。`01-agent.md`の検証後commit手順に従い、先にテストを実行する。",
         tag="warn",
     )
 
@@ -3157,12 +3120,10 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
         return None
 
     return _llm_notice(
-        "agent-toolkit/ files are staged but"
-        " `agent-toolkit/.claude-plugin/plugin.json` `version` is unchanged"
-        " in this commit and the unpushed range."
-        " If user-facing behavior changes (hook script, skill, agent definition,"
-        " rule file, etc.), bump the `version` field in plugin.json"
-        " (and keep `.claude-plugin/marketplace.json` in sync) before committing.",
+        "agent-toolkit配下のファイルがstageされているが、当該commitと未push範囲で"
+        "`agent-toolkit/.claude-plugin/plugin.json`の`version`が変更されていない。"
+        "フックスクリプト、スキル、エージェント定義、ルールファイルなどの利用者向け挙動を変更する場合は、"
+        "commit前に`plugin.json`の`version`を更新し、`.claude-plugin/marketplace.json`も同期する。",
         tag="warn",
     )
 
@@ -3229,10 +3190,8 @@ def _check_bash_codex_exec(command: str) -> str | None:
     else:
         return None
     return _llm_notice(
-        "running codex exec."
-        " If this run submits a plan file for review, check whether any decisions"
-        " were made by assumption rather than user confirmation,"
-        " and resolve open questions with the user before proceeding."
+        "`codex exec`を実行しようとしている。計画ファイルをレビューへ提出する実行であれば、"
+        "ユーザー確認ではなく推測で確定した判断が無いかを確認し、未解決の質問をユーザーと解消してから続行する。"
     )
 
 
@@ -3283,10 +3242,9 @@ def _check_agents_server_cwd(tool_input: dict) -> bool:
     actual = f"`{specified}`" if isinstance(specified, str) and specified != "" else "unspecified"
     print(
         _block_notice(
-            f"blocked: agents_server start requires a non-empty absolute cwd parameter (got {actual})."
-            " Without it, Codex resolves the working directory from the App Server"
-            " process rather than the requested worktree.",
-            fix="Retry with cwd set to the absolute path of the target working directory.",
+            f"blocked: agents_serverのstartには空でない絶対パスの`cwd`が必要である（実際: {actual}）。"
+            "指定が無い場合、Codexは要求されたworktreeではなくApp Serverプロセスから作業ディレクトリを解決する。",
+            fix="`cwd`へ対象作業ディレクトリの絶対パスを設定して再実行する。",
         ),
         file=sys.stderr,
     )
@@ -3301,8 +3259,8 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
         if not isinstance(prompt, str) or not prompt.strip():
             print(
                 _block_notice(
-                    f"blocked: {display_name} requires a non-empty prompt.",
-                    fix="Retry with a non-empty prompt.",
+                    f"blocked: {display_name}には空でない`prompt`が必要である。",
+                    fix="空でない`prompt`を指定して再実行する。",
                 ),
                 file=sys.stderr,
             )
@@ -3311,8 +3269,8 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
     if not isinstance(remote_session_id, str) or not remote_session_id:
         print(
             _block_notice(
-                f"blocked: {display_name} requires a non-empty session_id.",
-                fix="Use the session_id returned by codex_start, or start a new session with codex_start.",
+                f"blocked: {display_name}には空でない`session_id`が必要である。",
+                fix="codex_startが返した`session_id`を使うか、codex_startで新しいセッションを開始する。",
             ),
             file=sys.stderr,
         )
@@ -3322,8 +3280,8 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
     if not isinstance(cwd_map, dict) or not isinstance(cwd_map.get(remote_session_id), str):
         print(
             _block_notice(
-                f"blocked: {display_name} cannot continue because session_id has no stored absolute cwd.",
-                fix="Do not continue this session; start a new one with agents_server start using an absolute cwd.",
+                f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
+                fix="当該セッションを続行せず、絶対`cwd`を指定したagents_serverのstartで新しいセッションを開始する。",
             ),
             file=sys.stderr,
         )

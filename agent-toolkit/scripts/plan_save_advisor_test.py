@@ -77,8 +77,8 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     assert first_result["decision"] == "block"
     assert str(first) in first_result["reason"]
     assert str(second) in first_result["reason"]
-    assert "Leave the remaining bundles in place" in first_result["reason"]
-    assert "atk plans commit <main plan file name in the plan working root>" in first_result["reason"]
+    assert "残りのバンドルはその場に残して" in first_result["reason"]
+    assert "atk plans commit <計画作業ルート内の計画ファイル（メイン）名>" in first_result["reason"]
     assert not second_result
 
 

@@ -183,7 +183,7 @@ class TestCodexApplyPatchRecording:
             state_path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
             state_path.write_text(json.dumps(env_state), encoding="utf-8")
             result = _run(_codex_payload(patch_text, tmp_path, session_id), state_dir=tmp_path)
-            assert ("Run the post-write checks" in result.stdout) is expected
+            assert ("書き込み後の検査を実行する" in result.stdout) is expected
             assert _read_state(tmp_path, session_id).get("current_plan_file_path") is not None
 
     def test_conditional_prohibition_check_targets_existing_files_only(self, tmp_path: pathlib.Path) -> None:

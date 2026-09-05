@@ -45,8 +45,8 @@ def main(payload_text: str) -> int:
 
     if _is_empty_completion_report(payload.get("last_assistant_message")):
         reason = _block_notice(
-            "Provide a non-empty completion report before stopping. The caller does not retain a blocked report body.",
-            fix="Write a non-empty completion report and stop again.",
+            "停止する前に、空でない完了報告を出力する。呼び出し元は遮断された報告本文を保持しない。",
+            fix="空でない完了報告を書いてから、あらためて停止する。",
         )
         print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
         return 0

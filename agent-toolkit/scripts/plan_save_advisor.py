@@ -99,12 +99,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     update_state(session_id, _mark_notified)
     path_list = ", ".join(str(path) for path in paths)
     reason = _block_notice(
-        f"Plan bundles owned by this session remain under the plan working root: {path_list}\n"
-        "Move a bundle into private-notes only when its implementation review has converged. "
-        "Leave the remaining bundles in place and end the turn.",
+        f"当該セッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n"
+        "実装レビューが収束したバンドルだけをprivate-notesへ移す。"
+        "残りのバンドルはその場に残してターンを終了する。",
         fix=(
-            "Run `atk plans commit <main plan file name in the plan working root>` for each converged plan, "
-            "or end the turn if none has converged."
+            "収束した各計画に対して`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`を実行する。"
+            "収束した計画が無ければターンを終了する。"
         ),
     )
     append_stop_log(session_id, "block_working_plan_save", {"paths": len(paths)})

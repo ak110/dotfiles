@@ -586,11 +586,11 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     check_script = pathlib.Path(__file__).resolve().parents[1] / "skills/plan-mode/scripts/check_plan_file.py"
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
-        f"plan file {file_path} was written. Run the post-write checks:"
+        f"計画ファイル{file_path}へ書き込んだ。書き込み後の検査を実行する:"
         f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
         f" {shlex.quote(file_path)}`."
-        " Replace --work-dir if the plan targets a repository other than the session's"
-        " working directory.",
+        "計画の対象リポジトリが当該セッションの作業ディレクトリと異なる場合は、"
+        "`--work-dir`を対象リポジトリへ置き換える。",
         tag="notice",
     )
 
@@ -683,7 +683,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
                 display_name = tool_name.rsplit("__", 1)[-1]
-                notices.append(_llm_notice(f"warn: {display_name} response is missing or invalid {', '.join(missing)}."))
+                notices.append(_llm_notice(f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。"))
         remote_session_id = structured.get("session_id")
         if moved_to_background and not (isinstance(remote_session_id, str) and remote_session_id):
             _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)

@@ -67,7 +67,7 @@ class TestAgentsServerBackgroundResponse:
     def test_malformed_regular_response_still_warns(self) -> None:
         result = _run(self._payload("invalid response"))
         assert result.returncode == 0
-        assert "response is missing or invalid response, session_id, status" in result.stdout
+        assert "応答でresponse, session_id, statusが欠落しているか不正" in result.stdout
 
 
 def _run(
@@ -824,7 +824,7 @@ class TestPlanFilePostWriteNotice:
         assert result.returncode == 0
         payload = json.loads(result.stdout)
         message = payload["hookSpecificOutput"]["additionalContext"]
-        assert "post-write checks" in message
+        assert "書き込み後の検査" in message
         assert "check_plan_file.py" in message
         assert "[auto-generated: agent-toolkit/posttooluse]" in message
 
