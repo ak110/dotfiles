@@ -31,8 +31,8 @@ auto modeは次の4区分でルールを判定する。
 権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）→作業ディレクトリ内編集等の自動承認→
 auto mode classifierの順で行われる。
 PreToolUseフックの`permissionDecision: "allow"`はpermissions評価を迂回しない。
-auto modeの拒否ではなく従来の確認ダイアログが対象の場合は本節の対象外であり、
-`agent-toolkit:agent-standards`のHook実装ガイドラインにある`PermissionRequest`節で自動許可を扱う。
+auto modeの拒否ではなくpermissions設定による確認ダイアログが対象の場合は本節の対象外とし、
+同じ入口で読み込むHook実装ガイドラインの`PermissionRequest`節が自動許可を扱う。
 
 ## カスタムルール追加のワークフロー
 
@@ -48,8 +48,8 @@ auto modeの拒否ではなく従来の確認ダイアログが対象の場合�
    - `"$defaults"`を含む区分では、デフォルトルールが展開されて件数が維持されていることも確認する
 6. 配布元がある場合は、配布元が所有する契約を既存の対象固有テストで確認する
 7. 設定調整の完了後は毎回`claude auto-mode critique`を実行して結果を確認する。
-   指摘は過剰に厳しい傾向があるため全件採用を必須とせず、`01-agent.md`の判断指針
-   （必要十分な最小限・問題と手段の比例性）に従い採否を確定する
+   指摘は過剰に厳しい傾向があるため全件採用を必須とせず、`agent-toolkit/rules/01-agent.md`「判断指針」の
+   必要十分な最小限を選ぶ規定と、`agent-toolkit:review-standards`が定める問題と手段の比例性に従い採否を確定する
    - 変更前後の指摘を安定して対応付けられる場合は、変更前から存在する不変の指摘を除外し、
      変更後の新規・悪化指摘をラベルにかかわらず優先して検討する
    - 対応付けられない場合は、`critique`を参考情報として扱う

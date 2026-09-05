@@ -40,7 +40,6 @@
 - 複数ファイルの全文読取又は広範囲検索の結果を1回の出力へ集約する場合は、
   先に行数又はバイト数を確認し、出力予算内に収まる組へ分割して実行する
 - 出力量が不明な検索結果は、全文読取と同じ呼び出しへ混在させない
-- 切り詰めの警告が返った場合は、影響した対象を個別取得又は範囲分割で取得し直すまで読了として扱わない
 - 数件の小規模な並列取得は本項の対象外とする
 
 ## テスト
@@ -84,9 +83,6 @@ Codexホストが提供する公開能力と個別ツールの契約が共有規
 対象リポジトリ、キュー管理リポジトリ又はホストが保持する正本から、実在するファイル、コマンド、識別子及び状態へ再解決する。
 再解決できない状態を空集合、未実行又は承認済みと推定しない。
 ユーザー向け発話には、再解決した値と`agent-toolkit/rules/01-agent.md`「ユーザー向け発話ルール」を適用する。
-
-Codexでレビュー指摘を受領した場合は、成果物の変更又はレビュー指摘管理表への応答より先に、
-`agent-toolkit:reviewee-standards`「レビュー指摘の位置付け」を適用する。
 
 `agent-toolkit:exit-session`の実行環境別手順が現在のCodex本体を停止できると判定した場合、
 停止コマンドのツール呼び出し自体をセッションの終端とする。
@@ -147,15 +143,15 @@ Codexで実行するときは、次の対応表に従って読み替える。
 
 | Claude Code | Codex相当 |
 | --- | --- |
-| `Agent`ツール（サブエージェント起動） | 実際の別主体が必要な場合だけ、`runtime-routing.md`の通常経路でCodexから`agents_server`へ委譲する |
+| `Agent`ツール（サブエージェント起動） | 実際の別主体が必要な場合だけ、`agent-toolkit:delegation`の`references/runtime-routing.md`の通常経路でCodexから`agents_server`へ委譲する |
 | `SendMessage`（稼働中のサブエージェントへの追加指示・再開） | 実際の別主体へ委譲した経路が返した識別子と操作を使う |
 | `TaskStop` | 実際の別主体へ委譲した経路の中断操作を使い、返された識別子で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
-| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・探索委譲・シェル実行委譲・継続・中断） | 実際の別主体へ委譲する場合は、`runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
+| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・探索委譲・シェル実行委譲・継続・中断） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeではユーザーへ直接質問する |
-| `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
+| `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
 | `WebFetch`・`WebSearch` | ネイティブ機能を利用 |
@@ -174,7 +170,7 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 `agent-toolkit:delegation`が定める汎用エージェント代替経路は、実際の別主体へ委譲するときだけ使う。
 計画レビュー系・計画準拠実装レビュー系・独立実装レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
 
-`runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
+`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
 `engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start`へ対応する`model_type`を渡し、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 指定engineの経路を利用できない場合は同文書の手順4に従って`needs_escalation`又は未完了として返す。
 `engine=codex`の場合は、当該工程の`model_type`を`agents_server`の`start`へ渡し、engine、model及びeffortの解決をサーバーへ委ねる。

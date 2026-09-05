@@ -9,6 +9,12 @@ description: 「PRをマージして」などの明示依頼を受領したと�
 条件は`docs/development/operations.md`「日次リリースの自動実施」が定める。
 PRが存在するという観測だけでは起動しない。
 
+## 失敗時の共通規定
+
+いずれの工程が失敗した場合も、自動再試行、auto-merge、自動修復、自動rollbackのいずれも行わない。
+成立済みの外部状態を保持し、失敗した工程、外部状態、run URL及び再開点を報告して停止する。
+無人の再試行と巻き戻しは、GitHubの公開状態を利用者が観測しないまま変えるためである。
+
 ## 対象の選択
 
 PR番号又はPR URLが指定された場合は、その対象を読み取る。
@@ -53,7 +59,6 @@ gh pr checks <PR番号またはURL> --repo ak110/dotfiles --required --watch --f
 ```
 
 必須checkの失敗、mergeableでない状態、PR head OIDの変化又は検査対象の曖昧さがある場合は、外部状態と再開点を報告して停止する。
-自動再試行、auto-merge及びrollbackは行わない。
 
 ## レビューコメントの確認
 
@@ -65,20 +70,26 @@ gh api repos/ak110/dotfiles/pulls/<PR番号>/comments
 ```
 
 各指摘は対象の実装と規範を読んで妥当性を判定する。
-成立する指摘はAWIへ登録し、次セッション以降で正式に対応する。
-マージはこの登録を待たずに進める。
+成立する指摘は`agent-toolkit/rules/01-agent.md`「完遂と先送り」の判定を適用し、
+同一セッションで対応する指摘と次セッション以降へ回す指摘へ分ける。
+次セッション以降へ回す指摘だけをAWIへ登録する。
 成立しない指摘は登録せず、判定の根拠を報告へ残す。
+全指摘の判定、必要な同一セッションの是正及びAWI登録を完了してからマージへ進む。
+同一セッションで是正した場合は、修正後のPR headの完全OIDを新たな検査対象として保持し、「マージ前の検査」を再実行する。
+修正前の必須check成功を流用せず、修正後のPR headに対する必須check成功とhead OIDの一致を再検収する。
 
 ## PRのマージ
 
-必須check成功後にPR headの完全OIDを再取得し、取得値を`--match-head-commit`へ渡して明示的なマージコミットを作成する。
+レビューコメントの確認と必須checkが完了した後にPR headの完全OIDを再取得し、検査対象のOIDと一致することを確認する。
+一致しない場合は外部状態と再開点を報告して停止する。
+一致した完全OIDを`--match-head-commit`へ渡して明示的なマージコミットを作成する。
 `--auto`及び`--delete-branch`は指定しない。
 
 ```sh
 gh pr merge <PR番号またはURL> --repo ak110/dotfiles --merge --match-head-commit <PR headの完全OID>
 ```
 
-マージコマンドが失敗した場合は自動で再実行せず、出力された失敗理由と再開点を報告する。
+マージコマンドが失敗した場合は、出力された失敗理由と再開点を報告する。
 
 ## マージ後のbranch同期とCI
 
@@ -96,7 +107,7 @@ baseline作成と同期pushの順序を変更しない。push後に同期先のr
 `origin/develop`の更新はローカルbranchを操作元にせず、`MERGE_OID`と宛先refを明示したrefspecでpushする。
 
 ```sh
-uv run --no-project --script agent-toolkit/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
+uv run --no-project --script agent-toolkit/scripts/wait_ci.py --write-baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha <MERGE_OID>
 git push origin <MERGE_OID>:refs/heads/develop
 git fetch origin develop master
 git rev-parse origin/develop origin/master
@@ -126,7 +137,7 @@ develop CIの待機は、masterで検収したマージコミットとdevelopへ
 
 ```sh
 # OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
-uv run --no-project --script agent-toolkit/scripts/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref develop --sha <MERGE_OID>
+uv run --no-project --script agent-toolkit/scripts/wait_ci.py --baseline <baselineの絶対パス> --repo ak110/dotfiles --forge github --ref refs/heads/develop --source-ref origin/develop --sha <MERGE_OID>
 ```
 
 現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であるため、develop固有検査として扱わない。CI定義が変化した場合は省略条件を再判定する。
@@ -171,7 +182,7 @@ gh release view statusline-v<version> --repo ak110/dotfiles --json assets,tagNam
 gh api repos/ak110/dotfiles/git/ref/tags/statusline-v<version> --jq .object.sha
 ```
 
-Release run、tag、Release又はassetの検収に失敗した場合は、自動修復や再試行をせず、外部状態、失敗工程、run URL及び再開点を報告する。
+Release run、tag、Release又はassetの検収に失敗した場合は、外部状態、失敗工程、run URL及び再開点を報告する。
 
 ## 完了条件と失敗時の扱い
 
@@ -196,5 +207,4 @@ gh run view <失敗したrun ID> --repo ak110/dotfiles --log-failed
 
 詳細ログを取得できない場合も、元のCI又はReleaseの失敗を失敗工程として保持し、ログ取得の失敗を併記する。
 
-マージ後のCI又はReleaseが失敗しても、自動rollback、auto-merge及び自動再試行をせず、成立済みの外部状態を保持する。
-成立済みの外部状態、失敗した工程、run URL及び再開点を報告して停止する。
+マージ後のCI又はReleaseが失敗した場合も、成立済みの外部状態、失敗した工程、run URL及び再開点を報告して停止する。
