@@ -2286,7 +2286,7 @@ def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Pat
     for document in (assets.HTML, assets.PLANS_HTML, assets.SESSIONS_HTML):
         navigation = re.search(r'<nav class="app-nav"[^>]*>(.*?)</nav>', document, re.DOTALL)
         assert navigation is not None
-        assert re.findall(r">([^<>]+)</a>", navigation.group(1)) == ["WI", "計画ファイル", "セッション"]
+        assert re.findall(r">([^<>]+)</a>", navigation.group(1)) == ["ワークアイテム", "計画ファイル", "セッション"]
         assert re.findall(r'href="__BASE_PATH_HTML__(/[a-z]*)"', navigation.group(1)) == ["/", "/plans", "/sessions"]
     # 現在の画面だけが`aria-current`を持つ。
     assert assets.HTML.count('aria-current="page"') == 1
@@ -4438,7 +4438,7 @@ async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
     assert manifest_response.headers["Cache-Control"] == "no-cache"
     manifest = await manifest_response.get_json()
     assert manifest == {
-        "name": "WI管理",
+        "name": "ワークアイテム",
         "short_name": "atk serve",
         "start_url": "/",
         "scope": "/",

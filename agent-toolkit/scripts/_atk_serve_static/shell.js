@@ -3,16 +3,21 @@
 //
 // 各画面スクリプトは`window.__atkScreens`へ、`<body data-screen>`が示す画面名をキーとして
 // `{mount, unmount}`を登録する。`mount`は現在のマウントかを返す関数を受け取り、
-// 差し替え後のDOMへ初期化を適用する。`unmount`は
+// 保持DOMを表示するたびに再開処理を適用する。要素リスナーとbootstrap読取は各画面の初回mountだけ、
+// サーバーからの再読込と購読の再確立は毎回行う。`unmount`は
 // SSE購読・監視・生成済みオブジェクトURL・`window`と`document`へ登録した購読を解放する。
 // `unmount`は引数と戻り値を持たない。
-// 画面ごとのDOMは同時に1つだけ存在するため、3画面が同じ`id`を持つ要素は衝突しない。
+// 保持中の画面DOMは切り離し、表示中の1画面だけを接続するため、同じ`id`を持つ要素は衝突しない。
 window.__atkScreens = window.__atkScreens || {};
 
 (() => {
-  // 読み込み済みの画面スクリプトとスタイルシートのURL。同じ資産を二重に読み込まないために持つ。
+  // 読み込み済み資産と画面ごとの保持内容。同じURLの取得と要素の生成を1回に限定する。
   const loadedAssets = new Set();
+  const screenLoads = new Map();
+  const stylesheetsByScreen = new Map();
+  const sharedStylesheets = new Set();
   let currentScreen = null;
+  let currentState = null;
   let mountGeneration = 0;
   let navigationGeneration = 0;
 
@@ -36,10 +41,44 @@ window.__atkScreens = window.__atkScreens || {};
     return doc.body.getAttribute("data-screen") || "";
   }
 
-  function registerExistingAssets() {
-    for (const node of document.querySelectorAll("script[src], link[rel=stylesheet]")) {
-      loadedAssets.add(node.src || node.href);
+  function initialScreenState() {
+    const name = screenNameOf(document);
+    const header = document.querySelector("header.app-header");
+    const root = document.getElementById("screen-root");
+    const state = {
+      name,
+      title: document.title,
+      bodyClass: document.body.className,
+      headerNodes: header ? Array.from(header.childNodes) : [],
+      rootNodes: root ? Array.from(root.childNodes) : [],
+      bootstrapNodes: Array.from(document.querySelectorAll('script[type="application/json"]')),
+    };
+    const stylesheets = new Set();
+    for (const node of document.querySelectorAll("link[rel=stylesheet]")) {
+      loadedAssets.add(node.href);
+      if (node.href.endsWith("/static/shell.css")) sharedStylesheets.add(node);
+      else stylesheets.add(node);
     }
+    stylesheetsByScreen.set(name, stylesheets);
+    for (const node of document.querySelectorAll("script[src]")) loadedAssets.add(node.src);
+    screenLoads.set(location.href, Promise.resolve(state));
+    return state;
+  }
+
+  function rememberDisplayedScreen(state) {
+    const header = document.querySelector("header.app-header");
+    const root = document.getElementById("screen-root");
+    state.title = document.title;
+    state.bodyClass = document.body.className;
+    if (header) state.headerNodes = Array.from(header.childNodes);
+    if (root) state.rootNodes = Array.from(root.childNodes);
+  }
+
+  function setActiveStylesheets(name) {
+    for (const [screenName, nodes] of stylesheetsByScreen) {
+      for (const node of nodes) node.disabled = screenName !== name;
+    }
+    for (const node of sharedStylesheets) node.disabled = false;
   }
 
   async function mountScreen(name) {
@@ -70,17 +109,27 @@ window.__atkScreens = window.__atkScreens || {};
     });
   }
 
-  function loadStylesheets(doc) {
+  function loadStylesheets(doc, name) {
     const pending = [];
+    const stylesheets = new Set();
     for (const link of doc.querySelectorAll("link[rel=stylesheet]")) {
       const href = new URL(link.getAttribute("href"), location.href).href;
+      if (href.endsWith("/static/shell.css")) continue;
+      const existing = Array.from(document.querySelectorAll("link[rel=stylesheet]"))
+        .find((node) => node.href === href);
+      if (existing) {
+        stylesheets.add(existing);
+        continue;
+      }
       if (loadedAssets.has(href)) continue;
       loadedAssets.add(href);
       const node = document.createElement("link");
       node.rel = "stylesheet";
       node.href = href;
-      pending.push(loadAsset(node));
+      stylesheets.add(node);
+      pending.push(loadAsset(node).then(() => { node.disabled = name !== currentScreen; }));
     }
+    stylesheetsByScreen.set(name, stylesheets);
     return Promise.all(pending);
   }
 
@@ -97,9 +146,8 @@ window.__atkScreens = window.__atkScreens || {};
     return Promise.all(pending);
   }
 
-  function replaceBootstrapData(doc) {
-    // 画面の初期値はサーバーが要求ごとにJSONブロックへ埋め込むため、遷移先の内容へ入れ替える。
-    for (const source of doc.querySelectorAll('script[type="application/json"]')) {
+  function installBootstrapData(state) {
+    for (const source of state.bootstrapNodes) {
       const existing = document.getElementById(source.id);
       if (existing) {
         existing.textContent = source.textContent;
@@ -113,44 +161,64 @@ window.__atkScreens = window.__atkScreens || {};
     }
   }
 
-  function replaceScreenContent(doc) {
-    document.title = doc.title;
-    document.body.setAttribute("data-screen", screenNameOf(doc));
+  function showScreen(state) {
+    document.title = state.title;
+    document.body.className = state.bodyClass;
+    document.body.setAttribute("data-screen", state.name);
     const header = document.querySelector("header.app-header");
-    const nextHeader = doc.querySelector("header.app-header");
-    if (header && nextHeader) header.replaceChildren(...nextHeader.childNodes);
     const root = document.getElementById("screen-root");
-    const nextRoot = doc.getElementById("screen-root");
-    if (root && nextRoot) root.replaceChildren(...nextRoot.childNodes);
-    replaceBootstrapData(doc);
+    if (header) header.replaceChildren(...state.headerNodes);
+    if (root) root.replaceChildren(...state.rootNodes);
+    installBootstrapData(state);
+    setActiveStylesheets(state.name);
   }
 
-  async function swapScreen(url, continuation) {
-    const response = await continuation.wait(fetch(url));
+  async function fetchScreen(url) {
+    const response = await fetch(url);
     if (!response.ok) throw new Error(`画面を取得できません (${response.status})`);
-    const text = await continuation.wait(response.text());
+    const text = await response.text();
     const doc = new DOMParser().parseFromString(text, "text/html");
-    unmountScreen();
-    replaceScreenContent(doc);
-    await continuation.wait(loadStylesheets(doc));
-    await continuation.wait(loadScreenScripts(doc));
-    return doc;
+    const name = screenNameOf(doc);
+    const header = doc.querySelector("header.app-header");
+    const root = doc.getElementById("screen-root");
+    if (!name || !header || !root) throw new Error("画面の構造が不正です");
+    const state = {
+      name,
+      title: doc.title,
+      bodyClass: doc.body.className,
+      headerNodes: Array.from(header.childNodes),
+      rootNodes: Array.from(root.childNodes),
+      bootstrapNodes: Array.from(doc.querySelectorAll('script[type="application/json"]')),
+    };
+    await loadStylesheets(doc, name);
+    await loadScreenScripts(doc);
+    return state;
+  }
+
+  function loadScreen(url) {
+    const absolute = new URL(url, location.href).href;
+    if (!screenLoads.has(absolute)) screenLoads.set(absolute, fetchScreen(absolute));
+    return screenLoads.get(absolute);
   }
 
   async function navigate(url, {push}) {
     const generation = ++navigationGeneration;
     const continuation = createContinuation(() => generation === navigationGeneration);
-    let doc = null;
+    let state = null;
     try {
-      doc = await continuation.wait(swapScreen(url, continuation));
+      state = await continuation.wait(loadScreen(url));
     } catch (_) {
       // 取得と資産の読み込みに失敗した画面は中途半端な状態のため、通常のページ遷移でやり直す。
       location.assign(url);
       return;
     }
+    if (currentState) rememberDisplayedScreen(currentState);
+    unmountScreen();
+    showScreen(state);
+    currentState = state;
     // 画面の初期表示はサーバーへの問い合わせを伴うため、資産がそろった時点で履歴を進める。
     if (push) history.pushState({atkShell: true}, "", url);
-    await continuation.wait(mountScreen(screenNameOf(doc)));
+    await continuation.wait(mountScreen(state.name));
   }
 
   function isSameOriginNavigation(link, event) {
@@ -175,8 +243,17 @@ window.__atkScreens = window.__atkScreens || {};
   });
 
   // 画面スクリプトは本スクリプトより後に読み込まれ、登録は同期的に完了する。
-  document.addEventListener("DOMContentLoaded", () => {
-    registerExistingAssets();
-    void mountScreen(screenNameOf(document));
+  document.addEventListener("DOMContentLoaded", async () => {
+    const initial = initialScreenState();
+    currentScreen = initial.name;
+    currentState = initial;
+    setActiveStylesheets(initial.name);
+    await mountScreen(initial.name);
+    const navigation = document.querySelector("nav.app-nav");
+    if (!navigation) return;
+    for (const link of navigation.querySelectorAll("a[href]")) {
+      const url = new URL(link.href, location.href).href;
+      if (url !== location.href) void loadScreen(url).catch(() => {});
+    }
   });
 })();

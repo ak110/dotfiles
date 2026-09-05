@@ -4,7 +4,7 @@
 (() => {
 // ページロード時の初期値はサーバーが`plans.html`のJSONブロックへ埋め込む。
 // 資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけをHTML側から受け取る。
-// 画面の入れ替えでJSONブロックの内容も差し替わるため、`mount`のたびに読み直す。
+// 先読みした画面DOMとJSONブロックは保持されるため、初回の`mount`で読み取る。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
 let BASE_PATH = "";
 // ホスト名 -> 保存元ID -> {portable_root, home, os_type, os_name}。旧単一root形式の
@@ -50,6 +50,7 @@ const VISIBLE_FILES_INITIAL = 100;
 const VISIBLE_FILES_STEP = 100;
 let visibleLimit = VISIBLE_FILES_INITIAL;
 let sentinelObserver = null;
+let initialized = false;
 
 const HOST_BADGE_LABELS = {
   connecting: "再接続中",
@@ -774,10 +775,13 @@ function bindScreenEvents() {
 
 async function mount(currentMount) {
   isCurrentMount = currentMount;
-  const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
-  BASE_PATH = bootstrap.base_path;
-  ROOT_DIRS = bootstrap.root_dirs;
-  bindScreenEvents();
+  if (!initialized) {
+    const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
+    BASE_PATH = bootstrap.base_path;
+    ROOT_DIRS = bootstrap.root_dirs;
+    bindScreenEvents();
+    initialized = true;
+  }
   window.addEventListener("pagehide", handlePageHide);
   window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("focus", handleWindowFocus);
@@ -791,7 +795,7 @@ async function mount(currentMount) {
   if (!currentMount()) return;
   await currentMount.wait(refreshFiles());
   if (!currentMount()) return;
-  if (files.length > 0) {
+  if (!selectedPath && files.length > 0) {
     await currentMount.wait(openFile(files[0].host, files[0].path, fileSource(files[0])));
   }
   if (!currentMount()) return;
@@ -821,16 +825,6 @@ function unmount() {
     searchTimer = null;
   }
   revokePreviewObjectUrls();
-  files = [];
-  visibleFiles = [];
-  visibleLimit = VISIBLE_FILES_INITIAL;
-  serverSearchKeys = null;
-  hostStatus = {};
-  rootStatus = {};
-  selectedHost = null;
-  selectedSource = "";
-  selectedPath = null;
-  selectedMtime = null;
 }
 
 window.__atkScreens = window.__atkScreens || {};

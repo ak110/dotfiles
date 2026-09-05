@@ -4,7 +4,7 @@
 (() => {
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 // ページロード時の初期値はサーバーが`sessions.html`のJSONブロックへ埋め込む。
-// 画面の入れ替えでJSONブロックの内容も差し替わるため、`mount`のたびに読み直す。
+// 先読みした画面DOMとJSONブロックは保持されるため、初回の`mount`で読み取る。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSourceに前置する。
 let BASE_PATH = "";
 
@@ -26,8 +26,9 @@ let parentTrail = [];
 // SSE購読。`unmount`で閉じるため保持する。
 let eventSource = null;
 let isCurrentMount = () => false;
+let initialized = false;
 
-// 画面の入れ替えでDOMごと差し替わるため、参照は`mount`のたびに取り直す。
+// 画面DOMは切り離して保持されるため、参照は初回の`mount`で確定する。
 let listEl = null;
 let warningsEl = null;
 let detailEl = null;
@@ -299,32 +300,31 @@ function subscribeEvents() {
 
 function mount(currentMount) {
   isCurrentMount = currentMount;
-  BASE_PATH = JSON.parse(document.getElementById("sessions-bootstrap").textContent).base_path;
-  listEl = document.getElementById("sessions");
-  warningsEl = document.getElementById("warnings");
-  detailEl = document.getElementById("detail");
-  detailTitleEl = document.getElementById("detail-title");
-  detailUsageEl = document.getElementById("detail-usage");
-  filterEl = document.getElementById("filter");
-  sessions = [];
-  selected = null;
-  queryText = "";
-  parentTrail = [];
-  filterEl.addEventListener("input", () => {
-    queryText = filterEl.value.trim().toLowerCase();
-    renderList();
-  });
-  listEl.addEventListener("click", (event) => {
-    const item = event.target.closest(".session-item");
-    if (!item) return;
-    openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
-  });
-  document.getElementById("menu-btn").addEventListener("click", () => {
-    document.body.classList.toggle("drawer-open");
-  });
-  document.getElementById("drawer-backdrop").addEventListener("click", () => {
-    document.body.classList.remove("drawer-open");
-  });
+  if (!initialized) {
+    BASE_PATH = JSON.parse(document.getElementById("sessions-bootstrap").textContent).base_path;
+    listEl = document.getElementById("sessions");
+    warningsEl = document.getElementById("warnings");
+    detailEl = document.getElementById("detail");
+    detailTitleEl = document.getElementById("detail-title");
+    detailUsageEl = document.getElementById("detail-usage");
+    filterEl = document.getElementById("filter");
+    filterEl.addEventListener("input", () => {
+      queryText = filterEl.value.trim().toLowerCase();
+      renderList();
+    });
+    listEl.addEventListener("click", (event) => {
+      const item = event.target.closest(".session-item");
+      if (!item) return;
+      openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
+    });
+    document.getElementById("menu-btn").addEventListener("click", () => {
+      document.body.classList.toggle("drawer-open");
+    });
+    document.getElementById("drawer-backdrop").addEventListener("click", () => {
+      document.body.classList.remove("drawer-open");
+    });
+    initialized = true;
+  }
   loadList();
   subscribeEvents();
 }

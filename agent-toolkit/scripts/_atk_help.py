@@ -161,7 +161,7 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
-        "summary": "WI管理Web UIを起動する",
+        "summary": "ワークアイテムWeb UIを起動する",
         "description": "目的: private-notesのキューをブラウザーから閲覧して操作するWebサーバーを起動する。\n利用場面: ユーザーがAWIの投入、編集、採否をブラウザーで行うとき。\n対象と出力: 指定したホストとポートで待機し、private-notesを読み書きする。前景で動作し、停止の要求を受領するまで終了しない。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。\n復元・後始末: 停止は当該プロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
         "epilog": "実行例:\n\n  atk serve --port=28766",
     },

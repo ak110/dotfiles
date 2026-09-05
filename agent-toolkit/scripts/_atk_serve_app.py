@@ -821,7 +821,7 @@ def _register_shell_routes(app: quart.Quart) -> None:
         base_path = _safe_base_path(quart.request.root_path)
         root_url = f"{base_path}/"
         body = {
-            "name": "WI管理",
+            "name": "ワークアイテム",
             "short_name": "atk serve",
             "start_url": root_url,
             "scope": root_url,
