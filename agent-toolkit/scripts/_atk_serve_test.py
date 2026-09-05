@@ -2352,6 +2352,26 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
     assert (await client.get("/api/sessions/detail?engine=unknown&path=a.jsonl")).status_code == 404
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["file", "raw"])
+async def test_plan_file_apis_return_plan_file_error_status(tmp_path: pathlib.Path, route: str) -> None:
+    """計画ファイル取得APIは取得層が分類した未検出と入力不正の状態コードを返す。"""
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        plans_context=serve_plans.create_context(
+            root=tmp_path / "plans",
+            hostname="local-host",
+            remote_hosts=["remote-host"],
+        ),
+    )
+    client = app.test_client()
+
+    assert (await client.get(f"/api/plans/{route}?path=missing.md")).status_code == 404
+    assert (await client.get(f"/api/plans/{route}?path=../secret.md&host=remote-host")).status_code == 400
+
+
 def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> None:
     """設定の正本を`serve.toml`へ統合し、両画面の参照元を同じファイルで解決する。"""
     path = tmp_path / "serve.toml"
