@@ -6,7 +6,7 @@
 ## 起動
 
 メインはキュー一覧とAWI本文を自ら取得せず、pickerへ選定させる。
-`atk config get pick_wi_model`を起動直前に実行し、候補列の先頭候補を`agent-toolkit:delegation`の工程別モデル設定に従って直接起動する。
+`agents_server`の`start`へ`model_type="pick_wi"`と対象リポジトリの絶対パスを渡して起動する。engine、model及びeffortはサーバーが解決するため指定しない。
 
 起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`を指す。次を名前付き必須入力とし、これ以外を渡さない。
 
@@ -20,10 +20,14 @@
 ## 出力の受領
 
 pickerは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める形式で返す。
-メインは出力のファイル名、選定時点の状態、要求単位の由来、区分、レーン、計画ファイル、再開位置、確認境界、固有順序、上流投入の区分、投入先及び要求を検収してから「①の完了」節へ進む。
+メインは出力のファイル名、選定時点の状態、要求単位の由来、区分、レーン、計画ファイル、再開位置、確認境界、固有順序、上流投入の区分、投入先、要求及び`answered_uwis`を検収してから「①の完了」節へ進む。
 確認境界には、充足済み候補で実在を確認したコミット又は実装箇所の最小情報を含めることができる。
 上流投入の区分が`なし`以外の場合は投入先と要求が`なし`でないこと、区分が`なし`の場合は両方が`なし`であることを確認する。
 要求単位の由来は、`人間由来`と`エージェント由来`のいずれかの区分を伴う値であることを確認する。区分を伴わない値を受領した場合は、当該値を計画担当へ渡さず、同じpicker threadへ区分の確定を指示する。
+`answered_uwis`は、`なし`であるか、重複の無いUWIのファイル名の一覧であることを確認する。
+一覧である場合は、各ファイル名が`atk wi list --type=uwi --status=adopted --target-repo=<repo> --skip-pull`へ現れることを確認する。
+さらに、`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo> --skip-pull`が空であることを確認する。
+欠落、重複、形式外の値、未終端、終端可能な回答済みUWIの残存を検出した場合は「①の完了」節へ進まず、観測値を添えてpickerへ再取得を指示する。
 成功時の出力はレーンの起動に必要な構造化情報だけとする。
 メインは、上流へ投入する要求と確認境界の候補位置を除き、AWI本文、項目別の採否理由、候補の調査過程を含む対象実装の調査結果を受け取らない。
 メインがこれらを読むのは、pickerの`needs_escalation`、ユーザーの介入、第2ラウンド以降の収束判断など、内容に基づく判断が実際に必要になった時点に限る。
@@ -38,7 +42,7 @@ routeとtaskが有効なら同じpicker threadを再開し、その他は一般�
 ## ①の完了
 
 処理開始はpickerが実行する。メインは`atk wi start-processing`を自ら実行しない。
-出力の検収を完了した直後に`atk wi list --target-repo=<repo> --skip-pull`を1回実行し、pickerが選定時点の状態を`inbox`と報告した全件が`processing`へ配置されたことを確認して①を完了する。
+回答済みUWIの終端確認後に`atk wi list --target-repo=<repo> --skip-pull`を1回実行し、pickerが選定時点の状態を`inbox`と報告した全件が`processing`へ配置されたことを確認して①を完了する。
 配置されていない項目が1件でもある場合は、計画ファイル、managed-temp、worktree及び実装担当の起動を含む②へ進まない。
 
 ②へ進まない場合は、再取得した各項目の保存状態と、pickerが選定時点の状態を`inbox`と報告したファイル名の一覧を対照し、`processing`へ遷移していない項目を確定する。当該項目のファイル名、観測した保存状態及び当該セッションで再実行しない理由を`agent-toolkit:wi-standards`に従って登録し、①を終える。当該セッションでは②と③へ進まない。

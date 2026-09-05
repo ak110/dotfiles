@@ -39,10 +39,22 @@
 前処理の失敗では、当該行の`失敗時に遮断する実装単位`が挙げる実装単位だけを遮断し、他の実装単位を持つレーンは起動する。
 遮断した実装単位、失敗の観測値及び復元できなかったパスを`agent-toolkit:wi-standards`に従って登録する。
 
+## メインが読む対象の境界
+
+メインは全レーンの調停に必要な範囲だけを自ら読み、それ以外の読解を各担当と読み取り専用の探索委譲へ移す。
+
+- 自ら読むのは、本書、本書が全文読むよう定める`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書、各担当が返す所定の返却形式、計画ファイル（メイン）とする
+- レビュー指摘管理表は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の「採用案の確定」が対象とする行だけを読む
+- 例外は、同書の「採用案の確定」、担当が`needs_escalation`で返した事象、ユーザーの介入、及び「反復原因の判定」が求める構造的な対処とする
+- 「採用案の確定」では、当該ラウンドの未解消の要件又は仕様の指摘が挙げるAWIの本文だけを読む。同じ判断で他のAWIの本文と計画ファイル（詳細）を読まない
+- 前の2項の例外を除き、AWI本文、計画ファイル（詳細）、実装差分及び候補の調査過程は自ら読まない。これらを判断へ要する場合は、当該判断を担う担当へ返すか、`agents_server`の`start_explore`へ結論だけを求めて委譲する
+- 出力量が大きいコマンドは自ら実行せず、`agents_server`の`start_shell`へ委譲して終了状態と要約だけを受け取る
+
 ## 通常型の計画
 
-通常型の各レーンでは、メインが`plan_model`で計画担当を起動し、`plan_review_model`で独立した計画レビュー担当を起動する。
-起動入力と収束判定は`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`を正本とする。
+通常型の各レーンでは、メインが計画担当と、独立した計画レビュー担当を起動する。
+メインは起動の前に`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`を全文読む。
+両書が定める起動入力、渡す`model_type`と収束判定を確定してから起動する。
 計画初稿とレビュー指摘反映は同じ計画担当threadへ返す。
 メインは計画担当へ当該レーンのAWIだけを渡し、要求単位の由来と確認結果を添えて採用要求を計画へ記録させる。
 渡す由来はpickerが返した`origin`の値とし、メインは正本を再取得して確定し直さない。`origin`は人間由来とエージェント由来のいずれかへ確定した区分を伴うため、`AWI`のような区分を伴わない値を渡さない。判定の規則は`agent-toolkit:wi-standards`の「由来と承認」を正本とし、`origin`と正本の照合は計画レビュー担当が行う。
@@ -108,14 +120,14 @@
 ## 実装とレビュー
 
 メインは、同じ計画ファイルへ書き込む計画担当の終端を確認してから実装担当を起動する。
-起動文の構成、列挙形式及び必須入力は`${CLAUDE_PLUGIN_ROOT}/share/implementation.parent.md`が定める。
+メインは起動の前に`${CLAUDE_PLUGIN_ROOT}/share/implementation.parent.md`を全文読み、同書が定める起動文の構成、列挙形式、必須入力及び渡す`model_type`を確定する。
 本経路では、レーン専用worktreeとレーンmanaged-tempの絶対パス、pickerが確定した順序を保持したAWIファイル名一覧、AWI固有の処理順、公開、確認又は検証指示を同じ形式で加える。
 
 計画レビューの指摘管理表は渡さない。同表は計画の確定までに用いる記録であり、実装担当の入力ではない。
 実装担当が扱うのは実装レビューの指摘管理表だけとし、その受領条件は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`が定める。
 計画レビューの経緯が必要になる事象が生じた場合だけ、当該事象を示して同表の絶対パスを追送する。
 
-メインは依存先計画が導入する単一の実装レビュー担当を使う。
+メインは依存先計画が導入する単一の実装レビュー担当を使う。実装レビュー担当の起動の前に`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`を全文読み、同書が定める`review_contract`の生成元と渡す`model_type`を確定する。
 メイン自身による直接実装、レビュー省略、全体レビューへの責任移管をしない。
 同じレーンの実装単位は依存順に同じ専用worktreeで実装し、同時に1つの実装担当だけを置く。
 担当範囲の未commitの変更が残らないことを実装担当が完了値の返却前に確認する手順は、`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`が定める。

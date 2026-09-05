@@ -1,7 +1,8 @@
 # AWI選定とレーン分けタスク
 
 対象リポジトリのWIキューを自ら取得し、1処理回の処理対象、処理区分及びレーン分けを確定して返す。
-処理対象を確定した直後に、選定時点で`inbox`の項目を`processing`へ移す。計画の起草、実装、`reject`、`adopt`のいずれも担当しない。
+処理対象を確定した直後に、回答済みで終端可能なUWIを終端し、選定時点で`inbox`のAWIを`processing`へ移す。
+計画の起草と実装、`reject`、AWIの`adopt`は担当しない。
 
 本タスクの完了報告と、本タスクで作成する成果物はすべて日本語で書く。本書が書式を固定する機械可読な返却値と固定文字列は、その書式のままとする。
 
@@ -28,9 +29,12 @@
 - 表示上の判定が`blocked`で、`blocked_reason`が`cooldown-until`である（時間経過を待つ項目のため）
 - 表示上の判定が`blocked`で、`blocked_reason`がfrontmatter又は依存の不備を示す（キュー修復かユーザー回答なしには着手できない項目のため）。対象は`frontmatter-broken`、`invalid-cooldown`、`missing-plan-file`、`invalid-dependency`、`missing-dependency`、`self-dependency`、`cyclic-dependency`である
 - `blocked_reason`が`dependency-unmet`で、`atk wi show`が返す`depends_on`のいずれかが未回答UWIである
-- `blocked_reason`が`dependency-unmet`で、`depends_on`のいずれかが今回の一覧に現れない、又は一覧に現れても処理対象の候補に入らない
+- `blocked_reason`が`dependency-unmet`で、`depends_on`のいずれかが処理対象の候補と`answered_uwis`のいずれにも入らない
 
-`blocked_reason`が`dependency-unmet`で、`depends_on`の全てが処理対象の候補に入るAWIである項目は、処理対象に含める。
+`depends_on`の全てが処理対象の候補と`answered_uwis`のいずれかに入る項目は、処理対象に含める。
+`answered_uwis`は、`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo> --skip-pull`が返すファイル名とする。
+対象は、回答済みで終端可能な`inbox`又は`processing`のUWIである。
+pickerが処理開始の前に当該UWIを終端するため、依存の充足として扱う。
 
 既存の`hold`項目は、候補、優先度、依存判断又は固有指示の入力へ含めない。
 処理回の進行中に追加されたAWIを、確定済みの出力へ混ぜない。
@@ -45,7 +49,7 @@
 保存済みのメタデータと入力の実在を確認する。保存済みのメタデータから`depends_on`、回答済みUWI、`cooldown_until`、frontmatter、計画ファイルの有効性を確認する。
 `depends_on`の意味と用途は`agent-toolkit:wi-standards`を正本とする。日付境界、別リポジトリ候補探索、cycle再計算をせず、`queue_schedule`も移行しない。
 日付境界を自ら判定しないのは、境界日後の項目が境界日以前の終端処理と同じ`start-processing`集合へ混入した実績があるためである。
-他の3件は、キューを変更しないpickerの役割の外にあるためである。
+他の3件は、選定とその直後の既定遷移に属さないためである。
 
 CLI操作は実行前に検証する。警告又は失敗があれば対象を再取得し、意図した状態なら再実行せず、部分状態又は原因不明なら`needs_escalation`へ返す。
 private notesによるGit復旧、専用の失敗分類及び別の選定キューを作成しない。
@@ -136,7 +140,7 @@ frontmatterの`plan_file`が設定されているが実在する計画ファイ�
 末尾の厳密なH2 `## ユーザーコメント`、UWI回答、関連計画の実施内容及び出所付き対話回答に記録された明示由来を既定分類より優先する。由来を分離できない要求は人間由来とする。
 判定した由来は要求単位ごとに`origin`へ出力する。
 
-`needs_escalation`は、キュー入力の不整合と、本文だけから明白なユーザー選好又は外部待ちに限定する。キュー入力の不整合の判定に用いる入力は`## 処理区分`が定める範囲とする。公開契約を変更するという理由だけで、本文で合意済みの要求を確認待ちへ戻さない。公開契約の変更を要するかの判定と、その確認の要否は計画担当が確定する。キューを変更しない。
+`needs_escalation`は、キュー入力の不整合と、本文だけから明白なユーザー選好又は外部待ちに限定する。キュー入力の不整合の判定に用いる入力は`## 処理区分`が定める範囲とする。公開契約を変更するという理由だけで、本文で合意済みの要求を確認待ちへ戻さない。公開契約の変更を要するかの判定と、その確認の要否は計画担当が確定する。`needs_escalation`で返す場合はキューを変更しない。
 
 回答が得られない確認事項と外部待ちだけを、確認内容、必要な回答と再開条件を添えて`needs_escalation`へ返す。UWIの登録と元項目への依存追加は呼び出し元が行う。
 技術的失敗専用UWI、共通失敗集約及びplanner失敗UWIを要求しない。
@@ -149,6 +153,16 @@ AWI本文に固有の処理順、公開、確認と検証指示がある場合�
 `adopt`をPR/MRのマージ後、release後、配布後のいずれかへ明示的に延期する指示は、対象AWI、先行する終端工程、`adopt`時機を一組の固有順序として記録する。
 
 ## 処理開始
+
+`needs_escalation`で返す場合を除き、AWIを`processing`へ移す前に、`answered_uwis`のファイル名だけを引数として
+`atk wi adopt <filename>... --target-repo=<repo-path>`を1回実行する。`answered_uwis`が`なし`の場合は実行しない。
+実行後は、各ファイル名が`atk wi list --type=uwi --status=adopted --target-repo=<repo-path> --skip-pull`へ現れることを確認する。
+続けて、`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo-path> --skip-pull`へ現れないことを確認する。
+これにより、今回終端したUWIへの依存が充足したことを確認する。
+選出済みAWIへの先行依存だけで`dependency-unmet`が残る項目は処理対象から除外せず、同一レーン内の依存順を維持する。
+先行AWI Aと、A及び今回終端した回答済みUWI Uの双方へ依存するAWI Bを選出した場合、Uの終端後もBを保持し、Aの終端後にBを実施する。
+警告、失敗又は部分状態を検出した場合は対象を再取得し、全件が`adopted`なら再実行しない。
+未終端の項目が残る場合や原因不明の場合は`needs_escalation`で返し、AWIを`processing`へ移さない。
 
 `needs_escalation`で返す場合を除き、出力を確定した直後に、選定時点の保存状態が`inbox`である項目のファイル名だけを引数として`atk wi start-processing <filename>... --target-repo=<repo-path>`を1回実行する。
 選定時点で既に`processing`だった再開項目を引数へ含めない。引数となる項目が1件も無い場合は実行しない。
@@ -175,6 +189,8 @@ decisions:
   upstream_submission: <`上流要求だけ`、`混在`又は`なし`>
   upstream_target_repo: <投入先の上流リポジトリ識別子又は「なし」>
   upstream_request: <上流へ投入する要求と、改訂後に対象リポジトリで行う作業又は「なし」>
+answered_uwis:
+- <回答済みで未終端のUWIのファイル名。1件も無い場合は「なし」>
 阻害要因:
 - <needs_escalationの場合の確認事項。完了時は「なし」>
 ```
@@ -185,6 +201,7 @@ decisions:
 `upstream_submission`が`なし`以外の場合は、`upstream_target_repo`へ投入先を、`upstream_request`へ上流要求と上流改訂後の対象リポジトリ側の作業を記載する。対象リポジトリ側の作業が無い場合は、その旨を`upstream_request`へ記載する。`upstream_submission`が`なし`の場合は、両方を`なし`とする。
 
 成功時の出力は、呼び出し元がレーンの起動と①の完了確認へ用いる上記の項目だけとする。
+`answered_uwis`は、`decisions`の各項目が依存する範囲に限らず、対象リポジトリで回答済みかつ終端可能な`inbox`又は`processing`のUWIを全て挙げる。回答本文と解除される元項目の内容は出力へ含めない。
 充足済み候補で実在を確認したコミット又は実装箇所は、`confirmation_or_hold`の最小情報として出力できる。
 `upstream_request`に必要な範囲と確認境界の候補位置を除き、AWI本文、項目別の採否理由、候補の調査過程を含む対象実装の調査記録を出力へ含めない。
 これらは後段の計画担当と実装担当が、受領したファイル名と計画パスから正本を直接読んで確定する。

@@ -53,6 +53,7 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
 2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/cross-repository-submission.md`も全文読む。
 3. 計画に使うworktreeの絶対パスとbase commitを保持する。
 4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
+   起動の前に、次行が挙げる2書を全文読み、両書が定める起動入力、渡す`model_type`と収束判定を確定する。
    起草完了後、`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って計画レビュー担当を起動する。
    渡す入力は、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と、計画メタ情報の関連WIの出所・引用範囲とする。
    起動後は計画ファイルの書込所有権が、計画レビュー担当の指摘を反映する計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。

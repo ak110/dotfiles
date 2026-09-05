@@ -108,7 +108,8 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 | `inbox`→`hold` | `atk wi hold` | 項目を編集する主体が、編集の開始時に自動処理から除外する |
 | `hold`→`inbox` | `atk wi unhold` | 編集した主体が、編集の完了時に自動処理へ戻す |
 | `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のpickerが、処理対象を確定した直後に遷移させる |
-| `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のレーンが、ベースブランチへのマージ完了時、又は実装変更を伴わない充足の確定後に遷移させる |
+| `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが、回答を保存済みで未終端のUWIをAWIの処理開始前に終端する |
+| `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のpickerが回答済みUWIをAWIの処理開始前に終端するか、レーンがベースブランチへのマージ完了時又は実装変更を伴わない充足の確定後にAWIを終端する |
 | `processing`→`rejected` | `atk wi reject` | `agent-toolkit:process-wi`のレーンが、計画工程で確定した全要求の不採用についてメインが確認を終えた後に遷移させる |
 | `rejected`→`inbox` | `atk wi return-to-inbox --state=rejected` | UWIの回答が採用を示した項目を再処理へ戻す |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 処理中に未回答UWIへの依存が生じた項目を`inbox`かつ`blocked`へ戻す |
@@ -122,7 +123,7 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 
 着手不能の要因は、解除される契機で分類する。時間経過だけで解除される要因は`cooldown_until`で表し、レート制限のバックオフ、再試行間隔及び期日到来待ちがこれに当たる。実在する先行キュー項目の終端で解除される要因は、当該項目のファイル名を`depends_on`へ直接加えて表す。他リポジトリの成果待ちも、待つ対象がキュー項目として実在する場合はこの直接依存で表す。人間の回答がなければ解除できない要因は、解除条件と再開工程を本文へ持つUWIを`depends_on`へ加えて表す。UWIへ分類する前に、回答者へ提示する問いを1文で記述できることを確認する。問いを記述できない要因をUWIにしない。外部環境の制約と別環境での実施は要因の発生場所を示すに過ぎず、それだけではUWIの根拠にならない。対処方針の選択若しくは実施可否の判断をユーザーへ求める場合だけUWIとし、必要な認可を既に得ている実施は`agent-toolkit:process-wi`の外部操作の経路で扱う。`cooldown_until`を設定する主体は、当該要因が時間経過で解消することを実測又は公式一次資料で確認してから設定する。確認できない要因を`cooldown_until`で表さない（厳守規定。時間経過で解消しない要因を`cooldown_until`で表すと、選定側が期日まで当該項目を除外し続け、解除の契機が発生しない）。
 
-UWI待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してUWIを`depends_on`へ加え、`inbox`かつ`blocked`にする。`inbox`へ戻した後に着手可否が`blocked`であることを確認する。回答を保存したUWIを先に終端し、依存解除を確認した後に元項目を次の処理対象へ戻す。
+UWI待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してUWIを`depends_on`へ加え、`inbox`かつ`blocked`にする。`inbox`へ戻した後に着手可否が`blocked`であることを確認する。回答を保存したUWIを先に終端し、依存解除を確認した後に元項目を次の処理対象へ戻す。回答を保存した別セッションが終端まで到達しなかった場合は、次に当該キューを処理する`agent-toolkit:process-wi`のpickerが、AWIを`processing`へ移す前に当該UWIを終端する。メインは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「出力の受領」に従って`adopted`への存在を検収し、「①の完了」へ進む。
 
 `rejected`はエージェントが全要求を不採用と判断した時点で使用できる終端とし、後から`return-to-inbox`で`inbox`へ復元できる。技術的失敗、入力不足、外部条件待ち又は計画不備は不採用へ変換せず、必要なUWI依存を付けてactiveのまま保持する。
 
