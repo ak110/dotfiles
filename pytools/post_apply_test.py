@@ -5,7 +5,9 @@
 """
 
 import logging
+import re
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -281,6 +283,21 @@ class TestRun:
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
+    def test_foreground_completion_reports_step_duration(self, caplog: pytest.LogCaptureFixture) -> None:
+        """前景ステップの完了行へステップ本体の所要時間を表示する。"""
+
+        def foreground() -> bool:
+            time.sleep(0.3)
+            return False
+
+        caplog.set_level(logging.INFO)
+        post_apply.run([post_apply._StepSpec("前景", foreground)])  # noqa: SLF001
+
+        completion = next(record.getMessage() for record in caplog.records if record.getMessage().startswith("[1/1] 前景 ("))
+        match = re.fullmatch(r"\[1/1] 前景 \(([0-9]+\.[0-9])秒\)", completion)
+        assert match is not None
+        assert float(match.group(1)) >= 0.2
+
     def test_background_step_overlaps_foreground_and_appends_result_after_it(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -291,14 +308,15 @@ class TestRun:
 
         def background() -> bool:
             started.set()
-            assert released.wait(timeout=2)
+            time.sleep(0.3)
+            released.set()
             logging.getLogger("background-test").info("背景ログ")
             return True
 
         def foreground() -> bool:
             assert started.wait(timeout=2)
+            assert released.wait(timeout=2)
             logging.getLogger("foreground-test").info("前景ログ")
-            released.set()
             return False
 
         caplog.set_level(logging.INFO)
@@ -311,7 +329,11 @@ class TestRun:
 
         assert [result.name for result in results] == ["前景", "背景"]
         messages = [record.getMessage() for record in caplog.records]
-        assert messages.index("前景ログ") < messages.index("[1/2] 背景") < messages.index("背景ログ")
+        background_completion = next(message for message in messages if message.startswith("[1/2] 背景 ("))
+        match = re.fullmatch(r"\[1/2] 背景 \(([0-9]+\.[0-9])秒\)", background_completion)
+        assert match is not None
+        assert float(match.group(1)) >= 0.2
+        assert messages.index("前景ログ") < messages.index(background_completion) < messages.index("背景ログ")
 
     def test_background_step_failure_does_not_discard_other_results(self) -> None:
         """背景ステップの例外を当該結果へ局所化し、他の結果を保持する。"""

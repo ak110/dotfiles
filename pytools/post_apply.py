@@ -6,6 +6,7 @@
 import logging
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -383,13 +384,14 @@ class _BackgroundLogCapture(logging.Handler):
             _background_log_state.records.append(record)
 
 
-def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str]]:
-    """1ステップを実行し、例外と戻り値を共通形式へ変換する。"""
+def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
+    """1ステップを実行し、例外、戻り値、所要時間を共通形式へ変換する。"""
+    started_at = time.monotonic()
     try:
         ret = step.run()
     except Exception:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
         logger.exception("    %s: 失敗", step.name)
-        return _StepResult(name=step.name, ok=False, changed=False), []
+        return _StepResult(name=step.name, ok=False, changed=False), [], time.monotonic() - started_at
     notices: tuple[post_apply_outcome.PostApplyNotice, ...] = ()
     recommendations: list[str] = []
     if isinstance(ret, post_apply_outcome.PostApplyOutcome):
@@ -399,16 +401,20 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str]]:
         changed, recommendations = ret
     else:
         changed = ret
-    return _StepResult(name=step.name, ok=True, changed=changed, notices=notices), recommendations
+    return (
+        _StepResult(name=step.name, ok=True, changed=changed, notices=notices),
+        recommendations,
+        time.monotonic() - started_at,
+    )
 
 
-def _execute_background_step(step: _StepSpec) -> tuple[_StepResult, list[str], list[logging.LogRecord]]:
+def _execute_background_step(step: _StepSpec) -> tuple[_StepResult, list[str], float, list[logging.LogRecord]]:
     records: list[logging.LogRecord] = []
     _background_log_state.active = True
     _background_log_state.records = records
     try:
-        result, recommendations = _execute_step(step)
-        return result, recommendations, records
+        result, recommendations, duration = _execute_step(step)
+        return result, recommendations, duration, records
     finally:
         _background_log_state.active = False
 
@@ -441,7 +447,7 @@ def run(
     for handler in original_handlers:
         handler.addFilter(exclusion)
     root_logger.addHandler(capture)
-    pending: list[tuple[int, _StepSpec, Future[tuple[_StepResult, list[str], list[logging.LogRecord]]]]] = []
+    pending: list[tuple[int, _StepSpec, Future[tuple[_StepResult, list[str], float, list[logging.LogRecord]]]]] = []
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
             for index, step in enumerate(effective_steps, start=1):
@@ -449,12 +455,13 @@ def run(
                     pending.append((index, step, executor.submit(_execute_background_step, step)))
                     continue
                 logger.info("[%d/%d] %s", index, total, step.name)
-                result, step_recommendations = _execute_step(step)
+                result, step_recommendations, duration = _execute_step(step)
+                logger.info("[%d/%d] %s (%.1f秒)", index, total, step.name, duration)
                 results.append(result)
                 recommendations.extend(step_recommendations)
             for index, step, future in pending:
-                logger.info("[%d/%d] %s", index, total, step.name)
-                result, step_recommendations, records = future.result()
+                result, step_recommendations, duration, records = future.result()
+                logger.info("[%d/%d] %s (%.1f秒)", index, total, step.name, duration)
                 for record in records:
                     root_logger.handle(record)
                 results.append(result)
