@@ -11,13 +11,13 @@ LLM宛て出力には自動生成を示すプレフィックスとサフィッ�
 本モジュールの`llm_notice`関数が以下のフォーマットで整形する。
 
 - プレフィックス: `[auto-generated: <plugin>/<hook>]`（警告時は`[warn]`タグを並置）
-- サフィックス: `(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)`
+- サフィックス: `（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）`
 
 フィールドの詳細と規約の背景は
 `agent-toolkit/skills/agent-standards/references/claude-hooks.md`を参照する。
 """
 
-_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+_MESSAGE_SUFFIX = "（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
 
 
 def llm_notice(body: str, hook_id: str, *, tag: str = "") -> str:

@@ -543,6 +543,250 @@ def test_invalid_observation_boundary_returns_exit_code_two(
     assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界が不正: not-a-timestamp"}]
 
 
+def test_elapsed_until_returns_seconds_from_first_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """指定時刻までの経過秒数と入力の時刻表現を返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:01Z", "開始"),
+            _timestamped_entry("2026-09-01T00:00:03Z", "終了"),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:01:01Z"]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "session-elapsed",
+            "start": "2026-09-01T00:00:01Z",
+            "until": "2026-09-01T00:01:01Z",
+            "elapsed_seconds": 60,
+        }
+    ]
+
+
+def test_elapsed_until_with_observation_boundary_keeps_same_result(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """観測境界を併用しても経過時間の起点と終端を変えない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:01Z", "開始"),
+            _timestamped_entry("2026-09-01T00:00:03Z", "境界後"),
+        ],
+    )
+    elapsed_args = [str(transcript), "--elapsed-until", "2026-09-01T00:01:01Z"]
+
+    assert evidence.main(elapsed_args) == 0
+    without_boundary = _read_jsonl(capsys)
+    assert evidence.main([*elapsed_args, "--observation-boundary", "2026-09-01T00:00:02Z"]) == 0
+
+    assert _read_jsonl(capsys) == without_boundary
+
+
+def test_elapsed_until_rejects_invalid_observation_boundary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """経過時間照会と併用した解析不能な観測境界を拒否する。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", "記録")])
+
+    assert (
+        evidence.main(
+            [
+                str(transcript),
+                "--elapsed-until",
+                "2026-09-01T00:00:02Z",
+                "--observation-boundary",
+                "not-a-timestamp",
+            ]
+        )
+        == 2
+    )
+
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "観測境界が不正: not-a-timestamp"}]
+
+
+def test_elapsed_until_rejects_invalid_timestamp(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """解析できない経過時間の終端を拒否する。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", "記録")])
+
+    assert evidence.main([str(transcript), "--elapsed-until", "not-a-timestamp"]) == 2
+
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": "経過時間の終端が不正: not-a-timestamp"}]
+
+
+def test_elapsed_until_rejects_records_without_timestamp(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """起点になる時刻を持たない記録を拒否する。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry(None, "記録")])
+
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:01Z"]) == 2
+
+    assert _read_jsonl(capsys) == [{"kind": "error", "text": f"経過時間を算出できる記録が無い: {transcript}"}]
+
+
+def test_elapsed_until_rejects_time_before_first_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最初の記録より前の経過時間の終端を拒否する。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:02Z", "記録")])
+
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:01Z"]) == 2
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "error",
+            "text": "経過時間の終端が最初のレコードより前: 2026-09-01T00:00:01Z",
+        }
+    ]
+
+
+def test_elapsed_until_conflicts_with_other_query_options(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """経過時間照会と他の照会モードの同時指定を拒否する。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", "記録")])
+
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:02Z", "--stats"]) == 2
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "error",
+            "text": "--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-untilは併用できない",
+        }
+    ]
+
+
+def test_default_events_separate_main_user_message_from_subagent_task_prompt(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """人間の入力と委譲先のタスク入力を由来記録で区別する。"""
+    transcript = _write_transcript(tmp_path, [_timestamped_entry("2026-09-01T00:00:01Z", "人間の入力")])
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_timestamped_entry("2026-09-01T00:00:02Z", "タスク入力")],
+    )
+
+    assert evidence.main([str(transcript)]) == 0
+
+    user_events = [event for event in _read_jsonl(capsys, raw=True) if event["kind"] == "user"]
+    assert [(event["record"], event["text"]) for event in user_events] == [
+        ("main", "人間の入力"),
+        ("agent-child", "タスク入力"),
+    ]
+
+
+def test_reconciliation_repeats_until_no_main_user_intervention_is_added(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """再取得中に届いた人間の入力も次の境界で追加し、0件まで照合する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:01Z", "初回境界前の入力"),
+            _timestamped_entry("2026-09-01T00:00:03Z", "初回境界後の入力"),
+            _timestamped_entry("2026-09-01T00:00:05Z", "1回目の再取得中の入力"),
+            _timestamped_entry("2026-09-01T00:00:07Z", "2回目の再取得中の入力"),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_timestamped_entry("2026-09-01T00:00:07Z", "委譲先のタスク入力")],
+    )
+
+    assert evidence.main([str(transcript), "--observation-boundary", "2026-09-01T00:00:02Z"]) == 0
+    initial_events = _read_jsonl(capsys, raw=True)
+    known_locators = {(event["record"], event["line"]) for event in initial_events}
+    additions_by_reconciliation = []
+    for boundary in [
+        "2026-09-01T00:00:04Z",
+        "2026-09-01T00:00:06Z",
+        "2026-09-01T00:00:08Z",
+        "2026-09-01T00:00:09Z",
+    ]:
+        assert evidence.main([str(transcript), "--observation-boundary", boundary]) == 0
+        additional_users = [
+            event
+            for event in _read_jsonl(capsys, raw=True)
+            if event["kind"] == "user" and event["record"] == "main" and (event["record"], event["line"]) not in known_locators
+        ]
+        additions_by_reconciliation.append([event["text"] for event in additional_users])
+        known_locators.update((event["record"], event["line"]) for event in additional_users)
+
+    assert additions_by_reconciliation == [
+        ["初回境界後の入力"],
+        ["1回目の再取得中の入力"],
+        ["2回目の再取得中の入力"],
+        [],
+    ]
+
+
+def test_elapsed_until_after_reconciliation_includes_finalization_time(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """再照合後の成果確定時刻までを経過時間へ含める。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:01Z", "開始"),
+            _timestamped_entry("2026-09-01T00:00:07Z", "再取得中の入力"),
+        ],
+    )
+    final_reconciliation_boundary = "2026-09-01T00:00:09Z"
+    finalized_at = "2026-09-01T00:00:12Z"
+
+    assert evidence.main([str(transcript), "--observation-boundary", final_reconciliation_boundary]) == 0
+    _read_jsonl(capsys, raw=True)
+    assert evidence.main([str(transcript), "--elapsed-until", finalized_at]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "session-elapsed",
+            "start": "2026-09-01T00:00:01Z",
+            "until": finalized_at,
+            "elapsed_seconds": 11,
+        }
+    ]
+
+
+def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
+    """再照合の固定点と成果確定後の計測時刻を規範本文から検査する。"""
+    skill = (pathlib.Path(__file__).resolve().parents[1] / "SKILL.md").read_text(encoding="utf-8")
+    problem_candidates = skill.split("## 問題候補の抽出\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    elapsed_analysis = skill.split("## 所要時間の分析と改善提案\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+
+    fixed_point_rule = (
+        "12. メインは振り返り担当の初回返却後、手順3の観測境界を照合済み境界の初期値とし、"
+        "追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受領していない状態になるまで"
+        "次の再照合を繰り返す。"
+    )
+    elapsed_boundary_rule = (
+        "メインは振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
+    )
+
+    assert fixed_point_rule in problem_candidates
+    assert elapsed_boundary_rule in elapsed_analysis
+    assert "手順12" not in elapsed_analysis
+
+
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,

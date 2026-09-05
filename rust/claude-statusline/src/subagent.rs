@@ -32,8 +32,8 @@ use unicode_width::UnicodeWidthChar;
 const SEP: &str = " · ";
 const ELLIPSIS: &str = "…";
 const GAP_MIN: usize = 2;
-const DEFAULT_COLUMNS: usize = 80;
-const NAME_WIDTH_DIVISOR: usize = 3;
+pub(crate) const DEFAULT_COLUMNS: usize = 80;
+pub(crate) const NAME_WIDTH_DIVISOR: usize = 3;
 const MODEL_SHORT_PATTERNS: &[(&str, &str)] = &[
     ("opus", "Opus"),
     ("sonnet", "Sonnet"),
@@ -126,15 +126,34 @@ pub fn render_task(
     let cap = width / NAME_WIDTH_DIVISOR;
     let col_width =
         name_width.unwrap_or_else(|| display_width(&name_column(task, &description)).min(cap));
-    let name_present = col_width > 0;
-    let mut padded_name = String::new();
-    if name_present {
-        let name_col = fit_name_column(task, col_width, &description);
-        let pad = col_width.saturating_sub(display_width(&name_col));
-        padded_name = format!("{name_col}{}", " ".repeat(pad));
-    }
-
     let right_parts = build_right_parts(task, now);
+    let name_col = fit_name_column(task, col_width, &description);
+    Some(render_line(
+        &name_col,
+        &description,
+        &right_parts,
+        width,
+        col_width,
+    ))
+}
+
+/// 名前列・説明・右寄せ要素を、端末幅内の共通レイアウトへ整形する。
+pub(crate) fn render_line(
+    name_column: &str,
+    description: &str,
+    right_parts: &[String],
+    width: usize,
+    name_width: usize,
+) -> String {
+    let name_present = name_width > 0;
+    let padded_name = if name_present {
+        let fitted_name = truncate(name_column, name_width);
+        let pad = name_width.saturating_sub(display_width(&fitted_name));
+        format!("{fitted_name}{}", " ".repeat(pad))
+    } else {
+        String::new()
+    };
+
     let right = right_parts.join(SEP);
     let right_present = !right.is_empty();
 
@@ -151,7 +170,7 @@ pub fn render_task(
     }
     let desc_budget = width.saturating_sub(reserved);
     let desc = if !description.is_empty() {
-        truncate(&description, desc_budget)
+        truncate(description, desc_budget)
     } else {
         String::new()
     };
@@ -176,11 +195,11 @@ pub fn render_task(
     };
 
     let line = line.trim_end().to_string();
-    Some(if display_width(&line) > width {
+    if display_width(&line) > width {
         truncate(&line, width)
     } else {
         line
-    })
+    }
 }
 
 fn name_column(task: &Map<String, Value>, description: &str) -> String {
@@ -306,7 +325,7 @@ fn as_number(value: Option<&Value>) -> Option<f64> {
 }
 
 /// `startTime`からの経過時間を`1h23m`・`4m56s`・`45s`形式へ整形する。解釈不能・未来時刻はNone。
-fn format_elapsed(start_time: Option<&Value>, now: DateTime<Utc>) -> Option<String> {
+pub(crate) fn format_elapsed(start_time: Option<&Value>, now: DateTime<Utc>) -> Option<String> {
     let start = parse_start_time(start_time?)?;
     let seconds = (now - start).num_seconds();
     if seconds < 0 {
@@ -345,11 +364,11 @@ fn parse_start_time(value: &Value) -> Option<DateTime<Utc>> {
 }
 
 /// `description`内の改行を空白へ置換し、連続する空白を1個へ畳んで1行化する。
-fn normalize_description(text: &str) -> String {
+pub(crate) fn normalize_description(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn short_model_name(model_id: &str) -> String {
+pub(crate) fn short_model_name(model_id: &str) -> String {
     let lowered = model_id.to_lowercase();
     for (pattern, label) in MODEL_SHORT_PATTERNS {
         if lowered.contains(pattern) {
@@ -363,7 +382,7 @@ fn short_model_name(model_id: &str) -> String {
 ///
 /// `unicode-width`クレートの`width_cjk()`はAmbiguous幅を2カラム扱いする
 /// （`width()`は1カラム扱いのため不採用）。
-fn display_width(text: &str) -> usize {
+pub(crate) fn display_width(text: &str) -> usize {
     text.chars().map(|c| c.width_cjk().unwrap_or(1)).sum()
 }
 

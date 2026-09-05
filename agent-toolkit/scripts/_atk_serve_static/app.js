@@ -1335,7 +1335,6 @@ function handleFocusIn() {
 }
 
 function bindEvents() {
-  const currentMount = isCurrentMount;
   document.addEventListener('focusin', handleFocusIn);
   byId('global-error-close-button').addEventListener('click', () => {
     setGlobalError('');
@@ -1364,7 +1363,7 @@ function bindEvents() {
     currentPage = 1;
     pagination.page = 1;
     searchTimer = setTimeout(() => {
-      if (currentMount()) loadEntries({announce: true});
+      if (isCurrentMount()) loadEntries({announce: true});
     }, 250);
   });
   byId('edit-button').addEventListener('click', enterEdit);
@@ -1392,6 +1391,7 @@ let initialization = Promise.resolve();
 // SSE購読。`unmount`で閉じるため保持する。
 let eventSource = null;
 let isCurrentMount = () => false;
+let initialized = false;
 
 function initializeApp() {
   const currentMount = isCurrentMount;
@@ -1419,7 +1419,11 @@ function initializeApp() {
 
 function mount(currentMount) {
   isCurrentMount = currentMount;
-  bindEvents();
+  if (!initialized) {
+    bindEvents();
+    initialized = true;
+  }
+  document.addEventListener('focusin', handleFocusIn);
   initializeApp();
 }
 
@@ -1440,19 +1444,6 @@ function unmount() {
     searchTimer = null;
   }
   initialization = Promise.resolve();
-  entries = [];
-  currentEntry = null;
-  detailOrigin = null;
-  detailOriginKey = '';
-  currentPage = 1;
-  pagination = {page: 1, page_size: ENTRY_PAGE_SIZE, page_count: 1, total_count: 0};
-  knownUwiBaselineReady = false;
-  knownUwiFilenames.clear();
-  pendingListRequests = 0;
-  pendingOperations.clear();
-  dialogOrigins.clear();
-  dialogStack.length = 0;
-  refreshFocusRequested = false;
 }
 
 window.__atkScreens = window.__atkScreens || {};

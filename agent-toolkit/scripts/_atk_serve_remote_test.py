@@ -1,5 +1,6 @@
 """リモートホスト側ヘルパーの起動bootstrapのテスト。"""
 
+import io
 import json
 import pathlib
 import shutil
@@ -40,7 +41,6 @@ def test_bootstrap_runs_helper_without_file_global(
     helper_name: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`python -c`と同じ名前空間でbootstrapを実行し、ヘルパーが一覧を返すことを確認する。"""
     home = tmp_path / "home"
@@ -49,6 +49,11 @@ def test_bootstrap_runs_helper_without_file_global(
     shutil.copy(_SCRIPTS_DIR / helper_name, installed)
     _isolate_environment(home, tmp_path, monkeypatch)
     monkeypatch.setattr(sys, "argv", ["-c", "list"])
+    stdin = io.TextIOWrapper(io.BytesIO(), encoding="ascii")
+    stdout_buffer = io.BytesIO()
+    stdout = io.TextIOWrapper(stdout_buffer, encoding="ascii")
+    monkeypatch.setattr(sys, "stdin", stdin)
+    monkeypatch.setattr(sys, "stdout", stdout)
     # `python -c`はモジュール`__main__`のグローバルを渡す。`__file__`は束縛されていない。
     namespace: dict[str, typing.Any] = {"__name__": "__main__"}
 
@@ -56,9 +61,8 @@ def test_bootstrap_runs_helper_without_file_global(
         exec(bootstrap, namespace)  # pylint: disable=exec-used
 
     assert excinfo.value.code == 0
-    captured = capsys.readouterr()
-    assert "NameError" not in captured.err
-    json.loads(captured.out)
+    stdout.flush()
+    json.loads(stdout_buffer.getvalue().decode("utf-8"))
 
 
 def test_helper_resolves_own_root_from_bound_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,7 +85,9 @@ def test_helper_resolves_own_root_from_bound_file(tmp_path: pathlib.Path, monkey
 def test_bootstrap_avoids_shell_metacharacters(bootstrap: str, helper_name: str) -> None:
     """bootstrapはPOSIXシェルとcmd.exeの双方で1つのダブルクォート引数として渡せる文字だけで構成する。"""
     assert helper_name in bootstrap
-    assert not set(bootstrap) & set('"$%<>|&^')
+    assert "sys.stdout.reconfigure(encoding='utf-8', newline=chr(10))" in bootstrap
+    assert "sys.stdin.reconfigure(encoding='utf-8')" in bootstrap
+    assert not set(bootstrap) & set('"$%<>|&^\\')
 
 
 def _isolate_environment(home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

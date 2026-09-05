@@ -45,15 +45,15 @@ review_contract:
 
 ## レビュー修正
 
-`レビュー基準: 計画`の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。`レビュー基準: CI記録`ではCI記録へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には、前者では最初の実装担当の起動前に検収したworktreeの完全OID、後者では原因commitの親の完全OIDを使う。初回の実装レビュー担当を新規に起動する場合は、レビュー基準、`レビュー種別: 初回レビュー`、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`の絶対パス及び生成済みの`review_contract`を入力へ加えて渡す。
+`レビュー基準: 計画`の実装レビューは対象計画へ照合した後、同じコンテキストで`review_contract`へ照合する。`レビュー基準: CI記録`ではCI記録へ照合した後、同じコンテキストで`review_contract`へ照合する。公開契約基準には、前者では最初の実装担当の起動前に検収したworktreeの完全OID、後者では原因commitの親の完全OIDを使う。初回の新規起動では1行目で`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を指し、レビュー基準、`レビュー種別: 初回レビュー`及び生成済みの`review_contract`を名前付き入力とする。
 レビュー担当へ渡す開始時点の完全OIDは、渡す直前に`git -C <対象worktreeの絶対パス> rev-parse --verify --quiet <検収したOID>^{commit}`を実行し、終了コード0で出力された文字列をそのまま渡す。
 終了コードが0でない場合はレビュー担当を起動せず、実行したコマンドと終了コードを呼び出し元へ返す。記憶、転記又は短縮形からの復元でOIDを組み立てない。
 
 同worktreeだけへ単一の修正用の実装担当を割り当て、新規起動では`agents_server.start`へ`model_type="execute"`を渡す。継続接続では同じ`model_type`を保持する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
-新規起動では`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`と`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`を渡す。
-あわせて元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、AWIファイル名一覧、複製元と対象外worktreeも渡す。
-起動文へ担当種別を`レビュー修正担当`として明示する。
+新規起動は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`を指す。
+必須入力の項目は同書の`## 入力`が列挙するものとし、`担当種別`の値を`レビュー修正担当`とする。
+`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.subagent.md`、元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、AWIファイル名一覧、複製元と対象外worktreeも同じ形式で加える。
 実装レビュー指摘管理表の絶対パスと`implementation-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
 ファイル名と配置は`agent-toolkit:plan-mode`の計画ファイル基準が定める。
 修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。

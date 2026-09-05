@@ -9,9 +9,9 @@ from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _HOOK = pathlib.Path(__file__).resolve().parent / "hook.py"
 _WARNING_BODY = (
-    "agents_serverのsessionに、観測を試みていない作業が残っている。"
-    "wait(session_id)で観測するか、結果が不要ならkill(session_id)で破棄してから終了する。"
-    "send_messageは新しい作業を配送するだけで観測しないため、この警告は解消しない。"
+    "`agents_server`の`session`に、観測を試みていない作業が残っている。"
+    "`wait(session_id)`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
+    "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )
 

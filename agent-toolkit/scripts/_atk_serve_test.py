@@ -2286,7 +2286,7 @@ def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Pat
     for document in (assets.HTML, assets.PLANS_HTML, assets.SESSIONS_HTML):
         navigation = re.search(r'<nav class="app-nav"[^>]*>(.*?)</nav>', document, re.DOTALL)
         assert navigation is not None
-        assert re.findall(r">([^<>]+)</a>", navigation.group(1)) == ["WI", "計画ファイル", "セッション"]
+        assert re.findall(r">([^<>]+)</a>", navigation.group(1)) == ["ワークアイテム", "計画ファイル", "セッション"]
         assert re.findall(r'href="__BASE_PATH_HTML__(/[a-z]*)"', navigation.group(1)) == ["/", "/plans", "/sessions"]
     # 現在の画面だけが`aria-current`を持つ。
     assert assets.HTML.count('aria-current="page"') == 1
@@ -2350,6 +2350,26 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
     assert (await client.get("/api/sessions/detail")).status_code == 400
     assert (await client.get("/api/sessions/detail?engine=claude&path=../etc/passwd.jsonl")).status_code == 404
     assert (await client.get("/api/sessions/detail?engine=unknown&path=a.jsonl")).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["file", "raw"])
+async def test_plan_file_apis_return_plan_file_error_status(tmp_path: pathlib.Path, route: str) -> None:
+    """計画ファイル取得APIは取得層が分類した未検出と入力不正の状態コードを返す。"""
+    app = serve_app.create_app(
+        tmp_path,
+        config.ServeConfig("127.0.0.1", 28766),
+        state.ServeState(tmp_path),
+        plans_context=serve_plans.create_context(
+            root=tmp_path / "plans",
+            hostname="local-host",
+            remote_hosts=["remote-host"],
+        ),
+    )
+    client = app.test_client()
+
+    assert (await client.get(f"/api/plans/{route}?path=missing.md")).status_code == 404
+    assert (await client.get(f"/api/plans/{route}?path=../secret.md&host=remote-host")).status_code == 400
 
 
 def test_config_resolves_plans_and_sessions_sources(tmp_path: pathlib.Path) -> None:
@@ -4418,7 +4438,7 @@ async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
     assert manifest_response.headers["Cache-Control"] == "no-cache"
     manifest = await manifest_response.get_json()
     assert manifest == {
-        "name": "WI管理",
+        "name": "ワークアイテム",
         "short_name": "atk serve",
         "start_url": "/",
         "scope": "/",

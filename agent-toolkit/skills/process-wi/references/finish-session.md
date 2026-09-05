@@ -32,16 +32,14 @@ AWIが明示するPR又はMR、release、tag、配布等の終端工程は、①
 
 ## セッション終了
 
-最後に`agent-toolkit:completion-report`を起動する。同スキルは`agent-toolkit:process-wi`実行条件により`agent-toolkit:session-review`を必ず実施し、固有成果と振り返り結果を1回だけ報告する。
+最後に`agent-toolkit:completion-report`を起動する。同スキルは`agent-toolkit:process-wi`実行条件により`agent-toolkit:session-review`を必ず実施する。振り返りの即時対応でcommitした場合は、同スキルの報告前に「生成物とpush」節の版数判定、生成同期、push及びCI確認を完了する。この再公開でsession-reviewを再実施しない。
 
-`agent-toolkit:session-review`の実施と並行して、対象リポジトリのホスティングサービス上の自動コードレビューが過去のPull Request又はMerge Requestへ投稿した未解決の指摘を確認する。
-自動コードレビューはマージ後に時間差で投稿するため、当該の変更を提出したセッションでは観測できない。
-確認は読み取り専用の探索委譲で行い、メインは委譲先が返した指摘の一覧と所在だけを受け取る。
-メイン自身が全件の本文を読まない。
-メインは検出した未対応の指摘ごとに、当該セッションで是正するか`agent-toolkit:wi-standards`に従ってAWIを登録するかを確定してから③を完了する。
-既に是正済みで未解決スレッドだけが残る指摘は、メインが解決操作の要否を判定する。
+session-reviewと必要な再公開の完了後、completion-reportが固有成果と振り返り結果を報告する前に、対象リポジトリがGitHub上にある場合だけ自動コードレビューを確認する。この確認をsession-reviewと並列実行しない。GitHub Copilotの取得と判定は`github-copilot-review-audit.md`を全文読んで実行する。GitHub以外の対象リポジトリでは、以降の自動コードレビュー確認を行わない。
 
-振り返りの結果を「即時対応」で修正してcommitした場合は、報告の前に「生成物とpush」節の版数判定と生成同期を当該commitへ適用し、pushとCI確認まで完了する。CIが失敗した場合は「CI失敗」節の経路で処理する。この再公開でsession-reviewを再実施しない。
-報告完了後に`agent-toolkit:exit-session`を起動する。
+新しい自動レビューの到着を能動的に待機せず、session-reviewに要した自然な経過時間の後に1回だけ取得する。未対応の指摘ごとに、当該セッションで是正するか`agent-toolkit:wi-standards`に従ってAWIを登録するかを確定する。既に是正済み又は根拠付きで対応不要と確定した指摘の未解決threadは解決する。取得に失敗した場合は完了として報告せず、必須の外部資料を取得できない場合の確認経路へ送る。
+
+監査で同一セッションの是正を選んで成果物を変更した場合は、「生成物とpush」節及び必要な「固有の終端工程」を適用し、版数更新、生成同期、検査、commit、push、CI及びrelease反映を完遂する。この公開後にsession-review又は自動レビュー監査を繰り返さない。AWIへの記録を選んだ場合は追加の公開工程を行わない。
+
+確認は読み取り専用の探索委譲で行い、メインは委譲先が返した全指摘の所在、判定及び処置を受け取る。completion-reportは確定した固有成果と振り返り結果を1回だけ報告し、報告完了後に`agent-toolkit:exit-session`を起動する。
 
 active一覧を再取得して追加分を同じセッションへ混ぜず、追加分は次回セッションで扱う。

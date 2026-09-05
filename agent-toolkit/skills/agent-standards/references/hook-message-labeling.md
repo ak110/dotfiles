@@ -17,10 +17,10 @@
 
 ## サフィックス
 
-メッセージ本文の末尾に以下の英文を一行追加する。
+メッセージ本文の末尾に次の一行を追加する。
 
 ```text
-(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)
+（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）
 ```
 
 コーディングエージェントに対して「妥当性を文脈と照らして判断してから行動する」ことを明示する。
@@ -33,7 +33,7 @@ hookスクリプトごとに次のようなヘルパーを持ち、発出箇所�
 
 ```python
 _MESSAGE_PREFIX = "[auto-generated: myplugin/myhook]"
-_MESSAGE_SUFFIX = "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+_MESSAGE_SUFFIX = "（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
 
 def _llm_notice(body: str) -> str:
     return f"{_MESSAGE_PREFIX} {body} {_MESSAGE_SUFFIX}"

@@ -69,10 +69,8 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
 
     decision = json.loads(capsys.readouterr().out)
     assert decision["decision"] == "block"
-    assert decision["reason"].startswith(
-        "[auto-generated: agent-toolkit/subagent-stop][block] Provide a non-empty completion report"
-    )
-    assert "Fix: Write a non-empty completion report and stop again." in decision["reason"]
+    assert decision["reason"].startswith("[auto-generated: agent-toolkit/subagent-stop][block] 停止する前に")
+    assert "Fix: 空でない完了報告を書いてから、あらためて停止する。" in decision["reason"]
 
 
 def test_pending_child_with_nonempty_report_is_approved(

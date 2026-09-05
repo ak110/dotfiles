@@ -55,7 +55,7 @@ _STATE_KEY = "autonomous_exit_invoked"
 # 起動元のCLIや起動時のスキル名は判定していないため、本文では例示として扱わない。
 _REASON_BODY = """\
 このセッションには常駐ループの終了保証が適用される。
-agent-toolkit:process-wiの全工程を完了し、agent-toolkit:completion-reportで完了報告した後に、agent-toolkit:exit-sessionを起動する。
+`agent-toolkit:process-wi`の全工程を完了し、`agent-toolkit:completion-report`で完了報告した後に、`agent-toolkit:exit-session`を起動する。
 未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。"""
 
 
@@ -107,7 +107,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
         _REASON_BODY,
-        fix="Complete all listed prerequisites, then invoke /agent-toolkit:exit-session.",
+        fix="列挙した前提工程をすべて完了してから、/agent-toolkit:exit-sessionを起動する。",
     )
     return "block", reason
 

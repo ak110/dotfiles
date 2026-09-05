@@ -33,11 +33,13 @@ Codexでは`type`が`compacted`のレコードとして残り、所要時間の�
 ## 集計値の典拠
 
 セッション記録から集計したトークン量、リクエスト数又は所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
-抽出器は`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`とし、`--stats`を付けて実行する。
+抽出器は`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`とする。
+トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
 自作の集計を典拠にしない。
 Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。抽出器は当該重複を最後の`usage`だけへ畳み込んだ値を返す。
+`--elapsed-until`が返す`elapsed_seconds`は、セッションの最初のレコードの時刻から指定した時刻までの差であり、当該時刻より後に実施する工程を含まない。
 `--stats`が返す総量と工程別の内訳は基準が異なる。
-総量の`elapsed_seconds`はセッションの最初と最後のレコードの時刻差である。
+総量の`elapsed_seconds`はセッションの最初と最後のレコードの時刻差であり、抽出した時点より後の工程を含まない。
 工程別の`stats-tool`が示す秒はツール呼び出しごとの区間であり、親セッションと委譲先が並行して動く区間は重複して計上される。
 このため工程別の合計は総量を超えることがある。
 比率を提示する場合は、この基準差を同じ本文へ併記する。

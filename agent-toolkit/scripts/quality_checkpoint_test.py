@@ -39,7 +39,7 @@ def test_compact_emits_non_blocking_quality_context(capsys: pytest.CaptureFixtur
     assert output["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert notice.startswith("[auto-generated: agent-toolkit/quality_checkpoint]")
     assert subject.QUALITY_CHECKPOINT_NOTICE in notice
-    assert "Auto-generated hook notice" in notice
+    assert "自動生成のhook通知" in notice
 
 
 def test_notice_excludes_search_suppression() -> None:

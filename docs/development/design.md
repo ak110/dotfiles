@@ -222,6 +222,36 @@ backend側で個別に取り除く案が成立しないことにある。同じ�
 却下した代替案は、backendごとに除去処理を複製する案と、委譲先の各コマンド呼び出しで回避する案である。
 前者は同じ契約が複数箇所へ分かれ、後者は回避策を規範や起動文へ書き足す恒常費が残る。
 
+## agents_server sessionのstatusline表示
+
+`agents_server`が`start`・`start_explore`・`start_shell`で起動したsessionは、Claude CodeのUIでは`wait`の応答が届くまで状態を観測できない。
+このため`agents_server`は、ルートセッションごとのディレクトリへ生存中のsessionの状態ファイルを出力し、`claude-statusline`の`statusline`モードがセッション行の次の行以降へ1 sessionを1行で表示する。
+
+状態ファイルは`atk config get state_dir`が返すディレクトリ配下の`agents-server/<ルートセッション識別子>/<書込主体>.json`とする。
+ルートセッション識別子は`AGENT_TOOLKIT_OWNER_SESSION`、無ければ`CLAUDE_CODE_SESSION_ID`から取り、statuslineが受け取る入力JSONの`session_id`と同じ値である。
+Claude Codeが直接起動した`agents_server`は`root.json`を書き、委譲先の中で起動した`agents_server`は自身を収容するsessionの識別子を名前とするファイルを書く。
+収容sessionの識別子は、Claude backendの委譲先では`AGENT_TOOLKIT_DELEGATED_SESSION`が示すとおり自身の`CLAUDE_CODE_SESSION_ID`、Codex backendの委譲先では`CODEX_THREAD_ID`から取る。いずれも親の`agents_server`が公開する`session_id`と同じ値である。
+Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継承した`AGENT_TOOLKIT_DELEGATED_SESSION`を除く。
+除かない場合、Claude委譲先の中で起動したCodex委譲先がClaude委譲先と誤判定される。
+Codexホストから直接起動した`agents_server`はいずれの識別子も持たないため状態ファイルを書かない。
+書込側はsession状態の更新を1秒で集約し、自身の生存中のsession全体を原子的に全置換する。
+ルートの書込主体はMCPの開始時にディレクトリ配下を空にして前回プロセスの残存を除き、終了時にディレクトリを削除する。入れ子の書込主体は自身のファイルだけを書き、終了時に削除する。
+プロセスの生存確認とheartbeatは設けない。異常終了で残るファイルの影響は同じルートセッションの表示に閉じ、次回の`agents_server`起動で除かれるためである。
+読取側はLinuxで`XDG_STATE_HOME`又は`HOME/.local/state`、Windowsで`LOCALAPPDATA`から同じディレクトリを解決する。platformdirsの`user_state_dir`と同じ規則である。
+
+表示対象は結果本文を未回収で、終端結果の保持期限（30分）に達していないsessionとする。`wait`又は`kill`の応答が`agent_message`を返した時点、又は保持期限の到達で表示から外す。
+実行中だけに限定しないのは、回収し忘れたsessionを可視化するためである。保持期限の到達後は結果本文を回収できないため、表示を続けても回収にはつながらない。
+入れ子の書込主体の行は、収容sessionの行の直後へ深さに応じて字下げして置く。収容sessionの行が無い場合は末尾へ置く。
+Claude Codeのstatuslineはメッセージ到着などのイベントでだけ再実行されるため、`wait`の待機中は表示が更新されない。
+配布設定の`statusLine`へ`refreshInterval`を置き、待機中も経過時間と終端を反映する。
+
+知識境界として、session状態の意味（`status`、`progress`、結果の回収）は`agent-toolkit/scripts/_agents_server_state.py`が持ち、状態ファイルはその射影である。
+statuslineは状態ファイルを表示するだけで、sessionの制御と結果の回収をしない。
+
+却下した代替案は、PostToolUseフックが記録する`agents_server_sessions`の状態を表示に流用する案と、状態ファイルを一時ディレクトリへ置く案である。
+前者は`start`・`wait`の応答時点だけを観測し、実行中の進捗と終端を表示できない。
+後者はPythonの`tempfile.gettempdir()`とRustの`std::env::temp_dir()`で環境変数の参照順が異なり、同じ環境でも別のパスへ分岐し得る。
+
 ## 大出力コマンドの分離実行
 
 目的は、広域検索、全体テスト、大量のログ取得のように出力量が大きいコマンドの結果で呼び出し元のコンテキストを消費せず、終了状態と要約だけを受け取ることである。
@@ -1224,7 +1254,9 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインが版数・生成物同期、push、CI及び終端工程を1回だけ実行する。
 
-`agent-toolkit:process-wi`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りが即時対応のcommitを生む場合は、固定報告の前に同じ版数判定・生成同期・push・CI確認を当該commitへ1巡だけ適用する。振り返りを再実施しないことで、公開経路と振り返りの相互再帰を避ける。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
+`agent-toolkit:process-wi`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`を実施し、必要な再公開の完了後、固定報告の前に`agent-toolkit:process-wi`が実行時点の全PR又はMRの自動コードレビューを1回確認する。review本文、inline comment及びthreadをpaginationの終端まで取得し、確認時点の未対応指摘を是正又はAWIへ記録する。新しいレビューの到着を能動的に待機せず、session-reviewと並列実行しない。同一セッション是正で成果物を変更した場合は通常の公開工程を完遂し、その公開後にsession-review又は自動レビュー監査を繰り返さない。
+
+`agent-toolkit:completion-report`は固有成果と振り返り結果を1回だけ固定報告し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
 
 本文の明示記載を不可逆操作の認可とし、明記のない操作はUWIへ送る。
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、

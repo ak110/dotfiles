@@ -2077,8 +2077,8 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
 
     navigation = harness.page.locator("nav.app-nav")
     await navigation.wait_for(state="visible")
-    assert await navigation.locator("a").all_inner_texts() == ["WI", "計画ファイル", "セッション"]
-    assert await navigation.locator('a[aria-current="page"]').inner_text() == "WI"
+    assert await navigation.locator("a").all_inner_texts() == ["ワークアイテム", "計画ファイル", "セッション"]
+    assert await navigation.locator('a[aria-current="page"]').inner_text() == "ワークアイテム"
 
     await navigation.get_by_role("link", name="計画ファイル").click()
     await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
@@ -2090,7 +2090,7 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
     assert harness.page.url == harness.base_url + "/sessions"
     assert await harness.page.locator('nav.app-nav a[aria-current="page"]').inner_text() == "セッション"
 
-    await harness.page.locator("nav.app-nav").get_by_role("link", name="WI").click()
+    await harness.page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     await harness.page.locator("#entry-list").wait_for(state="visible")
     assert harness.page.url == harness.base_url + "/"
 
@@ -2114,6 +2114,114 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
     assert await page.evaluate("() => window.__atkReloadMarker") == "kept"
     assert await page.evaluate("() => location.pathname") == "/sessions"
+
+
+@pytest.mark.asyncio
+async def test_navigation_preloads_all_screens_without_refetching_html(screen_harness: _ScreenHarness) -> None:
+    """起動時に3画面を先読みし、画面切替では保持したHTMLを使う。"""
+    harness = screen_harness
+    page = harness.page
+    screen_urls = [harness.base_url + path for path in ("/", "/plans", "/sessions")]
+    await page.goto(screen_urls[0])
+    await page.locator("#entry-list").wait_for(state="visible")
+    await page.wait_for_timeout(100)
+
+    assert all(harness.requests.count(url) == 1 for url in screen_urls)
+    before = {url: harness.requests.count(url) for url in screen_urls}
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("#sessions .session-item").first.wait_for(state="visible")
+
+    assert {url: harness.requests.count(url) for url in screen_urls} == before
+
+
+@pytest.mark.asyncio
+async def test_navigation_waits_for_inflight_preload_without_duplicate_request(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """先読み中の画面へ移動しても同じHTMLを二重に要求しない。"""
+    harness = screen_harness
+    page = harness.page
+    both_requested = asyncio.Event()
+    release = asyncio.Event()
+    requested_paths: set[str] = set()
+
+    async def delay_preload(route: playwright.async_api.Route) -> None:
+        requested_paths.add(urllib.parse.urlparse(route.request.url).path)
+        if requested_paths == {"/plans", "/sessions"}:
+            both_requested.set()
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/plans", delay_preload)
+    await page.route("**/sessions", delay_preload)
+    await page.goto(harness.base_url + "/")
+    await asyncio.wait_for(both_requested.wait(), timeout=5)
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    assert harness.requests.count(harness.base_url + "/plans") == 1
+    release.set()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    assert harness.requests.count(harness.base_url + "/plans") == 1
+
+
+@pytest.mark.asyncio
+async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _ScreenHarness) -> None:
+    """3画面の入力値とワークアイテム画面の算出フォントサイズを往復後も保持する。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list").wait_for(state="visible")
+    initial_font_size = await page.locator("body").evaluate("element => getComputedStyle(element).fontSize")
+    await page.locator("#search-input").fill("ワークアイテム条件")
+
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    await page.locator("#filter").fill("計画条件")
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("#sessions .session-item").first.wait_for(state="visible")
+    await page.locator("#filter").fill("セッション条件")
+
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    assert await page.locator("#filter").input_value() == "計画条件"
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+    assert await page.locator("#search-input").input_value() == "ワークアイテム条件"
+    assert await page.locator("body").evaluate("element => getComputedStyle(element).fontSize") == initial_font_size
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    assert await page.locator("#filter").input_value() == "セッション条件"
+
+
+@pytest.mark.asyncio
+async def test_navigation_connects_only_the_visible_screen_dom(screen_harness: _ScreenHarness) -> None:
+    """画面往復後も`#screen-root`は表示中の1件だけをDOMへ接続する。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/")
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+
+    assert await page.locator("#screen-root").count() == 1
+
+
+@pytest.mark.asyncio
+async def test_remount_does_not_duplicate_plan_navigation_listeners(screen_harness: _ScreenHarness) -> None:
+    """計画画面を再mountした後も、1回の次項目操作で一覧を1件だけ進める。"""
+    harness = screen_harness
+    (harness.root / "second.md").write_text("# 2件目\n", encoding="utf-8")
+    (harness.root / "third.md").write_text("# 3件目\n", encoding="utf-8")
+    page = harness.page
+    await page.goto(harness.base_url + "/plans")
+    files = page.locator("#files .file")
+    await playwright.async_api.expect(files).to_have_count(3)
+    names = await files.all_inner_texts()
+    await files.first.click()
+
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("#sessions .session-item").first.wait_for(state="visible")
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#next-btn").click()
+
+    assert await page.locator("#files .file.active").inner_text() == names[1]
 
 
 @pytest.mark.asyncio
@@ -2379,7 +2487,7 @@ async def test_remount_discards_initial_response_from_previous_mount(
         "**/api/entries?type=all&status=active&answered=all&page=1",
         {"entries": [], "warnings": []},
         "計画ファイル",
-        "WI",
+        "ワークアイテム",
         "#entry-list .entry-select",
     )
     await exercise(
@@ -2394,7 +2502,7 @@ async def test_remount_discards_initial_response_from_previous_mount(
         "/sessions",
         "**/api/sessions/list",
         {"sessions": [], "warnings": []},
-        "WI",
+        "ワークアイテム",
         "セッション",
         "#sessions .session-item",
     )

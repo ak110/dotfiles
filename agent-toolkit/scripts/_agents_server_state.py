@@ -49,6 +49,17 @@ AUTO_RESUME_NOTICE = (
 )
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
+_TOUCH_LISTENERS: set[Callable[[], None]] = set()
+
+
+def add_touch_listener(listener: Callable[[], None]) -> None:
+    """session状態の更新通知先を登録する。"""
+    _TOUCH_LISTENERS.add(listener)
+
+
+def remove_touch_listener(listener: Callable[[], None]) -> None:
+    """session状態の更新通知先を解除する。"""
+    _TOUCH_LISTENERS.discard(listener)
 
 
 class SessionOwnerGoneError(RuntimeError):
@@ -181,6 +192,9 @@ class SessionState:
     engine: str = "codex"
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
+    label: str = ""
+    announced: bool = False
+    started_at: str = dataclasses.field(default_factory=_utc_now)
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     turn_id: str = ""
     status: str = "running"
@@ -244,6 +258,8 @@ class SessionState:
                 self.retention_deadline = asyncio.get_running_loop().time() + RESULT_RETENTION_SECONDS
         else:
             self.retention_deadline = None
+        for listener in tuple(_TOUCH_LISTENERS):
+            listener()
 
     def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
         """公開契約へ状態を射影する。内部のturn識別子は含めない。"""
@@ -327,6 +343,7 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.auto_resume_deadline = None
     session.pending_result = None
     session.retention_deadline = None
+    session.started_at = _utc_now()
     if reset_progress:
         session.reset_progress()
     session.touch()

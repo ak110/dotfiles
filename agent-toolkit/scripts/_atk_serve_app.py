@@ -821,7 +821,7 @@ def _register_shell_routes(app: quart.Quart) -> None:
         base_path = _safe_base_path(quart.request.root_path)
         root_url = f"{base_path}/"
         body = {
-            "name": "WI管理",
+            "name": "ワークアイテム",
             "short_name": "atk serve",
             "start_url": root_url,
             "scope": root_url,
@@ -863,9 +863,9 @@ def _register_shell_routes(app: quart.Quart) -> None:
         return png_response(assets.ICON_512_PNG)
 
 
-def _no_store(body: str, content_type: str) -> quart.Response:
+def _no_store(body: str, content_type: str, *, status: int = 200) -> quart.Response:
     """計画ファイル・セッションの応答を常に再取得させるヘッダーで返す。"""
-    return quart.Response(body, content_type=content_type, headers={"Cache-Control": "no-store"})
+    return quart.Response(body, status=status, content_type=content_type, headers={"Cache-Control": "no-store"})
 
 
 def _json_no_store(payload: typing.Any) -> quart.Response:
@@ -962,14 +962,20 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
     @app.get("/api/plans/file")
     async def plans_file() -> quart.Response:
         host, source_id, rel = _plan_request_target(context)
-        body = await serve_plans.render_file_html(context, host, source_id, rel)
+        try:
+            body = await serve_plans.render_file_html(context, host, source_id, rel)
+        except serve_plans.PlanFileError as error:
+            return _no_store(error.message, "text/plain; charset=utf-8", status=error.status)
         return _no_store(body, "text/html; charset=utf-8")
 
     @app.get("/api/plans/raw")
     async def plans_raw() -> quart.Response:
         # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため経路を分離する。
         host, source_id, rel = _plan_request_target(context)
-        text, _mtime = await serve_plans.resolve_text_and_mtime(context, host, source_id, rel)
+        try:
+            text, _mtime = await serve_plans.resolve_text_and_mtime(context, host, source_id, rel)
+        except serve_plans.PlanFileError as error:
+            return _no_store(error.message, "text/plain; charset=utf-8", status=error.status)
         content_type = "text/plain; charset=utf-8" if serve_plans.is_review_table_path(rel) else "text/markdown; charset=utf-8"
         return _no_store(text, content_type)
 

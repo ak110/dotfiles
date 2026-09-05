@@ -30,12 +30,10 @@ _REQUIRED_STRING_FIELDS = (
 )
 
 QUALITY_CHECKPOINT_NOTICE = (
-    "Keep the original user-visible purpose explicit. Prefer the minimum design that is "
-    "sufficient for the required scenario. Separate agent-facing conversation guidance "
-    "from durable artifact context, and keep conversation-only directives out of artifacts. "
-    "Fail explicitly when requirements are not met. Remove unsupported fallback, legacy, "
-    "and compatibility paths instead of preserving them without evidence. "
-    "Treat AGENTS.md and the agent-toolkit rules as the source of truth."
+    "ユーザーが観測する本来の目的を明示する。必要な利用場面を満たす最小の設計を選ぶ。"
+    "エージェント向けの会話上の案内と永続的な成果物の文脈を分離し、会話だけに適用する指示を成果物へ混入させない。"
+    "要件を満たさない場合は明示的に失敗させる。根拠のないフォールバック、旧経路及び互換経路は温存せず撤去する。"
+    "`AGENTS.md`とagent-toolkitの規範を正本として扱う。"
 )
 
 

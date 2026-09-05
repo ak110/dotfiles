@@ -14,6 +14,5 @@ from _message_format import llm_notice
 def test_llm_notice_wraps_body_with_standard_markers(tag: str, expected_prefix: str) -> None:
     """タグ有無にかかわらず共通プレフィックス・本文・サフィックスを保つ。"""
     assert llm_notice("本文", "agent-toolkit/example", tag=tag) == (
-        f"{expected_prefix} 本文 "
-        "(Auto-generated hook notice; evaluate relevance against the conversation context before acting.)"
+        f"{expected_prefix} 本文 （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
     )
