@@ -1,4 +1,4 @@
-"""session-reviewAWIのユーザーコメント節を抽出・更新する。"""
+"""session-review AWIのユーザーコメント節を抽出・更新する。"""
 
 import _atk_wi_frontmatter as frontmatter
 import markdown_it

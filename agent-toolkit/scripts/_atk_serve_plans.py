@@ -1725,7 +1725,7 @@ def _oldest_host_per_file(entries: list[FileEntry]) -> list[FileEntry]:
     集約の対象は`NEW_SOURCE_ID`のroot（private-notes配下のplans）に限る。
     同rootは全環境で同期される場合があり、同一のファイルが各ホストのエントリとして重複する。
     更新は最初に作成したホストで行われるため、作成日時が最も古いエントリだけを残す。
-    `ctime_epoch`が同値の場合は`(host, path)`の昇順で先頭を選び、選択を決定的にする。
+    `ctime_epoch`が同値の場合は`host`の昇順で先頭を選び、入力順に依存しない決定的な選択にする。
 
     旧root（`~/.claude/plans`）と設定で明示したrootはホスト間で同期されない。
     これらは`source_id`と相対パスが同じでもホストごとに別のファイルであるため、集約せず全件を保持する。

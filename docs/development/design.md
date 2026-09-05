@@ -1224,7 +1224,9 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインが版数・生成物同期、push、CI及び終端工程を1回だけ実行する。
 
-`agent-toolkit:process-wi`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`と固定報告を完了し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りが即時対応のcommitを生む場合は、固定報告の前に同じ版数判定・生成同期・push・CI確認を当該commitへ1巡だけ適用する。振り返りを再実施しないことで、公開経路と振り返りの相互再帰を避ける。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
+`agent-toolkit:process-wi`は全レーン、版数・生成物同期、push、CI及び固有終端工程の完了後に`agent-toolkit:completion-report`を起動する。`agent-toolkit:completion-report`は必須の`agent-toolkit:session-review`を実施し、必要な再公開の完了後、固定報告の前に`agent-toolkit:process-wi`が実行時点の全PR又はMRの自動コードレビューを1回確認する。review本文、inline comment及びthreadをpaginationの終端まで取得し、確認時点の未対応指摘を是正又はAWIへ記録する。新しいレビューの到着を能動的に待機せず、session-reviewと並列実行しない。同一セッション是正で成果物を変更した場合は通常の公開工程を完遂し、その公開後にsession-review又は自動レビュー監査を繰り返さない。
+
+`agent-toolkit:completion-report`は固有成果と振り返り結果を1回だけ固定報告し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。振り返りをpush前へ移す案は、push後のCI結果と公開操作を振り返りの入力から外すため採用しない。
 
 本文の明示記載を不可逆操作の認可とし、明記のない操作はUWIへ送る。
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、
