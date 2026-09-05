@@ -15,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+import typing
 
 import _atk_config as _config
 import _atk_git_sync
@@ -158,6 +159,21 @@ def _availability_probe_env(env: dict[str, str], orchestrator: str) -> dict[str,
 def _session_creation_flags(orchestrator: str, *, platform: str = os.name) -> int:
     """Windows Codexを親process-loopと別のコンソール制御グループで起動する。"""
     return _CREATE_NEW_PROCESS_GROUP if platform == "nt" and orchestrator == "codex" else 0
+
+
+def _reset_console(*, platform: str = os.name, stream: typing.TextIO | None = None) -> None:
+    """POSIXのターミナルを初期化し、子セッションが残した表示状態を復旧する。"""
+    if platform != "posix":
+        return
+    output = sys.stdout if stream is None else stream
+    try:
+        if not output.isatty():
+            return
+    except (AttributeError, ValueError):
+        return
+    executable = shutil.which("reset")
+    if executable is not None:
+        subprocess.run([executable], check=False)
 
 
 def _create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
@@ -974,6 +990,7 @@ def _run_process_session(
         cwd=session_path,
         creationflags=_session_creation_flags(orchestrator),
     )
+    _reset_console()
     _console_title.set_console_title("atk wi process-loop")
     _process_loop_log.append(
         "session_end",

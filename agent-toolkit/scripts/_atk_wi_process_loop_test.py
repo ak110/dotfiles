@@ -6,7 +6,9 @@ process-loopサブコマンド（常駐ループ）、リモートURL正規化�
 `_atk_wi_mutations_test.py`に分離する。共通ヘルパーは`atk_test.py`から再利用する。
 """
 
+import argparse
 import contextlib
+import io
 import os
 import pathlib
 import stat
@@ -2558,6 +2560,85 @@ class TestConsoleTitleReset:
         _process_loop._check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
         assert calls
         assert all(call == "atk wi process-loop" for call in calls)
+
+    @pytest.mark.parametrize(
+        ("platform", "tty_result", "reset_path", "expected"),
+        [
+            ("posix", True, "/usr/bin/reset", [["/usr/bin/reset"]]),
+            ("nt", True, "/usr/bin/reset", []),
+            ("posix", False, "/usr/bin/reset", []),
+            ("posix", True, None, []),
+            ("posix", AttributeError, "/usr/bin/reset", []),
+            ("posix", ValueError, "/usr/bin/reset", []),
+        ],
+    )
+    def test_reset_console_runs_only_on_posix_tty_with_reset_available(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        platform: str,
+        tty_result: bool | type[Exception],
+        reset_path: str | None,
+        expected: list[list[str]],
+    ) -> None:
+        """POSIXのTTYでresetを解決できる場合だけコンソールを初期化する。"""
+        calls: list[list[str]] = []
+
+        class TestStream(io.StringIO):
+            def isatty(self) -> bool:
+                if isinstance(tty_result, type) and issubclass(tty_result, Exception):
+                    raise tty_result
+                assert isinstance(tty_result, bool)
+                return tty_result
+
+        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            assert kwargs == {"check": False}
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(_process_loop.shutil, "which", lambda command: reset_path if command == "reset" else None)
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        _process_loop._reset_console(  # pylint: disable=protected-access  # noqa: SLF001
+            platform=platform,
+            stream=TestStream(),
+        )
+
+        assert calls == expected
+
+    def test_console_is_reset_between_child_session_and_title_reset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """子セッション終了後、タイトル再設定より前にコンソールを初期化する。"""
+        calls: list[str] = []
+
+        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append("session")
+            return subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(_process_loop, "_build_session_argv", lambda *_a, **_kw: (["claude"], None))
+        monkeypatch.setattr(_process_loop._process_loop_log, "append", lambda *_a, **_kw: None)  # pylint: disable=protected-access  # noqa: SLF001
+        monkeypatch.setattr(_process_loop, "_session_env", lambda env, _orchestrator: env)
+        monkeypatch.setattr(_process_loop, "_session_creation_flags", lambda _orchestrator: 0)
+        monkeypatch.setattr(_process_loop, "_reset_console", lambda: calls.append("reset"))
+        monkeypatch.setattr(_process_loop._console_title, "set_console_title", lambda _title: calls.append("title"))  # pylint: disable=protected-access  # noqa: SLF001
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = _process_loop._run_process_session(  # pylint: disable=protected-access  # noqa: SLF001
+            argparse.Namespace(no_update=True),
+            tmp_path,
+            "prompt",
+            {},
+            orchestrator="claude",
+            model="model",
+            effort="effort",
+            resume_pending=False,
+            dotfiles_root=None,
+        )
+
+        assert result is False
+        assert calls == ["session", "reset", "title"]
 
 
 class TestWorktreeWriterGate:
