@@ -80,7 +80,7 @@ description: >
 推奨ガイドまたは同期対象マトリクスが対象とするファイル群を更新した場合、
 同一セッション内で実行主体が`agent-toolkit:add-awi`をSkill機能で起動し、
 他プロジェクト向けの追従提案を各リポジトリのAWIとして投入する。
-複数リポジトリでは同スキルの`references/cross-repository-submission.md`に従う。
+複数リポジトリでは`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`に従う。
 
 - 追従提案の本文には適用すべき変更内容を対象リポジトリ単独で実施できる粒度で転記し、
   更新元のリポジトリ名とコミットを関連情報として併記する
