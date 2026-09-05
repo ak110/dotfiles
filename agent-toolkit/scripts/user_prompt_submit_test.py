@@ -14,10 +14,25 @@ import time
 
 import _fork_runner
 import pytest
+import user_prompt_submit
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
+_NOTICE_PREFIX = "[auto-generated: agent-toolkit/user_prompt_submit][warn] "
+_NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
+_EXPECTED_VERIFICATION_NOTICE_BODY = (
+    "発話が示す事実と是正要求は現物（原文・実装・規範・実行結果）で照合してから応答する。"
+    "照合に用いた手段と結果を応答へ書く。照合できない場合は同意も変更もしない。"
+    "同一の論点で2回目以降の差し替えを求められた場合は`AskUserQuestion`で意図を確認する。"
+)
+
+
+def _notice_body(context: str) -> str:
+    """標準プレフィックスとサフィックスを検証し、通知本文を返す。"""
+    assert context.startswith(_NOTICE_PREFIX)
+    assert context.endswith(_NOTICE_SUFFIX)
+    return context.removeprefix(_NOTICE_PREFIX).removesuffix(_NOTICE_SUFFIX)
 
 
 def _run(
@@ -88,7 +103,9 @@ class TestNonMatchingPrompts:
         )
         assert result.returncode == 0
         assert result.stdout == ""
-        assert _read_state(tmp_path, sid) == {}
+        state = _read_state(tmp_path, sid)
+        assert set(state) == {"last_user_prompt_at"}
+        assert isinstance(state["last_user_prompt_at"], float)
 
     def test_ignores_unrelated_slash(self, tmp_path: pathlib.Path):
         sid = "unrelated-slash"
@@ -99,7 +116,7 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert _read_state(tmp_path, sid) == {}
 
-    def test_claude_ignores_codex_skill_command(self, tmp_path: pathlib.Path):
+    def test_claude_treats_codex_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "claude-dollar-command"
         result = _run(
             {"session_id": sid, "prompt": "$agent-toolkit:process-wi"},
@@ -108,9 +125,11 @@ class TestNonMatchingPrompts:
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert _read_state(tmp_path, sid) == {}
+        state = _read_state(tmp_path, sid)
+        assert set(state) == {"last_user_prompt_at"}
+        assert isinstance(state["last_user_prompt_at"], float)
 
-    def test_codex_ignores_claude_skill_command(self, tmp_path: pathlib.Path):
+    def test_codex_treats_claude_skill_command_as_normal_prompt(self, tmp_path: pathlib.Path):
         sid = "codex-slash-command"
         result = _run(
             {
@@ -123,7 +142,9 @@ class TestNonMatchingPrompts:
 
         assert result.returncode == 0
         assert result.stdout == ""
-        assert _read_state(tmp_path, sid) == {}
+        state = _read_state(tmp_path, sid)
+        assert set(state) == {"last_user_prompt_at"}
+        assert isinstance(state["last_user_prompt_at"], float)
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
         """空入力・prompt欠落payloadでexit 0、状態不変。"""
@@ -180,6 +201,156 @@ class TestNonMatchingPrompts:
         assert result.returncode == 0
         assert state["process_wi_skill_invoked"] is True
         assert state["plan_mode_skill_invoked"] is True
+
+
+class TestVerificationNoticeInjection:
+    """通常発話の間隔に応じた照合指示の注入契約を検証する。"""
+
+    @staticmethod
+    def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+        path.write_text(json.dumps(state), encoding="utf-8")
+
+    def test_injects_notice_after_interval(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-after-interval"
+        self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 200})
+
+        result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert _notice_body(context) == _EXPECTED_VERIFICATION_NOTICE_BODY
+
+    @pytest.mark.parametrize(
+        ("session_id", "payload"),
+        [
+            ("verification-claude-dollar", {"prompt": "$PATHを確認する"}),
+            ("verification-codex-slash", {"prompt": "/homeを確認する", "model": "gpt-5"}),
+        ],
+    )
+    def test_nonmatching_host_command_prefix_is_normal_prompt(
+        self,
+        tmp_path: pathlib.Path,
+        session_id: str,
+        payload: dict,
+    ) -> None:
+        previous = time.time() - 200
+        self._write_state(tmp_path, session_id, {"last_user_prompt_at": previous})
+
+        result = _run({"session_id": session_id, **payload}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert _notice_body(context) == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert _read_state(tmp_path, session_id)["last_user_prompt_at"] > previous
+
+    def test_claims_notice_at_exact_threshold(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        states = {
+            "exact": {"last_user_prompt_at": 20.0},
+            "before": {"last_user_prompt_at": 20.0},
+        }
+
+        def update_state(session_id: str, mutator) -> None:
+            states[session_id] = mutator(states[session_id])
+
+        monkeypatch.setattr(user_prompt_submit, "update_state", update_state)
+
+        assert (
+            user_prompt_submit._claim_verification_notice(  # noqa: SLF001  # pylint: disable=protected-access
+                "exact", 200.0
+            )
+            is True
+        )
+        assert (
+            user_prompt_submit._claim_verification_notice(  # noqa: SLF001  # pylint: disable=protected-access
+                "before", 199.9
+            )
+            is False
+        )
+        assert states["exact"]["last_user_prompt_at"] == 200.0
+        assert states["before"]["last_user_prompt_at"] == 199.9
+
+    def test_does_not_inject_within_interval(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-within-interval"
+        self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 10})
+
+        result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_does_not_inject_on_first_prompt(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-first-prompt"
+
+        result = _run({"session_id": sid, "prompt": "最初の通常発話です。"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        state = _read_state(tmp_path, sid)
+        assert set(state) == {"last_user_prompt_at"}
+        assert isinstance(state["last_user_prompt_at"], float)
+
+    def test_does_not_inject_for_harness_message(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-harness-message"
+        previous = time.time() - 200
+        self._write_state(tmp_path, sid, {"last_user_prompt_at": previous})
+
+        result = _run({"session_id": sid, "prompt": "<task-notification>完了</task-notification>"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert _read_state(tmp_path, sid)["last_user_prompt_at"] == previous
+
+    def test_does_not_inject_for_slash_command(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-slash-command"
+        previous = time.time() - 200
+        self._write_state(tmp_path, sid, {"last_user_prompt_at": previous})
+
+        result = _run({"session_id": sid, "prompt": "/plan-mode"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        state = _read_state(tmp_path, sid)
+        assert state["plan_mode_skill_invoked"] is True
+        assert state["last_user_prompt_at"] == previous
+
+    def test_codex_payload_receives_same_notice(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-codex"
+        self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 200})
+
+        result = _run(
+            {"session_id": sid, "prompt": "通常のユーザー発話です。", "model": "gpt-5"},
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert hook_output["hookEventName"] == "UserPromptSubmit"
+        assert _notice_body(hook_output["additionalContext"]) == _EXPECTED_VERIFICATION_NOTICE_BODY
+        assert "sessionTitle" not in hook_output
+
+    def test_emits_session_title_and_notice_in_single_json(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-title-and-notice"
+        home = tmp_path / "home"
+        plan = home / ".claude" / "plans" / "current-plan.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# 計画\n", encoding="utf-8")
+        self._write_state(
+            tmp_path,
+            sid,
+            {"current_plan_file_path": str(plan), "last_user_prompt_at": time.time() - 200},
+        )
+
+        result = _run(
+            {"session_id": sid, "prompt": "通常のユーザー発話です。"},
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+
+        assert result.returncode == 0
+        hook_output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert hook_output["sessionTitle"] == "current-plan"
+        assert _notice_body(hook_output["additionalContext"]) == _EXPECTED_VERIFICATION_NOTICE_BODY
 
 
 class TestClaudePlanSessionTitle:

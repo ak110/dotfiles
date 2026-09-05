@@ -48,6 +48,9 @@
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に偽へ戻す。セッション終了まで保持する
 - `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
   `agent-toolkit/scripts/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
+- `last_user_prompt_at`: `agent-toolkit/scripts/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
+  同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。
+  ハーネスが挿入した通知とコマンド起動では記録も注入もしない。セッション終了まで保持し、リセット経路は設けない
 
 ## agents_server連携系
 

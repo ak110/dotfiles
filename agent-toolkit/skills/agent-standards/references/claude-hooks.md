@@ -202,6 +202,12 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 この契約はClaude Code専用であり、Codex payload（`model`又はCodexのターン識別子を持つ入力）では
 `sessionTitle`を出力しない。
 
+ユーザー発話への応答契約を注入するhookは、同一セッションの直前の通常発話からの経過時間を状態として保持し、
+閾値以上経過した通常発話にだけ`additionalContext`を返す。
+初回の通常発話は注入の対象から除くが、経過時間の基準となる時刻を記録する。
+初回を含む通常発話では当該時刻を更新し、ハーネスが挿入した通知及びコマンド起動では記録も注入もしない。
+この注入はホストを問わず有効であり、Codex payloadでも同じ`additionalContext`を返す。
+
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
 Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、

@@ -5,9 +5,11 @@ import os
 import pathlib
 import re
 import subprocess
+import time
 
 import _fork_runner
 import pytest
+from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(
@@ -425,6 +427,19 @@ def _run(payload: dict, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[s
     )
 
 
+def _run_user_prompt_submit(payload: dict, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmp_path)
+    env["TEMP"] = str(tmp_path)
+    env["TMP"] = str(tmp_path)
+    return _fork_runner.run_script(
+        _SCRIPT,
+        argv=("user_prompt_submit",),
+        input=json.dumps(payload, ensure_ascii=False),
+        env=env,
+    )
+
+
 def _write_english_transcript(tmp_path: pathlib.Path, message_id: str) -> pathlib.Path:
     transcript = tmp_path / "transcript.jsonl"
     entry = {
@@ -510,3 +525,44 @@ def test_response_language_block_is_japanese(tmp_path: pathlib.Path) -> None:
     result = _run(payload, tmp_path)
     assert result.returncode == 2
     assert _is_japanese_notice(result.stderr)
+
+
+def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> None:
+    sid = "japanese-verification-notice"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+    state_path.write_text(json.dumps({"last_user_prompt_at": time.time() - 200}), encoding="utf-8")
+
+    result = _run_user_prompt_submit({"session_id": sid, "prompt": "通常のユーザー発話です。"}, tmp_path)
+
+    assert result.returncode == 0
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert _is_japanese_notice(context)
+
+
+def test_user_facing_preamble_warning_is_japanese(tmp_path: pathlib.Path) -> None:
+    transcript = tmp_path / "japanese-preamble.jsonl"
+    entry = {
+        "type": "assistant",
+        "message": {
+            "id": "japanese-preamble",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "これは質問本文よりも十分に長い直前の地の文です。"}],
+            "stop_reason": "end_turn",
+        },
+    }
+    transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    result = _run(
+        {
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [{"question": "質問", "header": "確認", "options": [{"label": "案", "description": "説明"}]}]
+            },
+            "transcript_path": str(transcript),
+        },
+        tmp_path,
+    )
+
+    assert result.returncode == 0
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert _is_japanese_notice(context)
