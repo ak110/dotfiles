@@ -37,7 +37,10 @@ def _git_output(args: list[str], *, label: str) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """上流commit IDが変化した場合だけupdate-dotfilesを起動する。"""
+    """上流commit IDが変化した場合だけupdate-dotfilesを起動する。
+
+    euryaleでは利用者が配布先を直接編集しないため、確認入力を待たずに反映する。
+    """
     parser = argparse.ArgumentParser(description="origin/developの変化時だけdotfilesを更新する")
     parser.parse_args(argv)
     try:
@@ -83,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"update-dotfilesが未配置です: {update_dotfiles}", file=sys.stderr)
             return 1
         print(f"{_UPSTREAM}が変化しました: local {local_commit}, upstream {upstream_commit}")
-        return _run([str(update_dotfiles)], capture_output=False).returncode
+        return _run([str(update_dotfiles), "--force"], capture_output=False).returncode
     except (OSError, subprocess.SubprocessError) as error:
         print(f"上流更新の確認に失敗しました: {error}", file=sys.stderr)
         return 1

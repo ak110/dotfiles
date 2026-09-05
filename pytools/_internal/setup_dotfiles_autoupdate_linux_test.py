@@ -72,6 +72,7 @@ def test_run_passes_absolute_paths_and_unit_contents(
     assert received["service_unit_path"] == pathlib.Path.home() / ".config/systemd/user/dotfiles-autoupdate.service"
     assert received["timer_unit_path"] == pathlib.Path.home() / ".config/systemd/user/dotfiles-autoupdate.timer"
     service_content = str(received["service_unit_content"])
+    assert systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT in service_content
     assert f"ExecStart={uv} run --no-project --script {script}" in service_content
     assert (
         received["timer_unit_content"]

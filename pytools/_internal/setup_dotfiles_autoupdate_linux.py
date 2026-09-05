@@ -17,7 +17,7 @@ Description=Update dotfiles when origin/develop changed
 
 [Service]
 Type=oneshot
-ExecStart={uv} run --no-project --script {script}
+{path_environment}ExecStart={uv} run --no-project --script {script}
 """
 
 _TIMER_UNIT_CONTENT = """[Unit]
@@ -58,7 +58,11 @@ def run() -> bool:
         service_unit_path=unit_dir / _SERVICE_NAME,
         timer_unit_path=unit_dir / _TIMER_NAME,
         executable_path=uv,
-        service_unit_content=_SERVICE_UNIT_TEMPLATE.format(uv=uv, script=script),
+        service_unit_content=_SERVICE_UNIT_TEMPLATE.format(
+            path_environment=systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT,
+            uv=uv,
+            script=script,
+        ),
         timer_unit_content=_TIMER_UNIT_CONTENT,
         log_tag="dotfiles-autoupdate",
         timer_name=_TIMER_NAME,

@@ -172,6 +172,9 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
     転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
   - ホスト固有の待受設定と、計画ファイル・セッションの参照元はunitへ書かず
     `~/.config/agent-toolkit/serve.toml`で与える
+- unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdの既定PATHをこの順に指定する
+  - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
+  - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
   - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
   - ランチャーが最新バージョンの`scripts/atk.py`を実行時に解決する
@@ -207,10 +210,13 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
   upstreamが`origin/develop`であることを検証したうえで、`git ls-remote`で取得した`origin/develop`のcommit IDを
   ローカル`HEAD`と比較する
   - 一致する場合は何もせず正常終了し、`update-dotfiles`を起動しない
-  - 一致しない場合だけ`bin/update-dotfiles`を絶対パスで起動し、その終了コードを引き継ぐ
+  - 一致しない場合だけ`bin/update-dotfiles`を絶対パスかつ`--force`付きで起動し、その終了コードを引き継ぐ
+    - euryaleでは利用者が配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する
   - 作業ツリーのstash、reset及びcleanは行わない。手動実行との重複は`update-dotfiles`の排他ロックへ委ねる
-- systemdユーザーマネージャーのPATHにはdotfilesの`bin`と`uv`が含まれないため、unitのExecStartには
-  導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込む
+- systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
+  導入時に解決した`uv`と当該スクリプトの絶対パスを埋め込み、あわせて`Environment=PATH`を指定する
+  - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
+  - 指定順は`~/.local/bin`、miseのshims、systemdの既定PATHとし、実体を持つコマンドをshimより優先する
 - GitHubへの接続失敗、対象refの欠落、branch又はupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
 - dotfilesの作業ツリーに追跡済みの未コミット差分がある場合、`update-dotfiles`の`git pull --rebase`が失敗して

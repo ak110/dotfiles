@@ -584,6 +584,9 @@
 - 2026年8月: process-loopの子セッション正常終了後に、開始前更新と同じ`update-dotfiles --force`が同一反復で二重実行された。
   直接原因: 開始前更新を残したまま正常終了後の配布反映経路を追加していた。
   対策: 反復内は開始前更新1回に限定し、正常終了後の2回目を削除する
+- 2026年9月: euryaleの`dotfiles-autoupdate.service`が10分ごとに起動しながら毎回1段目で失敗した。
+  直接原因: systemdユーザーunitへ`Environment=PATH`が無く、`update-dotfiles`が実行ファイル名で起動する`chezmoi`を解決できなかった。
+  対策: unit生成側でPATHを明示し、`~/.local/bin`とmiseのshimsを既定PATHの前へ置く
 - 2026年8月28日: process-loopのCodex起動文が開始後のready項目も同じセッションで処理するよう明示していた一方、
   `agent-toolkit:process-feedbacks`が起動時の対象集合を固定し、追加分を次回セッションへ送る逆の契約を持っていた。
   直接原因: `agent-toolkit:process-feedbacks`の処理集合変更時に呼出元のprocess-loop起動文と既存設計の連続処理条件を照合せず、
