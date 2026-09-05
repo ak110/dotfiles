@@ -114,7 +114,7 @@ class TestPlanPostWrite:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert "post-write checks" in result.stdout
+        assert "書き込み後の検査" in result.stdout
         assert "does not conform" not in result.stdout
         assert _read_state(state_dir, "plan-write")["current_plan_file_path"] == str(plan)
 
@@ -142,7 +142,7 @@ class TestPlanPostWrite:
         )
         assert result.returncode == 0
         assert "does not conform" not in result.stdout
-        assert "post-write checks" in result.stdout
+        assert "書き込み後の検査" in result.stdout
 
     def test_read_textlint_reference_does_not_record_plan_state(self, tmp_path: pathlib.Path) -> None:
         """文章lint資料のReadは計画用状態フラグを記録しない。"""
