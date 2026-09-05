@@ -9,12 +9,16 @@ import sync_codex_agents as subject
 _TWO_LAYER_WAIT_HEADING = "### agents_serverの二層待機"
 
 
-def _root(tmp_path: Path, *, project: str = "project\n") -> Path:
+def _root(tmp_path: Path, *, project: str = "project\n", max_bytes: int = 128 * 1024) -> Path:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / subject.CODEX_CONFIG).write_text(
+        f"project_doc_max_bytes = {max_bytes}\n",
+        encoding="utf-8",
+    )
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
     return tmp_path
 
@@ -97,16 +101,20 @@ def test_main_help_does_not_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     assert exc_info.value.code == 0
 
 
-def test_size_failure_does_not_replace_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = _root(tmp_path, project="project\n")
+def test_size_failure_does_not_replace_output(tmp_path: Path) -> None:
+    root = _root(tmp_path, project="project\n", max_bytes=1)
     target = root / subject.TARGET
     target.write_text("old\n", encoding="utf-8")
     (root / "agent-toolkit/rules/01-a.md").write_text("large\n", encoding="utf-8")
-    monkeypatch.setattr(subject, "MAX_BYTES", 1)
-
     with pytest.raises(ValueError, match="超える"):
         subject.sync(root)
     assert target.read_text(encoding="utf-8") == "old\n"
+
+
+def test_config_template_uses_shared_project_doc_limit() -> None:
+    template = (subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml").read_text(encoding="utf-8")
+    assert 'include (joinPath .chezmoi.workingTree "scripts/codex_config.toml") | fromToml' in template
+    assert 'setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes' in template
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

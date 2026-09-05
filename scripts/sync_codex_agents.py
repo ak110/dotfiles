@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tomllib
 from pathlib import Path
 
 from codex_shared_rules import CODEX_EXCLUDED_RULE_NAMES, is_codex_shared_rule
@@ -24,7 +25,7 @@ BASE_SOURCE = Path("agent-toolkit/share/codex-agents-base.md")
 RULES_SOURCE = Path("agent-toolkit/rules")
 TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
-MAX_BYTES = 128 * 1024
+CODEX_CONFIG = Path("scripts/codex_config.toml")
 GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files.pyで再生成する。手動編集禁止。 -->"
 
 
@@ -44,12 +45,21 @@ def render(root: Path = REPO_ROOT) -> str:
     return "\n".join(sections) + "\n"
 
 
+def _project_doc_max_bytes(root: Path) -> int:
+    with (root / CODEX_CONFIG).open("rb") as config_file:
+        value: object = tomllib.load(config_file)["project_doc_max_bytes"]
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError("project_doc_max_bytesは整数で指定する")
+    return value
+
+
 def sync(root: Path = REPO_ROOT) -> bool:
     """生成物を冪等同期し、変更した場合はTrueを返す。"""
     content = render(root)
     project_content = (root / PROJECT_AGENTS).read_bytes()
-    if len(content.encode()) + len(project_content) > MAX_BYTES:
-        raise ValueError(f"Codex instruction chainが{MAX_BYTES} bytesを超える")
+    max_bytes = _project_doc_max_bytes(root)
+    if len(content.encode()) + len(project_content) > max_bytes:
+        raise ValueError(f"Codex instruction chainが{max_bytes} bytesを超える")
     target = root / TARGET
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return False
