@@ -1,4 +1,4 @@
-//! Claude Code statusLine: セッション状況を2行で可視化する。
+//! Claude Code statusLine: セッション状況とagents_server sessionを可視化する。
 //!
 //! `scripts/claude_status_line.py`の後継。stdinから公式statusLine JSON入力を受け取る。
 //! 1行目はモデル名・effort・cwd・追加/削除行数・output_style名（既定値以外）を半角スペース区切りで
@@ -36,6 +36,11 @@ pub fn run(raw: &str) {
     let home = home_dir();
     for line in render_lines(&data, home.as_deref()) {
         println!("{line}");
+    }
+    if let Some(session_id) = get_nested_str(&data, &["session_id"]) {
+        for line in crate::agents_server::render_for_session(&session_id) {
+            println!("{line}");
+        }
     }
 }
 
