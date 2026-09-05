@@ -10,9 +10,9 @@
 
 ## 起動
 
-`agents_server.start`へ`model_type="plan"`を渡し、新規の計画担当へ次の入力を渡す。
+`agents_server.start`へ`model_type="plan"`を渡して新規の計画担当を起動する。
+起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を指す。次を名前付き必須入力とする。
 
-- `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の絶対パス
 - 対象
 - 要求単位の由来
 - 採否

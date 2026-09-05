@@ -8,14 +8,13 @@
 計画レビューの`track`は`plan-review`とし、計画ごとに1つの表を全ラウンドで使う。
 メインはレビュー担当の新規起動時に`agents_server.start`へ`model_type="plan_review"`を渡し、
 継続接続では同じ`model_type`を保持する。経路は`agent-toolkit:delegation`の工程別モデル設定に従う。
-起動文は受信者への命令を先頭に置き、次の絶対パス、今回のレビュー種別（`初回レビュー`又は`引き継ぎ再レビュー`）及び`round: <ラウンド番号>`の行を全レビュー共通の入力として渡す。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
+起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/plan-review.subagent.md`を指す。次の入力、今回のレビュー種別（`初回レビュー`又は`引き継ぎ再レビュー`）及び`round: <ラウンド番号>`を全レビュー共通の名前付き必須入力とする。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
 初回・再レビュー固有の入力は、後続の規定に従って追加する。
 メインは、計画レビュー担当へ渡すplugin配下の資源の絶対パスを計画レビュー工程の開始時に1回解決し、同じ工程の初回レビュー、再レビュー及び指摘反映で同じ値を使う。
 あわせて、計画レビュー担当が同じrootから自ら解決して読む`skills/plan-mode/references/plan-file-standards.md`と`skills/plan-mode/scripts/check_plan_file.py`の実在も、同じ工程の開始時に1回確認する。この確認はメインが自ら行う検査であり、解決した絶対パスを計画レビュー担当へ渡さない。
 起動前に、`${CLAUDE_PLUGIN_ROOT}/share/plan-review.subagent.md`の`## 入力`が列挙する必須入力が起動文にそろっていることと、後掲の入力のうち絶対パスで示すものが実在することを確認する。元のユーザー指示が人間由来の場合は種別、出所と引用範囲がそろっていること、常駐自動起動の場合は起動事実がそろっていることも、当該確認の対象とする。
 起動前の検査で不在又は欠落を検知した場合は、計画レビュー担当を起動せず、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## エスカレーションの事由別の扱い`が定める区分へ対応付けて扱う。
 
-- `${CLAUDE_PLUGIN_ROOT}/share/plan-review.subagent.md`
 - 正規計画（新書式は計画ファイル（メイン）・計画ファイル（詳細）の絶対パスの組、旧形式は単一パス）
 - 構造検査の対象リポジトリ。計画メタ情報の`対象リポジトリ`に記載された絶対パスをそのまま渡す
 - 差分読取用作業ツリー。変更後ファイル、Git差分及びテスト対象を読む場所とし、構造検査の対象リポジトリと同じ値になる場合も省略せずに渡す

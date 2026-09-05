@@ -8,9 +8,8 @@
 メインはキュー一覧とAWI本文を自ら取得せず、pickerへ選定させる。
 `atk config get pick_wi_model`を起動直前に実行し、候補列の先頭候補を`agent-toolkit:delegation`の工程別モデル設定に従って直接起動する。
 
-pickerへ次の入力だけを渡す。
+起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`を指す。次を名前付き必須入力とし、これ以外を渡さない。
 
-- `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`の絶対パス
 - 対象リポジトリの絶対パス
 - プロジェクト規範の絶対パス
 - ユーザーが処理対象のAWIを明示した場合は、当該ファイル名の一覧
