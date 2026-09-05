@@ -748,6 +748,28 @@ def _apply_observation_boundary(records: list[_Record], boundary: datetime.datet
     return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
+def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
+    """最初の記録から指定時刻までの経過時間イベント又はエラー文を返す。"""
+    try:
+        until = _parse_timestamp(until_text)
+    except ValueError:
+        return f"経過時間の終端が不正: {until_text}"
+    timestamps = [
+        (timestamp, record.entry["timestamp"]) for record in records if (timestamp := _record_timestamp(record)) is not None
+    ]
+    if not timestamps:
+        return ""
+    start, start_text = min(timestamps, key=lambda item: item[0])
+    if until < start:
+        return f"経過時間の終端が最初のレコードより前: {until_text}"
+    return {
+        "kind": "session-elapsed",
+        "start": start_text,
+        "until": until_text,
+        "elapsed_seconds": int((until - start).total_seconds()),
+    }
+
+
 def _token_value(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
@@ -2419,6 +2441,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "解析できない値はエラーイベントを出力して終了コード2を返す。",
     )
     parser.add_argument(
+        "--elapsed-until",
+        metavar="TIMESTAMP",
+        help="ISO 8601の時刻を経過時間の終端とし、メイン記録の最初のレコードから当該時刻までの経過秒数を返す。"
+        "解析できない値、算出できる記録が無い場合及び当該時刻が最初のレコードより前の場合は"
+        "エラーイベントを出力して終了コード2を返す。",
+    )
+    parser.add_argument(
         "--warn",
         action="store_true",
         help="セッション全体のエントリから、行頭の警告マーカーまたは"
@@ -2472,10 +2501,20 @@ def main(argv: list[str] | None = None) -> int:
         reconfigure(encoding="utf-8", errors="replace")
     args = _build_parser().parse_args(sys.argv[1:] if argv is None else argv)
     if (
-        sum((args.warn, args.grep is not None, args.detail is not None, args.stats, args.hook_notices, args.bundle is not None))
+        sum(
+            (
+                args.warn,
+                args.grep is not None,
+                args.detail is not None,
+                args.stats,
+                args.hook_notices,
+                args.bundle is not None,
+                args.elapsed_until is not None,
+            )
+        )
         > 1
     ):
-        return _print_error("--warn・--grep・--detail・--stats・--hook-notices・--bundleは併用できない")
+        return _print_error("--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-untilは併用できない")
 
     if (args.transcript_path is None) == (args.codex_thread_id is None):
         return _print_error("transcript_pathと--codex-thread-idはいずれか一方だけを指定する")
@@ -2490,11 +2529,20 @@ def main(argv: list[str] | None = None) -> int:
     records = _load_records(transcript_path)
     if records is None:
         return _print_error(f"対象記録を読み込めない: {transcript_path}")
+    boundary = None
     if args.observation_boundary is not None:
         try:
             boundary = _parse_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}")
+    if args.elapsed_until is not None:
+        event = _elapsed_until_event(records, args.elapsed_until)
+        if isinstance(event, str):
+            message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
+            return _print_error(message)
+        _print_events([event])
+        return 0
+    if boundary is not None:
         records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
     collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
