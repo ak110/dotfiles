@@ -112,7 +112,7 @@ def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], arg
                 arguments.extend((name, *child_arguments))
                 return arguments, target
             continue
-        value = str(next(iter(action.choices))) if action.choices else "value"
+        value = str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
         if action.option_strings:
             if action.required:
                 option = next(option for option in action.option_strings if option.startswith("--"))
