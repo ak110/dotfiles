@@ -303,6 +303,9 @@ class SessionResumeState:
     engine: str
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
+    label: str = ""
+    started_at: str = dataclasses.field(default_factory=_utc_now)
+    updated_at: str = dataclasses.field(default_factory=_utc_now)
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
 
     @classmethod
@@ -313,6 +316,9 @@ class SessionResumeState:
             cwd=session.cwd,
             model_type=session.model_type,
             launch_kind=session.launch_kind,
+            label=session.label,
+            started_at=session.started_at,
+            updated_at=session.updated_at,
             excluded_candidates=session.excluded_candidates,
             model=session.model,
             effort=session.effort,

@@ -320,7 +320,15 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
 
 def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     """公開ツール集合とstartの入力境界が工程別モデル設定へ密結合している。"""
-    assert set(subject.mcp._tool_manager._tools) == {"start", "start_explore", "start_shell", "wait", "send_message", "kill"}
+    assert set(subject.mcp._tool_manager._tools) == {
+        "start",
+        "start_explore",
+        "start_shell",
+        "wait",
+        "send_message",
+        "kill",
+        "list",
+    }
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     properties = start_tool.parameters["properties"]
@@ -360,7 +368,7 @@ def test_server_instructions_carry_standalone_contract() -> None:
 def test_tool_descriptions_carry_standalone_contract() -> None:
     """各ツールの公開説明だけで候補枯渇と継続不能のエラー本文を判別できる。"""
     tools = {}
-    for tool_name in ("start", "start_explore", "start_shell", "wait", "send_message", "kill"):
+    for tool_name in ("start", "start_explore", "start_shell", "wait", "send_message", "kill", "list"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         tools[tool_name] = tool
@@ -374,6 +382,91 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "sessionとbackend processは破棄しない" in tools["kill"].description
     assert "`status`へ`expired`" in tools["kill"].description
     assert "`send_message`による訂正では足りないこと" in tools["kill"].description
+    assert "結果本文は返さない" in tools["list"].description
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_path: pathlib.Path) -> None:
+    """active、再開中及び期限切れのsessionを同じ項目集合で開始順に返す。"""
+    manager = subject.AgentsServerManager(status_writer=None)
+    active = subject.SessionState(
+        "duplicate",
+        str(tmp_path),
+        model="active-model",
+        effort="medium",
+        engine="codex",
+        model_type="execute",
+        label="active",
+        started_at="2026-09-06T00:00:02+00:00",
+        updated_at="2026-09-06T00:00:05+00:00",
+    )
+    active.set_progress("実行中")
+    manager.sessions[active.session_id] = active
+    expired = state.SessionResumeState(
+        session_id="expired",
+        cwd=str(tmp_path),
+        model="expired-model",
+        effort="high",
+        engine="claude",
+        model_type="plan",
+        launch_kind="delegate",
+        label="expired",
+        started_at="2026-09-06T00:00:01+00:00",
+        updated_at="2026-09-06T00:00:04+00:00",
+    )
+    manager.expired_sessions[expired.session_id] = expired
+    pending_state = state.SessionResumeState(
+        session_id="pending",
+        cwd=str(tmp_path),
+        model="pending-model",
+        effort="low",
+        engine="codex",
+        model_type="execute_fast",
+        launch_kind="explore",
+        label="pending",
+        started_at="2026-09-06T00:00:03+00:00",
+        updated_at="2026-09-06T00:00:06+00:00",
+    )
+
+    async def pending_session() -> subject.SessionState:
+        await asyncio.Future()
+        raise AssertionError("unreachable")
+
+    task = asyncio.create_task(pending_session())
+    manager._pending_resumes[pending_state.session_id] = subject._PendingResume(
+        state=pending_state,
+        task=task,
+        prompt=state.ResumePrompt("続行"),
+    )
+    manager.expired_sessions[active.session_id] = state.SessionResumeState.from_session(active)
+    try:
+        response = manager.list_sessions()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
+    expected_keys = {
+        "session_id",
+        "engine",
+        "model",
+        "effort",
+        "model_type",
+        "launch_kind",
+        "status",
+        "progress",
+        "label",
+        "started_at",
+        "updated_at",
+        "result_available",
+    }
+    assert all(set(session) == expected_keys for session in response["sessions"])
+    assert response["sessions"][0]["status"] == "expired"
+    assert response["sessions"][0]["progress"] == ""
+    assert response["sessions"][1]["status"] == "running"
+    assert response["sessions"][1]["progress"] == "実行中"
+    assert response["sessions"][2]["status"] == "running"
+    assert response["sessions"][2]["progress"] == ""
 
 
 def test_delegation_break_even_guidance_is_available_before_calling() -> None:
@@ -3101,6 +3194,9 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             model=None,
             effort=None,
             engine="claude",
+            label=session.label,
+            started_at=session.started_at,
+            updated_at=session.updated_at,
         )
     }
     with pytest.raises(ValueError, match="session retention expired: claude-expired"):

@@ -230,6 +230,68 @@ class AgentsServerManager:
             return pending.state
         raise self._unresolved_session_error(session_id, label=unknown_label)
 
+    def list_sessions(self) -> dict[str, list[dict[str, Any]]]:
+        """保持中のsessionを開始時刻順の公開項目へ射影する。"""
+        loop_time = asyncio.get_running_loop().time()
+        for session_id, session in tuple(self.sessions.items()):
+            if session.retention_deadline is not None and loop_time >= session.retention_deadline:
+                self._expire_session(session_id)
+
+        listed: dict[str, dict[str, Any]] = {}
+        for session in self.sessions.values():
+            listed[session.session_id] = {
+                "session_id": session.session_id,
+                "engine": session.engine,
+                "model": session.model,
+                "effort": session.effort,
+                "model_type": session.model_type,
+                "launch_kind": session.launch_kind,
+                "status": session.status,
+                "progress": session.progress,
+                "label": session.label,
+                "started_at": session.started_at,
+                "updated_at": session.updated_at,
+                "result_available": session.result_available,
+            }
+        for pending in self._pending_resumes.values():
+            session = pending.state
+            listed.setdefault(
+                session.session_id,
+                {
+                    "session_id": session.session_id,
+                    "engine": session.engine,
+                    "model": session.model,
+                    "effort": session.effort,
+                    "model_type": session.model_type,
+                    "launch_kind": session.launch_kind,
+                    "status": "running",
+                    "progress": "",
+                    "label": session.label,
+                    "started_at": session.started_at,
+                    "updated_at": session.updated_at,
+                    "result_available": False,
+                },
+            )
+        for session in self.expired_sessions.values():
+            listed.setdefault(
+                session.session_id,
+                {
+                    "session_id": session.session_id,
+                    "engine": session.engine,
+                    "model": session.model,
+                    "effort": session.effort,
+                    "model_type": session.model_type,
+                    "launch_kind": session.launch_kind,
+                    "status": "expired",
+                    "progress": "",
+                    "label": session.label,
+                    "started_at": session.started_at,
+                    "updated_at": session.updated_at,
+                    "result_available": False,
+                },
+            )
+        return {"sessions": sorted(listed.values(), key=lambda session: session["started_at"])}
+
     @staticmethod
     def _unresolved_session_error(session_id: str, *, label: str) -> ValueError:
         """未解決の識別子を体系相違または失われたsessionとして診断する。
@@ -847,9 +909,10 @@ with warnings.catch_warnings():
     mcp = FastMCP(
         "agents_server",
         instructions=(
-            "CodexまたはClaudeへの非同期委譲。承認・停止・一覧操作は公開しない。\n"
+            "CodexまたはClaudeへの非同期委譲。承認操作は公開しない。\n"
             "`start`と`start_explore`でsessionを開始し、`start_shell`でコマンドの実行と要約を委譲する。"
-            "`wait`で終端と結果本文を受け取る。継続は`send_message`、実行中turnの中断は`kill`で行う。\n"
+            "`wait`で終端と結果本文を受け取る。`list`は保持中のsessionの状態をまとめて返す。"
+            "継続は`send_message`、実行中turnの中断は`kill`で行う。\n"
             "`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
             "同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
@@ -1034,6 +1097,18 @@ async def kill(
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`progress`へ空文字列、`kill_requested`へ`false`を設定した応答を返す。応答の項目は他の成功応答と同じとする。
     """
     return await _MANAGER.kill(session_id, timeout)
+
+
+@mcp.tool(name="list", structured_output=True)
+async def list_sessions() -> dict[str, list[dict[str, Any]]]:
+    """保持中のsessionの状態を開始順に返す。
+
+    各sessionの`session_id`、`engine`、`model`、`effort`、`model_type`、`launch_kind`、`status`、`progress`、`label`、`started_at`、`updated_at`及び`result_available`を返す。
+    結果本文は返さないため、終端の観測と結果の受領は`wait`で行う。
+    終端結果の保持期限を過ぎたsessionは`status`へ`expired`、`progress`へ空文字列を設定して含める。
+    保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
+    """
+    return _MANAGER.list_sessions()
 
 
 def _prepare_child_environment() -> None:
