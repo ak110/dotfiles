@@ -283,6 +283,8 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_agents_server_codex.py",
         "_agents_server_claude.py",
         "_agents_server_state.py",
+        "_agents_server_status_file.py",
+        "_atomic_file.py",
         "_atk_config.py",
         "_atk_help.py",
         "_inherited_venv.py",
@@ -1868,9 +1870,12 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
         raise RuntimeError("capture complete")
 
     monkeypatch.setattr(codex_backend.asyncio, "create_subprocess_exec", create_subprocess)
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: "owner-session")
     client = codex_backend.JsonRpcProcess(lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0))
     with pytest.raises(RuntimeError, match="capture complete"):
         await client.start()
+    environment = observed.pop("env")
     assert observed == {
         "stdin": asyncio.subprocess.PIPE,
         "stdout": asyncio.subprocess.PIPE,
@@ -1878,6 +1883,8 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
         "limit": codex_backend.APP_SERVER_STREAM_LIMIT_BYTES,
         "cwd": codex_backend.APP_SERVER_WORKING_DIRECTORY,
     }
+    assert environment["AGENT_TOOLKIT_OWNER_SESSION"] == "owner-session"
+    assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in environment
     assert observed["limit"] > 64 * 1024
 
 

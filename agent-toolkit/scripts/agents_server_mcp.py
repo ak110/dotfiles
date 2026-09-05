@@ -20,6 +20,7 @@ from uuid import UUID
 
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
+import _agents_server_status_file as status_file
 import _atk_config
 import _inherited_venv
 import _wait_schedule
@@ -34,6 +35,8 @@ from _agents_server_state import (
     _validate_model_effort,
     _validate_prompt,
     _validate_shell_request,
+    add_touch_listener,
+    remove_touch_listener,
 )
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -110,11 +113,19 @@ def _shell_prompt(command: str, summary_policy: str) -> str:
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
+_DEFAULT_STATUS_WRITER = object()
+
+
 class AgentsServerManager:
     """エンジン別バックエンドと共有session状態を管理する。"""
 
-    def __init__(self) -> None:
-        self.sessions: dict[str, SessionState] = {}
+    def __init__(
+        self,
+        status_writer: status_file.StatusFileWriter | None | object = _DEFAULT_STATUS_WRITER,
+    ) -> None:
+        self.sessions: dict[str, SessionState] = (
+            status_writer.sessions if isinstance(status_writer, status_file.StatusFileWriter) else {}
+        )
         self.expired_sessions: dict[str, SessionResumeState] = {}
         self._pending_resumes: dict[str, _PendingResume] = {}
         self._condition = asyncio.Condition()
@@ -122,6 +133,19 @@ class AgentsServerManager:
         self._codex: Any = None
         self._claude: Any = None
         self._wait_timeouts: dict[str, float] = {}
+        if status_writer is _DEFAULT_STATUS_WRITER:
+            identity = status_file.resolve_status_file_identity(os.environ)
+            self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
+        else:
+            assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
+            self._status_writer = status_writer
+        if self._status_writer is not None:
+            add_touch_listener(self._status_writer.schedule)
+
+    def activate(self) -> None:
+        """状態ファイル出力を有効化する。"""
+        if self._status_writer is not None:
+            self._status_writer.activate()
 
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
@@ -158,6 +182,8 @@ class AgentsServerManager:
         session = self.sessions.pop(session_id, None)
         if session is not None:
             self.expired_sessions[session_id] = SessionResumeState.from_session(session)
+            if self._status_writer is not None:
+                self._status_writer.schedule()
 
     def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
@@ -256,6 +282,7 @@ class AgentsServerManager:
         exclude_session_id: str | None = None,
         *,
         launch_kind: LaunchKind = "delegate",
+        label: str | None = None,
     ) -> dict[str, Any]:
         """工程別モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -273,6 +300,8 @@ class AgentsServerManager:
         _validate_cwd(cwd)
         unavailable_response: dict[str, Any] | None = None
         unavailable_error: Exception | None = None
+        unavailable_session: SessionState | None = None
+        display_label = status_file.normalize_label(prompt if label is None else label)
         for candidate in candidates:
             engine, model, effort = candidate
             if engine not in SUPPORTED_ENGINES:
@@ -302,10 +331,17 @@ class AgentsServerManager:
                 "effort": effort,
             }
             if not _engine_unavailable(session):
+                session.label = display_label
+                session.announced = True
+                session.touch()
                 return response
-            unavailable_response, unavailable_error = response, None
+            unavailable_response, unavailable_error, unavailable_session = response, None, session
             excluded |= {candidate}
         if unavailable_response is not None:
+            assert unavailable_session is not None
+            unavailable_session.label = display_label
+            unavailable_session.announced = True
+            unavailable_session.touch()
             return unavailable_response
         assert unavailable_error is not None
         raise unavailable_error
@@ -356,6 +392,7 @@ class AgentsServerManager:
             cwd,
             exclude_session_id,
             launch_kind="shell",
+            label=command,
         )
 
     async def _resolve_wait_timeout(self, request_bucket: str) -> float:
@@ -419,6 +456,7 @@ class AgentsServerManager:
         response = session.public_status(include_result=session.result_available)
         if "agent_message" in response:
             session.result_delivered = True
+            session.touch()
         return response
 
     def _pending_resume_status(self, pending: _PendingResume) -> dict[str, Any]:
@@ -441,7 +479,7 @@ class AgentsServerManager:
         session_id = resume_state.session_id
         backend = self._backend(resume_state.engine)
         try:
-            return await backend.resume(
+            session = await backend.resume(
                 session_id,
                 prompt,
                 resume_state.cwd,
@@ -451,6 +489,9 @@ class AgentsServerManager:
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
             )
+            session.announced = True
+            session.touch()
+            return session
         except BaseException:
             if session_id not in self.sessions:
                 self.expired_sessions[session_id] = resume_state
@@ -549,6 +590,7 @@ class AgentsServerManager:
                 model_type=resume_state.model_type,
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
+                announced=True,
             )
             self.sessions[session.session_id] = session
         self.expired_sessions.pop(session.session_id, None)
@@ -782,6 +824,9 @@ class AgentsServerManager:
         backends = tuple(backend for backend in (self._codex, self._claude) if backend is not None)
         for backend in backends:
             await backend.close()
+        if self._status_writer is not None:
+            remove_touch_listener(self._status_writer.schedule)
+            self._status_writer.deactivate()
 
 
 _MANAGER = AgentsServerManager()
@@ -789,6 +834,7 @@ _MANAGER = AgentsServerManager()
 
 @contextlib.asynccontextmanager
 async def _mcp_lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
+    _MANAGER.activate()
     try:
         yield
     finally:

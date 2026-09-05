@@ -52,12 +52,17 @@ def _config_dir() -> pathlib.Path:
 
 
 def state_dir() -> pathlib.Path:
-    """platformdirsの状態ディレクトリ解決規約に従い、状態ファイル配置ディレクトリを返す。
+    """状態ファイル配置ディレクトリを返す。
 
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     `atk config get state_dir`の出力と、フックが状態ファイルを置く位置の双方をここで決める。
+    Linuxでは絶対パスの`XDG_STATE_HOME`だけを受理し、相対値は`HOME/.local/state`へ退避する。
     """
-    return pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    resolved = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
+    xdg_state_home = os.environ.get("XDG_STATE_HOME")
+    if os.name != "nt" and xdg_state_home and not pathlib.Path(xdg_state_home).is_absolute():
+        return pathlib.Path.home() / ".local" / "state" / "agent-toolkit"
+    return resolved
 
 
 def _config_file_path() -> pathlib.Path:

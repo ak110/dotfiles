@@ -88,6 +88,28 @@ class TestConfigGet:
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == f"{config_module.state_dir()}\n"
 
+    def test_get_state_dir_rejects_relative_xdg_state_home(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """相対XDG_STATE_HOMEはHOME配下へ退避し、状態読取側と同じ絶対パスを返す。"""
+        monkeypatch.setenv("XDG_STATE_HOME", "relative-state")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setattr(
+            config_module.platformdirs,
+            "user_state_dir",
+            lambda _name, **_kwargs: "relative-state/agent-toolkit",
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "get", "state_dir"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        expected = tmp_path / "home" / ".local" / "state" / "agent-toolkit"
+        assert capsys.readouterr().out == f"{expected}\n"
+
     @pytest.mark.parametrize(
         ("key", "expected"),
         [

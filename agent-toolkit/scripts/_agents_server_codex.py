@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# # このモジュールはagents_server_mcp.pyから読み込まれ、単独実行時の依存関係を持たない。
+# dependencies = ["platformdirs>=4.0"]
 # ///
 """Codex App ServerとのJSON-RPC通信を担当する。
 
@@ -18,11 +18,13 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import sys
 from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+import _plan_file
 from _agents_server_state import (
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
@@ -131,6 +133,11 @@ class JsonRpcProcess:
         if self.process is not None:
             return
         try:
+            environment = os.environ.copy()
+            environment.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
+            owner_session_id = _plan_file.resolve_owner_session_id()
+            if owner_session_id is not None:
+                environment["AGENT_TOOLKIT_OWNER_SESSION"] = owner_session_id
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
@@ -138,6 +145,7 @@ class JsonRpcProcess:
                 stderr=asyncio.subprocess.PIPE,
                 limit=APP_SERVER_STREAM_LIMIT_BYTES,
                 cwd=APP_SERVER_WORKING_DIRECTORY,
+                env=environment,
             )
         except OSError as exc:
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc
