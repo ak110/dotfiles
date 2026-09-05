@@ -221,16 +221,15 @@ function formatDateParts(value) {
 function kindLabel(kind) { return KIND_LABELS[kind] || '種別不明'; }
 function stateLabel(state) { return STATE_LABELS[state] || state || '不明'; }
 
-function appendCell(row, label, className) {
+function appendCell(row, className) {
   const cell = document.createElement('span');
   cell.className = `entry-cell ${className}`;
-  cell.dataset.label = label;
   row.append(cell);
   return cell;
 }
 
-function appendTextCell(row, label, className, value) {
-  const cell = appendCell(row, label, className);
+function appendTextCell(row, className, value) {
+  const cell = appendCell(row, className);
   cell.textContent = value || '—';
   return cell;
 }
@@ -254,13 +253,13 @@ function renderEntry(entry) {
   button.dataset.unansweredUwi = String(unanswered);
   button.setAttribute('aria-current', String(entryKey(currentEntry) === entryKey(entry)));
 
-  appendTextCell(button, 'ファイル名', 'filename-cell', entry.filename);
-  const targetRepo = appendTextCell(button, '対象リポジトリ', 'target-repo-cell', targetRepoDisplay(entry.target_repo));
+  appendTextCell(button, 'filename-cell', entry.filename);
+  const targetRepo = appendTextCell(button, 'target-repo-cell', targetRepoDisplay(entry.target_repo));
   if (entry.target_repo) {
     targetRepo.title = entry.target_repo;
     targetRepo.setAttribute('aria-label', `対象リポジトリ: ${entry.target_repo}`);
   }
-  const status = appendCell(button, '種別・状態', 'status-cell');
+  const status = appendCell(button, 'status-cell');
   const kind = document.createElement('span');
   kind.className = 'entry-kind';
   kind.textContent = entry.kind || 'unknown';
@@ -282,7 +281,7 @@ function renderEntry(entry) {
     attention.textContent = '未回答';
     status.append(attention);
   }
-  appendTextCell(button, '要約', 'summary-cell', entry.summary);
+  appendTextCell(button, 'summary-cell', entry.summary);
   button.setAttribute(
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', entry.kind || 'unknown', entry.state || 'unknown',
@@ -1121,7 +1120,6 @@ function resetCreateForm() {
   byId('create-kind').value = 'awi';
   byId('create-content').value = '';
   byId('create-target').value = '';
-  byId('create-source').value = '';
   byId('create-scope').value = '';
   byId('create-question-type').value = 'free-form';
   byId('create-choices').value = '';
@@ -1138,7 +1136,7 @@ function updateCreateFields() {
   const isChoice = isUwi && byId('create-question-type').value === 'choice';
   byId('uwi-fields').hidden = !isUwi;
   byId('choice-fields').hidden = !isChoice;
-  // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄と投入元欄を隠す。
+  // 一括登録は各エントリのfrontmatterの値だけを用いるため、対象リポジトリ欄を隠す。
   byId('create-repo-fields').hidden = isBatch;
   byId('create-content-label').textContent = isBatch ? 'show形式テキスト（必須）' : '本文（必須）';
 }
@@ -1180,8 +1178,6 @@ async function createEntry(event) {
   const payload = isBatch ? {text: rawContent} : {type, messages: [message]};
   if (!isBatch) {
     if (targetRepo) payload.target_repo = targetRepo;
-    const source = byId('create-source').value.trim();
-    if (source) payload.source = source;
     if (type === 'uwi') {
       const scope = byId('create-scope').value.trim();
       if (scope) payload.scope = scope;

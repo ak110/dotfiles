@@ -44,9 +44,13 @@ function formatTime(value) {
   return `${parsed.getFullYear()}/${pad(parsed.getMonth() + 1)}/${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }
 
+function setDrawerOpen(open) {
+  document.body.classList.toggle("drawer-open", open);
+}
+
 function matchesFilter(entry) {
   if (!queryText) return true;
-  const haystack = [entry.host, entry.project, entry.session_id, entry.path]
+  const haystack = [entry.host, entry.cwd, entry.first_user_message, entry.session_id, entry.path]
     .filter((value) => typeof value === "string")
     .join(" ")
     .toLowerCase();
@@ -67,17 +71,18 @@ function renderList() {
       item.setAttribute("aria-current", "true");
     }
 
-    const line = document.createElement("div");
-    line.className = "session-line";
-    const project = document.createElement("span");
-    project.className = "session-project";
-    project.textContent = entry.project || "(プロジェクト不明)";
-    line.append(project);
+    const cwd = document.createElement("div");
+    cwd.className = "session-cwd";
+    cwd.textContent = entry.cwd || "(作業ディレクトリ不明)";
+
+    const message = document.createElement("div");
+    message.className = "session-message";
+    message.textContent = entry.first_user_message || "(最初の発話なし)";
 
     const meta = document.createElement("div");
     meta.className = "session-meta";
-    meta.textContent = `${entry.host} / ${formatTime(entry.updated_at)} / ${entry.session_id}`;
-    item.append(line, meta);
+    meta.textContent = `${entry.host} / ${formatTime(entry.updated_at)}`;
+    item.append(cwd, message, meta);
 
     if (entry.warning) {
       const warning = document.createElement("div");
@@ -137,6 +142,21 @@ function appendUnavailable(parent, label) {
   parent.append(span);
 }
 
+function toolInputSummary(event) {
+  let input = event.detail?.input;
+  if (typeof input === "string") {
+    try {
+      input = JSON.parse(input);
+    } catch (_) {
+      return "";
+    }
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) return "";
+  if (typeof input.command === "string") return input.command.split(/\r?\n/, 1)[0];
+  if (typeof input.file_path === "string") return input.file_path;
+  return Object.values(input).find((value) => typeof value === "string") || "";
+}
+
 function renderEvent(event) {
   const block = document.createElement("details");
   block.className = `event kind-${event.kind}`;
@@ -163,6 +183,15 @@ function renderEvent(event) {
     const name = document.createElement("span");
     name.textContent = event.name;
     summary.append(name);
+  }
+  if (event.kind === "tool_call") {
+    const input = toolInputSummary(event);
+    if (input) {
+      const inputSummary = document.createElement("span");
+      inputSummary.className = "event-input-summary";
+      inputSummary.textContent = input;
+      summary.append(inputSummary);
+    }
   }
   block.append(summary);
 
@@ -284,7 +313,7 @@ async function openSession(host, engine, path, trail = []) {
     detailTitleEl.textContent = "";
     detailEl.textContent = String(error);
   }
-  document.body.classList.remove("drawer-open");
+  setDrawerOpen(false);
 }
 
 function subscribeEvents() {
@@ -318,19 +347,21 @@ function mount(currentMount) {
       openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
     });
     document.getElementById("menu-btn").addEventListener("click", () => {
-      document.body.classList.toggle("drawer-open");
+      setDrawerOpen(!document.body.classList.contains("drawer-open"));
     });
     document.getElementById("drawer-backdrop").addEventListener("click", () => {
-      document.body.classList.remove("drawer-open");
+      setDrawerOpen(false);
     });
     initialized = true;
   }
   loadList();
+  setDrawerOpen(window.matchMedia("(max-width: 768px)").matches);
   subscribeEvents();
 }
 
 function unmount() {
   isCurrentMount = () => false;
+  setDrawerOpen(false);
   if (eventSource) {
     eventSource.close();
     eventSource = null;

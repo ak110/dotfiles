@@ -414,7 +414,7 @@ const ids = [
   'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
   'create-kind', 'create-content', 'create-content-label', 'create-content-error',
   'create-repo-fields', 'create-target',
-  'create-target-error', 'create-source', 'uwi-fields', 'create-scope',
+  'create-target-error', 'uwi-fields', 'create-scope',
   'create-question-type', 'choice-fields', 'create-choices', 'create-choices-error',
   'create-submit-button', 'delete-dialog', 'delete-form', 'delete-close-button',
   'delete-alert', 'delete-status', 'delete-target', 'delete-state', 'delete-target-repo',
@@ -442,7 +442,7 @@ globalThis.controlGroups = {{
   ],
   'create-form': [
     elements['create-close-button'], elements['create-kind'], elements['create-content'],
-    elements['create-target'], elements['create-source'], elements['create-scope'],
+    elements['create-target'], elements['create-scope'],
     elements['create-question-type'], elements['create-choices'], elements['create-submit-button']
   ],
   'delete-form': [
@@ -4156,7 +4156,7 @@ def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatc
         (
             "post",
             "/api/entries",
-            {"type": "awi", "messages": ["x"], "target_repo": "example/repo", "source": ""},
+            {"type": "awi", "messages": ["x"], "target_repo": "example/repo", "source": "web"},
         ),
         (
             "post",
@@ -4343,7 +4343,7 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
             "/api/entries",
             {
                 "type": "awi",
-                "messages": ["awi"],
+                "messages": ["---\nsource: add-awi\n---\n\nawi"],
                 "target_repo": "https://github.com/Example/Specified.git",
             },
             "github.com/example/specified",
@@ -4352,7 +4352,7 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
             "/api/entries",
             {
                 "type": "uwi",
-                "messages": ["UWIですか？"],
+                "messages": ["---\nsource: add-awi\n---\n\nUWIですか？"],
                 "scope": "test",
                 "question_type": "free-form",
                 "target_repo": "https://github.com/Example/Specified.git",
@@ -4404,6 +4404,7 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
     assert f"target_repo: {expected_target}" in content
     assert "target_repo: \n" not in content
+    assert "source:" not in content
 
 
 def test_create_app_keeps_resolved_config(tmp_path: pathlib.Path) -> None:
@@ -5619,6 +5620,7 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     body = await response.get_json()
     content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
+    assert "source:" not in content
 
 
 @pytest.mark.asyncio
