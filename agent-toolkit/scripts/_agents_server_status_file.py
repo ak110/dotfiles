@@ -36,7 +36,7 @@ class StatusFileIdentity:
 def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileIdentity | None:
     """環境変数から状態ファイルの書込主体を解決する。"""
     owner = environment.get("AGENT_TOOLKIT_OWNER_SESSION") or environment.get("CLAUDE_CODE_SESSION_ID")
-    if owner is None or _SESSION_ID_PATTERN.fullmatch(owner) is None:
+    if owner is None or not valid_session_id(owner):
         return None
 
     host_session_id: str | None = None
@@ -44,7 +44,7 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
         host_session_id = environment.get("CLAUDE_CODE_SESSION_ID")
     elif environment.get("CODEX_THREAD_ID"):
         host_session_id = environment.get("CODEX_THREAD_ID")
-    if host_session_id is not None and _SESSION_ID_PATTERN.fullmatch(host_session_id) is None:
+    if host_session_id is not None and not valid_session_id(host_session_id):
         return None
 
     file_name = "root.json" if host_session_id is None else f"{host_session_id}.json"
@@ -55,6 +55,16 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     """ルートsessionの状態ファイルディレクトリを返す。"""
     root = _atk_config.state_dir() if state_root is None else state_root
     return root / "agents-server" / root_session_id
+
+
+def valid_session_id(session_id: str) -> bool:
+    """session識別子が状態ファイル名へ使用できる形式かを返す。"""
+    return bool(session_id and _SESSION_ID_PATTERN.fullmatch(session_id))
+
+
+def results_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """ルートsessionの終端結果ディレクトリを返す。"""
+    return status_directory(root_session_id, state_root) / "results"
 
 
 def normalize_label(value: str) -> str:
@@ -76,11 +86,13 @@ class StatusFileWriter:
     ) -> None:
         self._sessions = sessions
         self._identity = identity
+        self._state_root = state_root
         self._directory = status_directory(identity.root_session_id, state_root)
         self._path = self._directory / identity.file_name
         self._aggregate_seconds = aggregate_seconds
         self._flush_handle: asyncio.TimerHandle | None = None
         self._retention_handle: asyncio.TimerHandle | None = None
+        self._result_deadlines: dict[str, float] = {}
         self._active = False
 
     @property
@@ -100,6 +112,7 @@ class StatusFileWriter:
             for path in self._directory.iterdir():
                 if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
                     path.unlink()
+            self._remove_result_files()
         self.flush()
 
     def schedule(self) -> None:
@@ -130,6 +143,7 @@ class StatusFileWriter:
             "sessions": [_serialize_session(session) for session in visible],
         }
         atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
+        self._write_terminal_results(now)
         self._schedule_retention(visible, now)
 
     def deactivate(self) -> None:
@@ -146,8 +160,67 @@ class StatusFileWriter:
             for path in self._directory.iterdir():
                 if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
                     path.unlink()
+            self._remove_result_files()
+        else:
+            for session_id in tuple(self._result_deadlines):
+                self.delete_result(session_id)
+            result_directory = results_directory(self._identity.root_session_id, self._state_root)
+            if result_directory.exists() and not any(result_directory.iterdir()):
+                result_directory.rmdir()
+        self._result_deadlines.clear()
         if self._directory.exists() and not any(self._directory.iterdir()):
             self._directory.rmdir()
+
+    def retain_result(self, session: SessionState) -> None:
+        """session本体の破棄後も終端結果を保持期限まで残す。"""
+        now = asyncio.get_running_loop().time()
+        if session.retention_deadline is not None and session.retention_deadline <= now:
+            self.delete_result(session.session_id)
+            return
+        if session.result_available:
+            self._write_terminal_result(session)
+
+    def delete_result(self, session_id: str) -> None:
+        """保持期限へ到達したsessionの終端結果を削除する。"""
+        if not valid_session_id(session_id):
+            raise ValueError(f"invalid session_id: {session_id}")
+        path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
+        path.unlink(missing_ok=True)
+        self._result_deadlines.pop(session_id, None)
+
+    def _write_terminal_results(self, now: float) -> None:
+        for session_id, deadline in tuple(self._result_deadlines.items()):
+            if deadline <= now:
+                self.delete_result(session_id)
+        for session in self._sessions.values():
+            if session.retention_deadline is not None and session.retention_deadline <= now:
+                self.delete_result(session.session_id)
+                continue
+            if not session.result_available:
+                continue
+            self._write_terminal_result(session)
+
+    def _write_terminal_result(self, session: SessionState) -> None:
+        assert session.finalized_at is not None
+        assert session.retention_deadline is not None
+        payload = {
+            **session.public_status(include_result=True),
+            "turn_seq": session.turn_seq,
+            "finalized_at": session.finalized_at,
+        }
+        directory = results_directory(self._identity.root_session_id, self._state_root)
+        atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
+        self._result_deadlines[session.session_id] = session.retention_deadline
+
+    def _remove_result_files(self) -> None:
+        directory = self._directory / "results"
+        if not directory.exists():
+            return
+        for path in directory.iterdir():
+            if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
+                path.unlink()
+        if not any(directory.iterdir()):
+            directory.rmdir()
 
     def _schedule_retention(self, sessions: list[SessionState], now: float) -> None:
         if self._retention_handle is not None:
@@ -157,6 +230,7 @@ class StatusFileWriter:
             for session in sessions
             if session.retention_deadline is not None and session.retention_deadline > now
         ]
+        deadlines.extend(deadline for deadline in self._result_deadlines.values() if deadline > now)
         self._retention_handle = None
         if deadlines:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)

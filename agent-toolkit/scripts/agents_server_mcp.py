@@ -178,11 +178,12 @@ class AgentsServerManager:
         return session
 
     def _expire_session(self, session_id: str) -> None:
-        """期限切れ結果本体を破棄し、会話再開用の最小状態だけを保持する。"""
+        """session本体を破棄し、会話再開用の最小状態と期限内の結果を保持する。"""
         session = self.sessions.pop(session_id, None)
         if session is not None:
             self.expired_sessions[session_id] = SessionResumeState.from_session(session)
             if self._status_writer is not None:
+                self._status_writer.retain_result(session)
                 self._status_writer.schedule()
 
     def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
@@ -205,6 +206,7 @@ class AgentsServerManager:
             "status": "expired",
             "progress": "",
             "kill_requested": False,
+            "turn_seq": resume_state.turn_seq,
         }
         if resume_state.model_type is not None:
             response["model_type"] = resume_state.model_type
@@ -391,6 +393,7 @@ class AgentsServerManager:
                 "model_type": model_type,
                 "model": model,
                 "effort": effort,
+                "turn_seq": session.turn_seq,
             }
             if not _engine_unavailable(session):
                 session.label = display_label
@@ -531,6 +534,7 @@ class AgentsServerManager:
             "engine": pending.state.engine,
             "status": "running",
             "progress": "",
+            "turn_seq": pending.state.turn_seq + 1,
         }
         if pending.state.model_type is not None:
             result["model_type"] = pending.state.model_type
@@ -550,6 +554,7 @@ class AgentsServerManager:
                 model_type=resume_state.model_type,
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
+                turn_seq=resume_state.turn_seq,
             )
             session.announced = True
             session.touch()
@@ -653,6 +658,7 @@ class AgentsServerManager:
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
                 announced=True,
+                turn_seq=resume_state.turn_seq + 1,
             )
             self.sessions[session.session_id] = session
         self.expired_sessions.pop(session.session_id, None)

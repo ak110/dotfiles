@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import json
 import os
 import pathlib
 import shutil
@@ -16,6 +17,8 @@ from typing import Any, cast
 import _agents_server_claude as claude_backend
 import _agents_server_codex as codex_backend
 import _agents_server_state as state
+import _agents_server_status_file as status_file
+import _atk_agents_wait as agents_wait
 import agents_server_mcp as subject
 import pytest
 
@@ -78,6 +81,7 @@ class FakeBackend:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            turn_seq=1,
         )
         self.sessions[session.session_id] = session
         state._initialize_turn(session)
@@ -94,6 +98,7 @@ class FakeBackend:
         model_type: str | None = None,
         launch_kind: state.LaunchKind = "delegate",
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
+        turn_seq: int = 0,
     ) -> subject.SessionState:
         async def accept_prompt(value: str) -> None:
             del value
@@ -108,6 +113,7 @@ class FakeBackend:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            turn_seq=turn_seq + 1,
         )
         self.sessions[session_id] = session
         state._initialize_turn(session)
@@ -568,6 +574,7 @@ async def test_start_projects_shared_state_without_internal_fields(
         "model_type": "plan",
         "model": "model",
         "effort": "high",
+        "turn_seq": 1,
     }
     _assert_no_forbidden_keys(response)
 
@@ -943,11 +950,24 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
-async def test_send_message_resumes_expired_session_id(engine: str, tmp_path: pathlib.Path) -> None:
-    """期限切れ識別子へのsend_messageが同じ会話の新しいturnを開始する。"""
-    manager, backend = _manager_with_fake(engine)
-    session = subject.SessionState("saved-session", str(tmp_path), engine=engine)
-    _complete(session)
+async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_result(
+    engine: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """両engineの複数turn後の期限切れ再開を番号指定の背景待機で観測する。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, engine)
+    _install_backend(manager, engine, backend)
+    writer.activate()
+    session = subject.SessionState("saved-session", str(tmp_path), engine=engine, turn_seq=4)
+    _complete(session, message="期限切れ結果")
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
@@ -956,9 +976,65 @@ async def test_send_message_resumes_expired_session_id(engine: str, tmp_path: pa
     assert response["session_id"] == "saved-session"
     assert response["status"] == "running"
     assert response["delivery"] == "reply_started"
+    assert response["turn_seq"] == 5
     assert "previous_result" not in response
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
+
+    writer.flush()
+    wait_task = asyncio.create_task(
+        asyncio.to_thread(
+            agents_wait.wait_for_result,
+            session.session_id,
+            5,
+            1,
+            environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
+            state_root=tmp_path,
+        )
+    )
+    await asyncio.sleep(0.02)
+    assert not wait_task.done()
+
+    resumed = manager.sessions[session.session_id]
+    _complete(resumed, message="再開結果")
+    writer.flush()
+
+    assert await wait_task == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["agent_message"] == "再開結果"
+    assert result["turn_seq"] == 5
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_owner_gone_resume_keeps_previous_result_file_until_deadline(tmp_path: pathlib.Path) -> None:
+    """所有主体終了による再開は期限前の旧結果ファイルを削除しない。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = ConcurrentOwnerGoneBackend(manager.sessions, "claude")
+    manager._claude = backend
+    writer.activate()
+    session = subject.SessionState("claude-owner-gone", str(tmp_path), engine="claude", turn_seq=4)
+    _complete(session, message="旧結果")
+    manager.sessions[session.session_id] = session
+    backend.owner_gone_session = session
+    writer.flush()
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
+
+    responses = await asyncio.gather(
+        manager.send_message(session.session_id, "先行指示", timeout=1),
+        manager.send_message(session.session_id, "後続指示", timeout=1),
+    )
+
+    assert {response["turn_seq"] for response in responses} == {5}
+    assert json.loads(result_path.read_text(encoding="utf-8"))["agent_message"] == "旧結果"
+    assert json.loads(result_path.read_text(encoding="utf-8"))["turn_seq"] == 4
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -978,6 +1054,7 @@ async def test_wait_returns_same_terminal_result_without_consuming_state(tmp_pat
         "progress": "",
         "agent_message": "最終結果",
         "error": {"message": "補足"},
+        "turn_seq": 0,
     }
     _assert_no_forbidden_keys(first)
 
@@ -994,6 +1071,7 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
         "engine": "codex",
         "status": "running",
         "progress": "",
+        "turn_seq": 0,
     }
 
 
@@ -1036,6 +1114,7 @@ async def test_kill_timeout_zero_returns_request_state(tmp_path: pathlib.Path) -
         "engine": "codex",
         "status": "running",
         "progress": "",
+        "turn_seq": 0,
         "kill_requested": True,
     }
     assert backend.interrupt_calls == 1
@@ -1060,6 +1139,7 @@ async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_p
         "status": "completed",
         "progress": "",
         "agent_message": "中断結果",
+        "turn_seq": 0,
         "kill_requested": True,
     }
 
@@ -1324,6 +1404,7 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
         "engine": engine,
         "status": "completed",
         "agent_message": "直前の結果",
+        "turn_seq": 0,
     }
     _assert_no_forbidden_keys(response)
 
@@ -1340,6 +1421,56 @@ async def test_send_message_omits_previous_result_after_wait_returned_result(tmp
     response = await manager.send_message(session.session_id, "続行")
 
     assert "previous_result" not in response
+
+
+@pytest.mark.asyncio
+async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """前turnの結果を保持したまま、指定した次turnの終端だけを待つ。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    manager._codex = FakeBackend(manager.sessions, "codex")
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", None, None)])
+    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+    writer.activate()
+
+    started = await manager.start("execute", "実装", str(tmp_path))
+    session = manager.sessions[started["session_id"]]
+    _complete(session, message="結果A")
+    writer.flush()
+    assert (await manager.wait(session.session_id, timeout=0))["turn_seq"] == 1
+
+    continued = await manager.send_message(session.session_id, "続行")
+    assert continued["turn_seq"] == 2
+    writer.flush()
+    wait_task = asyncio.create_task(
+        asyncio.to_thread(
+            agents_wait.wait_for_result,
+            session.session_id,
+            2,
+            1,
+            environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
+            state_root=tmp_path,
+        )
+    )
+    await asyncio.sleep(0.02)
+    assert not wait_task.done()
+
+    _complete(session, message="結果B")
+    writer.flush()
+    assert await wait_task == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["agent_message"] == "結果B"
+    assert output["turn_seq"] == 2
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1453,6 +1584,7 @@ async def test_send_message_steered_response_has_no_previous_result(tmp_path: pa
         "engine": "codex",
         "status": "running",
         "progress": "",
+        "turn_seq": 0,
     }
 
 
@@ -2091,10 +2223,12 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
         "model_type": "plan",
         "model": "gpt-test",
         "effort": "high",
+        "turn_seq": 1,
     }
     backend.client = cast(Any, client)
     steered = await manager.send_message("thread-codex", "追加指示")
     assert steered["delivery"] == "steered"
+    assert steered["turn_seq"] == 1
     assert client.requests[-1][0] == "turn/steer"
     killed = await manager.kill("thread-codex", timeout=0)
     assert killed["kill_requested"] is True
@@ -2134,6 +2268,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
         "engine": "codex",
         "status": "running",
         "progress": "",
+        "turn_seq": 1,
     }
     assert client.requests[0] == (
         "thread/resume",
@@ -2183,6 +2318,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
             "engine": "codex",
             "status": "running",
             "progress": "",
+            "turn_seq": 1,
         }
         assert session_id not in manager.expired_sessions
 
@@ -2557,6 +2693,7 @@ async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: 
             "engine": "claude",
             "status": "completed",
             "agent_message": "直前結果",
+            "turn_seq": 0,
         },
     }
     assert iterator is not None
@@ -2660,6 +2797,7 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
             "engine": "claude",
             "status": "running",
             "progress": "",
+            "turn_seq": 1,
         }
         assert session_id not in manager.expired_sessions
 
@@ -2737,6 +2875,7 @@ async def test_claude_pending_resume_discards_previous_result_after_retention_de
     session.status = "completed"
     session.turn_completed = True
     session.agent_message = "期限付き結果"
+    session.touch()
     session.retention_deadline = asyncio.get_running_loop().time() + 0.04
     original_deadline = session.retention_deadline
     manager.sessions[session_id] = session
@@ -3197,6 +3336,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             label=session.label,
             started_at=session.started_at,
             updated_at=session.updated_at,
+            turn_seq=session.turn_seq,
         )
     }
     with pytest.raises(ValueError, match="session retention expired: claude-expired"):
@@ -3258,6 +3398,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
         "engine": "claude",
         "status": "running",
         "progress": "",
+        "turn_seq": 2,
     }
     assert not manager.expired_sessions
     assert manager.sessions[session.session_id].status == "running"
@@ -3297,12 +3438,14 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
         "engine": "claude",
         "status": "running",
         "progress": "",
+        "turn_seq": 2,
         "previous_result": {
             "session_id": "claude-failed",
             "engine": "claude",
             "status": "failed",
             "agent_message": "",
             "error": {"message": "stream failed"},
+            "turn_seq": 1,
         },
     }
     assert not manager.expired_sessions
@@ -3348,6 +3491,7 @@ async def test_expired_session_kill_returns_success_response(
         "status": "expired",
         "progress": "",
         "kill_requested": False,
+        "turn_seq": 0,
     }
     if model_type is not None:
         expected["model_type"] = model_type
