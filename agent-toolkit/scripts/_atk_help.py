@@ -252,8 +252,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table show": {
         "summary": "レビュー表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順のまま表示する。各セルはJSON文字列として保存されており、復号せずに書き"
-        "\u51fa\u3059。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。ファイルは変更しない。\n前提: `--track`を指定すると、当該trackの行だけを表示する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は各セルをJSON文字列として保存したraw TSV、`jsonl`は復号済みのJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。ファイルは変更しない。\n前提: `--track`を指定すると、当該trackの行だけを表示する。復号済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
     "atk review-table validate": {

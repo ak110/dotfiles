@@ -322,18 +322,19 @@ def respond(
     return 0
 
 
-def show(path: str | Path, track: str | None = None) -> int:
-    """表のraw TSVを保存順のまま表示し、指定時はtrackで限定する。"""
+def show(path: str | Path, track: str | None = None, output_format: str = "tsv") -> int:
+    """表を保存順で表示し、指定時はtrackで限定する。"""
     target = _path(str(path))
     text = _read_table_text(target)
     rows = _parse_text(text)
-    if track is None:
-        print(text, end="")
-        return 0
-    if track not in TRACK_VALUES:
+    if track is not None and track not in TRACK_VALUES:
         raise ValueError(f"trackが正規値ではない。{_RECOVERY_GUIDANCE}")
-    selected = [raw_line for raw_line, row in rows if row[1] == track]
-    print("".join(selected), end="")
+    selected = [(raw_line, row) for raw_line, row in rows if track is None or row[1] == track]
+    if output_format == "tsv":
+        print("".join(raw_line for raw_line, _ in selected), end="")
+        return 0
+    for _, row in selected:
+        print(json.dumps(dict(zip(COLUMNS, row, strict=True)), ensure_ascii=False))
     return 0
 
 
@@ -467,6 +468,12 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=TRACK_VALUES,
         help="表示対象を指定したレビュー区分の行だけに限定する。省略すると全行を表示する。",
     )
+    show_parser.add_argument(
+        "--format",
+        choices=("tsv", "jsonl"),
+        default="tsv",
+        help="出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する。",
+    )
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",
@@ -482,7 +489,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if command == "init":
         return init(args.path)
     if command == "show":
-        return show(args.path, args.track)
+        return show(args.path, args.track, args.format)
     if command == "validate":
         return validate(args.path, require_responses=not args.allow_unanswered)
     if command == "add":
