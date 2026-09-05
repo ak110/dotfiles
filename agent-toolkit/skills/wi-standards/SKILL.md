@@ -107,9 +107,9 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 | --- | --- | --- |
 | `inbox`→`hold` | `atk wi hold` | 項目を編集する主体が、編集の開始時に自動処理から除外する |
 | `hold`→`inbox` | `atk wi unhold` | 編集した主体が、編集の完了時に自動処理へ戻す |
-| `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のメインが、選定担当の出力を検収した直後に遷移させる |
-| `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のレーンが、ベースブランチへのマージ完了時に遷移させる |
-| `processing`→`rejected` | `atk wi reject` | `agent-toolkit:process-wi`のメインが、計画工程で全要求の不採用を確定した時に遷移させる |
+| `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のpickerが、処理対象を確定した直後に遷移させる |
+| `processing`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のレーンが、ベースブランチへのマージ完了時、又は実装変更を伴わない充足の確定後に遷移させる |
+| `processing`→`rejected` | `atk wi reject` | `agent-toolkit:process-wi`のレーンが、計画工程で確定した全要求の不採用についてメインが確認を終えた後に遷移させる |
 | `rejected`→`inbox` | `atk wi return-to-inbox --state=rejected` | UWIの回答が採用を示した項目を再処理へ戻す |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 処理中に未回答UWIへの依存が生じた項目を`inbox`かつ`blocked`へ戻す |
 
