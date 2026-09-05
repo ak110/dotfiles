@@ -948,7 +948,8 @@ def main(
         automatically_cleaned = _managed_temp.sweep_expired_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
         print(f"warning: 管理対象一時領域の自動削除に失敗しました: {error}", file=sys.stderr)
-    if args.command != "managed-temp":
+    is_delegated_session = os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
+    if args.command != "managed-temp" and not is_delegated_session:
         try:
             unregistered_count = _managed_temp.count_unregistered_candidates()
         except Exception as error:  # noqa: BLE001  # 件数取得の失敗で本来のサブコマンドを失敗させない

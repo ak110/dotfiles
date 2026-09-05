@@ -51,6 +51,7 @@ def _isolate_agent_and_managed_temp_environment(
     """listとmanaged-tempの既定動作をホスト環境から隔離する。"""
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
@@ -241,6 +242,7 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """無関係なサブコマンドは未登録領域を件数だけの1行で報告する。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
 
         def fixed_schedule(request_bucket: str) -> str:
             assert request_bucket == "main"
@@ -265,6 +267,35 @@ class TestWaitScheduleParser:
             ]
             assert str(tmp_path) not in captured.err
 
+    @pytest.mark.parametrize(
+        ("delegated_session", "expects_warning"),
+        [(None, True), ("1", False), ("other", True)],
+    )
+    def test_unregistered_managed_temp_warning_depends_on_delegated_session(
+        self,
+        delegated_session: str | None,
+        expects_warning: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """未登録領域の警告は値が1の委譲先だけで抑止する。"""
+        monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "fixed-subcommand-output")
+        monkeypatch.setattr(_managed_temp, "sweep_expired_managed_temp", lambda *, now: [])
+        monkeypatch.setattr(_managed_temp, "count_unregistered_candidates", lambda: 1)
+        if delegated_session is None:
+            monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        else:
+            monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", delegated_session)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out == "fixed-subcommand-output\n"
+        assert ("登録を持たない管理対象が1件あります" in captured.err) is expects_warning
+
     def test_unregistered_managed_temp_count_failure_does_not_change_subcommand_result(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -272,6 +303,7 @@ class TestWaitScheduleParser:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """未登録領域の件数取得失敗は本来の出力と終了コードを変えない。"""
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
 
         def fixed_schedule(request_bucket: str) -> str:
             assert request_bucket == "main"
