@@ -24,6 +24,7 @@
       "Source control: github.com/ak110 and all repositories under it are the user's own personal repositories (trusted)."
     ]
   },
+  "dialogExpiry": "never",
   "effortLevel": "medium",
   "enabledPlugins": {
     "hookify@claude-plugins-official": false,

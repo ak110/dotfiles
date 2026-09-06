@@ -1,6 +1,6 @@
 """公開情報からプロンプトキャッシュTTLを判定する。
 
-TTL判定は、委譲待機用cron式、質問自動継続タイムアウト及び`agents_server`の`wait`の既定timeoutが共有する正本である。
+TTL判定は、委譲待機用cron式、質問・ダイアログのタイムアウト及び`agents_server`の`wait`の既定timeoutが共有する正本である。
 
 Claude Codeはプロンプトキャッシュ保持期間を、`FORCE_PROMPT_CACHING_5M`、bucket別の環境変数、
 bucket別の設定、サブエージェント定義のfrontmatterの`cacheTtl`、`ENABLE_PROMPT_CACHING_1H`、

@@ -114,11 +114,11 @@ def _cmd_process_loop_status() -> None:
     print(f"常駐処理への中断要求: {status}")
 
 
-def _ask_user_question_timeout_settings() -> str:
-    """メイン会話のプロンプトキャッシュTTLに対応する質問タイムアウト設定を返す。"""
+def _dialog_timeout_settings() -> str:
+    """メイン会話のプロンプトキャッシュTTLに対応する質問・ダイアログのタイムアウト設定を返す。"""
     if _wait_schedule.get_prompt_cache_ttl("main") == "5m":
-        return '{"askUserQuestionTimeout": "60s"}'
-    return '{"askUserQuestionTimeout": "5m"}'
+        return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s"}'
+    return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}'
 
 
 def _child_env() -> dict[str, str]:
@@ -619,7 +619,7 @@ def _build_session_argv(
             "--debug-file",
             str(hook_debug_log),
             "--settings",
-            _ask_user_question_timeout_settings(),
+            _dialog_timeout_settings(),
         ]
         if resume_pending:
             argv.extend(("--model", model, "--effort", effort))
