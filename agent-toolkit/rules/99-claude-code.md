@@ -50,6 +50,8 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 `agent-toolkit/hooks/hooks.json`は`Stop`側と`SubagentStop`側へ別のフックを登録し、委譲先セッションでは`Stop`側のフックが判定を記録する。
 再検証は`agents_server`の通常起動で委譲先を1件起動し、当該委譲先のセッション記録に`Stop`側フックの結果が現れることと、`SubagentStop`側フックの記録が現れないことを対にして確認する。
 
+配布後の条文配送は次の手順で再検証する。Claude Codeを再起動した後の最上位セッションで、当該セッションのシステム指示を確認する。`agent-toolkit/rules/`直下の3ファイルと`agent-toolkit/share/rules-main.md`及び`agent-toolkit/share/rules-main.claude-code.md`が現れることを、この確認の合格条件とする。続いて同じセッションから`agents_server`の`start_explore`で委譲先を1件起動する。当該委譲先へ配送された規範ファイルの一覧を返させ、前記の5ファイルと`agent-toolkit/share/rules-subagent.md`のいずれもが現れないことを確認する。軽量起動は`setting_sources`を空とし、システム指示へプリセットを用いず固定の起動文だけを渡す。このためフックが追加する条文も`agents_server`が連結する条文も届かない。観測が本項と異なる場合は、当該差分を事象として本節の記述を是正する。
+
 ## 委譲起動時の厳守事項
 
 Claude Codeの基本的な委譲起動では、`02-agent-operations.md`「基本委譲契約」節を適用する。
