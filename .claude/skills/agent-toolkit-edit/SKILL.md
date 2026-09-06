@@ -14,10 +14,12 @@ description: >
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
-- `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保つ
+- `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く
   （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`: 順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけに適用する規範。
+  振り分けの判定は`agent-toolkit:agent-standards`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
@@ -127,6 +129,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は実装者向け領域へ記載し、
   自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`の編集は、生成差分もClaude配布一覧の変更も生じさせないが、バージョン更新の規定は適用する
 - 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan_format.py`が構造定数として名称を持つものは、同ファイルを正本とする。
   改訂するときは同ファイルの構造定数を変更し、`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、
   `agent-toolkit/share/`配下の担当タスク文書、`docs/development/design.md`、`docs/development/concepts.md`及び

@@ -10,7 +10,7 @@ import _plan_fixture
 import _plan_format
 import pytest
 from _test_helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
-from quality_checkpoint import QUALITY_CHECKPOINT_NOTICE
+from rules_context import QUALITY_CHECKPOINT_NOTICE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "hook.py"
 

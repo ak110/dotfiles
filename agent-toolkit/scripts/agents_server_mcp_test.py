@@ -291,6 +291,9 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
     source_dir = pathlib.Path(__file__).parent
     script_dir = tmp_path / "plugin" / "scripts"
     script_dir.mkdir(parents=True)
+    share_dir = tmp_path / "plugin" / "share"
+    share_dir.mkdir()
+    shutil.copyfile(source_dir.parent / "share" / "rules-subagent.md", share_dir / "rules-subagent.md")
     for name in (
         "agents_server_mcp.py",
         "_agents_server_codex.py",
@@ -2021,6 +2024,13 @@ def test_explore_system_prompt_contains_delegate_notice() -> None:
     """通常起動、探索起動及びシェル実行起動のいずれの指示も委譲先宣言から始まる。"""
     assert state.DELEGATE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
     assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+
+
+def test_delegate_system_prompt_appends_subagent_rules() -> None:
+    rules = state.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip()
+    assert state.DELEGATE_SYSTEM_PROMPT.endswith(rules)
+    assert rules not in state.EXPLORE_SYSTEM_PROMPT
+    assert rules not in state.SHELL_SYSTEM_PROMPT
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
 
 

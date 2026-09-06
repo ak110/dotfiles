@@ -143,6 +143,20 @@ _BLOCK_PROPERTIES = {
 }
 
 HOOK_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
+    "SessionStart": _event_schema(
+        "SessionStart",
+        hook_specific={
+            "additionalContext": {"type": "string"},
+            "initialUserMessage": {"type": "string"},
+            "watchPaths": {"type": "array", "items": {"type": "string"}},
+            "sessionTitle": {"type": "string"},
+            "reloadSkills": {"type": "boolean"},
+        },
+    ),
+    "SubagentStart": _event_schema(
+        "SubagentStart",
+        hook_specific={"additionalContext": {"type": "string"}},
+    ),
     "PreToolUse": _event_schema(
         "PreToolUse",
         hook_specific={

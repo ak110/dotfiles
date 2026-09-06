@@ -40,7 +40,8 @@ CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
 CODEX_POST_TOOL_USE_COMMAND = _hook_command("posttooluse")
 CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
 CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
-CODEX_QUALITY_CHECKPOINT_COMMAND = _hook_command("quality_checkpoint")
+CODEX_RULES_CONTEXT_COMMAND = _hook_command("rules_context")
+CODEX_RULES_CONTEXT_CODEX_COMMAND = _hook_command("rules_context_codex")
 
 # CodexのSessionEndは同期実行のため上限が短い。投影時に明示して超過を避ける。
 CODEX_SESSION_END_TIMEOUT_SECONDS = 3
@@ -53,12 +54,18 @@ class CodexHookProjection(NamedTuple):
     Claude向けの空matcher（全ツール対象）をそのまま配布すると、
     入力契約を確認していないCodexのツールでもhandlerが起動するため、
     ツール名を限定する場合は明示する。
+
+    Codexは既定でおよそ2,500トークンを超える`additionalContext`を退避する。
+    条文全文を渡す射影は`additional_context_limit=0`で無効化する。この指定は、
+    handlerの出力量が条文ファイルで固定され、`rules_context_test.py`の上限検査で
+    拘束される場合に限る。
     """
 
     commands: tuple[str, ...]
     matcher: str | None = None
     timeout: int | None = None
     output_command: str | None = None
+    additional_context_limit: int | None = None
 
     def project(self, group: dict[str, Any], handlers: list[dict[str, Any]]) -> dict[str, Any]:
         """正本のmatcher groupへ上書き値を適用した射影結果を返す。"""
@@ -69,6 +76,8 @@ class CodexHookProjection(NamedTuple):
                 projected_handler["command"] = self.output_command
             if self.timeout is not None:
                 projected_handler["timeout"] = self.timeout
+            if self.additional_context_limit is not None:
+                projected_handler["additionalContextLimit"] = self.additional_context_limit
             chosen.append(projected_handler)
         projected = {**group, "hooks": chosen}
         if self.matcher is not None:
@@ -77,6 +86,12 @@ class CodexHookProjection(NamedTuple):
 
 
 CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
+    "SessionStart": CodexHookProjection(
+        (CODEX_RULES_CONTEXT_COMMAND,),
+        output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
+        additional_context_limit=0,
+    ),
+    "SubagentStart": CodexHookProjection((CODEX_RULES_CONTEXT_COMMAND,), additional_context_limit=0),
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill",
@@ -93,14 +108,6 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "UserPromptSubmit": CodexHookProjection((CODEX_USER_PROMPT_SUBMIT_COMMAND,)),
     "SubagentStop": CodexHookProjection((CODEX_SUBAGENT_STOP_COMMAND,)),
     "SessionEnd": CodexHookProjection((CODEX_SESSION_END_COMMAND,), timeout=CODEX_SESSION_END_TIMEOUT_SECONDS),
-}
-CODEX_ONLY_HOOKS: dict[str, list[dict[str, Any]]] = {
-    "SessionStart": [
-        {
-            "matcher": "compact",
-            "hooks": [{"type": "command", "command": CODEX_QUALITY_CHECKPOINT_COMMAND}],
-        }
-    ]
 }
 # Codex 0.147.0が発火するhookイベント。handlerを持たないイベントは生成しない。
 CODEX_EVENTS = {
@@ -213,10 +220,6 @@ def _outputs(root: Path) -> dict[Path, str]:
     if (root / HOOKS_SOURCE).exists():
         hooks = _load(root, HOOKS_SOURCE)
         source_hooks = hooks.get("hooks", {})
-        collisions = (set(CODEX_ONLY_HOOKS) & set(source_hooks)) | (set(CODEX_ONLY_HOOKS) & set(CODEX_HOOK_ALLOWLIST))
-        if collisions:
-            events = ", ".join(sorted(collisions))
-            raise ValueError(f"Codex専用hookイベントが共有射影と衝突: {events}")
         for event, projection in CODEX_HOOK_ALLOWLIST.items():
             if event not in CODEX_EVENTS or event not in source_hooks:
                 raise ValueError(f"未知のCodex hookイベント: {event}")
@@ -230,8 +233,6 @@ def _outputs(root: Path) -> dict[Path, str]:
             if not projected:
                 raise ValueError(f"許可済みハンドラーが正本に存在しない: {event}")
             selected[event] = projected
-
-        selected.update(CODEX_ONLY_HOOKS)
 
     metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}
     agent_plugin = {"$schema": AGENT_PLUGIN_SCHEMA, **metadata}

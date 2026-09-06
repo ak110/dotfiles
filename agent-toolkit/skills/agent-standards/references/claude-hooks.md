@@ -56,6 +56,9 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 判定条件そのものが実行主体の判断へ依存する場合を本条件の対象とし、通知本文が解消手段として実行主体の判断を求めることは対象外とする。
 既存の遮断・警告フックを本条件で点検した結果、条件を満たさないものは、判定条件を機械的に確定できる形へ是正するか、規範文書へ移して当該フックを撤去する。
 
+`SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
+`agent-toolkit/scripts/rules_context.py`は、前者でメイン向け条文を追加するときに環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`で委譲先を除き、後者でサブエージェント向け条文を追加する。
+
 `Stop`と`SubagentStop`へ登録する判定は、いずれも委譲先で発火し得る。
 判定が求める処置を委譲先が実行できるかを判定ごとに確定し、結果と根拠を当該判定モジュールのdocstringへ記録する。
 `Stop`は当該セッション自身のターン終端で発火するため、`agents_server`が起動した委譲先の判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`を用いる。
@@ -265,7 +268,7 @@ Codex rolloutのtranscript形式は安定インターフェースではないた
 - `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を
   起動側の処理へ渡す一時ファイルのパス
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: 委譲先として起動したセッションであることを示す印。常駐実行の終了保証を最上位セッションへ限定する判定に使う
-- `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得又は作成した計画バンドルの所有として記録する、委譲元セッションの識別子
+- `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得又は作成した計画バンドルの所有として記録する、委譲元セッションの識別子。`agents_server`が起動した子だけが持つため、Codex backendの委譲先を含めてメイン向け規範の追加を省く判定にも使う
 
 ## メッセージの記述言語
 

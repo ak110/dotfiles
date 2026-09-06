@@ -315,7 +315,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     ("posttooluse.py:686 本文", "warn: {display_name}の応答に{', '.join(missing)}が欠けているか不正である。"),
     (
-        "quality_checkpoint.py:QUALITY_CHECKPOINT_NOTICE",
+        "rules_context.py:QUALITY_CHECKPOINT_NOTICE",
         "本来のユーザーから見"
         "える目的を明示に保つ。要求されたシナリオに十分な最小限の設計を選ぶ。"
         "エージェント向けの会話上の誘導と、成果物へ残す恒久的な文脈を分け、会話限りの指示を成果物へ持ち込まない。"

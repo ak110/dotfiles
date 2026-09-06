@@ -62,6 +62,8 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
             subject.HOOKS_SOURCE,
             {
                 "hooks": {
+                    "SessionStart": [{"hooks": [{"type": "command", "command": subject.CODEX_RULES_CONTEXT_COMMAND}]}],
+                    "SubagentStart": [{"hooks": [{"type": "command", "command": subject.CODEX_RULES_CONTEXT_COMMAND}]}],
                     "PreToolUse": [
                         {
                             "matcher": "",
@@ -194,13 +196,29 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             ],
             "SessionStart": [
                 {
-                    "matcher": "compact",
-                    "hooks": [{"type": "command", "command": subject.CODEX_QUALITY_CHECKPOINT_COMMAND}],
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": subject.CODEX_RULES_CONTEXT_CODEX_COMMAND,
+                            "additionalContextLimit": 0,
+                        }
+                    ],
+                }
+            ],
+            "SubagentStart": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": subject.CODEX_RULES_CONTEXT_COMMAND,
+                            "additionalContextLimit": 0,
+                        }
+                    ]
                 }
             ],
         }
     }
-    assert len(generated_hooks["hooks"]) == 7
+    assert len(generated_hooks["hooks"]) == 8
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -278,25 +296,23 @@ def test_codex_projection_preserves_command_without_replacement() -> None:
 def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root: Path) -> None:
     """許可表に無いイベントは正本にあってもCodexへ配布しない。"""
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
-    hooks["hooks"]["SubagentStart"] = [{"hooks": [{"type": "command", "command": "uv run --no-project --script other.py"}]}]
+    hooks["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": "uv run --no-project --script other.py"}]}]
     (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
 
     subject.sync(manifest_root)
 
     generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
-    assert "SubagentStart" not in generated
-    assert "SessionStart" in generated
-    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST) | {"SessionStart"}
+    assert "PreCompact" not in generated
+    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST)
 
 
-def test_rejects_codex_only_event_collision(manifest_root: Path) -> None:
-    """Codex専用イベントをClaude向け正本へ重ねて登録しない。"""
-    hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
-    hooks["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": []}]
-    (manifest_root / subject.HOOKS_SOURCE).write_text(json.dumps(hooks), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="衝突"):
-        subject.sync(manifest_root)
+def test_codex_projection_sets_additional_context_limit() -> None:
+    group: dict[str, Any] = {"hooks": []}
+    handler = [{"type": "command", "command": "source"}]
+    projected = subject.CodexHookProjection(("source",), additional_context_limit=0).project(group, handler)
+    assert projected["hooks"][0]["additionalContextLimit"] == 0
+    projected = subject.CodexHookProjection(("source",)).project(group, handler)
+    assert "additionalContextLimit" not in projected["hooks"][0]
 
 
 def test_sync_reads_all_json_as_utf8(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -476,7 +492,9 @@ def test_rejects_missing_allowlisted_handler(manifest_root: Path) -> None:
         subject.sync(manifest_root)
 
 
-@pytest.mark.parametrize("event", ["UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SessionEnd"])
+@pytest.mark.parametrize(
+    "event", ["SessionStart", "SubagentStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "SessionEnd"]
+)
 def test_rejects_missing_shared_allowlisted_handler(manifest_root: Path, event: str) -> None:
     hooks = json.loads((manifest_root / subject.HOOKS_SOURCE).read_text(encoding="utf-8"))
     del hooks["hooks"][event]

@@ -319,6 +319,8 @@ dotfiles配布利用者は`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPAT
 
 ルールファイル（`~/.claude/rules/agent-toolkit/`配下）は自動ロードされる。
 `01-agent.md`が基本原則・運用方針・言語表現・検証とコミットの流れを提供する。
+ルールファイルには、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く。
+メインエージェントだけに適用する条文は`share/rules-main.md`と`share/rules-main.claude-code.md`、サブエージェントと委譲先だけに適用する条文は`share/rules-subagent.md`に置き、フックと`agents_server`が起動時に文脈へ追加する。
 文体の核はJIS規格・公的な標準仕様書のスタイルとし、
 対話型UI向けの敬体はNHKの案内放送原稿のスタイルを例外として割り当てる。
 
@@ -336,7 +338,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | --- | --- | --- | --- |
 | plugin `PreToolUse/pretooluse` | 編集内容とコマンドの事前検査。文字化け・他言語文字の混入・LF改行のみの`.ps1`書き込み・lockfileやシークレットの直接編集・codexサンドボックス指定の弱体化をブロックし、口語表現・ホーム絶対パスの混入・自動生成manifestの手編集を警告する。ユーザーが直接読む質問本文と計画本文にも同じ本文検査を適用する。Bashでは`uv run python`の誤用とパターン一致によるプロセス終了をブロックし、`sleep`直後の状態確認連結と検証コマンド出力の切り詰めを同一セッション内の再検出でブロックし、高容量のユーザー領域を無限定に対象とする再帰検索・version未更新・未検証コミット・一括ステージ・`codex exec`前の未決事項を警告し、`git log`へ`--decorate`を自動挿入する | 対応 | 部分対応。編集検査は口語表現・文字化け・他言語文字・ホーム絶対パス・lockfile・シークレット・manifest・否定規定表現・サンドボックス保護に対応する。`.ps1`改行、frontmatter同期注記と本文節参照の実在検証はpatch入力から判定できないため非対応。ユーザーが直接読む本文の検査は、対応する入力を持たないため非対応。Bash検査は現在の入力とcwdだけで判定するものと、編集成功状態による一括ステージ警告に対応する。コマンドの終了コードを取得できないため、`git log`確認・amend後の状態・検証実行に依存する検査は非対応 |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。編集ファイル・計画ファイルの記録、条件付き禁止形の警告、検証実行・`git log`確認・amend後状態の記録、回答済みUWIの通知を行う | 対応 | 部分対応。成功した編集の対象記録、計画ファイル記録、条件付き禁止形の警告に対応する。シェル実行の終了コードが届かないため、検証実行とgit状態の記録は非対応 |
-| plugin `SessionStart/quality_checkpoint` | Codexの圧縮後に品質想起通知を追加する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応。`source=compact`だけを対象にし、非遮断の追加文脈を返す |
+| plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`及び圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は品質想起通知も併せて追加する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収し、会話破棄時だけ当該セッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`及び問いかけに関する終了判定を行う | 対応 | 非対応 |
@@ -349,10 +352,11 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前検査 | 対応 | 非対応。dotfiles固有の配布構成に依存するため、プラグインへ移さない |
 | 個人設定 `PostToolUse/posttooluse` | 参照文書へのReadとスキル起動をセッション状態へ記録する | 対応 | 非対応。同上 |
 
-Codexの`SessionStart`は、`source=compact`に限り品質想起通知へ対応する。`startup`・`resume`・`clear`では通知しない。
-pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする`SessionStart(compact)`定義と`quality_checkpoint` commandを確認して信頼する。
-信頼前は変更済みHookがスキップされるため、圧縮後通知は発火しない。
-信頼後に`/compact`を実行し、次のモデル継続前に自動生成通知が現れることを確認する。
+Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では品質想起通知も追加する。
+pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする2件の定義を確認して信頼する。
+対象は`SessionStart`定義の`rules_context_codex` commandと、`SubagentStart`定義の`rules_context` commandである。
+信頼前は変更済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
+信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
 
 ### 計画ファイルの作業領域と実装レビュー後の保存
 

@@ -11,6 +11,9 @@ from typing import Any, Literal
 
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+# 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
+SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parent.parent / "share" / "rules-subagent.md"
+SUBAGENT_RULES = SUBAGENT_RULES_PATH.read_text(encoding="utf-8")
 # 委譲先の実行主体は、両backendの既定の指示ではユーザーと直接対話する主体として起動される。
 # 起動経路の別を実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。
 # Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、既定の指示を置換しない。
@@ -19,7 +22,9 @@ DELEGATE_NOTICE = """あなたは別のコーディングエージェントか�
 あなたの応答はユーザーの画面へ表示されず、呼び出し元エージェントへ返る。"""
 DELEGATE_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
 規範が委譲先又はサブエージェントへ課す条文を自身へ適用し、メインエージェント又は最上位セッションへ限定した条文を適用しない。
-ユーザーへの確認は回答を得られないため発行せず、確認を要する事項は完了報告へ含めて呼び出し元へ差し戻す。"""
+ユーザーへの確認は回答を得られないため発行せず、確認を要する事項は完了報告へ含めて呼び出し元へ差し戻す。
+
+{SUBAGENT_RULES.rstrip()}"""
 EXPLORE_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
 あなたは調査専用の担当である。依頼された対象を読み取り、結論と根拠だけを日本語で返す。
 ファイルを作成、変更又は削除しない。コマンドは対象を変更しない読み取り操作に限る。

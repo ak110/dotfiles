@@ -1176,6 +1176,7 @@ def _check_body_section_reference_exists(tool_name: str, content: str, file_path
     is_target = any(
         pattern.search(normalized)
         for pattern in (
+            re.compile(r"(^|/)agent-toolkit/share/rules-[^/]+\.md$"),
             re.compile(r"(^|/)agent-toolkit/rules/[^/]+\.md$"),
             re.compile(r"(^|/)agent-toolkit/skills/(?:(?!.*/references/).)+/[^/]+\.md$"),
             re.compile(r"(^|/)agent-toolkit/agents/[^/]+\.md$"),

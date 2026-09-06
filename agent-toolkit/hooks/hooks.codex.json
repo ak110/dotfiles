@@ -1,5 +1,27 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py rules_context_codex",
+            "additionalContextLimit": 0
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py rules_context",
+            "additionalContextLimit": 0
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill",
@@ -60,17 +82,6 @@
             "type": "command",
             "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py session_end_cleanup",
             "timeout": 3
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py quality_checkpoint"
           }
         ]
       }

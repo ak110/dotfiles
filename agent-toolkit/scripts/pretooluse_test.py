@@ -5698,6 +5698,23 @@ class TestBodySectionReferenceExists:
         # 警告が出ること
         assert "section name does not exist" in _additional_context(result)
 
+    def test_warns_for_role_specific_rules_in_share(self, tmp_path):
+        """share配下の主体別規範も節参照検査の対象にする。"""
+        ref_file = tmp_path / "referenced.md"
+        ref_file.write_text("# 別の節\n", encoding="utf-8")
+        target_file = tmp_path / "agent-toolkit" / "share" / "rules-main.md"
+        target_file.parent.mkdir(parents=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": str(target_file),
+                    "content": "`referenced.md`「存在しない節」節を参照。",
+                },
+            }
+        )
+        assert "section name does not exist" in _additional_context(result)
+
 
 class TestAgentTaskLaunchIndependence:
     """Agent／Task起動が委譲スキル状態から独立していることを確認する。"""

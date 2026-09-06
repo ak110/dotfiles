@@ -19,6 +19,8 @@ _HOOK_SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 _HOOKS_PATH = _PLUGIN_ROOT / "hooks" / "hooks.json"
 
 _FIXTURES: dict[tuple[str, str], tuple[str, bool]] = {
+    ("SessionStart", "rules_context"): ("rules_context_session_start", True),
+    ("SubagentStart", "rules_context"): ("rules_context_subagent_start", True),
     ("PreToolUse", "pretooluse"): ("pretooluse", True),
     ("PostToolUse", "posttooluse"): ("posttooluse", True),
     ("PostToolUseFailure", "posttooluse"): ("empty", False),
@@ -58,7 +60,14 @@ def _build_fixture(
 
     managed_temp: pathlib.Path | None = None
 
-    if fixture_name == "pretooluse":
+    if fixture_name == "rules_context_session_start":
+        payload["source"] = "startup"
+        env.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
+        env.pop("AGENT_TOOLKIT_OWNER_SESSION", None)
+    elif fixture_name == "rules_context_subagent_start":
+        payload["agent_id"] = "agent-contract"
+        payload["agent_type"] = "general-purpose"
+    elif fixture_name == "pretooluse":
         payload.update(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",

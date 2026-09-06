@@ -516,6 +516,21 @@ version directoryを原本へ接続し、`plugin list`の導入済み判定だ�
 共有文書をCodex用に複製する案は、正本・生成器・検査の同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
 
+`agent-toolkit/rules/`配下には、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く。
+メインエージェントだけに適用する条文は`agent-toolkit/share/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules-main.claude-code.md`へ置く。
+サブエージェントと委譲先だけに適用する条文は`agent-toolkit/share/rules-subagent.md`へ置く。
+メイン向け条文は`SessionStart`フック（`agent-toolkit/scripts/rules_context.py`）が全ての`source`で文脈へ追加し、会話圧縮の後も再度追加する。
+サブエージェント向け条文は`SubagentStart`フックが全てのagent種別へ追加する。`agents_server`の通常起動の委譲先には、`agent-toolkit/scripts/_agents_server_state.py`の`DELEGATE_SYSTEM_PROMPT`が同じ条文を連結し、両backendのシステム指示として渡す。
+`SessionStart`フックは、`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の場合と`AGENT_TOOLKIT_OWNER_SESSION`が設定されている場合を`agents_server`の子と判定し、メイン向け条文を追加しない。
+後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
+知識境界として、条文の本文は`share/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。
+Codex向けAGENTS.mdの生成器は`rules/`配下の共通条文だけを埋め込み、`share/`配下の条文を埋め込まない。
+Claude Codeのフック出力は1件あたり10,000文字で切り詰められるため、メイン向け条文の合計を同上限内に保つ検査を`agent-toolkit/scripts/rules_context_test.py`へ置く。
+却下した代替案は3つある。
+Codexメイン向け条文をAGENTS.mdへ生成器で埋め込む案は、Codexのサブエージェントにもメイン向け条文が届き、両ホストで配布経路が非対称になるため採らない。
+委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印に依存し、未設定の環境で条文が欠落するため採らない。
+Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案は、Claude委譲先の中で起動したCodex委譲先がstatusline表示でClaude委譲先と誤判定されるため採らない。
+
 AWI本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。
 計画担当は目的と指定された外部可視要素を維持する文面を技術判断で確定し、原文との差異と根拠を採否記録と計画へ残す。
 採用済み本文が明示する変更は確認事項又は実装前提にしない。
@@ -640,7 +655,7 @@ Claude Platform on AWSで独立セッション間通信が成立しない実測�
 完了通知の受領主体を最上位と直接の親のいずれにも固定せず、直接の呼出元でない主体は現在の実行主体への`SendMessage`公開と保持済みの直接の子IDへの呼び出し成功を確認した場合だけ通知を逐語中継する。
 中継不能時は未反映を推定して再送せず、担当範囲と権限の内側にある未完了工程だけを巻き取り、外側の工程は`needs_escalation`として呼出元へ返す。
 ホスト別の手段と宛先を共有規範へ書かないのは、未実測の経路を全ホストへ配布する実施契約へ含めないためである。
-Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/rules/99-claude-code.md`だけが保持し、直接の呼出元への返信、通常完了報告及び独立セッション間通信と区別する。
+Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/share/rules-subagent.md`「Claude Code固有事項」だけが保持し、直接の呼出元への返信、通常完了報告及び独立セッション間通信と区別する。
 
 完了報告又は`ListAgents`だけから全プロセスの終了を推定する案は、外部プロセスを直接観測できないため採用しない。
 所有主体の終了後に自然終了を待つ案は、終了時機を保証できず実装担当の引継ぎを停止させるため通常経路にしない。
@@ -1019,9 +1034,8 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 利用者の意図、会話全体の意味又は工程の技術的な妥当性は判断しない。
 実行主体はフックの通知を自動生成情報として規範と会話へ照合し、採否と後続処理を決定する。
 
-Codex品質想起通知は、`SessionStart(source=compact)`だけを発火境界とする。
-通知handlerは本文を共有し、意味判定やセッション状態を持たず、非遮断の`additionalContext`として返す。
-Codex専用の`SessionStart`登録はmanifest生成器が生成し、Claude Code向け`hooks.json`へ登録しない。
+品質想起通知は、`SessionStart(source=compact)`だけを発火境界とし、Claude CodeとCodexの双方で`rules_context`がメイン向け条文と同じ非遮断の`additionalContext`へ結合して返す。
+通知の本文は`agent-toolkit/scripts/rules_context.py`が持ち、意味判定やセッション状態を持たない。
 
 block通知の解消手段は、`_hook_notice`のblock専用整形関数へ集約する。
 フックが誤発火した場合でも、通知を受領した主体が抜けられる状態を保つことが目的である。

@@ -889,6 +889,7 @@ def is_agent_facing_md(rel_path: str) -> bool:
 # `(^|/)`接頭辞で先頭一致・任意の親ディレクトリ配下一致の両方を許容する
 # （`pretooluse.py`側が絶対パス・tmp_path配下等の任意接頭辞パスを渡す既存挙動を保つ）。
 AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(^|/)agent-toolkit/share/rules-[^/]+\.md$"),
     re.compile(r"(^|/)agent-toolkit/rules/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
