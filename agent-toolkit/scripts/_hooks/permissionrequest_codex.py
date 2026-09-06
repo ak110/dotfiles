@@ -15,7 +15,7 @@ import subprocess
 import typing
 from ctypes import wintypes
 
-import _managed_temp
+from _atk import managed_temp as _managed_temp
 
 
 def _windows_dll(name: str) -> typing.Any:

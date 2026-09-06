@@ -17,7 +17,7 @@ import textwrap
 import time
 from collections.abc import Callable
 
-import _managed_temp
+from _atk import managed_temp as _managed_temp
 import hook
 import pytest
 from _testing import fork_runner as _fork_runner

@@ -9,8 +9,8 @@ import shlex
 import subprocess
 import sys
 
-import _managed_temp
 import pytest
+from _atk import managed_temp as _managed_temp
 from _testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 from _hooks.output_contract import HOOK_OUTPUT_SCHEMAS, validate_hook_output

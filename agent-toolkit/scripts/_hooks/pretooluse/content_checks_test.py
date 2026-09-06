@@ -17,7 +17,7 @@ import textwrap
 import time
 from collections.abc import Callable
 
-import _managed_temp
+from _atk import managed_temp as _managed_temp
 import hook
 import pytest
 from _testing import fork_runner as _fork_runner
@@ -25,7 +25,6 @@ from _testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 from pyfltr.colloquial import check as _colloquial_check
 
 
-pytest_plugins = ["_hooks.pretooluse.test_support_test"]
 from _hooks.pretooluse import dispatch as pretooluse
 from _hooks.pretooluse.test_support_test import *  # noqa: F403
 
@@ -940,6 +939,8 @@ def test_verified_managed_temp_git_repository_exclusion(
         }
 
     env = _plan_file_state_env(tmp_path)
+    env["XDG_STATE_HOME"] = str(tmp_path / "managed-temp-state")
+    env["LOCALAPPDATA"] = str(tmp_path / "managed-temp-state")
     for operation, command in commands.items():
         result = _run(
             {
@@ -951,7 +952,7 @@ def test_verified_managed_temp_git_repository_exclusion(
             env_overrides=env,
         )
         if condition == "valid":
-            assert result.returncode == 0, operation
+            assert result.returncode == 0, (operation, result.stdout, result.stderr)
             assert _agent_messages(result).strip() == "", operation
         elif operation == "commit":
             assert result.returncode == 0, operation

@@ -35,7 +35,6 @@ _VALID_MAIN_CONTENT = _plan_fixture.two_file_main()
 _VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
 
 
-pytest_plugins = ["_plan.structure.test_support_test"]
 from _plan.structure.test_support_test import *  # noqa: F403
 
 

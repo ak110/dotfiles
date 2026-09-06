@@ -58,11 +58,11 @@ from typing import Any
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-import _managed_temp  # noqa: E402
 from _agents_server import agents_wait as _atk_agents_wait  # noqa: E402
 from _atk import config as _config_cmd  # noqa: E402
 from _atk import git_sync as _atk_git_sync  # noqa: E402
 from _atk import help_text as _atk_help  # noqa: E402
+from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
 from _atk import plans as _plans  # noqa: E402
 from _atk import review_table as _review_table  # noqa: E402
 from _atk import watch as _watch  # noqa: E402

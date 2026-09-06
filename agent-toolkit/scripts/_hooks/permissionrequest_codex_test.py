@@ -12,13 +12,13 @@ import subprocess
 import sys
 import typing
 
-import _managed_temp
 import pytest
+from _atk import managed_temp as _managed_temp
 
 from _hooks import permissionrequest_codex as subject
 
 _ENTRYPOINT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
-_HELPER = pathlib.Path(_managed_temp.__file__).resolve()
+_HELPER = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
 
 
 @pytest.fixture(autouse=True)

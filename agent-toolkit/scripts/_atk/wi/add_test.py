@@ -17,7 +17,6 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_HEAD_COMMIT,
@@ -27,6 +26,7 @@ from _testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-p
 )
 from atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
+from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk.wi import add as add_module  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk.wi import frontmatter  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position

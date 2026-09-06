@@ -17,7 +17,7 @@ import textwrap
 import time
 from collections.abc import Callable
 
-import _managed_temp
+from _atk import managed_temp as _managed_temp
 import hook
 import pytest
 from _testing import fork_runner as _fork_runner
@@ -25,7 +25,6 @@ from _testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 from pyfltr.colloquial import check as _colloquial_check
 
 
-pytest_plugins = ["_hooks.pretooluse.test_support_test"]
 from _hooks.pretooluse import git_checks as pretooluse
 from _hooks.pretooluse.test_support_test import *  # noqa: F403
 

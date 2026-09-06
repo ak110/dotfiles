@@ -25,7 +25,6 @@ import watchdog.observers
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _common import inherited_venv as _inherited_venv  # noqa: E402  # pylint: disable=wrong-import-position
 from _common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
@@ -33,6 +32,7 @@ from atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-
 
 from _atk import config as _config  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk import git_sync as _atk_git_sync  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk.wi import process_loop as _process_loop  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk.wi import repo as _repo  # noqa: E402  # pylint: disable=wrong-import-position
 

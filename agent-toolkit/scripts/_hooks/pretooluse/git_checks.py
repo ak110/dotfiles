@@ -151,7 +151,7 @@ if TYPE_CHECKING:
 def _is_in_verified_managed_temp(file_path: str) -> bool:
     """真正性を検証できた管理対象一時領域の配下であれば真を返す。"""
     try:
-        managed_temp = importlib.import_module("_managed_temp")
+        managed_temp = importlib.import_module("_atk.managed_temp")
     except ImportError:
         return False
     try:

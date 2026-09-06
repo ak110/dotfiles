@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
