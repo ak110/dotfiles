@@ -291,11 +291,18 @@ def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None) -> boo
 
 
 def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None) -> bool:
-    """`path`が計画一覧の対象（`_is_target_path`が真、かつ付属計画ではない）かを判定する。
+    """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
-    一覧経路（`_scan_entries`）だけに使う。読取・検索・変更監視は`_is_target_path`を使い、付属計画も対象へ含める。
+    メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
+    メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
     """
-    return _is_target_path(path, root) and not path.name.endswith(_LISTED_EXCLUDED_SUFFIXES)
+    if not _is_target_path(path, root):
+        return False
+    review_suffix = next((suffix for suffix in _TARGET_TSV_SUFFIXES if path.name.endswith(suffix)), None)
+    if review_suffix is not None:
+        main_path = path.with_name(f"{path.name[: -len(review_suffix)]}.md")
+        return not main_path.is_file()
+    return not path.name.endswith((".detail.md", ".bugs.md"))
 
 
 @contextlib.contextmanager

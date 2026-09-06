@@ -65,7 +65,16 @@ _PLAN_SUFFIX_LABELS = (
     (_TARGET_TSV_SUFFIXES[0], "計画レビュー指摘管理表"),
     (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
 )
-_REVIEW_TABLE_HEADERS = ("ラウンド", "系統", "箇所", "指摘内容", "対応要否", "対応内容", "対応不要理由")
+_REVIEW_TABLE_HEADERS = (
+    "ラウンド",
+    "系統",
+    "箇所",
+    "指摘内容",
+    "指摘レベル",
+    "対応要否",
+    "対応内容",
+    "対応不要理由",
+)
 
 # debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。
 _BROADCAST_DEBOUNCE_SEC = 0.3
@@ -738,8 +747,18 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
 
 
 def is_listed_path(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """`path`が計画一覧の対象（`is_target_path`が真、かつ付属計画ではない）かを判定する。"""
-    return is_target_path(path, root) and not path.name.endswith(_LISTED_EXCLUDED_SUFFIXES)
+    """`path`が計画一覧で独立項目として表示する対象かを判定する。
+
+    メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
+    メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
+    """
+    if not is_target_path(path, root):
+        return False
+    review_suffix = next((suffix for suffix in _TARGET_TSV_SUFFIXES if path.name.endswith(suffix)), None)
+    if review_suffix is not None:
+        main = path.with_name(f"{path.name[: -len(review_suffix)]}.md")
+        return not main.is_file()
+    return not path.name.endswith((_DETAIL_SUFFIX, _BUGS_SUFFIX))
 
 
 class PlansEventHandler(watchdog.events.FileSystemEventHandler):
@@ -1779,9 +1798,10 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
         return entries
     local_results = await asyncio.gather(*(asyncio.to_thread(search_files, spec.path, query) for spec in context.roots))
     local_matches = {
-        (spec.source_id, listed_plan_path(path))
+        candidate
         for spec, paths in zip(context.roots, local_results, strict=True)
         for path in paths
+        for candidate in ((spec.source_id, path), (spec.source_id, listed_plan_path(path)))
     }
     # 1ホストの打ち切りで他ホストの結果が未回収の例外にならないよう、全件を回収してから判定する。
     results = await asyncio.gather(
@@ -1796,7 +1816,11 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
             # `_search_remote`は`Exception`のみを捕捉するため、この分岐はキャンセル等に限られる。
             raise result
         matched_host, matched_paths = result
-        remote_matches[matched_host] = {(source_id, listed_plan_path(path)) for source_id, path in matched_paths}
+        remote_matches[matched_host] = {
+            candidate
+            for source_id, path in matched_paths
+            for candidate in ((source_id, path), (source_id, listed_plan_path(path)))
+        }
     return [
         entry
         for entry in entries
@@ -1856,12 +1880,14 @@ def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str
 
 
 def review_table_html(text: str) -> str:
-    """JSON文字列7列のレビュー指摘管理表をHTML表へ変換し、不正入力は原文表示へ戻す。"""
+    """JSON文字列8列又は旧7列のレビュー指摘管理表をHTML表へ変換する。"""
     rows: list[list[str]] = []
     try:
         for line in text.splitlines():
             encoded_cells = line.split("\t")
-            if len(encoded_cells) != len(_REVIEW_TABLE_HEADERS):
+            if len(encoded_cells) == len(_REVIEW_TABLE_HEADERS) - 1:
+                encoded_cells.insert(4, json.dumps(""))
+            elif len(encoded_cells) != len(_REVIEW_TABLE_HEADERS):
                 raise ValueError("レビュー指摘管理表の列数が不正です")
             cells = [json.loads(cell) for cell in encoded_cells]
             if not all(isinstance(cell, str) for cell in cells):

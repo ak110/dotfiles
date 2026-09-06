@@ -12,6 +12,7 @@ import subprocess
 import typing
 
 import _atk_serve_plans as plans
+import atk_serve_plans_remote_helper as remote_helper
 import pytest
 
 
@@ -271,15 +272,25 @@ def test_pygments_css_keeps_token_rules_without_base_rule() -> None:
     assert not any(line.strip().startswith(".codehilite {") for line in css.splitlines())
 
 
-def test_review_table_is_rendered_as_table() -> None:
-    """レビュー指摘管理表は7列のHTML表へ変換する。"""
-    row = "\t".join(json.dumps(value, ensure_ascii=False) for value in ["1", "実装", "a.py:1", "指摘", "要", "対応", ""])
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["1", "実装", "a.py:1", "指摘", "仕様", "要", "対応", ""],
+        ["1", "実装", "a.py:1", "指摘", "要", "対応", ""],
+    ],
+)
+def test_review_table_is_rendered_as_table(values: list[str]) -> None:
+    """現行8列と旧7列のレビュー指摘管理表を8列のHTML表へ変換する。"""
+    row = "\t".join(json.dumps(value, ensure_ascii=False) for value in values)
 
     html = plans.review_table_html(row + "\n")
 
     assert "<table" in html
     assert "<th>ラウンド</th>" in html
+    assert "<th>指摘レベル</th>" in html
     assert "<td>指摘</td>" in html
+    assert html.count("<th>") == 8
+    assert html.count("<td>") == 8
 
 
 def test_malformed_review_table_falls_back_to_escaped_source() -> None:
@@ -394,6 +405,45 @@ def test_attached_files_are_excluded_from_the_listing(tmp_path: pathlib.Path, in
     assert plans.search_files(root, "詳細の本文") == {"p.detail.md"}
     assert plans.resolve_under_root(root, "p.detail.md") is not None
     assert plans.resolve_under_root(root, "note.txt") is None
+
+
+@pytest.mark.parametrize("suffix", [".plan-review.tsv", ".exec-review.tsv"])
+def test_review_table_without_main_plan_is_listed(
+    suffix: str,
+    tmp_path: pathlib.Path,
+    index_path: pathlib.Path,
+) -> None:
+    """メイン計画がないレビュー表はローカル・リモートの一覧対象になる。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    table = _plan(root, f"orphan{suffix}", "表だけの本文")
+
+    assert [entry.path for entry in plans.list_files(root, "local-host")] == [table.name]
+    assert remote_helper._is_listed_path(table, root)  # pylint: disable=protected-access
+
+    _plan(root, "orphan.md", "メイン本文")
+
+    assert [entry.path for entry in plans.list_files(root, "local-host")] == ["orphan.md"]
+    assert not remote_helper._is_listed_path(table, root)  # pylint: disable=protected-access
+
+
+@pytest.mark.asyncio
+async def test_orphan_review_table_search_match_maps_to_itself(
+    tmp_path: pathlib.Path,
+    index_path: pathlib.Path,
+) -> None:
+    """孤立したレビュー表の本文一致は同じ一覧項目へ接続する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    table = _plan(root, "orphan.exec-review.tsv", "固有の指摘")
+    context = _context(root)
+
+    entries = await plans.search_entries(context, "固有の指摘")
+
+    assert entries is not None
+    assert [entry.path for entry in entries] == [table.name]
 
 
 def test_absent_root_is_listed_without_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
