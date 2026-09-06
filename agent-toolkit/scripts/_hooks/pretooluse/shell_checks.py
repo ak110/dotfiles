@@ -136,6 +136,7 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
 from _hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import _WARN_TAG  # noqa: E402
 from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -743,7 +744,7 @@ def _check_bash_sleep_poll_pattern(
         return "block"
     return _llm_notice(
         f"warn: 前景の`sleep`の後に別のコマンドが続いており、反復ポーリングになる可能性がある。\n{guidance}",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
@@ -1184,7 +1185,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     "warn: 除外設定を反映しない再帰`grep`をディレクトリへ実行している。"
                     "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
                     "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。",
-                    tag="warn",
+                    tag=_WARN_TAG,
                 )
     return None
 
@@ -1202,7 +1203,7 @@ def _check_bash_state_change_command_chaining(command: str) -> str | None:
             return _llm_notice(
                 "warn: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。"
                 "当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
-                tag="warn",
+                tag=_WARN_TAG,
             )
     return None
 
@@ -1228,7 +1229,7 @@ def _check_bash_help_with_execution(command: str) -> str | None:
             "warn: 同じシェル呼び出しの中でヘルプ取得と同じ実行ファイルの実行が並んでいる。"
             "前段のヘルプ出力は同じ呼び出しの中では取得できないため、"
             "受理形式を確定してから実行を分けて呼び出す。",
-            tag="warn",
+            tag=_WARN_TAG,
         )
     return None
 
@@ -1517,7 +1518,7 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
             return _llm_notice(
                 "warn: 出力を切り詰めるパイプラインの後にある`$?`は、対象コマンドではなく"
                 "`head`・`tail`の終了状態を示す。出力を切り詰める前に対象コマンドの終了状態を保持する。",
-                tag="warn",
+                tag=_WARN_TAG,
             )
     return None
 
@@ -1631,7 +1632,7 @@ def _check_bash_recursive_home_search(command: str) -> str | None:
         "warn: 再帰検索が大容量のユーザーディレクトリを対象としている。"
         "対象ディレクトリを狭め、不要領域を除外し、検索対象と出力に上限を設けるか、"
         "`rg`・再帰`grep`を使う前に分離した実行コンテキストで検索する。",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 

@@ -41,7 +41,7 @@ def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
         source = (package_dir.parent / f"{module_name}.py").read_text(encoding="utf-8")
     offenders = _stderr_warn_offenders(source)
     if module_name == "pretooluse":
-        assert len(offenders) == 1
+        assert offenders == []
     else:
         assert offenders == [], module_name
 

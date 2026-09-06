@@ -22,6 +22,7 @@
 import json
 
 from _hooks.agent_id import resolve_hook_agent_id
+from _hooks.notice import _WARN_TAG, set_warning_session_id
 from _hooks.notice import formatter as _notice_formatter
 from _hooks.session_state import read_state
 from _hooks.stop_gate import parse_stop_session
@@ -35,7 +36,7 @@ _WARNING_BODY = (
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )
 
-_notice = _notice_formatter(_HOOK_ID, default_tag="warn")
+_notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 
 def _approve() -> None:
@@ -63,6 +64,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
+    set_warning_session_id(session_id)
     if payload.get("stop_hook_active") is True:
         return "approve", ""
 

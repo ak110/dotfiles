@@ -60,7 +60,13 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
     extract_execution_segments,
     extract_git_events,
 )
-from _hooks.notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _WARN_TAG,
+    set_warning_session_id,
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -616,7 +622,7 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
         return
     warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
     if warnings:
-        notices.append(_llm_notice("\n".join(warnings), tag="warn"))
+        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG))
 
 
 def _plan_main_path_for(display_path: str) -> str:
@@ -702,6 +708,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if parsed is None:
         return 0
     payload, session_id, tool_name, tool_input, cwd = parsed
+    set_warning_session_id(session_id)
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
