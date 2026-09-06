@@ -382,7 +382,7 @@ async def _open_question(page: playwright.async_api.Page) -> playwright.async_ap
 
 
 async def _open_filters(page: playwright.async_api.Page) -> None:
-    """既定で閉じているWI一覧のフィルターを利用者操作で開く。"""
+    """WI一覧のフィルターが閉じている場合に利用者操作で開く。"""
     details = page.locator(".filters details")
     if not await details.evaluate("element => element.open"):
         await details.locator("summary").click()
@@ -445,14 +445,14 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
 
 @pytest.mark.asyncio
 async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harness: _BrowserHarness) -> None:
-    """390px幅では閉じたフィルターより一覧を先に示し、各項目を2段で描画する。"""
+    """390px幅でもフィルターを開いて示し、各項目を2段で描画する。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
     row = page.locator("#entry-list .entry-row").first
     await row.wait_for(state="visible")
 
-    assert not await page.locator(".filters details").evaluate("element => element.open")
+    assert await page.locator(".filters details").evaluate("element => element.open")
     cells = row.locator(".entry-cell")
     pseudo_content = await cells.evaluate_all(
         "elements => elements.map(element => getComputedStyle(element, '::before').content)"
@@ -620,7 +620,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
-    assert not await page.locator(".filters details").evaluate("element => element.open")
+    assert await page.locator(".filters details").evaluate("element => element.open")
     await _open_filters(page)
 
     warning = page.get_by_role("alert").filter(has_text="invalid.md")
