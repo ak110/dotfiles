@@ -129,7 +129,7 @@ class TestAgentToolkitEditSkillRecording:
     def test_concurrent_write_preserves_both_keys(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
         """同一 session_id へ並行発行された別キー書き込みが消失しないこと。
 
-        agent-toolkit/skills/agent-standards/references/claude-hooks.md の
+        agent-toolkit/skills/writing-standards/references/claude-hooks.md の
         並行書き込み回帰テスト規定に整合。
         """
         # update_state 経由の書き込みは tempfile.gettempdir() を参照する。

@@ -1,7 +1,7 @@
 """`atk serve`のセッション画面の処理本体。
 
 Claude CodeとCodexの保存済み記録を共通の表示モデルへ正規化し、一覧と詳細を返す。
-保存先の規約は`agent-toolkit/skills/agent-standards/references/session-records.md`を正本とする。
+保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とする。
 リモートホスト側で実行するヘルパーは`atk_serve_sessions_remote_helper.py`とする。
 
 記録が持たない情報は0や空文字列で補わず、`None`（JSONのnull）として返す。

@@ -23,7 +23,7 @@ description: >
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
-  `<plugin root>/skills/agent-standards/references/claude-hooks.md`が扱う
+  `<plugin root>/skills/writing-standards/references/claude-hooks.md`が扱う
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
@@ -62,12 +62,12 @@ description: >
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
   エンドユーザーには挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
-    （`<plugin root>/skills/agent-standards/references/session-state-flags.md`等）は本規定の対象外とする
+    （`<plugin root>/skills/writing-standards/references/session-state-flags.md`等）は本規定の対象外とする
 
 スキル・サブエージェント編集時は次を守る。
 
-- 名前付きサブエージェントの定義と起動文を編集する場合は、`agent-toolkit:agent-standards`の
-  `agent-toolkit/skills/agent-standards/references/agent-skills.md`を適用する
+- 名前付きサブエージェントの定義と起動文を編集する場合は、`agent-toolkit:writing-standards`の
+  `agent-toolkit/skills/writing-standards/references/agent-skills.md`を適用する
 - 呼び出し元の専用の参照文書を起動契約、agent定義を受信側の恒常手順としてペアで更新する
 - 呼び出し元スキルと参照文書からagent定義をReadする手順を除外する
 - 独立入口間の重複は、各入口の読込コンテキストを実測し、
@@ -140,7 +140,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 ## セッション状態フラグ
 
-`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:agent-standards`の
+`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
 `references/session-state-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
 
 SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず
@@ -225,7 +225,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - Claude Codeのhookから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
   （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
 - `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
-  `agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`が定める互換入口の残置に従う。
+  `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換入口の残置に従う。
   残置した互換入口はバージョン管理の対象へ含める。
   撤去は、新しい入口を含む版をbumpして配布した後の版数更新以降であり、かつ旧定義を読み込んだセッションが全て終了したことを
   確認できた場合だけ行う。確認できない場合は残置を維持する
@@ -234,7 +234,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
   `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、当該イベントの既存の入口へ相乗りさせる。
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
-  入口の実装契約は`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`が定める
+  入口の実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
@@ -245,7 +245,7 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_h
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
 自身のhookメッセージを他hookから判別するため、`[auto-generated: agent-toolkit/<hook>]`形式のプレフィックスを行頭に置く。
-プレフィックス・サフィックスの規約は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
+プレフィックス・サフィックスの規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
 「コーディングエージェント宛てメッセージの標識」節に従う。
 
 ## marketplace管理

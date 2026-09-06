@@ -333,7 +333,7 @@ class TestPlanModeSkillInvocation:
             {
                 "session_id": sid,
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+                "tool_input": {"skill": "agent-toolkit:writing-standards"},
             },
             state_dir=tmp_path,
         )

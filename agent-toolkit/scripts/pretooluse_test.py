@@ -1193,7 +1193,7 @@ class TestPlanModeSkillFirstCheck:
             pytest.param(
                 "Skill",
                 # 通常の品質スキルを選び、計画単位の状態検査と分離する。
-                {"skill": "agent-toolkit:coding-standards"},
+                {"skill": "agent-toolkit:writing-standards"},
                 False,
                 0,
                 id="other-skill-without-plan-mode-skill",
@@ -1287,7 +1287,7 @@ class TestPlanModeSkillCallSites:
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+                "tool_input": {"skill": "agent-toolkit:writing-standards"},
                 "session_id": "other-skill",
                 "permission_mode": "default",
             },
@@ -5845,7 +5845,7 @@ class TestWorkflowSkillInvocation:
         result = _run(
             {
                 "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:coding-standards"},
+                "tool_input": {"skill": "agent-toolkit:writing-standards"},
                 "session_id": "reminder-other",
             },
             env_overrides=_plan_file_state_env(tmp_path),

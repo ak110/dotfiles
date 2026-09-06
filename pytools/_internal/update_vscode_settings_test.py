@@ -45,14 +45,14 @@ class TestHostnameColor:
 
         run() では1色しか生成しないため、パレット定数を直接参照して全色を検証する。
         """
-        for color in mod._HOST_COLORS:  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。coding-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
+        for color in mod._HOST_COLORS:  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。writing-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
             r, g, b = _hex_to_rgb(color)
             luminance = 0.299 * r + 0.587 * g + 0.114 * b
             assert luminance >= 140, f"パレット色 {color} が暗すぎる (輝度: {luminance:.1f})"
 
     def test_color_is_in_palette(self, tmp_path: Path) -> None:
         """複数ホスト名の戻り値が常にパレット内に含まれる。"""
-        palette = set(mod._HOST_COLORS)  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。coding-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
+        palette = set(mod._HOST_COLORS)  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。writing-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
         target = _make_settings_dir(tmp_path, is_windows=False)
         for hostname in ["host-a", "host-b", "server-1", "x", "long-hostname-example", "desk", "laptop"]:
             if target.exists():
@@ -71,7 +71,7 @@ class TestHostnameColor:
         """
         min_distance = min(
             math.dist(_hex_to_rgb(a), _hex_to_rgb(b))
-            for a, b in itertools.combinations(mod._HOST_COLORS, 2)  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。coding-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
+            for a, b in itertools.combinations(mod._HOST_COLORS, 2)  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。writing-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
         )
         assert min_distance >= 40.0, f"パレット内の最小ペア距離 {min_distance:.2f} が閾値 40 を下回っている"
 

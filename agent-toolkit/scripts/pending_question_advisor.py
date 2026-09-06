@@ -53,7 +53,7 @@ _REQUEST_EXPRESSIONS = (
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 
-# hookメッセージ英語規定（agent-toolkit/skills/agent-standards/references/claude-hooks.md）の例外。
+# hookメッセージ英語規定（agent-toolkit/skills/writing-standards/references/claude-hooks.md）の例外。
 # 遮断の対象が日本語で書かれた地の文であり、対象と同じ言語で示す方が該当箇所を特定しやすい。
 BLOCK_BODY = (
     "地の文で利用者へ判断を求めたままターンを終えようとしている。"

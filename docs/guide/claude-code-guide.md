@@ -14,7 +14,7 @@ Claude Codeは対話、フック、ルールの読み込み、作業全体の統
    既存コードの影響を受けて同水準のコードを生成する（割れ窓理論）。
    各言語のモダンなイディオム・禁止パターン・セキュリティ注意点・テスト方針を明示し品質水準を維持する
 3. 知識の補完: LLMの学習データに含まれない情報を補う。
-   Claude Code関連の仕様は改訂が頻繁なため、`agent-toolkit:agent-standards`スキル配下の
+   Claude Code関連の仕様は改訂が頻繁なため、`agent-toolkit:writing-standards`スキル配下の
    `references/agent-skills.md`・`references/claude-hooks.md`で現行仕様を参照できるようにする。
    個人製作のツール（pyfltr・pytilpackなど）は学習データに含まれないため、
    `agent-toolkit:pyfltr-usage`・`agent-toolkit:pytilpack-usage`等でリファレンスを提供する
@@ -429,9 +429,7 @@ Claude Codeで有効化する。
 
 該当作業に着手したとき自動的にロードされる。Claude Codeは`/`、Codexは`$`を付けて手動でも呼び出せる。
 
-- `agent-toolkit:coding-standards`: コードの新規作成・修正・レビュー時の品質基準とテスト方針
-- `agent-toolkit:writing-standards`: Markdown・README・技術文書などのドキュメントとコード内コメントの品質基準
-- `agent-toolkit:agent-standards`: コーディングエージェント向け文書固有の品質基準
+- `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、コーディングエージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
 - `agent-toolkit:bugfix`: バグ対応時の2系統4段階の原因分析、類似見直し、対策・横展開・再発防止の判断基準
 - `agent-toolkit:delegation`: 経路選択、継続、停滞検知又は複数主体調整が必要な高度な委譲の手順。

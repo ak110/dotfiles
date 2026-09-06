@@ -8,7 +8,7 @@
 `list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧をJSONで返す。
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 
-保存先の規約は`agent-toolkit/skills/agent-standards/references/session-records.md`を正本とし、
+保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とし、
 サーバー側`_atk_serve_sessions.py`と同じ規約で解決する
 （SSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
 """

@@ -12,7 +12,7 @@
 走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
 
 本スクリプトは検査スクリプトではなくデータ抽出ツールであるため、
-`agent-toolkit:agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+`agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と照会不能（対象記録の読込不能・モード併用・不正な正規表現・範囲外の行番号）を
 終了コード2とする区分だけを踏襲する。
 """

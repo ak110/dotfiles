@@ -14,7 +14,7 @@ LLM宛て出力には自動生成を示すプレフィックスとサフィッ�
 - サフィックス: `（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）`
 
 フィールドの詳細と規約の背景は
-`agent-toolkit/skills/agent-standards/references/claude-hooks.md`を参照する。
+`agent-toolkit/skills/writing-standards/references/claude-hooks.md`を参照する。
 """
 
 _MESSAGE_SUFFIX = "（自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"

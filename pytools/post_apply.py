@@ -142,7 +142,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 旧名careful-implの後継スキル名はplan-implだったが、
         # plan-implもagentsへ移植し廃止したため配布先リンクを除去する。
         Path("skills/careful-impl"),
-        # 現在のスキル名は agent-standards。旧名 claude-code-standards の配布先リンクを除去する。
+        # 現在のスキル名はwriting-standards。旧名claude-code-standardsの配布先リンクを除去する。
         Path("skills/claude-code-standards"),
         # plan-impl・plan-codex-reviewはagentsへ移植し、fork型スキルとしては廃止した。
         # 旧配布先リンクを除去する。

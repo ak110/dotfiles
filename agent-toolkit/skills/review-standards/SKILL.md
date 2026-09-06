@@ -4,12 +4,12 @@ description: >
   コードレビュー・ドキュメントレビュー実施時、および提案・自身の判断・サブエージェント出力の
   妥当性を評価する時に最初に必ず起動する。
   レビュー担当サブエージェント、およびメインエージェント自身がレビューする場面で起動する。
-  著者向けスキル（`agent-toolkit:coding-standards`・`agent-toolkit:writing-standards`・`agent-toolkit:agent-standards`）と併用する。
+  著者向けスキル`agent-toolkit:writing-standards`と併用する。
 # 編集時の注意点:
 # レビュー担当側の判断指針のみを扱う。
 # レビューイー側は`../reviewee-standards/SKILL.md`を正本とする。
 # レビュー工程管理と経路固有の出力は各タスク文書が扱う。
-# 著者向け規約はcoding-standards・writing-standards・agent-standards側に置く。
+# 著者向け規約はwriting-standards側に置く。
 ---
 
 # レビュー担当側心得

@@ -30,7 +30,7 @@ description: >
 ## PowerShell / `.ps1.tmpl` 側の必須作法
 
 改行・厳格モード・エンコーディング指定・パス操作などの記述作法は
-`<plugin root>/skills/coding-standards/references/powershell.md`に従う。
+`<plugin root>/skills/writing-standards/references/powershell.md`に従う。
 ペアファイル側で追加する事項は次の2点とする。
 
 - BOMなしUTF-8で出力する場合は`System.Text.UTF8Encoding`のインスタンスを使う
@@ -38,7 +38,7 @@ description: >
 
 ## Bash / `.sh.tmpl` 側の対応
 
-記述作法は`<plugin root>/skills/coding-standards/references/bash.md`に従う。
+記述作法は`<plugin root>/skills/writing-standards/references/bash.md`に従う。
 ただし`.sh.tmpl`では既存スクリプトに合わせて`set -eux`を使う。
 
 ## ローカル検査とCIジョブの対応
@@ -54,7 +54,7 @@ CIが`claude-plugin-validate`を無効化する点だけが異なる。
 - `python-lint (3.14)`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されない。
-`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
+`agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。
 
 ## 変更フロー
 

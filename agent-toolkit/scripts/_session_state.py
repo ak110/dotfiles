@@ -12,7 +12,7 @@
 直列化も不要になる）。書き込みは同一ディレクトリの一時ファイル経由`os.replace`で
 アトミックに反映する。
 
-パス規則は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
+パス規則は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
 「セッション状態ファイル」節に記載がある。
 """
 
