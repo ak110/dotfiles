@@ -116,6 +116,7 @@ class TestLanguageEscalation:
         assert r1.returncode == 0
         r2 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m-same")
         assert r2.returncode == 0  # 同一IDなのでカウンタ増加なし、ブロックしない
+        assert "英語主体" not in _additional_context(r2)
 
     def test_block_then_next_english_reblocks(self, tmp_path: pathlib.Path):
         """ブロック後の次ターン英語で再ブロックする。"""
@@ -498,7 +499,7 @@ class TestBashGitCommitWarning:
                 id="grep-single-quoted-pattern",
             ),
             pytest.param(
-                'grep -rn "git commit" .',
+                'grep -rn --exclude-dir=.git "git commit" .',
                 False,
                 False,
                 None,

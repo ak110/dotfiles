@@ -199,13 +199,15 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
     # update_stateがOSErrorで失敗した場合、_incrementは実行されずcountは初期値0のまま残る。
     # この場合はブロックしない方向（安全側）にフォールバックする。
     count = 0
+    duplicate = False
 
     def _increment(current: dict) -> dict | None:
-        nonlocal count
+        nonlocal count, duplicate
         prev_id = current.get("english_warning_msg_id", "")
         prev_count = current.get("english_warning_count", 0)
         if msg_id and prev_id == msg_id:
             count = prev_count
+            duplicate = True
             return None
         count = prev_count + 1
         current["english_warning_count"] = count
@@ -213,6 +215,9 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
         return current
 
     update_state(session_id, _increment)
+
+    if duplicate:
+        return (None, None)
 
     if count >= 2:
 

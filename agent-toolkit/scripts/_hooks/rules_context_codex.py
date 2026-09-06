@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import rules_context
+from _hooks import rules_context
 
 
 def main(payload_text: str) -> int:

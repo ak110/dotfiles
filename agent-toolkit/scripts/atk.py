@@ -46,6 +46,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 
 import argparse
 import datetime
+import importlib
 import os
 import pathlib
 import re
@@ -77,6 +78,7 @@ from _atk.wi import mutations as _mutations  # noqa: E402
 from _atk.wi import process_loop as _process_loop  # noqa: E402
 from _atk.wi import show as _show  # noqa: E402
 from _atk.wi import uwi as _uwi  # noqa: E402
+from _atk_agents_notify import send_notification as _send_agents_notification  # noqa: E402
 from _common import wait_schedule as _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
@@ -1039,12 +1041,11 @@ def main(
             except (OSError, UnicodeError) as error:
                 args.subparser.error(f"--body-fileをUTF-8で読めません: {error}")
         assert body is not None
-        sys.exit(_atk_agents_notify.send_notification(body))
+        sys.exit(_send_agents_notification(body))
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":
-        from _atk.serve import cli as _serve  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
+        _serve = importlib.import_module("_atk.serve.cli")
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
     if args.command == "managed-temp":

@@ -9,7 +9,7 @@ import pathlib
 import sys
 from collections.abc import Mapping
 
-import _agents_server_status_file as status_file
+from _agents_server import status_file
 
 
 def send_notification(

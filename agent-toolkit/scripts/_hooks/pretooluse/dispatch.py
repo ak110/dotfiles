@@ -180,9 +180,12 @@ if TYPE_CHECKING:
         _check_bash_codex_exec,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
+        _check_bash_help_with_execution,
         _check_bash_process_kill_by_pattern,
+        _check_bash_recursive_grep_without_exclusion,
         _check_bash_recursive_home_search,
         _check_bash_sleep_poll_pattern,
+        _check_bash_state_change_command_chaining,
         _check_bash_uv_run_python,
     )
 
@@ -304,9 +307,6 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        preamble_notice = _check_user_facing_preamble(tool_name, tool_input, payload)
-        if preamble_notice is not None:
-            pending_notices.append(preamble_notice)
         return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
@@ -423,6 +423,9 @@ def _handle_bash_tool(
         truncation_result,
         _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
+        _check_bash_recursive_grep_without_exclusion(command, cwd),
+        _check_bash_state_change_command_chaining(command),
+        _check_bash_help_with_execution(command),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -469,65 +472,6 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
                 if isinstance(value, str):
                     fields.append((f"questions[{question_index}].options[{option_index}].{name}", value))
     return fields
-
-
-def _user_facing_body_fields(tool_name: str, tool_input: dict) -> list[str]:
-    """ユーザーが読む本文欄の文字列を出現順に返す。"""
-    if tool_name == "ExitPlanMode":
-        plan = tool_input.get("plan")
-        return [plan] if isinstance(plan, str) else []
-    questions = tool_input.get("questions")
-    if not isinstance(questions, list):
-        return []
-    fields: list[str] = []
-    for question in questions:
-        if not isinstance(question, dict):
-            continue
-        value = question.get("question")
-        if isinstance(value, str):
-            fields.append(value)
-        options = question.get("options")
-        if not isinstance(options, list):
-            continue
-        for option in options:
-            if not isinstance(option, dict):
-                continue
-            for name in ("label", "description", "preview"):
-                value = option.get(name)
-                if isinstance(value, str):
-                    fields.append(value)
-    return fields
-
-
-def _check_user_facing_preamble(tool_name: str, tool_input: dict, payload: dict) -> str | None:
-    """地の文がユーザー向け本文より長い場合に警告を返す。"""
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path or payload.get("isSidechain") is True:
-        return None
-    body_fields = _user_facing_body_fields(tool_name, tool_input)
-    if not body_fields:
-        return None
-    preamble_parts: list[str] = []
-    for message in _transcript.iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        preamble_parts.extend(
-            block["text"]
-            for block in content
-            if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
-        )
-    if len("\n".join(preamble_parts)) <= len("".join(body_fields)):
-        return None
-    fields = (
-        "`questions[].question`と`options[]`の`label`・`description`・`preview`" if tool_name == "AskUserQuestion" else "`plan`"
-    )
-    return _llm_notice(
-        f"{tool_name}の直前に出力した地の文が、ユーザーが読む本文（{fields}）より長い。"
-        "地の文はハーネスが要約へ置換することがあり、ユーザーへ届かない場合がある。"
-        "判断材料を地の文へ置かず、ユーザーが読む本文へ自己完結で含める。",
-        tag="warn",
-    )
 
 
 def _handle_user_facing_text_tool(

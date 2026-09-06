@@ -16,7 +16,7 @@ import pathlib
 from collections.abc import Mapping
 from typing import Any
 
-from _hook_notice import formatter as _notice_formatter
+from _hooks.notice import formatter as _notice_formatter
 
 _HOOK_ID = "agent-toolkit/rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -28,7 +28,7 @@ QUALITY_CHECKPOINT_NOTICE = (
     "`AGENTS.md`とagent-toolkitの規範を正本として扱う。"
 )
 
-SHARE_DIR = pathlib.Path(__file__).resolve().parent.parent / "share"
+SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"

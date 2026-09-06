@@ -11,7 +11,7 @@ from _plan import structure as _plan_format
 from _testing import fork_runner as _fork_runner
 from _testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
-from rules_context import QUALITY_CHECKPOINT_NOTICE
+from _hooks.rules_context import QUALITY_CHECKPOINT_NOTICE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 

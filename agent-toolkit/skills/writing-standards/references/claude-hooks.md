@@ -66,7 +66,8 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 既存の遮断・警告フックを本条件で点検した結果、条件を満たさないものは、判定条件を機械的に確定できる形へ是正するか、規範文書へ移して当該フックを撤去する。
 
 `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
-`agent-toolkit/scripts/rules_context.py`は、前者でメイン向け条文を追加するときに環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`で委譲先を除き、後者でサブエージェント向け条文を追加する。
+`agent-toolkit/scripts/_hooks/rules_context.py`は、前者でメイン向け条文を追加するときに委譲先を除く。
+判定には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を用い、後者ではサブエージェント向け条文を追加する。
 
 `Stop`と`SubagentStop`へ登録する判定は、いずれも委譲先で発火し得る。
 判定が求める処置を委譲先が実行できるかを判定ごとに確定し、結果と根拠を当該判定モジュールのdocstringへ記録する。

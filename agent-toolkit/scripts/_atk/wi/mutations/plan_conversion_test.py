@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F403,F405,I001
@@ -535,6 +535,21 @@ class TestRmSingle:
         assert exc_info.value.code == 0
         assert not (processing_dir / "fb-001.md").exists()
 
+    def test_hold_file_removed(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """hold配下のファイルもrm対象として解決される。"""
+        notes = _setup_notes(tmp_path)
+        hold_dir = notes / "hold"
+        hold_dir.mkdir(parents=True, exist_ok=True)
+        path = _write_awi_file(notes, "fb-001.md")
+        path.rename(hold_dir / path.name)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "rm", "fb-001.md"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert not (hold_dir / "fb-001.md").exists()
+
     def test_processing_file_rejected_without_force(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -560,13 +575,13 @@ class TestRmSingle:
         assert "processing状態のファイルは既定で削除を保護します" in captured.err
         assert "fb-001.md" in captured.err
 
-    def test_missing_file_reports_inbox_and_processing(
+    def test_missing_file_reports_all_editable_states(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inbox・processingいずれにも存在しない場合、両状態を明記したメッセージでexit 2する。"""
+        """編集可能な3状態のいずれにも存在しない場合、その旨を明記してexit 2する。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -575,7 +590,7 @@ class TestRmSingle:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox・processingのいずれにも存在しません" in captured.err
+        assert "inbox・processing・holdのいずれにも存在しません" in captured.err
 
 
 def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(
@@ -595,6 +610,31 @@ def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(
     assert mutations.append_entry_content(notes, state="inbox", filename=append_path.name, content=appended)
     assert edit_path.read_text(encoding="utf-8").endswith("変更後\n")
     assert append_path.read_bytes() == appended
+
+
+@pytest.mark.parametrize("with_target_repo", [False, True])
+def test_edit_accepts_crlf_entry_with_and_without_target_repo(
+    with_target_repo: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CRLFで保存済みの項目を対象リポジトリ指定の有無を問わず編集する。"""
+    notes = _setup_notes(tmp_path)
+    path = notes / "inbox" / "fb-001.md"
+    path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\nold\r\n")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    argv = ["wi", "edit", "fb-001.md", "新本文"]
+    if with_target_repo:
+        argv[2:2] = ["--target-repo", "github.com/example/foo"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert b"\r" not in path.read_bytes()
+    assert "新本文" in path.read_text(encoding="utf-8")
+    assert "    body_match: 一致\n" in capsys.readouterr().out
 
 
 class TestEditWithChanges:
@@ -664,6 +704,52 @@ class TestEditWithChanges:
         assert exc_info.value.code == 0
         assert (processing_dir / "fb-001.md").read_text(encoding="utf-8").endswith("\n編集後\n")
 
+    def test_hold_file_edit_and_append_preserve_state(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """hold配下の本文を編集・追記しても保存状態を変えない。"""
+        notes = _setup_notes(tmp_path)
+        hold_dir = notes / "hold"
+        hold_dir.mkdir(parents=True, exist_ok=True)
+        path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        hold_path = hold_dir / path.name
+        path.rename(hold_path)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as edit_exit:
+            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+        with pytest.raises(SystemExit) as append_exit:
+            atk.main(["wi", "edit", "--append", "fb-001.md", "追記"], home=tmp_path)
+
+        assert edit_exit.value.code == 0
+        assert append_exit.value.code == 0
+        assert hold_path.exists()
+        saved = hold_path.read_text(encoding="utf-8")
+        assert "編集後" in saved
+        assert saved.endswith("追記")
+
+    def test_adopted_file_is_not_editable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """終端済みのadopted項目は編集対象へ含めない。"""
+        notes = _setup_notes(tmp_path)
+        adopted_dir = notes / "adopted"
+        adopted_dir.mkdir(parents=True)
+        path = _write_awi_file(notes, "fb-001.md")
+        path.rename(adopted_dir / path.name)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "fb-001.md", "変更"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert "inbox・processing・holdのいずれにも存在しません" in capsys.readouterr().err
+
     def test_editor_target_repo_change_invalidates_target_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -704,13 +790,13 @@ class TestEditWithChanges:
         assert parsed[0]["target_repo"] == "github.com/example/new"
         assert "target_commit" not in parsed[0]
 
-    def test_missing_file_reports_inbox_and_processing(
+    def test_missing_file_reports_all_editable_states(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inbox・processingいずれにも存在しない場合、両状態を明記したメッセージでexit 2する。"""
+        """編集可能な3状態のいずれにも存在しない場合、その旨を明記してexit 2する。"""
         _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -720,7 +806,7 @@ class TestEditWithChanges:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox・processingのいずれにも存在しません" in captured.err
+        assert "inbox・processing・holdのいずれにも存在しません" in captured.err
 
 
 class TestHold:

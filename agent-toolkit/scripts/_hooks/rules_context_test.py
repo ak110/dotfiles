@@ -7,10 +7,10 @@ import pathlib
 import re
 
 import pytest
-import rules_context
-import rules_context_codex
 
-_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[1]
+from _hooks import rules_context, rules_context_codex
+
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def _output(capsys: pytest.CaptureFixture[str]) -> str:

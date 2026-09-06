@@ -12,7 +12,7 @@ from typing import Any, Literal
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
-SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parent.parent / "share" / "rules-subagent.md"
+SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules-subagent.md"
 SUBAGENT_RULES = SUBAGENT_RULES_PATH.read_text(encoding="utf-8")
 # 委譲先の実行主体は、両backendの既定の指示ではユーザーと直接対話する主体として起動される。
 # 起動経路の別を実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。

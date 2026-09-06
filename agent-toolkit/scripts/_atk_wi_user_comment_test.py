@@ -1,7 +1,7 @@
 """ユーザーコメント節の改行保持契約を検証する。"""
 
-import _atk_wi_user_comment as user_comment
 import pytest
+from _atk.wi import user_comment
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

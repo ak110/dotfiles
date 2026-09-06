@@ -29,6 +29,67 @@ from _hooks.pretooluse import dispatch as pretooluse
 from _hooks.pretooluse.test_support_test import *  # noqa: F403
 
 
+class TestBashCommandContractWarnings:
+    """Bash入力の検索・直列実行・ヘルプ取得契約を検証する。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        ["grep -rn foo docs/", "grep -rn foo", "grep -rn -e foo docs/", "grep -rn -- foo", "grep -rn -e foo -- docs/"],
+    )
+    def test_recursive_grep_warns(self, command: str, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "docs").mkdir()
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        assert "除外設定を反映しない再帰`grep`" in _additional_context(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "grep -rn --include=*.md foo docs/",
+            "grep -rn --exclude-dir=.git foo docs/",
+            "rg -n foo docs/",
+            "printf 'foo' | grep -rn foo -",
+            "printf 'foo' | grep -rn -- foo -",
+            "grep -rn foo README.md",
+        ],
+    )
+    def test_recursive_grep_safe_forms_are_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "README.md").write_text("foo\n", encoding="utf-8")
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        ["atk wi unhold a.md && atk wi edit b.md", "git commit -m x; echo done", "git -C . commit -m x; echo done"],
+    )
+    def test_state_change_before_last_serial_command_warns(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "状態を変更するコマンドを他のコマンド" in _additional_context(result)
+
+    @pytest.mark.parametrize("command", ["cd /tmp && atk wi add --title x", "atk wi list && atk wi show a.md"])
+    def test_safe_serial_commands_are_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command", ["atk --help; atk agents --help", "atk --help; atk wi list", "atk wi --help && atk wi show a.md"]
+    )
+    def test_help_with_same_executable_warns(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "ヘルプ取得と同じ実行ファイル" in _additional_context(result)
+
+    @pytest.mark.parametrize("command", ["grep -h foo a.txt; grep -h bar b.txt", "atk --help", "atk wi list"])
+    def test_help_single_or_short_option_forms_are_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "ヘルプ取得と同じ実行ファイル" not in _agent_messages(result)
+
+
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力`tail`・`head`切り詰めを初回から遮断する。"""
 
@@ -136,11 +197,13 @@ class TestBashOutputTruncationWarning:
         [
             "atk wi add --body-file /tmp/body.md | tail -20",
             "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md | head -20",
+            "atk wi show 20260906-105742-003.md | tail -20",
+            "atk review-table show /tmp/review.tsv | head -20",
         ],
-        ids=["wi-add", "wi-edit"],
+        ids=["wi-add", "wi-edit", "wi-show", "review-table-show"],
     )
     def test_saved_body_command_truncation_blocks(self, command: str) -> None:
-        """保存本文の照合に使う登録・編集出力の切り詰めを遮断する。"""
+        """保存本文の照合に使うコマンド出力の切り詰めを遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
@@ -148,15 +211,79 @@ class TestBashOutputTruncationWarning:
     @pytest.mark.parametrize(
         "command",
         [
+            "mise run test 2>&1 | tail -25",
+            "mise run format | tail -5",
+            "mise r lint | head -5",
+            "mise tasks run check | tail -5",
+            "pnpm run test | tail -5",
+            "pnpm run lint | head -5",
+            "pnpm test | tail -5",
+            "npm run check | tail -5",
+            "make format | tail -5",
+            "atk wi hold a.md | tail -5",
+            "atk wi add --title x | grep -E ok",
+            "mise run --force test | tail -5",
+            "mise run build ::: test | tail -5",
+            "mise r --jobs 2 lint | head -5",
+            "mise tasks run --cd . check | tail -5",
+            "pnpm run --if-present lint | tail -5",
+            "pnpm run-script --dir . test | tail -5",
+            "git -C . commit -m x | tail -1",
+            "git -C . push | grep ok",
+        ],
+    )
+    def test_extended_complete_output_commands_block(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`・`grep`などで限定している" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "mise run test 2>&1 | tee /tmp/mise-test.log",
+            "mise tasks ls | head -3",
+            "pnpm run build | tail -5",
+            "atk wi list | head -5",
+            "pytest -q | grep FAILED",
+            "atk wi hold a.md --help | head -5",
+            "atk wi add --help | head -3",
+            "mise run build test | tail -5",
+            "pnpm run --test-pattern=test build | tail -1",
+            "pnpm run build --test-pattern=test | tail -1",
+            "git -C . status | tail -1",
+            "git -C . log | grep ok",
+        ],
+    )
+    def test_extended_complete_output_safe_forms_are_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`・`grep`などで限定している" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
             "atk wi add --body-file /tmp/body.md > /tmp/wi-add.log",
             "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md > /tmp/wi-edit.log",
+            "atk wi show 20260906-105742-003.md > /tmp/wi-show.log",
+            "atk review-table show /tmp/review.tsv > /tmp/review-table.log",
             "atk wi add --body-file /tmp/body.md | tee /tmp/wi-add.log | tail -20",
             "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md | tee /tmp/wi-edit.log | head -20",
+            "atk wi show 20260906-105742-003.md | tee /tmp/wi-show.log | tail -20",
+            "atk review-table show /tmp/review.tsv | tee /tmp/review-table.log | head -20",
         ],
-        ids=["wi-add-redirect", "wi-edit-redirect", "wi-add-tee", "wi-edit-tee"],
+        ids=[
+            "wi-add-redirect",
+            "wi-edit-redirect",
+            "wi-show-redirect",
+            "review-table-show-redirect",
+            "wi-add-tee",
+            "wi-edit-tee",
+            "wi-show-tee",
+            "review-table-show-tee",
+        ],
     )
     def test_saved_body_command_full_output_save_is_allowed(self, command: str) -> None:
-        """保存本文の全量をファイルへ残す登録・編集経路は許可する。"""
+        """保存本文の全量をファイルへ残す経路は許可する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
@@ -164,6 +291,20 @@ class TestBashOutputTruncationWarning:
     def test_saved_body_command_name_outside_execution_position_is_silent(self) -> None:
         """登録コマンド名を引数として含むだけの処理は遮断しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo 'atk wi add' | head -1"}})
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "gh pr create | head -20",
+            "gh release create v1.0.0 | tail -20",
+        ],
+        ids=["gh-pr-create", "gh-release-create"],
+    )
+    def test_identifier_output_command_truncation_is_silent(self, command: str) -> None:
+        """作成結果の識別子だけを返すコマンドは全量比較の対象にしない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 

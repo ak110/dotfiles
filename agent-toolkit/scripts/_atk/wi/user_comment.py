@@ -1,6 +1,7 @@
 """session-review AWIのユーザーコメント節を抽出・更新する。"""
 
 import re
+
 import markdown_it
 from markdown_it.token import Token
 
