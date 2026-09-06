@@ -209,6 +209,7 @@ class TestExtractPluginVersionMap:
         assert any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
 
+@pytest.mark.usefixtures("fake_which_present")
 class TestEnsureMarketplaceCliPath:
     """ensure_marketplace の CLI フォールバックパス (ファイル検査が None の場合)。
 

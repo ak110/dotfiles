@@ -84,7 +84,7 @@ def resolve_executable(name: str, *, preferred_directories: Sequence[Path] = ())
         seen.add(resolved_directory)
         found = shutil.which(name, path=str(directory))
         if found is not None:
-            return Path(found)
+            return safe_resolve(Path(found))
     return None
 
 

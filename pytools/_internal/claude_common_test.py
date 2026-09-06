@@ -123,6 +123,28 @@ class TestResolveExecutable:
             claude_common.resolve_executable("codex", preferred_directories=(tmp_path / "missing",)) == path_directory / "codex"
         )
 
+    def test_relative_path_stays_bound_after_cwd_change(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        resolve_cwd = tmp_path / "resolve"
+        launch_cwd = tmp_path / "launch"
+        for cwd, output in ((resolve_cwd, "expected"), (launch_cwd, "wrong")):
+            executable = cwd / "bin" / "claude"
+            executable.parent.mkdir(parents=True)
+            executable.write_text(f"#!/bin/sh\nprintf '%s\\n' {output}\n", encoding="utf-8")
+            executable.chmod(0o755)
+
+        monkeypatch.chdir(resolve_cwd)
+        monkeypatch.setenv("PATH", "bin")
+        resolved = claude_common.resolve_executable("claude")
+
+        assert resolved == resolve_cwd / "bin" / "claude"
+        monkeypatch.chdir(launch_cwd)
+        result = subprocess.run([str(resolved)], capture_output=True, text=True, check=True)
+        assert result.stdout == "expected\n"
+
     def test_custom_mise_data_dir_excludes_only_custom_shims(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         default_shims = tmp_path / ".local" / "share" / "mise" / "shims"
         custom_shims = tmp_path / "custom-mise" / "shims"
