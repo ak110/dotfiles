@@ -60,6 +60,44 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
         yield message
 
 
+def iter_latest_assistant_text_messages(transcript_path: str) -> collections.abc.Iterator[dict]:
+    """テキストブロックを持つ直近のアシスタントターンを新しい順に生成する。
+
+    テキストを持たないターンを除いて遡り、最初に見つけたmessage IDと同じエントリを
+    最大3件返す。APIエラーは、それ以前の本文を判定対象にしない終端境界とする。
+    """
+    lines = _read_transcript_lines(transcript_path)
+    if lines is None:
+        return
+    target_msg_id: str | None = None
+    yielded_count = 0
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if entry.get("isApiErrorMessage"):
+            return
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        if not isinstance(message, dict):
+            continue
+        msg_id = message.get("id", "")
+        if target_msg_id is None:
+            if not assistant_text(message):
+                continue
+            target_msg_id = msg_id if isinstance(msg_id, str) else ""
+        elif target_msg_id and msg_id and msg_id != target_msg_id:
+            return
+        if msg_id != target_msg_id:
+            continue
+        yielded_count += 1
+        if yielded_count > _MAX_ENTRIES:
+            return
+        yield message
+
+
 def latest_main_assistant_entry(transcript_path: str) -> dict | None:
     """末尾（最新側）で最初に見つかる非sidechainのassistantエントリ全体を返す。
 

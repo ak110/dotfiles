@@ -537,32 +537,3 @@ def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> 
     assert result.returncode == 0
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert _is_japanese_notice(context)
-
-
-def test_user_facing_preamble_warning_is_japanese(tmp_path: pathlib.Path) -> None:
-    transcript = tmp_path / "japanese-preamble.jsonl"
-    entry = {
-        "type": "assistant",
-        "message": {
-            "id": "japanese-preamble",
-            "role": "assistant",
-            "content": [{"type": "text", "text": "これは質問本文よりも十分に長い直前の地の文です。"}],
-            "stop_reason": "end_turn",
-        },
-    }
-    transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    result = _run(
-        {
-            "tool_name": "AskUserQuestion",
-            "tool_input": {
-                "questions": [{"question": "質問", "header": "確認", "options": [{"label": "案", "description": "説明"}]}]
-            },
-            "transcript_path": str(transcript),
-        },
-        tmp_path,
-    )
-
-    assert result.returncode == 0
-    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert _is_japanese_notice(context)

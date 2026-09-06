@@ -1,7 +1,7 @@
 """Claude Code agent-toolkit: 文字列の記述言語検査。
 
 文字列からコードブロック・インラインコード・URL・機械可読な返却行を除いた地の文を判定する。
-直前のメインエージェント応答はtranscriptから文字列を取得して同じ判定へ渡す。
+テキストブロックを持つ直近のメインエージェント応答はtranscriptから文字列を取得して同じ判定へ渡す。
 判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
 語数比が閾値未満であることの3種とする。
 語数比は日本語文字数を、日本語文字数と英単語数（連続英字列）の和で割った値とする。
@@ -12,7 +12,7 @@
 import enum
 import re
 
-from _transcript import iter_latest_assistant_messages
+from _transcript import iter_latest_assistant_text_messages
 
 # プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
@@ -165,7 +165,7 @@ def _collect_raw_text(transcript_path: str) -> tuple[str, str]:
     """
     texts: list[str] = []
     msg_id = ""
-    for message in iter_latest_assistant_messages(transcript_path):
+    for message in iter_latest_assistant_text_messages(transcript_path):
         raw_id = message.get("id", "")
         if not msg_id:
             msg_id = raw_id if isinstance(raw_id, str) else ""

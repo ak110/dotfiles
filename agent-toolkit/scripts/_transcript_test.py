@@ -4,7 +4,12 @@ import json
 import pathlib
 
 from _test_helpers import _write_transcript
-from _transcript import assistant_text, iter_latest_assistant_messages, latest_main_assistant_entry
+from _transcript import (
+    assistant_text,
+    iter_latest_assistant_messages,
+    iter_latest_assistant_text_messages,
+    latest_main_assistant_entry,
+)
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_a", stop_reason: str = "end_turn") -> dict:
@@ -153,6 +158,49 @@ def _api_error_entry(text: str) -> dict:
         "isApiErrorMessage": True,
         "message": {"id": "err", "role": "assistant", "content": [_text_block(text)], "stop_reason": None},
     }
+
+
+class TestIterLatestAssistantTextMessages:
+    """テキストを持つ直近ターンの抽出契約を検証する。"""
+
+    def test_skips_turns_without_text(self, tmp_path: pathlib.Path) -> None:
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _assistant_entry([_text_block("回答")], msg_id="text"),
+                _assistant_entry([{"type": "thinking", "thinking": "検討"}], msg_id="thinking"),
+                _assistant_entry([{"type": "tool_use", "name": "Bash"}], msg_id="tool"),
+            ],
+        )
+
+        messages = list(iter_latest_assistant_text_messages(str(transcript)))
+
+        assert [message["id"] for message in messages] == ["text"]
+
+    def test_merges_same_message_id_and_excludes_sidechain(self, tmp_path: pathlib.Path) -> None:
+        sidechain = _assistant_entry([_text_block("子")], msg_id="side")
+        sidechain["isSidechain"] = True
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                _assistant_entry([_text_block("前半")], msg_id="text"),
+                _assistant_entry([_text_block("後半")], msg_id="text"),
+                sidechain,
+            ],
+        )
+
+        messages = list(iter_latest_assistant_text_messages(str(transcript)))
+
+        assert [message["id"] for message in messages] == ["text", "text"]
+
+    def test_stops_at_api_error_and_handles_missing_input(self, tmp_path: pathlib.Path) -> None:
+        transcript = _write_transcript(
+            tmp_path,
+            [_assistant_entry([_text_block("回答")]), _api_error_entry("API error")],
+        )
+
+        assert not list(iter_latest_assistant_text_messages(str(transcript)))
+        assert not list(iter_latest_assistant_text_messages(str(tmp_path / "missing.jsonl")))
 
 
 class TestLatestMainAssistantEntry:

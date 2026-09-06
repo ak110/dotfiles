@@ -958,118 +958,6 @@ class TestUserFacingTextChecks:
         assert "口語的な日本語表現" in _additional_context(result)
 
 
-class TestUserFacingPreambleLength:
-    """ユーザー向け本文と直前の地の文の文字数比較を検証する。"""
-
-    @staticmethod
-    def _write_transcript(tmp_path: pathlib.Path, text: str) -> pathlib.Path:
-        entry = {
-            "type": "assistant",
-            "message": {
-                "id": "preamble-message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": text}],
-                "stop_reason": "end_turn",
-            },
-        }
-        path = tmp_path / "preamble-transcript.jsonl"
-        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-        return path
-
-    @staticmethod
-    def _question_payload(transcript: pathlib.Path | None = None, *, preview: str | None = None) -> dict:
-        option = {"label": "案", "description": "説明"}
-        if preview is not None:
-            option["preview"] = preview
-        payload = {
-            "tool_name": "AskUserQuestion",
-            "tool_input": {"questions": [{"question": "質問", "header": "確認", "options": [option]}]},
-        }
-        if transcript is not None:
-            payload["transcript_path"] = str(transcript)
-        return payload
-
-    def test_warns_when_preamble_longer_than_user_facing_body(self, tmp_path: pathlib.Path) -> None:
-        transcript = self._write_transcript(tmp_path, "これは十分に長い直前の地の文です。")
-
-        result = _run(self._question_payload(transcript))
-
-        assert result.returncode == 0
-        context = _additional_context(result)
-        assert _notice_body(context) == (
-            "AskUserQuestionの直前に出力した地の文が、ユーザーが読む本文（`questions[].question`と"
-            "`options[]`の`label`・`description`・`preview`）より長い。"
-            "地の文はハーネスが要約へ置換することがあり、ユーザーへ届かない場合がある。"
-            "判断材料を地の文へ置かず、ユーザーが読む本文へ自己完結で含める。"
-        )
-
-    def test_no_warning_when_body_longer_than_preamble(self, tmp_path: pathlib.Path) -> None:
-        transcript = self._write_transcript(tmp_path, "短文")
-        payload = self._question_payload(transcript, preview="判断材料をここへ十分な長さで記載します。")
-
-        result = _run(payload)
-
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_no_warning_when_preview_holds_context(self, tmp_path: pathlib.Path) -> None:
-        transcript = self._write_transcript(tmp_path, "質問本文より長い地の文です。")
-        payload = self._question_payload(transcript, preview="選択に必要な判断材料を詳細かつ自己完結で記載します。")
-
-        result = _run(payload)
-
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_no_warning_on_equal_length(self, tmp_path: pathlib.Path) -> None:
-        transcript = self._write_transcript(tmp_path, "あいうえおかきく")
-        tool_input = {"questions": [{"question": "あいうえおかきく", "options": []}]}
-        payload = {
-            "transcript_path": str(transcript),
-            "tool_input": tool_input,
-        }
-
-        notice = pretooluse._check_user_facing_preamble(  # noqa: SLF001  # pylint: disable=protected-access
-            "AskUserQuestion", tool_input, payload
-        )
-
-        assert notice is None
-
-    def test_warns_when_preamble_longer_than_plan(self, tmp_path: pathlib.Path) -> None:
-        transcript = self._write_transcript(tmp_path, "これは計画本文より長い直前の地の文です。")
-        result = _run(
-            {
-                "tool_name": "ExitPlanMode",
-                "tool_input": {"plan": "計画"},
-                "transcript_path": str(transcript),
-            }
-        )
-
-        assert result.returncode == 0
-        context = _additional_context(result)
-        assert _notice_body(context) == (
-            "ExitPlanModeの直前に出力した地の文が、ユーザーが読む本文（`plan`）より長い。"
-            "地の文はハーネスが要約へ置換することがあり、ユーザーへ届かない場合がある。"
-            "判断材料を地の文へ置かず、ユーザーが読む本文へ自己完結で含める。"
-        )
-
-    def test_no_warning_without_transcript_path(self) -> None:
-        result = _run(self._question_payload())
-
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_no_warning_for_sidechain(self, tmp_path: pathlib.Path) -> None:
-        transcript = self._write_transcript(tmp_path, "これは十分に長い直前の地の文です。")
-        payload = self._question_payload(transcript)
-        payload["isSidechain"] = True
-
-        result = _run(payload)
-
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-
 def _plan_file_state_env(
     tmp_path: pathlib.Path,
     home_dir: pathlib.Path | None = None,
@@ -1599,6 +1487,25 @@ class TestResponseLanguageCheck:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    def test_warns_for_text_turn_before_tool_only_turn(self, tmp_path: pathlib.Path) -> None:
+        transcript = tmp_path / "transcript.jsonl"
+        entries = [
+            {
+                "type": "assistant",
+                "message": {"id": "text", "role": "assistant", "content": [{"type": "text", "text": "English response only."}]},
+            },
+            {
+                "type": "assistant",
+                "message": {"id": "tool", "role": "assistant", "content": [{"type": "tool_use", "name": "Bash"}]},
+            },
+        ]
+        transcript.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8")
+
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}, "transcript_path": str(transcript)})
+
+        assert result.returncode == 0
+        assert "英語主体" in _additional_context(result)
+
 
 class TestBlockCheckExecutionOrder:
     """複数のblock系checkが同時に違反する場合の先行check契約を検証する。"""
@@ -1805,6 +1712,7 @@ class TestLanguageEscalation:
         assert r1.returncode == 0
         r2 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m-same")
         assert r2.returncode == 0  # 同一IDなのでカウンタ増加なし、ブロックしない
+        assert "英語主体" not in _additional_context(r2)
 
     def test_block_then_next_english_reblocks(self, tmp_path: pathlib.Path):
         """ブロック後の次ターン英語で再ブロックする。"""
@@ -2227,7 +2135,7 @@ class TestBashGitCommitWarning:
                 id="grep-single-quoted-pattern",
             ),
             pytest.param(
-                'grep -rn "git commit" .',
+                'grep -rn --exclude-dir=.git "git commit" .',
                 False,
                 False,
                 None,
@@ -4337,6 +4245,67 @@ class TestBashHeredocLiteralExclusion:
         assert "終了状態を示す" not in _agent_messages(result)
 
 
+class TestBashCommandContractWarnings:
+    """Bash入力の検索・直列実行・ヘルプ取得契約を検証する。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        ["grep -rn foo docs/", "grep -rn foo", "grep -rn -e foo docs/", "grep -rn -- foo", "grep -rn -e foo -- docs/"],
+    )
+    def test_recursive_grep_warns(self, command: str, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "docs").mkdir()
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        assert "除外設定を反映しない再帰`grep`" in _additional_context(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "grep -rn --include=*.md foo docs/",
+            "grep -rn --exclude-dir=.git foo docs/",
+            "rg -n foo docs/",
+            "printf 'foo' | grep -rn foo -",
+            "printf 'foo' | grep -rn -- foo -",
+            "grep -rn foo README.md",
+        ],
+    )
+    def test_recursive_grep_safe_forms_are_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "README.md").write_text("foo\n", encoding="utf-8")
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+        assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        ["atk wi unhold a.md && atk wi edit b.md", "git commit -m x; echo done", "git -C . commit -m x; echo done"],
+    )
+    def test_state_change_before_last_serial_command_warns(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "状態を変更するコマンドを他のコマンド" in _additional_context(result)
+
+    @pytest.mark.parametrize("command", ["cd /tmp && atk wi add --title x", "atk wi list && atk wi show a.md"])
+    def test_safe_serial_commands_are_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command", ["atk --help; atk agents --help", "atk --help; atk wi list", "atk wi --help && atk wi show a.md"]
+    )
+    def test_help_with_same_executable_warns(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "ヘルプ取得と同じ実行ファイル" in _additional_context(result)
+
+    @pytest.mark.parametrize("command", ["grep -h foo a.txt; grep -h bar b.txt", "atk --help", "atk wi list"])
+    def test_help_single_or_short_option_forms_are_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "ヘルプ取得と同じ実行ファイル" not in _agent_messages(result)
+
+
 class TestBashOutputTruncationWarning:
     """`Bash`経由の検証コマンド出力`tail`・`head`切り詰めを初回から遮断する。"""
 
@@ -4452,6 +4421,57 @@ class TestBashOutputTruncationWarning:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "mise run test 2>&1 | tail -25",
+            "mise run format | tail -5",
+            "mise r lint | head -5",
+            "mise tasks run check | tail -5",
+            "pnpm run test | tail -5",
+            "pnpm run lint | head -5",
+            "pnpm test | tail -5",
+            "npm run check | tail -5",
+            "make format | tail -5",
+            "atk wi hold a.md | tail -5",
+            "atk wi add --title x | grep -E ok",
+            "mise run --force test | tail -5",
+            "mise run build ::: test | tail -5",
+            "mise r --jobs 2 lint | head -5",
+            "mise tasks run --cd . check | tail -5",
+            "pnpm run --if-present lint | tail -5",
+            "pnpm run-script --dir . test | tail -5",
+            "git -C . commit -m x | tail -1",
+            "git -C . push | grep ok",
+        ],
+    )
+    def test_extended_complete_output_commands_block(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`・`grep`などで限定している" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "mise run test 2>&1 | tee /tmp/mise-test.log",
+            "mise tasks ls | head -3",
+            "pnpm run build | tail -5",
+            "atk wi list | head -5",
+            "pytest -q | grep FAILED",
+            "atk wi hold a.md --help | head -5",
+            "atk wi add --help | head -3",
+            "mise run build test | tail -5",
+            "pnpm run --test-pattern=test build | tail -1",
+            "pnpm run build --test-pattern=test | tail -1",
+            "git -C . status | tail -1",
+            "git -C . log | grep ok",
+        ],
+    )
+    def test_extended_complete_output_safe_forms_are_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`・`grep`などで限定している" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",

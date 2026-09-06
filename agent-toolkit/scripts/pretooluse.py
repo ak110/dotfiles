@@ -35,7 +35,10 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
-- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
+- 全量観測が必要なコマンドの出力を限定する指定の検出 (block)
+- 除外指定の無い再帰`grep`をディレクトリへ実行する指定の検出 (warn)
+- 状態を変更するコマンドと他コマンドの直列連結の検出 (warn)
+- ヘルプ取得と同じ実行ファイルの実行の並置の検出 (warn)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
@@ -102,7 +105,6 @@ import _hook_tool_input  # noqa: E402  # pylint: disable=wrong-import-position,i
 import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _response_language_check  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 import _scratchpad_path  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _GLOBAL_OPTIONS_WITH_VALUE,
     _GLOBAL_OPTIONS_WITHOUT_VALUE,
@@ -255,9 +257,6 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        preamble_notice = _check_user_facing_preamble(tool_name, tool_input, payload)
-        if preamble_notice is not None:
-            pending_notices.append(preamble_notice)
         return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
@@ -374,6 +373,9 @@ def _handle_bash_tool(
         truncation_result,
         _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
+        _check_bash_recursive_grep_without_exclusion(command, cwd),
+        _check_bash_state_change_command_chaining(command),
+        _check_bash_help_with_execution(command),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -420,65 +422,6 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
                 if isinstance(value, str):
                     fields.append((f"questions[{question_index}].options[{option_index}].{name}", value))
     return fields
-
-
-def _user_facing_body_fields(tool_name: str, tool_input: dict) -> list[str]:
-    """ユーザーが読む本文欄の文字列を出現順に返す。"""
-    if tool_name == "ExitPlanMode":
-        plan = tool_input.get("plan")
-        return [plan] if isinstance(plan, str) else []
-    questions = tool_input.get("questions")
-    if not isinstance(questions, list):
-        return []
-    fields: list[str] = []
-    for question in questions:
-        if not isinstance(question, dict):
-            continue
-        value = question.get("question")
-        if isinstance(value, str):
-            fields.append(value)
-        options = question.get("options")
-        if not isinstance(options, list):
-            continue
-        for option in options:
-            if not isinstance(option, dict):
-                continue
-            for name in ("label", "description", "preview"):
-                value = option.get(name)
-                if isinstance(value, str):
-                    fields.append(value)
-    return fields
-
-
-def _check_user_facing_preamble(tool_name: str, tool_input: dict, payload: dict) -> str | None:
-    """地の文がユーザー向け本文より長い場合に警告を返す。"""
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path or payload.get("isSidechain") is True:
-        return None
-    body_fields = _user_facing_body_fields(tool_name, tool_input)
-    if not body_fields:
-        return None
-    preamble_parts: list[str] = []
-    for message in _transcript.iter_latest_assistant_messages(transcript_path):
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        preamble_parts.extend(
-            block["text"]
-            for block in content
-            if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
-        )
-    if len("\n".join(preamble_parts)) <= len("".join(body_fields)):
-        return None
-    fields = (
-        "`questions[].question`と`options[]`の`label`・`description`・`preview`" if tool_name == "AskUserQuestion" else "`plan`"
-    )
-    return _llm_notice(
-        f"{tool_name}の直前に出力した地の文が、ユーザーが読む本文（{fields}）より長い。"
-        "地の文はハーネスが要約へ置換することがあり、ユーザーへ届かない場合がある。"
-        "判断材料を地の文へ置かず、ユーザーが読む本文へ自己完結で含める。",
-        tag="warn",
-    )
 
 
 def _handle_user_facing_text_tool(
@@ -655,13 +598,15 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
     # update_stateがOSErrorで失敗した場合、_incrementは実行されずcountは初期値0のまま残る。
     # この場合はブロックしない方向（安全側）にフォールバックする。
     count = 0
+    duplicate = False
 
     def _increment(current: dict) -> dict | None:
-        nonlocal count
+        nonlocal count, duplicate
         prev_id = current.get("english_warning_msg_id", "")
         prev_count = current.get("english_warning_count", 0)
         if msg_id and prev_id == msg_id:
             count = prev_count
+            duplicate = True
             return None
         count = prev_count + 1
         current["english_warning_count"] = count
@@ -669,6 +614,9 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
         return current
 
     update_state(session_id, _increment)
+
+    if duplicate:
+        return (None, None)
 
     if count >= 2:
 
@@ -2660,13 +2608,83 @@ _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("dotnet", "test"),
     ("npm", "test"),
     ("npm", "run", "test"),
+    ("pnpm", "test"),
     ("vitest",),
 )
-_SAVED_BODY_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+_STATE_CHANGING_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("atk", "wi", "add"),
     ("atk", "wi", "edit"),
+    ("atk", "wi", "start-processing"),
+    ("atk", "wi", "hold"),
+    ("atk", "wi", "unhold"),
+    ("atk", "wi", "return-to-inbox"),
+    ("atk", "wi", "adopt"),
+    ("atk", "wi", "reject"),
+    ("atk", "wi", "rm"),
+    ("atk", "wi", "convert-to-plan"),
+    ("atk", "wi", "set-dependencies"),
+    ("atk", "wi", "answer"),
+    ("atk", "wi", "commit"),
+    ("atk", "wi", "migrate"),
+    ("atk", "plans", "commit"),
+    ("atk", "plans", "checkout"),
+    ("atk", "plans", "migrate"),
+    ("atk", "plans", "rewrite-references"),
+    ("atk", "review-table", "init"),
+    ("atk", "review-table", "add"),
+    ("atk", "review-table", "respond"),
+    ("git", "commit"),
+    ("git", "push"),
+    ("gh", "pr", "create"),
+    ("gh", "pr", "merge"),
 )
+"""出力が後続の検収の唯一の入力となる状態変更コマンドの前置き。"""
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
+_STATE_OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = _OUTPUT_TRUNCATION_COMMANDS | {"grep", "egrep", "fgrep", "rg"}
+_VERIFICATION_TARGET_KEYWORDS: tuple[str, ...] = ("test", "check", "lint", "format", "fmt")
+"""全量観測を要するタスク名の部分一致語。整形時の警告も保持するため`format`と`fmt`を含む。"""
+_GREP_COMMANDS: frozenset[str] = frozenset({"grep", "egrep", "fgrep"})
+_GREP_LONG_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "--regexp",
+        "--file",
+        "--include",
+        "--exclude",
+        "--exclude-dir",
+        "--binary-files",
+        "--directories",
+        "--devices",
+        "--max-count",
+        "--label",
+    }
+)
+_GREP_LONG_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--recursive",
+        "--ignore-case",
+        "--invert-match",
+        "--word-regexp",
+        "--line-regexp",
+        "--line-number",
+        "--with-filename",
+        "--no-filename",
+        "--quiet",
+        "--silent",
+        "--count",
+        "--files-with-matches",
+        "--files-without-match",
+        "--only-matching",
+        "--text",
+        "--binary",
+        "--null",
+        "--null-data",
+        "--extended-regexp",
+        "--fixed-strings",
+        "--basic-regexp",
+        "--perl-regexp",
+    }
+)
+_GREP_SHORT_OPTIONS_WITHOUT_VALUE = frozenset("rRivwxsclLohnbIaEFGPqzZU")
 _OUTPUT_FULL_SAVE_COMMAND = "tee"
 _SHELL_REDIRECTION_PATTERN = re.compile(r"^(?:\d+)?(?:&>>|&>|<<<|<<|>>|<>|>&|<&|>\||>|<)")
 _TEE_NON_FILE_OPERAND_PATTERN = re.compile(r"^(?:/dev/null|/dev/(?:stdin|stdout|stderr|tty)|/dev/fd/\d+|/proc/self/fd/\d+)/?$")
@@ -2740,10 +2758,242 @@ _MAKE_LONG_OPTIONS: frozenset[str] = frozenset(
 )
 """`make --help`に現れる長形オプション。GNU Makeの一意な省略解決に使う。"""
 
+_MISE_RUN_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "--affected-base",
+        "--affected-head",
+        "--allow-env",
+        "--allow-net",
+        "--allow-read",
+        "--allow-write",
+        "--cd",
+        "--env",
+        "--jobs",
+        "--output",
+        "--shell",
+        "--task-cache",
+        "--timeout",
+        "--tool",
+        "-C",
+        "-E",
+        "-j",
+        "-o",
+        "-s",
+        "-t",
+    }
+)
+_MISE_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--affected",
+        "--affected-explain",
+        "--affected-json",
+        "--all",
+        "--continue-on-error",
+        "--deny-all",
+        "--deny-env",
+        "--deny-net",
+        "--deny-read",
+        "--deny-write",
+        "--dry-run",
+        "--force",
+        "--fresh-env",
+        "--locked",
+        "--no-cache",
+        "--no-deps",
+        "--no-timings",
+        "--quiet",
+        "--raw",
+        "--silent",
+        "--skip-deps",
+        "--skip-tools",
+        "--task-cache-explain",
+        "--task-cache-explain-json",
+        "--task-cache-stats",
+        "--verbose",
+        "--yes",
+        "-c",
+        "-f",
+        "-n",
+        "-q",
+        "-r",
+        "-S",
+        "-v",
+        "-y",
+    }
+)
+_PNPM_RUN_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
+    {
+        "--changed-files-ignore-pattern",
+        "--dir",
+        "--filter",
+        "--filter-prod",
+        "--loglevel",
+        "--resume-from",
+        "--test-pattern",
+        "-C",
+        "-F",
+    }
+)
+_PNPM_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {
+        "--aggregate-output",
+        "--color",
+        "--dry-run",
+        "--fail-if-no-match",
+        "--help",
+        "--if-present",
+        "--no-bail",
+        "--no-color",
+        "--parallel",
+        "--recursive",
+        "--report-summary",
+        "--reporter-hide-prefix",
+        "--sequential",
+        "--stream",
+        "--use-stderr",
+        "--workspace-root",
+        "--yes",
+        "-h",
+        "-r",
+        "-s",
+        "-w",
+        "-y",
+    }
+)
+_NPM_RUN_OPTIONS_WITH_VALUE: frozenset[str] = frozenset({"--script-shell", "--workspace", "-w"})
+_NPM_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
+    {"--foreground-scripts", "--if-present", "--ignore-scripts", "--include-workspace-root", "--workspaces"}
+)
+
 
 def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) -> bool:
     """区間の実行位置以降のトークン列が指定の接頭トークン列で始まるかを返す。"""
     return segment.resolved and segment.tokens[: len(prefix)] == prefix
+
+
+def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
+    """区間が列挙済みの状態変更コマンドであるかを返す。
+
+    Gitはサブコマンド前のグローバルオプションを許容するため、既存のGitイベント解析でサブコマンドを解決する。
+    """
+    if not segment.resolved or not segment.tokens:
+        return False
+    if segment.tokens[0] != "git":
+        return any(_segment_starts_with(segment, prefix) for prefix in _STATE_CHANGING_COMMAND_PREFIXES)
+    events = _bash_command_parser.extract_git_events(shlex.join(segment.tokens), ".")
+    return len(events) == 1 and events[0].subcommand in {"commit", "push"}
+
+
+def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], frozenset[str]] | None:
+    """再帰`grep`区間のファイルoperandと認識済みオプションを返す。"""
+    operands: list[str] = []
+    options: set[str] = set()
+    tokens = segment.tokens[1:]
+    index = 0
+    option_terminator = False
+    while index < len(tokens):
+        token = tokens[index]
+        if option_terminator or token == "-" or not token.startswith("-"):
+            operands.append(token)
+            index += 1
+            continue
+        if token == "--":
+            option_terminator = True
+            index += 1
+            continue
+        if token.startswith("--"):
+            name, separator, _ = token.partition("=")
+            if name in _GREP_LONG_OPTIONS_WITH_VALUE:
+                options.add(name)
+                index += 1 if separator else 2
+                continue
+            if name in _GREP_LONG_OPTIONS_WITHOUT_VALUE and not separator:
+                options.add(name)
+                index += 1
+                continue
+            return None
+        short = token[1:]
+        if short[:1] in {"e", "f"}:
+            options.add(f"-{short[0]}")
+            index += 1 if len(short) > 1 else 2
+            continue
+        if not short or any(character not in _GREP_SHORT_OPTIONS_WITHOUT_VALUE for character in short):
+            return None
+        options.update(f"-{character}" for character in short)
+        index += 1
+    pattern_is_option = bool(options & {"-e", "-f", "--regexp", "--file"})
+    return (tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
+
+
+def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
+    """除外指定の無い再帰`grep`がディレクトリを読む場合に警告する。"""
+    if _contains_heredoc(command):
+        return None
+    base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
+    for pipeline in _extract_execution_pipelines(command):
+        for segment in pipeline:
+            if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
+                continue
+            parsed = _grep_file_operands(segment)
+            if parsed is None:
+                continue
+            files, options = parsed
+            if not options & {"-r", "-R", "--recursive"}:
+                continue
+            if options & {"--include", "--exclude", "--exclude-dir"}:
+                continue
+            if not files or any(token != "-" and (token.endswith("/") or (base / token).is_dir()) for token in files):
+                return _llm_notice(
+                    "warn: 除外設定を反映しない再帰`grep`をディレクトリへ実行している。"
+                    "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
+                    "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。",
+                    tag="warn",
+                )
+    return None
+
+
+def _check_bash_state_change_command_chaining(command: str) -> str | None:
+    """状態変更コマンドが最後の直列区間でない場合に警告する。
+
+    最後の区間では当該コマンドの終了コードがシェルの終了コードとなるため対象外とする。
+    """
+    if _contains_heredoc(command):
+        return None
+    serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
+    for serial_command in serial_commands[:-1]:
+        if any(_segment_is_state_changing(segment) for segment in _extract_execution_segments(serial_command)):
+            return _llm_notice(
+                "warn: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。"
+                "当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
+                tag="warn",
+            )
+    return None
+
+
+def _check_bash_help_with_execution(command: str) -> str | None:
+    """同じ実行ファイルのヘルプ取得と別区間の並置を警告する。
+
+    `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
+    """
+    if _contains_heredoc(command):
+        return None
+    segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
+    names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
+    help_names = {
+        name
+        for name, segment in zip(names, segments, strict=True)
+        if "--" not in segment.tokens[1:]
+        and "--help" in segment.tokens[1:]
+        and all(token == "--help" for token in segment.tokens[1:] if token.startswith("-"))
+    }
+    if any(names.count(name) >= 2 for name in help_names):
+        return _llm_notice(
+            "warn: 同じシェル呼び出しの中でヘルプ取得と同じ実行ファイルの実行が並んでいる。"
+            "前段のヘルプ出力は同じ呼び出しの中では取得できないため、"
+            "受理形式を確定してから実行を分けて呼び出す。",
+            tag="warn",
+        )
+    return None
 
 
 def _tee_operand_is_non_regular_file(token: str) -> bool:
@@ -2824,36 +3074,111 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
     return tuple(targets)
 
 
+def _option_operand_index(
+    tokens: tuple[str, ...],
+    start: int,
+    options_with_value: frozenset[str],
+    options_without_value: frozenset[str],
+) -> int | None:
+    """先頭のオプション列を走査し、最初のoperandの位置を返す。"""
+    index = start
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            return index + 1 if index + 1 < len(tokens) else None
+        name, separator, _ = token.partition("=")
+        if name in options_with_value:
+            index += 1 if separator else 2
+            continue
+        if token in options_without_value:
+            index += 1
+            continue
+        short_value_option = next(
+            (option for option in options_with_value if len(option) == 2 and token.startswith(option) and token != option),
+            None,
+        )
+        if short_value_option is not None:
+            index += 1
+            continue
+        if token.startswith("-"):
+            return None
+        return index
+    return None
+
+
+def _mise_task_targets(tokens: tuple[str, ...], start: int) -> tuple[str, ...]:
+    """`mise run`のオプションと複数タスク区切りを除いたタスク名を返す。"""
+    first = _option_operand_index(tokens, start, _MISE_RUN_OPTIONS_WITH_VALUE, _MISE_RUN_OPTIONS_WITHOUT_VALUE)
+    if first is None:
+        return ()
+    targets = [tokens[first]]
+    targets.extend(tokens[index + 1] for index, token in enumerate(tokens[first:-1], start=first) if token == ":::")
+    return tuple(targets)
+
+
+def _task_runner_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
+    """既知のタスクランナー起動形からタスク名を返す。
+
+    外部のタスク定義へ問い合わせず、静的に確定できる起動形だけを扱う。`mise x`は
+    `mise exec`の別名であり、`pnpm run-script`は`pnpm run`の別名である。
+    """
+    runners = (
+        (("mise", "run"), _MISE_RUN_OPTIONS_WITH_VALUE, _MISE_RUN_OPTIONS_WITHOUT_VALUE),
+        (("mise", "r"), _MISE_RUN_OPTIONS_WITH_VALUE, _MISE_RUN_OPTIONS_WITHOUT_VALUE),
+        (("mise", "tasks", "run"), _MISE_RUN_OPTIONS_WITH_VALUE, _MISE_RUN_OPTIONS_WITHOUT_VALUE),
+        (("pnpm", "run"), _PNPM_RUN_OPTIONS_WITH_VALUE, _PNPM_RUN_OPTIONS_WITHOUT_VALUE),
+        (("pnpm", "run-script"), _PNPM_RUN_OPTIONS_WITH_VALUE, _PNPM_RUN_OPTIONS_WITHOUT_VALUE),
+        (("npm", "run"), _NPM_RUN_OPTIONS_WITH_VALUE, _NPM_RUN_OPTIONS_WITHOUT_VALUE),
+    )
+    for prefix, options_with_value, options_without_value in runners:
+        if not _segment_starts_with(segment, prefix):
+            continue
+        if prefix[0] == "mise":
+            return _mise_task_targets(segment.tokens, len(prefix))
+        target_index = _option_operand_index(segment.tokens, len(prefix), options_with_value, options_without_value)
+        return () if target_index is None else (segment.tokens[target_index],)
+    return ()
+
+
 def _segment_requires_complete_output(segment: _ExecutionSegment) -> bool:
-    """区間が全量観測を必要とするコマンドの実行位置から始まるかを返す。"""
+    """区間が全量観測を必要とするコマンドの実行位置から始まるかを返す。
+
+    `mise tasks ls --json`でタスク本文を解決すると、フック実行時の外部プロセスの成否、
+    miseの導入及び設定の信頼へ判定が依存し、失敗時は結局キーワード規則へ縮退する。
+    そのため、外部プロセスへ問い合わせず静的な起動形とタスク名のキーワードで判定する。
+    """
     if _has_uv_terminal_option(segment.tokens):
         return False
     return (
         any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES)
-        or any(_segment_starts_with(segment, prefix) for prefix in _SAVED_BODY_COMMAND_PREFIXES)
+        or _segment_is_state_changing(segment)
         or segment.is_agent_toolkit_script
-        or any(target.lower().find(keyword) >= 0 for target in _make_targets(segment) for keyword in ("test", "check", "lint"))
+        or any(
+            keyword in target.lower()
+            for target in (*_make_targets(segment), *_task_runner_targets(segment))
+            for keyword in _VERIFICATION_TARGET_KEYWORDS
+        )
     )
 
 
 def _pipeline_truncates_required_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
     """1つのパイプライン内で、必要な出力が全量保存されないまま切り詰められるかを判定する。
 
-    全量観測が必要なコマンドより後方で最初に現れる`tail`・`head`を切り詰めの発生点とし、
+    全量観測が必要なコマンドより後方で最初に現れる切り詰めコマンドを発生点とし、
     その手前に`tee`が無い場合に真を返す。`tee`で全量を先に保存してから抽出する形は対象外とし、
     切り詰めた後に`tee`で保存する形は保存内容が既に切り詰め後であるため対象とする。
     同一パイプラインに対象コマンドが複数ある場合は、いずれか1件でも該当すれば真を返す。
+    状態変更コマンドでは`head`・`tail`に加えて`grep`系も切り詰めとして扱う。
     """
     for index, segment in enumerate(pipeline):
         if not _segment_requires_complete_output(segment):
             continue
         following = pipeline[index + 1 :]
+        truncation_commands = (
+            _STATE_OUTPUT_TRUNCATION_COMMANDS if _segment_is_state_changing(segment) else _OUTPUT_TRUNCATION_COMMANDS
+        )
         truncation_index = next(
-            (
-                position
-                for position, item in enumerate(following)
-                if item.resolved and item.tokens[0] in _OUTPUT_TRUNCATION_COMMANDS
-            ),
+            (position for position, item in enumerate(following) if item.resolved and item.tokens[0] in truncation_commands),
             None,
         )
         if truncation_index is None:
@@ -2882,9 +3207,10 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
     del session_id
     print(
         _block_notice(
-            "block: 全量観測が必要なコマンドの実行出力を`tail`・`head`で切り詰めている。",
+            "block: 全量観測が必要なコマンドの実行出力を`tail`・`head`・`grep`などで限定している。",
             fix=(
-                "最初に全出力を保存し、保存済みファイルから抽出するか、構造化出力から必要なレコード種別を選ぶか、"
+                "実行出力を`tail`・`head`で切り詰めている場合を含め、最初に全出力を保存し、"
+                "保存済みファイルから抽出するか、構造化出力から必要なレコード種別を選ぶか、"
                 "agents_serverの`start_shell`ツールを使って分離したコンテキストでコマンドを実行する。"
                 "実行中の出力を切り詰めない。"
             ),

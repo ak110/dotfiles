@@ -217,6 +217,31 @@ class TestDetailedCheck:
         assert body is None
         assert msg_id == ""
 
+    def test_warns_for_latest_turn_with_text_before_thinking_turn(self, tmp_path: pathlib.Path) -> None:
+        transcript = _write_transcript(
+            tmp_path,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "text",
+                        "role": "assistant",
+                        "content": [_text_block("This response is written entirely in English.")],
+                    },
+                },
+                {
+                    "type": "assistant",
+                    "message": {"id": "thinking", "role": "assistant", "content": [{"type": "thinking"}]},
+                },
+            ],
+        )
+
+        outcome, body, msg_id = detailed_check(str(transcript))
+
+        assert outcome is CheckOutcome.WARN
+        assert body is not None
+        assert msg_id == "text"
+
     def test_boundary_ratio_0_2857_warns(self, tmp_path: pathlib.Path):
         """語数比0.2857 (<0.30) でWARNを返す。"""
         text = _make_mixed(14, 35)

@@ -21,6 +21,15 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 - Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。
   信頼するまではCodexが当該フックをスキップする
 - 呼出主体の判別: サブエージェントの呼び出しとメイン会話を区別する場合は共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指すため判別に利用できない。サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである（2026年9月2日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節と`SubagentStop`節で確認した。再検証は同2節を読む）
+- 当該ターンの地の文の可視性: `PreToolUse`の発火時点では、当該ツール呼び出しと同じアシスタントターンのテキストブロックが`transcript_path`のJSONLへ未書き込みである。
+  思考ブロックとツール呼び出しだけのターンも記録されるため、直前の1ターンだけを判定対象にすると地の文を取得できない。
+  当該ターンの地の文を入力とする判定を`PreToolUse`へ置かない。
+  直近の地の文を対象とする判定では、テキストブロックを持たないターンを走査の対象から除いて遡る。
+  2026年9月6日、Claude Code 2.1.263で次を実測した。
+  地の文を1文書いた直後に同じ応答で`Bash`を1回呼ぶ指示を与え、当該呼び出しの`PreToolUse`が受領した`transcript_path`の内容を捕捉した。
+  発火時点の当該JSONLはアシスタントのエントリを1件も持たなかった。
+  実行後の同じJSONLには、同一の`message.id`を持つ思考ブロック、テキストブロック及びツール呼び出しの3エントリが並んでいた。
+  再検証は、同じ指示を与えて発火時点のJSONLの内容と実行後の内容を比較する
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
