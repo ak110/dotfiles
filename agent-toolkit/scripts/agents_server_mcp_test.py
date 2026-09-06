@@ -3744,7 +3744,7 @@ async def test_stop_discards_terminal_session(
     if model_type is not None:
         expected["model_type"] = model_type
     assert response == expected
-    assert manager.list_sessions() == {"sessions": []}
+    assert manager.list_sessions() == {"sessions": [], "omitted": 0}
     assert "terminal" not in manager.sessions
     assert "terminal" not in manager.expired_sessions
     assert manager.stopped_sessions["terminal"].session_id == "terminal"
@@ -3793,7 +3793,7 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     assert response["status"] == "stopped"
     assert session.session_id not in manager.expired_sessions
     assert session.session_id in manager.stopped_sessions
-    assert manager.list_sessions() == {"sessions": []}
+    assert manager.list_sessions() == {"sessions": [], "omitted": 0}
     assert backend.release_calls == [session.session_id]
 
 
