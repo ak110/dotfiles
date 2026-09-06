@@ -24,7 +24,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、当該定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
 - Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、「工程別モデル設定」の表が定めるキーを持つ工程の委譲先は、engineの別によらず`agents_server`で起動する。当該工程は同表のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けず、当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
-- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない
   - `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
   - 起動直後にモデル実行環境の可用性で終端した候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ再起動を重ねない
@@ -37,6 +37,8 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
   - `wait`で進捗を観測し、終端時は結果本文を同じ応答から取得する。固有のtimeout要件がなければ`timeout`を省略し、サブエージェントは`request_bucket`へ`subagent`を渡す。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。未回収の終端結果は保持期限の経過後も`wait`が返す。`wait`が`session retention expired: <session_id>`を返すのは終端結果を回収済みの場合であり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない。`wait`の応答の`notices`は、委譲先が実行中に送った即時報告である。再待機の要否は`notices`の有無ではなく`status`で判定し、`status`が`running`の応答だけへ同じ`session_id`の`wait`を再発行する。`status`が`completed`、`failed`、`interrupted`のいずれかである応答が`notices`を含む場合は、当該本文と終端結果をともに受領して終端処理へ進む。通知の取得のために別のコマンド、ポーリング又は追加の待機ループを実行しない
   - 同じ担当へ追加指示を返す場合は`send_message`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。固有のtimeout要件がなければ`timeout`を省略する。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
   - 実行中turnを明示的に中断する場合は`kill`を使う。停止は最終手段とし、`send_message`による訂正では足りないことと、当該作業の継続自体が不要であることを確認してから発行する。`TimeoutError`が返った場合もsessionとbackend processは破棄されないため、`wait`で状態を確認してから次の操作を選ぶ
+  - 再開する予定の無い委譲先は`stop`で明示的に破棄する（努力目標）。破棄したsessionはstatusLineの表示対象と`list`の応答のいずれにも現れず、backendが当該sessionのために保持していた接続が解放される。同じ`session_id`への`send_message`は破棄後も暗黙再開するため、再開の余地を残したまま破棄してよい。実行中turnを持つsessionは破棄できないため、中断が必要な場合は先に`kill`を発行する。結果本文の受領と破棄を1回の呼び出しで済ませる場合は、`wait`又は`kill`へ`stop=true`を渡す。既定の`false`では現行と同じ応答と状態を返し、`true`では終端結果を返した応答に限って破棄する
+  - `stop`の呼び出しは努力目標とし、呼び出し漏れを検出、警告又は強制する仕組みと、経過時間その他の契機で自動的に破棄する仕組みを追加してはならない。呼び出さずにターンを終えた場合の挙動は、保持期限までの表示と保持期限後の暗黙再開のままとする
   - `agents_server`で起動した委譲先が自身のturnを終端させずに委譲元へ本文を届ける場合は、当該委譲先が`atk agents-notify`を実行する。宛先は環境変数`AGENT_TOOLKIT_OWNER_SESSION`が示すルートセッションの共有状態ディレクトリであり、送信元は当該委譲先自身のsession識別子とする。委譲元は次の`wait`の応答の`notices`で受け取る。当該環境変数を保持しない実行主体と、コマンドが非0で終了した場合は、同じ事象を完了報告へ含める
   - 保持中のsessionの状態をまとめて確認する場合は`list`を使う。開始順に並べたsessionごとの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返し、結果本文は返さない。終端結果の保持期限を過ぎたsessionは`status`へ`expired`を設定して含め、未回収の終端結果を保持する場合は`result_available`を真にする。保持していた`session_id`を失った場合の回復と、複数の委譲先を並行させたときの残作業の把握へ用いる。個別sessionの終端の観測は`wait`で行う
   - 計画の最初のfast担当とCI修正は新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。fast担当からfix担当への引継ぎと通常実装モードのレビュー修正は、後段の継続条件で継続又は新規起動を確定する

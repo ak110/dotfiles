@@ -566,6 +566,14 @@ class AppServerManager:
                 **session.public_status(),
             }
 
+    async def release_session(self, session_id: str) -> None:
+        """Codex backendにはsession専用の接続が無いため、資源を解放しない。
+
+        `codex app-server`はbackend単位で共有する。`thread/unsubscribe`後の
+        `thread/resume`による会話復元を実測していないため、unsubscribeは行わない。
+        """
+        del session_id
+
     async def interrupt(self, session: SessionState) -> None:
         """公開killから対象turnへ中断要求を送り、受理を待つ。"""
         if session.terminal:
