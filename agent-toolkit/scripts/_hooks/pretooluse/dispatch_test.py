@@ -131,6 +131,8 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
         assert "LFだけの内容" in result.stderr
+        assert "UTF-8 BOMが失われて日本語が文字化け" in result.stderr
+        assert "*.ps1 text eol=crlf" in result.stderr
         assert "Fix: 既存ファイルにはEditツールを使う" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):

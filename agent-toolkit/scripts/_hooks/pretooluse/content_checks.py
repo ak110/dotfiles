@@ -262,7 +262,7 @@ def _is_ps1(file_path: str) -> bool:
 
 
 def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """PowerShellスクリプトへのLF-only書き込みを検出したらTrueを返す。"""
+    """BOMなしのLF-only書き込みと改行規約の不一致を検出したらTrueを返す。"""
     for field, value in fields:
         if "\n" not in value:
             continue
@@ -271,7 +271,8 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         print(
             _block_notice(
                 f"blocked: `{tool_name}.{field}`にLFだけの内容を検出した。"
-                f"PowerShell 5.1はLF改行の`.ps1`を解析できないため、CRLFが必要である。対象: {file_path}",
+                "この書き込みではUTF-8 BOMが失われて日本語が文字化けし、"
+                f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
                 fix=(
                     "既存ファイルにはEditツールを使う（CRLFを透過的に維持する）。"
                     "新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。"

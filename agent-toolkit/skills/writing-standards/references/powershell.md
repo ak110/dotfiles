@@ -8,11 +8,9 @@
     - 例: `printf '\xEF\xBB\xBF' > file.ps1 && cat <<'ENDOFPS1' | sed 's/$/\r/' >> file.ps1`
   - `.gitattributes`の`eol=crlf`は改行のみ管理し、BOMは復元しない。BOM付加は別途必要
 - Windows PowerShell 5.1互換性
-  - CRLF改行が必須（LFのみだと構文解析に失敗するため）
-  - `.gitattributes`で`*.ps1 text eol=crlf`を設定してgit側でも改行を管理する
-  - UTF-8エンコーディングを常に明示する
-   （Windows PowerShell 5.1のデフォルトエンコーディングはShift-JISであり、日本語が正しく扱えないため）
-    - `Get-Content -Encoding UTF8`、`Set-Content -Encoding UTF8`
+  - `.gitattributes`で`*.ps1 text eol=crlf`を設定し、改行をgit側で管理する
+  - 非ASCII文字を含むスクリプトはUTF-8 BOM付きで保存する
+   （Windows PowerShell 5.1はBOMを持たないファイルをANSIコードページとして読み、日本語が文字化けするため）
 - 基本スタイル
   - 冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述する
   - 命名規則:
