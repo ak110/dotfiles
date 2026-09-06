@@ -57,7 +57,7 @@
 
 ## 指摘の配送
 
-メインが計画担当へレビュー指摘を配送する場合は、配送文へ`agent-toolkit:reviewee-standards`のSKILL.mdと`agent-toolkit:review-standards`の判断詳細契約の絶対パス、及び`round: <ラウンド番号>`の行を含める。配送文へユーザー指示を追送する場合は、`## 起動`の元のユーザー指示と同じ形式で種別、出所と引用範囲を付ける。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
+メインが計画担当へレビュー指摘を配送する場合は、配送文へ`agent-toolkit:review-standards`の`references/reviewee.md`と判断詳細契約の絶対パス、及び`round: <ラウンド番号>`の行を含める。配送文へユーザー指示を追送する場合は、`## 起動`の元のユーザー指示と同じ形式で種別、出所と引用範囲を付ける。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
 配送の時点で計画担当threadが無い場合は、`agents_server.start`へ`model_type="plan"`を渡して新規の計画担当を起動し、以後の指摘対応を同じthreadへ送る。
 この起動では、起動文へ`起動区分: 引き継ぎ`の1行を含める。
 あわせて`## 起動`が列挙する入力の全件、計画ファイル（メイン）と計画ファイル（詳細）の絶対パス、本節が定める指摘配送の入力を渡す。

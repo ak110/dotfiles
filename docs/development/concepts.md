@@ -46,7 +46,7 @@
 ## 品質とコスト効率の優先順位
 
 判断指針と行動指針の現行の正本はルールファイルにある。
-レビュー指摘の採否は`agent-toolkit:reviewee-standards`が正本とする。
+レビュー指摘の採否は`agent-toolkit:review-standards`の`references/reviewee.md`が正本とする。
 工程別のモデル割当は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`が正本とする。
 レーン分けは`agent-toolkit/share/pick-wi.subagent.md`が正本とする。
 計画の成果物契約は`agent-toolkit:plan-mode`の計画ファイル基準が正本とする。
@@ -111,7 +111,7 @@
 - CIの早期失敗を検出したら全jobの終了を待たず直ちに調査へ着手する
 - 既存規範への違反が観測された事象では、規範が既に存在することを対策不要の根拠にせず、規範追加以外の階層（機械検査、フック、工程・入力構造の変更）の対策を評価する（2026年8月19日、利用者指示）。
   現行の正本は`agent-toolkit:bugfix`の再発防止策の必須性、
-  `agent-toolkit:reviewee-standards`の恒久ルールへの反映判定及び
+  `agent-toolkit:review-standards`の`references/reviewee.md`が定める恒久ルールへの反映判定及び
   `agent-toolkit:review-standards`の判断詳細にある
 - 対象ファイル全体の読解は実装工程の規範とし、計画工程の調査範囲はコーディングエージェントの裁量に委ねる。
   理由は、計画ファイルへ書かれない読解が実装工程へ引き継がれないことと、

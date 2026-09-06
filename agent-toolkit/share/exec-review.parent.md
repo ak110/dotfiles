@@ -54,7 +54,7 @@ review_contract:
 
 新規起動は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を指す。
 必須入力の項目は同書の`## 入力`が列挙するものとし、`担当種別`の値を`レビュー修正担当`とする。
-`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`、元の実装入力、`agent-toolkit:reviewee-standards`のSKILL.md、AWIファイル名一覧、複製元と対象外worktreeも同じ形式で加える。
+`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`、元の実装入力、`agent-toolkit:review-standards`の`references/reviewee.md`、AWIファイル名一覧、複製元と対象外worktreeも同じ形式で加える。
 実行レビュー指摘管理表の絶対パスと`exec-review`の`track`は、fast担当又はfix担当の初回起動入力に含める。
 ファイル名と配置は`agent-toolkit:plan-mode`の計画ファイル基準が定める。
 修正担当はレビュー表とworktreeの実体から指摘の採否、対象の実装単位commit及び修正方針を確定する。

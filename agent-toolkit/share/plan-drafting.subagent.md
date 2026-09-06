@@ -84,9 +84,9 @@ cleanupの終了コード0を確認した後、終了コード2の場合は計�
 
 ## 指摘の検収と修正
 
-計画担当は`agent-toolkit:reviewee-standards`のSKILL.mdを適用し、
+計画担当は`agent-toolkit:review-standards`の`references/reviewee.md`を適用し、
 `agent-toolkit:review-standards`の判断詳細契約を全文読んで指摘の採否と修正を確定する。
-呼び出し元が指摘を配送する場合は、`agent-toolkit:reviewee-standards`のSKILL.mdと
+呼び出し元が指摘を配送する場合は、`agent-toolkit:review-standards`の`references/reviewee.md`と
 `agent-toolkit:review-standards`の判断詳細契約の絶対パスを計画担当への配送文へ含める。
 一部しか解消していない指摘は、残余を同じラウンド内で修正してから再レビューへ送る（努力目標）。
 計画の目的と実施内容に記録された採否・除外・保持を満たす最小限の修正を選ぶ。

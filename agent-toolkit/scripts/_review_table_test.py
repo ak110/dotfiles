@@ -759,19 +759,19 @@ def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv
 
 
 @pytest.mark.parametrize(
-    ("skill", "marker", "subcommand"),
+    ("relative_path", "marker", "subcommand"),
     (
-        ("review-standards", "レビュー指摘管理表への記録は", "add"),
-        ("reviewee-standards", "応答は`atk review-table respond", "respond"),
+        ("review-standards/references/reviewer.md", "レビュー指摘管理表への記録は", "add"),
+        ("review-standards/references/reviewee.md", "応答は`atk review-table respond", "respond"),
     ),
 )
 def test_skill_review_table_options_match_accepted_cli_vectors(
-    skill: str,
+    relative_path: str,
     marker: str,
     subcommand: str,
 ) -> None:
     """スキル本文のオプション集合を受理ケースの仕様集合へ固定する。"""
-    skill_path = pathlib.Path(__file__).parents[1] / "skills" / skill / "SKILL.md"
+    skill_path = pathlib.Path(__file__).parents[1] / "skills" / relative_path
     paragraph = next(line for line in skill_path.read_text(encoding="utf-8").splitlines() if marker in line)
     documented = set(re.findall(r"--[a-z-]+", paragraph))
     accepted = {
