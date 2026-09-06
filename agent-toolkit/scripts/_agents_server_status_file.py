@@ -151,7 +151,7 @@ class StatusFileWriter:
             "sessions": [_serialize_session(session) for session in visible],
         }
         atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
-        self._write_terminal_results(now)
+        self._write_terminal_results()
         self._schedule_retention(visible, now)
 
     def deactivate(self) -> None:
@@ -181,28 +181,21 @@ class StatusFileWriter:
             self._directory.rmdir()
 
     def retain_result(self, session: SessionState) -> None:
-        """session本体の破棄後も終端結果を保持期限まで残す。"""
-        now = asyncio.get_running_loop().time()
-        if session.retention_deadline is not None and session.retention_deadline <= now:
-            self.delete_result(session.session_id)
-            return
-        if session.result_available:
+        """session本体の破棄後も未回収の終端結果を残す。"""
+        if session.result_available and not session.result_delivered:
             self._write_terminal_result(session)
 
     def delete_result(self, session_id: str) -> None:
-        """保持期限へ到達したsessionの終端結果を削除する。"""
+        """回収済み又は所有解除するsessionの終端結果を削除する。"""
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
         path.unlink(missing_ok=True)
         self._result_deadlines.pop(session_id, None)
 
-    def _write_terminal_results(self, now: float) -> None:
-        for session_id, deadline in tuple(self._result_deadlines.items()):
-            if deadline <= now:
-                self.delete_result(session_id)
+    def _write_terminal_results(self) -> None:
         for session in self._sessions.values():
-            if session.retention_deadline is not None and session.retention_deadline <= now:
+            if session.result_delivered:
                 self.delete_result(session.session_id)
                 continue
             if not session.result_available:
@@ -247,7 +240,6 @@ class StatusFileWriter:
             for session in sessions
             if session.retention_deadline is not None and session.retention_deadline > now
         ]
-        deadlines.extend(deadline for deadline in self._result_deadlines.values() if deadline > now)
         self._retention_handle = None
         if deadlines:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)

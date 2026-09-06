@@ -116,7 +116,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
 
 @pytest.mark.asyncio
 async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """期限前のsessionと結果を書き、call_atで期限到達後に両方を除く。"""
+    """期限到達後はsession表示を除き、未回収の結果を残す。"""
     session = state.SessionState("retained", str(tmp_path), announced=True, turn_seq=1)
     session.status = "completed"
     session.agent_message = "完了"
@@ -140,13 +140,13 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
     assert writer._retention_handle is not None
     await asyncio.sleep(0.05)
     assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert not result_path.exists()
+    assert result_path.exists()
     writer.deactivate()
 
 
 @pytest.mark.asyncio
 async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """wait後に表示対象から外れた結果も保持期限で削除する。"""
+    """waitで回収済みになった結果を次のflushで削除する。"""
     session = state.SessionState("waited", str(tmp_path), announced=True, turn_seq=1)
     session.status = "completed"
     session.agent_message = "完了"
@@ -165,11 +165,6 @@ async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: path
     result_path = subject.results_directory("root", tmp_path) / "waited.json"
     assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
     writer.flush()
-    assert result_path.exists()
-    assert writer._retention_handle is not None
-
-    await asyncio.sleep(0.05)
-
     assert not result_path.exists()
     await manager.close()
 
@@ -280,7 +275,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     await manager.wait(session.session_id, timeout=0)
     writer.flush()
     result_path = subject.results_directory("root", tmp_path) / f"{session.session_id}.json"
-    assert json.loads(result_path.read_text(encoding="utf-8"))["agent_message"] == "完了"
+    assert not result_path.exists()
     remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert session.session_id not in {item["session_id"] for item in remaining}
     await manager.close()
@@ -381,7 +376,7 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
 
     assert response["agent_message"] == "完了"
     results = subject.results_directory("root", tmp_path)
-    assert (results / f"{killed['session_id']}.json").exists()
+    assert not (results / f"{killed['session_id']}.json").exists()
     assert (results / f"{uncollected['session_id']}.json").exists()
     sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert [item["session_id"] for item in sessions] == [uncollected["session_id"]]

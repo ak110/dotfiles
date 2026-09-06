@@ -3459,7 +3459,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限経過時にSDKを切断し、結果recordを識別子だけへ縮小する。"""
+    """保持期限経過時にSDKを切断し、未回収の結果を退避する。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
@@ -3490,8 +3490,12 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             started_at=session.started_at,
             updated_at=session.updated_at,
             turn_seq=session.turn_seq,
+            status="completed",
+            agent_message="完了",
+            finalized_at=session.finalized_at,
         )
     }
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
     with pytest.raises(ValueError, match="session retention expired: claude-expired"):
         await manager.wait(session.session_id, timeout=0)
 
@@ -3609,17 +3613,30 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
 async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, tmp_path: pathlib.Path) -> None:
-    """両engineで期限切れ結果を削除し、waitへ同じ理由を返す。"""
+    """両engineで期限切れの未回収結果を1回返す。"""
     manager, _ = _manager_with_fake(engine)
     session = subject.SessionState("expired", str(tmp_path), engine=engine)
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
-    for _ in range(2):
-        with pytest.raises(ValueError, match="session retention expired: expired"):
-            await manager.wait(session.session_id, timeout=0)
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
+    with pytest.raises(ValueError, match="session retention expired: expired"):
+        await manager.wait(session.session_id, timeout=0)
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: pathlib.Path) -> None:
+    """退避済みの未回収結果もwaitが1回返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("expired", str(tmp_path))
+    _complete(session, message="退避結果")
+    manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
+
+    assert manager.list_sessions()["sessions"][0]["result_available"] is True
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "退避結果"
+    assert manager.list_sessions()["sessions"][0]["result_available"] is False
 
 
 @pytest.mark.asyncio

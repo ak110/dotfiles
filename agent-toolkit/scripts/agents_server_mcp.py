@@ -26,6 +26,7 @@ import _atk_config
 import _inherited_venv
 import _wait_schedule
 from _agents_server_state import (
+    TERMINAL_STATUSES,
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
@@ -180,13 +181,49 @@ class AgentsServerManager:
         return session
 
     def _expire_session(self, session_id: str) -> None:
-        """session本体を破棄し、会話再開用の最小状態と期限内の結果を保持する。"""
+        """session本体を破棄し、再開状態と未回収の終端結果を保持する。"""
         session = self.sessions.pop(session_id, None)
         if session is not None:
             self.expired_sessions[session_id] = SessionResumeState.from_session(session)
             if self._status_writer is not None:
                 self._status_writer.retain_result(session)
                 self._status_writer.schedule()
+
+    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
+        """期限切れsessionに未回収の終端結果があれば1回だけ返す。"""
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        session = self.sessions.get(session_id)
+        if (
+            session is not None
+            and session.retention_deadline is not None
+            and asyncio.get_running_loop().time() >= session.retention_deadline
+        ):
+            self._expire_session(session_id)
+        resume_state = self.expired_sessions.get(session_id)
+        if (
+            resume_state is None
+            or resume_state.result_delivered
+            or resume_state.status not in TERMINAL_STATUSES
+            or resume_state.finalized_at is None
+        ):
+            return None
+        response: dict[str, Any] = {
+            "session_id": session_id,
+            "engine": resume_state.engine,
+            "status": resume_state.status,
+            "progress": "",
+            "turn_seq": resume_state.turn_seq,
+            "agent_message": resume_state.agent_message,
+        }
+        if resume_state.model_type is not None:
+            response["model_type"] = resume_state.model_type
+        if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
+            response["error"] = resume_state.error
+        object.__setattr__(resume_state, "result_delivered", True)
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session_id)
+        return response
 
     def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
@@ -291,7 +328,7 @@ class AgentsServerManager:
                     "label": session.label,
                     "started_at": session.started_at,
                     "updated_at": session.updated_at,
-                    "result_available": False,
+                    "result_available": not session.result_delivered and session.finalized_at is not None,
                 },
             )
         return {"sessions": sorted(listed.values(), key=lambda session: session["started_at"])}
@@ -479,6 +516,9 @@ class AgentsServerManager:
 
         `timeout`が`None`の場合は、プロンプトキャッシュの保持期間から導出した上限を使う。
         """
+        expired_response = self._expired_result_response(session_id)
+        if expired_response is not None:
+            return expired_response
         if timeout is None:
             timeout = await self._resolve_wait_timeout(request_bucket)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:

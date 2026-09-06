@@ -312,7 +312,7 @@ class SessionState:
 
 @dataclasses.dataclass(frozen=True)
 class SessionResumeState:
-    """結果本文の回収後も同じ会話を再開するために保持する最小状態。"""
+    """同じ会話の再開と未回収の終端結果の返却に必要な状態を保持する。"""
 
     session_id: str
     cwd: str
@@ -326,6 +326,11 @@ class SessionResumeState:
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
+    status: str = ""
+    agent_message: str = ""
+    error: Any = None
+    finalized_at: str | None = None
+    result_delivered: bool = False
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
@@ -343,6 +348,11 @@ class SessionResumeState:
             model=session.model,
             effort=session.effort,
             engine=session.engine,
+            status=session.status,
+            agent_message=session.agent_message,
+            error=session.error,
+            finalized_at=session.finalized_at,
+            result_delivered=session.result_delivered,
         )
 
 
