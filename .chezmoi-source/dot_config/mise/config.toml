@@ -28,3 +28,8 @@ typos = "latest"
 idiomatic_version_file_enable_tools = ["node"]
 lockfile = true
 minimum_release_age = "168h"
+
+# miseはglab CLIの設定ファイルからトークンを取得し、公開プロジェクトの取得へも付与する。
+# 期限切れのトークンは401を返すため、匿名で取得する。
+[settings.gitlab]
+glab_cli_tokens = false

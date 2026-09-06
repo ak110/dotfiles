@@ -1,10 +1,105 @@
 """dot_bashrcの起動時契約全般を検証する。"""
 
+import os
 import pathlib
 import subprocess
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 BASHRC = REPO_ROOT / ".chezmoi-source" / "dot_bashrc"
+
+
+def _write_completion_stub(path: pathlib.Path, *, fails: bool = False) -> None:
+    """補完定義と実行時の環境を記録するスタブを作成する。"""
+    exit_code = 1 if fails else 0
+    path.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "${MISE_AUTO_INSTALL-unset}" >> "$COMPLETION_CALL_LOG"\n'
+        "printf ': # generated completion\\n'\n"
+        f"exit {exit_code}\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def test_completion_generation_is_cached_and_disables_mise_auto_install(tmp_path: pathlib.Path) -> None:
+    """補完生成を必要時だけ実行し、miseの暗黙導入を開始しない。"""
+    home = tmp_path / "home"
+    fake_bin = home / "fake-bin"
+    fake_bin.mkdir(parents=True)
+    uv_stub = fake_bin / "uv"
+    call_log = home / "completion-calls"
+    cache_home = home / "cache"
+    _write_completion_stub(uv_stub)
+    env = {
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:/usr/bin:/bin",
+        "TERM": "dumb",
+        "XDG_CACHE_HOME": str(cache_home),
+        "COMPLETION_CALL_LOG": str(call_log),
+    }
+
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-i",
+            "-c",
+            '. "$1"\n. "$1"\nprintf "mise-auto-install:%s\\n" "${MISE_AUTO_INSTALL-unset}"',
+            "bash",
+            str(BASHRC),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env=env,
+    )
+    assert call_log.read_text(encoding="utf-8").splitlines() == ["false"]
+    assert "mise-auto-install:unset" in completed.stdout.splitlines()
+
+    cache_file = cache_home / "dotfiles" / "bash-completion" / "uv.bash"
+    newer = cache_file.stat().st_mtime_ns + 1_000_000_000
+    os.utime(uv_stub, ns=(newer, newer))
+
+    subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-i", "-c", '. "$1"', "bash", str(BASHRC)],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env=env,
+    )
+    assert call_log.read_text(encoding="utf-8").splitlines() == ["false", "false"]
+
+
+def test_failed_completion_generation_leaves_no_cache_and_continues(tmp_path: pathlib.Path) -> None:
+    """補完生成の失敗時は書きかけを残さず、シェル初期化を継続する。"""
+    home = tmp_path / "home"
+    fake_bin = home / "fake-bin"
+    fake_bin.mkdir(parents=True)
+    call_log = home / "completion-calls"
+    cache_home = home / "cache"
+    _write_completion_stub(fake_bin / "uv", fails=True)
+
+    completed = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-i", "-c", '. "$1"\nprintf "continued\\n"', "bash", str(BASHRC)],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env={
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "TERM": "dumb",
+            "XDG_CACHE_HOME": str(cache_home),
+            "COMPLETION_CALL_LOG": str(call_log),
+        },
+    )
+
+    assert "continued" in completed.stdout.splitlines()
+    cache_dir = cache_home / "dotfiles" / "bash-completion"
+    assert not list(cache_dir.glob("uv.bash*"))
 
 
 def test_fixed_paths_are_ordered_and_idempotent(tmp_path: pathlib.Path) -> None:
