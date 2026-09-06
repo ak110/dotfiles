@@ -220,7 +220,7 @@ class AgentsServerManager:
             response["model_type"] = resume_state.model_type
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
-        object.__setattr__(resume_state, "result_delivered", True)
+        self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
             self._status_writer.delete_result(session_id)
         return response

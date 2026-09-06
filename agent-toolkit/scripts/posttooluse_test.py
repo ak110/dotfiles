@@ -1505,6 +1505,7 @@ class TestAgentsServerSessionState:
         session = SessionState(remote_session_id, str(tmp_path), engine="codex")
         session.status = "completed"
         session.turn_completed = True
+        session.touch()
         session.retention_deadline = asyncio.get_running_loop().time() - 1
         manager.sessions[remote_session_id] = session
         response = await manager.kill(remote_session_id, timeout=0)
