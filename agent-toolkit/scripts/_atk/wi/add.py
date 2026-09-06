@@ -479,10 +479,11 @@ def _cmd_add(
                     "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
                     "ユーザーの発言は本文中へ出所を示して引用してください。"
                 )
-            reject_message_file_path(
-                message,
-                file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
-            )
+            if not body_files:
+                reject_message_file_path(
+                    message,
+                    file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
+                )
             parse_entry_message(message, entry_type=args.type)
         except WebInputError as error:
             if str(error) == _EMPTY_AWI_ERROR:

@@ -610,6 +610,12 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         ),
     )
     edit.add_argument(
+        "--body-file",
+        metavar="PATH",
+        default=None,
+        help="UTF-8ファイルの内容を本文として読み込む。MESSAGEとは併用できない。",
+    )
+    edit.add_argument(
         "--append",
         action="store_true",
         help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。UWIは対象外。",

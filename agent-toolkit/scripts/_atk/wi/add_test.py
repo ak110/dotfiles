@@ -1642,6 +1642,28 @@ class TestAddBodyFile:
         assert any("1件目の本文" in body for body in bodies)
         assert any("2件目の本文" in body for body in bodies)
 
+    def test_body_file_accepts_existing_file_path_as_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """本文ファイル内の既存ファイルパスを本文として投入する。"""
+        notes = _setup_notes(tmp_path)
+        repo = tmp_path / "myrepo"
+        repo.mkdir()
+        _patch_add_git(monkeypatch, repo)
+        message_file = tmp_path / "message.txt"
+        message_file.write_text("本文ファイルが参照する既存ファイル", encoding="utf-8")
+        body_path = tmp_path / "body.md"
+        body_path.write_text(str(message_file), encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert f"\n{message_file}\n" in content
+
     def test_body_file_rejects_positional_message(
         self,
         tmp_path: pathlib.Path,

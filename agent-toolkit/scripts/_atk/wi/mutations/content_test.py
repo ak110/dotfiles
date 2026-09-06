@@ -648,6 +648,148 @@ class TestNoninteractiveEdit:
             "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
         )
 
+
+class TestEditBodyFile:
+    """editサブコマンドの本文ファイル入力を検証する。"""
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_body_file_preserves_multiline_content(
+        self,
+        newline: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """改行をLFへ正規化し、本文の記号と構造を保持する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="編集前")
+        body = '---\n# 見出し\n\n"引用" \\ path\n```sh\necho ok\n```\n'
+        body_path = tmp_path / "body.md"
+        body_path.write_bytes(body.replace("\n", newline).encode())
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "entry.md", "--body-file", str(body_path)], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[1] == '\n---\n# 見出し\n\n"引用" \\ path\n```sh\necho ok\n```\n'
+
+    def test_body_file_appends_and_rejects_message_combination(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """本文ファイルを追記でき、MESSAGEとの併用は書込前に拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="編集前")
+        body_path = tmp_path / "body.md"
+        body_path.write_text("追記本文", encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "entry.md", "--append", "--body-file", str(body_path)], home=tmp_path)
+        assert exc_info.value.code == 0
+        appended = path.read_text(encoding="utf-8")
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "entry.md", "MESSAGE", "--body-file", str(body_path)], home=tmp_path)
+        assert exc_info.value.code == 2
+        assert path.read_text(encoding="utf-8") == appended
+
+    @pytest.mark.parametrize(
+        ("append", "expected_body"),
+        [
+            (False, "\n{message_file}\n"),
+            (True, "\n編集前\n\n\n{message_file}"),
+        ],
+    )
+    def test_body_file_accepts_existing_file_path_as_content(
+        self,
+        append: bool,
+        expected_body: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """既存ファイルパスだけの本文を通常編集と追記でそのまま保存する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="編集前")
+        message_file = tmp_path / "message.txt"
+        message_file.write_text("本文ファイルが参照する既存ファイル", encoding="utf-8")
+        body_path = tmp_path / "body.md"
+        body_path.write_text(str(message_file), encoding="utf-8")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        command = ["wi", "edit", "entry.md", "--body-file", str(body_path)]
+        if append:
+            command.append("--append")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(command, home=tmp_path)
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[1] == expected_body.format(message_file=message_file)
+
+    def test_plan_body_file_accepts_existing_file_path_as_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """計画型編集も本文ファイル内の既存ファイルパスを本文として保存する。"""
+        notes = _setup_notes(tmp_path)
+        filename = "20260907-000000-001.md"
+        _write_convert_awi(notes, filename, state="hold")
+        plan = _write_integration_plan(notes / "plans", "a" * 40, (filename,))
+        target_worktree = tmp_path / "target-worktree"
+        target_worktree.mkdir()
+        message_file = tmp_path / "message.txt"
+        message_file.write_text("本文ファイルが参照する既存ファイル", encoding="utf-8")
+        body_path = tmp_path / "body.md"
+        body_path.write_text(str(message_file), encoding="utf-8")
+        _disable_convert_git(monkeypatch)
+        _patch_integration_target_resolution(monkeypatch)
+        monkeypatch.setattr(
+            mutations._add,  # pylint: disable=protected-access
+            "resolve_add_target",
+            lambda _value: ("github.com/example/foo", target_worktree),
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "wi",
+                    "edit",
+                    filename,
+                    "--body-file",
+                    str(body_path),
+                    "--plan-file",
+                    str(plan),
+                    "--target-repo",
+                    "github.com/example/foo",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        parsed = frontmatter_parser.parse_frontmatter((notes / "inbox" / filename).read_text(encoding="utf-8"))
+        assert parsed is not None
+        assert parsed[1] == f"\n{message_file}\n"
+
+    def test_unreadable_body_file_does_not_modify_entry(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """解釈できない本文ファイルは終了コード1で拒否し、項目を保持する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "entry.md", body="編集前")
+        original = path.read_bytes()
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "entry.md", "--body-file", str(tmp_path / "missing")], home=tmp_path)
+        assert exc_info.value.code == 1
+        assert path.read_bytes() == original
+
     def test_message_does_not_start_editor(
         self,
         monkeypatch: pytest.MonkeyPatch,

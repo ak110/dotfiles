@@ -629,6 +629,13 @@ class TestMutationTargetRepoParserOption:
         assert args.filename == "20260714-000001-001.md"
         assert args.message == "追記本文"
 
+    def test_edit_accepts_body_file(self) -> None:
+        """`edit --body-file`を単一の本文ファイルとして解析する。"""
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["wi", "edit", "entry.md", "--body-file", "body.md"])
+        assert args.body_file == "body.md"
+        assert args.message is None
+
     @pytest.mark.parametrize("value", ["2", "3.5", "three"])
     def test_return_to_inbox_rejects_invalid_cooldown_days(self, value: str) -> None:
         """再処理抑制日数は3以上の整数だけを受理する。"""
