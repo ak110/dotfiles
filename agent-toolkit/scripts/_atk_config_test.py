@@ -388,7 +388,7 @@ class TestConfigSet:
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """候補ごとの既知一覧照合で一覧外の候補だけを警告し、保存は成功する。"""
-        known = "codex:gpt-5.6-sol/medium"
+        known = "codex:gpt-6-astra/low"
         unknown = "claude:unknown-model/medium"
 
         with pytest.raises(SystemExit) as exc_info:
