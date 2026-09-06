@@ -160,11 +160,13 @@ class ClaudeServerManager:
         condition: asyncio.Condition | None = None,
         client_factory: Callable[[Any], Any] | None = None,
         expire_session: Callable[[str], None] | None = None,
+        publish_registry: bool = False,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._client_factory = client_factory or self._default_client_factory
         self._expire_session = expire_session or self._expire_local_session
+        self._publish_registry = publish_registry
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
@@ -363,7 +365,7 @@ class ClaudeServerManager:
                 loop = asyncio.get_running_loop()
                 now = loop.time()
                 if session is not None and session.auto_resume_deadline is not None and session.auto_resume_deadline <= now:
-                    self._finalize_pending_result(session)
+                    self._finalize_pending_result(session, record_unobserved=True)
                     iterator = None
                     await self._notify_waiters()
                     continue
@@ -387,7 +389,7 @@ class ClaudeServerManager:
                 done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
                 if not done:
                     if session is not None and session.auto_resume_deadline is not None:
-                        self._finalize_pending_result(session)
+                        self._finalize_pending_result(session, record_unobserved=True)
                         iterator = None
                         await self._notify_waiters()
                         continue
@@ -405,11 +407,16 @@ class ClaudeServerManager:
                     try:
                         message = completed_message_task.result()
                     except StopAsyncIteration:
-                        if session is not None and session.awaiting_auto_resume:
+                        if session is not None and session.awaiting_auto_resume and not session.live_child_session_ids:
                             self._finalize_pending_result(session)
                             iterator = None
                             await self._notify_waiters()
-                        elif session is not None and session.result_available:
+                        elif (
+                            session is not None
+                            and session.awaiting_auto_resume
+                            or session is not None
+                            and session.result_available
+                        ):
                             iterator = None
                         else:
                             raise RuntimeError("Claude Agent SDK message stream ended before ResultMessage") from None
@@ -437,6 +444,7 @@ class ClaudeServerManager:
                                     effort=effort,
                                     engine="claude",
                                     turn_seq=turn_seq,
+                                    publish_registry=self._publish_registry,
                                 )
                                 self.sessions[session_id] = session
                                 self._channels[session_id] = channel
@@ -448,9 +456,14 @@ class ClaudeServerManager:
                             elif session_id != session.session_id:
                                 raise RuntimeError("Claude init message reported a different session_id")
                         elif name == "AssistantMessage" and session is not None:
+                            shared_state.consume_claude_agents_server_message(session, message)
                             text = _assistant_text(message)
                             session.agent_message = text
                             session.set_progress(text)
+                            await self._notify_waiters()
+                        elif name == "UserMessage" and session is not None:
+                            shared_state.consume_claude_agents_server_message(session, message)
+                            session.touch()
                             await self._notify_waiters()
                         elif name == "TaskStartedMessage" and session is not None:
                             session.live_task_ids.add(message.task_id)
@@ -467,7 +480,7 @@ class ClaudeServerManager:
                                 session.auto_resume_consumed = True
                                 self._finalize_turn(session, result)
                                 iterator = None
-                            elif session.live_task_ids and not session.auto_resume_consumed:
+                            elif (session.live_task_ids or session.live_child_session_ids) and not session.auto_resume_consumed:
                                 session.pending_result = result
                                 session.awaiting_auto_resume = True
                                 session.auto_resume_deadline = (
@@ -617,10 +630,16 @@ class ClaudeServerManager:
         session.touch()
 
     @classmethod
-    def _finalize_pending_result(cls, session: SessionState) -> None:
-        if session.pending_result is None:
-            raise RuntimeError("Claude auto-resume wait has no pending result")
-        cls._finalize_turn(session, session.pending_result)
+    def _finalize_pending_result(
+        cls,
+        session: SessionState,
+        *,
+        record_unobserved: bool = False,
+    ) -> None:
+        unobserved = set(session.live_child_session_ids)
+        shared_state.finalize_pending_result(session)
+        if record_unobserved and unobserved:
+            shared_state.record_unobserved_sessions(session, unobserved)
 
     @classmethod
     def _record_failure(cls, session: SessionState, error: BaseException) -> None:

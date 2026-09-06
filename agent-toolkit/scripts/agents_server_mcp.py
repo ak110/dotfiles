@@ -21,7 +21,7 @@ from uuid import UUID
 
 from _agents_server import claude as claude_backend
 from _agents_server import codex as codex_backend
-from _agents_server import status_file
+from _agents_server import session_registry, status_file
 from _agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
@@ -35,6 +35,8 @@ from _agents_server.state import (
     _validate_prompt,
     _validate_shell_request,
     add_touch_listener,
+    finalize_pending_result,
+    record_unobserved_sessions,
     remove_touch_listener,
     selected_candidate,
 )
@@ -155,7 +157,11 @@ class AgentsServerManager:
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
             if self._codex is None:
-                self._codex = codex_backend.AppServerManager(self.sessions, self._condition)
+                self._codex = codex_backend.AppServerManager(
+                    self.sessions,
+                    self._condition,
+                    publish_registry=True,
+                )
             return self._codex
         if engine == "claude":
             if self._claude is None:
@@ -163,6 +169,7 @@ class AgentsServerManager:
                     self.sessions,
                     self._condition,
                     expire_session=self._expire_session,
+                    publish_registry=True,
                 )
             return self._claude
         raise ValueError(f"unsupported engine: {engine}")
@@ -613,12 +620,16 @@ class AgentsServerManager:
                         response = self._response_with_notices(self._pending_resume_status(pending), notices)
                         return await self._stop_after_terminal_response(response, stop)
         session = self._get_session(session_id)
+        await self._advance_child_session_wait(session)
         notices = self._take_notices(session_id)
         if session.result_available or notices:
             response = self._response_with_notices(self._result_response(session), notices)
             return await self._stop_after_terminal_response(response, stop)
         if not session.result_available:
             while not session.result_available:
+                await self._advance_child_session_wait(session)
+                if session.result_available:
+                    break
                 remaining = deadline - loop.time()
                 if remaining <= 0:
                     break
@@ -628,14 +639,48 @@ class AgentsServerManager:
                             self._condition.wait_for(
                                 lambda: (current := self.sessions.get(session_id)) is None or current.result_available
                             ),
-                            timeout=min(1.0, remaining),
+                            timeout=min(0.1 if session.awaiting_auto_resume else 1.0, remaining),
                         )
                 session = self._get_session(session_id)
+                await self._advance_child_session_wait(session)
                 notices = self._take_notices(session_id)
                 if session.result_available or notices:
                     response = self._response_with_notices(self._result_response(session), notices)
                     return await self._stop_after_terminal_response(response, stop)
         return await self._stop_after_terminal_response(self._result_response(self._get_session(session_id)), stop)
+
+    async def _advance_child_session_wait(self, session: SessionState) -> None:
+        """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
+        if not session.awaiting_auto_resume or session.pending_result is None:
+            return
+        terminal = {session_id for session_id in session.live_child_session_ids if session_registry.is_terminal(session_id)}
+        for session_id in terminal:
+            session.live_child_session_ids.discard(session_id)
+            session.terminal_child_session_ids.add(session_id)
+            session_registry.remove(session_id)
+
+        if not session.live_child_session_ids and session.terminal_child_session_ids and not session.live_task_ids:
+            identifiers = sorted(session.terminal_child_session_ids)
+            prompt = (
+                "あなたが`agents_server`で起動した次のsessionは終端した。\n"
+                f"終端したsession: {', '.join(identifiers)}\n"
+                "各sessionの結果を確認し、所定の返却形式を返せ。"
+            )
+            session.auto_resume_consumed = True
+            finalize_pending_result(session, touch=False)
+            try:
+                await self._backend(session.engine).send_message(session, prompt)
+            except Exception:
+                session.touch()
+                raise
+            return
+
+        deadline = session.auto_resume_deadline
+        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+            unobserved = set(session.live_child_session_ids)
+            finalize_pending_result(session)
+            if unobserved:
+                record_unobserved_sessions(session, unobserved)
 
     def _take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
