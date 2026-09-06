@@ -273,67 +273,80 @@ class AgentsServerManager:
             return pending.state
         raise self._unresolved_session_error(session_id, label=unknown_label)
 
-    def list_sessions(self) -> dict[str, list[dict[str, Any]]]:
-        """保持中のsessionを開始時刻順の公開項目へ射影する。"""
+    @staticmethod
+    def _listed_session(
+        session: SessionState | SessionResumeState,
+        *,
+        status: str,
+        progress: str,
+        result_available: bool,
+    ) -> dict[str, Any]:
+        """sessionを一覧向けの公開項目へ射影する。"""
+        label = session.label
+        if len(label) > 100:
+            label = f"{label[:100]}…"
+        return {
+            "session_id": session.session_id,
+            "status": status,
+            "progress": progress,
+            "model_type": session.model_type,
+            "launch_kind": session.launch_kind,
+            "label": label,
+            "result_available": result_available,
+        }
+
+    def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
+        """保持中のsessionを開始時刻順の公開項目へ射影する。
+
+        未回収結果を持つsessionは、終端済み又は期限切れでも既定の一覧へ残す。
+        """
         loop_time = asyncio.get_running_loop().time()
         for session_id, session in tuple(self.sessions.items()):
             if session.retention_deadline is not None and loop_time >= session.retention_deadline:
                 self._expire_session(session_id)
 
-        listed: dict[str, dict[str, Any]] = {}
+        listed: dict[str, tuple[str, dict[str, Any]]] = {}
         for session in self.sessions.values():
-            listed[session.session_id] = {
-                "session_id": session.session_id,
-                "engine": session.engine,
-                "model": session.model,
-                "effort": session.effort,
-                "model_type": session.model_type,
-                "launch_kind": session.launch_kind,
-                "status": session.status,
-                "progress": session.progress,
-                "label": session.label,
-                "started_at": session.started_at,
-                "updated_at": session.updated_at,
-                "result_available": session.result_available,
-            }
+            listed[session.session_id] = (
+                session.started_at,
+                self._listed_session(
+                    session,
+                    status=session.status,
+                    progress=session.progress,
+                    result_available=session.result_available,
+                ),
+            )
         for pending in self._pending_resumes.values():
             session = pending.state
             listed.setdefault(
                 session.session_id,
-                {
-                    "session_id": session.session_id,
-                    "engine": session.engine,
-                    "model": session.model,
-                    "effort": session.effort,
-                    "model_type": session.model_type,
-                    "launch_kind": session.launch_kind,
-                    "status": "running",
-                    "progress": "",
-                    "label": session.label,
-                    "started_at": session.started_at,
-                    "updated_at": session.updated_at,
-                    "result_available": False,
-                },
+                (
+                    session.started_at,
+                    self._listed_session(session, status="running", progress="", result_available=False),
+                ),
             )
         for session in self.expired_sessions.values():
             listed.setdefault(
                 session.session_id,
-                {
-                    "session_id": session.session_id,
-                    "engine": session.engine,
-                    "model": session.model,
-                    "effort": session.effort,
-                    "model_type": session.model_type,
-                    "launch_kind": session.launch_kind,
-                    "status": "expired",
-                    "progress": "",
-                    "label": session.label,
-                    "started_at": session.started_at,
-                    "updated_at": session.updated_at,
-                    "result_available": not session.result_delivered and session.finalized_at is not None,
-                },
+                (
+                    session.started_at,
+                    self._listed_session(
+                        session,
+                        status="expired",
+                        progress="",
+                        result_available=not session.result_delivered and session.finalized_at is not None,
+                    ),
+                ),
             )
-        return {"sessions": sorted(listed.values(), key=lambda session: session["started_at"])}
+        sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: item[0])]
+        if include_terminated:
+            return {"sessions": sessions, "omitted": 0}
+        visible = [
+            session
+            for session in sessions
+            if session["result_available"] or session["status"] not in TERMINAL_STATUSES | {"expired"}
+        ]
+        return {"sessions": visible, "omitted": len(sessions) - len(visible)}
 
     async def stop(self, session_id: str) -> dict[str, Any]:
         """終端済みsessionを破棄し、会話再開用の最小状態だけを保持する。"""
@@ -1287,15 +1300,17 @@ async def stop_session(session_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(name="list", structured_output=True)
-async def list_sessions() -> dict[str, list[dict[str, Any]]]:
+async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
-    各sessionの`session_id`、`engine`、`model`、`effort`、`model_type`、`launch_kind`、`status`、`progress`、`label`、`started_at`、`updated_at`及び`result_available`を返す。
+    各sessionの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返す。
+    `label`は起動文又はコマンドの先頭100文字までとし、切り詰めた場合は末尾へ`…`を付す。
     結果本文は返さないため、終端の観測と結果の受領は`wait`で行う。
-    終端結果の保持期限を過ぎたsessionは`status`へ`expired`、`progress`へ空文字列を設定して含める。
+    既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。
+    全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
-    return _MANAGER.list_sessions()
+    return _MANAGER.list_sessions(include_terminated=include_terminated)
 
 
 def _prepare_child_environment() -> None:

@@ -471,7 +471,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
     )
     manager.expired_sessions[active.session_id] = state.SessionResumeState.from_session(active)
     try:
-        response = manager.list_sessions()
+        response = manager.list_sessions(include_terminated=True)
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -479,16 +479,11 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
     expected_keys = {
         "session_id",
-        "engine",
-        "model",
-        "effort",
         "model_type",
         "launch_kind",
         "status",
         "progress",
         "label",
-        "started_at",
-        "updated_at",
         "result_available",
     }
     assert all(set(session) == expected_keys for session in response["sessions"])
@@ -498,6 +493,57 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
     assert response["sessions"][1]["progress"] == "実行中"
     assert response["sessions"][2]["status"] == "running"
     assert response["sessions"][2]["progress"] == ""
+    assert response["omitted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_omits_terminated_sessions_without_pending_result(
+    tmp_path: pathlib.Path,
+) -> None:
+    """既定では未回収結果を持たない終端sessionだけを除く。"""
+    manager = subject.AgentsServerManager(status_writer=None)
+    active = subject.SessionState("active", str(tmp_path))
+    manager.sessions[active.session_id] = active
+    completed = subject.SessionState("completed", str(tmp_path))
+    completed.status = "completed"
+    manager.sessions[completed.session_id] = completed
+    pending_expired = subject.SessionState("pending-expired", str(tmp_path))
+    _complete(pending_expired)
+    manager.expired_sessions[pending_expired.session_id] = state.SessionResumeState.from_session(pending_expired)
+    delivered_expired = state.SessionResumeState(
+        session_id="delivered-expired",
+        cwd=str(tmp_path),
+        model=None,
+        effort=None,
+        engine="codex",
+        status="completed",
+        finalized_at="2026-09-06T00:00:00+00:00",
+        result_delivered=True,
+    )
+    manager.expired_sessions[delivered_expired.session_id] = delivered_expired
+
+    response = manager.list_sessions()
+    assert {session["session_id"] for session in response["sessions"]} == {
+        "active",
+        "pending-expired",
+    }
+    assert response["omitted"] == 2
+    all_sessions = manager.list_sessions(include_terminated=True)
+    assert len(all_sessions["sessions"]) == 4
+    assert all_sessions["omitted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_truncates_label_to_identifiable_length(tmp_path: pathlib.Path) -> None:
+    """一覧のlabelだけを100文字境界で切り詰める。"""
+    manager = subject.AgentsServerManager(status_writer=None)
+    long_label = subject.SessionState("long", str(tmp_path), label="a" * 101)
+    exact_label = subject.SessionState("exact", str(tmp_path), label="b" * 100)
+    manager.sessions = {long_label.session_id: long_label, exact_label.session_id: exact_label}
+
+    labels = {session["session_id"]: session["label"] for session in manager.list_sessions()["sessions"]}
+    assert labels["long"] == f"{'a' * 100}…"
+    assert labels["exact"] == "b" * 100
 
 
 def test_delegation_break_even_guidance_is_available_before_calling() -> None:
@@ -3668,9 +3714,9 @@ async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: path
     _complete(session, message="退避結果")
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
-    assert manager.list_sessions()["sessions"][0]["result_available"] is True
+    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is True
     assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "退避結果"
-    assert manager.list_sessions()["sessions"][0]["result_available"] is False
+    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
 
 
 @pytest.mark.asyncio
