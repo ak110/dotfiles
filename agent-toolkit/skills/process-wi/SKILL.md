@@ -77,7 +77,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
   当該照合のための調査の委譲は本制限の対象にしない
   （「即時対応」に当たる実装の委譲先は同節が定める）
 
-- ③では`agent-toolkit:session-review`、即時対応及び自動コードレビュー監査の処置確定を先に完了し、push、CI、CI失敗時の修正、固有の終端工程及び延期`adopt`を1回だけ終端担当へ委譲する。
+- ③では`agent-toolkit:session-review`、即時対応及び自動コードレビュー監査の処置確定を先に完了し、統合後検証、push、CI、検証失敗時の修正、固有の終端工程及び延期`adopt`を1回だけ終端担当へ委譲する。
   メインは`agent-toolkit:session-review`、`agent-toolkit:completion-report`、`agent-toolkit:exit-session`の起動と、
   自動コードレビュー監査が返した指摘ごとの処置の確定を保持する
 - ③のpush、CI、固有の終端工程及び延期`adopt`の対象が1件も無い処理回の扱いは`references/finish-session.md`「公開対象が無い処理回の短絡」が定める
