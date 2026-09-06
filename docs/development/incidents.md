@@ -622,6 +622,12 @@
 - 2026年9月6日: ベースbranchへ直接commitした未公開の変更を残したままセッションを終了し、後続のprocess-loopの開始前更新が`chezmoi git pull --rebase`の衝突で停止して次セッションが開始しなくなる事象が多発した。
   直接原因: 終端の検収は、ベースbranchのローカルOIDとリモート追跡refのOIDがpushした完全OIDと一致することだけを対象とし、作業ツリーのclean状態とrebase・merge・cherry-pickの中断状態はどの工程でも観測していなかった。当該照合は終端担当が返却した時点の1回であり、以降の工程を経た後の状態は対象に入らない。未公開のcommitが当該照合を通過して残った具体的な経路は特定できておらず未確定である。
   対策: 終端担当の返却へベースbranchの公開状態の観測結果を追加し、メインが固定報告の前にも同じ項目を観測する。前者は返却時点、後者は以降の工程を経た後の状態を対象とし、未確定の経路を含めて検出する。解消できない場合はUWIへ引き継ぐ
+- 2026年9月6日: pickerが`decisions`へ61件を返した処理回で、`atk wi start-processing`が63件を`processing`へ移し、差の2件がレーンへ割り当てられないまま`processing`に残った。
+  直接原因: `start-processing`の引数集合と`decisions`の集合の一致を検査する工程が、picker側にもメイン側にも無かった。メイン側の検収は`decisions`の全件が`processing`にあることだけを確認し、`decisions`に無い項目が`processing`に現れた場合を検出しなかった。
+  対策: pickerが`start-processing`の実行前に引数集合と`decisions`のうち選定時点`inbox`の集合の一致を検査し、メインが`decisions[].awi`の全件の`processing`配置を検収する
+- 2026年9月6日: `agent-toolkit:process-wi`の3回目の終端担当が全体検査の途中でユーザー指示により中断し、版数更新だけが未コミットで残った状態をメインが手動でcommitして終えた。
+  直接原因: `agent-toolkit/share/session-termination.subagent.md`「生成物とpush」が版数更新と派生manifest同期の後に検査を置く順序だけを定め、版数更新から当該差分のcommitまでを連続した工程として要求していなかった。
+  対策: 版数更新、派生manifest同期、生成同期の検査及び当該差分のcommitを1つの連続した工程として実行し、版数更新だけが未コミットで残る状態で当該工程を終えないことを同節へ定める
 - 2026年9月: euryaleの`dotfiles-autoupdate.service`が10分ごとに起動しながら毎回1段目で失敗した。
   直接原因: systemdユーザーunitへ`Environment=PATH`が無く、`update-dotfiles`が実行ファイル名で起動する`chezmoi`を解決できなかった。
   対策: unit生成側でPATHを明示し、`~/.local/bin`とmiseのshimsを既定PATHの前へ置く

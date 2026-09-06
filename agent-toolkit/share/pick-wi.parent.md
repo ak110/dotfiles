@@ -47,7 +47,9 @@ routeとtaskが有効なら同じpicker threadを再開し、その他は一般�
 ## ①の完了
 
 処理開始はpickerが実行する。メインは`atk wi start-processing`を自ら実行しない。
-回答済みUWIの終端確認後に`atk wi list --target-repo=<repo> --skip-pull`を1回実行し、pickerが選定時点の状態を`inbox`と報告した全件が`processing`へ配置されたことを確認して①を完了する。
+回答済みUWIの終端確認後に`atk wi list --target-repo=<repo> --skip-pull`を1回実行し、pickerが選定時点の状態を`inbox`と報告した全件が`processing`へ配置されたことを確認する。
+同じ出力から、`decisions[].awi`の全件が`processing`にあることを1回のコマンドで照合し、両方が成立した時点で①を完了する。
+`decisions`に無いファイル名が`processing`にあることは、当該回の処理対象ではないため①の完了を妨げない。ユーザーが処理対象を明示した処理回では、当該項目が`processing`に残ることが正常であるためである。
 配置されていない項目が1件でもある場合は、計画ファイル、managed-temp、worktree及び実装担当の起動を含む②へ進まない。
 
 ②へ進まない場合は、再取得した各項目の保存状態と、pickerが選定時点の状態を`inbox`と報告したファイル名の一覧を対照し、`processing`へ遷移していない項目を確定する。当該項目のファイル名、観測した保存状態及び当該セッションで再実行しない理由を`agent-toolkit:wi-standards`に従って登録し、①を終える。当該セッションでは②と③へ進まない。
