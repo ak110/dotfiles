@@ -774,9 +774,9 @@ def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
     elapsed_analysis = skill.split("## 所要時間の分析と改善提案\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
 
     fixed_point_rule = (
-        "12. メインは振り返り担当の初回返却後、手順3の観測境界を照合済み境界の初期値とし、"
+        "手順1が返した観測境界を照合済み境界の初期値とし、"
         "追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受領していない状態になるまで"
-        "次の再照合を繰り返す。"
+        "次を繰り返す。"
     )
     elapsed_boundary_rule = (
         "メインは振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
@@ -784,7 +784,7 @@ def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
 
     assert fixed_point_rule in problem_candidates
     assert elapsed_boundary_rule in elapsed_analysis
-    assert "手順12" not in elapsed_analysis
+    assert "手順4" not in elapsed_analysis
 
 
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
