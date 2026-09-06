@@ -143,6 +143,8 @@ UWI待ちは物理的な`hold`へ移さず、元項目の既存依存を保持�
 ## 投入と取得
 
 1. 通常AWIは技術主張を実装、実行結果又は公式一次資料で裏付け、ユーザー依存事項をUWIへ分離してから起草する。観測した欠陥を起点とする通常AWIは、本文の起草前に`agent-toolkit:bugfix`の初動と原因分析の要否判定を適用する。UWIは原因分析の対象にしない。
+   投入前に本文を単独で読み直し、「同じ」「上記」「当該」などの指示語の参照先が同一本文内にあり、変更対象、根拠となる事象・要件、対応内容及び完成条件を本文だけから確定できることを検査する。
+   複数のWIを連続して起草する場合も、各本文を他の本文から独立して検査する。検査に合格しない本文は投入しない。
 2. 複数リポジトリへ投入する場合は[references/cross-repository-submission.md](references/cross-repository-submission.md)を全文読む。
 3. 同じ対象リポジトリの複数項目を一括取得する場合は[references/managed-temp-bulk-show.md](references/managed-temp-bulk-show.md)を全文読む。
 4. 本文へ引用符又は改行を含む場合はファイルへ保存し、`atk wi add --body-file <path>`で渡す。位置引数とは併用しない。
