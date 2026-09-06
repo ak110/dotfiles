@@ -40,6 +40,7 @@ from _agents_server import status_file as subject
             subject.StatusFileIdentity("owner", "codex-child.json", "codex-child"),
         ),
         ({}, None),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, None),
         ({"CLAUDE_CODE_SESSION_ID": "../invalid"}, None),
         (
             {
@@ -51,7 +52,7 @@ from _agents_server import status_file as subject
     ],
 )
 def test_resolve_status_file_identity(environment: dict[str, str], expected: subject.StatusFileIdentity | None) -> None:
-    """ルート・Claude委譲先・Codex委譲先と不正識別子を区別する。"""
+    """ルート・両backendの委譲先・識別不能な所有session・不正識別子を区別する。"""
     assert subject.resolve_status_file_identity(environment) == expected
 
 

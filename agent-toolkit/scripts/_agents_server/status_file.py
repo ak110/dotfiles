@@ -1,9 +1,17 @@
 """agents_serverのsession状態をClaude Codeのstatusline向けに出力する。
 
 Claude backendの委譲先は所有sessionと自身のClaude Code sessionを持つ。
-Codex backendの委譲先は所有sessionと自身のCodex threadを持つ。この対応は
-Claude Code 2.1.261、Codex CLI 0.153.2及びclaude-agent-sdk 0.2系で確認した。
-各ホスト又はSDKの更改時は、委譲先の環境変数を再取得して対応を検証する。
+この対応はClaude Code 2.1.261及びclaude-agent-sdk 0.2系で確認した。
+Codex backendの委譲先自身のシェルは、所有sessionと自身のCodex threadを持つ。
+2026年9月7日にCodex CLI 0.153.4の`start_shell`で起動したシェルに
+`CODEX_THREAD_ID`が存在することを確認した。
+
+Codex CLIが直接起動するMCPサーバープロセスには、所有session識別子、
+Claude Code session識別子及びCodex thread識別子のいずれも現れない。
+2026年9月7日にCodex CLI 0.153.4が起動したMCPサーバーの`/proc/<pid>/environ`から
+環境変数名だけを取得して確認した。この経路は書込主体を解決できないため、
+状態ファイルを書かない。各ホスト、CLI又はSDKの更改時は同じ2経路の環境変数を
+再取得し、識別子の有無を個別に検証する。
 
 上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して実測した。この前提が崩れた場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
 """
@@ -37,7 +45,7 @@ class StatusFileIdentity:
 
 
 def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileIdentity | None:
-    """環境変数から状態ファイルの書込主体を解決する。"""
+    """環境変数から状態ファイルの書込主体を解決し、識別できない場合は`None`を返す。"""
     owner = environment.get("AGENT_TOOLKIT_OWNER_SESSION") or environment.get("CLAUDE_CODE_SESSION_ID")
     if owner is None or not valid_session_id(owner):
         return None
@@ -48,6 +56,8 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
     elif environment.get("CODEX_THREAD_ID"):
         host_session_id = environment.get("CODEX_THREAD_ID")
     if host_session_id is not None and not valid_session_id(host_session_id):
+        return None
+    if host_session_id is None and environment.get("AGENT_TOOLKIT_OWNER_SESSION"):
         return None
 
     file_name = "root.json" if host_session_id is None else f"{host_session_id}.json"
