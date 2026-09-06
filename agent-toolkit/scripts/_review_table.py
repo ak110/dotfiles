@@ -22,6 +22,8 @@ import _atk_help
 import _file_lock
 from _atomic_file import atomic_write
 
+# 配布物独立性のため、Web表示側`_atk_serve_plans.py`の`_REVIEW_TABLE_HEADERS`と同じ列順を二重に持つ。
+# 列を増減する場合は双方を同期し、旧形式の読み取り互換も両側で更新する。
 COLUMNS = (
     "round",
     "track",
@@ -322,14 +324,23 @@ def respond(
     return 0
 
 
-def show(path: str | Path, track: str | None = None, output_format: str = "tsv") -> int:
-    """表を保存順で表示し、指定時はtrackで限定する。"""
+def show(
+    path: str | Path,
+    track: str | None = None,
+    output_format: str = "tsv",
+    round_value: int | None = None,
+) -> int:
+    """表を保存順で表示し、指定時はtrackとラウンドで限定する。"""
     target = _path(str(path))
     text = _read_table_text(target)
     rows = _parse_text(text)
     if track is not None and track not in TRACK_VALUES:
         raise ValueError(f"trackが正規値ではない。{_RECOVERY_GUIDANCE}")
-    selected = [(raw_line, row) for raw_line, row in rows if track is None or row[1] == track]
+    selected = [
+        (raw_line, row)
+        for raw_line, row in rows
+        if (track is None or row[1] == track) and (round_value is None or row[0] == str(round_value))
+    ]
     if output_format == "tsv":
         print("".join(raw_line for raw_line, _ in selected), end="")
         return 0
@@ -469,6 +480,11 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         help="表示対象を指定したレビュー区分の行だけに限定する。省略すると全行を表示する。",
     )
     show_parser.add_argument(
+        "--round",
+        type=int,
+        help="表示対象を指定したラウンドの行だけに限定する。省略すると全ラウンドを表示する。",
+    )
+    show_parser.add_argument(
         "--format",
         choices=("tsv", "jsonl"),
         default="tsv",
@@ -489,7 +505,7 @@ def dispatch(args: argparse.Namespace) -> int:
     if command == "init":
         return init(args.path)
     if command == "show":
-        return show(args.path, args.track, args.format)
+        return show(args.path, args.track, args.format, args.round)
     if command == "validate":
         return validate(args.path, require_responses=not args.allow_unanswered)
     if command == "add":

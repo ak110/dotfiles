@@ -269,6 +269,38 @@ def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.Capture
     assert "盲検指摘" not in output
 
 
+def test_show_filters_rows_by_round(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """指定ラウンドだけを保存順で表示し、存在しないラウンドは空出力にする。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "1件目")
+    table.add(path, "2", _TRACK, "module.py:20", "2件目")
+    table.add(path, "1", _TRACK, "module.py:30", "3件目")
+    capsys.readouterr()
+
+    assert table.show(path, round_value=1) == 0
+    output = capsys.readouterr().out
+    assert output.index("1件目") < output.index("3件目")
+    assert "2件目" not in output
+
+    assert table.show(path, round_value=99) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_show_combines_round_track_and_jsonl(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """ラウンド・track・JSON Linesの指定を同時に適用する。"""
+    path = tmp_path / "review.tsv"
+    table.init(path)
+    table.add(path, "1", _TRACK, "module.py:10", "対象")
+    table.add(path, "2", _TRACK, "module.py:20", "別ラウンド")
+    table.add(path, "1", "independent", "module.py:30", "別track")
+    capsys.readouterr()
+
+    assert table.show(path, track=_TRACK, output_format="jsonl", round_value=1) == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["issue"] for row in rows] == ["対象"]
+
+
 def test_show_jsonl_decodes_control_characters_and_quotes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -722,7 +754,6 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
 @pytest.mark.parametrize(
     ("subcommand", "arguments", "accepted_options"),
     (
-        ("show", ["review.tsv", "--round", "1"], ("--format", "--track")),
         ("validate", ["review.tsv", "--round", "1"], ("--allow-unanswered",)),
         ("init", ["review.tsv", "--track", "plan-review"], ()),
         (
@@ -747,7 +778,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
                 "--track",
             ),
         ),
-        ("show", ["review.tsv", "--all"], ("--format", "--track")),
+        ("show", ["review.tsv", "--all"], ("--format", "--round", "--track")),
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],

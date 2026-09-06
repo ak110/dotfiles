@@ -188,3 +188,22 @@ def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
     assert "未送信commitをremoteへpush" in description
     assert "remoteの変更をprivate-notesへpull" in description
     assert "private-notesの内容は変更しない" not in description
+
+
+@pytest.mark.parametrize(
+    ("command", "format_name"),
+    [
+        ("atk wi list", "JSON Lines"),
+        ("atk plans list", "TSV"),
+        ("atk agents-wait", "単一のJSON文書"),
+        ("atk managed-temp list", "JSON Lines"),
+        ("atk review-table show", "raw TSV"),
+    ],
+)
+def test_structured_output_commands_state_their_format(command: str, format_name: str) -> None:
+    """構造化出力を返すコマンドは解析形式を一意に明示する。"""
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands[command].description
+
+    assert description is not None
+    assert format_name in description
