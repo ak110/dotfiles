@@ -164,7 +164,8 @@ def test_get_claude_options_returns_empty_on_help_failure(
 
 @pytest.mark.skipif(os.name == "nt", reason="bash補完の疎通確認はPOSIX専用")
 def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> None:
-    claude_bin = tmp_path / "claude"
+    claude_bin = tmp_path / ".local" / "bin" / "claude"
+    claude_bin.parent.mkdir(parents=True)
     claude_bin.write_text(
         "#!/bin/sh\nprintf '  --model <model>\\n  --permission-mode <mode>\\n'\n",
         encoding="utf-8",
@@ -181,7 +182,7 @@ def test_argcomplete_writes_claude_options_to_fd8(tmp_path: pathlib.Path) -> Non
     completion_output = tmp_path / "completion-output"
     env = {
         **os.environ,
-        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(tmp_path),
         "_ARGCOMPLETE": "1",
         "_ARGCOMPLETE_IFS": "\v",
         "COMP_LINE": "sonnet --",
