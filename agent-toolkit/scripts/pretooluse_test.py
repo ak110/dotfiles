@@ -4413,11 +4413,13 @@ class TestBashOutputTruncationWarning:
         [
             "atk wi add --body-file /tmp/body.md | tail -20",
             "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md | head -20",
+            "atk wi show 20260906-105742-003.md | tail -20",
+            "atk review-table show /tmp/review.tsv | head -20",
         ],
-        ids=["wi-add", "wi-edit"],
+        ids=["wi-add", "wi-edit", "wi-show", "review-table-show"],
     )
     def test_saved_body_command_truncation_blocks(self, command: str) -> None:
-        """保存本文の照合に使う登録・編集出力の切り詰めを遮断する。"""
+        """保存本文の照合に使うコマンド出力の切り詰めを遮断する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
@@ -4478,13 +4480,26 @@ class TestBashOutputTruncationWarning:
         [
             "atk wi add --body-file /tmp/body.md > /tmp/wi-add.log",
             "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md > /tmp/wi-edit.log",
+            "atk wi show 20260906-105742-003.md > /tmp/wi-show.log",
+            "atk review-table show /tmp/review.tsv > /tmp/review-table.log",
             "atk wi add --body-file /tmp/body.md | tee /tmp/wi-add.log | tail -20",
             "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md | tee /tmp/wi-edit.log | head -20",
+            "atk wi show 20260906-105742-003.md | tee /tmp/wi-show.log | tail -20",
+            "atk review-table show /tmp/review.tsv | tee /tmp/review-table.log | head -20",
         ],
-        ids=["wi-add-redirect", "wi-edit-redirect", "wi-add-tee", "wi-edit-tee"],
+        ids=[
+            "wi-add-redirect",
+            "wi-edit-redirect",
+            "wi-show-redirect",
+            "review-table-show-redirect",
+            "wi-add-tee",
+            "wi-edit-tee",
+            "wi-show-tee",
+            "review-table-show-tee",
+        ],
     )
     def test_saved_body_command_full_output_save_is_allowed(self, command: str) -> None:
-        """保存本文の全量をファイルへ残す登録・編集経路は許可する。"""
+        """保存本文の全量をファイルへ残す経路は許可する。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
@@ -4492,6 +4507,20 @@ class TestBashOutputTruncationWarning:
     def test_saved_body_command_name_outside_execution_position_is_silent(self) -> None:
         """登録コマンド名を引数として含むだけの処理は遮断しない。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo 'atk wi add' | head -1"}})
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "gh pr create | head -20",
+            "gh release create v1.0.0 | tail -20",
+        ],
+        ids=["gh-pr-create", "gh-release-create"],
+    )
+    def test_identifier_output_command_truncation_is_silent(self, command: str) -> None:
+        """作成結果の識別子だけを返すコマンドは全量比較の対象にしない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
 

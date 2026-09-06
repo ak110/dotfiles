@@ -2639,6 +2639,21 @@ _STATE_CHANGING_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("gh", "pr", "merge"),
 )
 """出力が後続の検収の唯一の入力となる状態変更コマンドの前置き。"""
+_COMPLETE_OUTPUT_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("atk", "wi", "show"),
+    ("atk", "review-table", "show"),
+)
+"""状態を変更せず、出力の全量が後続の照合の根拠となるコマンドの前置語。
+
+`atk wi show`は一括取得の契約が全項目の出力を本文採用の条件とし、`atk review-table show`は
+記録後の保存本文の取得手段である。いずれも一部だけを読むと照合の根拠が失われる。
+状態変更コマンドは`_STATE_CHANGING_COMMAND_PREFIXES`で別に判定する。
+"""
+_COMPLETE_OUTPUT_EXCLUDED_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("gh", "pr", "create"),
+    ("gh", "release", "create"),
+)
+"""作成結果の識別子1件だけを返し、全量比較を要しないコマンドの前置語。"""
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
 _STATE_OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = _OUTPUT_TRUNCATION_COMMANDS | {"grep", "egrep", "fgrep", "rg"}
 _VERIFICATION_TARGET_KEYWORDS: tuple[str, ...] = ("test", "check", "lint", "format", "fmt")
@@ -3149,9 +3164,12 @@ def _segment_requires_complete_output(segment: _ExecutionSegment) -> bool:
     """
     if _has_uv_terminal_option(segment.tokens):
         return False
+    if any(_segment_starts_with(segment, prefix) for prefix in _COMPLETE_OUTPUT_EXCLUDED_PREFIXES):
+        return False
     return (
         any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES)
         or _segment_is_state_changing(segment)
+        or any(_segment_starts_with(segment, prefix) for prefix in _COMPLETE_OUTPUT_COMMAND_PREFIXES)
         or segment.is_agent_toolkit_script
         or any(
             keyword in target.lower()
