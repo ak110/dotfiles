@@ -215,6 +215,43 @@ def test_detail_renders_codex_records_in_order(tmp_path: pathlib.Path) -> None:
     assert detail["project"] == "/home/aki/other"
 
 
+def test_codex_roles_and_compaction_are_preserved(tmp_path: pathlib.Path) -> None:
+    """Codexの各発話ロールと圧縮境界を、表示用の種別と付随情報へ変換する。"""
+    path = _write(
+        tmp_path / "codex" / "sessions" / "2026" / "09" / "01" / "rollout-roles.jsonl",
+        [
+            {"type": "response_item", "payload": {"role": "user", "content": [{"text": "利用者"}]}},
+            {"type": "response_item", "payload": {"role": "developer", "content": [{"text": "開発者"}]}},
+            {"type": "response_item", "payload": {"role": "assistant", "content": [{"text": "応答"}]}},
+            {"type": "response_item", "payload": {"role": "unknown", "content": [{"text": "不明"}]}},
+            {"type": "response_item", "payload": {"content": [{"text": "欠落"}]}},
+            {
+                "type": "compacted",
+                "timestamp": "2026-09-01T00:00:06Z",
+                "payload": {"message": [{"text": "圧縮しました"}], "window_number": 2},
+            },
+            {"type": "compacted", "payload": {"message": "", "window_number": 3}},
+        ],
+    )
+
+    detail = sessions.read_local_detail(_context(tmp_path), "codex", str(path))
+
+    assert [event["kind"] for event in detail["events"]] == [
+        "user",
+        "developer",
+        "assistant",
+        "assistant",
+        "assistant",
+        "compact_boundary",
+        "compact_boundary",
+    ]
+    assert detail["events"][5]["text"] == "圧縮しました"
+    assert detail["events"][5]["timestamp"] == "2026-09-01T00:00:06Z"
+    assert detail["events"][5]["detail"] == {"window_number": 2}
+    assert detail["events"][6]["text"] is None
+    assert detail["events"][6]["detail"] == {"window_number": 3}
+
+
 def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
     """記録が持たない情報は0や空文字列で補わず、取得不能として返す。"""
     path = _write(

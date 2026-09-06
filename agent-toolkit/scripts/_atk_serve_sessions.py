@@ -255,6 +255,16 @@ def _codex_events(records: typing.Iterable[dict[str, typing.Any]]) -> tuple[list
         if record_type == "event_msg":
             _codex_apply_token_count(payload, totals)
             continue
+        if record_type == "compacted":
+            events.append(
+                SessionEvent(
+                    kind="compact_boundary",
+                    timestamp=timestamp,
+                    text=_as_text(payload.get("message")) or None,
+                    detail={"window_number": payload.get("window_number")},
+                )
+            )
+            continue
         if record_type != "response_item":
             continue
         events.append(_codex_payload_event(payload, timestamp))
@@ -295,7 +305,15 @@ def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) 
         output = payload.get("output")
         return SessionEvent(kind="tool_result", timestamp=timestamp, text=_as_text(output) or _stringify(output))
     role = payload.get("role")
-    kind = "user" if role in {"user", "developer"} else "assistant"
+    kind = (
+        {
+            "user": "user",
+            "developer": "developer",
+            "assistant": "assistant",
+        }.get(role, "assistant")
+        if isinstance(role, str)
+        else "assistant"
+    )
     return SessionEvent(kind=kind, timestamp=timestamp, text=_as_text(payload.get("content")))
 
 

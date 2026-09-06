@@ -11,6 +11,7 @@ let BASE_PATH = "";
 const ENGINE_LABELS = { claude: "Claude Code", codex: "Codex" };
 const KIND_LABELS = {
   user: "ユーザー",
+  developer: "開発者",
   assistant: "アシスタント",
   thinking: "思考・要約",
   tool_call: "ツール呼び出し",

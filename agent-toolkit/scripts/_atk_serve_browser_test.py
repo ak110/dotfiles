@@ -2113,6 +2113,24 @@ def _write_session_records(root: Path) -> None:
             {
                 "type": "response_item",
                 "timestamp": "2026-09-01T01:00:02Z",
+                "payload": {"type": "message", "role": "developer", "content": [{"text": "Codexの開発者指示"}]},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "compacted",
+                "timestamp": "2026-09-01T01:00:03Z",
+                "payload": {"message": "コンテキストを圧縮しました", "window_number": 2},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T01:00:04Z",
                 "payload": {"type": "function_call", "name": "shell", "arguments": '{"cmd":"pwd"}'},
             },
             ensure_ascii=False,
@@ -2121,7 +2139,7 @@ def _write_session_records(root: Path) -> None:
         + json.dumps(
             {
                 "type": "response_item",
-                "timestamp": "2026-09-01T01:00:03Z",
+                "timestamp": "2026-09-01T01:00:05Z",
                 "payload": {"type": "function_call", "name": "broken", "arguments": "{invalid-json"},
             },
             ensure_ascii=False,
@@ -2981,6 +2999,12 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     await harness.page.locator("#sessions .session-item").first.click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
     assert "Codexの発話" in await harness.page.locator("#detail").inner_text()
+    developer = harness.page.locator("#detail .kind-developer")
+    compacted = harness.page.locator("#detail .kind-compact_boundary")
+    assert "開発者" in await developer.locator("summary").inner_text()
+    assert "コンテキスト圧縮" in await compacted.locator("summary").inner_text()
+    assert not await developer.evaluate("element => element.open")
+    assert not await compacted.evaluate("element => element.open")
     assert "/home/aki/other" in await harness.page.locator("#detail-title").inner_text()
     shell_summary = harness.page.locator("#detail .kind-tool_call", has_text="shell").locator("summary")
     assert "pwd" in await shell_summary.inner_text()
