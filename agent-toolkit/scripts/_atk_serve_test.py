@@ -223,14 +223,16 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
 
     grid = re.search(r"\.entry-columns, \.entry-row \{(.*?)\n\}", assets.CSS, re.DOTALL)
     assert grid is not None
-    widths = re.findall(r"minmax\(([^)]+)\)", grid.group(1))
+    template = re.search(r"grid-template-columns:(.*?);", grid.group(1), re.DOTALL)
+    assert template is not None
+    widths = re.findall(r"minmax\([^)]+\)|\d+rem|auto", template.group(1))
     assert widths == [
-        "8rem, 0.9fr",
-        "7rem, 0.9fr",
-        "7rem, 0.8fr",
-        "16rem, 3fr",
+        "15rem",
+        "14rem",
+        "15rem",
+        "minmax(0, 1fr)",
+        "auto",
     ]
-    assert re.search(r"\sauto;", grid.group(1))
     assert "grid-column: 1 / 5;" in assets.CSS
     assert "grid-template-columns: subgrid;" in assets.CSS
     assert ".entry-copy { grid-column: 5;" in assets.CSS
@@ -329,6 +331,7 @@ def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     executable = (
         source[: -len(closing)]
         + "\nconst testMount = () => true;\n"
+        + "testMount.restoreOnSettle = (pending, restore) => { pending.then(restore, restore); return pending; };\n"
         + "testMount.wait = async pending => pending;\n"
         + "isCurrentMount = testMount;\n"
         + "\n(async () => {\n"
