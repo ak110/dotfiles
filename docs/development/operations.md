@@ -186,6 +186,22 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 2. SQLiteのDB、WAL、SHMを一組として復旧し、通常ストレージ側の内容を検証する
 3. 復旧結果を確認した後に限り、共有メモリー側の旧`target`と競合スナップショットを手動で回収する
 
+## Codexの実験的コンテキスト管理
+
+`.chezmoi-source/dot_codex/modify_private_config.toml`は、Codex設定の
+`features.context_management.experimental_mode`を`true`に設定する。
+2026年9月6日に`codex-cli 0.153.4`の`codex features list`で、有効化前の値が`false`であることを確認した。
+
+有効化前の基準はセッション`cd6180fe-097a-4d97-bc6b-ea5c9bdc159c`で計測し、
+コンパクションは合計69回だった。内訳は次のとおりである。
+
+- メインのClaudeセッション: 5回、合計1284.9秒
+- Claude委譲先: 10回、合計2230.3秒
+- Codex委譲先: 54回。このうちセッション`01a074b5-f8d5-7850-bca7-a10144a3b742`は6.8時間で10回
+
+有効化後の比較値は、次回以降の`agent-toolkit:process-wi`セッションが完了した時点で計測する。
+本節の値は有効化前の基準だけを表す。
+
 ## 特定ホストでの常駐サービス自動起動
 
 `euryale`でのみ、`chezmoi apply`後処理がsystemd user service`atk-serve.service`を配置して有効化する。
