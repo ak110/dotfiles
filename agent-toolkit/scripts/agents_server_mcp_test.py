@@ -561,6 +561,26 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "`timeout=0`は中断要求配送後の現状態を返す" in kill_tool.description
 
 
+def test_public_descriptions_expose_agents_wait_handoff() -> None:
+    """公開ツール説明が目標評価を避ける待機引継ぎを示す。"""
+    start_tool = subject.mcp._tool_manager.get_tool("start")
+    wait_tool = subject.mcp._tool_manager.get_tool("wait")
+    send_tool = subject.mcp._tool_manager.get_tool("send_message")
+    assert start_tool is not None
+    assert wait_tool is not None
+    assert send_tool is not None
+
+    assert "`turn_seq`" in start_tool.description
+    assert "`atk agents-wait`" in start_tool.description
+    assert "`--turn`へそのまま渡す" in start_tool.description
+    assert "`/goal`が設定され" in wait_tool.description
+    assert "`atk agents-wait <session_id> --turn=<turn_seq>`" in wait_tool.description
+    assert "`timeout=0`の本ツールを1回発行" in wait_tool.description
+    assert "`turn_seq`" in send_tool.description
+    assert "`atk agents-wait`" in send_tool.description
+    assert "`--turn`へそのまま渡す" in send_tool.description
+
+
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
     """進捗本文は改行を除き、長文では末尾80文字だけを返す。"""
     assert state._progress_excerpt("a\r\nb\rc\nd") == "a b c d"

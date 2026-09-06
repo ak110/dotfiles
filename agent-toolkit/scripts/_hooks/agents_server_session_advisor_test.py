@@ -104,6 +104,24 @@ def _record_send_message(state_directory: pathlib.Path, local_session_id: str, r
     )
 
 
+def _record_bash(state_directory: pathlib.Path, local_session_id: str, command: str) -> None:
+    """PostToolUseを通して成功したBash入力を記録する。"""
+    payload = {
+        "session_id": local_session_id,
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_response": "",
+    }
+    result = _fork_runner.run_script(
+        _HOOK,
+        argv=("posttooluse",),
+        input=json.dumps(payload),
+        env=_environment(state_directory),
+    )
+    assert result.returncode == 0
+
+
 def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_path: pathlib.Path) -> None:
     """未観測作業の警告はStop用additionalContextだけを返す。"""
     local_session_id = "pending-output"
@@ -223,6 +241,57 @@ def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
         {"session_id": remote_session_id, "status": "interrupted", "kill_requested": True},
     )
     assert _run_stop(tmp_path, local_session_id) == ""
+
+
+def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> None:
+    """Bash経由のatk agents-waitが未観測作業を解消する。"""
+    commands = (
+        "atk agents-wait remote-direct --turn=1",
+        "uv run --no-project --script /plugin/agent-toolkit/scripts/atk.py agents-wait --turn 1 remote-script",
+    )
+    for index, command in enumerate(commands):
+        local_session_id = f"agents-wait-{index}"
+        remote_session_id = f"remote-{'direct' if index == 0 else 'script'}"
+        _record_start(tmp_path, local_session_id, remote_session_id)
+        _record_bash(tmp_path, local_session_id, command)
+        assert _run_stop(tmp_path, local_session_id) == ""
+
+
+def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathlib.Path) -> None:
+    """保持期限切れで結果のないsessionもagents-waitの実行後は警告しない。"""
+    local_session_id = "agents-wait-expired"
+    remote_session_id = "remote-expired"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)
+    state_path.write_text(
+        json.dumps(
+            {
+                "agents_server_sessions": {
+                    remote_session_id: {
+                        "status": "expired",
+                        "result_available": False,
+                        "pending_observation": True,
+                        "owner_agent_id": "main",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _record_bash(tmp_path, local_session_id, f"atk agents-wait {remote_session_id} --turn=1")
+
+    assert _run_stop(tmp_path, local_session_id) == ""
+
+
+def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_path: pathlib.Path) -> None:
+    """引数に現れるagents-waitの文字列は観測の試みとして扱わない。"""
+    local_session_id = "agents-wait-argument"
+    remote_session_id = "remote-argument"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+
+    _record_bash(tmp_path, local_session_id, f"printf '%s' 'atk agents-wait {remote_session_id} --turn=1'")
+
+    assert _run_stop(tmp_path, local_session_id)
 
 
 def test_no_pending_observation_emits_nothing(tmp_path: pathlib.Path) -> None:

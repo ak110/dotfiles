@@ -17,7 +17,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
-6. agents_server MCP呼び出し後のsession状態記録
+6. agents_server MCP呼び出しと`atk agents-wait`実行後のsession状態記録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)
 8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
@@ -57,6 +57,7 @@ from _hooks import tool_input as _hook_tool_input  # noqa: E402  # pylint: disab
 from _hooks import uwi_completion as _uwi_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hooks.agent_id import resolve_hook_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_execution_segments,
     extract_git_events,
 )
 from _hooks.notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -403,6 +404,55 @@ def _record_agents_server_observation_attempt(session_id: str, tool_input: dict,
     update_state(session_id, _mutator)
 
 
+def _agents_wait_session_id(tokens: tuple[str, ...]) -> str | None:
+    """`atk agents-wait`の実行トークン列からsession識別子を返す。"""
+    if len(tokens) < 3:
+        return None
+    executable = tokens[0].replace("\\", "/")
+    if executable.rsplit("/", 1)[-1] not in {"atk", "atk.py"} or tokens[1] != "agents-wait":
+        return None
+    index = 2
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"--turn", "--timeout"}:
+            index += 2
+            continue
+        if token.startswith(("--turn=", "--timeout=")):
+            index += 1
+            continue
+        if token == "--":
+            return tokens[index + 1] if index + 1 < len(tokens) else None
+        if token.startswith("-"):
+            return None
+        return token
+    return None
+
+
+def _record_agents_wait_observation_attempt(session_id: str, command: str) -> None:
+    """成功したBash入力内の`atk agents-wait`を観測の試みとして記録する。"""
+    remote_session_ids = {
+        remote_session_id
+        for segment in extract_execution_segments(command)
+        if segment.resolved and (remote_session_id := _agents_wait_session_id(segment.tokens)) is not None
+    }
+    if not remote_session_ids:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict):
+            return None
+        changed = False
+        for remote_session_id in remote_session_ids:
+            record = sessions.get(remote_session_id)
+            if isinstance(record, dict) and record.get("pending_observation") is True:
+                record["pending_observation"] = False
+                changed = True
+        return state if changed else None
+
+    update_state(session_id, _mutator)
+
+
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
     """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
@@ -599,6 +649,7 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
 def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
+    _record_agents_wait_observation_attempt(session_id, command)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:

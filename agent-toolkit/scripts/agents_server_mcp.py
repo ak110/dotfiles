@@ -1054,7 +1054,8 @@ async def start(
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
-    応答は`session_id`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
+    応答は`session_id`、`turn_seq`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
+    `turn_seq`は、`atk agents-wait`でこのturnを待つ場合に`--turn`へそのまま渡す。
     全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
     これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
     """
@@ -1147,6 +1148,11 @@ async def wait(
 
     `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
+    呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
+    本ツールの背景移行で待たず、`atk agents-wait <session_id> --turn=<turn_seq>`を
+    実行ホストの背景ジョブとして起動して待機表明でターンを終える。
+    `<turn_seq>`には`start`又は`send_message`の応答値をそのまま渡す。
+    当該背景ジョブの完了通知を受領した後に`timeout=0`の本ツールを1回発行し、結果本文の配送を確定させる。
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
@@ -1178,7 +1184,9 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`で配送結果を示す。直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
+    応答は`delivery`で配送結果を示し、`turn_seq`を含む。
+    `turn_seq`は、`atk agents-wait`でこのturnを待つ場合に`--turn`へそのまま渡す。
+    直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
     `configuration changed: <session_id>`は、
     当該sessionが採用しているengine・model・effortが工程別モデル設定の候補列から外れたことを示す。
     本文が続けて変わった項目と変更前後の値を示すため、検収済み状態を渡して新規起動する。
