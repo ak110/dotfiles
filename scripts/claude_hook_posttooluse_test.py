@@ -18,8 +18,8 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"
 
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _testing import fork_runner as _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
@@ -129,7 +129,7 @@ class TestAgentToolkitEditSkillRecording:
     def test_concurrent_write_preserves_both_keys(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
         """同一 session_id へ並行発行された別キー書き込みが消失しないこと。
 
-        agent-toolkit/skills/agent-standards/references/claude-hooks.md の
+        agent-toolkit/skills/writing-standards/references/claude-hooks.md の
         並行書き込み回帰テスト規定に整合。
         """
         # update_state 経由の書き込みは tempfile.gettempdir() を参照する。

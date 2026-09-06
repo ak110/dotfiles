@@ -163,6 +163,51 @@ def test_skips_when_src_missing(
     assert not (codex_home / "skills" / "foo").exists()
 
 
+@pytest.mark.parametrize("failure_side", ["source", "destination"])
+def test_os_error_skips_only_affected_link(
+    env: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failure_side: str,
+) -> None:
+    """配布元又は配布先の検査失敗後も、残るリンクを処理する。"""
+    dotfiles_root, codex_home = env
+    monkeypatch.setattr(
+        setup_codex_links,
+        "_LINKS",
+        {"skills/failing": "sources/failing", "skills/succeeding": "sources/succeeding"},
+    )
+    failing_source = dotfiles_root / "sources" / "failing"
+    succeeding_source = dotfiles_root / "sources" / "succeeding"
+    failing_source.mkdir(parents=True)
+    succeeding_source.mkdir(parents=True)
+    failing_dest = codex_home / "skills" / "failing"
+    real_exists = Path.exists
+    real_sync = setup_codex_links.sync_directory_link
+
+    if failure_side == "source":
+        monkeypatch.setattr(
+            Path,
+            "exists",
+            lambda path: (_ for _ in ()).throw(OSError("検査失敗")) if path == failing_source else real_exists(path),
+        )
+    else:
+        monkeypatch.setattr(
+            setup_codex_links,
+            "sync_directory_link",
+            lambda dest, target: (
+                (_ for _ in ()).throw(OSError("検査失敗")) if dest == failing_dest else real_sync(dest, target)
+            ),
+        )
+
+    with caplog.at_level(logging.WARNING):
+        assert setup_codex_links.run() is True
+
+    assert "検査失敗" in caplog.text
+    assert str(failing_dest) in caplog.text
+    assert (codex_home / "skills" / "succeeding").is_symlink()
+
+
 def test_returns_false_when_dotfiles_root_unresolved(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

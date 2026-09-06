@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
+from pathlib import Path
 from typing import Any
 
 from pytools._internal import claude_common, log_format
@@ -56,7 +56,7 @@ def is_legacy_definition(value: object) -> bool:
 
 def run() -> bool:
     """完全一致するUser scope旧定義だけを`claude mcp remove --scope user`で削除する。"""
-    if shutil.which("claude") is None:
+    if claude_common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
         logger.info(log_format.format_status("legacy-codex-mcp", "claude CLI 未検出のためスキップ"))
         return False
     current = _load_user_codex()

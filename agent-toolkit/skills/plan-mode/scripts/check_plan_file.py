@@ -21,8 +21,8 @@ import typing
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
-import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -154,7 +154,8 @@ def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
         (
             "advisory",
             f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
-            "重複する記述を単一の情報源へ集約し、実装工程の入力として参照する素材を外部ファイルへ分けることを検討する",
+            "重複する記述を単一の情報源へ集約し、計画ファイル基準の`### 実装資料と完了条件`が定める配置規約に従って"
+            "逐語本文を付属素材へ分離する",
         )
     ]
 

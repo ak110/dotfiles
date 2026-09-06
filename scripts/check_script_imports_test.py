@@ -55,6 +55,43 @@ def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, ca
     assert "agent-toolkit/skills/example/scripts/broken.py" in captured.err
 
 
+def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """サブディレクトリのPEP 723起点も再帰走査する。"""
+    _write_pep723_script(
+        _isolate_repo_root / "agent-toolkit/scripts/_pkg/broken.py",
+        body="import missing_nested_dependency",
+    )
+    assert check_script_imports.main() == 1
+    assert "agent-toolkit/scripts/_pkg/broken.py" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "import_line", "expected"),
+    [
+        ("_atk/wi/x.py", "import _hooks.b", 1),
+        ("_hooks/pretooluse/y.py", "import _testing.helpers", 1),
+        ("_hooks/pretooluse/z.py", "import _common.a", 0),
+        ("_atk/serve/plans/w_test.py", "import _testing.helpers", 0),
+    ],
+)
+def test_nested_layer_import_rules(
+    _isolate_repo_root: pathlib.Path, relative_path: str, import_line: str, expected: int
+) -> None:
+    """入れ子のモジュールでも禁止辺を拒否し、許可辺を受理する。"""
+    scripts_root = _isolate_repo_root / "agent-toolkit/scripts"
+    for package in ("_common", "_hooks", "_testing"):
+        package_dir = scripts_root / package
+        package_dir.mkdir(exist_ok=True)
+        (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (scripts_root / "_common/a.py").write_text("", encoding="utf-8")
+    (scripts_root / "_hooks/b.py").write_text("", encoding="utf-8")
+    (scripts_root / "_testing/helpers.py").write_text("", encoding="utf-8")
+    target = scripts_root / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"{import_line}\n", encoding="utf-8")
+    assert check_script_imports.main() == expected
+
+
 def test_unresolvable_import_reports_script_and_module(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

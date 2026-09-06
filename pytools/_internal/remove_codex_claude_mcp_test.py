@@ -2,6 +2,7 @@
 
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -9,6 +10,12 @@ from pytools._internal import remove_codex_claude_mcp
 
 type Call = tuple[list[str], float | None, str | None]
 type Result = subprocess.CompletedProcess[str] | None
+
+
+@pytest.fixture(autouse=True)
+def _resolve_codex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex CLIをテスト用のコマンド名へ固定する。"""
+    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "resolve_executable", lambda _name: Path("codex"))
 
 
 def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
@@ -77,6 +84,22 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
         (["codex", "mcp", "get", "claude", "--json"], 30, "codex"),
         (["codex", "mcp", "remove", "claude"], 30, "codex"),
     ]
+
+
+def test_run_skips_when_codex_is_unresolved(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """Codex CLIを解決できない場合は手動確認を促して変更なしとする。"""
+    monkeypatch.setattr(remove_codex_claude_mcp.claude_common, "resolve_executable", lambda _name: None)
+    monkeypatch.setattr(
+        remove_codex_claude_mcp.claude_common,
+        "run_subprocess",
+        lambda *_args, **_kwargs: pytest.fail("コマンドを起動してはいけない"),
+    )
+
+    with caplog.at_level("WARNING"):
+        assert remove_codex_claude_mcp.run() is False
+
+    assert "codex" in caplog.text
+    assert "手動" in caplog.text
 
 
 @pytest.mark.parametrize(

@@ -129,9 +129,9 @@ textlint-args = ["--cache"]
 lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
-    "agent-toolkit/scripts/_atk_serve_static/index.html",
-    "agent-toolkit/scripts/_atk_serve_static/plans.html",
-    "agent-toolkit/scripts/_atk_serve_static/sessions.html",
+    "agent-toolkit/scripts/_atk/serve/static/index.html",
+    "agent-toolkit/scripts/_atk/serve/static/plans.html",
+    "agent-toolkit/scripts/_atk/serve/static/sessions.html",
 ]
 # profile_ipy/はIPython自動生成プロファイル、
 # tone-examples.md・tone-examples-llm-tone.mdは意図的な違反例を収録するため検査対象外とする。
@@ -170,7 +170,7 @@ targets = [
     "agent-toolkit/mcp.json",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",
-    "agent-toolkit/scripts/*.py",
+    "agent-toolkit/scripts/**/*.py",
     "agent-toolkit/bin/*",
     "agent-toolkit/completions/atk.bash",
     "completions/_pytools.bash",
@@ -266,8 +266,8 @@ convention = "google"
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
-# scripts/ から agent-toolkit/scripts/ の _stop_gate モジュールを import するため
-# そのパスを追加する。agent-toolkit/scripts/posttooluse.py が
+# scripts/ から agent-toolkit/scripts/ の _hooks.stop_gate モジュールを import するため
+# そのパスを追加する。agent-toolkit/scripts/_hooks/posttooluse.py が
 # agent-toolkit/skills/plan-mode/scripts配下のモジュールを sys.path 経由で
 # 共有利用するため当該パスも追加する。
 extraPaths = ["agent-toolkit/scripts", "agent-toolkit/skills/plan-mode/scripts"]

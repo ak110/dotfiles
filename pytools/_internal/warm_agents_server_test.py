@@ -9,7 +9,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import warm_agents_server as _warmup
 
-from ._test_helpers import _FakeResult
+from ._test_helpers import _FakeResult, command_matches
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 
@@ -21,7 +21,7 @@ def _write_script(path: pathlib.Path) -> pathlib.Path:
 
 
 def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list[list[str]]:
-    monkeypatch.setattr(_warmup.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     claude_script = tmp_path / "claude" / "scripts" / "agents_server_mcp.py"
@@ -49,7 +49,7 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list[list
 
     def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
         calls.append(cmd)
-        if cmd[:3] == ["codex", "plugin", "list"]:
+        if command_matches(cmd, ["codex", "plugin", "list"]):
             return _FakeResult(
                 stdout=json.dumps({"installed": [{"pluginId": _PLUGIN_ID, "version": "1.0.0", "enabled": True}]})
             )
@@ -64,7 +64,7 @@ def test_warms_all_targets_with_dependency_check(monkeypatch: pytest.MonkeyPatch
     calls = _setup(monkeypatch, tmp_path)
 
     assert _warmup.run() is False
-    warmups = [cmd for cmd in calls if cmd[:4] == ["uv", "run", "--no-project", "--script"]]
+    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
     assert len(warmups) == 2
     assert all(cmd[-1] == "--check-dependencies" for cmd in warmups)
 
@@ -78,7 +78,7 @@ def test_repository_scripts_are_not_targets(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr(_warmup.claude_common, "find_dotfiles_root", lambda: repository)
 
     assert _warmup.run() is False
-    warmups = [cmd for cmd in calls if cmd[:4] == ["uv", "run", "--no-project", "--script"]]
+    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
     assert len(warmups) == 2
     assert all(not any(str(repository) in argument for argument in cmd) for cmd in warmups)
 
@@ -95,7 +95,7 @@ def test_missing_target_is_logged_and_not_warmed(
     caplog.set_level(logging.INFO, logger=_warmup.__name__)
 
     assert _warmup.run() is False
-    warmups = [cmd for cmd in calls if cmd[:4] == ["uv", "run", "--no-project", "--script"]]
+    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
     assert len(warmups) == 1
     assert all(str(missing) not in argument for cmd in warmups for argument in cmd)
     assert f"対象が存在しないため除外: {missing}" in caplog.text
@@ -118,13 +118,17 @@ def test_no_existing_target_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     ).unlink()
 
     assert _warmup.run() is False
-    assert not [cmd for cmd in calls if cmd[:4] == ["uv", "run", "--no-project", "--script"]]
+    assert not [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
 
 
 def test_missing_uv_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """uv不在時は外部コマンドを実行しない。"""
     calls = _setup(monkeypatch, tmp_path)
-    monkeypatch.setattr(_warmup.shutil, "which", lambda name: None if name == "uv" else f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        _claude_common,
+        "resolve_executable",
+        lambda name, **_kwargs: None if name == "uv" else pathlib.Path(name),
+    )
 
     assert _warmup.run() is False
     assert not calls
@@ -136,7 +140,7 @@ def test_warmup_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
         calls.append(cmd)
-        if cmd[:3] == ["codex", "plugin", "list"]:
+        if command_matches(cmd, ["codex", "plugin", "list"]):
             return _FakeResult(stdout=json.dumps({"installed": []}))
         return _FakeResult(returncode=1)
 

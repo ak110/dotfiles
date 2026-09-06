@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _test_helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
@@ -774,9 +774,9 @@ def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
     elapsed_analysis = skill.split("## 所要時間の分析と改善提案\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
 
     fixed_point_rule = (
-        "12. メインは振り返り担当の初回返却後、手順3の観測境界を照合済み境界の初期値とし、"
+        "手順1が返した観測境界を照合済み境界の初期値とし、"
         "追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受領していない状態になるまで"
-        "次の再照合を繰り返す。"
+        "次を繰り返す。"
     )
     elapsed_boundary_rule = (
         "メインは振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
@@ -784,7 +784,7 @@ def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
 
     assert fixed_point_rule in problem_candidates
     assert elapsed_boundary_rule in elapsed_analysis
-    assert "手順12" not in elapsed_analysis
+    assert "手順4" not in elapsed_analysis
 
 
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
@@ -1299,6 +1299,413 @@ def _read_jsonl(capsys: pytest.CaptureFixture[str], *, raw: bool = False) -> lis
     ]
 
 
+def test_warn_excludes_hook_marker_in_command_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """コマンド出力に現れたフック通知標識を実行時のフック警告として返さない。"""
+    notice = "[auto-generated: agent-toolkit/pretooluse][warn] 文書中の例示"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": notice},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": notice}],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_warn_keeps_hook_marker_in_hook_record(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """フック実行の記録に由来する通知標識を実行時警告として返す。"""
+    notice = "[auto-generated: agent-toolkit/pretooluse][warn] 実行時の警告"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "call-1",
+                    "content": [notice],
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": notice}]
+
+
+def test_warn_keeps_command_output_warning(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """フック通知標識を持たないコマンド出力の警告は検出対象に保つ。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "warning: build failed"},
+                "message": {"role": "user", "content": []},
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "warning: build failed"}]
+
+
+def test_warn_excludes_absence_statement(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """問題の不在を述べる警告本文を除き、実在する警告は保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "user",
+                "toolUseResult": {"stdout": "警告: なし\n警告: 3件\nwarning: none.\nwarning: build failed"},
+                "message": {"role": "user", "content": []},
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert [event["text"] for event in _read_jsonl(capsys)] == ["警告: 3件", "warning: build failed"]
+
+
+def test_warn_collects_codex_item_completed_command_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexの完了したコマンド実行から通常の実行時警告を返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "aggregated_output": "warning: build failed, waiting for other jobs to finish...",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [
+        {
+            "kind": "warning",
+            "line": 1,
+            "text": "warning: build failed, waiting for other jobs to finish...",
+        }
+    ]
+
+
+def test_warn_excludes_hook_marker_in_codex_command_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Codexのコマンド出力に現れたフック通知標識を警告として返さない。"""
+    notice = "[auto-generated: agent-toolkit/pretooluse][warn] 文書中の例示"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {"type": "CommandExecution", "status": "completed", "aggregated_output": notice},
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--warn"]) == 0
+
+    assert _read_jsonl(capsys) == [{"kind": "warning", "text": "一致なし"}]
+
+
+def test_final_result_skips_commentary_phase(tmp_path: pathlib.Path) -> None:
+    """Codexの中間報告をassistantのまま保ち、最終回答だけを最終結果へ分類する。"""
+    commentary_only = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "commentary",
+                    "content": [{"type": "output_text", "text": "作業中"}],
+                },
+            }
+        ],
+    )
+
+    assert evidence.load_and_extract(str(commentary_only)) == [
+        {"kind": "assistant", "text": "作業中", "phase": "commentary", "line": 1, "sequence": 1}
+    ]
+
+    with_final_answer = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final_answer",
+                    "content": [{"type": "output_text", "text": "完了"}],
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "commentary",
+                    "content": [{"type": "output_text", "text": "後続の中間報告"}],
+                },
+            },
+        ],
+    )
+
+    assert [event["kind"] for event in evidence.load_and_extract(str(with_final_answer))] == [
+        "final-result",
+        "assistant",
+    ]
+
+
+def test_user_events_returns_main_user_events_in_range(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """指定区間のメイン記録にある利用者イベントだけを由来位置付きで返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _timestamped_entry("2026-09-01T00:00:00Z", "開始前"),
+            _timestamped_entry("2026-09-01T00:00:01Z", "開始境界"),
+            _timestamped_entry("2026-09-01T00:00:02Z", "区間内1"),
+            _timestamped_entry(None, "時刻なし"),
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-01T00:00:03Z",
+                "message": {"role": "assistant", "content": "中間報告"},
+            },
+            _timestamped_entry("2026-09-01T00:00:04Z", "区間内2"),
+            _timestamped_entry("2026-09-01T00:00:05Z", "終了後"),
+        ],
+    )
+    _write_subagent(
+        transcript.with_suffix("") / "subagents",
+        "agent-child",
+        [_timestamped_entry("2026-09-01T00:00:03Z", "委譲先の入力")],
+    )
+
+    assert (
+        evidence.main(
+            [
+                str(transcript),
+                "--user-events",
+                "--since",
+                "2026-09-01T00:00:01Z",
+                "--observation-boundary",
+                "2026-09-01T00:00:04Z",
+            ]
+        )
+        == 0
+    )
+
+    events = _read_jsonl(capsys, raw=True)
+    assert [(event["record"], event["line"], event["text"]) for event in events[:-1]] == [
+        ("main", 3, "区間内1"),
+        ("main", 6, "区間内2"),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 2}
+
+
+def test_user_events_keeps_claude_question_state_across_start_boundary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """開始境界以前のClaude質問を保持し、回答が成立した時刻で区間を判定する。"""
+    entries: list[dict] = []
+
+    def add_question(timestamp: str, call_id: str) -> None:
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "AskUserQuestion", "id": call_id}],
+                },
+            }
+        )
+
+    def add_answer(timestamp: str, call_id: str, question: str, answer: str) -> None:
+        entries.append(
+            {
+                "type": "user",
+                "timestamp": timestamp,
+                "toolUseResult": {"answers": {question: answer}, "questions": []},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "通常出力"}],
+                },
+            }
+        )
+
+    add_question("2026-09-01T12:00:00.100Z", "old")
+    add_answer("2026-09-01T12:00:00.800Z", "old", "区間前", "対象外")
+    add_question("2026-09-01T12:00:00.900Z", "cross-one")
+    add_question("2026-09-01T12:00:00.950Z", "cross-two")
+    add_question("2026-09-01T12:00:01.200Z", "within")
+    add_answer("2026-09-01T12:00:01.300Z", "cross-two", "境界越え2", "回答2")
+    add_answer("2026-09-01T12:00:01.400Z", "within", "区間内", "回答3")
+    add_answer("2026-09-01T12:00:01.500Z", "cross-one", "境界越え1", "回答1")
+    add_question("2026-09-01T12:00:01.600Z", "future")
+    add_answer("2026-09-01T12:00:02.100Z", "future", "終了後", "対象外")
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert (
+        evidence.main(
+            [
+                str(transcript),
+                "--user-events",
+                "--since",
+                "2026-09-01T12:00:01Z",
+                "--observation-boundary",
+                "2026-09-01T12:00:02Z",
+            ]
+        )
+        == 0
+    )
+
+    events = _read_jsonl(capsys, raw=True)
+    assert [(event["line"], event["text"]) for event in events[:-1]] == [
+        (4, "質問: 境界越え2\n回答: 回答2"),
+        (5, "質問: 区間内\n回答: 回答3"),
+        (3, "質問: 境界越え1\n回答: 回答1"),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def test_user_events_keeps_codex_question_state_across_start_boundary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """開始境界以前のCodex質問を保持し、回答が成立した時刻で区間を判定する。"""
+    entries: list[dict] = []
+
+    def add_question(timestamp: str, call_id: str, question_id: str, question: str) -> None:
+        entries.append(
+            {
+                "type": "response_item",
+                "timestamp": timestamp,
+                "payload": {
+                    "type": "function_call",
+                    "name": "request_user_input",
+                    "call_id": call_id,
+                    "arguments": json.dumps({"questions": [{"id": question_id, "question": question}]}),
+                },
+            }
+        )
+
+    def add_answer(timestamp: str, call_id: str, question_id: str, answer: str) -> None:
+        entries.append(
+            {
+                "type": "response_item",
+                "timestamp": timestamp,
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": json.dumps({"answers": {question_id: {"answers": [answer]}}}),
+                },
+            }
+        )
+
+    add_question("2026-09-01T12:00:00.100Z", "old", "old-question", "区間前")
+    add_answer("2026-09-01T12:00:00.800Z", "old", "old-question", "対象外")
+    add_question("2026-09-01T12:00:00.900Z", "cross-one", "shared", "境界越え1")
+    add_question("2026-09-01T12:00:00.950Z", "cross-two", "shared", "境界越え2")
+    add_question("2026-09-01T12:00:01.200Z", "within", "within-question", "区間内")
+    add_answer("2026-09-01T12:00:01.300Z", "cross-two", "shared", "回答2")
+    add_answer("2026-09-01T12:00:01.400Z", "within", "within-question", "回答3")
+    add_answer("2026-09-01T12:00:01.500Z", "cross-one", "shared", "回答1")
+    add_question("2026-09-01T12:00:01.600Z", "future", "future-question", "終了後")
+    add_answer("2026-09-01T12:00:02.100Z", "future", "future-question", "対象外")
+    transcript = _write_transcript(tmp_path, entries)
+
+    assert (
+        evidence.main(
+            [
+                str(transcript),
+                "--user-events",
+                "--since",
+                "2026-09-01T12:00:01Z",
+                "--observation-boundary",
+                "2026-09-01T12:00:02Z",
+            ]
+        )
+        == 0
+    )
+
+    events = _read_jsonl(capsys, raw=True)
+    assert [(event["line"], event["text"]) for event in events[:-1]] == [
+        (4, "質問: 境界越え2\n回答: 回答2"),
+        (5, "質問: 区間内\n回答: 回答3"),
+        (3, "質問: 境界越え1\n回答: 回答1"),
+    ]
+    assert events[-1] == {"kind": "summary", "count": 3}
+
+
+def test_user_events_requires_since(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """照会開始境界の欠落・誤用・不正値と他モード併用を拒否する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [_timestamped_entry("2026-09-01T00:00:01Z", "入力")],
+    )
+
+    invocations = (
+        [str(transcript), "--user-events"],
+        [str(transcript), "--since", "2026-09-01T00:00:00Z"],
+        [str(transcript), "--user-events", "--since", "不正な時刻"],
+        [str(transcript), "--user-events", "--since", "2026-09-01T00:00:00Z", "--warn"],
+    )
+    for arguments in invocations:
+        assert evidence.main(arguments) == 2
+        assert _read_jsonl(capsys)[0]["kind"] == "error"
+
+
 def test_warn_mode_reports_matching_entries_with_line_and_tool(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1359,25 +1766,26 @@ def test_warn_mode_ignores_identifier_only_management_values(
 
 
 @pytest.mark.parametrize(
-    "warning_line",
+    ("warning_line", "expected"),
     [
-        "[warn] 実行時警告",
-        "[warning] 実行時警告",
-        "[auto-generated: agent-toolkit/pretooluse][warn] 実行時警告",
-        "warning: 実行時警告",
-        "warn: 実行時警告",
-        "警告: 実行時警告",
-        "⚠: 実行時警告",
-        "⚠ 実行時警告",
-        "⚠    実行時警告",
+        ("[warn] 実行時警告", True),
+        ("[warning] 実行時警告", True),
+        ("[auto-generated: agent-toolkit/pretooluse][warn] 実行時警告", False),
+        ("warning: 実行時警告", True),
+        ("warn: 実行時警告", True),
+        ("警告: 実行時警告", True),
+        ("⚠: 実行時警告", True),
+        ("⚠ 実行時警告", True),
+        ("⚠    実行時警告", True),
     ],
 )
 def test_warn_mode_accepts_real_line_start_markers_only(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     warning_line: str,
+    expected: bool,
 ) -> None:
-    """実在する行頭マーカーを受理し、本文途中の同語を警告へ昇格させない。"""
+    """実在する行頭マーカーを受理し、コマンド出力内のフック通知標識を除く。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -1394,7 +1802,10 @@ def test_warn_mode_accepts_real_line_start_markers_only(
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
-    assert _read_jsonl(capsys) == [{"kind": "warning", "line": 2, "text": warning_line}]
+    expected_events = (
+        [{"kind": "warning", "line": 2, "text": warning_line}] if expected else [{"kind": "warning", "text": "一致なし"}]
+    )
+    assert _read_jsonl(capsys) == expected_events
 
 
 @pytest.mark.parametrize(

@@ -1,1 +1,2 @@
 project_doc_max_bytes = 262144
+project_doc_warn_ratio = 0.8

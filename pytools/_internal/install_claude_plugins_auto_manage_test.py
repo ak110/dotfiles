@@ -8,6 +8,7 @@ CLI が発行されないことも合わせて検証する。
 """
 
 import json
+import pathlib
 
 import pytest
 
@@ -15,7 +16,7 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, _plugin_list_json, make_installed_two_plugin_fake
+from ._test_helpers import _FakeResult, _plugin_list_json, command_matches, make_installed_two_plugin_fake
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +104,7 @@ class TestAutoDisablePlugins:
         ``_read_target_info`` はダミー 1 件の targets を返す設定にして dotfiles
         プラグインの install/update ループを「最新」スルーで無害化する。
         """
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         # target_versions が空だと run() が早期リターンするため1件設定する。
         # インストールループは CLI リストにダミーを含めることで「最新」スルーになる。
         monkeypatch.setattr(
@@ -135,9 +136,9 @@ class TestAutoDisablePlugins:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 return _FakeResult(returncode=0, stdout=json.dumps(raw_list, ensure_ascii=False))
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -181,7 +182,7 @@ class TestAutoDisablePlugins:
         )
         changed, _ = _install_claude_plugins.run()
         assert changed is False
-        assert not any(c[:3] == ["claude", "plugin", "disable"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
     def test_disable_skipped_when_not_installed(self, monkeypatch: pytest.MonkeyPatch):
         """未インストールなら disable CLI を発行しない (install して無効化するのは過剰介入)。"""
@@ -193,7 +194,7 @@ class TestAutoDisablePlugins:
         )
         changed, _ = _install_claude_plugins.run()
         assert changed is False
-        assert not any(c[:3] == ["claude", "plugin", "disable"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
     def test_disable_failure_does_not_raise(self, monkeypatch: pytest.MonkeyPatch):
         """disable CLI が失敗しても例外は送出されず run() が正常終了する。"""
@@ -214,14 +215,14 @@ class TestAutoDisablePlugins:
 
         def fake_run_with_disable_failure(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 return _FakeResult(returncode=0, stdout=json.dumps(raw_list, ensure_ascii=False))
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
                 )
-            if cmd[:3] == ["claude", "plugin", "disable"]:
+            if command_matches(cmd, ["claude", "plugin", "disable"]):
                 return _FakeResult(returncode=1, stderr="boom")
             return _FakeResult(returncode=0)
 
@@ -230,7 +231,7 @@ class TestAutoDisablePlugins:
         # disable 失敗でも例外は出ない (changed は False: 成功件数 0)
         changed, _ = _install_claude_plugins.run()
         assert changed is False
-        assert any(c[:3] == ["claude", "plugin", "disable"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
 
 class TestRunAutoDisable:
@@ -239,7 +240,7 @@ class TestRunAutoDisable:
     def test_disable_called_and_changed_set(self, monkeypatch: pytest.MonkeyPatch):
         """インストール済みかつ有効な disable 対象に対し `claude plugin disable` が発行され changed が真になる。"""
         target_disable = "serena@claude-plugins-official"
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
@@ -261,7 +262,7 @@ class TestRunAutoDisable:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001 -- subprocess.run 互換シグネチャ
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
@@ -269,7 +270,7 @@ class TestRunAutoDisable:
                         {"id": target_disable, "scope": "user", "version": "1.0.0"},
                     ),
                 )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -290,7 +291,7 @@ class TestRunNoAutomaticStateChange:
 
     def test_no_state_change_cli_and_recommendations_returned(self, monkeypatch: pytest.MonkeyPatch):
         """有効化対象は未インストール、無効化対象は空集合のときに CLI 発行なしで推奨のみ返す。"""
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
@@ -340,7 +341,7 @@ class TestExternalMarketplaces:
         add_succeeds: bool = True,
         registered_source: str | None = None,
     ) -> list[list[str]]:
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", (self._TARGET,))
         monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, set()))
         calls: list[list[str]] = []
@@ -349,16 +350,16 @@ class TestExternalMarketplaces:
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             nonlocal marketplace_added
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 source = registered_source or self._TARGET[1]
                 marketplaces = (
                     [{"name": self._TARGET[0], "source": "github", "repo": source}] if registered or marketplace_added else []
                 )
                 return _FakeResult(returncode=0, stdout=json.dumps(marketplaces))
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 plugins = [{"id": self._TARGET[2], "scope": "user"}] if installed else []
                 return _FakeResult(returncode=0, stdout=json.dumps(plugins))
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 marketplace_added = add_succeeds
                 return _FakeResult(returncode=0 if add_succeeds else 1, stderr="登録失敗")
             return _FakeResult(returncode=0)
@@ -374,7 +375,7 @@ class TestExternalMarketplaces:
         assert changed is True
         assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls
         assert ["claude", "plugin", "install", self._TARGET[2], "--scope=user"] in calls
-        assert sum(call[:4] == ["claude", "plugin", "marketplace", "list"] for call in calls) == 2
+        assert sum(command_matches(call, ["claude", "plugin", "marketplace", "list"]) for call in calls) == 2
 
     def test_skips_when_already_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls = self._setup_run(monkeypatch, registered=True, installed=True)
@@ -382,8 +383,8 @@ class TestExternalMarketplaces:
         changed, _ = _install_claude_plugins.run()
 
         assert changed is False
-        assert not any(call[:4] == ["claude", "plugin", "marketplace", "add"] for call in calls)
-        assert not any(call[:3] == ["claude", "plugin", "install"] for call in calls)
+        assert not any(command_matches(call, ["claude", "plugin", "marketplace", "add"]) for call in calls)
+        assert not any(command_matches(call, ["claude", "plugin", "install"]) for call in calls)
 
     def test_rejects_same_name_from_different_source(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -398,8 +399,8 @@ class TestExternalMarketplaces:
         changed, _ = _install_claude_plugins.run()
 
         assert changed is False
-        assert not any(call[:4] == ["claude", "plugin", "marketplace", "add"] for call in calls)
-        assert not any(call[:3] == ["claude", "plugin", "install"] for call in calls)
+        assert not any(command_matches(call, ["claude", "plugin", "marketplace", "add"]) for call in calls)
+        assert not any(command_matches(call, ["claude", "plugin", "install"]) for call in calls)
         assert "marketplace取得元が一致しないためスキップ" in caplog.text
 
     def test_continues_when_cli_fails(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:

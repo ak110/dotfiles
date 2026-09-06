@@ -13,13 +13,13 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, make_fresh_install_fake
+from ._test_helpers import _FakeResult, command_matches, make_fresh_install_fake
 
 
 @pytest.fixture(name="fake_which_present")
 def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """claude と uv の両方が存在する状態に見せかける。"""
-    monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="fake_target_info")
@@ -66,7 +66,7 @@ class TestExtractPluginVersionMap:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """共通の前提設定: which は通し、ファイル読み取りは無効化し、自動管理は no-op にする。"""
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
@@ -83,7 +83,7 @@ class TestExtractPluginVersionMap:
         """user scope のエントリが installed として認識され、version 一致で update されない。"""
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps(
@@ -91,7 +91,7 @@ class TestExtractPluginVersionMap:
                         ensure_ascii=False,
                     ),
                 )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -110,7 +110,7 @@ class TestExtractPluginVersionMap:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps(
@@ -118,14 +118,14 @@ class TestExtractPluginVersionMap:
                         ensure_ascii=False,
                     ),
                 )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
                 )
-            if cmd[:3] == ["claude", "plugin", "install"]:
+            if command_matches(cmd, ["claude", "plugin", "install"]):
                 return _FakeResult(returncode=0)
-            if cmd[:3] == ["claude", "plugin", "uninstall"]:
+            if command_matches(cmd, ["claude", "plugin", "uninstall"]):
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
@@ -134,7 +134,7 @@ class TestExtractPluginVersionMap:
         changed, _ = _install_claude_plugins.run()
         # project scope は user scope 用のインストール判定から外れるため install が発行される
         assert changed is True
-        assert any("agent-toolkit@ak110-dotfiles" in c for c in calls if c[:3] == ["claude", "plugin", "install"])
+        assert any("agent-toolkit@ak110-dotfiles" in c for c in calls if command_matches(c, ["claude", "plugin", "install"]))
 
     def test_plugins_key_format_is_parsed(self, monkeypatch: pytest.MonkeyPatch):
         """{plugins: [...]} の入れ子形式は name で agent-toolkit を認識し install しない。"""
@@ -142,7 +142,7 @@ class TestExtractPluginVersionMap:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 # {"plugins": [{"name": ..., "version": ..., "scope": "user"}]} 形式
                 return _FakeResult(
                     returncode=0,
@@ -151,7 +151,7 @@ class TestExtractPluginVersionMap:
                         ensure_ascii=False,
                     ),
                 )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -163,7 +163,7 @@ class TestExtractPluginVersionMap:
         changed, _ = _install_claude_plugins.run()
         # version 一致のため install は発行されない
         assert changed is False
-        assert not any(c[:3] == ["claude", "plugin", "install"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
     def test_version_missing_treated_as_outdated(self, monkeypatch: pytest.MonkeyPatch):
         """version フィールドが無いエントリは空文字列扱いとなり target と不一致で update される。"""
@@ -171,7 +171,7 @@ class TestExtractPluginVersionMap:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "list"]):
                 # version なし (空文字列扱い) で scope=user
                 return _FakeResult(
                     returncode=0,
@@ -180,14 +180,14 @@ class TestExtractPluginVersionMap:
                         ensure_ascii=False,
                     ),
                 )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
                 )
-            if cmd[:4] == ["claude", "plugin", "marketplace", "update"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "update"]):
                 return _FakeResult(returncode=0)
-            if cmd[:3] == ["claude", "plugin", "update"]:
+            if command_matches(cmd, ["claude", "plugin", "update"]):
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
@@ -195,7 +195,7 @@ class TestExtractPluginVersionMap:
 
         changed, _ = _install_claude_plugins.run()
         assert changed is True
-        assert any(c[:3] == ["claude", "plugin", "update"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)
 
     def test_empty_list_results_in_full_install(self, monkeypatch: pytest.MonkeyPatch):
         """空リストは全プラグイン未インストール扱いとなり install が発行される。"""
@@ -206,9 +206,10 @@ class TestExtractPluginVersionMap:
 
         changed, _ = _install_claude_plugins.run()
         assert changed is True
-        assert any(c[:3] == ["claude", "plugin", "install"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
 
+@pytest.mark.usefixtures("fake_which_present")
 class TestEnsureMarketplaceCliPath:
     """ensure_marketplace の CLI フォールバックパス (ファイル検査が None の場合)。
 
@@ -228,7 +229,7 @@ class TestEnsureMarketplaceCliPath:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -238,8 +239,8 @@ class TestEnsureMarketplaceCliPath:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
-        assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]] == []
-        assert [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]] == []
+        assert [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "remove"])] == []
+        assert [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])] == []
 
     def test_not_registered_calls_add_with_dotfiles_absolute_path(
         self,
@@ -254,27 +255,23 @@ class TestEnsureMarketplaceCliPath:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(returncode=0, stdout="[]")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
-        add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
+        add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
         assert len(add_calls) == 1
         dotfiles_root = _claude_common.find_dotfiles_root()
         assert dotfiles_root is not None
-        assert add_calls[0] == [
-            "claude",
-            "plugin",
-            "marketplace",
-            "add",
-            str(dotfiles_root),
-            "--scope=user",
-        ]
+        assert command_matches(
+            add_calls[0],
+            ["claude", "plugin", "marketplace", "add", str(dotfiles_root), "--scope=user"],
+        )
 
 
 class TestLegacyGithubTypeMigration:
@@ -365,7 +362,7 @@ class TestReadTargetInfo:
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
@@ -373,7 +370,7 @@ class TestReadTargetInfo:
 
         changed, _ = _install_claude_plugins.run()
         assert changed is True
-        install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
+        install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         # 実際の marketplace.json の agent-toolkit が install 対象として現れる
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
 
@@ -384,7 +381,7 @@ class TestReadTargetInfo:
     ):
         """marketplace.json がない場合は対象 plugin なしでスキップし、claude CLI を一切呼ばない。"""
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         # dotfiles_root を marketplace.json が存在しない tmp_path に差し替える
         monkeypatch.setattr(_claude_common, "find_dotfiles_root", lambda: tmp_path)
         calls: list[list[str]] = []

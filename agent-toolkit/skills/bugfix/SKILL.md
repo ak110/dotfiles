@@ -20,9 +20,9 @@ description: >
 4. 計画、実装、レビューのいずれでも同じ判定と原因分析の段階を用いる
 
 CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
-履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`を全文読む。
+履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む。
 実装担当の経路を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
-分岐検証へ入る前は`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`を全文読む。
+分岐検証へ入る前は`agent-toolkit:writing-standards`の`references/testing.md`を全文読む。
 
 拡張原因分析の条件に該当しない局所不良は、直接的原因への対策と近接検証で完了する。
 拡張原因分析の条件に該当する不良は、2系統4段階の原因分析、原因分析の品質確認、原因起点の類似見直し、

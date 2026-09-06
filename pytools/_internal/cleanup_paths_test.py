@@ -1,5 +1,6 @@
 """pytools._internal.cleanup_paths のテスト。"""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -65,6 +66,31 @@ class TestCleanupPaths:
         # c は存在しない
         removed = cleanup_paths(tmp_path, (Path("a"), Path("b"), Path("c")))
         assert removed == 2
+
+    def test_os_error_skips_target_and_continues(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """1件の検査失敗後も後続対象を削除する。"""
+        failing = tmp_path / "failing"
+        succeeding = tmp_path / "succeeding"
+        failing.write_text("保持", encoding="utf-8")
+        succeeding.write_text("削除", encoding="utf-8")
+        real_exists = Path.exists
+
+        def exists(path: Path) -> bool:
+            if path == failing:
+                raise OSError("検査失敗")
+            return real_exists(path)
+
+        monkeypatch.setattr(Path, "exists", exists)
+        with caplog.at_level(logging.WARNING):
+            removed = cleanup_paths(tmp_path, (Path("failing"), Path("succeeding")))
+
+        assert removed == 1
+        assert real_exists(failing)
+        assert not real_exists(succeeding)
+        assert str(failing) in caplog.text
+        assert "検査失敗" in caplog.text
 
     def test_windows_junction_is_removed_with_rmdir(
         self,
@@ -187,3 +213,31 @@ class TestCleanupPathsIfContentMatches:
         assert removed == 1
         assert not (tmp_path / "match.md").exists()
         assert (tmp_path / "mismatch.md").exists()
+
+    def test_os_error_skips_target_and_continues(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """内容一致検査の失敗後も後続対象を削除する。"""
+        failing = tmp_path / "failing.md"
+        succeeding = tmp_path / "succeeding.md"
+        failing.write_bytes(b"keep\n")
+        succeeding.write_bytes(b"remove\n")
+        real_exists = Path.exists
+
+        def exists(path: Path) -> bool:
+            if path == failing:
+                raise OSError("検査失敗")
+            return real_exists(path)
+
+        monkeypatch.setattr(Path, "exists", exists)
+        with caplog.at_level(logging.WARNING):
+            removed = cleanup_paths_if_content_matches(
+                tmp_path,
+                {Path("failing.md"): b"keep\n", Path("succeeding.md"): b"remove\n"},
+            )
+
+        assert removed == 1
+        assert real_exists(failing)
+        assert not real_exists(succeeding)
+        assert str(failing) in caplog.text
+        assert "検査失敗" in caplog.text

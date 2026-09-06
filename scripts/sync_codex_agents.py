@@ -45,21 +45,38 @@ def render(root: Path = REPO_ROOT) -> str:
     return "\n".join(sections) + "\n"
 
 
-def _project_doc_max_bytes(root: Path) -> int:
+def _codex_limits(root: Path) -> tuple[int, float]:
+    """指示連結の上限と警告比率を唯一の設定元から読む。
+
+    chezmoiの設定テンプレートも同じ設定元から`project_doc_max_bytes`を読む。
+    """
     with (root / CODEX_CONFIG).open("rb") as config_file:
-        value: object = tomllib.load(config_file)["project_doc_max_bytes"]
-    if not isinstance(value, int) or isinstance(value, bool):
+        config = tomllib.load(config_file)
+    max_bytes: object = config["project_doc_max_bytes"]
+    warn_ratio: object = config["project_doc_warn_ratio"]
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool):
         raise TypeError("project_doc_max_bytesは整数で指定する")
-    return value
+    if not isinstance(warn_ratio, (int, float)) or isinstance(warn_ratio, bool):
+        raise TypeError("project_doc_warn_ratioは数値で指定する")
+    if warn_ratio <= 0 or warn_ratio > 1:
+        raise ValueError("project_doc_warn_ratioは0より大きく1以下で指定する")
+    return max_bytes, float(warn_ratio)
 
 
 def sync(root: Path = REPO_ROOT) -> bool:
     """生成物を冪等同期し、変更した場合はTrueを返す。"""
     content = render(root)
     project_content = (root / PROJECT_AGENTS).read_bytes()
-    max_bytes = _project_doc_max_bytes(root)
-    if len(content.encode()) + len(project_content) > max_bytes:
+    max_bytes, warn_ratio = _codex_limits(root)
+    total = len(content.encode()) + len(project_content)
+    if total > max_bytes:
         raise ValueError(f"Codex instruction chainが{max_bytes} bytesを超える")
+    if total >= max_bytes * warn_ratio:
+        print(
+            f"警告: Codex instruction chainが{total} bytesとなり、上限{max_bytes} bytesの警告比率{warn_ratio:g}へ達した。"
+            "規範の総量を減らすか、scripts/codex_config.tomlのproject_doc_max_bytesを引き上げる。",
+            file=sys.stderr,
+        )
     target = root / TARGET
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return False

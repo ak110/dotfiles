@@ -1,5 +1,25 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py rules_context"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py rules_context"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",

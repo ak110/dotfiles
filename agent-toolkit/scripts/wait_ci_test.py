@@ -1,6 +1,6 @@
 """`wait_ci`モジュールのテスト。公開API（`main`・`wait_for_ci`）経由で境界条件を網羅する。
 private helper（`_gh_run_list`・`_resolve_sha`等）は原則として直接テストせず、`main`経由の
-シナリオテストで挙動を確認する（`coding-standards/references/testing.md`
+シナリオテストで挙動を確認する（`writing-standards/references/testing.md`
 「private関数の直接テスト禁止」に従う）。
 例外はforge判別・forge応答正規化と外部コマンド境界とし、入力形態ごとの網羅を`main`経由で行うと
 1形態あたり複数の外部コマンド応答を組み立てる必要があり、判定対象の入出力関係が読み取れなくなるため

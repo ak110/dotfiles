@@ -24,9 +24,15 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 
-from ._test_helpers import _FakeResult, write_known_entry, write_settings_entry
+from ._test_helpers import _FakeResult, command_matches, write_known_entry, write_settings_entry
 
 # --- fixtures ---
+
+
+@pytest.fixture(autouse=True)
+def _resolve_claude(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude CLIをテスト用のコマンド名へ固定する。"""
+    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="dotfiles_root")
@@ -79,9 +85,9 @@ class TestMarketplaceAlreadyRegistered:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(returncode=0, stdout=json.dumps(list_output, ensure_ascii=False))
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
@@ -94,41 +100,41 @@ class TestMarketplaceAlreadyRegistered:
         data = [{"name": _claude_common.MARKETPLACE_NAME}]
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
-        assert not any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_list_without_target_calls_add(self, monkeypatch: pytest.MonkeyPatch):
         """リスト形式: 対象 name が含まれなければ未登録として add を呼ぶ。"""
         data = [{"name": "other-marketplace"}]
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
-        assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_empty_list_calls_add(self, monkeypatch: pytest.MonkeyPatch):
         """空リストは未登録として add を呼ぶ。"""
         result, calls = self._ensure_with_list_output(monkeypatch, [])
         assert result is True
-        assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_dict_with_marketplaces_key_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """{marketplaces: [...]} の入れ子形式は再帰的にパースし登録済みと判断する。"""
         data = {"marketplaces": [{"name": _claude_common.MARKETPLACE_NAME}]}
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
-        assert not any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_flat_dict_contains_name_skips_add(self, monkeypatch: pytest.MonkeyPatch):
         """フラット dict 形式: トップレベルのキーが name と一致すれば登録済みと判断する。"""
         data: dict[str, object] = {_claude_common.MARKETPLACE_NAME: {}}
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
-        assert not any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_flat_dict_no_target_calls_add(self, monkeypatch: pytest.MonkeyPatch):
         """フラット dict 形式: 対象キーが無ければ未登録として add を呼ぶ。"""
         data: dict[str, object] = {"other": {}}
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
-        assert any(c[:4] == ["claude", "plugin", "marketplace", "add"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
 
 # --- TestRewriteKnownMarketplacesEntry ---
@@ -368,7 +374,7 @@ class TestRefreshMarketplace:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _claude_marketplace.refresh_marketplace() is True
-        update_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "update"]]
+        update_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "update"])]
         assert update_calls, "marketplace update が呼ばれていない"
         assert _claude_common.MARKETPLACE_NAME in update_calls[0]
 
@@ -407,7 +413,7 @@ class TestEnsureRepairRefreshFullCycle:
 
         def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 write_known_entry(
                     known,
                     {"source": {"source": "directory", "path": str(dotfiles_root)}},
@@ -492,9 +498,9 @@ class TestEnsureMarketplace:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(returncode=1, stderr="error")
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
@@ -502,7 +508,7 @@ class TestEnsureMarketplace:
 
         result = _claude_marketplace.ensure_marketplace()
         assert result is True
-        add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
+        add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
         assert add_calls, "marketplace add が呼ばれていない"
         assert str(dotfiles_root) in add_calls[0]
 
@@ -535,7 +541,7 @@ class TestEnsureMarketplace:
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
             # marketplace list は成功 (空リスト) を返す
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(returncode=0, stdout="[]")
             return _FakeResult(returncode=1)
 
@@ -543,7 +549,7 @@ class TestEnsureMarketplace:
 
         result = _claude_marketplace.ensure_marketplace()
         assert result is False
-        add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
+        add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
         assert not add_calls, "dotfiles ルート不在なのに add が呼ばれた"
 
 

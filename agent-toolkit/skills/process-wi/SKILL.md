@@ -4,7 +4,7 @@ description: >
   対象リポジトリのAWIを取得・検討・適用するときに起動する。
   「AWIがあった」「改善提案を反映」「振り返り結果を反映」などのキーワードで起動する。
 # 設計意図: docs/development/design.md の「終端工程」を参照。
-# 自動起動元: atk wi process-loopが本スキルの起動を目的文へ設定する。実装は agent-toolkit/scripts/_atk_wi_process_loop.py の_build_process_loop_prompt。
+# 自動起動元: atk wi process-loopが本スキルの起動を目的文へ設定する。実装は agent-toolkit/scripts/_atk/wi/process_loop.py の_build_process_loop_prompt。
 ---
 
 # AWI処理
@@ -67,7 +67,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
 - AWI本文とレビュー指摘管理表は、メイン自身が判断を確定する契機に限って読む。
   レーンの進行に必要な範囲は各レーンの担当が読み、メインは返却された判断材料で扱う。
   レビュー指摘又は委譲先の返却に含まれる事実主張を前提として確認経路へ送る場合は当該契機に当たり、
-  メインが`agent-toolkit/rules/01-agent.md`「確認を要する事項」節に従って当該主張を現物で実測してから発行する。
+  メインが`agent-toolkit/share/rules-main.md`「確認を要する事項」節に従って当該主張を現物で実測してから発行する。
   本項の読込抑制は、実測していない主張をそのままユーザーへ渡す根拠にならない
 - ユーザーの割り込みで生じた調査・是正のうち、稼働中のレーンと対象が独立するものは、当該作業へ適した委譲先へ渡す。
   是正の委譲は`agent-toolkit/rules/01-agent.md`「指摘発生時の扱い」が定める照合と採否を終えてから行う。

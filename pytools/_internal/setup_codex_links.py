@@ -44,11 +44,10 @@ def run() -> bool:
 
 def _process_link(dest: Path, target: Path) -> bool:
     """単一のリンクを処理し、新規作成または更新したら`True`を返す。"""
-    if not target.exists():
-        logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
-        return False
-
     try:
+        if not target.exists():
+            logger.warning(log_format.format_status("codex links", f"配布元が存在しないためスキップ: {target}"))
+            return False
         changed = sync_directory_link(dest, target)
     except FileExistsError:
         logger.warning(
@@ -57,6 +56,9 @@ def _process_link(dest: Path, target: Path) -> bool:
                 f"通常ファイル／通常ディレクトリが存在するためスキップ: {dest}",
             )
         )
+        return False
+    except OSError as error:
+        logger.warning(log_format.format_status("codex links", f"パスの検査又は同期に失敗したためスキップ: {dest}: {error}"))
         return False
     if not changed:
         return False

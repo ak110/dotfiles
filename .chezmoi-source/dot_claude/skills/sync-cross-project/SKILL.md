@@ -59,7 +59,7 @@ description: >
 推奨ガイド（`~/pyfltr/docs/guide/recommended.md`・`recommended-nonpython.md`）または
 姉妹プロジェクト共有ファイルへの追従作業では、着手前に次の2点を確認する。
 
-- 同期対象マトリクスで波及先とした各プロジェクト宛の未処理AWIを`atk wi list`と`atk wi grep`で照会し、実装レビューで確定した
+- 同期対象マトリクスで波及先とした各プロジェクト宛の未処理AWIを`atk wi list`と`atk wi grep`で照会し、実行レビューで確定した
   検証結果・訂正記録が記録されていないかを確認する。記録があった場合はその結論を変更の前提として取り込む
 - 推奨ガイドが新設した設定へ追随する場合、追随先が実際に取得する配布物の公開版に当該設定が
   含まれることを、公開版を明示指定した実行で確認する
@@ -247,8 +247,10 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
   `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
   `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
-- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
-  PowerShell系（gv / lc）が`check-suites` API方式
+- `release.yaml`のCI待機は、対象コミットを指定してCIワークフロー（`ci.yaml`）の実行を直接照会し、
+  その結論で判定する方式とする。`check-suites` APIの先頭suiteを判定に使う方式は、
+  リリースワークフロー自身のsuiteを拾い、CIが成功していても待機がタイムアウトするため用いない。
+  各リポジトリが用いる照会コマンドは`.github/workflows/`配下をSSOTとし、本文へ写さない
 - `container:`実行ジョブのstepへ新しいコマンド呼び出しを追加する場合は、先行stepで導入されることを確認するか、
   ジョブが宣言する`image`上で当該コマンドの存在を確認する
   - どちらでも利用可能と確認できないコマンドは、呼び出す前に同じジョブで導入する

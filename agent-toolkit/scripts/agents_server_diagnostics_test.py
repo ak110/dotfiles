@@ -2,8 +2,8 @@
 
 import sys
 
-import _agents_server_codex as subject
 import pytest
+from _agents_server import codex as subject
 
 
 async def _ignore_message(_message: dict[str, object]) -> None:

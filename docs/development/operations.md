@@ -60,7 +60,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   利用者の入力を要さない待機でベルが鳴るためである
 - 応答終了そのものは`Stop`のフック（`scripts/claude_hook_stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
-  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/scripts/_stop_gate.py`の判定を用いる。
+  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/scripts/_hooks/stop_gate.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、当該ターンの終了前にベルが鳴る
 - Windowsはtmux運用外のため、ベルの各経路は`share/claude_settings_json_managed.win32.json`へ追加しない
 - `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
@@ -95,16 +95,25 @@ tmux内の対話シェルでコマンドを実行している間は、ステー�
 `$TMUX`または`$TMUX_PANE`が設定されていないシェルと、`tmux`コマンドが存在しない環境では機能を追加しない。
 Windowsはtmux運用外のため対象外とする。
 
-## 質問自動継続タイムアウトの配布
+## 質問・ダイアログのタイムアウトの配布
 
-Claude Codeの`askUserQuestionTimeout`は`share/claude_settings_json_managed.json`で`never`を配布する。
-対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
+Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
+`askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
 端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
 フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
 
-`atk wi process-loop`のClaude起動だけが`--settings`で値を明示する。
+`dialogExpiry`の対象は、リモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
+及びHELD状態のcross-sessionメッセージが承認を待つ時間である。
+上限を超えるとキャンセル又は拒否付きのdropへ解決するため、エージェントは期限切れと実利用者の拒否を区別できない。
+リモートクライアントが接続していないローカル専用の権限プロンプトは影響を受けない。
+`~/.claude/settings.json`は`remoteControlAtStartup`が真であり、権限ダイアログが転送されるため、
+既定値の`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
+環境変数`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`を設定した環境では、当該値が設定ファイルの値より優先する。
+
+`atk wi process-loop`のClaude起動だけが`--settings`で両設定の値を明示する。
+自律実行では無期限の駐留が工程の停止を招くため、配布値の`never`を常駐実行だけ有限値へ上書きする。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
-TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_wait_schedule.py`の
+TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_common/wait_schedule.py`の
 プロンプトキャッシュTTL判定を用いる。
 利用者が`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、当該指定を判定の入力とする。
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
@@ -124,11 +133,26 @@ dotfilesリポジトリを対象とする`atk wi process-loop`は、miseの`late
 `--no-update`指定時、dotfiles以外を対象とする場合、又は`~/dotfiles`を解決できない場合は再評価しない。
 `mise`の終了コードが0以外の場合と600秒でタイムアウトした場合は、結果を標準エラー出力へ警告して常駐処理を続行する。
 ログイン時のシェル初期化処理は`mise install`を実行しない。
+対話シェルの初期化が起動する外部コマンドのうち、miseのshimとして解決され得るものは`MISE_AUTO_INSTALL=false`を与えて起動する。
+これにより、未導入ツールのshimを実行してもmiseは導入を始めない。
+導入は本節の非ログイン再評価と`chezmoi apply`の後処理だけが担う。
+配布するglobal設定は`gitlab.glab_cli_tokens`を無効にする。
+miseはglab CLIの設定ファイルから取得したトークンを公開APIの呼び出しへ付与するため、期限切れのトークンは401を返す。
 
 `chezmoi apply`の後処理も`mise install`を実行する。
 miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
 そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
+
+## 対話シェル起動時のbash補完のキャッシュ
+
+対話シェルは補完定義を得るためにコマンドごとの子プロセスを起動する。
+起動回数が多く対話シェルの起動時間の大半を占めるため、生成結果をキャッシュへ保存して次回以降は読み込みだけで済ませる。
+保存先は`${XDG_CACHE_HOME:-~/.cache}/dotfiles/bash-completion/<コマンド名>.bash`とする。
+
+キャッシュは、存在しない場合と、生成元の実行ファイルがキャッシュより新しい場合に再生成する。
+生成が失敗した場合はキャッシュを保存せず、当該コマンドの補完を読み込まずに続行する。
+生成コマンドを変更した場合はキャッシュへ反映されないため、`~/.cache/dotfiles/bash-completion`を削除して再生成する。
 
 ## claude-statuslineの開発版導入
 

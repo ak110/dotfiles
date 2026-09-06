@@ -6,10 +6,10 @@ import argparse
 import inspect
 from collections.abc import Iterator
 
-import _atk_help
-import _managed_temp
 import atk
 import pytest
+from _atk import help_text as _atk_help
+from _atk import managed_temp as _managed_temp
 
 _DESCRIPTION_MARKERS = ("目的:", "利用場面:", "対象と出力:", "前提:", "復元・後始末:")
 
@@ -120,6 +120,13 @@ def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], arg
             continue
         if action.nargs not in ("?", "*"):
             arguments.append(value)
+    for group in parser._mutually_exclusive_groups:  # pylint: disable=protected-access
+        if not group.required:
+            continue
+        action = group._group_actions[0]  # pylint: disable=protected-access
+        value = str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
+        option = next(option for option in action.option_strings if option.startswith("--"))
+        arguments.extend((option, value))
     return arguments, parser
 
 
@@ -171,3 +178,32 @@ def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
 
     for description, _satisfied in _managed_temp._PREFIX_RULES:  # pylint: disable=protected-access
         assert description in help_text
+
+
+def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    description = commands["atk plans checkout"].description
+
+    assert description is not None
+    assert "未送信commitをremoteへpush" in description
+    assert "remoteの変更をprivate-notesへpull" in description
+    assert "private-notesの内容は変更しない" not in description
+
+
+@pytest.mark.parametrize(
+    ("command", "format_name"),
+    [
+        ("atk wi list", "JSON Lines"),
+        ("atk plans list", "TSV"),
+        ("atk agents-wait", "単一のJSON文書"),
+        ("atk managed-temp list", "JSON Lines"),
+        ("atk review-table show", "raw TSV"),
+    ],
+)
+def test_structured_output_commands_state_their_format(command: str, format_name: str) -> None:
+    """構造化出力を返すコマンドは解析形式を一意に明示する。"""
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands[command].description
+
+    assert description is not None
+    assert format_name in description

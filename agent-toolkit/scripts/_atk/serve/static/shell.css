@@ -1,0 +1,194 @@
+/* 3画面が共有するヘッダー・ナビゲーション・ボタンの表示。各画面固有の装飾は各画面のCSSが持つ。
+   WI画面は本ファイルの後に`app.css`を読み込み、同じセレクターを上書きする。 */
+
+:root {
+  --color-background: #f3f6fa;
+  --color-surface: #ffffff;
+  --color-text: #172033;
+  --color-secondary-text: #5d6678;
+  --color-border: #d9dfe8;
+  --color-primary: #3157d5;
+  --color-primary-hover: #2444ae;
+  --color-normal: #eef2f8;
+  --color-normal-hover: #e0e6ef;
+  --color-danger: #b42318;
+  --color-danger-hover: #8f1c13;
+  --color-success: #18794e;
+  --color-warning: #9a6700;
+  --color-focus: #2563eb;
+  --space-1: 0.375rem;
+  --space-2: 0.625rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+  --radius-small: 0.5rem;
+  --radius-medium: 0.875rem;
+  --shadow-card: 0 0.5rem 1.5rem rgb(30 45 75 / 0.09);
+  --font-size-secondary: 0.875rem;
+}
+
+html, body { height: 100%; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 画面の入れ替え単位。ヘッダーを固定したflex配置へ各画面の本文を直接参加させるため、
+   包む要素自身はレイアウトへ関与させない。画面固有の本文要素が残りの高さとスクロールを担う。 */
+#screen-root {
+  display: contents;
+}
+
+button {
+  max-width: 100%;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text);
+  background: var(--color-normal);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover { background: var(--color-normal-hover); }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+
+.button-primary {
+  border-color: var(--color-primary);
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.button-primary:hover { background: var(--color-primary-hover); }
+.button-secondary { background: var(--color-normal); }
+.button-text { border-color: transparent; background: transparent; }
+
+.button-danger {
+  border-color: var(--color-danger);
+  color: #fff;
+  background: var(--color-danger);
+}
+
+.button-danger:hover { background: var(--color-danger-hover); }
+
+/* ヘッダーの子要素の数は画面ごとに異なるため、列を固定してナビゲーションを画面中央へ置く。
+   高さ・文字サイズ・内側の余白・影・折り返しは本ファイルを正本とし、画面固有のCSSは水平方向の余白だけを上書きする。 */
+.app-header {
+  --header-line-height: 1.55;
+  position: sticky;
+  flex: 0 0 auto;
+  z-index: 10;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid #e6e6e6;
+  background: rgb(255 255 255 / 0.96);
+  box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
+  font-family: system-ui, sans-serif;
+  /* 各画面の本文用の文字サイズと行の高さがヘッダーへ及ぶと、同じ部品の大きさが画面ごとに変わるため明示する。 */
+  font-size: 1rem;
+  line-height: var(--header-line-height);
+}
+
+/* WI画面だけが操作群のボタンを持つため、ボタンの有無でヘッダーの高さが変わらないよう
+   3つの列へボタンと同じ高さを最小値として与える。ボタンの高さは、継承する文字サイズと行の高さの積へ
+   ボタン自身の上下の内側の余白と上下の境界線を加えた値である。 */
+.app-header .header-title,
+.app-header .app-nav,
+.app-header .header-actions {
+  min-height: calc(1em * var(--header-line-height) + var(--space-1) * 2 + 2px);
+}
+
+.app-header .header-title {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-header .app-nav { grid-column: 2; }
+
+.app-header .header-actions {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 計画ファイル画面は本文用の`markdown.css`も読み込むため、見出しの寸法を本ファイルで明示して打ち消す。 */
+.app-header h1 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 1.375rem;
+  line-height: 1.55;
+  letter-spacing: normal;
+}
+
+/* シェル部品（ヘッダーの操作群と各ペインのツールバー）のボタン寸法と文字サイズを3画面でそろえる。 */
+.app-header .header-actions button,
+main > .toolbar button {
+  padding: var(--space-1) var(--space-2);
+}
+
+main > .toolbar { font-size: 1rem; }
+
+.app-nav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-nav a {
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+}
+
+.app-nav a:hover {
+  background: rgb(0 0 0 / 0.06);
+}
+
+.app-nav a[aria-current="page"] {
+  background: rgb(0 0 0 / 0.08);
+  border-color: rgb(0 0 0 / 0.18);
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  /* 横方向の余地が無いため、タイトル・ナビゲーション・操作群を1列で縦に並べる。 */
+  .app-header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .app-header .header-title,
+  .app-header .app-nav,
+  .app-header .header-actions {
+    grid-column: 1;
+  }
+
+  .app-header .header-title { justify-content: space-between; }
+
+  .app-header h1 {
+    font-size: 1.05rem;
+  }
+
+  .app-nav a {
+    padding: 4px 8px;
+    font-size: 0.86rem;
+  }
+}

@@ -1,6 +1,7 @@
-"""CI workflowの所有権契約を静的に検証する。"""
+"""CI workflowの静的契約を検証する。"""
 
 import re
+import shlex
 import typing
 from pathlib import Path
 
@@ -54,6 +55,25 @@ def _load_workflow() -> dict[str, object]:
         # BaseLoaderはYAML 1.1の`on`キーを真偽値へ変換せず、安全なスカラー値だけを構築する。
         value = yaml.load(stream, Loader=yaml.BaseLoader)
     return _mapping(value)
+
+
+def _direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
+    targets: list[str] = []
+    for value in _jobs(workflow).values():
+        for step in _steps(_mapping(value)):
+            command = step.get("run")
+            if not isinstance(command, str) or "pytest" not in command.split():
+                continue
+            tokens = shlex.split(command)
+            if "pytest" not in tokens:
+                continue
+            pytest_index = tokens.index("pytest")
+            targets.extend(
+                token
+                for token in tokens[pytest_index + 1 :]
+                if not token.startswith("-") and ("/" in token or token.endswith(".py"))
+            )
+    return targets
 
 
 @pytest.fixture(scope="module", name="workflow_data")
@@ -143,3 +163,11 @@ def test_job_and_step_cardinality(workflow_data: dict[str, object]) -> None:
     assert expanded_common_job_count == 5
     assert len(statusline_jobs) == 1
     assert expanded_common_job_count + len(statusline_jobs) == 6
+
+
+def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
+    """workflowのpytestコマンドが直接指定するリポジトリ内の対象は実在する。"""
+    targets = _direct_pytest_targets(workflow_data)
+    assert targets
+    for target in targets:
+        assert (_REPOSITORY_ROOT / target).exists(), target

@@ -16,7 +16,6 @@ hook初回実行時のvenv構築は残る。
 import json
 import logging
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -51,7 +50,8 @@ def run() -> bool:
     Returns:
         常にFalse。uvキャッシュのみへ作用し、観測可能な設定変更を行わないため。
     """
-    if shutil.which("uv") is None:
+    uv = claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+    if uv is None:
         logger.info(log_format.format_status(_TAG, "uv CLI が見つからずスキップ"))
         return False
     targets = _targets()
@@ -59,7 +59,7 @@ def run() -> bool:
         logger.info(log_format.format_status(_TAG, "対象スクリプトが見つからずスキップ"))
         return False
     for target in targets:
-        _warmup(target)
+        _warmup(target, uv)
     return False
 
 
@@ -122,10 +122,11 @@ def _codex_plugin_script() -> Path | None:
     `codex plugin list --json`の有効なエントリ（`pluginId`一致・`enabled`が真・
     文字列の`version`）から解決する。
     """
-    if shutil.which("codex") is None:
+    codex = claude_common.resolve_executable("codex")
+    if codex is None:
         logger.info(log_format.format_status(_TAG, "codex CLI が見つからないためCodex分を除外"))
         return None
-    result = claude_common.run_subprocess(["codex", "plugin", "list", "--json"], timeout=_CODEX_LIST_TIMEOUT, tag="codex")
+    result = claude_common.run_subprocess([str(codex), "plugin", "list", "--json"], timeout=_CODEX_LIST_TIMEOUT, tag="codex")
     if result is None or result.returncode != 0:
         logger.warning(log_format.format_status(_TAG, "Codex plugin一覧を取得できないためCodex分を除外"))
         return None
@@ -157,7 +158,7 @@ def _enabled_version(installed: list[object]) -> str | None:
     return None
 
 
-def _warmup(path: Path) -> None:
+def _warmup(path: Path, uv: Path) -> None:
     """1件のスクリプトへ`uv run`を実行して環境を構築する。
 
     入口スクリプトは引数なし実行でusageを表示して終了コード0で終わるため副作用は無い。
@@ -165,7 +166,7 @@ def _warmup(path: Path) -> None:
     """
     started = time.monotonic()
     result = claude_common.run_subprocess(
-        ["uv", "run", "--no-project", "--script", str(path)], timeout=_WARMUP_TIMEOUT, tag="uv"
+        [str(uv), "run", "--no-project", "--script", str(path)], timeout=_WARMUP_TIMEOUT, tag="uv"
     )
     elapsed = time.monotonic() - started
     short = log_format.home_short(path)

@@ -16,8 +16,8 @@
 //! 使用率はtokenCount/contextWindowSizeから算出する（いずれか欠落・非数値・
 //! contextWindowSizeが0以下の場合は省略）。経過時間は`startTime`
 //! （エポックミリ秒またはISO 8601）から算出する。`description`は改行を空白へ置換して
-//! 1行化し、連続空白を1個へ畳んでから表示幅（East Asian WidthのW/F/A、曖昧幅を含め
-//! 全角2セル換算）で残り幅へ切り詰める。`id`欠落タスクは出力対象外とする。
+//! 1行化し、連続空白を1個へ畳んでから対象端末の表示幅で残り幅へ切り詰める。
+//! `id`欠落タスクは出力対象外とする。
 //! 最終行は端末幅`columns`セル以内へ収める。
 //!
 //! `name`指定＋`run_in_background=true`起動のnamed subagent（teammate）はタスク種別
@@ -28,6 +28,8 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::{Map, Value};
 use unicode_width::UnicodeWidthChar;
+#[cfg(test)]
+use unicode_width::UnicodeWidthStr;
 
 const SEP: &str = " · ";
 const ELLIPSIS: &str = "…";
@@ -378,18 +380,16 @@ pub(crate) fn short_model_name(model_id: &str) -> String {
     model_id.to_string()
 }
 
-/// East Asian Width基準の表示幅を返す。`W`・`F`・`A`（曖昧幅を含む）の文字は2セル、他は1セル換算。
+/// 対象端末の描画に合わせ、曖昧幅を1セルとして表示幅を返す。
 ///
-/// `unicode-width`クレートの`width_cjk()`はAmbiguous幅を2カラム扱いする
-/// （`width()`は1カラム扱いのため不採用）。
+/// 日本語の全角文字は2セル、区切り記号や省略記号などの曖昧幅は1セルとして描画される。
 pub(crate) fn display_width(text: &str) -> usize {
-    text.chars().map(|c| c.width_cjk().unwrap_or(1)).sum()
+    text.chars().map(|c| c.width().unwrap_or(1)).sum()
 }
 
 /// 文字列を表示幅`budget`セル以内へ省略記号付きで切り詰める。
 ///
-/// 省略記号`…`（U+2026）はEast Asian Widthが`A`（曖昧幅）のため`display_width`基準で
-/// 2セルを占める。ハードコードした1セル前提は表示幅超過を招くため、実測幅を予約する。
+/// 省略記号`…`（U+2026）は対象端末で1セルを占めるため、`display_width`の実測幅を予約する。
 fn truncate(text: &str, budget: usize) -> String {
     if budget == 0 {
         return String::new();
@@ -404,7 +404,7 @@ fn truncate(text: &str, budget: usize) -> String {
     let mut result = String::new();
     let mut used = 0usize;
     for ch in text.chars() {
-        let w = ch.width_cjk().unwrap_or(1);
+        let w = ch.width().unwrap_or(1);
         if used + w > budget - ellipsis_width {
             break;
         }
@@ -584,8 +584,29 @@ mod tests {
         ]);
         assert_eq!(
             render_task(&t, 80, now(), Some(13)),
-            Some("xx… (Sonnet)".to_string())
+            Some("xxx… (Sonnet)".to_string())
         );
+    }
+
+    #[test]
+    fn rendered_rows_match_terminal_width_with_ambiguous_and_japanese_text() {
+        let data = serde_json::json!({
+            "columns": 50,
+            "tasks": [
+                {"id": "t1", "name": "impl", "description": "English description", "status": "running"},
+                {"id": "t2", "name": "実装", "description": "日本語の長い説明を確実に切り詰めるため十分な長さを持たせた検体", "status": "running"},
+                {"id": "t3", "name": "review", "description": "短い説明", "tokenCount": 1500, "status": "running"}
+            ]
+        });
+
+        let rows = render_all(&data);
+        assert_eq!(rows.len(), 3);
+        assert!(rows
+            .iter()
+            .all(|(_, row)| UnicodeWidthStr::width(row.as_str()) == 50));
+        assert!(rows.iter().all(|(_, row)| row.ends_with("running")));
+        assert!(rows.iter().any(|(_, row)| row.contains(ELLIPSIS)));
+        assert!(rows.iter().any(|(_, row)| row.contains(SEP)));
     }
 
     #[test]

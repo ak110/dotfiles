@@ -14,13 +14,11 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
-import _agents_server_claude as claude_backend
-import _agents_server_codex as codex_backend
-import _agents_server_state as state
-import _agents_server_status_file as status_file
-import _atk_agents_wait as agents_wait
 import agents_server_mcp as subject
 import pytest
+from _agents_server import agents_wait, state, status_file
+from _agents_server import claude as claude_backend
+from _agents_server import codex as codex_backend
 
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
 
@@ -44,6 +42,13 @@ def _complete(session: subject.SessionState, *, message: str = "完了", error: 
     session.turn_completed = True
     session.turn_start_ambiguous = False
     session.touch()
+
+
+def _write_notice(directory: pathlib.Path, session_id: str, sequence: int, sent_at: str, body: str) -> None:
+    """待機テスト用の未回収通知を保存する。"""
+    directory.mkdir(parents=True, exist_ok=True)
+    payload = {"version": 1, "session_id": session_id, "sent_at": sent_at, "body": body}
+    (directory / f"{session_id}.{sequence}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 class FakeBackend:
@@ -284,20 +289,28 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
     source_dir = pathlib.Path(__file__).parent
     script_dir = tmp_path / "plugin" / "scripts"
     script_dir.mkdir(parents=True)
-    for name in (
+    share_dir = tmp_path / "plugin" / "share"
+    share_dir.mkdir()
+    shutil.copyfile(source_dir.parent / "share" / "rules-subagent.md", share_dir / "rules-subagent.md")
+    paths = (
         "agents_server_mcp.py",
-        "_agents_server_codex.py",
-        "_agents_server_claude.py",
-        "_agents_server_state.py",
-        "_agents_server_status_file.py",
-        "_atomic_file.py",
-        "_atk_config.py",
-        "_atk_help.py",
-        "_inherited_venv.py",
-        "_plan_file.py",
-        "_wait_schedule.py",
-    ):
-        shutil.copyfile(source_dir / name, script_dir / name)
+        "_agents_server/codex.py",
+        "_agents_server/claude.py",
+        "_agents_server/state.py",
+        "_agents_server/status_file.py",
+        "_common/atomic_file.py",
+        "_atk/config.py",
+        "_atk/help_text.py",
+        "_common/inherited_venv.py",
+        "_plan/locations.py",
+        "_common/wait_schedule.py",
+    )
+    for relative_path in paths:
+        destination = script_dir / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_dir / relative_path, destination)
+    for package in ("_agents_server", "_common", "_atk", "_plan"):
+        (script_dir / package / "__init__.py").write_text("", encoding="utf-8")
 
     check = subprocess.run(
         [
@@ -906,11 +919,11 @@ async def test_start_shell_rejects_empty_command_and_summary_policy(tmp_path: pa
 
 
 @pytest.mark.asyncio
-async def test_send_message_rejects_changed_first_candidate_without_discarding_session(
+async def test_send_message_continues_when_selected_candidate_remains(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """現在の先頭候補が起動値と異なる場合はsessionを保持して継続を拒否する。"""
+    """候補の順序が変わっても採用済み候補が残るsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
@@ -918,7 +931,79 @@ async def test_send_message_rejects_changed_first_candidate_without_discarding_s
     session_id = response["session_id"]
     current[:] = [("codex", "replacement", "high"), ("codex", "first", "high")]
 
-    with pytest.raises(ValueError, match=f"configuration changed: {session_id}"):
+    result = await manager.send_message(session_id, "続行")
+
+    assert result["delivery"] == "steered"
+    assert session_id in manager.sessions
+    assert backend.send_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_continues_without_model_type(tmp_path: pathlib.Path) -> None:
+    """候補列を直接指定したsessionは工程別モデル設定を比較せず継続する。"""
+    manager, backend = _manager_with_fake("codex")
+    session = await backend.start("調査", str(tmp_path), "direct", "high")
+
+    result = await manager.send_message(session.session_id, "続行")
+
+    assert result["delivery"] == "steered"
+    assert backend.send_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_continues_with_selected_first_remaining_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """採用済み候補が除外後の先頭にあるsessionを継続する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+    first = await manager.start("plan", "調査", str(tmp_path))
+    second = await manager.start("plan", "調査", str(tmp_path), first["session_id"])
+
+    result = await manager.send_message(second["session_id"], "続行")
+
+    assert result["delivery"] == "steered"
+    assert backend.send_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_reports_changed_candidate_fields_without_discarding_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """採用済み候補が消えた場合は変更項目を示し、sessionを保持して拒否する。"""
+    current = [("codex", "first", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    manager, backend = _manager_with_fake("codex")
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = response["session_id"]
+    current[:] = [("claude", "replacement", "medium")]
+
+    expected = (
+        f"configuration changed: {session_id}; engine: codex -> claude, model: first -> replacement, effort: high -> medium"
+    )
+    with pytest.raises(ValueError, match=expected):
+        await manager.send_message(session_id, "続行")
+    assert session_id in manager.sessions
+    assert backend.send_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_reports_when_no_candidate_remains_without_discarding_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """候補が残らない場合は理由を示し、sessionを保持して継続を拒否する。"""
+    current = [("codex", "first", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    manager, backend = _manager_with_fake("codex")
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = response["session_id"]
+    current.clear()
+
+    with pytest.raises(ValueError, match=f"configuration changed: {session_id}; no candidate remains"):
         await manager.send_message(session_id, "続行")
     assert session_id in manager.sessions
     assert backend.send_calls == 0
@@ -1073,6 +1158,60 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
         "progress": "",
         "turn_seq": 0,
     }
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) -> None:
+    """waitは実行中の通知を検出して復帰し、同じ通知を再配送しない。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+    await asyncio.sleep(0)
+    notices = status_file.notices_directory("root-session", tmp_path)
+    _write_notice(notices, session.session_id, 2, "2026-09-06T00:00:02+00:00", "後の通知")
+    _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "先の通知")
+
+    response = await wait_task
+
+    assert response["status"] == "running"
+    assert "agent_message" not in response
+    assert response["notices"] == [
+        {"sent_at": "2026-09-06T00:00:01+00:00", "body": "先の通知"},
+        {"sent_at": "2026-09-06T00:00:02+00:00", "body": "後の通知"},
+    ]
+    second = await manager.wait(session.session_id, timeout=0)
+    assert "notices" not in second
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: pathlib.Path) -> None:
+    """終端時に残る通知を結果本文と同じ応答へ載せる。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="最終結果")
+    manager.sessions[session.session_id] = session
+    notices = status_file.notices_directory("root-session", tmp_path)
+    _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "終端前の通知")
+
+    response = await manager.wait(session.session_id, timeout=0)
+
+    assert response["status"] == "completed"
+    assert response["agent_message"] == "最終結果"
+    assert response["notices"] == [{"sent_at": "2026-09-06T00:00:01+00:00", "body": "終端前の通知"}]
+    assert not any(notices.iterdir())
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1888,7 +2027,16 @@ def test_explore_system_prompt_contains_delegate_notice() -> None:
     """通常起動、探索起動及びシェル実行起動のいずれの指示も委譲先宣言から始まる。"""
     assert state.DELEGATE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
     assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+
+
+def test_delegate_system_prompt_appends_subagent_rules() -> None:
+    rules = state.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip()
+    assert state.DELEGATE_SYSTEM_PROMPT.endswith(rules)
+    assert rules not in state.EXPLORE_SYSTEM_PROMPT
+    assert rules not in state.SHELL_SYSTEM_PROMPT
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+    assert "あなたはメインエージェントでも最上位セッションでもない。" in state.DELEGATE_NOTICE
+    assert "呼び出し元エージェントの配送" in state.DELEGATE_NOTICE
 
 
 def test_auto_resume_notice_limits_waiting_exception_to_child_agents() -> None:
@@ -1903,6 +2051,14 @@ def test_shell_system_prompt_requires_background_result_collection() -> None:
     assert "背景実行へ移行した場合は、移行の通知を結果として報告しない" in state.SHELL_SYSTEM_PROMPT
     assert "起動結果が返す出力ファイルを読み" in state.SHELL_SYSTEM_PROMPT
     assert "終了状態を確定してから報告する" in state.SHELL_SYSTEM_PROMPT
+
+
+def test_lightweight_system_prompts_require_limit_reporting() -> None:
+    """軽量起動は上限到達を報告し、不完全な結果から確定しない契約を受領する。"""
+    assert "その事実と切り詰められた範囲を要約へ必ず含める" in state.SHELL_SYSTEM_PROMPT
+    assert "切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない" in state.SHELL_SYSTEM_PROMPT
+    assert "その事実と到達した上限を報告へ必ず含める" in state.EXPLORE_SYSTEM_PROMPT
+    assert "上限に達した結果から、網羅性、件数、不在のいずれも結論しない" in state.EXPLORE_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
@@ -3306,7 +3462,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限経過時にSDKを切断し、結果recordを識別子だけへ縮小する。"""
+    """保持期限経過時にSDKを切断し、未回収の結果を退避する。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
@@ -3337,8 +3493,12 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             started_at=session.started_at,
             updated_at=session.updated_at,
             turn_seq=session.turn_seq,
+            status="completed",
+            agent_message="完了",
+            finalized_at=session.finalized_at,
         )
     }
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
     with pytest.raises(ValueError, match="session retention expired: claude-expired"):
         await manager.wait(session.session_id, timeout=0)
 
@@ -3456,17 +3616,30 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
 async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, tmp_path: pathlib.Path) -> None:
-    """両engineで期限切れ結果を削除し、waitへ同じ理由を返す。"""
+    """両engineで期限切れの未回収結果を1回返す。"""
     manager, _ = _manager_with_fake(engine)
     session = subject.SessionState("expired", str(tmp_path), engine=engine)
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
-    for _ in range(2):
-        with pytest.raises(ValueError, match="session retention expired: expired"):
-            await manager.wait(session.session_id, timeout=0)
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
+    with pytest.raises(ValueError, match="session retention expired: expired"):
+        await manager.wait(session.session_id, timeout=0)
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: pathlib.Path) -> None:
+    """退避済みの未回収結果もwaitが1回返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("expired", str(tmp_path))
+    _complete(session, message="退避結果")
+    manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
+
+    assert manager.list_sessions()["sessions"][0]["result_available"] is True
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "退避結果"
+    assert manager.list_sessions()["sessions"][0]["result_available"] is False
 
 
 @pytest.mark.asyncio

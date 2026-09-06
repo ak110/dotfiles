@@ -10,8 +10,8 @@ import create_plan_files
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

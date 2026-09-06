@@ -53,7 +53,8 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "stopfailure_notifier",
         "permissionrequest",
         "permissionrequest_codex",
-        "quality_checkpoint",
+        "rules_context",
+        "rules_context_codex",
         "user_prompt_submit",
     }
 )
@@ -61,7 +62,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
 # 例外時に`_approve()`で終了を許可する対象。出力形式はStop系モジュールの実装へ委ねる。
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop"})
 
-# 複数hookが共存する環境で自身の出力を判別するための標識。書式は`agent-toolkit:agent-standards`の
+# 複数hookが共存する環境で自身の出力を判別するための標識。書式は`agent-toolkit:writing-standards`の
 # メッセージ標識契約に従う。終了コード0の標準エラー出力はコーディングエージェントへ直接渡らないため、
 # 同契約のサフィックスは付けない。
 _MESSAGE_PREFIX = "[auto-generated: agent-toolkit/hook]"
@@ -120,10 +121,10 @@ def main(argv: list[str]) -> int:
             session_id = payload.get("session_id")
             transcript_path = payload.get("transcript_path")
             if isinstance(session_id, str) and isinstance(transcript_path, str):
-                session_state = importlib.import_module("_session_state")
+                session_state = importlib.import_module("_hooks.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
     try:
-        module = importlib.import_module(argv[0])
+        module = importlib.import_module(f"_hooks.{argv[0]}")
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
         traceback.print_exc()
         return 0

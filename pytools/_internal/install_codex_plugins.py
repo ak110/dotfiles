@@ -1,10 +1,10 @@
 """dotfiles同梱のCodex pluginを自動導入・更新する。"""
 
+import contextvars
 import json
 import logging
 import os
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +22,7 @@ _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     ),
     command="codex app-server daemon restart",
 )
+_CODEX_EXECUTABLE: contextvars.ContextVar[Path] = contextvars.ContextVar("codex_executable", default=Path("codex"))
 
 # Codexでは使用しないため、導入済みなら除去するプラグイン。
 _UNUSED_PLUGINS: tuple[str, ...] = ("compact-plus@compact-plus",)
@@ -37,7 +38,7 @@ class _LegacyLinkSnapshot:
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
-    result = claude_common.run_subprocess(["codex", *args], timeout=_TIMEOUT, tag="codex")
+    result = claude_common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     if result is None or result.returncode != 0:
         return None
     try:
@@ -48,7 +49,7 @@ def _codex_json(args: list[str]) -> dict[str, Any] | None:
 
 
 def _command(args: list[str]) -> bool:
-    result = claude_common.run_subprocess(["codex", *args], timeout=_TIMEOUT, tag="codex")
+    result = claude_common.run_subprocess([str(_CODEX_EXECUTABLE.get()), *args], timeout=_TIMEOUT, tag="codex")
     return result is not None and result.returncode == 0
 
 
@@ -318,10 +319,12 @@ def _append_notices_to_exception(error: Exception, notices: list[post_apply_outc
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """marketplaceを登録してagent-toolkitを導入・更新する。"""
-    if shutil.which("codex") is None:
+    codex = claude_common.resolve_executable("codex")
+    if codex is None:
         logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
         return _outcome(False, [])
 
+    token = _CODEX_EXECUTABLE.set(codex)
     notices: list[post_apply_outcome.PostApplyNotice] = []
     try:
         unused_outcome = _remove_unused_plugins()
@@ -364,3 +367,5 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     except Exception as error:
         _append_notices_to_exception(error, notices)
         raise
+    finally:
+        _CODEX_EXECUTABLE.reset(token)

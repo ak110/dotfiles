@@ -14,14 +14,16 @@ description: >
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
 - `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
-- `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保つ
+- `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く
   （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`: 順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけに適用する規範。
+  振り分けの判定は`agent-toolkit:agent-standards`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
-  `<plugin root>/skills/agent-standards/references/claude-hooks.md`が扱う
+  `<plugin root>/skills/writing-standards/references/claude-hooks.md`が扱う
 
 参照方向はdotfilesリポジトリ→プラグイン、およびプラグイン↔ルールファイルを許容する。
 配置先は「いつコンテキストへ読み込ませたいか」で判断する。
@@ -31,6 +33,27 @@ description: >
 - 配置先は表層識別子ではなく、規範の成立条件が依存する対象で判定する
 - プロジェクト固有のツール、データ、命名、CI、運用経路へ依存する内容はプロジェクト側へ置く
 - 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
+
+### scripts配下の配置
+
+`agent-toolkit/scripts/`直下には、配布物の外部から絶対パスで解決される入口だけを置く。
+入口は`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`とする。
+リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`も入口とする。
+実装モジュールは責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ置く。
+この6つを依存の層とし、この並び順を層の順序とする。
+後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
+同じ層の中のimportは制限しない。
+テスト専用の共有ヘルパーは`_testing`へ置く。
+`_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
+新しいモジュールの追加先は、当該モジュールを読み込む主体が属するサブパッケージで判定する。
+直下の入口は接頭辞`_`を付けずに命名する。
+`_managed_temp.py`だけは外部の許可判定が当該パスを解決するため名前を維持し、`agent-toolkit/scripts/script_prefix_test.py`が当該1件を除外する。
+
+サブパッケージ内のimportには絶対importを使う。
+`scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の検査の被覆が失われるためである。
+同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
+モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
+テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
 
 ### MCPサーバー識別子とホスト別ツール名
 
@@ -60,12 +83,12 @@ description: >
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
   エンドユーザーには挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
-    （`<plugin root>/skills/agent-standards/references/session-state-flags.md`等）は本規定の対象外とする
+    （`<plugin root>/skills/writing-standards/references/session-state-flags.md`等）は本規定の対象外とする
 
 スキル・サブエージェント編集時は次を守る。
 
-- 名前付きサブエージェントの定義と起動文を編集する場合は、`agent-toolkit:agent-standards`の
-  `agent-toolkit/skills/agent-standards/references/agent-skills.md`を適用する
+- 名前付きサブエージェントの定義と起動文を編集する場合は、`agent-toolkit:writing-standards`の
+  `agent-toolkit/skills/writing-standards/references/agent-skills.md`を適用する
 - 呼び出し元の専用の参照文書を起動契約、agent定義を受信側の恒常手順としてペアで更新する
 - 呼び出し元スキルと参照文書からagent定義をReadする手順を除外する
 - 独立入口間の重複は、各入口の読込コンテキストを実測し、
@@ -103,7 +126,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
+整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。
@@ -127,7 +150,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は実装者向け領域へ記載し、
   自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
-- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan_format.py`が構造定数として名称を持つものは、同ファイルを正本とする。
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`の編集は、生成差分もClaude配布一覧の変更も生じさせないが、バージョン更新の規定は適用する
+- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan/structure.py`が構造定数として名称を持つものは、同ファイルを正本とする。
   改訂するときは同ファイルの構造定数を変更し、`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、
   `agent-toolkit/share/`配下の担当タスク文書、`docs/development/design.md`、`docs/development/concepts.md`及び
   `docs/guide/claude-code-guide.md`のうち当該名称を持つ記述を同じ変更単位でそろえる。
@@ -137,7 +161,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 
 ## セッション状態フラグ
 
-`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:agent-standards`の
+`agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
 `references/session-state-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
 
 SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず
@@ -222,7 +246,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - Claude Codeのhookから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
   （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
 - `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
-  `agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`が定める互換入口の残置に従う。
+  `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換入口の残置に従う。
   残置した互換入口はバージョン管理の対象へ含める。
   撤去は、新しい入口を含む版をbumpして配布した後の版数更新以降であり、かつ旧定義を読み込んだセッションが全て終了したことを
   確認できた場合だけ行う。確認できない場合は残置を維持する
@@ -231,7 +255,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
   `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、当該イベントの既存の入口へ相乗りさせる。
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
-  入口の実装契約は`agent-toolkit:agent-standards`の`agent-standards/references/claude-hooks.md`が定める
+  入口の実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
 
 agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
@@ -242,7 +266,7 @@ agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_h
 
 agent-toolkitのhookがエンドユーザー環境の他hookと同一イベントで共存する場合がある。
 自身のhookメッセージを他hookから判別するため、`[auto-generated: agent-toolkit/<hook>]`形式のプレフィックスを行頭に置く。
-プレフィックス・サフィックスの規約は`agent-toolkit/skills/agent-standards/references/claude-hooks.md`の
+プレフィックス・サフィックスの規約は`agent-toolkit/skills/writing-standards/references/claude-hooks.md`の
 「コーディングエージェント宛てメッセージの標識」節に従う。
 
 ## marketplace管理

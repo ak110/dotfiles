@@ -31,7 +31,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote, urlparse
 
-import _json_command
+from _common import json_command as _json_command
 
 # 以下の終了コードはCLIの公開インターフェース（ユーザーが`echo $?`等で参照する契約）であり、
 # private実装詳細ではないためアンダースコア接頭辞を付けない。

@@ -28,7 +28,7 @@ import platformdirs
 
 # pylint: disable=duplicate-code
 # リモート側で単独実行するためローカル側の永続キャッシュ実装・ファイルロック実装を共有できない。
-# 作成日時インデックスのキーと値の形式は`_atk_serve_plans.py`と一致させる必要がある
+# 作成日時インデックスのキーと値の形式は`_atk/serve/plans/`と一致させる必要がある
 # （同一ホスト上で両者が同じキャッシュディレクトリを共有するため）。
 
 if os.name == "nt":
@@ -255,7 +255,7 @@ _PING_INTERVAL_SEC = 30.0
 # stdoutへの書き込みは観測スレッドとRPC応答スレッドの双方から発生し得る。
 # print内のwrite/flushが分割されると行JSONが破損するため、emit側で排他する。
 _STDOUT_LOCK = threading.Lock()
-# 作成日時の永続インデックス。`_atk_serve_plans.py`の`_CREATION_TIME_INDEX_PATH`と同一のパス・形式とする。
+# 作成日時の永続インデックス。`_atk/serve/plans/`の`_CREATION_TIME_INDEX_PATH`と同一のパス・形式とする。
 _CREATION_TIME_INDEX_PATH = (
     pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times" / "index.json"
 )
@@ -270,7 +270,7 @@ _LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
 def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None) -> bool:
     """`path`が指定root配下の対象計画ファイルか判定する。
 
-    `_atk_serve_plans.py`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
+    `_atk/serve/plans/`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
     メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
     （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める。`_is_listed_path`が一覧専用の判定を持つ）。
     `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
@@ -291,18 +291,25 @@ def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None) -> boo
 
 
 def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None) -> bool:
-    """`path`が計画一覧の対象（`_is_target_path`が真、かつ付属計画ではない）かを判定する。
+    """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
-    一覧経路（`_scan_entries`）だけに使う。読取・検索・変更監視は`_is_target_path`を使い、付属計画も対象へ含める。
+    メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
+    メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
     """
-    return _is_target_path(path, root) and not path.name.endswith(_LISTED_EXCLUDED_SUFFIXES)
+    if not _is_target_path(path, root):
+        return False
+    review_suffix = next((suffix for suffix in _TARGET_TSV_SUFFIXES if path.name.endswith(suffix)), None)
+    if review_suffix is not None:
+        main_path = path.with_name(f"{path.name[: -len(review_suffix)]}.md")
+        return not main_path.is_file()
+    return not path.name.endswith((".detail.md", ".bugs.md"))
 
 
 @contextlib.contextmanager
 def _exclusive_file_lock(path: pathlib.Path) -> typing.Iterator[None]:
     """`path`をロックファイルとしてプロセス間の排他ロックを保持する。
 
-    `agent-toolkit/scripts/_file_lock.py`の`exclusive_file_lock`と同じ排他範囲を持つ。
+    `agent-toolkit/scripts/_common/file_lock.py`の`exclusive_file_lock`と同じ排他範囲を持つ。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+", encoding="utf-8") as handle:
@@ -384,7 +391,7 @@ def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
 def _atomic_write_index(index: dict[str, typing.Any]) -> bool:
     """インデックスを同一ディレクトリの一時ファイル経由で原子的に保存する。
 
-    一時ファイル名は`_atk_serve_plans.py`が用いる原子的書き込みと同じ
+    一時ファイル名は`_atk/serve/plans/`が用いる原子的書き込みと同じ
     `index.json.<ランダム文字列>.tmp`の形とし、除去規則を両実装で一致させる。
     """
     content = json.dumps(index, ensure_ascii=False, indent=2) + "\n"
@@ -487,7 +494,7 @@ def _cleanup_creation_time_temporaries() -> None:
 def _ctime_epoch(st: os.stat_result) -> float:
     """観測時点の作成日時候補をepoch秒で返す。`st_birthtime`（存在時）を優先する。
 
-    詳細は`agent-toolkit/scripts/_atk_serve_plans.py`の同名関数のdocstringを参照
+    詳細は`agent-toolkit/scripts/_atk/serve/plans.py`の同名関数のdocstringを参照
     （リモートヘルパーは独立実行スクリプトのためロジックを重複させている）。
     """
     birthtime = getattr(st, "st_birthtime", None)
@@ -497,7 +504,7 @@ def _ctime_epoch(st: os.stat_result) -> float:
 def _host_info() -> dict[str, str]:
     """このリモートホストの`host_info`エントリ（`root`・`home`・`os_type`・`os_name`）を組み立てる。
 
-    `root`・`home`は`/`区切りへ正規化する（`_atk_serve_plans.py`の`local_host_info`と同一の正規化。
+    `root`・`home`は`/`区切りへ正規化する（`_atk/serve/plans/`の`local_host_info`と同一の正規化。
     クライアント側`copySelectedPath`が`root`・`home`を`/`区切り前提で解析するため）。
     """
     home = str(pathlib.Path.home()).replace("\\", "/")

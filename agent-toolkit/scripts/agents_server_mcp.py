@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
+import json
 import logging
 import os
 import warnings
@@ -18,13 +19,11 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
 from uuid import UUID
 
-import _agents_server_claude as claude_backend
-import _agents_server_codex as codex_backend
-import _agents_server_status_file as status_file
-import _atk_config
-import _inherited_venv
-import _wait_schedule
-from _agents_server_state import (
+from _agents_server import claude as claude_backend
+from _agents_server import codex as codex_backend
+from _agents_server import status_file
+from _agents_server.state import (
+    TERMINAL_STATUSES,
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
@@ -38,6 +37,9 @@ from _agents_server_state import (
     add_touch_listener,
     remove_touch_listener,
 )
+from _atk import config as _atk_config
+from _common import inherited_venv as _inherited_venv
+from _common import wait_schedule as _wait_schedule
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
@@ -139,6 +141,7 @@ class AgentsServerManager:
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer
+        self._notices_directory = self._status_writer.path.parent / "notices" if self._status_writer is not None else None
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
 
@@ -178,13 +181,49 @@ class AgentsServerManager:
         return session
 
     def _expire_session(self, session_id: str) -> None:
-        """session本体を破棄し、会話再開用の最小状態と期限内の結果を保持する。"""
+        """session本体を破棄し、再開状態と未回収の終端結果を保持する。"""
         session = self.sessions.pop(session_id, None)
         if session is not None:
             self.expired_sessions[session_id] = SessionResumeState.from_session(session)
             if self._status_writer is not None:
                 self._status_writer.retain_result(session)
                 self._status_writer.schedule()
+
+    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
+        """期限切れsessionに未回収の終端結果があれば1回だけ返す。"""
+        if not isinstance(session_id, str) or not session_id:
+            return None
+        session = self.sessions.get(session_id)
+        if (
+            session is not None
+            and session.retention_deadline is not None
+            and asyncio.get_running_loop().time() >= session.retention_deadline
+        ):
+            self._expire_session(session_id)
+        resume_state = self.expired_sessions.get(session_id)
+        if (
+            resume_state is None
+            or resume_state.result_delivered
+            or resume_state.status not in TERMINAL_STATUSES
+            or resume_state.finalized_at is None
+        ):
+            return None
+        response: dict[str, Any] = {
+            "session_id": session_id,
+            "engine": resume_state.engine,
+            "status": resume_state.status,
+            "progress": "",
+            "turn_seq": resume_state.turn_seq,
+            "agent_message": resume_state.agent_message,
+        }
+        if resume_state.model_type is not None:
+            response["model_type"] = resume_state.model_type
+        if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
+            response["error"] = resume_state.error
+        self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session_id)
+        return response
 
     def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
@@ -289,7 +328,7 @@ class AgentsServerManager:
                     "label": session.label,
                     "started_at": session.started_at,
                     "updated_at": session.updated_at,
-                    "result_available": False,
+                    "result_available": not session.result_delivered and session.finalized_at is not None,
                 },
             )
         return {"sessions": sorted(listed.values(), key=lambda session: session["started_at"])}
@@ -477,6 +516,9 @@ class AgentsServerManager:
 
         `timeout`が`None`の場合は、プロンプトキャッシュの保持期間から導出した上限を使う。
         """
+        expired_response = self._expired_result_response(session_id)
+        if expired_response is not None:
+            return expired_response
         if timeout is None:
             timeout = await self._resolve_wait_timeout(request_bucket)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
@@ -485,35 +527,81 @@ class AgentsServerManager:
         deadline = loop.time() + float(timeout)
         pending = self._pending_resumes.get(session_id)
         if pending is not None:
+            notices = self._take_notices(session_id)
+            if notices:
+                return self._response_with_notices(self._pending_resume_status(pending), notices)
             if timeout == 0:
                 return self._pending_resume_status(pending)
-            try:
-                await asyncio.wait_for(
-                    asyncio.shield(pending.task),
-                    timeout=max(0.0, deadline - loop.time()),
-                )
-            except TimeoutError:
-                current = self._pending_resumes.get(session_id)
-                if current is pending:
+            while self._pending_resumes.get(session_id) is pending and not pending.task.done():
+                remaining = deadline - loop.time()
+                if remaining <= 0:
                     return self._pending_resume_status(pending)
-                session = self.sessions.get(session_id)
-                if session is not None:
-                    return self._result_response(session)
-                return self._get_session(session_id).public_status()
+                try:
+                    await asyncio.wait_for(asyncio.shield(pending.task), timeout=min(1.0, remaining))
+                except TimeoutError:
+                    notices = self._take_notices(session_id)
+                    if notices:
+                        return self._response_with_notices(self._pending_resume_status(pending), notices)
         session = self._get_session(session_id)
+        notices = self._take_notices(session_id)
+        if session.result_available or notices:
+            return self._response_with_notices(self._result_response(session), notices)
         if not session.result_available:
-            try:
+            while not session.result_available:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
                 async with self._condition:
-                    await asyncio.wait_for(
-                        self._condition.wait_for(
-                            lambda: (current := self.sessions.get(session_id)) is None or current.result_available
-                        ),
-                        timeout=max(0.0, deadline - loop.time()),
-                    )
-            except TimeoutError:
-                pass
-        session = self._get_session(session_id)
-        return self._result_response(session)
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(
+                            self._condition.wait_for(
+                                lambda: (current := self.sessions.get(session_id)) is None or current.result_available
+                            ),
+                            timeout=min(1.0, remaining),
+                        )
+                session = self._get_session(session_id)
+                notices = self._take_notices(session_id)
+                if session.result_available or notices:
+                    return self._response_with_notices(self._result_response(session), notices)
+        return self._result_response(self._get_session(session_id))
+
+    def _take_notices(self, session_id: str) -> list[dict[str, str]]:
+        """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
+        if self._notices_directory is None:
+            return []
+        try:
+            paths = tuple(self._notices_directory.iterdir())
+        except FileNotFoundError:
+            return []
+        matched: list[tuple[str, str, dict[str, str]]] = []
+        for path in paths:
+            if not path.is_file() or path.suffix != ".json":
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if (
+                not isinstance(payload, dict)
+                or payload.get("version") != 1
+                or payload.get("session_id") != session_id
+                or not isinstance(payload.get("sent_at"), str)
+                or not isinstance(payload.get("body"), str)
+            ):
+                continue
+            notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
+            matched.append((payload["sent_at"], path.name, notice))
+        matched.sort(key=lambda item: (item[0], item[1]))
+        for _sent_at, file_name, _notice in matched:
+            (self._notices_directory / file_name).unlink()
+        return [notice for _sent_at, _file_name, notice in matched]
+
+    @staticmethod
+    def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
+        """回収した通知がある場合だけ応答へ追加する。"""
+        if notices:
+            response["notices"] = notices
+        return response
 
     @staticmethod
     def _result_response(session: SessionState) -> dict[str, Any]:
@@ -705,10 +793,20 @@ class AgentsServerManager:
         route_state = self._route_state(session_id, unknown_label="session")
         if route_state.model_type is not None:
             candidates = _atk_config.resolve_model_candidates(route_state.model_type)
-            expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
             actual = (route_state.engine, route_state.model, route_state.effort)
-            if expected != actual:
-                raise ValueError(f"configuration changed: {session_id}")
+            if actual not in candidates:
+                expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
+                if expected is None:
+                    change = "no candidate remains"
+                else:
+                    names = ("engine", "model", "effort")
+                    changes = [
+                        f"{name}: {before} -> {after}"
+                        for name, before, after in zip(names, actual, expected, strict=True)
+                        if before != after
+                    ]
+                    change = ", ".join(changes)
+                raise ValueError(f"configuration changed: {session_id}; {change}")
         try:
             async with asyncio.timeout(float(timeout)):
                 while True:
@@ -1053,6 +1151,11 @@ async def wait(
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
     `session retention expired: <session_id>`は終端結果の保持期限が過ぎたことだけを示し、会話再開用の最小状態は保持されている。
+    委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
+    再待機の要否は`notices`の有無ではなく`status`で判定する。
+    `status: running`の応答は終端前の復帰であり、同じ`session_id`へ`wait`を再発行して待機を継続する。
+    `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して`wait`を再発行しない。
+    応答へ載せた通知は回収済みとして再び返さない。
     """
     return await _MANAGER.wait(session_id, timeout, request_bucket)
 
@@ -1076,7 +1179,10 @@ async def send_message(
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`で配送結果を示す。直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
-    `configuration changed: <session_id>`は工程別モデル設定の候補列が変わったことを示すため、検収済み状態を渡して新規起動する。
+    `configuration changed: <session_id>`は、
+    当該sessionが採用しているengine・model・effortが工程別モデル設定の候補列から外れたことを示す。
+    本文が続けて変わった項目と変更前後の値を示すため、検収済み状態を渡して新規起動する。
+    候補列の記述だけが変わり採用済みの値が候補列に残る場合は、同じsessionの継続に成功する。
     `unknown session: <session_id>`だけが継続不能を示す。
     """
     return await _MANAGER.send_message(session_id, prompt, timeout)

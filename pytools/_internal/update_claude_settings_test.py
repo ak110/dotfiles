@@ -84,6 +84,12 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"enabledPlugins": {"hookify@claude-plugins-official": True}})
         assert result["enabledPlugins"]["hookify@claude-plugins-official"] is False
 
+    def test_managed_dialog_expiry_overwrites_existing(self, tmp_path: Path):
+        """配布原本の dialogExpiry は既存設定の値を上書きする。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
+        assert result["dialogExpiry"] == "never"
+
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {

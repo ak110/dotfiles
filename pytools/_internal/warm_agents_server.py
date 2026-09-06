@@ -6,7 +6,6 @@
 import json
 import logging
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -38,7 +37,8 @@ def run() -> bool:
 
     ウォームアップはキャッシュ構築だけを行うため、個別の失敗を後処理全体の失敗にしない。
     """
-    if shutil.which("uv") is None:
+    uv = claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
+    if uv is None:
         logger.info(log_format.format_status(_TAG, "uv CLI が見つからずスキップ"))
         return False
     targets = _targets()
@@ -46,7 +46,7 @@ def run() -> bool:
         logger.info(log_format.format_status(_TAG, "対象スクリプトが見つからずスキップ"))
         return False
     for target in targets:
-        _warmup(target)
+        _warmup(target, uv)
     return False
 
 
@@ -92,10 +92,11 @@ def _claude_plugin_scripts() -> list[Path]:
 
 def _codex_plugin_script() -> Path | None:
     """Codexが参照する有効版プラグインキャッシュ内のスクリプトを返す。"""
-    if shutil.which("codex") is None:
+    codex = claude_common.resolve_executable("codex")
+    if codex is None:
         logger.info(log_format.format_status(_TAG, "codex CLI が見つからないためCodex分を除外"))
         return None
-    result = claude_common.run_subprocess(["codex", "plugin", "list", "--json"], timeout=_CODEX_LIST_TIMEOUT, tag="codex")
+    result = claude_common.run_subprocess([str(codex), "plugin", "list", "--json"], timeout=_CODEX_LIST_TIMEOUT, tag="codex")
     if result is None or result.returncode != 0:
         logger.warning(log_format.format_status(_TAG, "Codex plugin一覧を取得できないためCodex分を除外"))
         return None
@@ -127,11 +128,11 @@ def _enabled_version(installed: list[object]) -> str | None:
     return None
 
 
-def _warmup(path: Path) -> None:
+def _warmup(path: Path, uv: Path) -> None:
     """1件のスクリプトに``--check-dependencies``を渡し、PEP 723環境の依存読込を確認する。"""
     started = time.monotonic()
     result = claude_common.run_subprocess(
-        ["uv", "run", "--no-project", "--script", str(path), "--check-dependencies"],
+        [str(uv), "run", "--no-project", "--script", str(path), "--check-dependencies"],
         timeout=_WARMUP_TIMEOUT,
         tag="uv",
     )

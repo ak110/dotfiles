@@ -13,13 +13,13 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, assert_scope_user_install_calls, make_fresh_install_fake
+from ._test_helpers import _FakeResult, assert_scope_user_install_calls, command_matches, make_fresh_install_fake
 
 
 @pytest.fixture(name="fake_which_present")
 def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
     """claude と uv の両方が存在する状態に見せかける。"""
-    monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="fake_target_info")
@@ -86,7 +86,7 @@ class TestReadInstalledFromFile:
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -95,7 +95,7 @@ class TestReadInstalledFromFile:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -106,7 +106,7 @@ class TestReadInstalledFromFile:
 
         changed, _ = _install_claude_plugins.run()
         assert changed is False
-        assert not any(c[:3] == ["claude", "plugin", "install"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
     def test_file_not_found_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """ファイルが存在しない場合は CLI フォールバックで plugin list が呼ばれる。"""
@@ -116,7 +116,7 @@ class TestReadInstalledFromFile:
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -129,7 +129,7 @@ class TestReadInstalledFromFile:
         changed, _ = _install_claude_plugins.run()
         assert changed is True
         # CLI フォールバックとして plugin list が呼ばれている
-        assert any(c[:3] == ["claude", "plugin", "list"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "list"]) for c in calls)
 
     def test_invalid_json_falls_back_to_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """不正な JSON の場合は CLI フォールバックで動作する。"""
@@ -141,7 +141,7 @@ class TestReadInstalledFromFile:
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -153,7 +153,7 @@ class TestReadInstalledFromFile:
 
         changed, _ = _install_claude_plugins.run()
         assert changed is True
-        assert any(c[:3] == ["claude", "plugin", "list"] for c in calls)
+        assert any(command_matches(c, ["claude", "plugin", "list"]) for c in calls)
 
     def test_mixed_scopes_user_scope_only_in_version_check(
         self,
@@ -183,7 +183,7 @@ class TestReadInstalledFromFile:
             "_read_target_info",
             lambda _root: ({"agent-toolkit": "0.2.0"}, set()),
         )
-        monkeypatch.setattr(_install_claude_plugins.shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
@@ -192,13 +192,13 @@ class TestReadInstalledFromFile:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
                 )
             # project scope の uninstall は成功を返す
-            if cmd[:3] == ["claude", "plugin", "uninstall"]:
+            if command_matches(cmd, ["claude", "plugin", "uninstall"]):
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=0)
 
@@ -206,8 +206,8 @@ class TestReadInstalledFromFile:
 
         _install_claude_plugins.run()
         # user scope で version 一致のため install/update は発行されない
-        assert not any(c[:3] == ["claude", "plugin", "install"] for c in calls)
-        assert not any(c[:3] == ["claude", "plugin", "update"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)
 
 
 class TestCheckMarketplaceFromFile:
@@ -331,7 +331,7 @@ class TestHappyPathDirectoryType:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            if cmd[:3] == ["claude", "plugin", "install"]:
+            if command_matches(cmd, ["claude", "plugin", "install"]):
                 return _FakeResult(returncode=0)
             raise AssertionError(f"予期しない subprocess 呼び出し: {cmd}")
 
@@ -341,5 +341,5 @@ class TestHappyPathDirectoryType:
         # 全プラグインに対して install が --scope=user で再実行される
         assert_scope_user_install_calls(calls)
         # marketplace update / plugin update は呼ばれない
-        assert not any(c[:4] == ["claude", "plugin", "marketplace", "update"] for c in calls)
-        assert not any(c[:3] == ["claude", "plugin", "update"] for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "marketplace", "update"]) for c in calls)
+        assert not any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)

@@ -69,24 +69,120 @@ class TestResolveUvPath:
 
     def test_prefers_local_bin(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         uv = tmp_path / ".local" / "bin" / "uv"
-        uv.parent.mkdir(parents=True)
-        uv.touch()
         monkeypatch.setattr(claude_common.Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(claude_common.shutil, "which", lambda _name: "/path/uv")
+        monkeypatch.setattr(claude_common, "resolve_executable", lambda *_args, **_kwargs: uv)
 
         assert claude_common.resolve_uv_path() == uv
 
     def test_falls_back_to_path_lookup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setattr(claude_common.Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(claude_common.shutil, "which", lambda _name: "/opt/uv/bin/uv")
+        monkeypatch.setattr(
+            claude_common,
+            "resolve_executable",
+            lambda *_args, **_kwargs: Path("/opt/uv/bin/uv"),
+        )
 
         assert claude_common.resolve_uv_path() == Path("/opt/uv/bin/uv")
 
     def test_returns_none_when_uv_is_missing(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setattr(claude_common.Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(claude_common.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(claude_common, "resolve_executable", lambda *_args, **_kwargs: None)
 
         assert claude_common.resolve_uv_path() is None
+
+
+class TestResolveExecutable:
+    """mise shimを除外した実行ファイル解決を検証する。"""
+
+    @staticmethod
+    def _fake_which(name: str, *, path: str | None = None) -> str | None:
+        assert path is not None
+        candidate = Path(path) / name
+        return str(candidate) if candidate.is_file() else None
+
+    def test_prefers_explicit_directory_before_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        preferred = tmp_path / "preferred"
+        path_directory = tmp_path / "path"
+        preferred.mkdir()
+        path_directory.mkdir()
+        (preferred / "claude").touch()
+        (path_directory / "claude").touch()
+        monkeypatch.setenv("PATH", str(path_directory))
+        monkeypatch.setattr(claude_common.shutil, "which", self._fake_which)
+
+        assert claude_common.resolve_executable("claude", preferred_directories=(preferred,)) == preferred / "claude"
+
+    def test_missing_preferred_directory_falls_back_to_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        path_directory = tmp_path / "path"
+        path_directory.mkdir()
+        (path_directory / "codex").touch()
+        monkeypatch.setenv("PATH", str(path_directory))
+        monkeypatch.setattr(claude_common.shutil, "which", self._fake_which)
+
+        assert (
+            claude_common.resolve_executable("codex", preferred_directories=(tmp_path / "missing",)) == path_directory / "codex"
+        )
+
+    def test_relative_path_stays_bound_after_cwd_change(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        resolve_cwd = tmp_path / "resolve"
+        launch_cwd = tmp_path / "launch"
+        for cwd, output in ((resolve_cwd, "expected"), (launch_cwd, "wrong")):
+            executable = cwd / "bin" / "claude"
+            executable.parent.mkdir(parents=True)
+            executable.write_text(f"#!/bin/sh\nprintf '%s\\n' {output}\n", encoding="utf-8")
+            executable.chmod(0o755)
+
+        monkeypatch.chdir(resolve_cwd)
+        monkeypatch.setenv("PATH", "bin")
+        resolved = claude_common.resolve_executable("claude")
+
+        assert resolved == resolve_cwd / "bin" / "claude"
+        monkeypatch.chdir(launch_cwd)
+        result = subprocess.run([str(resolved)], capture_output=True, text=True, check=True)
+        assert result.stdout == "expected\n"
+
+    def test_custom_mise_data_dir_excludes_only_custom_shims(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        default_shims = tmp_path / ".local" / "share" / "mise" / "shims"
+        custom_shims = tmp_path / "custom-mise" / "shims"
+        real_bin = tmp_path / "real"
+        for directory in (default_shims, custom_shims, real_bin):
+            directory.mkdir(parents=True)
+            (directory / "claude").touch()
+        monkeypatch.setattr(claude_common.Path, "home", lambda: tmp_path)
+        monkeypatch.setenv("MISE_DATA_DIR", str(tmp_path / "custom-mise"))
+        monkeypatch.setenv("PATH", os.pathsep.join((str(custom_shims), str(default_shims), str(real_bin))))
+        monkeypatch.setattr(claude_common.shutil, "which", self._fake_which)
+
+        assert claude_common.resolve_executable("claude") == default_shims / "claude"
+
+    def test_returns_none_when_only_mise_shim_exists(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        shims = tmp_path / "mise" / "shims"
+        shims.mkdir(parents=True)
+        (shims / "uv").touch()
+        monkeypatch.setenv("MISE_DATA_DIR", str(tmp_path / "mise"))
+        monkeypatch.setenv("PATH", str(shims))
+        monkeypatch.setattr(claude_common.shutil, "which", self._fake_which)
+
+        assert claude_common.resolve_executable("uv") is None
+
+    def test_windows_local_app_data_shims_are_excluded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        shims = tmp_path / "local-app-data" / "mise" / "shims"
+        real_bin = tmp_path / "real"
+        shims.mkdir(parents=True)
+        real_bin.mkdir()
+        (shims / "codex").touch()
+        (real_bin / "codex").touch()
+        monkeypatch.delenv("MISE_DATA_DIR", raising=False)
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+        monkeypatch.setenv("PATH", os.pathsep.join((str(shims), str(real_bin))))
+        monkeypatch.setattr(claude_common.sys, "platform", "win32")
+        monkeypatch.setattr(claude_common.shutil, "which", self._fake_which)
+
+        assert claude_common.resolve_executable("codex") == real_bin / "codex"
 
 
 class TestEnsureFlagFilePresent:

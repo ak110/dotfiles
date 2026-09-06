@@ -65,6 +65,7 @@ baseline作成、push、監視の順で実行する。
 1. 標準経路ではremote名とbranch名を明示せず`git push`を単独で実行する。
    明示経路では、成功したdry-runから`--dry-run --porcelain`だけを除いた同一の`<remote> <source>:<destination>`を渡す
 2. push成功後、保存した各baselineに対して同スクリプトを`--baseline`付きで実行する
+   呼び出し元がCI通過の判定を当該セッションで行わないと明示した場合は、`--baseline`を実行せずに後始末へ進む。
    baselineごとに十分な総待機時間を指定して1回だけ起動する。
    ホストが実行ハンドルのyield・再開を提供する場合は、60秒未満の観測間隔で同一processへ再接続する。
    進捗表示のために短い`--timeout`を指定した別processへ分割せず、実行中のplugin root更新を理由に置換しない
@@ -88,6 +89,10 @@ baseline作成、push、監視の順で実行する。
    再実行の終端前の新規pushは先行runを`cancelled`にし、非決定性とCI通過の判定根拠を失わせる。
    判定に用いるrunの終端を確定してから次のpushを行う
 
+`--baseline`によるCI通過の判定が終わるまで、同じコミットに対して`gh workflow run`などで別のworkflowを手動起動しない。
+`wait_ci.py`はbaselineに無い同一コミットの実行も判定対象へ含めるため、手動起動したworkflowの失敗がCI失敗として返る。
+リリース、配備その他のworkflowの手動起動は、CI通過を確定した後に行う。
+
 `wait_ci.py`の終了コードは次のとおり。
 
 | 終了コード | 意味 |
@@ -102,7 +107,7 @@ baseline作成、push、監視の順で実行する。
 
 ## 後始末
 
-CI成功、CI定義なし、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
+CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
 保持した各領域に対し、plan mode外で次を単独実行し、終了コード0を確認する。
 終了コード0は対象パスの除去完了を含意するため、別コマンドによる不在確認を追加しない。
 

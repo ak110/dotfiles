@@ -1,7 +1,7 @@
 //! Claude Code statusLine: セッション状況とagents_server sessionを可視化する。
 //!
 //! `scripts/claude_status_line.py`の後継。stdinから公式statusLine JSON入力を受け取る。
-//! 1行目はモデル名・effort・cwd・追加/削除行数・output_style名（既定値以外）を半角スペース区切りで
+//! 1行目はモデル名・effort・cwdを半角スペース区切りで
 //! 結合したのち、コンテキスト・コスト・経過時間・消費量(5h/7d)とパイプ区切りで連結する。
 //! 2行目はセッションID・セッション名を半角スペース区切りで結合したのち、worktree情報（存在時のみ）
 //! とパイプ区切りで連結する。数値項目には日本語ラベルを付与し、欠落・null・空文字列の要素は省略する。
@@ -13,11 +13,9 @@ const RED: &str = "\x1b[31m";
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
 const BLUE: &str = "\x1b[34m";
-const MAGENTA: &str = "\x1b[35m";
 const CYAN: &str = "\x1b[36m";
 const GRAY: &str = "\x1b[90m";
 
-const DEFAULT_OUTPUT_STYLE: &str = "default";
 const LABEL_CONTEXT: &str = "コンテキスト";
 const LABEL_COST: &str = "コスト";
 const LABEL_DURATION: &str = "経過時間";
@@ -64,28 +62,19 @@ fn render_lines(data: &Value, home: Option<&str>) -> Vec<String> {
 }
 
 fn render_primary_line(data: &Value, home: Option<&str>) -> String {
-    let model_name = get_nested_str(data, &["model", "display_name"]);
+    let model_name = get_nested_str(data, &["model", "display_name"])
+        .map(|name| name.replacen(" (1M context)", "[1m]", 1));
     let effort_level = get_nested_str(data, &["effort", "level"]);
     let cwd = get_nested_str(data, &["workspace", "current_dir"]);
-    let mut style_name = get_nested_str(data, &["output_style", "name"]);
-    if style_name.as_deref() == Some(DEFAULT_OUTPUT_STYLE) {
-        style_name = None;
-    }
     let ctx_pct = get_nested_number(data, &["context_window", "used_percentage"]);
     let total_cost = get_nested_number(data, &["cost", "total_cost_usd"]);
     let duration_ms = get_nested_number(data, &["cost", "total_duration_ms"]);
     let five_hour_pct = get_nested_number(data, &["rate_limits", "five_hour", "used_percentage"]);
     let seven_day_pct = get_nested_number(data, &["rate_limits", "seven_day", "used_percentage"]);
-    let lines_added = get_nested_number(data, &["cost", "total_lines_added"]);
-    let lines_removed = get_nested_number(data, &["cost", "total_lines_removed"]);
-
-    let lines_changed_seg = build_lines_changed_segment(lines_added, lines_removed);
     let head = build_head_segment(
         model_name.as_deref(),
         effort_level.as_deref(),
         cwd.as_deref(),
-        style_name.as_deref(),
-        lines_changed_seg,
         home,
     );
 
@@ -153,23 +142,10 @@ fn build_worktree_segment(name: Option<&str>, branch: Option<&str>) -> Option<St
     Some(color(&text, BLUE))
 }
 
-fn build_lines_changed_segment(added: Option<f64>, removed: Option<f64>) -> Option<String> {
-    if added.is_none() && removed.is_none() {
-        return None;
-    }
-    let added = added.unwrap_or(0.0);
-    let removed = removed.unwrap_or(0.0);
-    Some(format!(
-        "{GREEN}+{added:.0}{RESET}/{RED}-{removed:.0}{RESET}"
-    ))
-}
-
 fn build_head_segment(
     model_name: Option<&str>,
     effort_level: Option<&str>,
     cwd: Option<&str>,
-    style_name: Option<&str>,
-    lines_changed: Option<String>,
     home: Option<&str>,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -178,13 +154,10 @@ fn build_head_segment(
         parts.push(color(&format!("[{label}]"), CYAN));
     }
     if let Some(cwd) = cwd {
-        parts.push(color(&shorten_home(cwd, home), BLUE));
-    }
-    if let Some(seg) = lines_changed {
-        parts.push(seg);
-    }
-    if let Some(style) = style_name {
-        parts.push(color(&format!("@{style}"), MAGENTA));
+        parts.push(color(
+            &shorten_worktree_path(&shorten_home(cwd, home)),
+            BLUE,
+        ));
     }
     parts.join(" ")
 }
@@ -213,6 +186,36 @@ fn shorten_home(path: &str, home: Option<&str>) -> String {
         }
     }
     path.to_string()
+}
+
+/// `.claude/worktrees/<名前>`を親ディレクトリに続く` (<名前>)`へ短縮する。
+fn shorten_worktree_path(path: &str) -> String {
+    let match_ = ["/", "\\"]
+        .into_iter()
+        .filter_map(|separator| {
+            let marker = format!("{separator}.claude{separator}worktrees{separator}");
+            path.find(&marker).map(|index| (index, marker.len()))
+        })
+        .min_by_key(|(index, _)| *index);
+    let Some((marker_start, marker_len)) = match_ else {
+        return path.to_string();
+    };
+    let name_start = marker_start + marker_len;
+    let name_end = path[name_start..]
+        .char_indices()
+        .find_map(|(offset, character)| {
+            matches!(character, '/' | '\\').then_some(name_start + offset)
+        })
+        .unwrap_or(path.len());
+    if name_start == name_end {
+        return path.to_string();
+    }
+    format!(
+        "{} ({}){}",
+        &path[..marker_start],
+        &path[name_start..name_end],
+        &path[name_end..]
+    )
 }
 
 fn home_dir() -> Option<String> {
@@ -349,18 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn default_output_style_omitted() {
-        let data = serde_json::json!({"output_style": {"name": "default"}});
-        assert_eq!(render(data), "");
-    }
-
-    #[test]
-    fn named_output_style_shown() {
-        let data = serde_json::json!({"output_style": {"name": "Explanatory"}});
-        assert_eq!(render(data), format!("{MAGENTA}@Explanatory{RESET}"));
-    }
-
-    #[test]
     fn context_percentage_color_thresholds() {
         let cases = [
             (0.0, GREEN),
@@ -415,40 +406,53 @@ mod tests {
     }
 
     #[test]
-    fn lines_changed_segment_shown_on_primary_line() {
-        let data =
-            serde_json::json!({"cost": {"total_lines_added": 156, "total_lines_removed": 23}});
-        assert_eq!(render(data), format!("{GREEN}+156{RESET}/{RED}-23{RESET}"));
-    }
-
-    #[test]
-    fn lines_changed_after_cwd_with_output_style() {
+    fn output_style_and_changed_lines_are_omitted() {
         let data = serde_json::json!({
             "workspace": {"current_dir": "/home/test/repo"},
             "output_style": {"name": "custom"},
             "cost": {"total_lines_added": 11, "total_lines_removed": 11}
         });
-        assert_eq!(
-            render(data),
-            format!(
-                "{BLUE}~/repo{RESET} {GREEN}+11{RESET}/{RED}-11{RESET} {MAGENTA}@custom{RESET}"
-            )
-        );
+        assert_eq!(render(data), format!("{BLUE}~/repo{RESET}"));
     }
 
     #[test]
-    fn lines_changed_before_context_in_tail() {
-        let data = serde_json::json!({
-            "workspace": {"current_dir": "/home/test/repo"},
-            "cost": {"total_lines_added": 11, "total_lines_removed": 11},
-            "context_window": {"used_percentage": 24.0}
-        });
-        assert_eq!(
-            render(data),
-            format!(
-                "{BLUE}~/repo{RESET} {GREEN}+11{RESET}/{RED}-11{RESET} | {GREEN}{LABEL_CONTEXT}: 24%{RESET}"
-            )
-        );
+    fn model_context_suffix_shortens_once() {
+        let cases = [
+            ("Opus 5 (1M context)", "Opus 5[1m]"),
+            ("Opus 5", "Opus 5"),
+            ("Sonnet 5 (1M context) 追記", "Sonnet 5[1m] 追記"),
+            ("1M context", "1M context"),
+        ];
+        for (input, expected) in cases {
+            let data = serde_json::json!({"model": {"display_name": input}});
+            assert_eq!(render(data), format!("{CYAN}[{expected}]{RESET}"));
+        }
+    }
+
+    #[test]
+    fn worktree_path_shortening_preserves_remainder_and_unmatched_paths() {
+        let cases = [
+            (
+                "~/dotfiles/.claude/worktrees/lane-11",
+                "~/dotfiles (lane-11)",
+            ),
+            (
+                "~/dotfiles/.claude/worktrees/lane-11/agent-toolkit",
+                "~/dotfiles (lane-11)/agent-toolkit",
+            ),
+            (
+                "~\\dotfiles\\.claude\\worktrees\\lane-11",
+                "~\\dotfiles (lane-11)",
+            ),
+            ("~/dotfiles", "~/dotfiles"),
+            ("~/.claude/worktrees", "~/.claude/worktrees"),
+            ("~/.claude/worktrees/", "~/.claude/worktrees/"),
+            ("/opt/work/project", "/opt/work/project"),
+            ("~", "~"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(shorten_worktree_path(input), expected);
+        }
     }
 
     #[test]

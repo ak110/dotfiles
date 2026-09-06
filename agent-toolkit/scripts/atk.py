@@ -15,7 +15,8 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・`atk wait-schedule`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
+`atk agents-notify`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
@@ -31,11 +32,12 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
 - mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans checkout/commit/migrate: 保存済み計画又は独立CI実装レビュー表の取得・対象限定commit・push、旧保存先からの一括移行
+- plans checkout/commit/migrate: 保存済み計画又は独立CI実行レビュー表の取得・対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 - agents-wait: agents_serverが保存した指定turn以降の終端結果を1行で出力する
+- agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -44,6 +46,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 
 import argparse
 import datetime
+import importlib
 import os
 import pathlib
 import re
@@ -56,33 +59,34 @@ from typing import Any
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-import _atk_agents_wait  # noqa: E402
-import _atk_config as _config_cmd  # noqa: E402
-import _atk_git_sync  # noqa: E402
-import _atk_help  # noqa: E402
-import _atk_plans as _plans  # noqa: E402
-import _atk_watch as _watch  # noqa: E402
-import _atk_wi_add as _add  # noqa: E402
-import _atk_wi_batch as _batch  # noqa: E402
-import _atk_wi_common as _common  # noqa: E402
-import _atk_wi_grep as _grep  # noqa: E402
-import _atk_wi_list as _list  # noqa: E402
-import _atk_wi_migrate as _migrate  # noqa: E402
-import _atk_wi_mutations as _mutations  # noqa: E402
-import _atk_wi_process_loop as _process_loop  # noqa: E402
-import _atk_wi_show as _show  # noqa: E402
-import _atk_wi_uwi as _uwi  # noqa: E402
-import _atk_worktree_stash as _worktree_stash  # noqa: E402
-import _managed_temp  # noqa: E402
-import _review_table  # noqa: E402
-import _wait_schedule  # noqa: E402
+from _agents_server import agents_wait as _atk_agents_wait  # noqa: E402
+from _atk import config as _config_cmd  # noqa: E402
+from _atk import git_sync as _atk_git_sync  # noqa: E402
+from _atk import help_text as _atk_help  # noqa: E402
+from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
+from _atk import plans as _plans  # noqa: E402
+from _atk import review_table as _review_table  # noqa: E402
+from _atk import watch as _watch  # noqa: E402
+from _atk import worktree_stash as _worktree_stash  # noqa: E402
+from _atk.wi import add as _add  # noqa: E402
+from _atk.wi import batch as _batch  # noqa: E402
+from _atk.wi import common as _common  # noqa: E402
+from _atk.wi import grep as _grep  # noqa: E402
+from _atk.wi import listing as _list  # noqa: E402
+from _atk.wi import migrate as _migrate  # noqa: E402
+from _atk.wi import mutations as _mutations  # noqa: E402
+from _atk.wi import process_loop as _process_loop  # noqa: E402
+from _atk.wi import show as _show  # noqa: E402
+from _atk.wi import uwi as _uwi  # noqa: E402
+from _atk_agents_notify import send_notification as _send_agents_notification  # noqa: E402
+from _common import wait_schedule as _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
-_convert_to_plan_filename_completer = _common.make_filename_completer(
+_editable_filename_completer = _common.make_filename_completer(_common.WI_EDITABLE_STATES)
+_removable_filename_completer = _common.make_filename_completer(
     (_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING, _common.WI_STATE_HOLD)
 )
-_removable_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING))
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
@@ -385,6 +389,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="エントリ件数を整数のみで出力する（種別ヘッダを抑制する）。",
     )
     output.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="ファイル名と要約だけを持つ1件1行のJSON Lines形式で出力する。",
+    )
+    output.add_argument(
         "--json",
         action="store_true",
         help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
@@ -584,11 +593,11 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         nargs="?",
         default=None,
         help=(
-            "編集対象のファイル名（inbox・processingいずれも対象）。"
+            "編集対象のファイル名（inbox・processing・holdいずれも対象）。"
             "MESSAGEとともに指定すると非対話で編集する。"
             "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
         ),
-    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
+    ).completer = _editable_filename_completer  # type: ignore[attr-defined]
     edit.add_argument(
         "message",
         metavar="MESSAGE",
@@ -626,7 +635,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="+",
         help="変換する同一状態のAWIファイル名（1個以上）。holdでは--messageを指定する。",
-    ).completer = _convert_to_plan_filename_completer  # type: ignore[attr-defined]
+    ).completer = _editable_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--message",
         metavar="MESSAGE",
@@ -868,6 +877,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=3600.0,
         help="待機上限秒数。到達した場合は終了コード3で終わる。",
     )
+    agents_notify = _atk_help.add_command(top, "agents-notify", **_atk_help.HELP["atk agents-notify"])
+    agents_notify.set_defaults(subparser=agents_notify)
+    notification_body = agents_notify.add_mutually_exclusive_group(required=True)
+    notification_body.add_argument("--body", help="委譲元へ送る本文。")
+    notification_body.add_argument(
+        "--body-file",
+        type=pathlib.Path,
+        help="委譲元へ送る本文を保持するUTF-8ファイルの絶対パス。",
+    )
     managed_temp = _atk_help.add_command(top, "managed-temp", **_atk_help.HELP["atk managed-temp"])
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     worktree_stash = _atk_help.add_command(top, "worktree-stash", **_atk_help.HELP["atk worktree-stash"])
@@ -1012,11 +1030,22 @@ def main(
         if args.timeout < 0:
             args.subparser.error("--timeoutには0以上の数値を指定してください。")
         sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.turn, args.timeout))
+    if args.command == "agents-notify":
+        body = args.body
+        if args.body_file is not None:
+            if not args.body_file.is_absolute():
+                args.subparser.error("--body-fileには絶対パスを指定してください。")
+            try:
+                with args.body_file.open(encoding="utf-8", newline="") as stream:
+                    body = stream.read()
+            except (OSError, UnicodeError) as error:
+                args.subparser.error(f"--body-fileをUTF-8で読めません: {error}")
+        assert body is not None
+        sys.exit(_send_agents_notification(body))
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":
-        import _atk_serve as _serve  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
+        _serve = importlib.import_module("_atk.serve.cli")
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)
     if args.command == "managed-temp":

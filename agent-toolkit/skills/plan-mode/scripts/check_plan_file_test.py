@@ -9,9 +9,9 @@ import check_plan_file
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")

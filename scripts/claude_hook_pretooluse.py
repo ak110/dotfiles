@@ -39,16 +39,16 @@ sys.path.insert(
     str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
 )
 # pylint: disable-next=wrong-import-position,import-error
-from _hook_notice import (
+from _hooks.notice import (
     block_formatter as _block_notice_formatter,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 
 # pylint: disable-next=wrong-import-position,import-error
-from _hook_notice import formatter as _notice_formatter  # noqa: E402
-from _hook_tool_input import new_content_fields  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_file import new_plans_root  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan_format import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.notice import formatter as _notice_formatter  # noqa: E402
+from _hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.tool_input import new_content_fields  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan.locations import new_plans_root  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan.structure import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
@@ -125,7 +125,7 @@ def main(payload_text: str) -> int:
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
-        # （`agent-toolkit/scripts/permissionrequest.py`）で別途処理する。
+        # （`agent-toolkit/scripts/_hooks/permissionrequest.py`）で別途処理する。
         print(
             json.dumps(
                 {
