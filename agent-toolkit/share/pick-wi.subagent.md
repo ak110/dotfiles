@@ -154,7 +154,13 @@ AWI本文に固有の処理順、公開、確認と検証指示がある場合�
 
 ## 処理開始
 
-`needs_escalation`で返す場合を除き、AWIを`processing`へ移す前に、`answered_uwis`のファイル名だけを引数として
+`needs_escalation`で返す場合を除き、候補出力を返す前に、`ready_awis`のファイル名集合と`decisions[].awi`のファイル名集合が一致し、各ファイル名が`decisions`へ1回だけ現れることを1回のコマンドで検査する。
+同じAWIファイル名が複数のレーンへ割り当てられていないことも同じコマンドで検査する。
+いずれかが成立しない場合は候補出力を返さず、`decisions`を修正して検査をやり直す。
+検査に合格した候補集合を`awaiting_acceptance`として返し、呼び出し元から当該集合を受理した旨を受領するまでキューを変更しない。
+受理後も、候補集合、`decisions`及び`answered_uwis`を候補出力から変更しない。
+
+候補集合が受理された後、AWIを`processing`へ移す前に、`answered_uwis`のファイル名だけを引数として
 `atk wi adopt <filename>... --target-repo=<repo-path>`を1回実行する。`answered_uwis`が`なし`の場合は実行しない。
 実行後は、各ファイル名が`atk wi list --type=uwi --status=adopted --target-repo=<repo-path> --skip-pull`へ現れることを確認する。
 続けて、`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo-path> --skip-pull`へ現れないことを確認する。
@@ -164,7 +170,7 @@ AWI本文に固有の処理順、公開、確認と検証指示がある場合�
 警告、失敗又は部分状態を検出した場合は対象を再取得し、全件が`adopted`なら再実行しない。
 未終端の項目が残る場合や原因不明の場合は`needs_escalation`で返し、AWIを`processing`へ移さない。
 
-`needs_escalation`で返す場合を除き、出力を確定した直後に、選定時点の保存状態が`inbox`である項目のファイル名だけを引数として`atk wi start-processing <filename>... --target-repo=<repo-path>`を1回実行する。
+候補集合が受理された後、選定時点の保存状態が`inbox`である項目のファイル名だけを引数として`atk wi start-processing <filename>... --target-repo=<repo-path>`を1回実行する。
 選定時点で既に`processing`だった再開項目を引数へ含めない。引数となる項目が1件も無い場合は実行しない。
 実行後は`atk wi list --target-repo=<repo-path> --skip-pull`を実行し、引数へ渡した全件が`processing`へ配置されたことを確認する。
 `state`へは選定時点の保存状態をそのまま返し、本節の遷移結果で書き換えない。
@@ -172,10 +178,12 @@ AWI本文に固有の処理順、公開、確認と検証指示がある場合�
 
 ## 出力
 
-次の内容をファイル名ごとに返す。同じレーンの項目は実装依存順で連続して並べる。
+次の内容を候補集合の検査時と処理開始の完了時に返す。同じレーンの項目は実装依存順で連続して並べる。
 
 ```text
-status: completed | needs_escalation
+status: awaiting_acceptance | completed | needs_escalation
+ready_awis:
+- <候補集合のAWIファイル名>
 decisions:
 - awi: <AWIファイル名>
   state: <選定時点の保存状態。inbox又はprocessing>
@@ -201,6 +209,8 @@ answered_uwis:
 `upstream_submission`が`なし`以外の場合は、`upstream_target_repo`へ全投入先を角括弧内のリポジトリ識別子として列挙し、`upstream_request`へ上流要求と上流改訂後の対象リポジトリ側の作業を記載する。条件に該当する投入先だけへ要求する場合は、投入の要否を実測できる条件も`upstream_request`へ記載する。対象リポジトリ側の作業が無い場合は、その旨を`upstream_request`へ記載する。`upstream_submission`が`なし`の場合は、両方を`なし`とする。
 
 成功時の出力は、呼び出し元がレーンの起動と①の完了確認へ用いる上記の項目だけとする。
+候補集合の検査に合格した時点では`status: awaiting_acceptance`、呼び出し元による受理後に処理開始まで完了した時点では`status: completed`とする。
+`ready_awis`には候補集合の全ファイル名を重複なく記載し、`decisions`と同じ実装依存順で並べる。
 `answered_uwis`は、`decisions`の各項目が依存する範囲に限らず、対象リポジトリで回答済みかつ終端可能な`inbox`又は`processing`のUWIを全て挙げる。回答本文と解除される元項目の内容は出力へ含めない。
 充足済み候補で実在を確認したコミット又は実装箇所は、`confirmation_or_hold`の最小情報として出力できる。
 `upstream_request`に必要な範囲と確認境界の候補位置を除き、AWI本文、項目別の採否理由、候補の調査過程を含む対象実装の調査記録を出力へ含めない。
