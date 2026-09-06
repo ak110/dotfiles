@@ -2032,6 +2032,8 @@ def test_delegate_system_prompt_appends_subagent_rules() -> None:
     assert rules not in state.EXPLORE_SYSTEM_PROMPT
     assert rules not in state.SHELL_SYSTEM_PROMPT
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
+    assert "あなたはメインエージェントでも最上位セッションでもない。" in state.DELEGATE_NOTICE
+    assert "呼び出し元エージェントの配送" in state.DELEGATE_NOTICE
 
 
 def test_auto_resume_notice_limits_waiting_exception_to_child_agents() -> None:
