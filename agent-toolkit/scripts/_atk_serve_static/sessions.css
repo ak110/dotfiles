@@ -194,6 +194,7 @@ main .spacer { flex: 1; }
 }
 
 .event.kind-user .event-kind { background: #2563eb; }
+.event.kind-developer .event-kind { background: #be185d; }
 .event.kind-assistant .event-kind { background: #16a34a; }
 .event.kind-thinking .event-kind { background: #7c3aed; }
 .event.kind-tool_call .event-kind { background: #d97706; }

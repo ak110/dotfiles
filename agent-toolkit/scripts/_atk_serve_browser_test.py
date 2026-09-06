@@ -2120,9 +2120,9 @@ def _write_session_records(root: Path) -> None:
         + "\n"
         + json.dumps(
             {
-                "type": "compacted",
+                "type": "response_item",
                 "timestamp": "2026-09-01T01:00:03Z",
-                "payload": {"message": "コンテキストを圧縮しました", "window_number": 2},
+                "payload": {"type": "message", "role": "assistant", "content": [{"text": "Codexの応答"}]},
             },
             ensure_ascii=False,
         )
@@ -2131,7 +2131,7 @@ def _write_session_records(root: Path) -> None:
             {
                 "type": "response_item",
                 "timestamp": "2026-09-01T01:00:04Z",
-                "payload": {"type": "function_call", "name": "shell", "arguments": '{"cmd":"pwd"}'},
+                "payload": {"type": "reasoning", "summary": [{"text": "Codexの思考"}]},
             },
             ensure_ascii=False,
         )
@@ -2140,6 +2140,33 @@ def _write_session_records(root: Path) -> None:
             {
                 "type": "response_item",
                 "timestamp": "2026-09-01T01:00:05Z",
+                "payload": {"type": "function_call_output", "output": "Codexのツール結果"},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "compacted",
+                "timestamp": "2026-09-01T01:00:06Z",
+                "payload": {"message": "コンテキストを圧縮しました", "window_number": 2},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T01:00:07Z",
+                "payload": {"type": "function_call", "name": "shell", "arguments": '{"cmd":"pwd"}'},
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-01T01:00:08Z",
                 "payload": {"type": "function_call", "name": "broken", "arguments": "{invalid-json"},
             },
             ensure_ascii=False,
@@ -3009,6 +3036,31 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     compacted = harness.page.locator("#detail .kind-compact_boundary")
     assert "開発者" in await developer.locator("summary").inner_text()
     assert "コンテキスト圧縮" in await compacted.locator("summary").inner_text()
+    developer_background = await developer.locator(".event-kind").evaluate(
+        "element => getComputedStyle(element).backgroundColor"
+    )
+    default_background = await harness.page.evaluate(
+        """() => {
+            const event = document.createElement("div");
+            event.className = "event";
+            const kind = document.createElement("span");
+            kind.className = "event-kind";
+            event.append(kind);
+            document.body.append(event);
+            const color = getComputedStyle(kind).backgroundColor;
+            event.remove();
+            return color;
+        }"""
+    )
+    existing_backgrounds = []
+    for kind in ("user", "assistant", "thinking", "tool_call", "tool_result", "compact_boundary"):
+        existing_backgrounds.append(
+            await harness.page.locator(f"#detail .kind-{kind} .event-kind").first.evaluate(
+                "element => getComputedStyle(element).backgroundColor"
+            )
+        )
+    assert developer_background != default_background
+    assert developer_background not in existing_backgrounds
     assert not await developer.evaluate("element => element.open")
     assert not await compacted.evaluate("element => element.open")
     assert "/home/aki/other" in await harness.page.locator("#detail-title").inner_text()
