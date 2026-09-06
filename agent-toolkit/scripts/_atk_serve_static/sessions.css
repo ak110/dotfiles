@@ -1,14 +1,9 @@
 /* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
 
-html, body { height: 100%; }
-
 /* 書体・文字サイズ・行の高さを`markdown.css`へそろえ、右ペインの本文を計画ファイル画面の本文と同じ表示にする。 */
 body {
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   font-family: "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
   color: #1a1a1a;
   font-size: 1.125rem;

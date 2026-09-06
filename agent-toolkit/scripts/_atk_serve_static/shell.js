@@ -23,6 +23,17 @@ window.__atkScreens = window.__atkScreens || {};
 
   function createContinuation(isCurrent) {
     const continuation = () => isCurrent();
+    continuation.restoreOnSettle = (pending, restore) => {
+      const restoreSafely = () => {
+        try {
+          restore();
+        } catch (_) {
+          // 復元処理の失敗で、本来の非同期処理の成功・失敗を変えない。
+        }
+      };
+      pending.then(restoreSafely, restoreSafely);
+      return pending;
+    };
     continuation.wait = async (pending) => {
       try {
         const value = await pending;
@@ -32,6 +43,7 @@ window.__atkScreens = window.__atkScreens || {};
       }
       // 失効した処理の成功・失敗を呼び出し元へ返すと、catchやfinallyを含む継続が
       // 現行画面へ触れ得る。未完了のまま切り離し、継続をこの入口だけで遮断する。
+      // 保持DOMの一時状態は、待機前に`restoreOnSettle`へ登録して処理の終了時に復元する。
       return new Promise(() => {});
     };
     return continuation;

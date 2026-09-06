@@ -27,8 +27,16 @@
   --font-size-secondary: 0.875rem;
 }
 
-/* 画面の入れ替え単位。各画面のレイアウトは`body`の直接の子を前提とするため、
-   包む要素自身はレイアウトへ関与させない。 */
+html, body { height: 100%; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 画面の入れ替え単位。ヘッダーを固定したflex配置へ各画面の本文を直接参加させるため、
+   包む要素自身はレイアウトへ関与させない。画面固有の本文要素が残りの高さとスクロールを担う。 */
 #screen-root {
   display: contents;
 }
@@ -71,6 +79,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .app-header {
   --header-line-height: 1.55;
   position: sticky;
+  flex: 0 0 auto;
   z-index: 10;
   top: 0;
   display: grid;

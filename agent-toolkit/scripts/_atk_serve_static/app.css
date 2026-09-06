@@ -34,8 +34,9 @@ textarea { resize: vertical; }
   white-space: nowrap;
 }
 .app-header {
-  padding-inline: max(var(--space-3), calc((100vw - 1800px) / 2));
+  padding-inline: max(var(--space-3), calc((100% - 1800px) / 2));
 }
+.wi-screen-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .header-title, .header-actions, .pane-heading, .detail-title-row, .dialog-footer {
   display: flex;
   align-items: center;
@@ -141,12 +142,12 @@ textarea { resize: vertical; }
 .entry-pane { min-height: 34rem; }
 .entry-columns, .entry-row {
   display: grid;
-  /* ファイル名と要約を主情報として幅を配分し、末尾にコピー操作を置く。 */
+  /* 識別子と状態の列幅を固定し、要約だけへ残りの幅を配分する。 */
   grid-template-columns:
-    minmax(8rem, 0.9fr)
-    minmax(7rem, 0.9fr)
-    minmax(7rem, 0.8fr)
-    minmax(16rem, 3fr)
+    15rem
+    14rem
+    15rem
+    minmax(0, 1fr)
     auto;
   gap: var(--space-2);
   align-items: center;
@@ -190,8 +191,12 @@ textarea { resize: vertical; }
 }
 .entry-cell { min-width: 0; overflow-wrap: anywhere; }
 .entry-cell::before { display: none; }
-.filename-cell, .target-repo-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-cell { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
+.filename-cell, .target-repo-cell, .summary-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-cell { display: flex; flex-wrap: nowrap; gap: var(--space-1); align-items: center; white-space: nowrap; }
 .time-cell { font-size: var(--font-size-secondary); }
 .entry-kind { font-weight: 700; }
 .state-badge, .plan-badge, .attention-badge {

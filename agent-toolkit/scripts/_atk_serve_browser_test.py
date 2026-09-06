@@ -2267,6 +2267,186 @@ async def test_navigation_connects_only_the_visible_screen_dom(screen_harness: _
 
 
 @pytest.mark.asyncio
+async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harness: _ScreenHarness) -> None:
+    """最長の状態表示を含む一覧でも固定列を折り返さず、全行を同じ高さで描画する。"""
+    processing = screen_harness.plan_path.parent.parent / "processing"
+    processing.mkdir()
+    (processing / "20260906-123456-001.md").write_text(
+        "---\ntype: uwi\ntarget_repo: example/long-repository\nsource: human\n"
+        "plan_file: /tmp/plan.md\n---\n\n長い要約を持つ確認事項 "
+        + "要約" * 80
+        + "\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n",
+        encoding="utf-8",
+    )
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 1600, "height": 800})
+    await page.goto(screen_harness.base_url + "/")
+    rows = page.locator("#entry-list .entry-row")
+    await playwright.async_api.expect(rows).to_have_count(5)
+
+    metrics = await rows.evaluate_all(
+        """rows => rows.map(row => {
+          const filename = row.querySelector('.filename-cell');
+          const status = row.querySelector('.status-cell');
+          const childHeights = Array.from(status.children, child => child.getBoundingClientRect().height);
+          return {
+            height: row.getBoundingClientRect().height,
+            filenameClientWidth: filename.clientWidth,
+            filenameScrollWidth: filename.scrollWidth,
+            statusHeight: status.getBoundingClientRect().height,
+            tallestStatusChild: Math.max(...childHeights)
+          };
+        })"""
+    )
+    assert len({round(metric["height"], 1) for metric in metrics}) == 1
+    assert all(metric["filenameScrollWidth"] <= metric["filenameClientWidth"] for metric in metrics)
+    assert all(metric["statusHeight"] <= metric["tallestStatusChild"] + 1 for metric in metrics)
+
+
+@pytest.mark.asyncio
+async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _ScreenHarness) -> None:
+    """3画面ともビューポートではなくヘッダー下の本文要素をスクロールする。"""
+    screen_harness.plan_path.write_text(
+        "# 長い計画\n\n" + "\n\n".join(f"計画の段落{index}" for index in range(60)) + "\n",
+        encoding="utf-8",
+    )
+    session_path = next((screen_harness.root.parent / "claude").rglob("*.jsonl"))
+    with session_path.open("a", encoding="utf-8") as stream:
+        for index in range(40):
+            stream.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "timestamp": f"2026-09-01T00:20:{index:02d}Z",
+                        "message": {"content": f"スクロール用の発話{index}"},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 900, "height": 240})
+    for path, selector in (("/", ".wi-screen-scroll"), ("/plans", "main"), ("/sessions", "main")):
+        await page.goto(screen_harness.base_url + path)
+        scrollable = page.locator(selector)
+        await scrollable.wait_for(state="visible")
+        if path == "/plans":
+            await page.locator("#preview h1", has_text="長い計画").wait_for(state="visible")
+        elif path == "/sessions":
+            await page.locator("#sessions .session-item").first.click()
+            await page.locator("#detail details").first.wait_for(state="visible")
+        metrics = await scrollable.evaluate(
+            """element => {
+              element.scrollTop = element.scrollHeight;
+              const header = document.querySelector('.app-header').getBoundingClientRect();
+              const rect = element.getBoundingClientRect();
+              return {
+                documentClientHeight: document.scrollingElement.clientHeight,
+                documentScrollHeight: document.scrollingElement.scrollHeight,
+                clientHeight: element.clientHeight,
+                scrollHeight: element.scrollHeight,
+                headerTop: header.top,
+                headerBottom: header.bottom,
+                contentTop: rect.top
+              };
+            }"""
+        )
+        assert metrics["documentScrollHeight"] <= metrics["documentClientHeight"], path
+        assert metrics["scrollHeight"] > metrics["clientHeight"], path
+        assert abs(metrics["headerTop"]) <= 1, path
+        assert metrics["contentTop"] >= metrics["headerBottom"] - 1, path
+
+
+@pytest.mark.parametrize("sync_succeeds", [True, False], ids=["success", "failure"])
+@pytest.mark.asyncio
+async def test_sync_state_restores_when_response_settles_while_away(
+    screen_harness: _ScreenHarness,
+    sync_succeeds: bool,
+) -> None:
+    """離脱中に同期が確定しても保持DOMのボタンを復元し、失効した結果を表示へ反映しない。"""
+    page = screen_harness.page
+    requested = asyncio.Event()
+    release = asyncio.Event()
+    fulfilled = asyncio.Event()
+    request_count = 0
+
+    async def delay_sync(route: playwright.async_api.Route) -> None:
+        nonlocal request_count
+        request_count += 1
+        if request_count == 1:
+            await route.continue_()
+            return
+        response = await route.fetch() if sync_succeeds else None
+        requested.set()
+        await release.wait()
+        if response is None:
+            await route.fulfill(status=500, json={"error": "離脱中の同期失敗"})
+        else:
+            await route.fulfill(response=response)
+        fulfilled.set()
+
+    await page.route("**/api/sync", delay_sync)
+    await page.goto(screen_harness.base_url + "/")
+    refresh = page.locator("#refresh-button")
+    await refresh.click()
+    await asyncio.wait_for(requested.wait(), timeout=5)
+    await playwright.async_api.expect(refresh).to_be_disabled()
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    preview_before = await page.locator("#preview").inner_text()
+    release.set()
+    await asyncio.wait_for(fulfilled.wait(), timeout=5)
+    await page.wait_for_timeout(50)
+    assert await page.locator("#preview").inner_text() == preview_before
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+    await playwright.async_api.expect(refresh).to_have_text("今すぐ同期")
+    await playwright.async_api.expect(refresh).to_be_enabled()
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#global-error")).to_be_hidden()
+    await page.unroute("**/api/sync", delay_sync)
+    async with page.expect_response("**/api/sync"):
+        await refresh.click()
+
+
+@pytest.mark.asyncio
+async def test_list_loading_counts_requests_that_finish_while_away(screen_harness: _ScreenHarness) -> None:
+    """旧取得の完了では後続取得の表示を解除せず、各取得の完了後に保持DOMを復元する。"""
+    page = screen_harness.page
+    first_requested = asyncio.Event()
+    second_requested = asyncio.Event()
+    release_first = asyncio.Event()
+    release_second = asyncio.Event()
+    request_count = 0
+
+    async def delay_entries(route: playwright.async_api.Route) -> None:
+        nonlocal request_count
+        request_count += 1
+        response = await route.fetch()
+        if request_count == 1:
+            first_requested.set()
+            await release_first.wait()
+        elif request_count == 2:
+            second_requested.set()
+            await release_second.wait()
+        await route.fulfill(response=response)
+
+    await page.route("**/api/entries?*", delay_entries)
+    await page.goto(screen_harness.base_url + "/")
+    await asyncio.wait_for(first_requested.wait(), timeout=5)
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+    await asyncio.wait_for(second_requested.wait(), timeout=5)
+    release_first.set()
+    await page.wait_for_timeout(50)
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+    release_second.set()
+    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
+    await page.unroute("**/api/entries?*", delay_entries)
+
+
+@pytest.mark.asyncio
 async def test_remount_does_not_duplicate_plan_navigation_listeners(screen_harness: _ScreenHarness) -> None:
     """計画画面を再mountした後も、1回の次項目操作で一覧を1件だけ進める。"""
     harness = screen_harness
@@ -2694,11 +2874,11 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
     harness = screen_harness
     await harness.page.set_viewport_size({"width": 600, "height": 800})
 
-    for path in ("/plans", "/sessions"):
+    for path, selector in (("/", ".wi-screen-scroll"), ("/plans", "#app"), ("/sessions", "#app")):
         await harness.page.goto(harness.base_url + path)
         header = harness.page.locator(".app-header")
         await header.wait_for(state="visible")
-        pane = harness.page.locator("#app")
+        pane = harness.page.locator(selector)
         await pane.wait_for(state="visible")
         header_box = await header.bounding_box()
         pane_box = await pane.bounding_box()

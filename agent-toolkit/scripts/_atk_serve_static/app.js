@@ -189,16 +189,19 @@ async function runPending(key, {container, button, busyLabel}, operation) {
   button.classList.add('is-pending');
   button.setAttribute('aria-busy', 'true');
   container.setAttribute('aria-busy', 'true');
+  const restorePendingState = () => {
+    controls.forEach((control, index) => { control.disabled = previous[index]; });
+    button.textContent = originalLabel;
+    button.classList.remove('is-pending');
+    button.setAttribute('aria-busy', 'false');
+    container.setAttribute('aria-busy', 'false');
+    pendingOperations.delete(key);
+  };
+  const pending = Promise.resolve().then(operation);
   try {
-    return await currentMount.wait(operation());
+    return await currentMount.wait(currentMount.restoreOnSettle(pending, restorePendingState));
   } finally {
     if (currentMount()) {
-      controls.forEach((control, index) => { control.disabled = previous[index]; });
-      button.textContent = originalLabel;
-      button.classList.remove('is-pending');
-      button.setAttribute('aria-busy', 'false');
-      container.setAttribute('aria-busy', 'false');
-      pendingOperations.delete(key);
       syncFilterDependencies();
       syncDetailMutationAvailability();
       restoreRefreshFocus();
@@ -382,19 +385,35 @@ function hasSearchFallbackFilters(query) {
     query.get('answered') !== 'all' || query.has('target_repo') || query.has('source_kind');
 }
 
-function setListLoading(value) {
-  pendingListRequests += value ? 1 : -1;
-  pendingListRequests = Math.max(0, pendingListRequests);
-  const loading = pendingListRequests > 0;
-  byId('loading-indicator').hidden = !loading;
-  byId('entry-list').setAttribute('aria-busy', String(loading));
-  renderPagination();
+function captureListLoadingView() {
+  return {
+    indicator: byId('loading-indicator'),
+    list: byId('entry-list'),
+    previous: byId('previous-page-button'),
+    next: byId('next-page-button'),
+    status: byId('pagination-status')
+  };
 }
 
-function renderPagination() {
-  const previous = byId('previous-page-button');
-  const next = byId('next-page-button');
-  const status = byId('pagination-status');
+function renderListLoading(view = captureListLoadingView()) {
+  const loading = pendingListRequests > 0;
+  view.indicator.hidden = !loading || entries.length > 0;
+  view.list.setAttribute('aria-busy', String(loading));
+  renderPagination(view);
+}
+
+function beginListRequest(view) {
+  pendingListRequests += 1;
+  renderListLoading(view);
+}
+
+function endListRequest(view) {
+  pendingListRequests = Math.max(0, pendingListRequests - 1);
+  renderListLoading(view);
+}
+
+function renderPagination(view = captureListLoadingView()) {
+  const {previous, next, status} = view;
   if (!previous || !next || !status) return;
   const page = pagination.page || currentPage;
   const pageCount = pagination.page_count || 1;
@@ -447,47 +466,56 @@ async function loadEntries({announce = false} = {}) {
   const searchTerm = query.get('q') || '';
   const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
   const generation = ++listRequestGeneration;
-  setListLoading(true);
-  try {
-    const payload = await currentMount.wait(api(`/api/entries?${query.toString()}`));
-    if (!currentMount() || generation !== listRequestGeneration) return entries;
-    const initialEntries = Array.isArray(payload.entries) ? payload.entries : [];
-    let selectedPayload = payload;
-    let searchFallback = false;
-    let fallbackError = null;
-    if (canSearchFallback && initialEntries.length === 0) {
-      try {
-        const fallbackQuery = new URLSearchParams({q: searchTerm, page: String(currentPage)});
-        const fallbackPayload = await currentMount.wait(api(`/api/entries?${fallbackQuery.toString()}`));
-        if (!currentMount() || generation !== listRequestGeneration) return entries;
-        const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
-        if (fallbackEntries.length > 0 && fallbackEntries.length <= SEARCH_FALLBACK_MAX_RESULTS) {
-          selectedPayload = fallbackPayload;
-          searchFallback = true;
+  const loadingView = captureListLoadingView();
+  beginListRequest(loadingView);
+  const pending = (async () => {
+    try {
+      const payload = await api(`/api/entries?${query.toString()}`);
+      if (!currentMount() || generation !== listRequestGeneration) return entries;
+      const initialEntries = Array.isArray(payload.entries) ? payload.entries : [];
+      let selectedPayload = payload;
+      let searchFallback = false;
+      let fallbackError = null;
+      if (canSearchFallback && initialEntries.length === 0) {
+        try {
+          const fallbackQuery = new URLSearchParams({q: searchTerm, page: String(currentPage)});
+          const fallbackPayload = await api(`/api/entries?${fallbackQuery.toString()}`);
+          if (!currentMount() || generation !== listRequestGeneration) return entries;
+          const fallbackEntries = Array.isArray(fallbackPayload.entries) ? fallbackPayload.entries : [];
+          if (fallbackEntries.length > 0 && fallbackEntries.length <= SEARCH_FALLBACK_MAX_RESULTS) {
+            selectedPayload = fallbackPayload;
+            searchFallback = true;
+          }
+        } catch (error) {
+          fallbackError = error;
         }
-      } catch (error) {
-        fallbackError = error;
       }
-    }
-    if (!currentMount() || generation !== listRequestGeneration) return entries;
-    entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
-    applyPagination(selectedPayload);
-    const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
-    if (selected) currentEntry = {...currentEntry, ...selected};
-    const shouldAnnounce = pendingListAnnouncement;
-    pendingListAnnouncement = false;
-    renderList(Array.isArray(selectedPayload.warnings) ? selectedPayload.warnings : [], shouldAnnounce, searchFallback);
-    if (fallbackError) setGlobalError(fallbackError.message);
-    return entries;
-  } catch (error) {
-    if (currentMount() && generation === listRequestGeneration) {
+      if (!currentMount() || generation !== listRequestGeneration) return entries;
+      entries = Array.isArray(selectedPayload.entries) ? selectedPayload.entries : [];
+      applyPagination(selectedPayload);
+      const selected = entries.find(item => entryKey(item) === entryKey(currentEntry));
+      if (selected) currentEntry = {...currentEntry, ...selected};
+      const shouldAnnounce = pendingListAnnouncement;
       pendingListAnnouncement = false;
-      setGlobalError(error.message);
+      renderList(
+        Array.isArray(selectedPayload.warnings) ? selectedPayload.warnings : [],
+        shouldAnnounce,
+        searchFallback
+      );
+      if (fallbackError) setGlobalError(fallbackError.message);
+      return entries;
+    } catch (error) {
+      if (currentMount() && generation === listRequestGeneration) {
+        pendingListAnnouncement = false;
+        setGlobalError(error.message);
+      }
+      return entries;
     }
-    return entries;
-  } finally {
-    if (currentMount()) setListLoading(false);
-  }
+  })();
+  return currentMount.wait(currentMount.restoreOnSettle(
+    pending,
+    () => endListRequest(loadingView)
+  ));
 }
 
 function syncNotificationButton() {
