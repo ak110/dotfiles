@@ -178,3 +178,13 @@ def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
 
     for description, _satisfied in _managed_temp._PREFIX_RULES:  # pylint: disable=protected-access
         assert description in help_text
+
+
+def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    description = commands["atk plans checkout"].description
+
+    assert description is not None
+    assert "未送信commitをremoteへpush" in description
+    assert "remoteの変更をprivate-notesへpull" in description
+    assert "private-notesの内容は変更しない" not in description

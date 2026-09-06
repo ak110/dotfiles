@@ -169,6 +169,47 @@ def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) 
     assert snapshots == {detail.name: detail.read_bytes(), main.name: main.read_bytes()}
 
 
+def test_checkout_syncs_remote_before_reading_saved_bundle(tmp_path: pathlib.Path) -> None:
+    """remoteだけが新しい場合も同期後の保存元を取得する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    other = tmp_path / "other-notes"
+    _init_remote_notes(notes, remote)
+    relative = pathlib.Path("2026/08/30-remote同期-d4f9.md")
+    saved_main, _detail = _create_saved_plan(notes, relative)
+    _git(notes, "push")
+    _clone_notes(remote, other)
+    other_main = other / "plans" / relative
+    other_main.write_text("# remote latest\n", encoding="utf-8")
+    _git(other, "add", "plans")
+    _git(other, "commit", "-m", "update saved plan")
+    _git(other, "push")
+
+    copied = _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    working_main = next(path for path in copied if path.name == saved_main.name)
+    assert working_main.read_text(encoding="utf-8") == "# remote latest\n"
+    assert saved_main.read_text(encoding="utf-8") == "# remote latest\n"
+
+
+def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) -> None:
+    """取得済み拒否は記録回収と再取得のコマンドを示す。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-再取得-d4f9.md")
+    main, _detail = _create_saved_plan(notes, relative)
+    _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    with pytest.raises(_common.WebInputError) as exc_info:
+        _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
+
+    message = str(exc_info.value)
+    assert f"atk plans commit {main.name}" in message
+    assert f"atk plans checkout {relative}" in message
+
+
 def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
     """計画契約なしの再帰的CI失敗で同じ表を取得、更新、再保存できる。"""
     home = tmp_path / "home"
@@ -334,8 +375,12 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
         _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
     )
 
-    with pytest.raises(_common.WebInputError, match="取得後に保存元"):
+    with pytest.raises(_common.WebInputError, match="取得後に保存元") as exc_info:
         _atk_plans.commit_plan(notes, main.name, home=home)
+
+    assert "相違した対象" in str(exc_info.value)
+    assert "作業root外へ退避" in str(exc_info.value)
+    assert f"atk plans checkout {relative}" in str(exc_info.value)
 
     assert (
         _atk_plans._bundle_contents(  # pylint: disable=protected-access
@@ -1269,6 +1314,23 @@ def test_rewrite_references_replaces_only_matching_stem(tmp_path: pathlib.Path) 
     assert f"{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/08/30-別計画-c3d4.bugs.md" in detail_text
 
 
+def test_rewrite_plan_references_saves_lf(tmp_path: pathlib.Path) -> None:
+    """CRLFの保存済み計画を書き換えた後はLFのbytesで保存する。"""
+    notes = tmp_path / "private-notes"
+    remote = tmp_path / "origin.git"
+    _init_remote_notes(notes, remote)
+    stem = "01-改行保存-1a2b"
+    main, _detail = _saved_plan_with_references(notes, stem)
+    main.write_bytes(main.read_bytes().replace(b"\n", b"\r\n"))
+    _git(notes, "add", "-A")
+    _git(notes, "commit", "-m", "add CRLF plan")
+    _git(notes, "push")
+
+    _atk_plans.rewrite_plan_references(notes)
+
+    assert b"\r" not in main.read_bytes()
+
+
 def test_rewrite_references_replaces_reference_with_spaces_in_file_name(tmp_path: pathlib.Path) -> None:
     """ファイル名が空白を含む計画の参照も書き換える。"""
     notes = tmp_path / "private-notes"
@@ -1506,8 +1568,8 @@ def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pa
     assert updated_by_path[str(owned)] == datetime.datetime.fromtimestamp(1_700_000_500).astimezone().isoformat()
 
 
-def test_list_removes_orphan_sidecar_locks(tmp_path: pathlib.Path) -> None:
-    """一覧は本体を失ったロックだけを回収し、稼働中のロックと共有ロックを残す。"""
+def test_list_removes_legacy_sidecar_lock_even_when_table_exists(tmp_path: pathlib.Path) -> None:
+    """一覧は本体の有無を問わず旧sidecarロックを回収し、共有ロックを残す。"""
     home = tmp_path / "home"
     working_root = _plan_file.working_plans_root(home)
     working_root.mkdir(parents=True)
@@ -1526,7 +1588,7 @@ def test_list_removes_orphan_sidecar_locks(tmp_path: pathlib.Path) -> None:
 
     assert [entry["path"] for entry in entries] == [str(plan)]
     assert not orphan_lock.exists()
-    assert live_lock.exists()
+    assert not live_lock.exists()
     assert shared_lock.exists()
 
 

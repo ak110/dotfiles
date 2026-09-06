@@ -333,13 +333,18 @@ def _remove_checkout_record(relative_main: pathlib.Path) -> None:
     root.rmdir()
 
 
-def _write_checkout_record(relative_main: pathlib.Path, snapshots: dict[str, bytes]) -> None:
+def _write_checkout_record(
+    relative_main: pathlib.Path,
+    snapshots: dict[str, bytes],
+    *,
+    duplicate_message: str,
+) -> None:
     """取得元と取得時点のbytesをcheckout記録へ排他的に保存する。"""
     root = _checkout_record_root(relative_main)
     try:
         root.mkdir(parents=True, exist_ok=False)
     except FileExistsError as error:
-        raise _common.WebInputError(f"同じ計画を取得済みです: {relative_main}") from error
+        raise _common.WebInputError(duplicate_message) from error
     try:
         files_root = root / "files"
         files_root.mkdir()
@@ -364,32 +369,43 @@ def checkout_plan(
     if plan_file.endswith(".exec-review.tsv"):
         return checkout_ci_review(private_notes, plan_file, home=home)
     relative_main = _validate_saved_plan_relative_path(plan_file)
-    if _checkout_record_root(relative_main).exists():
-        raise _common.WebInputError(f"同じ計画を取得済みです: {relative_main}")
-    saved_bundle = _saved_plan_bundle(private_notes, relative_main)
-    if not saved_bundle:
-        raise _common.WebInputError(f"指定したメイン計画が見つかりません: {relative_main}")
     working_root = _plan_file.working_plans_root(home)
-    destinations = tuple(working_root / path.name for path in saved_bundle)
-    conflicts = tuple(path for path in destinations if path.exists())
-    if conflicts:
-        raise _common.WebInputError(f"作業rootに同名ファイルがあります: {conflicts[0]}")
-    snapshots = {path.name: path.read_bytes() for path in saved_bundle}
-    working_root.mkdir(parents=True, exist_ok=True)
-    copied: list[pathlib.Path] = []
-    try:
-        for destination in destinations:
-            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, "wb") as output:
-                output.write(snapshots[destination.name])
-            copied.append(destination)
-        _write_checkout_record(relative_main, snapshots)
-    except Exception:
-        for path in copied:
-            path.unlink(missing_ok=True)
-        raise
-    _plan_file.record_plan_owner(working_root / relative_main.name)
-    return destinations
+    working_main = working_root / relative_main.name
+    duplicate_message = (
+        f"同じ計画を取得済みです: {relative_main}。作業root直下に当該計画バンドルがある場合は、"
+        "それが取得結果のため再取得は不要です。作業root直下に当該計画バンドルが無い場合は、"
+        f"`atk plans commit {working_main.name}`で取得記録を回収してから"
+        f"`atk plans checkout {relative_main}`を実行してください。"
+    )
+    with _atk_git_sync.repo_lock(private_notes):
+        if _checkout_record_root(relative_main).exists():
+            raise _common.WebInputError(duplicate_message)
+        if _atk_git_sync.has_remote(private_notes):
+            _atk_git_sync.push_pending_commits(private_notes)
+            _atk_git_sync.pull(private_notes)
+        saved_bundle = _saved_plan_bundle(private_notes, relative_main)
+        if not saved_bundle:
+            raise _common.WebInputError(f"指定したメイン計画が見つかりません: {relative_main}")
+        destinations = tuple(working_root / path.name for path in saved_bundle)
+        conflicts = tuple(path for path in destinations if path.exists())
+        if conflicts:
+            raise _common.WebInputError(f"作業rootに同名ファイルがあります: {conflicts[0]}")
+        snapshots = {path.name: path.read_bytes() for path in saved_bundle}
+        working_root.mkdir(parents=True, exist_ok=True)
+        copied: list[pathlib.Path] = []
+        try:
+            for destination in destinations:
+                descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(snapshots[destination.name])
+                copied.append(destination)
+            _write_checkout_record(relative_main, snapshots, duplicate_message=duplicate_message)
+        except Exception:
+            for path in copied:
+                path.unlink(missing_ok=True)
+            raise
+        _plan_file.record_plan_owner(working_main)
+        return destinations
 
 
 def checkout_ci_review(
@@ -400,25 +416,35 @@ def checkout_ci_review(
 ) -> tuple[pathlib.Path, ...]:
     """保存済みの独立CI実装レビュー表を計画作業rootへ取得する。"""
     relative = _validate_saved_ci_review_relative_path(review_table)
-    if _checkout_record_root(relative).exists():
-        raise _common.WebInputError(f"同じ独立CI実装レビュー表を取得済みです: {relative}")
-    saved = _plan_file.new_plans_root(private_notes) / relative
-    if saved.is_symlink() or not saved.is_file():
-        raise _common.WebInputError(f"指定した独立CI実装レビュー表が見つかりません: {relative}")
     working = _plan_file.working_plans_root(home) / relative.name
-    if working.exists():
-        raise _common.WebInputError(f"作業rootに同名ファイルがあります: {working}")
-    content = saved.read_bytes()
-    working.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        descriptor = os.open(working, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as output:
-            output.write(content)
-        _write_checkout_record(relative, {relative.name: content})
-    except Exception:
-        working.unlink(missing_ok=True)
-        raise
-    return (working,)
+    duplicate_message = (
+        f"同じ独立CI実装レビュー表を取得済みです: {relative}。作業root直下に当該表がある場合は、"
+        "それが取得結果のため再取得は不要です。作業root直下に当該表が無い場合は、"
+        f"`atk plans commit {working.name}`で取得記録を回収してから"
+        f"`atk plans checkout {relative}`を実行してください。"
+    )
+    with _atk_git_sync.repo_lock(private_notes):
+        if _checkout_record_root(relative).exists():
+            raise _common.WebInputError(duplicate_message)
+        if _atk_git_sync.has_remote(private_notes):
+            _atk_git_sync.push_pending_commits(private_notes)
+            _atk_git_sync.pull(private_notes)
+        saved = _plan_file.new_plans_root(private_notes) / relative
+        if saved.is_symlink() or not saved.is_file():
+            raise _common.WebInputError(f"指定した独立CI実装レビュー表が見つかりません: {relative}")
+        if working.exists():
+            raise _common.WebInputError(f"作業rootに同名ファイルがあります: {working}")
+        content = saved.read_bytes()
+        working.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(working, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(content)
+            _write_checkout_record(relative, {relative.name: content}, duplicate_message=duplicate_message)
+        except Exception:
+            working.unlink(missing_ok=True)
+            raise
+        return (working,)
 
 
 def _copy_working_bundle(
@@ -620,6 +646,22 @@ def _plan_display_name(relative_main: pathlib.Path) -> str:
     return relative_main.stem
 
 
+def _checkout_conflict_differences(
+    recorded: dict[str, bytes],
+    working: dict[str, bytes],
+    saved: dict[str, bytes],
+    remote: dict[str, bytes],
+) -> str:
+    """取得時点・作業側の双方と異なる保存元を、相違の別とともに返す。"""
+    differences: list[str] = []
+    for name in sorted(recorded.keys() | working.keys() | saved.keys() | remote.keys()):
+        if saved.get(name) not in (recorded.get(name), working.get(name)):
+            differences.append(f"{name}（保存元が取得時点とも作業側とも異なる）")
+        if remote.get(name) not in (recorded.get(name), working.get(name)):
+            differences.append(f"{name}（保存元のremoteが取得時点とも作業側とも異なる）")
+    return "、".join(differences)
+
+
 def commit_plan(
     private_notes: pathlib.Path,
     plan_file: str,
@@ -698,7 +740,23 @@ def commit_plan(
                 recorded_contents,
                 working_contents,
             ):
-                raise _common.WebInputError(f"取得後に保存元の計画バンドルが変更されています: {relative_main}")
+                differences = _checkout_conflict_differences(
+                    recorded_contents,
+                    working_contents,
+                    saved_contents,
+                    remote_contents,
+                )
+                bundle_names = "、".join(sorted(working_contents))
+                raise _common.WebInputError(
+                    f"取得後に保存元の計画バンドルが変更されています: {relative_main}。"
+                    "取得時点・作業側・保存元の内容が一致しないため、どれを正とするかが確定するまで"
+                    f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
+                    f"作業root直下の{bundle_names}を作業root外へ退避します。"
+                    f"`atk plans commit {working_main.name}`を実行すると、作業バンドルが不在のため取得記録だけを回収します。"
+                    f"`atk plans checkout {relative_main}`でremoteと同期した保存元を取得し直します。"
+                    "退避した内容と取得した内容のどちらを正とするかを決めて作業root直下へ反映します。"
+                    f"`atk plans commit {working_main.name}`で保存します。"
+                )
             snapshots = _working_snapshots(working_bundle)
             if saved_contents == recorded_contents:
                 _update_saved_bundle(saved_main.parent, saved_bundle, working_contents)
@@ -775,7 +833,22 @@ def commit_ci_review(
                 recorded_contents,
                 working_contents,
             ):
-                raise _common.WebInputError(f"取得後に保存元の独立CI実装レビュー表が変更されています: {relative}")
+                differences = _checkout_conflict_differences(
+                    recorded_contents,
+                    working_contents,
+                    saved_contents,
+                    remote_contents,
+                )
+                raise _common.WebInputError(
+                    f"取得後に保存元の独立CI実装レビュー表が変更されています: {relative}。"
+                    "取得時点・作業側・保存元の内容が一致しないため、どれを正とするかが確定するまで"
+                    f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
+                    f"作業root直下の{working.name}を作業root外へ退避します。"
+                    f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
+                    f"`atk plans checkout {relative}`でremoteと同期した保存元を取得し直します。"
+                    "退避した内容と取得した内容のどちらを正とするかを決めて作業root直下へ反映します。"
+                    f"`atk plans commit {working.name}`で保存します。"
+                )
         elif saved_contents and saved_contents != working_contents:
             raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=saved))
         if saved_contents != working_contents:
@@ -809,7 +882,7 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     if not root.is_dir():
         return ()
-    _remove_orphan_sidecar_locks(root)
+    _remove_legacy_sidecar_locks(root)
     entries: list[dict[str, object]] = []
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file() or not _plan_file.is_plan_main_file(str(path)):
@@ -826,18 +899,16 @@ def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str
     return tuple(entries)
 
 
-def _remove_orphan_sidecar_locks(root: pathlib.Path) -> None:
-    """計画作業root配下で、対応する本体を失ったロックファイルを削除する。
+def _remove_legacy_sidecar_locks(root: pathlib.Path) -> None:
+    """計画作業root配下に残る旧版のsidecarロックを削除する。
 
-    レビュー指摘管理表のロックを兄弟ファイルとして置いていた旧版の生成物が対象であり、
-    表の削除後も残って計画の一覧と親ディレクトリの回収を妨げる。
-    計画作成の排他に使う共有ロックと、本体が実在するロックは残す。
-    削除できないファイルがあっても一覧の出力は続ける。
+    レビュー指摘管理表のロックを兄弟ファイルとして置いていた旧版の生成物が対象であり、現行版はロックを
+    計画作業rootの外へ置くため、いずれも読み書きしない。本体の表が実在するかで残置を分けると、表を
+    作業rootへ置いたままの計画で回収の契機が永久に訪れないため、本体の有無によらず削除する。
+    計画作成の排他に使う共有ロックは残す。削除できないファイルがあっても一覧の出力は続ける。
     """
     for path in root.rglob(f"*{_LOCK_SUFFIX}"):
         if path.name == _PLAN_CREATE_LOCK_NAME or path.is_symlink() or not path.is_file():
-            continue
-        if path.with_name(path.name.removesuffix(_LOCK_SUFFIX)).exists():
             continue
         with contextlib.suppress(OSError):
             path.unlink()
@@ -1330,7 +1401,7 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
         snapshot = _snapshot(changes)
         try:
             for path, content in changes.items():
-                path.write_text(content, encoding="utf-8")
+                path.write_bytes(_frontmatter.normalize_newlines(content).encode("utf-8"))
             relative_paths = tuple(_as_relative_notes_path(path, private_notes) for path in sorted(changes))
             _atk_git_sync.commit_and_push(
                 private_notes,
