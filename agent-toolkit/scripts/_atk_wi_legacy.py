@@ -12,7 +12,7 @@ from contextlib import AbstractContextManager
 from typing import Any
 
 from _atk_wi_constants import WI_TYPE_AWI, WI_TYPE_UWI
-from _atk_wi_frontmatter import parse_frontmatter, serialize_frontmatter
+from _atk_wi_frontmatter import parse_frontmatter, serialize_frontmatter, write_entry_text
 
 WI_STATE_INBOX = "inbox"
 WI_STATE_PLANNING = "planning"
@@ -137,7 +137,7 @@ def migrate_legacy_layout(
         planned = _plan_legacy_migration(private_notes, legacy_dirs)
         for source, destination, migrated in planned:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(migrated, encoding="utf-8")
+            write_entry_text(destination, migrated)
             source.unlink()
         legacy_names = [legacy_dir.name for legacy_dir in legacy_dirs]
         tracked_legacy_names = _tracked_names(private_notes, legacy_names)
@@ -288,7 +288,7 @@ def migrate_legacy_reservations(
                 data["depends_on"] = retained
                 changed = True
         if changed:
-            path.write_text(serialize_frontmatter(data, body), encoding="utf-8")
+            write_entry_text(path, serialize_frontmatter(data, body))
 
     for path in sorted(reservation_paths):
         if path.parent != processing_dir:

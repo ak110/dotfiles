@@ -3914,6 +3914,31 @@ class TestNoninteractiveEdit:
         assert "frontmatterが破損" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("with_target_repo", [False, True])
+def test_edit_accepts_crlf_entry_with_and_without_target_repo(
+    with_target_repo: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CRLFで保存済みの項目を対象リポジトリ指定の有無を問わず編集する。"""
+    notes = _setup_notes(tmp_path)
+    path = notes / "inbox" / "fb-001.md"
+    path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\nold\r\n")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    argv = ["wi", "edit", "fb-001.md", "新本文"]
+    if with_target_repo:
+        argv[2:2] = ["--target-repo", "github.com/example/foo"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert b"\r" not in path.read_bytes()
+    assert "新本文" in path.read_text(encoding="utf-8")
+    assert "    body_match: 一致\n" in capsys.readouterr().out
+
+
 class TestAppendEdit:
     """`edit --append`のraw bytes保持・競合・UWI拒否を検証する。"""
 
@@ -3951,6 +3976,42 @@ class TestAppendEdit:
 
         assert exc_info.value.code == 0
         assert path.read_bytes() == original + b"\n\n" + "追記本文".encode()
+
+    @pytest.mark.parametrize("agent_environment", [False, True])
+    @pytest.mark.parametrize("has_user_comment", [False, True])
+    def test_append_preserves_crlf_bytes_and_reports_match(
+        self,
+        agent_environment: bool,
+        has_user_comment: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """全追記経路で保持対象のCRLF bytesを変えず、保存本文の一致を報告する。"""
+        notes = _setup_notes(tmp_path)
+        path = notes / "inbox" / "fb-001.md"
+        body = "本文\r\n"
+        comment = "\r\n## ユーザーコメント\r\n\r\n記入済み\r\n" if has_user_comment else ""
+        path.write_bytes(("---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\n" + body + comment).encode())
+        original = path.read_bytes()
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+            monkeypatch.delenv(name, raising=False)
+        if agent_environment:
+            monkeypatch.setenv("AI_AGENT", "1")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        if agent_environment and has_user_comment:
+            marker = b"## " + "ユーザーコメント".encode()
+            before, saved_comment = original.split(marker, maxsplit=1)
+            expected = before + b"\n\n" + "追記本文".encode() + b"\n\n" + marker + saved_comment
+        else:
+            expected = original + b"\n\n" + "追記本文".encode()
+        assert path.read_bytes() == expected
+        assert "    body_match: 一致\n" in capsys.readouterr().out
 
     @pytest.mark.parametrize("answer", ["", "既存回答"])
     def test_append_rejects_uwi_before_writing(

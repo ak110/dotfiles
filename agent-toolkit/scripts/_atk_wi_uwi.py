@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 
+import _atk_wi_frontmatter as _frontmatter
 from _atk_wi_common import (
     WI_PROCESSABLE_STATES,
     WI_STATE_HOLD,
@@ -244,7 +245,7 @@ def answer_uwi(
                 raise
             raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
         try:
-            text = path.read_text(encoding="utf-8")
+            text = _frontmatter.decode_entry_text(path.read_bytes())
         except (OSError, UnicodeError) as error:
             if expected_content is None:
                 raise
@@ -259,7 +260,7 @@ def answer_uwi(
         content = text.rsplit(ANSWER_MARKER, maxsplit=1)[0] + ANSWER_MARKER + "\n" + answer.strip() + "\n"
         if text == content:
             return False
-        path.write_text(content, encoding="utf-8")
+        _frontmatter.write_entry_text(path, content)
         _commit_and_push(private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))])
     return True
 
@@ -329,7 +330,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if answered == snapshot:
             tmp_path.unlink(missing_ok=True)
             continue
-        edited_text = answered.decode("utf-8")
+        edited_text = _frontmatter.decode_entry_text(answered)
         if ANSWER_MARKER not in edited_text:
             print(f"回答欄マーカーがありません: {path.name}", file=sys.stderr)
             tmp_path.unlink(missing_ok=True)
@@ -339,7 +340,7 @@ def _cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 private_notes,
                 filename=path.name,
                 answer=edited_text.rsplit(ANSWER_MARKER, maxsplit=1)[1],
-                expected_content=snapshot.decode("utf-8"),
+                expected_content=_frontmatter.decode_entry_text(snapshot),
             )
         except RuntimeError:
             print(

@@ -1055,16 +1055,16 @@ def _resolve_removable_targets(
 
 def _atomic_write_text(path: pathlib.Path, content: str) -> None:
     """同一ディレクトリの一時ファイルから置換してUTF-8本文を原子的に保存する。"""
+    encoded = _frontmatter.normalize_newlines(content).encode("utf-8")
     temporary_path: pathlib.Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
+            mode="wb",
             dir=path.parent,
             prefix=f".{path.name}.",
             delete=False,
         ) as temporary:
-            temporary.write(content)
+            temporary.write(encoded)
             temporary.flush()
             temporary_path = pathlib.Path(temporary.name)
         temporary_path.replace(path)
@@ -1932,8 +1932,8 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             path = paths[0]
         snapshot = path.read_bytes()
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
-        _verify_target_repo_content(path, snapshot.decode("utf-8"), normalized_target_repo)
-    original = snapshot.decode("utf-8")
+        _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
+    original = _frontmatter.decode_entry_text(snapshot)
     tmp_path: pathlib.Path | None = None
     if message is None:
         assert editor is not None
@@ -2015,7 +2015,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         path = _resolve_processable_targets([args.filename], inbox_dir, processing_dir)[0]
         snapshot = path.read_bytes()
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
-        _verify_target_repo_content(path, snapshot.decode("utf-8"), normalized_target_repo)
+        _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
 
     original = snapshot.decode("utf-8")
     if is_agent_environment():

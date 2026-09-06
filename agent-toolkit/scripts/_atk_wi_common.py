@@ -60,7 +60,7 @@ from _atk_wi_formatters import (
     _truncate_target_repo,
     _uwi_body_summary,
 )
-from _atk_wi_frontmatter import parse_frontmatter
+from _atk_wi_frontmatter import parse_frontmatter, write_entry_text
 from _atk_wi_readiness import QueueEntry, ReadinessResult, _count_pending_entries, calculate_readiness
 from _uwi_scan import is_uwi_answered as _is_uwi_answered
 
@@ -553,7 +553,7 @@ def _stamp_result(
     if note:
         lines.append(f"- メモ: {note}")
     body += "\n".join(lines) + "\n"
-    path.write_text(body, encoding="utf-8")
+    write_entry_text(path, body)
 
 
 def _normalize_md_filename(filename: str) -> str:

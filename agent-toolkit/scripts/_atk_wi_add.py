@@ -63,7 +63,7 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落又は改変されて
     いないことを、呼び出し元が終了コードと出力だけで確定できるようにする。
     """
-    saved_body = path.read_text(encoding="utf-8")
+    saved_body = _frontmatter.decode_entry_text(path.read_bytes())
     parsed = _frontmatter.parse_frontmatter(saved_body)
     if parsed is None:
         raise WebInputError(f"保存済みエントリのfrontmatterを読み込めません: {path.name}")
@@ -303,8 +303,8 @@ def _add_entries_locked(
                 frontmatter_data["plan_file"] = plan_file
             if depends_on:
                 frontmatter_data["depends_on"] = list(depends_on)
-        content = _frontmatter.serialize_frontmatter(frontmatter_data, logical_body)
-        (inbox_dir / filename).write_text(content, encoding="utf-8")
+        content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
+        _frontmatter.write_entry_text(inbox_dir / filename, content)
         if entry_type != WI_TYPE_AWI:
             _uwi.warn_question_quality(filename, body, question_type)
         generated.append((filename, content))
@@ -415,7 +415,7 @@ def read_body_files(paths: list[str]) -> list[str]:
     for raw in paths:
         path = pathlib.Path(raw).expanduser()
         try:
-            bodies.append(path.read_text(encoding="utf-8"))
+            bodies.append(_frontmatter.normalize_newlines(path.read_text(encoding="utf-8")))
         except OSError as error:
             raise WebInputError(f"--body-fileの読み込みに失敗しました: {raw}（{error}）") from error
         except UnicodeDecodeError as error:

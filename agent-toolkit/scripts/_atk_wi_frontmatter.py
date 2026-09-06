@@ -5,6 +5,7 @@
 `_atk_wi_common.py`・`_atk_serve_app.py`・`_uwi_scan.py`がこのモジュールから一方向にimportする。
 """
 
+import pathlib
 import typing
 
 import yaml
@@ -41,6 +42,31 @@ for _tag in (
     "tag:yaml.org,2002:timestamp",
 ):
     _LiteralScalarLoader.add_constructor(_tag, _construct_literal_scalar)
+
+
+def normalize_newlines(text: str) -> str:
+    """CRLFとCRをLFへ正規化して返す。"""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def decode_entry_text(data: bytes) -> str:
+    """キュー項目のbytesをUTF-8で復号し、改行をLFへ正規化して返す。
+
+    読み取り時にテキストIOのユニバーサル改行処理を経ないため、Windowsで保存したCRLFの本文が
+    frontmatterの区切り照合と読み直した本文との一致判定を通らない。復号の時点で正規化して両者をそろえる。
+    保存bytesをそのまま保つ追記経路では、保存する内容の組み立てへ本関数を使わない。
+    """
+    return normalize_newlines(data.decode("utf-8"))
+
+
+def write_entry_text(path: pathlib.Path, content: str) -> None:
+    """キュー項目の本文をLF改行のUTF-8で保存する。
+
+    テキストモードの既定はプラットフォームの改行へ変換するため、Windowsで保存した本文がCRLFとなり、
+    bytesで読み直す経路がfrontmatterを解析できなくなる。本文をLFへ正規化したうえでテキストモードを
+    経ずに符号化して書き込み、保存形式を実行環境から独立させる。
+    """
+    path.write_bytes(normalize_newlines(content).encode("utf-8"))
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:

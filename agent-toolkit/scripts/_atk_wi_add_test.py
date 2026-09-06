@@ -1882,6 +1882,37 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
     assert saved_details[generated[0]]["body_match"] == "一致"
 
 
+@pytest.mark.parametrize("input_kind", ["position", "body-file"])
+def test_add_reports_body_match_for_crlf_inputs(
+    input_kind: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """位置引数と本文ファイルのCRLFをLFで保存し、保存本文との一致を報告する。"""
+    notes = _prepare_notes(tmp_path, monkeypatch)
+    message = "1行目\r\n2行目\r\n"
+    if input_kind == "body-file":
+        body_path = tmp_path / "body.md"
+        body_path.write_bytes(message.encode())
+        messages = add_module.read_body_files([str(body_path)])
+    else:
+        messages = [message]
+    saved_details: dict[str, dict[str, object | None]] = {}
+
+    generated = add_module.add_entries(
+        notes,
+        messages=messages,
+        target_repo="github.com/example/repo",
+        source="test",
+        now=_FIXED_DT,
+        saved_details=saved_details,
+    )
+
+    saved = (notes / "inbox" / generated[0]).read_bytes()
+    assert b"\r" not in saved
+    assert saved_details[generated[0]]["body_match"] == "一致"
+
+
 def test_cli_add_outputs_body_match_before_saved_body(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

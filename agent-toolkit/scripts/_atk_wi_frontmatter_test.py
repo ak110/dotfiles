@@ -1,10 +1,32 @@
 """frontmatterパーサー・直列化モジュールのテスト。"""
 
+import pathlib
 import typing
 
 import _atk_wi_frontmatter as frontmatter
 import pytest
 import yaml
+
+
+def test_write_entry_text_normalizes_crlf_without_text_mode(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """テキストモードを使わず、CRLFをLFのbytesで保存する。"""
+    path = tmp_path / "entry.md"
+
+    def fail_write_text(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("write_textを呼び出してはなりません")
+
+    monkeypatch.setattr(pathlib.Path, "write_text", fail_write_text)
+    frontmatter.write_entry_text(path, "1行目\r\n2行目\r3行目\n")
+
+    assert path.read_bytes() == "1行目\n2行目\n3行目\n".encode()
+
+
+def test_decode_entry_text_normalizes_crlf_and_cr() -> None:
+    """UTF-8のCRLFと単独CRをLFへ正規化する。"""
+    assert frontmatter.decode_entry_text(b"1\r\n2\r3\n") == "1\n2\n3\n"
 
 
 class TestParseFrontmatter:

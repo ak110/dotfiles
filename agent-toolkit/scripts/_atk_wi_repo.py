@@ -10,6 +10,7 @@ import subprocess
 import sys
 import typing
 
+import _atk_wi_frontmatter as _frontmatter
 import _git_remote
 from _atk_wi_common import (
     _commit_and_push,
@@ -218,7 +219,8 @@ def edit_entry(
         path = _validate_filename(filename, directory)
         if not path.is_file():
             raise FileNotFoundError(filename)
-        previous = path.read_text(encoding="utf-8")
+        previous = _frontmatter.decode_entry_text(path.read_bytes())
+        content = _frontmatter.normalize_newlines(content)
         normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
         _verify_target_repo_content(path, previous, normalized_target_repo)
         if expected_content is not None and previous != expected_content:
@@ -241,7 +243,7 @@ def edit_entry(
                 file=sys.stderr,
             )
             sys.exit(2)
-        path.write_text(content, encoding="utf-8")
+        _frontmatter.write_entry_text(path, content)
         _commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
     return True
 
@@ -269,8 +271,8 @@ def append_entry(
         if not path.is_file():
             raise FileNotFoundError(filename)
         previous_bytes = path.read_bytes()
-        previous = previous_bytes.decode("utf-8")
-        updated = content.decode("utf-8")
+        previous = _frontmatter.decode_entry_text(previous_bytes)
+        updated = _frontmatter.decode_entry_text(content)
         normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
         _verify_target_repo_content(path, previous, normalized_target_repo)
         if expected_content is not None and previous_bytes != expected_content:

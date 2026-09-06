@@ -1,5 +1,7 @@
 """session-review AWIのユーザーコメント節を抽出・更新する。"""
 
+import re
+
 import _atk_wi_frontmatter as frontmatter
 import markdown_it
 from markdown_it.token import Token
@@ -23,16 +25,35 @@ class UserCommentError(ValueError):
 
 def _body_parts(text: str) -> tuple[str, str]:
     """本文の前置き（frontmatter）とMarkdown本文を返す。"""
-    parsed = frontmatter.parse_frontmatter(text)
+    normalized = frontmatter.normalize_newlines(text)
+    parsed = frontmatter.parse_frontmatter(normalized)
     if parsed is None:
         return "", text
-    body = parsed[1]
-    return text[: len(text) - len(body)], body
+    normalized_body = parsed[1]
+    prefix_line_count = len(_line_segments(normalized[: len(normalized) - len(normalized_body)]))
+    segments = _line_segments(text)
+    return "".join(segments[:prefix_line_count]), "".join(segments[prefix_line_count:])
+
+
+def _line_segments(text: str) -> list[str]:
+    r"""行終端を含む行の並びを返す。連結すると入力へ復元できる。
+
+    行終端は`\r\n`・`\r`・`\n`とし、markdown-itが行番号を数える単位とそろえる。
+    `str.splitlines`はこれら以外の文字も行終端として扱い、行番号がずれるため用いない。
+    """
+    segments: list[str] = []
+    start = 0
+    for match in re.finditer(r"\r\n|\r|\n", text):
+        segments.append(text[start : match.end()])
+        start = match.end()
+    if start < len(text):
+        segments.append(text[start:])
+    return segments
 
 
 def _lines(text: str) -> list[str]:
     """行末を保持した行列を返す。"""
-    return text.splitlines(keepends=True)
+    return _line_segments(text)
 
 
 def _is_blank_line(line: str) -> bool:
@@ -54,7 +75,7 @@ def _normalize_comment(text: str) -> str:
 
 def _heading_tokens(text: str) -> list[tuple[Token, str]]:
     """H2の開きtokenと見出し本文tokenを対応付けて返す。"""
-    tokens = _MARKDOWN.parse(text)
+    tokens = _MARKDOWN.parse(frontmatter.normalize_newlines(text))
     headings: list[tuple[Token, str]] = []
     for index, token in enumerate(tokens[:-1]):
         if token.type != "heading_open" or token.tag != "h2" or token.map is None:
@@ -95,11 +116,17 @@ def extract_user_comment(text: str) -> str | None:
         return None
     lines = _lines(body)
     assert heading.map is not None
-    return _normalize_comment("".join(lines[heading.map[1] :]))
+    return _normalize_comment(frontmatter.normalize_newlines("".join(lines[heading.map[1] :])))
 
 
 def split_before_user_comment(text: str) -> tuple[str, str]:
-    """本文を予約見出しの直前までと予約見出し以降へ分けて返す。"""
+    """本文を予約見出しの直前までと予約見出し以降へ分けて返す。
+
+    戻り値はいずれも入力の部分文字列であり、連結すると入力へ復元できる。追記経路はこの戻り値を
+    符号化して保存bytesを組み立てるため、改行表現を変えると保存済みの内容が書き換わる。
+    予約見出しの位置は改行をLFへ正規化した写しに対して求め、得た行番号を入力の行へ写して切り出す。
+    呼び出し側は正規化していない原文を渡す。
+    """
     prefix, body = _body_parts(text)
     heading = _find_reserved_heading(body)
     if heading is None:
@@ -117,7 +144,7 @@ def has_reserved_heading(text: str) -> bool:
 
 def _validate_comment(text: str) -> str:
     """入力コメントを検証し、前後の空行を正規化する。"""
-    normalized = _normalize_comment(text)
+    normalized = _normalize_comment(frontmatter.normalize_newlines(text))
     if not normalized:
         raise UserCommentError("ユーザーコメントは空にできません")
     if any(token.type == "heading_open" and token.tag == "h2" for token in _MARKDOWN.parse(text)):
@@ -126,7 +153,11 @@ def _validate_comment(text: str) -> str:
 
 
 def update_user_comment(text: str, comment: str) -> str:
-    """予約節を追記又は置換し、更新後の全文を返す。"""
+    """予約節を追記又は置換し、更新後の全文を返す。
+
+    入力から保持する部分は部分文字列のまま用い、新たに書くコメント節だけをLFで組み立てる。
+    予約見出しの位置は改行をLFへ正規化した写しに対して求める。
+    """
     normalized = _validate_comment(comment)
     prefix, body = _body_parts(text)
     heading = _find_reserved_heading(body)

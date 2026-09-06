@@ -394,9 +394,12 @@ def add_batch_entries(
         )
         renames = {original: saved for original, saved in assignments.items() if original != saved}
         normalized_entries = [_normalize_plan_file(entry, private_notes) for entry in entries]
-        contents = [(assignments[entry.original_name], _rewrite_depends_on(entry, renames)) for entry in normalized_entries]
+        contents = [
+            (assignments[entry.original_name], _frontmatter.normalize_newlines(_rewrite_depends_on(entry, renames)))
+            for entry in normalized_entries
+        ]
         for filename, content in contents:
-            (inbox_dir / filename).write_text(content, encoding="utf-8")
+            _frontmatter.write_entry_text(inbox_dir / filename, content)
         warnings = _dependency_warnings(
             entries,
             assignments=assignments,
