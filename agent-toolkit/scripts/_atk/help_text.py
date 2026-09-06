@@ -276,6 +276,21 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table validate /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
+    "atk review-audit": {
+        "summary": "自動コードレビュー監査の判定済みreviewを記録する",
+        "description": "目的: 自動コードレビュー監査が分類を確定したreview本文の識別子を対象リポジトリごとに記録し、次回以降の判定対象から除けるようにする。\n利用場面: 自動コードレビュー監査が判定の前に記録を取得するとき。分類の確定後に識別子を記録するとき。\n対象と出力: `atk config get state_dir`が返すディレクトリ配下の`review-audit.json`を読み書きし、標準出力へ識別子を1件1行で書く。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。識別子はGraphQLのreviewが返す`databaseId`の正の整数とする。\n復元・後始末: 記録は分類の再導出を省く補助であり、失われた場合は次回の監査が同じ分類を再導出する。",
+        "epilog": "実行例:\n\n  atk review-audit list --repo=ak110/dotfiles\n  atk review-audit mark --repo=ak110/dotfiles 123456789",
+    },
+    "atk review-audit list": {
+        "summary": "判定済みreviewの識別子を列挙する",
+        "description": "目的: 指定したリポジトリについて記録済みのreview識別子を昇順で列挙する。\n利用場面: 自動コードレビュー監査が、取得したreview本文から判定済みのものを除くとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を読み取り、標準出力へ識別子を1件1行で書く。記録が無い場合は何も書かず終了コード0で終わる。ファイルは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk review-audit list --repo=ak110/dotfiles",
+    },
+    "atk review-audit mark": {
+        "summary": "判定済みreviewの識別子を記録する",
+        "description": "目的: 分類を確定したreview識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済み又は根拠付き対応不要と分類したreview本文を記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、更新後の当該リポジトリの識別子を昇順で標準出力へ書く。記録済みの識別子は重複させない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へ正の整数の識別子を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
+        "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 987654321",
+    },
 }
 
 

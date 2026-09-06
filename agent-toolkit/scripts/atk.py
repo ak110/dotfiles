@@ -17,7 +17,8 @@
 
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
 `atk agents-notify`・`atk wait-schedule`・
-`atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
+`atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
+`atk review-audit <sub>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -65,6 +66,7 @@ from _atk import git_sync as _atk_git_sync  # noqa: E402
 from _atk import help_text as _atk_help  # noqa: E402
 from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
 from _atk import plans as _plans  # noqa: E402
+from _atk import review_audit as _review_audit  # noqa: E402
 from _atk import review_table as _review_table  # noqa: E402
 from _atk import watch as _watch  # noqa: E402
 from _atk import worktree_stash as _worktree_stash  # noqa: E402
@@ -885,6 +887,7 @@ def _build_parser() -> argparse.ArgumentParser:
     watch = _atk_help.add_command(top, "watch", **_atk_help.HELP["atk watch"])
     _watch.build_parser(watch)
     _review_table.build_parser(top)
+    _review_audit.build_parser(top)
     return parser
 
 
@@ -1080,6 +1083,12 @@ def main(
     if args.command == "review-table":
         try:
             sys.exit(_review_table.dispatch(args))
+        except ValueError as error:
+            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
+    if args.command == "review-audit":
+        try:
+            sys.exit(_review_audit.dispatch(args))
         except ValueError as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
