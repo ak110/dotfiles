@@ -35,7 +35,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill",
+        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop",
         "hooks": [
           {
             "type": "command",
