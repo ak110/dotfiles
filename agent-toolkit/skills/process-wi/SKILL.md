@@ -47,7 +47,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
 2. ②レーンの計画から後始末
    - ①の出力を確定した後、②を開始するときだけ`references/run-lanes.md`を全文読む。
    - 各レーンの計画ファイルは、`references/run-lanes.md`がレーン種別ごとに定める最終化契機まで`~/.claude/plans`で更新し、当該契機でprivate-notesへ移動する。
-3. ③push、CI及び終了
+3. ③振り返り、push、CI及び終了
    - ②の全レーンが完了した後、③を開始するときだけ`references/finish-session.md`を全文読む。
 
 ## レーン
@@ -74,7 +74,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
   当該照合のための調査の委譲は本制限の対象にしない
   （「即時対応」に当たる実装の委譲先は同節が定める）
 
-- ③のpush、CI、CI失敗時の修正、固有の終端工程及び延期`adopt`は必ず終端担当へ委譲する。
+- ③では`agent-toolkit:session-review`、即時対応及び自動コードレビュー監査の処置確定を先に完了し、push、CI、CI失敗時の修正、固有の終端工程及び延期`adopt`を1回だけ終端担当へ委譲する。
   メインは`agent-toolkit:session-review`、自動コードレビュー監査、`agent-toolkit:completion-report`と`agent-toolkit:exit-session`を保持する
 
 ③の終端担当以外の委譲の要否は`agent-toolkit/rules/01-agent.md`「委譲の要否判定」節に従って判定し、
@@ -100,6 +100,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
      AWI本文では、即時対応で修正する問題箇所と、次セッションの正式な修正で扱う類似見直し・横展開の範囲を分けて書く。
      ユーザーの指示により生じた事象を含め、レーンを新設せず、既存レーンの対象へも渡さない。
 3. メインが自ら実施せず、サブエージェントに問題の解決からコミットまでを移譲する
+   - ③の`agent-toolkit:session-review`で複数の即時対応を確定した場合は、全項目を1件の委譲先へまとめ、項目又は工程ごとに分けない。
    - `agents_server.start`へ`model_type="execute"`を渡して委譲先を起動し、engine、model及びeffortの解決をサーバーへ委ねる。
    - 起動時は作業ディレクトリの絶対パス、適用する規範、`agent-toolkit/`配下の規範文書を改訂する許可を渡す。
      変更範囲を観測した問題箇所へ限定し、類似見直し及び横展開を実施しないことも委譲文へ明示する。
