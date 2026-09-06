@@ -4,9 +4,9 @@ import os
 import pathlib
 from collections.abc import Callable
 
-import _atk_config
 import agents_server_mcp as subject
 import pytest
+from _atk import config as _atk_config
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("AGENT_TOOLKIT_LIVE_AGENTS_TEST") != "1",

@@ -34,6 +34,27 @@ description: >
 - プロジェクト固有のツール、データ、命名、CI、運用経路へ依存する内容はプロジェクト側へ置く
 - 固有要素を同種の任意要素へ置換しても判定基準、工程順序、停止条件が成立する内容だけを配布物候補とする
 
+### scripts配下の配置
+
+`agent-toolkit/scripts/`直下には、配布物の外部から絶対パスで解決される入口だけを置く。
+入口は`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`とする。
+リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`も入口とする。
+実装モジュールは責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ置く。
+この6つを依存の層とし、この並び順を層の順序とする。
+後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
+同じ層の中のimportは制限しない。
+テスト専用の共有ヘルパーは`_testing`へ置く。
+`_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
+新しいモジュールの追加先は、当該モジュールを読み込む主体が属するサブパッケージで判定する。
+直下の入口は接頭辞`_`を付けずに命名する。
+`_managed_temp.py`だけは外部の許可判定が当該パスを解決するため名前を維持し、`agent-toolkit/scripts/script_prefix_test.py`が当該1件を除外する。
+
+サブパッケージ内のimportには絶対importを使う。
+`scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の検査の被覆が失われるためである。
+同スクリプトは層の順序に反するimportと、非テストモジュールからの`_testing`のimportを失敗として報告する。
+モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
+テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
+
 ### MCPサーバー識別子とホスト別ツール名
 
 - MCPサーバー識別子にはハイフンを使わず、アンダースコアで構成する。MCPツール名はホストごとの修飾規則が異なるため、片方の綴りを別ホストへ流用しない
@@ -105,7 +126,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/scripts/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
+整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。
@@ -130,7 +151,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`の編集は、生成差分もClaude配布一覧の変更も生じさせないが、バージョン更新の規定は適用する
-- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan_format.py`が構造定数として名称を持つものは、同ファイルを正本とする。
+- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan/structure.py`が構造定数として名称を持つものは、同ファイルを正本とする。
   改訂するときは同ファイルの構造定数を変更し、`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、
   `agent-toolkit/share/`配下の担当タスク文書、`docs/development/design.md`、`docs/development/concepts.md`及び
   `docs/guide/claude-code-guide.md`のうち当該名称を持つ記述を同じ変更単位でそろえる。

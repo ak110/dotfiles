@@ -18,8 +18,8 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"
 
 sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
-import _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _testing import fork_runner as _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:

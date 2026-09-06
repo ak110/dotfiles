@@ -34,7 +34,7 @@
 
 ## plan系
 
-- `working_plan_save_notified`: 計画作業rootに残る計画バンドルの保存確認をStopフックが促した事実を記録する。`agent-toolkit/scripts/plan_save_advisor.py`が記録し、同フックが再通知の抑止に読む。セッション終了まで保持し、リセット経路は設けない
+- `working_plan_save_notified`: 計画作業rootに残る計画バンドルの保存確認をStopフックが促した事実を記録する。`agent-toolkit/scripts/_hooks/plan_save_advisor.py`が記録し、同フックが再通知の抑止に読む。セッション終了まで保持し、リセット経路は設けない
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画ファイル検査の適用判定に使う
 - `current_plan_file_path`: 計画ファイル編集時のパスを記録する
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値を記録する。
@@ -53,9 +53,9 @@
   セッション終了まで保持し、リセット経路は設けない
 - `process_wi_skill_invoked`: process-wiスキルの起動を記録する。
   PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に偽へ戻す。セッション終了まで保持する
-- `autonomous_exit_invoked`: `agent-toolkit/scripts/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
-  `agent-toolkit/scripts/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
-- `last_user_prompt_at`: `agent-toolkit/scripts/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
+- `autonomous_exit_invoked`: `agent-toolkit/scripts/_hooks/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
+  `agent-toolkit/scripts/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
+- `last_user_prompt_at`: `agent-toolkit/scripts/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。
   ハーネスが挿入した通知とコマンド起動では記録も注入もしない。セッション終了まで保持し、リセット経路は設けない
 

@@ -6,10 +6,10 @@ import argparse
 import inspect
 from collections.abc import Iterator
 
-import _atk_help
 import _managed_temp
 import atk
 import pytest
+from _atk import help_text as _atk_help
 
 _DESCRIPTION_MARKERS = ("目的:", "利用場面:", "対象と出力:", "前提:", "復元・後始末:")
 

@@ -46,7 +46,7 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 
 2026年9月4日、agent-toolkit 2.94.0で次を実測した。
 `agents_server`の`start`で起動した委譲先のプロセス環境に`AGENT_TOOLKIT_DELEGATED_SESSION=1`が入る。
-`agent-toolkit/scripts/_agents_server_claude.py`の`_build_options`は、通常起動で`setting_sources`へ`user`と`project`を渡し、軽量起動で空リストを渡す。
+`agent-toolkit/scripts/_agents_server/claude.py`の`_build_options`は、通常起動で`setting_sources`へ`user`と`project`を渡し、軽量起動で空リストを渡す。
 `agent-toolkit/hooks/hooks.json`は`Stop`側と`SubagentStop`側へ別のフックを登録し、委譲先セッションでは`Stop`側のフックが判定を記録する。
 再検証は`agents_server`の通常起動で委譲先を1件起動し、当該委譲先のセッション記録に`Stop`側フックの結果が現れることと、`SubagentStop`側フックの記録が現れないことを対にして確認する。
 

@@ -124,9 +124,9 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 <https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
 本節は経路選択の方針だけを定める。
 
-イベントごとの出力契約の機械検査は`agent-toolkit/scripts/_hook_output_contract.py`を正本とする。
+イベントごとの出力契約の機械検査は`agent-toolkit/scripts/_hooks/output_contract.py`を正本とする。
 同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
-`agent-toolkit/scripts/hook_output_contract_test.py`が登録済みの全hookの出力を当該契約へ照合する。
+`agent-toolkit/scripts/_hooks/output_contract_test.py`が登録済みの全hookの出力を当該契約へ照合する。
 フックを追加又は変更する場合は、当該契約と検体を同じ変更単位で更新する。
 
 Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器が
@@ -140,7 +140,7 @@ PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェン�
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
 `systemMessage`の情報通知はユーザーの判断・操作に影響する事象に限って使い、決定論的で失敗しない自動補正の発動など、反復発動してユーザーの対応を要しない事象には付けない。
 Stop/SubagentStopで当該ターン継続を強制する用途は、エラーとして遮断する場合（振り返り誘導等）に`decision: "block"`＋`reason`を、フックの想定内の助言に`hookSpecificOutput.additionalContext`を採用する。
-永続ログはstderr出力ではなく`_stop_gate.append_stop_log`等の専用APIに集約する。
+永続ログはstderr出力ではなく`_hooks.stop_gate.append_stop_log`等の専用APIに集約する。
 
 | フィールド | 表示先 | 用途 |
 | --- | --- | --- |
@@ -154,7 +154,7 @@ Stop/SubagentStopで当該ターン継続を強制する用途は、エラーと
 Stop/SubagentStopでは停止を防いでターン継続を強制し、PostToolUseではblock理由を直前のツール結果に添えて返す。
 PreToolUse・PostToolUse・UserPromptSubmitで挙動の強制が不要であれば`additionalContext`単独で出力する。Stop/SubagentStopでは`additionalContext`単独でもターン継続を強制する。
 
-- block通知は`_hook_notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`fix`が空文字列または空白文字だけの場合は`ValueError`となる
+- block通知は`_hooks.notice`のblock専用整形関数（`block_formatter`）で生成し、解消手段の`fix`を渡す。`fix`が空文字列または空白文字だけの場合は`ValueError`となる
 - 独自の整形関数でblock本文を構成しない（解消手段の欠落を機械的に検出できなくなるため）
 - PreToolUse・PostToolUseのblockは当該操作の中止で場面が解消するため、Stop系の成立条件の規定は適用しない
 

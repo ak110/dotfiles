@@ -19,13 +19,10 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
 from uuid import UUID
 
-import _agents_server_claude as claude_backend
-import _agents_server_codex as codex_backend
-import _agents_server_status_file as status_file
-import _atk_config
-import _inherited_venv
-import _wait_schedule
-from _agents_server_state import (
+from _agents_server import claude as claude_backend
+from _agents_server import codex as codex_backend
+from _agents_server import status_file
+from _agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
     ModelCandidate,
@@ -40,6 +37,9 @@ from _agents_server_state import (
     add_touch_listener,
     remove_touch_listener,
 )
+from _atk import config as _atk_config
+from _common import inherited_venv as _inherited_venv
+from _common import wait_schedule as _wait_schedule
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 

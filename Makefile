@@ -67,7 +67,7 @@ test:
 test-browser:
 	uv run playwright install chromium
 	AGENT_TOOLKIT_SERVE_BROWSER_TESTS=1 \
-		uv run pytest agent-toolkit/scripts/_atk_serve_browser_test.py \
+		uv run pytest agent-toolkit/scripts/_atk/serve/browser_test.py \
 		-o addopts='' -p no:cacheprovider
 
 # agents_serverの実backendを使うライブ一体テスト

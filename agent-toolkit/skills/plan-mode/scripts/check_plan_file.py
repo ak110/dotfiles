@@ -21,8 +21,8 @@ import typing
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
-import _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-import _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")

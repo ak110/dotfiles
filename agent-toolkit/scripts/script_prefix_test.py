@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import pathlib
 
+_EXEMPT_ENTRIES = frozenset({"_managed_temp.py"})
+
 
 def _has_main_guard(path: pathlib.Path) -> bool:
     """モジュールが`__main__`ガードを持つかを返す。"""
@@ -44,6 +46,7 @@ def _standalone_private_prefixed_scripts(paths: list[pathlib.Path]) -> list[str]
             path.stem in imported and source.name != f"{path.stem}_test.py" for source, imported in imports_by_path.items()
         )
         and path.stem.startswith("_")
+        and path.name not in _EXEMPT_ENTRIES
     ]
 
 
@@ -64,3 +67,10 @@ def test_test_only_import_does_not_make_entry_private(tmp_path: pathlib.Path) ->
     (tmp_path / "_foo_test.py").write_text("import _foo\n", encoding="utf-8")
 
     assert _standalone_private_prefixed_scripts(sorted(tmp_path.glob("*.py"))) == ["_foo.py"]
+
+
+def test_exempt_entry_is_not_reported(tmp_path: pathlib.Path) -> None:
+    """外部の許可判定がパスを解決する例外入口は違反にしない。"""
+    entry = tmp_path / "_managed_temp.py"
+    entry.write_text('if __name__ == "__main__":\n    pass\n', encoding="utf-8")
+    assert _standalone_private_prefixed_scripts([entry]) == []

@@ -44,6 +44,9 @@ class TestEntrypointExceptionStages:
     def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
         entrypoint = tmp_path / "hook.py"
         shutil.copy2(_SCRIPT, entrypoint)
+        hooks = tmp_path / "_hooks"
+        hooks.mkdir()
+        (hooks / "__init__.py").write_text("", encoding="utf-8")
         return entrypoint
 
     @pytest.mark.parametrize("subcommand", ["stop"])
@@ -53,7 +56,7 @@ class TestEntrypointExceptionStages:
         subcommand: str,
     ) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / f"{subcommand}.py").write_text(
+        (tmp_path / "_hooks" / f"{subcommand}.py").write_text(
             "import json\n\n"
             "def _approve() -> None:\n"
             "    print(json.dumps({}))\n\n"
@@ -78,7 +81,7 @@ class TestEntrypointExceptionStages:
 
     def test_module_import_error_emits_only_traceback(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "autonomous_exit.py").write_text(
+        (tmp_path / "_hooks" / "autonomous_exit.py").write_text(
             "raise ImportError('module failure')\n",
             encoding="utf-8",
         )
@@ -102,7 +105,7 @@ class TestEntrypointExceptionStages:
     ) -> None:
         """approve対象外のサブコマンドは例外時もJSONなしでfail-openする。"""
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "pretooluse.py").write_text(
+        (tmp_path / "_hooks" / "pretooluse.py").write_text(
             "def main(payload_text: str) -> int:\n    del payload_text\n    raise RuntimeError('boom')\n",
             encoding="utf-8",
         )
@@ -124,7 +127,7 @@ class TestEntrypointExceptionStages:
     ) -> None:
         subcommand = "session_end_cleanup"
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / f"{subcommand}.py").write_text(
+        (tmp_path / "_hooks" / f"{subcommand}.py").write_text(
             "def main(payload_text: str) -> int:\n    del payload_text\n    raise RuntimeError('boom')\n",
             encoding="utf-8",
         )
@@ -147,11 +150,14 @@ class TestStandardInputAndPayloadDump:
     def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
         entrypoint = tmp_path / "hook.py"
         shutil.copy2(_SCRIPT, entrypoint)
+        hooks = tmp_path / "_hooks"
+        hooks.mkdir()
+        (hooks / "__init__.py").write_text("", encoding="utf-8")
         return entrypoint
 
     @staticmethod
     def _write_echo_module(tmp_path: pathlib.Path, subcommand: str = "pretooluse") -> None:
-        (tmp_path / f"{subcommand}.py").write_text(
+        (tmp_path / "_hooks" / f"{subcommand}.py").write_text(
             "def main(payload_text: str) -> int:\n    print(payload_text, end='')\n    return 0\n",
             encoding="utf-8",
         )
@@ -180,7 +186,7 @@ class TestStandardInputAndPayloadDump:
     def test_invalid_utf8_skips_module_call(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
         marker = tmp_path / "called"
-        (tmp_path / "pretooluse.py").write_text(
+        (tmp_path / "_hooks" / "pretooluse.py").write_text(
             "import pathlib\n\n"
             "def main(payload_text: str) -> int:\n"
             "    del payload_text\n"
@@ -233,8 +239,11 @@ class TestStandardInputAndPayloadDump:
         entrypoint = self._copy_entrypoint(tmp_path)
         self._write_echo_module(tmp_path)
         source_directory = _SCRIPT.parent
-        for name in ("_session_state.py", "_atomic_file.py", "_file_lock.py"):
-            shutil.copy2(source_directory / name, tmp_path / name)
+        (tmp_path / "_common").mkdir()
+        (tmp_path / "_common/__init__.py").write_text("", encoding="utf-8")
+        shutil.copy2(source_directory / "_hooks/session_state.py", tmp_path / "_hooks/session_state.py")
+        shutil.copy2(source_directory / "_common/atomic_file.py", tmp_path / "_common/atomic_file.py")
+        shutil.copy2(source_directory / "_common/file_lock.py", tmp_path / "_common/file_lock.py")
         temp_directory = tmp_path / "temp"
         temp_directory.mkdir()
         (temp_directory / "claude-agent-toolkit-previous.json").write_text(
@@ -266,7 +275,7 @@ class TestStandardInputAndPayloadDump:
 
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "pretooluse.py").write_text(
+        (tmp_path / "_hooks" / "pretooluse.py").write_text(
             "raise ImportError('日本語の読込失敗')\n",
             encoding="utf-8",
         )

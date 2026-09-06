@@ -111,8 +111,8 @@ jobs:
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --python 3.14 pytest -q
-          agent-toolkit/scripts/_managed_temp_test.py
-          agent-toolkit/scripts/permissionrequest_codex_test.py
+          agent-toolkit/scripts/_atk/managed_temp_test.py
+          agent-toolkit/scripts/_hooks/permissionrequest_codex_test.py
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash
@@ -278,7 +278,7 @@ jobs:
           AGENT_TOOLKIT_SERVE_BROWSER_TESTS: "1"
         run: >-
           uv run pytest
-          agent-toolkit/scripts/_atk_serve_browser_test.py
+          agent-toolkit/scripts/_atk/serve/browser_test.py
           -o addopts='' -p no:cacheprovider
 
       - name: Prune uv cache for CI

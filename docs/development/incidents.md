@@ -578,7 +578,7 @@
   直接原因: 完了通知の配送不着時に、独立した定時起動から停滞の検知と巻き取りへ進む経路が無かった。
   混入要因: `claude-code-runtime.md`が`ScheduleWakeup`と`CronCreate`を一般待機の候補として並記し、Cronの作成・再利用・resume又はcompaction後の照合・削除を一連の契約として定義していなかった。
   動機的要因: 完了通知を主経路とする待機設計に、通知不着時の復旧契機を定期再確認で保持する要求が組み込まれていなかった。
-  見逃し原因: 主要agent定義と`_REQUIRED_TOOLS`に`CronCreate`、`CronList`及び`CronDelete`がなく、`_stop_gate.py`と実際のCron待機を結ぶ検査も不足していた。
+  見逃し原因: 主要agent定義と`_REQUIRED_TOOLS`に`CronCreate`、`CronList`及び`CronDelete`がなく、`agent-toolkit/scripts/_hooks/stop_gate.py`と実際のCron待機を結ぶ検査も不足していた。
   根本原因: 完了通知、ホストの定期起動、Stopの継続判定とagent定義のtool許可を別々に管理し、待機対象と定期taskを同じ正本状態へ結び付けていなかった。
   是正: `atk wait-schedule`のcron式を変更せずに1件だけ`CronCreate`へ渡し、保持IDとtask IDを`CronList`で照合して再利用し、全対象の終端後に`CronDelete`で削除する契約をruntimeと待機文書へ置く。定期再確認時は更新時刻だけで終了を判定せず、記録末尾と実行識別子を照合して停滞の検知と巻き取りへ進む。
   横展開: `CronCreate`をStopの非同期待機系と3つのagent定義の許可toolへ追加し、完了通知を既定経路として維持する実機相当の検査を追加する。

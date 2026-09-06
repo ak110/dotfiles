@@ -14,13 +14,11 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
-import _agents_server_claude as claude_backend
-import _agents_server_codex as codex_backend
-import _agents_server_state as state
-import _agents_server_status_file as status_file
-import _atk_agents_wait as agents_wait
 import agents_server_mcp as subject
 import pytest
+from _agents_server import agents_wait, state, status_file
+from _agents_server import claude as claude_backend
+from _agents_server import codex as codex_backend
 
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
 
@@ -294,20 +292,25 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
     share_dir = tmp_path / "plugin" / "share"
     share_dir.mkdir()
     shutil.copyfile(source_dir.parent / "share" / "rules-subagent.md", share_dir / "rules-subagent.md")
-    for name in (
+    paths = (
         "agents_server_mcp.py",
-        "_agents_server_codex.py",
-        "_agents_server_claude.py",
-        "_agents_server_state.py",
-        "_agents_server_status_file.py",
-        "_atomic_file.py",
-        "_atk_config.py",
-        "_atk_help.py",
-        "_inherited_venv.py",
-        "_plan_file.py",
-        "_wait_schedule.py",
-    ):
-        shutil.copyfile(source_dir / name, script_dir / name)
+        "_agents_server/codex.py",
+        "_agents_server/claude.py",
+        "_agents_server/state.py",
+        "_agents_server/status_file.py",
+        "_common/atomic_file.py",
+        "_atk/config.py",
+        "_atk/help_text.py",
+        "_common/inherited_venv.py",
+        "_plan/locations.py",
+        "_common/wait_schedule.py",
+    )
+    for relative_path in paths:
+        destination = script_dir / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_dir / relative_path, destination)
+    for package in ("_agents_server", "_common", "_atk", "_plan"):
+        (script_dir / package / "__init__.py").write_text("", encoding="utf-8")
 
     check = subprocess.run(
         [

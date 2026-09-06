@@ -9,13 +9,15 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
 対象種別ごとに検査方式を分ける。
 
 - 対象種別1: `scripts/`・`agent-toolkit/scripts/`・`agent-toolkit/skills/*/scripts/`
-  直下のPEP 723単独実行スクリプト（`*_test.py`を除く）。起点ごとのPEP 723依存と、
+  配下のPEP 723単独実行スクリプト（`*_test.py`を除く）。起点ごとのPEP 723依存と、
   静的に評価できる`sys.path.insert`が示す探索パスを用い、到達する内部モジュールを
   推移走査する。`ImportError`または`ModuleNotFoundError`で保護されたimportは除外する
 - 対象種別2: `pyproject.toml`の`[project.scripts]`が参照する`module:function`形式。
   参照先モジュールファイルが実在するか、当該ファイル内に対象関数の定義（または再エクスポートによる
   束縛）が存在するかを`ast.parse`で確認する。プロジェクト依存の解決は`--no-project`環境では
   成立しないため対象外とする
+- 対象種別3: `agent-toolkit/scripts/`配下の責務別サブパッケージを再帰走査し、
+  層の順序に反する絶対importと、非テストモジュールから`_testing`へのimportを検出する
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -45,6 +47,7 @@ _PYPROJECT_PATH = _REPO_ROOT / "pyproject.toml"
 
 _SHEBANG = "#!/usr/bin/env -S uv run --script"
 _DEPENDENCY_IMPORT_NAMES = {"markdown-it-py": "markdown_it", "pyyaml": "yaml"}
+_LAYER_ORDER = ("_common", "_git", "_plan", "_atk", "_agents_server", "_hooks")
 
 # PEP 723インラインメタデータブロックの抽出パターン（公式仕様のリファレンス実装に準拠）。
 _PEP723_BLOCK_RE = re.compile(r"(?m)^# /// (?P<type>[A-Za-z0-9-]+)$\s(?P<content>(?:^#(?:| .*)$\s)+)^# ///$")
@@ -282,10 +285,10 @@ def _problem(entry_path: pathlib.Path, source_path: pathlib.Path, detail: str) -
     return f"{entry}: {_display_path(source_path)}経由で{detail}"
 
 
-def _check_entry_script(entry_path: pathlib.Path, text: str) -> list[str]:
+def _check_entry_script(entry_path: pathlib.Path, text: str, scripts_root: pathlib.Path | None = None) -> list[str]:
     """1つの起点スクリプトから到達するimportを推移的に検査する。"""
     dependencies = _read_pep723_dependencies(text)
-    search_paths = [entry_path.parent]
+    search_paths = list(dict.fromkeys((entry_path.parent, scripts_root))) if scripts_root is not None else [entry_path.parent]
     sources = {entry_path: text}
     imports: dict[pathlib.Path, tuple[_ImportReference, ...]] = {}
     queued = [entry_path]
@@ -339,12 +342,36 @@ def _check_script_directories() -> list[str]:
     """全対象ディレクトリのPEP 723スクリプトを検査する。"""
     problems: list[str] = []
     for directory in _script_directories():
-        for script_path in sorted(directory.glob("*.py")):
+        for script_path in sorted(directory.rglob("*.py")):
+            if "__pycache__" in script_path.parts:
+                continue
             if script_path.name.endswith("_test.py"):
                 continue
             text = script_path.read_text(encoding="utf-8")
             if _is_pep723_script(text):
-                problems.extend(_check_entry_script(script_path, text))
+                problems.extend(_check_entry_script(script_path, text, directory))
+    return problems
+
+
+def _check_agent_toolkit_layers() -> list[str]:
+    """agent-toolkitの責務層に反するimportを返す。"""
+    scripts_root = _REPO_ROOT / "agent-toolkit/scripts"
+    order = {name: index for index, name in enumerate(_LAYER_ORDER)}
+    problems: list[str] = []
+    for layer in (*_LAYER_ORDER, "_testing"):
+        layer_root = scripts_root / layer
+        if not layer_root.is_dir():
+            continue
+        for source_path in sorted(layer_root.rglob("*.py")):
+            if "__pycache__" in source_path.parts:
+                continue
+            tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+            for reference in _extract_imports(tree):
+                imported_layer = reference.name.partition(".")[0]
+                if imported_layer == "_testing" and not source_path.name.endswith("_test.py"):
+                    problems.append(f"{_display_path(source_path)}: 非テストモジュールから`_testing`をimportしている")
+                elif imported_layer in order and layer in order and order[imported_layer] > order[layer]:
+                    problems.append(f"{_display_path(source_path)}: 層の順序に反して`{imported_layer}`をimportしている")
     return problems
 
 
@@ -402,7 +429,7 @@ def _check_project_scripts() -> list[str]:
 
 def main() -> int:
     """PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検査する。"""
-    problems = _check_script_directories() + _check_project_scripts()
+    problems = _check_script_directories() + _check_project_scripts() + _check_agent_toolkit_layers()
     for problem in problems:
         print(f"error: {problem}", file=sys.stderr)
     return 1 if problems else 0

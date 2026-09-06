@@ -34,7 +34,7 @@
 ## 構造化文書の解析
 
 Markdownなどの構造化文書を検査する場合は、構造認識と原記法の検査を分離する。
-設計の詳細は`agent-toolkit/scripts/_plan_format.py`のモジュールdocstringを参照する。
+設計の詳細は`agent-toolkit/scripts/_plan/structure.py`のモジュールdocstringを参照する。
 
 ## 検査項目のerror・warning区分
 

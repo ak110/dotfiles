@@ -58,27 +58,26 @@ from typing import Any
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-import _atk_agents_notify  # noqa: E402
-import _atk_agents_wait  # noqa: E402
-import _atk_config as _config_cmd  # noqa: E402
-import _atk_git_sync  # noqa: E402
-import _atk_help  # noqa: E402
-import _atk_plans as _plans  # noqa: E402
-import _atk_watch as _watch  # noqa: E402
-import _atk_wi_add as _add  # noqa: E402
-import _atk_wi_batch as _batch  # noqa: E402
-import _atk_wi_common as _common  # noqa: E402
-import _atk_wi_grep as _grep  # noqa: E402
-import _atk_wi_list as _list  # noqa: E402
-import _atk_wi_migrate as _migrate  # noqa: E402
-import _atk_wi_mutations as _mutations  # noqa: E402
-import _atk_wi_process_loop as _process_loop  # noqa: E402
-import _atk_wi_show as _show  # noqa: E402
-import _atk_wi_uwi as _uwi  # noqa: E402
-import _atk_worktree_stash as _worktree_stash  # noqa: E402
 import _managed_temp  # noqa: E402
-import _review_table  # noqa: E402
-import _wait_schedule  # noqa: E402
+from _agents_server import agents_wait as _atk_agents_wait  # noqa: E402
+from _atk import config as _config_cmd  # noqa: E402
+from _atk import git_sync as _atk_git_sync  # noqa: E402
+from _atk import help_text as _atk_help  # noqa: E402
+from _atk import plans as _plans  # noqa: E402
+from _atk import review_table as _review_table  # noqa: E402
+from _atk import watch as _watch  # noqa: E402
+from _atk import worktree_stash as _worktree_stash  # noqa: E402
+from _atk.wi import add as _add  # noqa: E402
+from _atk.wi import batch as _batch  # noqa: E402
+from _atk.wi import common as _common  # noqa: E402
+from _atk.wi import grep as _grep  # noqa: E402
+from _atk.wi import listing as _list  # noqa: E402
+from _atk.wi import migrate as _migrate  # noqa: E402
+from _atk.wi import mutations as _mutations  # noqa: E402
+from _atk.wi import process_loop as _process_loop  # noqa: E402
+from _atk.wi import show as _show  # noqa: E402
+from _atk.wi import uwi as _uwi  # noqa: E402
+from _common import wait_schedule as _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
@@ -1044,7 +1043,7 @@ def main(
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":
-        import _atk_serve as _serve  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        from _atk.serve import cli as _serve  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         _serve.run(host=args.host, port=args.port, home=home)
         sys.exit(0)

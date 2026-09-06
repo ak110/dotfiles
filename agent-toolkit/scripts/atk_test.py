@@ -24,15 +24,15 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import _atk_wi_add as _add  # noqa: E402  # pylint: disable=wrong-import-position
-import _atk_worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 import _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
-import _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
+from _atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+from _common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
+from _testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
 )
-from _atk_git_fake_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     make_git_remote_fake as _make_git_remote_fake,
 )
 
@@ -865,9 +865,9 @@ class TestServeParser:
         def run(*, host: str | None, port: int | None, home: pathlib.Path) -> None:
             calls.append({"host": host, "port": port, "home": home})
 
-        serve = types.ModuleType("_atk_serve")
+        serve = types.ModuleType("_atk.serve.cli")
         serve.__dict__["run"] = run
-        monkeypatch.setitem(sys.modules, "_atk_serve", serve)
+        monkeypatch.setitem(sys.modules, "_atk.serve.cli", serve)
         with pytest.raises(SystemExit) as error:
             atk.main(["serve", "--host", "127.0.0.2", "--port", "28766"], home=tmp_path)
         assert error.value.code == 0
@@ -880,7 +880,7 @@ class TestServeParser:
             "import sys; "
             f"sys.path.insert(0, {str(script_dir)!r}); "
             "import atk; "
-            "raise SystemExit(1 if '_atk_serve' in sys.modules else 0)"
+            "raise SystemExit(1 if '_atk.serve.cli' in sys.modules else 0)"
         )
 
         result = subprocess.run([sys.executable, "-c", code], check=False)
@@ -1850,7 +1850,7 @@ class TestAddBatchOption:
     @staticmethod
     def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
         """一括取り込み側のロック・remote同期・commitを無効化する。"""
-        import _atk_wi_batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        from _atk.wi import batch as batch_module  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         monkeypatch.setattr(batch_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
         monkeypatch.setattr(batch_module, "_pull", lambda _path: None)

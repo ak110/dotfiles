@@ -26,7 +26,7 @@ import typing
 import unicodedata
 from ctypes import wintypes
 
-import _atk_help
+from _atk import help_text as _atk_help
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 _SCHEMA_VERSION = 4

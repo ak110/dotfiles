@@ -19,7 +19,7 @@ _NOW = datetime.datetime(2026, 7, 29, 12, tzinfo=datetime.UTC)
 _TARBALL_URL = "https://registry.npmjs.org/mermaid/-/mermaid-10.0.0.tgz"
 _BUNDLE = b"window.mermaid={version:'10.0.0'};\n"
 _LICENSE = b"MIT License\n"
-_VENDOR_DIR = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts" / "_atk_serve_static" / "vendor"
+_VENDOR_DIR = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts" / "_atk" / "serve" / "static" / "vendor"
 
 
 def _metadata(integrity: str = "sha512-placeholder") -> dict[str, object]:

@@ -60,7 +60,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   利用者の入力を要さない待機でベルが鳴るためである
 - 応答終了そのものは`Stop`のフック（`scripts/claude_hook_stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
-  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/scripts/_stop_gate.py`の判定を用いる。
+  背景稼働の判定は他のStop系フックと同じ`agent-toolkit/scripts/_hooks/stop_gate.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、当該ターンの終了前にベルが鳴る
 - Windowsはtmux運用外のため、ベルの各経路は`share/claude_settings_json_managed.win32.json`へ追加しない
 - `icon`の既定書式はcurrent・lastなど全フラグをアイコン化するため、
@@ -113,7 +113,7 @@ Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_setti
 `atk wi process-loop`のClaude起動だけが`--settings`で両設定の値を明示する。
 自律実行では無期限の駐留が工程の停止を招くため、配布値の`never`を常駐実行だけ有限値へ上書きする。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
-TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_wait_schedule.py`の
+TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_common/wait_schedule.py`の
 プロンプトキャッシュTTL判定を用いる。
 利用者が`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、当該指定を判定の入力とする。
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。

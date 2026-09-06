@@ -121,10 +121,10 @@ def main(argv: list[str]) -> int:
             session_id = payload.get("session_id")
             transcript_path = payload.get("transcript_path")
             if isinstance(session_id, str) and isinstance(transcript_path, str):
-                session_state = importlib.import_module("_session_state")
+                session_state = importlib.import_module("_hooks.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
     try:
-        module = importlib.import_module(argv[0])
+        module = importlib.import_module(f"_hooks.{argv[0]}")
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
         traceback.print_exc()
         return 0

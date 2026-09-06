@@ -9,7 +9,7 @@
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 
 保存先の規約は`agent-toolkit/skills/writing-standards/references/session-records.md`を正本とし、
-サーバー側`_atk_serve_sessions.py`と同じ規約で解決する
+サーバー側`_atk/serve/sessions.py`と同じ規約で解決する
 （SSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
 """
 
@@ -207,7 +207,7 @@ def _is_safe_record_path(raw: str) -> bool:
 def _subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]]:
     """記録本体に属するサブエージェント記録の親子関係を返す。
 
-    サーバー側`_atk_serve_sessions.py`の`_claude_subagents`と同じ規約で解決する。
+    サーバー側`_atk/serve/sessions.py`の`_claude_subagents`と同じ規約で解決する。
     サブエージェント記録が無い場合は空のリストを返す。応答が本欄を持つこと自体を、
     本欄を返さない旧版のヘルパーとサーバー側が区別する根拠とするためである。
     """

@@ -8,10 +8,10 @@ import pathlib
 from types import SimpleNamespace
 from typing import Any
 
-import _agents_server_claude as claude_backend
-import _agents_server_state as state
 import agents_server_mcp as subject
 import pytest
+from _agents_server import claude as claude_backend
+from _agents_server import state
 
 _STREAM_END = object()
 

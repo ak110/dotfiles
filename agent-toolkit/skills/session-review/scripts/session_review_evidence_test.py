@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _test_helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
