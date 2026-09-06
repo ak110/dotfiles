@@ -2733,6 +2733,12 @@ async def test_remount_discards_initial_response_from_previous_mount(
         await page.goto(harness.base_url + path)
         await asyncio.wait_for(first_requested.wait(), timeout=5)
         await page.locator("nav.app-nav").get_by_role("link", name=away_label).click()
+        away_selector = {
+            "ワークアイテム": "#entry-list .entry-select",
+            "計画ファイル": "#files .file",
+            "セッション": "#sessions .session-item",
+        }[away_label]
+        await page.locator(away_selector).first.wait_for(state="visible")
         await page.locator("nav.app-nav").get_by_role("link", name=return_label).click()
         stable = page.locator(stable_selector)
         await stable.first.wait_for(state="visible")
