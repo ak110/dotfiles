@@ -46,6 +46,13 @@ def _complete(session: subject.SessionState, *, message: str = "完了", error: 
     session.touch()
 
 
+def _write_notice(directory: pathlib.Path, session_id: str, sequence: int, sent_at: str, body: str) -> None:
+    """待機テスト用の未回収通知を保存する。"""
+    directory.mkdir(parents=True, exist_ok=True)
+    payload = {"version": 1, "session_id": session_id, "sent_at": sent_at, "body": body}
+    (directory / f"{session_id}.{sequence}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
 class FakeBackend:
     """共有MCP層の契約だけを検証するバックエンド。"""
 
@@ -1145,6 +1152,60 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
         "progress": "",
         "turn_seq": 0,
     }
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) -> None:
+    """waitは実行中の通知を検出して復帰し、同じ通知を再配送しない。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+    await asyncio.sleep(0)
+    notices = status_file.notices_directory("root-session", tmp_path)
+    _write_notice(notices, session.session_id, 2, "2026-09-06T00:00:02+00:00", "後の通知")
+    _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "先の通知")
+
+    response = await wait_task
+
+    assert response["status"] == "running"
+    assert "agent_message" not in response
+    assert response["notices"] == [
+        {"sent_at": "2026-09-06T00:00:01+00:00", "body": "先の通知"},
+        {"sent_at": "2026-09-06T00:00:02+00:00", "body": "後の通知"},
+    ]
+    second = await manager.wait(session.session_id, timeout=0)
+    assert "notices" not in second
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: pathlib.Path) -> None:
+    """終端時に残る通知を結果本文と同じ応答へ載せる。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="最終結果")
+    manager.sessions[session.session_id] = session
+    notices = status_file.notices_directory("root-session", tmp_path)
+    _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "終端前の通知")
+
+    response = await manager.wait(session.session_id, timeout=0)
+
+    assert response["status"] == "completed"
+    assert response["agent_message"] == "最終結果"
+    assert response["notices"] == [{"sent_at": "2026-09-06T00:00:01+00:00", "body": "終端前の通知"}]
+    assert not any(notices.iterdir())
+    await manager.close()
 
 
 @pytest.mark.asyncio

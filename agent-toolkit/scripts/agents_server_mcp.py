@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
+import json
 import logging
 import os
 import warnings
@@ -139,6 +140,7 @@ class AgentsServerManager:
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer
+        self._notices_directory = self._status_writer.path.parent / "notices" if self._status_writer is not None else None
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
 
@@ -485,35 +487,81 @@ class AgentsServerManager:
         deadline = loop.time() + float(timeout)
         pending = self._pending_resumes.get(session_id)
         if pending is not None:
+            notices = self._take_notices(session_id)
+            if notices:
+                return self._response_with_notices(self._pending_resume_status(pending), notices)
             if timeout == 0:
                 return self._pending_resume_status(pending)
-            try:
-                await asyncio.wait_for(
-                    asyncio.shield(pending.task),
-                    timeout=max(0.0, deadline - loop.time()),
-                )
-            except TimeoutError:
-                current = self._pending_resumes.get(session_id)
-                if current is pending:
+            while self._pending_resumes.get(session_id) is pending and not pending.task.done():
+                remaining = deadline - loop.time()
+                if remaining <= 0:
                     return self._pending_resume_status(pending)
-                session = self.sessions.get(session_id)
-                if session is not None:
-                    return self._result_response(session)
-                return self._get_session(session_id).public_status()
+                try:
+                    await asyncio.wait_for(asyncio.shield(pending.task), timeout=min(1.0, remaining))
+                except TimeoutError:
+                    notices = self._take_notices(session_id)
+                    if notices:
+                        return self._response_with_notices(self._pending_resume_status(pending), notices)
         session = self._get_session(session_id)
+        notices = self._take_notices(session_id)
+        if session.result_available or notices:
+            return self._response_with_notices(self._result_response(session), notices)
         if not session.result_available:
-            try:
+            while not session.result_available:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    break
                 async with self._condition:
-                    await asyncio.wait_for(
-                        self._condition.wait_for(
-                            lambda: (current := self.sessions.get(session_id)) is None or current.result_available
-                        ),
-                        timeout=max(0.0, deadline - loop.time()),
-                    )
-            except TimeoutError:
-                pass
-        session = self._get_session(session_id)
-        return self._result_response(session)
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(
+                            self._condition.wait_for(
+                                lambda: (current := self.sessions.get(session_id)) is None or current.result_available
+                            ),
+                            timeout=min(1.0, remaining),
+                        )
+                session = self._get_session(session_id)
+                notices = self._take_notices(session_id)
+                if session.result_available or notices:
+                    return self._response_with_notices(self._result_response(session), notices)
+        return self._result_response(self._get_session(session_id))
+
+    def _take_notices(self, session_id: str) -> list[dict[str, str]]:
+        """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
+        if self._notices_directory is None:
+            return []
+        try:
+            paths = tuple(self._notices_directory.iterdir())
+        except FileNotFoundError:
+            return []
+        matched: list[tuple[str, str, dict[str, str]]] = []
+        for path in paths:
+            if not path.is_file() or path.suffix != ".json":
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if (
+                not isinstance(payload, dict)
+                or payload.get("version") != 1
+                or payload.get("session_id") != session_id
+                or not isinstance(payload.get("sent_at"), str)
+                or not isinstance(payload.get("body"), str)
+            ):
+                continue
+            notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
+            matched.append((payload["sent_at"], path.name, notice))
+        matched.sort(key=lambda item: (item[0], item[1]))
+        for _sent_at, file_name, _notice in matched:
+            (self._notices_directory / file_name).unlink()
+        return [notice for _sent_at, _file_name, notice in matched]
+
+    @staticmethod
+    def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
+        """回収した通知がある場合だけ応答へ追加する。"""
+        if notices:
+            response["notices"] = notices
+        return response
 
     @staticmethod
     def _result_response(session: SessionState) -> dict[str, Any]:
@@ -1063,6 +1111,11 @@ async def wait(
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
     `session retention expired: <session_id>`は終端結果の保持期限が過ぎたことだけを示し、会話再開用の最小状態は保持されている。
+    委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
+    再待機の要否は`notices`の有無ではなく`status`で判定する。
+    `status: running`の応答は終端前の復帰であり、同じ`session_id`へ`wait`を再発行して待機を継続する。
+    `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して`wait`を再発行しない。
+    応答へ載せた通知は回収済みとして再び返さない。
     """
     return await _MANAGER.wait(session_id, timeout, request_bucket)
 

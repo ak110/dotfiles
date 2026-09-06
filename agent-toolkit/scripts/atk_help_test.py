@@ -120,6 +120,13 @@ def _required_arguments(parser: argparse.ArgumentParser) -> tuple[list[str], arg
             continue
         if action.nargs not in ("?", "*"):
             arguments.append(value)
+    for group in parser._mutually_exclusive_groups:  # pylint: disable=protected-access
+        if not group.required:
+            continue
+        action = group._group_actions[0]  # pylint: disable=protected-access
+        value = str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
+        option = next(option for option in action.option_strings if option.startswith("--"))
+        arguments.extend((option, value))
     return arguments, parser
 
 

@@ -4,6 +4,8 @@ Claude backendの委譲先は所有sessionと自身のClaude Code sessionを持�
 Codex backendの委譲先は所有sessionと自身のCodex threadを持つ。この対応は
 Claude Code 2.1.261、Codex CLI 0.153.2及びclaude-agent-sdk 0.2系で確認した。
 各ホスト又はSDKの更改時は、委譲先の環境変数を再取得して対応を検証する。
+
+上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して実測した。この前提が崩れた場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
 """
 
 from __future__ import annotations
@@ -67,6 +69,11 @@ def results_directory(root_session_id: str, state_root: pathlib.Path | None = No
     return status_directory(root_session_id, state_root) / "results"
 
 
+def notices_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """ルートsession宛ての未回収通知ディレクトリを返す。"""
+    return status_directory(root_session_id, state_root) / "notices"
+
+
 def normalize_label(value: str) -> str:
     """依頼本文又はコマンドの最初の空でない行を表示用に正規化する。"""
     line = next((line for line in value.splitlines() if line.strip()), "")
@@ -113,6 +120,7 @@ class StatusFileWriter:
                 if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
                     path.unlink()
             self._remove_result_files()
+            self._remove_notice_files()
         self.flush()
 
     def schedule(self) -> None:
@@ -161,6 +169,7 @@ class StatusFileWriter:
                 if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
                     path.unlink()
             self._remove_result_files()
+            self._remove_notice_files()
         else:
             for session_id in tuple(self._result_deadlines):
                 self.delete_result(session_id)
@@ -214,6 +223,14 @@ class StatusFileWriter:
 
     def _remove_result_files(self) -> None:
         directory = self._directory / "results"
+        self._remove_directory_files(directory)
+
+    def _remove_notice_files(self) -> None:
+        directory = self._directory / "notices"
+        self._remove_directory_files(directory)
+
+    @staticmethod
+    def _remove_directory_files(directory: pathlib.Path) -> None:
         if not directory.exists():
             return
         for path in directory.iterdir():

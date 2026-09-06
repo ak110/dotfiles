@@ -58,6 +58,7 @@ def test_status_directory_uses_platform_state_dir(monkeypatch: pytest.MonkeyPatc
     """状態ディレクトリをatk configと同じXDG規則から解決する。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     assert subject.status_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root"
+    assert subject.notices_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "notices"
 
 
 def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -200,6 +201,10 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
     results.mkdir()
     (results / "stale-session.json").write_text("{}", encoding="utf-8")
     (results / ".stale-session.json.token.tmp").write_text("temporary", encoding="utf-8")
+    notices = directory / "notices"
+    notices.mkdir()
+    (notices / "stale-session.1.json").write_text("{}", encoding="utf-8")
+    (notices / ".stale-session.1.json.token.tmp").write_text("temporary", encoding="utf-8")
     writer = subject.StatusFileWriter(
         {},
         subject.StatusFileIdentity("root", "root.json", None),
@@ -220,6 +225,10 @@ async def test_nested_writer_preserves_root_file_on_deactivate(tmp_path: pathlib
     directory.mkdir(parents=True)
     root_file = directory / "root.json"
     root_file.write_text("{}", encoding="utf-8")
+    notices = directory / "notices"
+    notices.mkdir()
+    notice_file = notices / "child.1.json"
+    notice_file.write_text("{}", encoding="utf-8")
     writer = subject.StatusFileWriter(
         {},
         subject.StatusFileIdentity("root", "child.json", "child"),
@@ -230,6 +239,7 @@ async def test_nested_writer_preserves_root_file_on_deactivate(tmp_path: pathlib
     writer.deactivate()
     assert root_file.exists()
     assert not writer.path.exists()
+    assert notice_file.exists()
 
 
 @pytest.mark.asyncio

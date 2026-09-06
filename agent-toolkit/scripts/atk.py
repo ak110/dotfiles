@@ -15,7 +15,8 @@
 # ///
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・`atk wait-schedule`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
+`atk agents-notify`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
@@ -36,6 +37,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 - agents-wait: agents_serverが保存した指定turn以降の終端結果を1行で出力する
+- agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -56,6 +58,7 @@ from typing import Any
 # pylint: disable=wrong-import-position,protected-access
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
+import _atk_agents_notify  # noqa: E402
 import _atk_agents_wait  # noqa: E402
 import _atk_config as _config_cmd  # noqa: E402
 import _atk_git_sync  # noqa: E402
@@ -868,6 +871,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=3600.0,
         help="待機上限秒数。到達した場合は終了コード3で終わる。",
     )
+    agents_notify = _atk_help.add_command(top, "agents-notify", **_atk_help.HELP["atk agents-notify"])
+    agents_notify.set_defaults(subparser=agents_notify)
+    notification_body = agents_notify.add_mutually_exclusive_group(required=True)
+    notification_body.add_argument("--body", help="委譲元へ送る本文。")
+    notification_body.add_argument(
+        "--body-file",
+        type=pathlib.Path,
+        help="委譲元へ送る本文を保持するUTF-8ファイルの絶対パス。",
+    )
     managed_temp = _atk_help.add_command(top, "managed-temp", **_atk_help.HELP["atk managed-temp"])
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     worktree_stash = _atk_help.add_command(top, "worktree-stash", **_atk_help.HELP["atk worktree-stash"])
@@ -1012,6 +1024,18 @@ def main(
         if args.timeout < 0:
             args.subparser.error("--timeoutには0以上の数値を指定してください。")
         sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.turn, args.timeout))
+    if args.command == "agents-notify":
+        body = args.body
+        if args.body_file is not None:
+            if not args.body_file.is_absolute():
+                args.subparser.error("--body-fileには絶対パスを指定してください。")
+            try:
+                with args.body_file.open(encoding="utf-8", newline="") as stream:
+                    body = stream.read()
+            except (OSError, UnicodeError) as error:
+                args.subparser.error(f"--body-fileをUTF-8で読めません: {error}")
+        assert body is not None
+        sys.exit(_atk_agents_notify.send_notification(body))
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":
