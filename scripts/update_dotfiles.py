@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["filelock>=3.30", "platformdirs>=4.0"]
+# dependencies = ["filelock>=3.30", "platformdirs>=4.0", "psutil"]
 # ///
 r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 
@@ -29,9 +29,12 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 各段のサブプロセスへ`MISE_AUTO_INSTALL=0`を渡し、miseのshimが呼び出したコマンドと
 無関係なツールを自動導入して更新処理を停止させる経路を抑止する。
 取得したchezmoi出力は、プラットフォームの既定値に依存せずUTF-8として厳格に復号する。
+git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
+`0`は上限なしとし、負数又は整数でない値は終了コード2で拒否する。
 """
 
 import argparse
+import contextlib
 import os
 import pathlib
 import subprocess
@@ -39,10 +42,15 @@ import sys
 
 import filelock
 import platformdirs
+import psutil
 
 _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _LOCK_PATH = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks" / "update-dotfiles.lock"
 _LOCK_TIMEOUT_SEC = 600.0
+_GIT_TIMEOUT_DEFAULT_SEC = 600
+_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC = 30
+_PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
+_GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
 
 
 def _child_env() -> dict[str, str]:
@@ -75,7 +83,40 @@ def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture:
     return result.returncode, (result.stdout if capture else "")
 
 
-def _run_git_pull(step_no: int, total: int) -> int:
+def _git_timeout() -> int | None:
+    """Git pullの待機上限を環境変数から返す。`0`は上限なしを表す。"""
+    raw_value = os.environ.get(_GIT_TIMEOUT_ENV)
+    if raw_value is None:
+        return _GIT_TIMEOUT_DEFAULT_SEC
+    try:
+        value = int(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{_GIT_TIMEOUT_ENV}={raw_value!r}は0以上の整数で指定してください。") from error
+    if value < 0:
+        raise ValueError(f"{_GIT_TIMEOUT_ENV}={raw_value!r}は0以上の整数で指定してください。")
+    return None if value == 0 else value
+
+
+def _kill_process_tree(process: subprocess.Popen[str]) -> None:
+    """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。"""
+    processes: list[psutil.Process] = []
+    try:
+        parent = psutil.Process(process.pid)
+        processes = [*parent.children(recursive=True), parent]
+    except psutil.NoSuchProcess:
+        pass
+
+    for child in processes:
+        try:
+            child.kill()
+        except psutil.NoSuchProcess:
+            continue
+    psutil.wait_procs(processes, timeout=_PROCESS_TREE_WAIT_TIMEOUT_SEC)
+    with contextlib.suppress(ProcessLookupError):
+        process.kill()
+
+
+def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOUT_DEFAULT_SEC) -> int:
     """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
 
     `submodule.recurse=false`は、dotfilesリポジトリがsubmoduleを持たないため不要な再帰を無効化する。
@@ -83,22 +124,45 @@ def _run_git_pull(step_no: int, total: int) -> int:
     POSIX shで実行され、PATH上の`gettext.sh`を読み込むため、当該ファイルがbash専用構文を含むと
     構文エラーで終了し、更新処理が最初の工程で止まる。
     `_child_env`の`MISE_AUTO_INSTALL=0`と同じく、工程が利用者環境の設定を引き継いで停止する経路を抑止する。
+
+    子のセッションとプロセスグループは変更せず、SSH鍵のパスフレーズを制御端末から入力できる状態を保つ。
+    `timeout=None`は待機上限を設けない。上限超過時は子を終了する前に子孫を列挙して全て強制終了し、
+    出力回収にも上限を設ける。
     """
     print(f"=== [{step_no}/{total}] git pull ===")
-    result = subprocess.run(
+    # 上限超過時に子孫を列挙してから直接子を回収するため、プロセスを明示的に保持する。
+    process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
         ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "-c", "submodule.recurse=false", "pull", "--rebase", "--quiet"],
         cwd=_DOTFILES_ROOT,
-        check=False,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         encoding="utf-8",
         env=_child_env(),
     )
-    if result.stdout:
-        sys.stdout.write(result.stdout)
-    if result.stderr:
-        stream = sys.stdout if result.returncode == 0 else sys.stderr
-        stream.write(result.stderr)
-    return result.returncode
+    try:
+        stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(process)
+        try:
+            stdout, stderr = process.communicate(timeout=_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
+        if stdout:
+            sys.stdout.write(stdout)
+        if stderr:
+            sys.stderr.write(stderr)
+        print(
+            f"git pullが{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
+            f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。",
+            file=sys.stderr,
+        )
+        return 1
+    if stdout:
+        sys.stdout.write(stdout)
+    if stderr:
+        stream = sys.stdout if process.returncode == 0 else sys.stderr
+        stream.write(stderr)
+    return process.returncode
 
 
 def _filter_apply_pending(status_output: str) -> list[str]:
@@ -125,12 +189,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
     args = _parse_args(argv)
+    try:
+        git_timeout = _git_timeout()
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
     total = 5 if args.force else 4
     lock_dir = _LOCK_PATH.parent
     lock_dir.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
-            returncode = _run_git_pull(1, total)
+            returncode = _run_git_pull(1, total, timeout=git_timeout)
             if returncode != 0:
                 return returncode
 
