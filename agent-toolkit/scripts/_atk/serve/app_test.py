@@ -528,7 +528,7 @@ async def test_concurrent_sync_requests_share_one_pull(
 
 
 def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.Path) -> None:
-    """`atk wi migrate`の実行前に保存された`type`値を現行の種別として一覧へ返す。"""
+    """旧形式で保存された`type`値を現行の種別として一覧へ返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(

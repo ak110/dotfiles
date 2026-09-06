@@ -27,8 +27,8 @@ _LEGACY_TYPE_DIRECTORIES = {"feedback": WI_TYPE_AWI, "tbd": WI_TYPE_UWI}
 _LEGACY_RESERVATION_TYPES = ("feedback", WI_TYPE_AWI)
 """2.34.0形式の予約が保持し得る`type`値。
 
-当時の保存値と、`atk wi migrate`が変換した後の現行値の双方を受理する。
-片方だけで判定すると、変換の前後どちらかの環境で予約の移行が働かない。
+当時の保存値と現行値の双方を読み取り互換として受理する。
+片方だけで判定すると、いずれかの形式で予約の移行が働かない。
 """
 
 

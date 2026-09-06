@@ -73,7 +73,6 @@ from _atk.wi import batch as _batch  # noqa: E402
 from _atk.wi import common as _common  # noqa: E402
 from _atk.wi import grep as _grep  # noqa: E402
 from _atk.wi import listing as _list  # noqa: E402
-from _atk.wi import migrate as _migrate  # noqa: E402
 from _atk.wi import mutations as _mutations  # noqa: E402
 from _atk.wi import process_loop as _process_loop  # noqa: E402
 from _atk.wi import show as _show  # noqa: E402
@@ -713,13 +712,6 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_target_repo_arg(answer)
 
     _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
-    migrate = _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk wi migrate"])
-    migrate.add_argument(
-        "--private-notes",
-        default=None,
-        help="変換対象のprivate-notesの絶対パス（既定: atk config get private_notesの値）。",
-    )
-    migrate.add_argument("--skip-push", action="store_true", help="commitまでを行い、pushを行わない。")
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
@@ -1125,7 +1117,6 @@ def main(
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
-        "migrate": lambda: _migrate.cmd_migrate(args, private_notes),
     }
     try:
         exit_code = dispatch[sub]() or 0

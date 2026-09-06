@@ -704,8 +704,7 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
 def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object]) -> str:
     """解析済みfrontmatterの種別を検証して返す。
 
-    保存値は読み取り互換として正規化する。`atk wi migrate`の実行後は現行の値だけが残るため、
-    正規化は移行前の保存値を持つ項目だけを通る。
+    保存値は読み取り互換として正規化する。旧値を持つ項目は現行の種別として扱う。
     """
     entry_type = normalized_wi_type(metadata.get("type"))
     if entry_type is None:

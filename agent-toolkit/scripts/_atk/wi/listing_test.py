@@ -717,7 +717,7 @@ class TestListSourceFilter:
 
 
 class TestListLegacyTypeValues:
-    """`list`サブコマンド: `atk wi migrate`の実行前に保存された`type`値を読み取る。"""
+    """`list`サブコマンド: 旧形式で保存された`type`値を読み取る。"""
 
     def test_legacy_type_values_are_listed_as_current_types(
         self,

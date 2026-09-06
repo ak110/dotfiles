@@ -71,11 +71,10 @@ WI_TYPES = (WI_TYPE_AWI, WI_TYPE_UWI)
 """frontmatterの`type`が取り得る値の全体。"""
 
 LEGACY_WI_TYPES = {"feedback": WI_TYPE_AWI, "tbd": WI_TYPE_UWI}
-"""`atk wi migrate`の実行前に保存された`type`値と、現行の値の対応。
+"""旧形式で保存された`type`値と、現行の値の対応。
 
-配布は移行より先に届くため、移行前のprivate-notesが旧値のまま残る期間がある。
+private-notesには旧値を持つ項目が残り得る。
 読み取り経路だけが本表を参照し、書き込み経路は常に現行の値を保存する。
-`atk wi migrate`が保存値を変換した後は、本表に一致する値が残らない。
 """
 
 
