@@ -76,6 +76,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
 
 - ③では`agent-toolkit:session-review`、即時対応及び自動コードレビュー監査の処置確定を先に完了し、push、CI、CI失敗時の修正、固有の終端工程及び延期`adopt`を1回だけ終端担当へ委譲する。
   メインは`agent-toolkit:session-review`、自動コードレビュー監査、`agent-toolkit:completion-report`と`agent-toolkit:exit-session`を保持する
+- ③のpush、CI、固有の終端工程及び延期`adopt`の対象が1件も無い処理回の扱いは`references/finish-session.md`「公開対象が無い処理回の短絡」が定める
 
 ③の終端担当以外の委譲の要否は`agent-toolkit/rules/01-agent.md`「委譲の要否判定」節に従って判定し、
 対象が特定済みで読む範囲が少量の場合はメインが自ら実施してよい。

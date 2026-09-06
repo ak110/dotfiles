@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from pytools._internal import claude_common  # pylint: disable=wrong-import-position  # noqa: E402
 
 BASE_SOURCE = Path("agent-toolkit/share/codex-agents-base.md")
+PERSONAL_SOURCE = Path(".chezmoi-source/dot_claude/rules/myprojects-common.md")
 RULES_SOURCE = Path("agent-toolkit/rules")
 TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
@@ -32,17 +33,17 @@ GENERATED_MARKER = "<!-- 自動生成ファイル。scripts/sync_generated_files
 def render(root: Path = REPO_ROOT) -> str:
     """生成内容を決定的に組み立てる。"""
     sections = [GENERATED_MARKER, "", (root / BASE_SOURCE).read_text(encoding="utf-8").rstrip("\n")]
+    sections.extend(_embedded_section(root, PERSONAL_SOURCE))
     for rule in sorted(path for path in (root / RULES_SOURCE).glob("*.md") if is_codex_shared_rule(path)):
-        relative = rule.relative_to(root).as_posix()
-        sections.extend(
-            [
-                "",
-                f"<!-- BEGIN: {relative} -->",
-                rule.read_text(encoding="utf-8").rstrip("\n"),
-                f"<!-- END: {relative} -->",
-            ]
-        )
+        sections.extend(_embedded_section(root, rule.relative_to(root)))
     return "\n".join(sections) + "\n"
+
+
+def _embedded_section(root: Path, relative: Path) -> list[str]:
+    """埋め込み元のパスを示すマーカーの間に本文を配置する。"""
+    marker = relative.as_posix()
+    body = (root / relative).read_text(encoding="utf-8").rstrip("\n")
+    return ["", f"<!-- BEGIN: {marker} -->", body, f"<!-- END: {marker} -->"]
 
 
 def _codex_limits(root: Path) -> tuple[int, float]:
