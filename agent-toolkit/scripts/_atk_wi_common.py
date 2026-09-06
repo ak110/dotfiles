@@ -41,6 +41,7 @@ import platformdirs
 from _atk_wi_constants import (
     TRANSITION_EXPLICIT_STATES,
     WI_ACTIVE_STATES,
+    WI_EDITABLE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
@@ -67,6 +68,7 @@ from _uwi_scan import is_uwi_answered as _is_uwi_answered
 __all__ = [
     "TRANSITION_EXPLICIT_STATES",
     "WI_ACTIVE_STATES",
+    "WI_EDITABLE_STATES",
     "WI_PROCESSABLE_STATES",
     "WI_STATES",
     "WI_STATE_ADOPTED",

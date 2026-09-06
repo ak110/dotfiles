@@ -32,6 +32,12 @@ WI_STATES = (
 WI_ACTIVE_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD)
 """未終端の項目を表示する一覧集合。項目の種別によらず同じ集合とする。"""
 
+WI_EDITABLE_STATES = (WI_STATE_HOLD, WI_STATE_PROCESSING, WI_STATE_INBOX)
+"""本文の編集と追記が受理する保存状態の唯一の定義。
+
+並び順は対象解決の探索順を表す。
+"""
+
 WI_PROCESSABLE_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING)
 """自動処理へ渡せる一覧集合。着手可否は別途判定する。"""
 

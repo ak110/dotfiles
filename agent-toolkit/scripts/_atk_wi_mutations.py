@@ -25,6 +25,7 @@ import _plan_file
 import _plan_format
 from _atk_wi_common import (
     TRANSITION_EXPLICIT_STATES,
+    WI_EDITABLE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
@@ -512,7 +513,7 @@ def edit_entry_content(
 
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
-    if state not in {WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD}:
+    if state not in WI_EDITABLE_STATES:
         raise WebInputError("編集可能状態はinbox、processing又はholdです")
 
     directory = private_notes / state
@@ -545,7 +546,7 @@ def append_entry_content(
 
     `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
     """
-    if state not in {WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD}:
+    if state not in WI_EDITABLE_STATES:
         raise WebInputError("追記可能状態はinbox、processing又はholdです")
 
     directory = private_notes / state
@@ -990,6 +991,38 @@ def _resolve_processable_targets(
     return resolved
 
 
+def _resolve_editable_targets(
+    filenames: list[str],
+    private_notes: pathlib.Path,
+    *,
+    missing_is_conflict: bool = False,
+) -> list[pathlib.Path]:
+    """編集対象を解決し、解決した保存状態のまま本文を書き戻す。"""
+    resolved: list[pathlib.Path] = []
+    missing: list[str] = []
+    for name in filenames:
+        normalized = _validate_filename(name, private_notes / WI_STATE_INBOX).name
+        path = next(
+            (
+                private_notes / state_name / normalized
+                for state_name in WI_EDITABLE_STATES
+                if (private_notes / state_name / normalized).exists()
+            ),
+            None,
+        )
+        if path is None:
+            missing.append(normalized)
+        else:
+            resolved.append(path)
+    if missing:
+        if missing_is_conflict:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        for name in missing:
+            print(f"inbox・processing・holdのいずれにも存在しません: {name}", file=sys.stderr)
+        sys.exit(2)
+    return resolved
+
+
 def _resolve_conversion_targets(
     filenames: tuple[str, ...],
     inbox_dir: pathlib.Path,
@@ -1030,7 +1063,7 @@ def _resolve_removable_targets(
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """rmの対象をprocessing、inboxの優先順で解決する。"""
+    """rmの対象をprocessing、inbox、holdの優先順で解決する。"""
     resolved: list[pathlib.Path] = []
     missing: list[str] = []
     for name in filenames:
@@ -1038,6 +1071,7 @@ def _resolve_removable_targets(
         candidates = (
             processing_dir / normalized,
             inbox_dir / normalized,
+            inbox_dir.parent / WI_STATE_HOLD / normalized,
         )
         path = next((candidate for candidate in candidates if candidate.exists()), None)
         if path is None:
@@ -1048,7 +1082,7 @@ def _resolve_removable_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            print(f"inbox・processingのいずれにも存在しません: {name}", file=sys.stderr)
+            print(f"inbox・processing・holdのいずれにも存在しません: {name}", file=sys.stderr)
         sys.exit(2)
     return resolved
 
@@ -1913,7 +1947,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             print("$EDITORが未設定のため編集できません。", file=sys.stderr)
             sys.exit(1)
     inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    _subdir(private_notes, WI_STATE_PROCESSING)
     with _repo_lock(private_notes):
         if args.filename is None:
             _pull(private_notes)
@@ -1928,7 +1962,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         else:
             _validate_filenames_only([args.filename], inbox_dir)
             _pull(private_notes)
-            paths = _resolve_processable_targets([args.filename], inbox_dir, processing_dir)
+            paths = _resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
         snapshot = path.read_bytes()
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
@@ -2008,11 +2042,11 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         sys.exit(1)
 
     inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    _subdir(private_notes, WI_STATE_PROCESSING)
     with _repo_lock(private_notes):
         _validate_filenames_only([args.filename], inbox_dir)
         _pull(private_notes)
-        path = _resolve_processable_targets([args.filename], inbox_dir, processing_dir)[0]
+        path = _resolve_editable_targets([args.filename], private_notes)[0]
         snapshot = path.read_bytes()
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)

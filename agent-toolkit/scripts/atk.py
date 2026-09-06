@@ -82,10 +82,10 @@ import _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
-_convert_to_plan_filename_completer = _common.make_filename_completer(
+_editable_filename_completer = _common.make_filename_completer(_common.WI_EDITABLE_STATES)
+_removable_filename_completer = _common.make_filename_completer(
     (_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING, _common.WI_STATE_HOLD)
 )
-_removable_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING))
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
@@ -592,11 +592,11 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         nargs="?",
         default=None,
         help=(
-            "編集対象のファイル名（inbox・processingいずれも対象）。"
+            "編集対象のファイル名（inbox・processing・holdいずれも対象）。"
             "MESSAGEとともに指定すると非対話で編集する。"
             "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
         ),
-    ).completer = _processable_filename_completer  # type: ignore[attr-defined]
+    ).completer = _editable_filename_completer  # type: ignore[attr-defined]
     edit.add_argument(
         "message",
         metavar="MESSAGE",
@@ -634,7 +634,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         metavar="FILENAME",
         nargs="+",
         help="変換する同一状態のAWIファイル名（1個以上）。holdでは--messageを指定する。",
-    ).completer = _convert_to_plan_filename_completer  # type: ignore[attr-defined]
+    ).completer = _editable_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
         "--message",
         metavar="MESSAGE",

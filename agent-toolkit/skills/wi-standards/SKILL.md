@@ -114,7 +114,8 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 | `rejected`→`inbox` | `atk wi return-to-inbox --state=rejected` | UWIの回答が採用を示した項目を再処理へ戻す |
 | `processing`→`inbox` | `atk wi return-to-inbox` | 処理中に未回答UWIへの依存が生じた項目を`inbox`かつ`blocked`へ戻す |
 
-`inbox`と`hold`の項目は`atk wi rm`で削除できる。本文の編集は保存状態によらず行える。
+`inbox`と`hold`の項目は`atk wi rm`で削除できる。本文の編集は`inbox`、`processing`、`hold`の各状態で行える。
+投入済み項目の本文を修正する主体は、`atk wi hold`で保留し、本文を編集し、`atk wi unhold`で保留を解除する順序で行う。常駐する`atk wi process-loop`が編集途中の本文を取得することを防ぐためである。
 `agent-toolkit:process-wi`は`processable`の項目だけを処理の対象とし、`hold`の項目を候補、優先度、依存判断及び固有指示の入力から除外する。
 
 `depends_on`は、当該項目より先に終端すべきキュー項目のファイル名を保持する。用途は、未回答UWIによる外部待ちと、先に終端すべきAWIへの先行成果依存の2つとする。依存先は`target_repo`が異なるキュー項目でもよく、着手可否はリポジトリを横断して判定する。値は保存済みのメタデータを正本とし、本文の記述から依存を再構築しない。
