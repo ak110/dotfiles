@@ -2462,19 +2462,27 @@ async def test_list_loading_counts_requests_that_finish_while_away(screen_harnes
     second_requested = asyncio.Event()
     release_first = asyncio.Event()
     release_second = asyncio.Event()
+    first_fulfilled = asyncio.Event()
+    second_fulfilled = asyncio.Event()
     request_count = 0
 
     async def delay_entries(route: playwright.async_api.Route) -> None:
         nonlocal request_count
         request_count += 1
+        request_number = request_count
         response = await route.fetch()
-        if request_count == 1:
+        if request_number == 1:
             first_requested.set()
             await release_first.wait()
-        elif request_count == 2:
+            await route.fulfill(response=response)
+            first_fulfilled.set()
+        elif request_number == 2:
             second_requested.set()
             await release_second.wait()
-        await route.fulfill(response=response)
+            await route.fulfill(response=response)
+            second_fulfilled.set()
+        else:
+            await route.fulfill(response=response)
 
     await page.route("**/api/entries?*", delay_entries)
     await page.goto(screen_harness.base_url + "/")
@@ -2483,13 +2491,14 @@ async def test_list_loading_counts_requests_that_finish_while_away(screen_harnes
     await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     await asyncio.wait_for(second_requested.wait(), timeout=5)
     release_first.set()
-    await page.wait_for_timeout(50)
+    await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
     release_second.set()
+    await asyncio.wait_for(second_fulfilled.wait(), timeout=5)
+    await page.unroute_all(behavior="wait")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
-    await page.unroute("**/api/entries?*", delay_entries)
 
 
 @pytest.mark.asyncio
