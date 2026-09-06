@@ -3,6 +3,7 @@
 各ステップは独立して動作し、途中で失敗しても他のステップは継続する。
 """
 
+import io
 import logging
 import os
 import sys
@@ -59,7 +60,10 @@ class _BelowWarningFilter(logging.Filter):
 
 
 def _configure_logging() -> tuple[list[logging.Handler], int]:
-    """正常ログをstdout、警告以上をstderrへ分離し、復元用のroot設定を返す。"""
+    """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="backslashreplace")
     formatter = logging.Formatter("  %(message)s")
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
@@ -247,13 +251,20 @@ def _cleanup_removed_paths() -> bool:
         total_removed += cleanup_paths.cleanup_paths_if_content_matches(base_dir, expected)
     # 配布済みREADMEの親だけを深い順で除去する。rmdirにより利用者ファイルが残るディレクトリは保持する。
     ipython_dir = Path.home() / ".ipython"
-    ipython_resolved = ipython_dir.resolve()
+    try:
+        ipython_resolved = ipython_dir.resolve()
+    except OSError as error:
+        logger.warning("%s の検査に失敗したため空ディレクトリの削除をスキップします: %s", ipython_dir, error)
+        return total_removed > 0
     for relative_dir in (Path("profile_default/startup"), Path("profile_default")):
         target = ipython_dir / relative_dir
         try:
             target.resolve().relative_to(ipython_resolved)
         except ValueError:
             logger.warning("%s は %s 配下ではないためスキップします", target, ipython_dir)
+            continue
+        except OSError as error:
+            logger.warning("%s の検査に失敗したためスキップします: %s", target, error)
             continue
         try:
             target.rmdir()

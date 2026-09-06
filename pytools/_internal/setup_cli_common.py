@@ -111,7 +111,7 @@ def _warn_unconfirmed_launcher(cli_name: str, launcher: Path, reason: str) -> No
 def _launcher_kind(launcher: Path) -> str:
     """帰属判定に用いたランチャーの実体の種別を返す。"""
     if launcher.is_symlink():
-        return f"symlink（参照先: {_safe_resolve(launcher)}）"
+        return f"symlink（参照先: {claude_common.safe_resolve(launcher)}）"
     if launcher.is_dir():
         return "ディレクトリ"
     if launcher.is_file():
@@ -134,13 +134,13 @@ def _iter_noncanonical_launchers(
     """
     seen: set[str] = set()
     names = (cli_name, f"{cli_name}.cmd", f"{cli_name}.exe") if sys.platform == "win32" else (cli_name,)
-    canonical_real = _safe_resolve(canonical_launcher)
-    prefix_real = _safe_resolve(canonical_prefix)
-    shim_directories = _mise_shim_directories()
+    canonical_real = claude_common.safe_resolve(canonical_launcher)
+    prefix_real = claude_common.safe_resolve(canonical_prefix)
+    shim_directories = claude_common.mise_shim_directories()
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     seen_directories: set[str] = set()
     for directory in (*path_directories, *extra_search_directories):
-        directory_real = _safe_resolve(directory)
+        directory_real = claude_common.safe_resolve(directory)
         directory_key = os.path.normcase(str(directory_real))
         if directory_key in seen_directories:
             continue
@@ -151,25 +151,14 @@ def _iter_noncanonical_launchers(
             launcher = directory / name
             if not launcher.exists():
                 continue
-            key = os.path.normcase(str(_safe_resolve(launcher)))
+            key = os.path.normcase(str(claude_common.safe_resolve(launcher)))
             if key in seen:
                 continue
             seen.add(key)
-            resolved = _safe_resolve(launcher)
+            resolved = claude_common.safe_resolve(launcher)
             if resolved == canonical_real or _is_relative_to(resolved, prefix_real):
                 continue
             yield launcher
-
-
-def _mise_shim_directories() -> set[Path]:
-    """miseがshimを配置するディレクトリのうち、実在するものの解決済みパスを返す。"""
-    data_dir = os.environ.get("MISE_DATA_DIR")
-    candidates = [Path(data_dir) / "shims" if data_dir else Path.home() / ".local" / "share" / "mise" / "shims"]
-    if sys.platform == "win32":
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if local_app_data:
-            candidates.append(Path(local_app_data) / "mise" / "shims")
-    return {_safe_resolve(candidate) for candidate in candidates if candidate.is_dir()}
 
 
 def _adjacent_npm(directory: Path) -> Path | None:
@@ -202,8 +191,8 @@ def _npm_package_dir(npm: Path, package_name: str, unresolved: list[str] | None 
             f"npmの導入先を取得できない: prefix={_command_output(prefix_result)} root={_command_output(root_result)}",
         )
         return None
-    prefix = _safe_resolve(Path(prefix_result.stdout.strip()))
-    root = _safe_resolve(Path(root_result.stdout.strip()))
+    prefix = claude_common.safe_resolve(Path(prefix_result.stdout.strip()))
+    root = claude_common.safe_resolve(Path(root_result.stdout.strip()))
     if not _is_relative_to(root, prefix):
         _record_unresolved(unresolved, f"npmのroot（{root}）がprefix（{prefix}）の配下ではない")
         return None
@@ -230,8 +219,8 @@ def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
 
 
 def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name: str) -> bool:
-    resolved = _safe_resolve(launcher)
-    package_real = _safe_resolve(package_dir)
+    resolved = claude_common.safe_resolve(launcher)
+    package_real = claude_common.safe_resolve(package_dir)
     if resolved != launcher.absolute() and _is_relative_to(resolved, package_real):
         return True
     if launcher.suffix.lower() == ".cmd":
@@ -242,8 +231,11 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
         entrypoint = _package_bin_entrypoint(package_dir, launcher.stem)
         if entrypoint is None:
             return False
-        entrypoint_real = _safe_resolve(entrypoint)
-        return any(_safe_resolve(candidate) == entrypoint_real for candidate in _cmd_referenced_paths(content, launcher.parent))
+        entrypoint_real = claude_common.safe_resolve(entrypoint)
+        return any(
+            claude_common.safe_resolve(candidate) == entrypoint_real
+            for candidate in _cmd_referenced_paths(content, launcher.parent)
+        )
     if launcher.suffix.lower() == ".exe":
         # mise shimはmiseの解決情報が対象packageを指す場合だけ対象とする。
         mise_name = shutil.which("mise")
@@ -260,7 +252,7 @@ def _launcher_belongs_to_package(launcher: Path, package_dir: Path, package_name
             result is not None
             and result.returncode == 0
             and (package_name.lower() in normalized_output or package_slug in normalized_output)
-            and _is_relative_to(_safe_resolve(Path(output)), package_real)
+            and _is_relative_to(claude_common.safe_resolve(Path(output)), package_real)
         )
     return False
 
@@ -304,16 +296,9 @@ def _package_bin_entrypoint(package_dir: Path, cli_name: str) -> Path | None:
         return None
     if not isinstance(relative, str) or not relative:
         return None
-    entrypoint = _safe_resolve(package_dir / relative)
-    package_real = _safe_resolve(package_dir)
+    entrypoint = claude_common.safe_resolve(package_dir / relative)
+    package_real = claude_common.safe_resolve(package_dir)
     return entrypoint if entrypoint.is_file() and _is_relative_to(entrypoint, package_real) else None
-
-
-def _safe_resolve(path: Path) -> Path:
-    try:
-        return path.resolve()
-    except OSError:
-        return path.absolute()
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

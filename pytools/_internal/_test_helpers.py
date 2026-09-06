@@ -22,6 +22,13 @@ class _FakeResult:
         self.stderr = stderr
 
 
+def command_matches(cmd: list[str], expected: list[str]) -> bool:
+    """実行ファイルの絶対パスを許容して、コマンド列の先頭部分を比較する。"""
+    if len(cmd) < len(expected) or not cmd or not expected:
+        return False
+    return Path(cmd[0]).stem == expected[0] and cmd[1 : len(expected)] == expected[1:]
+
+
 def _plugin_list_json(*entries: dict[str, object]) -> str:
     """テスト用の `claude plugin list --json` 出力を組み立てる。"""
     return json.dumps(list(entries), ensure_ascii=False)
@@ -36,13 +43,13 @@ def make_fresh_install_fake(calls: list[list[str]]) -> typing.Callable[..., _Fak
 
     def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
         calls.append(cmd)
-        if cmd[:3] == ["claude", "plugin", "list"]:
+        if command_matches(cmd, ["claude", "plugin", "list"]):
             return _FakeResult(returncode=0, stdout="[]")
-        if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+        if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
             return _FakeResult(returncode=0, stdout="[]")
-        if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+        if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
             return _FakeResult(returncode=0)
-        if cmd[:3] == ["claude", "plugin", "install"]:
+        if command_matches(cmd, ["claude", "plugin", "install"]):
             return _FakeResult(returncode=0)
         return _FakeResult(returncode=1)
 
@@ -64,7 +71,7 @@ def make_installed_two_plugin_fake(
 
     def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
         calls.append(cmd)
-        if cmd[:3] == ["claude", "plugin", "list"]:
+        if command_matches(cmd, ["claude", "plugin", "list"]):
             return _FakeResult(
                 returncode=0,
                 stdout=_plugin_list_json(
@@ -72,7 +79,7 @@ def make_installed_two_plugin_fake(
                     {"id": "sample-plugin@ak110-dotfiles", "version": "1.0.0", "scope": "user"},
                 ),
             )
-        if cmd[:4] == ["claude", "plugin", "marketplace", "list"]:
+        if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
             return _FakeResult(
                 returncode=0,
                 stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
@@ -88,21 +95,20 @@ def make_installed_two_plugin_fake(
 
 def assert_scope_user_install_calls(calls: list[list[str]]) -> None:
     """agent-toolkit / sample-plugin の両方が `--scope=user` で install されたことを検証する。"""
-    install_calls = [c for c in calls if c[:3] == ["claude", "plugin", "install"]]
-    assert [
-        "claude",
-        "plugin",
-        "install",
-        "agent-toolkit@ak110-dotfiles",
-        "--scope=user",
-    ] in install_calls
-    assert [
-        "claude",
-        "plugin",
-        "install",
-        "sample-plugin@ak110-dotfiles",
-        "--scope=user",
-    ] in install_calls
+    assert any(
+        command_matches(
+            command,
+            ["claude", "plugin", "install", "agent-toolkit@ak110-dotfiles", "--scope=user"],
+        )
+        for command in calls
+    )
+    assert any(
+        command_matches(
+            command,
+            ["claude", "plugin", "install", "sample-plugin@ak110-dotfiles", "--scope=user"],
+        )
+        for command in calls
+    )
 
 
 def write_known_entry(path: pathlib.Path, entry: dict[str, object]) -> None:

@@ -49,13 +49,48 @@ def is_euryale() -> bool:
     return sys.platform == "linux" and socket.gethostname().lower().split(".")[0] == _EURYALE_HOSTNAME
 
 
+def safe_resolve(path: Path) -> Path:
+    """パスを解決し、OSが解決を拒否した場合は絶対パスを返す。"""
+    try:
+        return path.resolve()
+    except OSError:
+        return path.absolute()
+
+
+def mise_shim_directories() -> set[Path]:
+    """miseがshimを配置するディレクトリのうち、実在するものの解決済みパスを返す。"""
+    data_dir = os.environ.get("MISE_DATA_DIR")
+    candidates = [Path(data_dir) / "shims" if data_dir else Path.home() / ".local" / "share" / "mise" / "shims"]
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            candidates.append(Path(local_app_data) / "mise" / "shims")
+    return {safe_resolve(candidate) for candidate in candidates if candidate.is_dir()}
+
+
+def resolve_executable(name: str, *, preferred_directories: Sequence[Path] = ()) -> Path | None:
+    """mise管理版ではない実行ファイルの実体を絶対パスで返す。
+
+    優先ディレクトリと`PATH`を順に走査し、mise shimのディレクトリは除外する。
+    miseが唯一の提供元であるツールへ適用すると、shimを除外した結果として`None`を返す。
+    """
+    shim_directories = mise_shim_directories()
+    path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
+    seen: set[Path] = set()
+    for directory in (*preferred_directories, *path_directories):
+        resolved_directory = safe_resolve(directory)
+        if resolved_directory in seen or resolved_directory in shim_directories:
+            continue
+        seen.add(resolved_directory)
+        found = shutil.which(name, path=str(directory))
+        if found is not None:
+            return Path(found)
+    return None
+
+
 def resolve_uv_path() -> Path | None:
     """公式導入先を優先して`uv`の絶対パスを返す。"""
-    candidate = Path.home() / ".local" / "bin" / "uv"
-    if candidate.is_file():
-        return candidate
-    found = shutil.which("uv")
-    return Path(found) if found else None
+    return resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
 
 
 def ensure_flag_file_present(flag_path: Path, *, tag: str) -> bool:
@@ -156,13 +191,17 @@ def run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.Comple
     `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
     原因追跡のため、実行コマンドと戻り値をログに残す。
     """
+    claude = resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",))
+    if claude is None:
+        logger.warning(log_format.format_status("claude", "claudeコマンドが見つからないためスキップ"))
+        return None
     logger.info(
         log_format.format_status(
             "claude",
             f"exec: {' '.join(args)}" + (f" (cwd={cwd})" if cwd is not None else ""),
         )
     )
-    result = run_subprocess(["claude", *args], timeout=CLAUDE_TIMEOUT, cwd=cwd, tag="claude")
+    result = run_subprocess([str(claude), *args], timeout=CLAUDE_TIMEOUT, cwd=cwd, tag="claude")
     if result is None:
         return None
     logger.info(log_format.format_status("claude", f"exit {result.returncode}: {' '.join(args)}"))

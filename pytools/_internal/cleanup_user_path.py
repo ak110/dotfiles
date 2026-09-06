@@ -69,12 +69,19 @@ def run() -> bool:
     new_value, removed = _filter_user_path(_PATH_SEPARATOR.join(placeholder_entries), system_value or "")
 
     # (3) 存在チェック警告
-    missing = _find_missing_paths(_split(new_value))
+    missing, unresolved = _find_missing_paths(_split(new_value))
     for original, expanded in missing:
         logger.warning(
             log_format.format_status(
                 _LOG_LABEL,
                 f"ユーザー PATH に存在しないエントリーを検出: {original} (展開: {expanded})",
+            )
+        )
+    for original, expanded, error in unresolved:
+        logger.warning(
+            log_format.format_status(
+                _LOG_LABEL,
+                f"ユーザー PATH のエントリーを検査できないため保持: {original} (展開: {expanded}): {error}",
             )
         )
 
@@ -169,20 +176,28 @@ def _filter_user_path(user_value: str, system_value: str) -> tuple[str, list[str
     return _PATH_SEPARATOR.join(kept), removed
 
 
-def _find_missing_paths(entries: Iterable[str]) -> list[tuple[str, str]]:
-    """存在しないエントリーを `(元エントリー, 展開後パス)` のタプル列で返す。
+def _find_missing_paths(
+    entries: Iterable[str],
+) -> tuple[list[tuple[str, str]], list[tuple[str, str, OSError]]]:
+    """存在しないエントリーと検査できないエントリーを返す。
 
     展開後にも `%` が残るエントリー（未定義変数残留）は判定不能として除外する。
     判定は `pathlib.Path(p).exists()` で行う。
     """
     missing: list[tuple[str, str]] = []
+    unresolved: list[tuple[str, str, OSError]] = []
     for entry in entries:
         expanded = ntpath.expandvars(entry)
         if not expanded or "%" in expanded:
             continue
-        if not Path(expanded).exists():
+        try:
+            exists = Path(expanded).exists()
+        except OSError as error:
+            unresolved.append((entry, expanded, error))
+            continue
+        if not exists:
             missing.append((entry, expanded))
-    return missing
+    return missing, unresolved
 
 
 def _split(path_value: str) -> list[str]:

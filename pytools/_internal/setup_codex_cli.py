@@ -268,10 +268,7 @@ def _find_orphaned_mise_shims() -> tuple[list[str], list[Path]]:
         return [], []
     names = ("codex", "codex.exe") if sys.platform == "win32" else ("codex",)
     shims = [
-        shim
-        for directory in setup_cli_common._mise_shim_directories()  # pylint: disable=protected-access
-        for name in names
-        if (shim := directory / name).is_file()
+        shim for directory in claude_common.mise_shim_directories() for name in names if (shim := directory / name).is_file()
     ]
     return [], shims
 

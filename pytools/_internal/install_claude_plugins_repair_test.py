@@ -14,7 +14,13 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 
-from ._test_helpers import _FakeResult, write_known_entry, write_settings_entry
+from ._test_helpers import _FakeResult, command_matches, write_known_entry, write_settings_entry
+
+
+@pytest.fixture(autouse=True)
+def _resolve_claude(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude CLIをテスト用のコマンド名へ固定する。"""
+    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
 
 
 @pytest.fixture(name="dotfiles_root")
@@ -215,7 +221,7 @@ class TestRepairMarketplace:
         healthy_entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 write_known_entry(known, {**healthy_entry, "installLocation": str(dotfiles_root)})
                 write_settings_entry(settings, healthy_entry)
             return _FakeResult(returncode=0)
@@ -246,7 +252,7 @@ class TestRepairMarketplace:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         _claude_marketplace.repair_marketplace()
-        add_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "add"]]
+        add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
         assert add_calls, f"marketplace add が呼ばれていない: {calls}"
         assert add_calls[0] == [
             "claude",
@@ -256,7 +262,7 @@ class TestRepairMarketplace:
             str(dotfiles_root),
             "--scope=user",
         ]
-        remove_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "remove"]]
+        remove_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "remove"])]
         assert remove_calls, f"marketplace remove が呼ばれていない: {calls}"
         # remove には --scope オプションは存在しない
         assert not any(c.startswith("--scope") for c in remove_calls[0])
@@ -296,7 +302,7 @@ class TestRepairMarketplace:
         # settings 側は installLocation を持たない
         assert settings_entry == {"source": {"source": "directory", "path": str(dotfiles_root)}}
         # メタデータ整合確認のため marketplace update が呼ばれる
-        refresh_calls = [c for c in calls if c[:4] == ["claude", "plugin", "marketplace", "update"]]
+        refresh_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "update"])]
         assert refresh_calls, f"marketplace update が呼ばれていない: {calls}"
 
     def test_direct_write_preserves_other_marketplace_keys(

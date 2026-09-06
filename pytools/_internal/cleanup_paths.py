@@ -47,11 +47,11 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
     removed = 0
     for rel in relative_paths:
         target = base_dir / rel
-        is_link_like = _is_link_like(target)
-        if not target.exists() and not is_link_like:
-            logger.debug("%s は存在しないためスキップ", target)
-            continue
         try:
+            is_link_like = _is_link_like(target)
+            if not target.exists() and not is_link_like:
+                logger.debug("%s は存在しないためスキップ", target)
+                continue
             if is_link_like:
                 # リンク自体の削除はリンク先を削除しないため、親ディレクトリだけを確認する。
                 target.parent.resolve().relative_to(base_resolved)
@@ -60,12 +60,19 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path]) -> int:
         except ValueError:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
-        if is_link_like:
-            _remove_link_like(target)
-        elif target.is_dir():
-            shutil.rmtree(target)
-        else:
-            target.unlink()
+        except OSError as error:
+            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            continue
+        try:
+            if is_link_like:
+                _remove_link_like(target)
+            elif target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        except OSError as error:
+            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            continue
         logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1
     return removed
@@ -86,25 +93,36 @@ def cleanup_paths_if_content_matches(base_dir: Path, expected: dict[Path, bytes]
     removed = 0
     for rel, expected_bytes in expected.items():
         target = base_dir / rel
-        if not target.exists() and not target.is_symlink():
-            logger.debug("%s は存在しないためスキップ", target)
-            continue
         try:
+            if not target.exists() and not target.is_symlink():
+                logger.debug("%s は存在しないためスキップ", target)
+                continue
             target.resolve().relative_to(base_resolved)
         except ValueError:
             logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
             continue
-        if not target.is_file() or target.is_symlink():
-            logger.warning("%s は通常ファイルではないためスキップします", target)
+        except OSError as error:
+            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
             continue
-        actual_bytes = target.read_bytes()
+        try:
+            if not target.is_file() or target.is_symlink():
+                logger.warning("%s は通常ファイルではないためスキップします", target)
+                continue
+            actual_bytes = target.read_bytes()
+        except OSError as error:
+            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            continue
         if actual_bytes != expected_bytes:
             logger.warning(
                 "%s はユーザーによる編集の可能性があるためスキップします",
                 log_format.home_short(target),
             )
             continue
-        target.unlink()
+        try:
+            target.unlink()
+        except OSError as error:
+            logger.warning("%s の検査又は削除に失敗したためスキップします: %s", target, error)
+            continue
         logger.info(log_format.format_status(log_format.home_short(target), "旧配布物を削除"))
         removed += 1
     return removed

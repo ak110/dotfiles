@@ -5,6 +5,10 @@
 レジストリ I/O は monkeypatch で `winutils` 関数を差し替え、Linux 上でも実行可能にする。
 """
 
+# pylint: disable=protected-access
+
+from pathlib import Path
+
 import pytest
 
 from pytools._internal import cleanup_user_path
@@ -298,6 +302,26 @@ class TestFindMissingPaths:
             assert cleanup_user_path.run() is False
         assert any("ユーザー PATH に存在しないエントリーを検出" in record.getMessage() for record in caplog.records)
 
+    def test_os_error_is_reported_and_remaining_entry_is_checked(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        """1件の検査失敗を分離し、後続の不在エントリーを検出する。"""
+        failing = str(tmp_path / "failing")
+        missing = str(tmp_path / "missing")
+        real_exists = Path.exists
+
+        def exists(path: Path) -> bool:
+            if str(path) == failing:
+                raise OSError("検査失敗")
+            return real_exists(path)
+
+        monkeypatch.setattr(Path, "exists", exists)
+
+        absent, unresolved = cleanup_user_path._find_missing_paths((failing, missing))
+
+        assert absent == [(missing, missing)]
+        assert len(unresolved) == 1
+        assert unresolved[0][:2] == (failing, failing)
+        assert str(unresolved[0][2]) == "検査失敗"
+
     def test_unresolved_placeholder_is_skipped(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
         """展開後に % が残るエントリーは判定不能としてスキップし、警告ログを出力しない。"""
         _stub_winutils(
@@ -469,7 +493,7 @@ class TestRun:
         monkeypatch.setattr(
             cleanup_user_path,
             "_find_missing_paths",
-            lambda entries: [(r"%USERPROFILE%\missing", rf"{_USERPROFILE}\missing")],
+            lambda entries: ([(r"%USERPROFILE%\missing", rf"{_USERPROFILE}\missing")], []),
         )
 
         with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
@@ -477,6 +501,38 @@ class TestRun:
         assert not write_calls
         assert not broadcast_calls
         assert any("ユーザー PATH に存在しないエントリーを検出" in record.getMessage() for record in caplog.records)
+
+    def test_path_check_os_error_warns_and_does_not_prevent_writeback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """検査不能なエントリーを保持し、別の重複除去結果を書き戻す。"""
+        failing = str(tmp_path / "failing")
+        write_calls, broadcast_calls = _stub_winutils(
+            monkeypatch,
+            user_value=failing + r";C:\Windows\System32",
+            user_reg_type=_REG_EXPAND_SZ,
+            system_value=r"C:\Windows\System32",
+            stub_find_missing=False,
+        )
+        real_exists = Path.exists
+
+        def exists(path: Path) -> bool:
+            if str(path) == failing:
+                raise OSError("検査失敗")
+            return real_exists(path)
+
+        monkeypatch.setattr(Path, "exists", exists)
+
+        with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
+            assert cleanup_user_path.run() is True
+
+        assert write_calls == [("Path", failing, _REG_EXPAND_SZ)]
+        assert broadcast_calls == [True]
+        assert failing in caplog.text
+        assert "検査失敗" in caplog.text
 
 
 def _stub_winutils(
@@ -521,5 +577,5 @@ def _stub_winutils(
     )
     if stub_find_missing:
         # 既定では存在チェック警告を抑止する (テストごとに必要なら明示的に差し替える)。
-        monkeypatch.setattr(cleanup_user_path, "_find_missing_paths", lambda entries: [])
+        monkeypatch.setattr(cleanup_user_path, "_find_missing_paths", lambda entries: ([], []))
     return write_calls, broadcast_calls

@@ -8,7 +8,6 @@ dotfiles apply全体の失敗にはしない。
 
 import json
 import logging
-import shutil
 import sys
 from pathlib import Path
 from typing import cast
@@ -144,7 +143,7 @@ def run() -> tuple[bool, list[str]]:
         elif is_directory_type:
             # directory 型登録が健全かつ version 一致の場合、dotfiles 側の編集を反映するため
             # `plugin install` を再実行してキャッシュを最新化する。
-            logger.info(log_format.format_status(name, f"最新 ({current or '不明'}) — directory 型キャッシュ再同期"))
+            logger.info(log_format.format_status(name, f"最新 ({current or '不明'}) のため directory 型キャッシュを再同期"))
             if _install_plugin(name):
                 any_change = True
                 resynced_count += 1
@@ -381,10 +380,10 @@ def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
 
 def _prerequisites_ok() -> bool:
     """前提条件 (claude と uv の両方が PATH にあるか) を確認する。"""
-    if shutil.which("claude") is None:
+    if claude_common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
         logger.info(log_format.format_status("plugins", "claude CLI 未検出のためスキップ"))
         return False
-    if shutil.which("uv") is None:
+    if claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
         logger.info(log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)"))
         return False
     return True

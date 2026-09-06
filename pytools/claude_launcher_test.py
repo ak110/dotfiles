@@ -51,7 +51,8 @@ def test_model_entrypoint_forwards_arguments_unchanged(
             ["--version", "追加引数"],
             os_name="nt",
             home=tmp_path,
-            which=lambda name: "claude.exe" if name == "claude" else None,
+            which=lambda _name: None,
+            resolve=lambda _name, _preferred: pathlib.Path("claude.exe"),
             run=run,
             isatty=lambda _: True,
         )
@@ -100,6 +101,7 @@ def test_clear_conditions(
         os_name="nt",
         home=tmp_path,
         which=which,
+        resolve=lambda _name, _preferred: pathlib.Path("claude"),
         run=run,
         isatty=isatty,
     )
@@ -108,16 +110,19 @@ def test_clear_conditions(
     assert (["c"] in commands) is clears
 
 
-def test_resolve_claude_bin_prefers_posix_user_install_only(
+def test_resolve_claude_bin_prefers_user_install_on_all_platforms(
     tmp_path: pathlib.Path,
 ) -> None:
     preferred = tmp_path / ".local" / "bin" / "claude"
-    preferred.parent.mkdir(parents=True)
-    preferred.write_text("#!/bin/sh\n", encoding="utf-8")
-    preferred.chmod(preferred.stat().st_mode | stat.S_IXUSR)
+    calls: list[tuple[str, tuple[pathlib.Path, ...]]] = []
 
-    assert claude_launcher._resolve_claude_bin("posix", tmp_path, lambda _: "path-claude") == str(preferred)
-    assert claude_launcher._resolve_claude_bin("nt", tmp_path, lambda _: "path-claude") == "path-claude"
+    def resolve(name: str, directories: tuple[pathlib.Path, ...]) -> pathlib.Path:
+        calls.append((name, directories))
+        return preferred
+
+    assert claude_launcher._resolve_claude_bin("posix", tmp_path, resolve) == str(preferred)
+    assert claude_launcher._resolve_claude_bin("nt", tmp_path, resolve) == str(preferred)
+    assert calls == [("claude", (preferred.parent,)), ("claude", (preferred.parent,))]
 
 
 def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
@@ -127,6 +132,7 @@ def test_missing_claude_returns_127(capsys: pytest.CaptureFixture[str], tmp_path
         os_name="nt",
         home=tmp_path,
         which=lambda _: None,
+        resolve=lambda _name, _preferred: None,
         run=lambda _: pytest.fail("コマンドは実行されない"),
         isatty=lambda _: True,
     )

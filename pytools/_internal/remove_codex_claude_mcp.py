@@ -1,6 +1,10 @@
 """Codex設定に残るClaude MCP登録を削除する。"""
 
+import logging
+
 from pytools._internal import claude_common
+
+logger = logging.getLogger(__name__)
 
 _COMMAND_TIMEOUT = 30
 _NOT_FOUND_ERROR = "Error: No MCP server named 'claude' found."
@@ -8,8 +12,12 @@ _NOT_FOUND_ERROR = "Error: No MCP server named 'claude' found."
 
 def run() -> bool:
     """Claude MCP登録が存在すれば削除し、変更の有無を返す。"""
+    codex = claude_common.resolve_executable("codex")
+    if codex is None:
+        logger.warning("codexコマンドが見つからないためClaude MCP登録を確認できません。手動で確認してください。")
+        return False
     result = claude_common.run_subprocess(
-        ["codex", "mcp", "get", "claude", "--json"],
+        [str(codex), "mcp", "get", "claude", "--json"],
         timeout=_COMMAND_TIMEOUT,
         tag="codex",
     )
@@ -23,7 +31,7 @@ def run() -> bool:
         raise RuntimeError(f"Claude MCP登録の取得に失敗: {claude_common.format_cli_error(result)}")
 
     removal = claude_common.run_subprocess(
-        ["codex", "mcp", "remove", "claude"],
+        [str(codex), "mcp", "remove", "claude"],
         timeout=_COMMAND_TIMEOUT,
         tag="codex",
     )

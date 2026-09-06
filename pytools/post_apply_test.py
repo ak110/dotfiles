@@ -4,6 +4,7 @@
 失敗時の exit code を検証する。
 """
 
+import io
 import logging
 import re
 import threading
@@ -17,6 +18,33 @@ from pytools._internal import post_apply_outcome
 
 # 配布先cleanup契約の定数を直接検証する。
 # pylint: disable=protected-access
+
+
+def test_configure_logging_preserves_cp932_record_with_unencodable_character(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CP932で表現できない文字を代替表現へ変換し、ログレコードを保持する。"""
+    stdout_buffer = io.BytesIO()
+    stderr_buffer = io.BytesIO()
+    stdout = io.TextIOWrapper(stdout_buffer, encoding="cp932")
+    stderr = io.TextIOWrapper(stderr_buffer, encoding="cp932")
+    monkeypatch.setattr(post_apply.sys, "stdout", stdout)
+    monkeypatch.setattr(post_apply.sys, "stderr", stderr)
+    root_logger = logging.getLogger()
+    previous_handlers, previous_level = post_apply._configure_logging()  # noqa: SLF001
+    try:
+        logging.getLogger("cp932-test").info("符号化不能文字: ✓")
+        stdout.flush()
+        stderr.flush()
+        output = stdout_buffer.getvalue().decode("cp932") + stderr_buffer.getvalue().decode("cp932")
+    finally:
+        root_logger.handlers[:] = previous_handlers
+        root_logger.setLevel(previous_level)
+
+    assert stdout.encoding == "cp932"
+    assert "符号化不能文字" in output
+    assert r"\u2713" in output
+    assert "--- Logging error ---" not in output
 
 
 def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:

@@ -8,6 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from pytools._internal import claude_common
 from pytools._internal.cli import enable_completion, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -244,8 +245,12 @@ def _build_prompt(
 
 def _run_claude(prompt: str, *, git_root: Path, model: str, effort: str | None) -> None:
     """claudeを呼び出してgit操作を実行させる。"""
+    claude = claude_common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",))
+    if claude is None:
+        print("claudeコマンドが見つかりません。", file=sys.stderr)
+        sys.exit(127)
     cmd = [
-        "claude",
+        str(claude),
         "--print",
         "--tools=Bash",
         "--permission-mode=bypassPermissions",

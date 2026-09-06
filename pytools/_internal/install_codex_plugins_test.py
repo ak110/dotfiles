@@ -45,7 +45,7 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
-    monkeypatch.setattr(install_codex_plugins.shutil, "which", lambda _: "/bin/codex")
+    monkeypatch.setattr(install_codex_plugins.claude_common, "resolve_executable", lambda _name: Path("codex"))
     monkeypatch.setattr(install_codex_plugins, "CODEX_HOME", tmp_path / ".codex")
     monkeypatch.delenv("CODEX_HOME", raising=False)
     return root

@@ -1,6 +1,6 @@
 """pytools._internal.warmup_hook_scripts のテスト。
 
-`shutil.which`・`claude_common.run_subprocess`・plugin一覧の入力を差し替え、
+`resolve_executable`・`claude_common.run_subprocess`・plugin一覧の入力を差し替え、
 ウォームアップ対象の列挙と個別失敗時の継続を検証する。実際の`uv`は起動しない。
 """
 
@@ -12,7 +12,7 @@ import pytest
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import warmup_hook_scripts as _warmup
 
-from ._test_helpers import _FakeResult
+from ._test_helpers import _FakeResult, command_matches
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 
@@ -46,7 +46,7 @@ def _setup(
     dotfiles_root = tmp_path / "dotfiles"
     _write_script(dotfiles_root / "scripts" / "claude_hook.py")
     monkeypatch.setattr(_warmup.claude_common, "find_dotfiles_root", lambda: dotfiles_root)
-    monkeypatch.setattr(_warmup.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
@@ -64,7 +64,7 @@ def _setup(
 
     def fake_run_subprocess(cmd: list[str], **_kwargs: object) -> _FakeResult | None:
         calls.append(cmd)
-        if cmd[:3] == ["codex", "plugin", "list"]:
+        if command_matches(cmd, ["codex", "plugin", "list"]):
             return _FakeResult(returncode=codex_returncode, stdout=_codex_list_json(*codex_entries))
         if warmup_returncode is None:
             return None
@@ -81,7 +81,7 @@ def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
 
 def _warmed(calls: list[list[str]]) -> list[str]:
     """記録済みコマンドからウォームアップ対象パスを取り出す。"""
-    return [cmd[-1] for cmd in calls if cmd[:4] == ["uv", "run", "--no-project", "--script"]]
+    return [cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
 
 
 class TestPrerequisites:
@@ -90,7 +90,11 @@ class TestPrerequisites:
     def test_missing_uv_skips(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """uvが無い環境では外部コマンドを実行しない。"""
         calls = _setup(monkeypatch, tmp_path)
-        monkeypatch.setattr(_warmup.shutil, "which", lambda name: None if name == "uv" else f"/usr/bin/{name}")
+        monkeypatch.setattr(
+            _claude_common,
+            "resolve_executable",
+            lambda name, **_kwargs: None if name == "uv" else pathlib.Path(name),
+        )
 
         assert _warmup.run() is False
         assert not calls
@@ -195,7 +199,11 @@ class TestCodexResolution:
     def test_missing_codex_cli_excludes_codex_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """codex CLI不在ではCodex分だけを除外して継続する。"""
         calls = _setup(monkeypatch, tmp_path)
-        monkeypatch.setattr(_warmup.shutil, "which", lambda name: None if name == "codex" else f"/usr/bin/{name}")
+        monkeypatch.setattr(
+            _claude_common,
+            "resolve_executable",
+            lambda name, **_kwargs: None if name == "codex" else pathlib.Path(name),
+        )
         codex_script = _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() is False

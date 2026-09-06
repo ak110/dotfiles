@@ -11,12 +11,14 @@ import sys
 from collections.abc import Callable
 from typing import NoReturn
 
+from pytools._internal import claude_common
 from pytools._internal.cli import enable_completion
 
 _NON_INTERACTIVE_OPTIONS = frozenset(("--help", "-h", "--version", "-v", "--print", "-p"))
 _LONG_OPTION_PATTERN = re.compile(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9-]*)")
 
 type CommandResolver = Callable[[str], str | None]
+type ExecutableResolver = Callable[[str, tuple[pathlib.Path, ...]], pathlib.Path | None]
 type CommandRunner = Callable[[list[str]], int]
 type HelpRunner = Callable[[list[str]], subprocess.CompletedProcess[str] | None]
 type TerminalChecker = Callable[[int], bool]
@@ -47,16 +49,19 @@ def _get_claude_options(claude_bin: str, *, run_help: HelpRunner = _run_help) ->
     return sorted(set(_LONG_OPTION_PATTERN.findall(result.stdout or "")))
 
 
-def _resolve_claude_bin(os_name: str, home: pathlib.Path, which: CommandResolver) -> str | None:
-    if os_name != "nt":
-        preferred = home / ".local" / "bin" / "claude"
-        if preferred.is_file() and os.access(preferred, os.X_OK):
-            return str(preferred)
-    return which("claude")
+def _resolve_executable(name: str, preferred_directories: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
+    return claude_common.resolve_executable(name, preferred_directories=preferred_directories)
+
+
+def _resolve_claude_bin(os_name: str, home: pathlib.Path, resolve: ExecutableResolver) -> str | None:
+    """OSを問わず公式導入先を優先し、mise shimを除いたClaude CLIを返す。"""
+    del os_name
+    resolved = resolve("claude", (home / ".local" / "bin",))
+    return str(resolved) if resolved is not None else None
 
 
 def _complete_claude_options(prefix: str, **_: object) -> list[str]:
-    claude_bin = _resolve_claude_bin(os.name, pathlib.Path.home(), shutil.which)
+    claude_bin = _resolve_claude_bin(os.name, pathlib.Path.home(), _resolve_executable)
     if claude_bin is None:
         return []
     return [option for option in _get_claude_options(claude_bin) if option.startswith(prefix)]
@@ -76,10 +81,11 @@ def _run_claude(
     os_name: str,
     home: pathlib.Path,
     which: CommandResolver,
+    resolve: ExecutableResolver,
     run: CommandRunner,
     isatty: TerminalChecker,
 ) -> int:
-    claude_bin = _resolve_claude_bin(os_name, home, which)
+    claude_bin = _resolve_claude_bin(os_name, home, resolve)
     if claude_bin is None:
         print("claudeコマンドが見つかりません。", file=sys.stderr)
         return 127
@@ -100,6 +106,7 @@ def _main(
     os_name: str,
     home: pathlib.Path | None,
     which: CommandResolver,
+    resolve: ExecutableResolver,
     run: CommandRunner,
     isatty: TerminalChecker,
 ) -> NoReturn:
@@ -113,6 +120,7 @@ def _main(
             os_name=os_name,
             home=actual_home,
             which=which,
+            resolve=resolve,
             run=run,
             isatty=isatty,
         )
@@ -125,6 +133,7 @@ def main_sonnet(
     os_name: str = os.name,
     home: pathlib.Path | None = None,
     which: CommandResolver = shutil.which,
+    resolve: ExecutableResolver = _resolve_executable,
     run: CommandRunner = _run_command,
     isatty: TerminalChecker = os.isatty,
 ) -> NoReturn:
@@ -135,6 +144,7 @@ def main_sonnet(
         os_name=os_name,
         home=home,
         which=which,
+        resolve=resolve,
         run=run,
         isatty=isatty,
     )
@@ -146,6 +156,7 @@ def main_opus(
     os_name: str = os.name,
     home: pathlib.Path | None = None,
     which: CommandResolver = shutil.which,
+    resolve: ExecutableResolver = _resolve_executable,
     run: CommandRunner = _run_command,
     isatty: TerminalChecker = os.isatty,
 ) -> NoReturn:
@@ -156,6 +167,7 @@ def main_opus(
         os_name=os_name,
         home=home,
         which=which,
+        resolve=resolve,
         run=run,
         isatty=isatty,
     )
@@ -167,6 +179,7 @@ def main_fable(
     os_name: str = os.name,
     home: pathlib.Path | None = None,
     which: CommandResolver = shutil.which,
+    resolve: ExecutableResolver = _resolve_executable,
     run: CommandRunner = _run_command,
     isatty: TerminalChecker = os.isatty,
 ) -> NoReturn:
@@ -184,6 +197,7 @@ def main_fable(
         os_name=os_name,
         home=home,
         which=which,
+        resolve=resolve,
         run=run,
         isatty=isatty,
     )
