@@ -20,7 +20,7 @@ description: >
 4. 計画、実装、レビューのいずれでも同じ判定と原因分析の段階を用いる
 
 CI通過へ入る前は`agent-toolkit:commit`の`commit/references/push-and-ci.md`を全文読む。
-履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/implementation.subagent.md`を全文読む。
+履歴を扱う実装単位へ入る前は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を全文読む。
 実装担当の経路を確定する前は`agent-toolkit:delegation`の`delegation/references/runtime-routing.md`を全文読む。
 分岐検証へ入る前は`agent-toolkit:coding-standards`の`coding-standards/references/testing.md`を全文読む。
 

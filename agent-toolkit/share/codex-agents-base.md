@@ -168,7 +168,7 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 `agent-toolkit:delegation`が定める`agents_server`経路は、実際の別主体へ委譲するときに使う。
 出力量が大きいコマンドの隔離には`agents_server`の`start_shell`を使う。
 `agent-toolkit:delegation`が定める汎用エージェント代替経路は、実際の別主体へ委譲するときだけ使う。
-計画レビュー系・計画準拠実装レビュー系・独立実装レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
+計画レビュー系・計画準拠実行レビュー系・独立実行レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
 
 `agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
 `engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start`へ対応する`model_type`を渡し、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。

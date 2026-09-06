@@ -1,6 +1,6 @@
 """計画ファイルの保存root・参照表記・種別判定を扱う共通モジュール。
 
-新規計画は`~/.claude/plans/`直下で作業し、実装レビュー完了後は作成日の年月階層を付けて
+新規計画は`~/.claude/plans/`直下で作業し、実行レビュー完了後は作成日の年月階層を付けて
 private-notesへ移す。計画本文が同じ計画に属する付属ファイルを参照する場合は、固定接頭辞
 `~/.claude/plans/`とファイル名を用い、接頭辞を展開せず当該参照を含む計画ファイルの
 ディレクトリを基準に解決する。これにより計画が作業rootと保存rootのどちらにあっても
@@ -69,7 +69,7 @@ def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.P
 
 
 def working_plans_root(home: pathlib.Path | str | None = None) -> pathlib.Path:
-    """実装レビュー完了まで使う計画作業rootの絶対パスを返す。"""
+    """実行レビュー完了まで使う計画作業rootの絶対パスを返す。"""
     home_path = pathlib.Path(home).expanduser() if home is not None else pathlib.Path.home()
     return home_path / ".claude" / "plans"
 

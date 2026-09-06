@@ -58,7 +58,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_review_model` | 計画レビュー | 計画レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の③の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び③の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_review_model` | 実装後の実装レビュー | 実装レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 
 `model_type`へは、`atk config`が持つ`<種別>_model`のキー名から`_model`を除いた種別を渡せる。上表が対応工程を定めるのは`pick_wi`、`plan`、`plan_review`、`execute_fast`、`execute`、`execute_review`及び`session_review`である。
@@ -68,7 +68,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 現に保存されているキーと実効値は`atk config show`で確認する。
 
 `execute_fast_model`と`execute_model`のどちらを初回実装へ用いるかは、計画ファイル（詳細）の`### 実装担当のモデル区分`の`判定`から確定する。
-`判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/implementation.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。
+`判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試し、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
@@ -126,9 +126,9 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    正本の絶対パス、対象ID、未記録の差分だけを渡す。
    参照可能な正本がない場合は、呼び出し元が管理対象領域へレビュー表を作成してから継続し、表の内容を起動文へ埋め込まない。
    レビュー担当のthreadで継続不能と判定した場合は、同じ`model_type`で新しいレビュー担当を起動し、当該レビューを最初のラウンドから再実行しない。
-   起動文へは、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前修正の直接影響範囲及び読み取り専用の範囲を渡す。実装レビューでは、レビュー対象HEADの完全OIDも渡す。
+   起動文へは、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前修正の直接影響範囲及び読み取り専用の範囲を渡す。実行レビューでは、レビュー対象HEADの完全OIDも渡す。
    ラウンド番号の正本と各主体への配布は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める。ラウンド番号はメインが保持する値を引き継ぎ、新規起動を理由に最初のラウンドへ戻さない。
-   実装レビューでは、起動主体が`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の生成規則で`review_contract`を再生成して渡す。
+   実行レビューでは、起動主体が`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の生成規則で`review_contract`を再生成して渡す。
    新しい担当は、レビュー指摘管理表で解消済みと記録された行を再走査せず、未解消の行と当該ラウンドの走査範囲だけを対象とする。
 
 本節の代替起動はAgentツール経路にだけ適用する。
@@ -221,7 +221,7 @@ fast担当がエスカレーションを返した場合だけfix担当の作業�
   新規fix担当を起動する場合はfast担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合して渡し、同一threadを継続する場合は書込主体が変わらないため終端確認を要さない
 - 作業ディレクトリ、複製元、対象外worktreeを絶対パスで渡し、複製元リポジトリのファイルを編集させない
 - git操作は`git -C <受領したworktree絶対パス>`の形とし、作業場所を自己解決させない
-- 実装レビュー担当は実装担当の終端後に起動し、同じ最終HEADへ1ラウンド1回だけ割り当てる
+- 実行レビュー担当は実装担当の終端後に起動し、同じ最終HEADへ1ラウンド1回だけ割り当てる
 - 作業用の複製（git worktree等）内でセッションを起動する場合は、調査・計画作成への着手前に
   `git fetch`後の分岐元との差分を双方向で確認し、分岐元が進んでいる場合は先に追随してから着手するよう
   起動文で指示する（努力目標）

@@ -32,8 +32,8 @@ _SHARE_DIR = pathlib.Path(__file__).resolve().parents[1] / "share"
 _SECRETS_COPY_GUIDANCE = "Bashの`cp`で原本を複製"
 _SECRETS_VALUE_EDIT_GUIDANCE = "Bashの`echo ... >>`または`sed -i`"
 
-# 実装レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
-_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("implementation-review.subagent.md",)
+# 実行レビューのタスク文書名（`TestExecuteReviewAlternateRouteAllowed`が使う）。
+_EXECUTE_REVIEW_TASK_NAMES: tuple[str, ...] = ("exec-review.subagent.md",)
 _NOTICE_PREFIX = "[auto-generated: agent-toolkit/pretooluse][warn] "
 _NOTICE_SUFFIX = " （自動生成のhook通知。行動する前に会話コンテキストとの関連性を評価すること。）"
 
@@ -5056,11 +5056,11 @@ class TestTaskStopBlock:
 
 
 class TestExecuteReviewAlternateRouteAllowed:
-    """`execute_review_model`が指すengineによらず実装レビューのAgent起動が通過する。"""
+    """`execute_review_model`が指すengineによらず実行レビューのAgent起動が通過する。"""
 
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
-        """可用性起因の代替としてClaude経路へ切り替えた実装レビュー起動を遮断しない。"""
+        """可用性起因の代替としてClaude経路へ切り替えた実行レビュー起動を遮断しない。"""
         result = _run(
             {
                 "tool_name": "Agent",
@@ -5080,7 +5080,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-review.subagent.mdを読んでレビューする。",
+                    "prompt": "exec-review.subagent.mdを読んでレビューする。",
                 },
                 "session_id": "execute-review-claude",
                 "isSidechain": True,
@@ -5098,7 +5098,7 @@ class TestExecuteReviewAlternateRouteAllowed:
                 "tool_name": "Agent",
                 "tool_input": {
                     "subagent_type": "general-purpose",
-                    "prompt": "implementation-review.subagent.mdを読んでレビューする。",
+                    "prompt": "exec-review.subagent.mdを読んでレビューする。",
                 },
                 "session_id": session_id,
                 "isSidechain": False,

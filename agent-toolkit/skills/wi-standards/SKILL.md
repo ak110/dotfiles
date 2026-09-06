@@ -18,7 +18,7 @@ AWIは未完了の作業要求を、UWIは人間の入力がなければ元の�
 - `normal`はレビュー済み計画が関連していないAWI、`plan`はレビュー済み計画が関連するAWIである。
 - 変更量にかかわらず、全ての実装要求は実装前に計画と計画レビューを完了する。`normal`を計画なしで実装しない。
 - `agent-toolkit:plan-and-add-awi`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を`hold(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
-- 計画ファイルと同じstemの付属ファイルは、実装レビューが収束するまで計画作業root`~/.claude/plans`の直下で更新する。private-notes配下の計画ファイルを編集せず、保存先への移動は`atk plans commit`だけが行う。
+- 計画ファイルと同じstemの付属ファイルは、実行レビューが収束するまで計画作業root`~/.claude/plans`の直下で更新する。private-notes配下の計画ファイルを編集せず、保存先への移動は`atk plans commit`だけが行う。
 - `plan_file`へは、計画の作成時点で保存先を指す可搬値`$(atk config get private_notes)/plans/yyyy/MM/<メイン計画ファイル名>`を書く。計画ファイルの実体が計画作業rootと保存先のどちらにあっても同じ値が同じ計画を指すため、保存先への移動後も値を書き換えない。
 
 ## 通常AWIの本文

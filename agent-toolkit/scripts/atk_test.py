@@ -1010,11 +1010,11 @@ def test_review_table_subcommands_are_public() -> None:
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
         if subcommand == "add":
-            argv.extend(["--round=1", "--track=implementation-review", "--level=詳細", "位置", "指摘"])
+            argv.extend(["--round=1", "--track=exec-review", "--level=詳細", "位置", "指摘"])
         elif subcommand == "respond":
             argv.extend(
                 [
-                    "--track=implementation-review",
+                    "--track=exec-review",
                     "位置",
                     "指摘",
                     "--response-needed=yes",
@@ -1053,6 +1053,28 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     assert "対応要否が未回答" in capsys.readouterr().err
 
 
+def test_public_review_table_show_accepts_compat_track(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """公開CLIのshowは保存済み旧trackを受理してraw TSVを表示する。"""
+    path = tmp_path / "review.tsv"
+    raw = (
+        "\t".join(
+            json.dumps(value, ensure_ascii=False)
+            for value in ("1", "implementation-review", "位置", "指摘", "詳細", "", "", "")
+        )
+        + "\n"
+    )
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["review-table", "show", str(path), "--track=implementation-review"])
+
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out == raw
+
+
 def test_public_review_table_validate_rejects_whitespace_around_stored_track(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -1085,6 +1107,7 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     error = capsys.readouterr().err
     assert "--track" in error
     assert "plan-review" in error
+    assert "exec-review" in error
     assert "implementation-review" in error
     assert "plan-conformance" in error
     assert "independent" in error
@@ -1111,7 +1134,8 @@ def test_public_review_table_invalid_column_count_error_explains_recovery(
     assert "期待列数は8" in error
     assert "trackの位置はroundの直後" in error
     assert "levelの位置はissueの直後" in error
-    assert "plan-review, implementation-review, plan-conformance, independent" in error
+    assert "plan-review, exec-review, plan-conformance, independent" in error
+    assert "implementation-reviewはexec-reviewとして読み取る" in error
 
 
 @pytest.mark.parametrize(
@@ -1161,7 +1185,8 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     assert "期待列数は8" in error
     assert "trackの位置はroundの直後" in error
     assert "levelの位置はissueの直後" in error
-    assert "plan-review, implementation-review, plan-conformance, independent" in error
+    assert "plan-review, exec-review, plan-conformance, independent" in error
+    assert "implementation-reviewはexec-reviewとして読み取る" in error
 
 
 class TestSpaceSeparatedOptionWarning:

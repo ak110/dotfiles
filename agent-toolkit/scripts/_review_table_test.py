@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 import _review_table as table
 import pytest
 
-_TRACK = "implementation-review"
+_TRACK = "exec-review"
+_COMPAT_TRACK = "implementation-review"
 
 _ADD_NAMESPACE_DEFAULTS = {
     "command": "review-table",
@@ -301,6 +302,51 @@ def test_show_combines_round_track_and_jsonl(tmp_path: pathlib.Path, capsys: pyt
     assert [row["issue"] for row in rows] == ["対象"]
 
 
+@pytest.mark.parametrize("track", (_TRACK, _COMPAT_TRACK))
+def test_show_filters_compat_track_without_rewriting_raw_tsv(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    track: str,
+) -> None:
+    """保存済み旧trackは新旧どちらの指定でも限定し、raw TSVを変更しない。"""
+    path = tmp_path / "review.tsv"
+    cells = ("1", _COMPAT_TRACK, "module.py:10", "旧表の指摘", "詳細", "", "", "")
+    raw = "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n"
+    path.write_text(raw, encoding="utf-8")
+
+    assert table.show(path, track=track) == 0
+    assert capsys.readouterr().out == raw
+    assert path.read_text(encoding="utf-8") == raw
+
+
+def test_respond_matches_compat_track_and_rewrites_all_rows_canonically(tmp_path: pathlib.Path) -> None:
+    """応答更新は保存済み旧trackへ一致し、同時に全行を正規値へ移行する。"""
+    path = tmp_path / "review.tsv"
+    rows = (
+        ("1", _COMPAT_TRACK, "module.py:10", "更新対象", "詳細", "", "", ""),
+        ("1", _COMPAT_TRACK, "module.py:20", "別の指摘", "詳細", "yes", "対応済み", ""),
+    )
+    path.write_text(
+        "".join("\t".join(json.dumps(value, ensure_ascii=False) for value in row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    assert table.respond(path, "1", _TRACK, "module.py:10", "更新対象", "yes", "修正した", "") == 0
+    saved = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [row[1] for row in saved] == [_TRACK, _TRACK]
+    assert saved[0][5:] == ["yes", "修正した", ""]
+
+
+def test_add_normalizes_compat_track_before_saving(tmp_path: pathlib.Path) -> None:
+    """追加時の旧track入力は正規値へ変換して保存する。"""
+    path = tmp_path / "review.tsv"
+
+    assert table.add(path, "1", _COMPAT_TRACK, "module.py:10", "互換入力") == 0
+
+    row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").rstrip().split("\t")]
+    assert row[1] == _TRACK
+
+
 def test_show_jsonl_decodes_control_characters_and_quotes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -575,7 +621,8 @@ def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: 
         assert "期待列数は8" in message
         assert "trackの位置はroundの直後" in message
         assert "levelの正規値集合は要件, 仕様, 詳細, 実装" in message
-        assert "plan-review, implementation-review, plan-conformance, independent" in message
+        assert "plan-review, exec-review, plan-conformance, independent" in message
+        assert "implementation-reviewはexec-reviewとして読み取る" in message
         assert "levelの位置はissueの直後" in message
         assert "保存済み7列形式はlevelを空として読み込み" in message
 

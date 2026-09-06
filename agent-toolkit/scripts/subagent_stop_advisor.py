@@ -1,7 +1,7 @@
 """SubagentStop hook: 空の完了報告を検査する。
 
 公式仕様の`last_assistant_message`を直参照し、空文字列だけの完了報告をblockする。
-成果物と検証結果の妥当性は呼び出し元の実測と実装レビュー担当のレビューへ委ねる。
+成果物と検証結果の妥当性は呼び出し元の実測と実行レビュー担当のレビューへ委ねる。
 
 正常許可と`stop_hook_active`真の再呼び出し時は、両ホスト共通でstdoutを空にする。
 transcriptを完了判定の契約へ利用せず、安定入力の`last_assistant_message`による空報告検査だけを共有する。

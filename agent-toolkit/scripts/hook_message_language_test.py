@@ -335,7 +335,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "plan_save_advisor.py:101 本文",
         "当該セッションが所有する計画バンドルが計画作業`root`に残っている: {path_list}\\n"
-        "実装レビューが収束した計画バンドルだけを`private-notes`へ移す。残りはそのまま置いてターンを終える。",
+        "実行レビューが収束した計画バンドルだけを`private-notes`へ移す。残りはそのまま置いてターンを終える。",
     ),
     (
         "plan_save_advisor.py:101 解消手段",

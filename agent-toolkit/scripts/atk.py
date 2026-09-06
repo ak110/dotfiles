@@ -32,7 +32,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
 - mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans checkout/commit/migrate: 保存済み計画又は独立CI実装レビュー表の取得・対象限定commit・push、旧保存先からの一括移行
+- plans checkout/commit/migrate: 保存済み計画又は独立CI実行レビュー表の取得・対象限定commit・push、旧保存先からの一括移行
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する

@@ -223,7 +223,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     working = _plan_file.working_plans_root(home) / name
     working.parent.mkdir(parents=True)
     _review_table.init(working)
-    _review_table.add(working, "1", "implementation-review", "sample.py:1", "初回指摘", "仕様")
+    _review_table.add(working, "1", "exec-review", "sample.py:1", "初回指摘", "仕様")
 
     first = _atk_plans.commit_plan(notes, name, home=home)
 
@@ -242,7 +242,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     _review_table.respond(
         working,
         "1",
-        "implementation-review",
+        "exec-review",
         "sample.py:1",
         "初回指摘",
         "yes",
@@ -252,7 +252,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     _review_table.add(
         working,
         "2",
-        "implementation-review",
+        "exec-review",
         "sample.py:2",
         f"再帰失敗の指摘（原因commit: {second_cause_oid}）",
         "仕様",
@@ -260,7 +260,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     _review_table.respond(
         working,
         "2",
-        "implementation-review",
+        "exec-review",
         "sample.py:2",
         f"再帰失敗の指摘（原因commit: {second_cause_oid}）",
         "yes",
@@ -277,7 +277,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     assert _git(notes, "status", "--short").stdout == ""
     _git(clone, "pull", "--ff-only")
     assert (clone / "plans" / saved_relative).read_bytes() == saved.read_bytes()
-    assert saved.read_text().count("implementation-review") == 2
+    assert saved.read_text().count("exec-review") == 2
     assert saved.name == f"ci-{first_cause_oid}.exec-review.tsv"
 
 
@@ -312,8 +312,8 @@ def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.
     _git(notes, "add", saved.relative_to(notes).as_posix())
     _git(notes, "commit", "-m", "add review")
     (working,) = _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home)
-    _review_table.add(working, "1", "implementation-review", "sample.py:1", "作業側", "詳細")
-    _review_table.add(saved, "1", "implementation-review", "sample.py:2", "保存側", "詳細")
+    _review_table.add(working, "1", "exec-review", "sample.py:1", "作業側", "詳細")
+    _review_table.add(saved, "1", "exec-review", "sample.py:2", "保存側", "詳細")
 
     with pytest.raises(_common.WebInputError, match="取得後に保存元"):
         _atk_plans.commit_plan(notes, name, home=home)
