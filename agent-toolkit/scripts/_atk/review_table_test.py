@@ -8,6 +8,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from _common import body_match
 
 from _atk import review_table as table
 
@@ -202,6 +203,99 @@ def test_init_add_and_raw_show(tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     assert all(isinstance(json.loads(cell), str) for line in lines for cell in line.split("\t"))
     assert table.show(path) == 0
     assert capsys.readouterr().out == path.read_text(encoding="utf-8")
+
+
+def test_add_reports_each_saved_cell_match_without_saved_bodies(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """追加は指摘箇所と指摘内容を別々に照合し、本文を出力しない。"""
+    path = tmp_path / "review.tsv"
+    location = "module.py:10\nissue_body_match: 一致"
+    issue = "1行目\n2行目"
+
+    assert table.add(path, "1", _TRACK, location, issue) == 0
+
+    assert capsys.readouterr().out == (f"追加成功: {path} (1件)\nlocation_body_match: 一致\nissue_body_match: 一致\n")
+
+
+def test_add_matches_location_and_issue_with_corresponding_saved_cells(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2列の判定は送信本文と対応する保存セルの組を各1回渡す。"""
+    path = tmp_path / "review.tsv"
+    location = "module.py:10"
+    issue = "修正が必要"
+    calls: list[tuple[str, str]] = []
+    original_verdict = body_match.verdict
+
+    def record_verdict(expected: str, saved: str) -> str:
+        calls.append((expected, saved))
+        return original_verdict(expected, saved)
+
+    monkeypatch.setattr(body_match, "verdict", record_verdict)
+
+    assert table.add(path, "1", _TRACK, location, issue) == 0
+
+    assert calls == [(location, location), (issue, issue)]
+    assert original_verdict(*calls[0]) == "一致"
+    assert original_verdict(calls[1][0], calls[1][1] + "差異").startswith("不一致（最初の差異:")
+
+
+def test_add_rereads_decoded_cells_after_storage_write(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """追加は保存層を経た復号済みセルを一致判定へ渡す。"""
+    path = tmp_path / "review.tsv"
+    original_atomic_write = table.atomic_write
+
+    def write_with_changed_location(target: pathlib.Path, content: str, *, fsync: bool = False) -> None:
+        cells = content.rstrip("\n").split("\t")
+        cells[2] = json.dumps(f" {json.loads(cells[2])} ", ensure_ascii=False)
+        original_atomic_write(target, "\t".join(cells) + "\n", fsync=fsync)
+
+    monkeypatch.setattr(table, "atomic_write", write_with_changed_location)
+
+    assert table.add(path, "1", _TRACK, "module.py:10", "修正が必要") == 0
+
+    assert capsys.readouterr().out == (
+        f"追加成功: {path} (1件)\nlocation_body_match: 不一致（最初の差異: 1文字目）\nissue_body_match: 一致\n"
+    )
+
+
+def test_respond_reports_decoded_response_and_match(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対応要では引用符・逆斜線・タブ・改行を復号済み本文として出力する。"""
+    path = tmp_path / "review.tsv"
+    response = '応答本文へ"二重引用符"と\\逆斜線を含める。\nタブ\tも含める。'
+    table.add(path, "1", _TRACK, "位置", "指摘")
+    capsys.readouterr()
+
+    assert table.respond(path, "1", _TRACK, "位置", "指摘", "yes", response, "") == 0
+
+    assert capsys.readouterr().out == (f"応答更新成功: {path}\nbody_match: 一致\nsaved_body:\n{response}\n")
+
+
+def test_respond_reports_only_decoded_no_response_reason(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対応不要では更新した理由だけを復号済み本文として出力する。"""
+    path = tmp_path / "review.tsv"
+    reason = '対象外の理由へ"引用符"、\\逆斜線、タブ\t及び\n改行を含める。'
+    table.add(path, "1", _TRACK, "位置", "指摘")
+    capsys.readouterr()
+
+    assert table.respond(path, "1", _TRACK, "位置", "指摘", "no", "", reason) == 0
+
+    output = capsys.readouterr().out
+    assert output == f"応答更新成功: {path}\nbody_match: 一致\nsaved_body:\n{reason}\n"
+    assert "response:" not in output
 
 
 @pytest.mark.parametrize("operation", ("validate", "show", "add", "respond"))

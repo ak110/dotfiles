@@ -870,7 +870,7 @@ _COMPLETE_OUTPUT_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 """状態を変更せず、出力の全量が後続の照合の根拠となるコマンドの前置語。
 
 `atk wi show`は一括取得の契約が全項目の出力を本文採用の条件とし、`atk review-table show`は
-記録後の保存本文の取得手段である。いずれも一部だけを読むと照合の根拠が失われる。
+未解消の指摘と対応状況を確認する手段である。いずれも一部だけを読むと判断の根拠が失われる。
 状態変更コマンドは`_STATE_CHANGING_COMMAND_PREFIXES`で別に判定する。
 """
 _COMPLETE_OUTPUT_EXCLUDED_PREFIXES: tuple[tuple[str, ...], ...] = (

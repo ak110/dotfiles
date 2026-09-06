@@ -18,6 +18,7 @@ import unicodedata
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from _common import body_match as _body_match
 from _common import file_lock as _file_lock
 from _common.atomic_file import atomic_write
 
@@ -254,7 +255,13 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
         return [*rows, row]
 
     rows = _locked_update(target, updater)
+    saved_rows = [saved_row for saved_row in _read(target) if _key(saved_row) == _key(row)]
+    if len(saved_rows) != 1:
+        raise ValueError(f"追加した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
+    saved_row = saved_rows[0]
     print(f"追加成功: {target} ({len(rows)}件)")
+    print(f"location_body_match: {_body_match.verdict(location, saved_row[2])}")
+    print(f"issue_body_match: {_body_match.verdict(issue, saved_row[3])}")
     return 0
 
 
@@ -330,8 +337,13 @@ def respond(
         updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], updated[matches[0]][4], needed, replacement, reason]
         return updated
 
-    _locked_update(target, updater)
+    rows = _locked_update(target, updater)
+    saved_row = next(row for row in rows if all(_normalized(row[column_index]) == value for column_index, value in given))
+    saved_body = saved_row[6] if needed == "yes" else saved_row[7]
     print(f"応答更新成功: {target}")
+    print(f"body_match: {_body_match.verdict(replacement if needed == 'yes' else reason, saved_body)}")
+    print("saved_body:")
+    print(saved_body)
     return 0
 
 

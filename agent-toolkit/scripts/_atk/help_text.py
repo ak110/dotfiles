@@ -258,12 +258,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存する。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、追加した行ごとに、保存済みの表から読み直した指摘箇所と指摘内容について送信した本文との一致判定を`location_body_match`、`issue_body_match`の順で標準出力へ書く。保存本文そのものは書かない。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
         "epilog": '実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review --level=詳細 "実装資料" "検索コマンドが未記載"',
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: 行を一意に特定できる列を指定して、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、対応の内容か対応が不要である理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。特定できる行が無い場合と複数ある場合は失敗する。\n前提: `round`、`track`、`location`、`issue`のうち、行を一意に特定できる列を指定する。`--issue`には復号した後の本文を渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "description": "目的: 行を一意に特定できる列を指定して、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、対応の内容か対応が不要である理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方を、送信した本文との一致判定`body_match`とともに標準出力へ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: `round`、`track`、`location`、`issue`のうち、行を一意に特定できる列を指定する。`--issue`には復号した後の本文を渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
         "epilog": '実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review --response-needed=yes --response="検索コマンドを追記した"',
     },
     "atk review-table show": {
