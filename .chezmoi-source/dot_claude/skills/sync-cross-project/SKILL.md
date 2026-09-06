@@ -247,8 +247,10 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
   `env: UV_PYTHON: ${{ matrix.python-version }}`で引き継ぐ。
   `defaults.run.shell: bash`の指定が必須（GitHub Actionsの`container:`既定シェルが`sh`のため）
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
-- `release.yaml`のCI待機ロジックはbash系（pyfltr / pytilpack / glatasks）が`gh api` + `jq`方式、
-  PowerShell系（gv / lc）が`check-suites` API方式
+- `release.yaml`のCI待機は、対象コミットを指定してCIワークフロー（`ci.yaml`）の実行を直接照会し、
+  その結論で判定する方式とする。`check-suites` APIの先頭suiteを判定に使う方式は、
+  リリースワークフロー自身のsuiteを拾い、CIが成功していても待機がタイムアウトするため用いない。
+  各リポジトリが用いる照会コマンドは`.github/workflows/`配下をSSOTとし、本文へ写さない
 - `container:`実行ジョブのstepへ新しいコマンド呼び出しを追加する場合は、先行stepで導入されることを確認するか、
   ジョブが宣言する`image`上で当該コマンドの存在を確認する
   - どちらでも利用可能と確認できないコマンドは、呼び出す前に同じジョブで導入する
