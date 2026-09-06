@@ -17,14 +17,14 @@
 ## 処理対象の決定
 
 最初に`atk wi list --status=processable --target-repo=<repo-path> --skip-pull`を実行する。
-ユーザーが明示したファイル名の一覧を入力で受け取った場合は、当該項目だけを処理対象とし、次の順の判定と除外条件を適用しない。
+ユーザーが明示したファイル名の一覧を入力で受け取った場合は、当該項目だけを処理対象とし、次の候補判定と除外条件を適用しない。
 一覧の項目が`--status=processable`の出力に現れない場合は、当該項目を処理対象へ含めず、現れなかったファイル名を`needs_escalation`へ返す。
-一覧を受け取っていない場合は、次の順で判定して最初に成立した条件だけを採用する。
+一覧を受け取っていない場合は、`processing`状態の全項目と、`inbox`かつ次の除外条件に当たらない項目を
+処理対象の候補とする。`processing`状態の項目は既に選定済みであるため、次の除外条件を適用しない。
+両方の状態に候補がある場合も、いずれかの状態を候補集合から除外しない。
+`processing`状態の項目を優先する必要がある場合は、レーン割当又はレーン内の実装依存順で表現する。
 
-1. `processing`状態の項目が1件以上ある場合は、当該`processing`項目だけを処理対象とする
-2. いずれにも当たらない場合は、`inbox`かつ次の除外条件に当たらない項目を処理対象の候補とする
-
-除外条件は次のとおりとする。
+`inbox`状態の項目に適用する除外条件は次のとおりとする。
 
 - 表示上の判定が`blocked`で、`blocked_reason`が`cooldown-until`である（時間経過を待つ項目のため）
 - 表示上の判定が`blocked`で、`blocked_reason`がfrontmatter又は依存の不備を示す（キュー修復かユーザー回答なしには着手できない項目のため）。対象は`frontmatter-broken`、`invalid-cooldown`、`missing-plan-file`、`invalid-dependency`、`missing-dependency`、`self-dependency`、`cyclic-dependency`である
