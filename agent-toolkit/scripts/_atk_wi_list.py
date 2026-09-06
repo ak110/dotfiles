@@ -81,6 +81,7 @@ def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
     emits_json = getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False))
     return (
         not args.count
+        and not getattr(args, "summary_only", False)
         and not emits_json
         and args.type in ("all", WI_TYPE_UWI)
         and args.status in ("all", "active", "processable")
@@ -180,6 +181,13 @@ def _print_json_entries(selected: list[QueueEntryDisplay], readiness: ReadinessR
         print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
 
+def _print_summary_entries(selected: list[QueueEntryDisplay]) -> None:
+    """選択済みエントリのファイル名と要約をJSON Linesで出力する。"""
+    for path, _, text, _, entry_type in sorted(selected, key=lambda entry: entry[0].name):
+        summary = _uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else _body_summary(text, sys.maxsize)
+        print(json.dumps({"filename": path.name, "summary": summary}, ensure_ascii=False, separators=(",", ":")))
+
+
 def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
 
@@ -195,6 +203,7 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     該当エントリが1件以上ある種別だけ見出しを出力する。
     `--count`指定時は、フィルター適用後のAWI件数とUWI件数の合計を整数のみで出力し、
     種別見出し・エントリ行は出力しない。
+    `--summary-only`指定時は、ファイル名と要約だけをJSON Linesで出力する。
     """
     if not args.skip_pull:
         with _repo_lock(private_notes):
@@ -213,6 +222,10 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
     if args.count:
         print(len(selected))
+        return
+
+    if args.summary_only:
+        _print_summary_entries(selected)
         return
 
     if getattr(args, "json", False) or (is_agent_environment() and not getattr(args, "no_json", False)):

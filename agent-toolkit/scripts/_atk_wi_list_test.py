@@ -1244,6 +1244,43 @@ class TestListJson:
         assert capsys.readouterr().out == "1\n"
 
 
+def test_list_summary_only_outputs_filename_and_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """要約出力はAWIとUWIをファイル名順の最小JSONへ変換する。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "z-awi.md", body="AWIの要約")
+    _write_uwi_file(notes, "a-uwi.md", question="UWIの質問", answer="")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "list", "--summary-only", "--skip-pull"], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert [json.loads(line) for line in captured.out.splitlines()] == [
+        {"filename": "a-uwi.md", "summary": "UWIの質問"},
+        {"filename": "z-awi.md", "summary": "AWIの要約"},
+    ]
+    assert "a-uwi.md" in captured.err
+
+
+@pytest.mark.parametrize("other_output", ["--count", "--json"])
+def test_list_summary_only_conflicts_with_other_output_options(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    other_output: str,
+) -> None:
+    """要約出力と他の出力形式の同時指定を引数解析で拒否する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "list", "--summary-only", other_output], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
 class TestMultipleFiltersCombinedAsAnd:
     """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
 

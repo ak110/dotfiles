@@ -388,6 +388,11 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="エントリ件数を整数のみで出力する（種別ヘッダを抑制する）。",
     )
     output.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="ファイル名と要約だけを持つ1件1行のJSON Lines形式で出力する。",
+    )
+    output.add_argument(
         "--json",
         action="store_true",
         help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
