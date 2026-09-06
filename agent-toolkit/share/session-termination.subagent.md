@@ -49,18 +49,19 @@ AWIが明示するPR又はMR、release、tag、配布等の終端工程は、受
 
 ## 出力
 
-自身が起動した全ての委譲先と外部プロセスの終了を、ツール終了結果か、保持した実行識別子の直接照会で確認してから、`終端完了`に続けて次の7行を返す。各値は返却の直前に実測して得た値とし、記憶又は推測で組み立てない。
+自身が起動した全ての委譲先と外部プロセスの終了を、ツール終了結果か、保持した実行識別子の直接照会で確認してから、`終端完了`に続けて次の8行を返す。各値は返却の直前に実測して得た値とし、記憶又は推測で組み立てない。
 
 ```text
-pushed_head: <`git -C <対象リポジトリの絶対パス> rev-parse <ベースbranch名>`で取得した、pushを完了した完全OID>
-ci_result: <`pushed_head`のCIの結論。成功した場合は「成功」>
+ci_verified_head: <CIを実行した対象commitの完全OID>
+final_branch_head: <固有終端工程まで完了した後にベースbranchの追跡refが指す完全OID>
+ci_result: <`ci_verified_head`のCIの結論。成功した場合は「成功」>
 base_branch_state: <ベースbranchの観測結果。4つの観測項目が全て成立した場合は「公開済み」。成立しない項目がある場合は当該項目名をASCIIカンマ区切りで並べる>
 version: <更新後の版数。更新しなかった場合は「bump不要」>
-terminal_steps: <実行した固有の終端工程と対象をASCIIカンマ区切りで並べる。実行した工程が無い場合は「なし」>
+terminal_steps: <実行した固有の終端工程と対象をASCIIカンマ区切りで並べる。固有終端工程がcommitを生成した場合は成功run識別子、生成commitの完全OID及びその親OIDを併記する。実行した工程が無い場合は「なし」>
 deferred_adopted: <延期指示により`adopt`したAWIのファイル名をASCIIカンマ区切りで並べる。無い場合は「なし」>
 released: <CI修正レーンで削除を確認したworktreeの絶対パス、branch名及びmanaged-tempの絶対パスをASCIIカンマ区切りで並べる。無い場合は「なし」>
 ```
 
-この7行は`agent-toolkit/rules/02-agent-operations.md`が定める「返却形式の文面だけを出力し、地の文を加えない」規定の対象内であり、指定形式の一部として返す。
+この8行は`agent-toolkit/rules/02-agent-operations.md`が定める「返却形式の文面だけを出力し、地の文を加えない」規定の対象内であり、指定形式の一部として返す。
 続行不能時はエスカレーション内容だけを返す。
 完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。

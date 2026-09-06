@@ -26,10 +26,11 @@
 
 ## 受領と検収
 
-`終端完了`に続く7行を受領し、次のとおり照合する。いずれかが一致しない場合は同じ終端担当へ差し戻し、成果物と実装差分の再読解をしない。
+`終端完了`に続く8行を受領し、次のとおり照合する。いずれかが一致しない場合は同じ終端担当へ差し戻し、成果物と実装差分の再読解をしない。
 
-- `git -C <対象リポジトリの絶対パス> rev-parse <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse <ベースbranchのリモート追跡ref>`の出力が、いずれも`pushed_head`と一致する
-- `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`pushed_head`について同じ結論を返す
+- `git -C <対象リポジトリの絶対パス> rev-parse <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
+- `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
+- `ci_verified_head`と`final_branch_head`が異なる場合は、両OIDの差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head>`で取得する。当該完全OIDの集合が、`terminal_steps`が挙げる生成commitの完全OIDの集合と過不足なく一致することを確認する。この場合に`final_branch_head`のCIを照会せず、`final_branch_head`のCIが成功したものとして扱わない
 - `base_branch_state`が`公開済み`である
   - 続けて`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の「生成物とpush」節を全文読み、同節が定める4つの観測項目を現在のGit状態から再取得して、全て成立することを確認する
   - 終端担当が返した`base_branch_state`を現在状態の再取得に代用しない
