@@ -149,6 +149,7 @@ if TYPE_CHECKING:
         _PLAN_H2_CANONICAL_BY_ALIAS,
         _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS,
         _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS,
+        plan_human_review_path_is_absolute,
     )
     from _plan.structure.markdown import (
         MarkdownTable,
@@ -1203,7 +1204,7 @@ def _check_agent_judgment_section(
 def _check_human_review_root(root: str, expected_round: str, decision: str) -> list[str]:
     """計画レビュー由来の行が絶対パスと同じラウンドを指すか検査する。"""
     match = PLAN_HUMAN_REVIEW_ROOT_PATTERN.fullmatch(root)
-    if match is None:
+    if match is None or not plan_human_review_path_is_absolute(match.group("path")):
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー由来の`根拠`は絶対パスのTSVと同じroundを指定する: {root}"]
     if match.group("round") != expected_round:
         return [

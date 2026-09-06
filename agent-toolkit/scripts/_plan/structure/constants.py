@@ -357,7 +357,14 @@ PLAN_WI_ANSWER_HEADING: str = "回答"
 
 _FRONTMATTER_DELIMITER: str = "---"
 _FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")
-PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
+PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>\S.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
+
+
+def plan_human_review_path_is_absolute(path: str) -> bool:
+    """POSIX又はWindowsの純粋パスとして絶対パスである場合に真を返す。"""
+    return pathlib.PurePosixPath(path).is_absolute() or pathlib.PureWindowsPath(path).is_absolute()
+
+
 PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
 """計画ファイル（メイン）の実施内容表が受理する採否値。"""
 PLAN_ACTION_NON_ADOPTED_DECISIONS: tuple[str, ...] = ("不採用", "充足済み", "保留", "対象外", "移管")

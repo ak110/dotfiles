@@ -38,6 +38,22 @@ _VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
 from _plan.structure.test_support_test import *  # noqa: F403
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/home/a/x.tsv", True),
+        (r"C:\dir\x.tsv", True),
+        ("C:/dir/x.tsv", True),
+        ("//?/C:/dir/x.tsv", True),
+        ("C:x.tsv", False),
+        ("rel/x.tsv", False),
+    ],
+)
+def test_plan_human_review_path_is_absolute(path: str, expected: bool) -> None:
+    """POSIXとWindowsの絶対パスをOSによらず受理する。"""
+    assert _plan_format.plan_human_review_path_is_absolute(path) is expected
+
+
 def test_canonical_plan_passes_structure_check() -> None:
     """通常変更とバグ対応の正規形はいずれも構造検査を通過する。"""
     assert not _plan_format.check_plan_structure(_VALID_CONTENT)
