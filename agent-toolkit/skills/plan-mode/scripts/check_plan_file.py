@@ -154,7 +154,8 @@ def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
         (
             "advisory",
             f"計画の行数が閾値を超えている: {len(lines)}行（閾値{_PLAN_LINE_WARNING_THRESHOLD}行）。"
-            "重複する記述を単一の情報源へ集約し、実装工程の入力として参照する素材を外部ファイルへ分けることを検討する",
+            "重複する記述を単一の情報源へ集約し、計画ファイル基準の`### 実装資料と完了条件`が定める配置規約に従って"
+            "逐語本文を付属素材へ分離する",
         )
     ]
 
