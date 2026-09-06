@@ -4442,6 +4442,42 @@ class TestBashOutputTruncationWarning:
     @pytest.mark.parametrize(
         "command",
         [
+            "atk wi add --body-file /tmp/body.md | tail -20",
+            "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md | head -20",
+        ],
+        ids=["wi-add", "wi-edit"],
+    )
+    def test_saved_body_command_truncation_blocks(self, command: str) -> None:
+        """保存本文の照合に使う登録・編集出力の切り詰めを遮断する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk wi add --body-file /tmp/body.md > /tmp/wi-add.log",
+            "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md > /tmp/wi-edit.log",
+            "atk wi add --body-file /tmp/body.md | tee /tmp/wi-add.log | tail -20",
+            "atk wi edit 20260906-105742-003.md --body-file /tmp/body.md | tee /tmp/wi-edit.log | head -20",
+        ],
+        ids=["wi-add-redirect", "wi-edit-redirect", "wi-add-tee", "wi-edit-tee"],
+    )
+    def test_saved_body_command_full_output_save_is_allowed(self, command: str) -> None:
+        """保存本文の全量をファイルへ残す登録・編集経路は許可する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
+
+    def test_saved_body_command_name_outside_execution_position_is_silent(self) -> None:
+        """登録コマンド名を引数として含むだけの処理は遮断しない。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "echo 'atk wi add' | head -1"}})
+        assert result.returncode == 0
+        assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
             "uvx pyfltr run-for-agent | tail -20",
             "pytest -q | head -5",
             "uv run --no-project --script /repo/agent-toolkit/scripts/check_plan_file.py | tail -20",

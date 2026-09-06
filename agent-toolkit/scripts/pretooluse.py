@@ -35,7 +35,7 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
-- 検証コマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
+- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
@@ -2647,7 +2647,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
     return True
 
 
-# --- Bash: 検証コマンド出力の切り詰め検出 ---
+# --- Bash: 全量観測が必要なコマンド出力の切り詰め検出 ---
 
 _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("pyfltr", "ci"),
@@ -2660,6 +2660,10 @@ _VERIFICATION_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("npm", "test"),
     ("npm", "run", "test"),
     ("vitest",),
+)
+_SAVED_BODY_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("atk", "wi", "add"),
+    ("atk", "wi", "edit"),
 )
 _OUTPUT_TRUNCATION_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
 _OUTPUT_FULL_SAVE_COMMAND = "tee"
@@ -2819,27 +2823,28 @@ def _make_targets(segment: _ExecutionSegment) -> tuple[str, ...]:
     return tuple(targets)
 
 
-def _segment_is_verification(segment: _ExecutionSegment) -> bool:
-    """区間が検証コマンドの実行位置から始まるかを返す。"""
+def _segment_requires_complete_output(segment: _ExecutionSegment) -> bool:
+    """区間が全量観測を必要とするコマンドの実行位置から始まるかを返す。"""
     if _has_uv_terminal_option(segment.tokens):
         return False
     return (
         any(_segment_starts_with(segment, prefix) for prefix in _VERIFICATION_COMMAND_PREFIXES)
+        or any(_segment_starts_with(segment, prefix) for prefix in _SAVED_BODY_COMMAND_PREFIXES)
         or segment.is_agent_toolkit_script
         or any(target.lower().find(keyword) >= 0 for target in _make_targets(segment) for keyword in ("test", "check", "lint"))
     )
 
 
-def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
-    """1つのパイプライン内で、検証コマンドの出力が全量保存されないまま切り詰められるかを判定する。
+def _pipeline_truncates_required_output(pipeline: Sequence[_ExecutionSegment]) -> bool:
+    """1つのパイプライン内で、必要な出力が全量保存されないまま切り詰められるかを判定する。
 
-    検証コマンドより後方で最初に現れる`tail`・`head`を切り詰めの発生点とし、
+    全量観測が必要なコマンドより後方で最初に現れる`tail`・`head`を切り詰めの発生点とし、
     その手前に`tee`が無い場合に真を返す。`tee`で全量を先に保存してから抽出する形は対象外とし、
     切り詰めた後に`tee`で保存する形は保存内容が既に切り詰め後であるため対象とする。
-    同一パイプラインに検証コマンドが複数ある場合は、いずれか1件でも該当すれば真を返す。
+    同一パイプラインに対象コマンドが複数ある場合は、いずれか1件でも該当すれば真を返す。
     """
     for index, segment in enumerate(pipeline):
-        if not _segment_is_verification(segment):
+        if not _segment_requires_complete_output(segment):
             continue
         following = pipeline[index + 1 :]
         truncation_index = next(
@@ -2859,24 +2864,24 @@ def _pipeline_truncates_verification_output(pipeline: Sequence[_ExecutionSegment
 
 
 def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
-    """検証コマンドの出力を`tail`・`head`で切り詰める指定を初回から遮断する。
+    """全量観測が必要な出力を`tail`・`head`で切り詰める指定を初回から遮断する。
 
     全量をファイルへ保存してから必要部分を抽出する形、構造化出力をレコード種別で抽出する形、
     または分離したコンテキストで実行する形を解消手段として示す。
-    全パイプラインの全検証コマンド区間を対象とし、1件でも切り詰めに該当すれば1回だけ通知する。
-    `;`・`&&`・`||`・`&`で連結した後続コマンドは検証コマンドの出力を受け取らないため対象外とする。
-    判定は`_extract_execution_pipelines`が返す実行位置で行うため、検証ツール名を検索語・引数として
-    含むだけの読み取り操作は検出しない。実行位置を確定できない区間と、実行位置以外で起動される
-    検証コマンドも検出しない（助言であり非検出側の誤差の実害が小さいため）。
+    全パイプラインの検証コマンドと保存本文を返すコマンドを対象とし、1件でも切り詰めに該当すれば1回だけ通知する。
+    `;`・`&&`・`||`・`&`で連結した後続コマンドは対象コマンドの出力を受け取らないため対象外とする。
+    判定は`_extract_execution_pipelines`が返す実行位置で行うため、対象コマンド名を検索語・引数として
+    含むだけの場合は検出しない。実行位置を確定できない区間と、実行位置以外で起動される対象コマンドも
+    検出しない（助言であり非検出側の誤差の実害が小さいため）。
     """
     if _contains_heredoc(command):
         return None
-    if not any(_pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
+    if not any(_pipeline_truncates_required_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
         return None
     del session_id
     print(
         _block_notice(
-            "block: 検証コマンドの実行出力を`tail`・`head`で切り詰めている。",
+            "block: 全量観測が必要なコマンドの実行出力を`tail`・`head`で切り詰めている。",
             fix=(
                 "最初に全出力を保存し、保存済みファイルから抽出するか、構造化出力から必要なレコード種別を選ぶか、"
                 "agents_serverの`start_shell`ツールを使って分離したコンテキストでコマンドを実行する。"
@@ -2924,7 +2929,7 @@ def _contains_unquoted_status_expansion(token: str) -> bool:
 
 
 def _status_report_follows_truncation(command: str) -> bool:
-    """直後のserial commandが検証コマンドの終了状態を利用する形かを返す。"""
+    """直後のserial commandが切り詰め対象コマンドの終了状態を利用する形かを返す。"""
     tokens = _command_tokens_with_quotes(command)
     if not tokens:
         return False
@@ -2939,14 +2944,12 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
         return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for index, serial_command in enumerate(serial_commands[:-1]):
-        if not any(
-            _pipeline_truncates_verification_output(pipeline) for pipeline in _extract_execution_pipelines(serial_command)
-        ):
+        if not any(_pipeline_truncates_required_output(pipeline) for pipeline in _extract_execution_pipelines(serial_command)):
             continue
         if _status_report_follows_truncation(serial_commands[index + 1]):
             return _llm_notice(
-                "warn: 出力を切り詰める検証パイプラインの後にある`$?`は、検証コマンドではなく"
-                "`head`・`tail`の終了状態を示す。出力を切り詰める前に検証コマンドの終了状態を保持する。",
+                "warn: 出力を切り詰めるパイプラインの後にある`$?`は、対象コマンドではなく"
+                "`head`・`tail`の終了状態を示す。出力を切り詰める前に対象コマンドの終了状態を保持する。",
                 tag="warn",
             )
     return None
