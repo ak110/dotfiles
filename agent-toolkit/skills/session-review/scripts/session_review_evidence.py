@@ -6,7 +6,7 @@
 """Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
-`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`の照会モードは、抽出結果に無い詳細をtranscriptから
+`--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査を1回の記録読み込みでまとめて行い、
 走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
@@ -41,6 +41,10 @@ _WARNING_LINE_PATTERN = re.compile(
     r")|"
     r"(?:warning|warn|警告)\s*[:：]"
     r")",
+    re.IGNORECASE,
+)
+_WARNING_ABSENCE_PATTERN = re.compile(
+    r"(?:なし|無し|ありません|検出なし|0件|none|no|n/a|-)[\s。.]*\Z",
     re.IGNORECASE,
 )
 _STRUCTURED_WARNING_VALUES = frozenset({"warn", "warning", "警告"})
@@ -572,6 +576,9 @@ def _codex_entry_events(
             for text in _codex_text_blocks(payload.get("content")):
                 event = _event(kind, text)
                 if event:
+                    phase = payload.get("phase")
+                    if isinstance(phase, str):
+                        event["phase"] = phase
                     events.append(event)
     elif entry_type == "response_item" and payload_type == "agent_message":
         text = _codex_agent_message(payload)
@@ -617,7 +624,7 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
 def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """最終結果への置換と連番付けを行う。"""
     for event in reversed(events):
-        if event["kind"] == "assistant":
+        if event["kind"] == "assistant" and event.get("phase") != "commentary":
             event["kind"] = "final-result"
             break
     for sequence, event in enumerate(events, start=1):
@@ -1627,90 +1634,103 @@ def _warning_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return found
 
 
-def _warning_result_values(entry: dict[str, Any]) -> list[Any]:
-    """構造化警告を抽出できる実行結果領域の値だけを返す。"""
-    values: list[Any] = []
+def _warning_result_values(entry: dict[str, Any]) -> list[tuple[Any, bool]]:
+    """構造化警告を抽出できる実行結果領域の値とhook記録由来かを返す。"""
+    values: list[tuple[Any, bool]] = []
     tool_use_result = entry.get("toolUseResult")
     is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
 
     if "toolUseResult" in entry and not is_read_result:
-        values.append(tool_use_result)
+        values.append((tool_use_result, False))
 
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, list) and not is_read_result:
-        values.extend(block for block in content if isinstance(block, dict) and block.get("type") == "tool_result")
+        values.extend((block, False) for block in content if isinstance(block, dict) and block.get("type") == "tool_result")
 
     payload = entry.get("payload")
     if isinstance(payload, dict) and payload.get("type") == "function_call_output":
-        values.append(payload.get("output"))
+        values.append((payload.get("output"), False))
     if isinstance(payload, dict) and payload.get("type") == "custom_tool_call_output":
-        values.append(payload.get("output"))
-    if isinstance(payload, dict) and payload.get("type") == "event_msg":
+        values.append((payload.get("output"), False))
+    if entry.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") == "item_completed":
         item = payload.get("item")
         if isinstance(item, dict) and item.get("type") == "CommandExecution":
-            values.extend(item.get(key) for key in ("aggregated_output", "output", "stdout", "stderr"))
+            values.extend((item.get(key), False) for key in ("aggregated_output", "output", "stdout", "stderr"))
 
-    values.extend(_warning_hook_records(entry))
+    values.extend((hook_record, True) for hook_record in _warning_hook_records(entry))
     return values
 
 
 def _warning_texts(entry: dict[str, Any]) -> list[str]:
-    """実行結果領域内の行頭マーカー又は構造化警告フィールドに対応する本文行を返す。"""
-    bodies: list[tuple[str, bool]] = []
+    """本文の由来に基づき、実行結果領域から実行時警告の本文行を返す。
 
-    def collect_markers(value: Any) -> None:
+    フック通知標識はhook実行の記録に由来する場合だけ採用する。コマンド出力に由来する通常の
+    実行時警告は検出対象として維持し、問題の不在を述べる本文は除外する。
+    """
+    bodies: list[tuple[str, bool, bool]] = []
+
+    def collect_markers(value: Any, from_hook_record: bool) -> None:
         if isinstance(value, str):
-            bodies.append((value, True))
+            bodies.append((value, True, from_hook_record))
             try:
                 parsed = json.loads(value)
             except (json.JSONDecodeError, TypeError, ValueError):
                 return
             if isinstance(parsed, (dict, list)):
-                collect_markers(parsed)
+                collect_markers(parsed, from_hook_record)
             return
         if isinstance(value, dict):
             for item in value.values():
-                collect_markers(item)
+                collect_markers(item, from_hook_record)
         elif isinstance(value, list):
             for item in value:
-                collect_markers(item)
+                collect_markers(item, from_hook_record)
 
-    def collect_structured(value: Any) -> None:
+    def collect_structured(value: Any, from_hook_record: bool) -> None:
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
             except (json.JSONDecodeError, TypeError, ValueError):
                 return
             if isinstance(parsed, (dict, list)):
-                collect_structured(parsed)
+                collect_structured(parsed, from_hook_record)
             return
         if isinstance(value, dict):
             warning_values, direct_warning = _structured_warning_fields(value)
             for warning_value in warning_values:
                 for text in _structured_warning_value_texts(warning_value):
-                    bodies.append((text, False))
+                    bodies.append((text, False, from_hook_record))
             if direct_warning and not warning_values:
                 for text in _structured_warning_value_texts(value):
-                    bodies.append((text, False))
+                    bodies.append((text, False, from_hook_record))
             for item in value.values():
-                collect_structured(item)
+                collect_structured(item, from_hook_record)
         elif isinstance(value, list):
             for item in value:
-                collect_structured(item)
+                collect_structured(item, from_hook_record)
 
-    for result_value in _warning_result_values(entry):
-        collect_markers(result_value)
-        collect_structured(result_value)
+    for result_value, from_hook_record in _warning_result_values(entry):
+        collect_markers(result_value, from_hook_record)
+        collect_structured(result_value, from_hook_record)
     unnumbered_by_body = [
-        {line.strip() for line in text.splitlines() if _LINE_NUMBER_PREFIX.match(line) is None} for text, _ in bodies
+        {line.strip() for line in text.splitlines() if _LINE_NUMBER_PREFIX.match(line) is None} for text, _, _ in bodies
     ]
     seen: set[str] = set()
     result: list[str] = []
-    for body_index, (text, marker_only) in enumerate(bodies):
+    for body_index, (text, marker_only, from_hook_record) in enumerate(bodies):
         for line in text.splitlines():
             stripped = line.strip()
             if not stripped or not (not marker_only or _WARNING_LINE_PATTERN.search(line)):
+                continue
+            if _HOOK_NOTICE_MARKER.search(line) and not from_hook_record:
+                continue
+            warning_body = stripped
+            if numbered_body := _LINE_NUMBER_PREFIX.match(warning_body):
+                warning_body = numbered_body.group(1).strip()
+            if warning_marker := _WARNING_LINE_PATTERN.search(warning_body):
+                warning_body = warning_body[warning_marker.end() :].strip()
+            if not warning_body or _WARNING_ABSENCE_PATTERN.fullmatch(warning_body):
                 continue
             numbered = _LINE_NUMBER_PREFIX.match(line)
             key = stripped
@@ -2273,6 +2293,37 @@ def _warning_collection_events(collected: list[_CollectedRecord], unresolved: li
     return events
 
 
+def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime) -> list[dict[str, Any]]:
+    """メイン記録の状態を保ち、指定時刻より後に成立した利用者イベントだけを返す。"""
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        if item.record_id != "main":
+            continue
+        runtime = _detect_runtime([record.entry for record in item.records])
+        if runtime is None:
+            break
+        selected_events: list[dict[str, Any]] = []
+        pending_question_lines: dict[str, int] = {}
+        pending_questions: dict[str, tuple[int, dict[str, str]]] = {}
+        subagent_record = _is_subagent_record([record.entry for record in item.records])
+        for record in item.records:
+            record_events = (
+                _codex_entry_events(record.entry, record.line, pending_questions)
+                if runtime == "codex"
+                else _claude_entry_events(record.entry, record.line, pending_question_lines, subagent_record)
+            )
+            for event in record_events:
+                event.setdefault("line", record.line)
+            timestamp = _record_timestamp(record)
+            if timestamp is not None and timestamp > since:
+                selected_events.extend(record_events)
+        user_events = [event for event in _finalize(selected_events) if event["kind"] == "user"]
+        events.extend(_events_with_record(user_events, item.record_id))
+        break
+    events.append({"kind": "summary", "count": len(events)})
+    return events
+
+
 def _grep_collection_events(
     collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], pattern: re.Pattern[str]
 ) -> list[dict[str, Any]]:
@@ -2483,6 +2534,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "重複を除いた通知件数を照会する。" + _CLAUDE_ONLY_NOTE,
     )
     parser.add_argument(
+        "--user-events",
+        action="store_true",
+        help="`--since`より後から観測境界までのメイン記録にある利用者イベントだけを照会する。",
+    )
+    parser.add_argument(
+        "--since",
+        metavar="TIMESTAMP",
+        help="`--user-events`の開始境界をISO 8601の時刻で指定する。当該時刻を持つレコードは対象外とする。",
+    )
+    parser.add_argument(
         "--bundle",
         metavar="DIR",
         help="通常表示、`--warn`、`--stats`及び`--hook-notices`の走査を1回の記録読み込みで行い、"
@@ -2510,11 +2571,22 @@ def main(argv: list[str] | None = None) -> int:
                 args.hook_notices,
                 args.bundle is not None,
                 args.elapsed_until is not None,
+                args.user_events,
             )
         )
         > 1
     ):
         return _print_error("--warn・--grep・--detail・--stats・--hook-notices・--bundle・--elapsed-untilは併用できない")
+    if args.since is not None and not args.user_events:
+        return _print_error("--sinceは--user-eventsと併用する")
+    if args.user_events and args.since is None:
+        return _print_error("--user-eventsには--sinceが必要")
+    since = None
+    if args.since is not None:
+        try:
+            since = _parse_timestamp(args.since)
+        except ValueError:
+            return _print_error(f"開始境界が不正: {args.since}")
 
     if (args.transcript_path is None) == (args.codex_thread_id is None):
         return _print_error("transcript_pathと--codex-thread-idはいずれか一方だけを指定する")
@@ -2572,6 +2644,10 @@ def main(argv: list[str] | None = None) -> int:
         _print_events(
             [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)]
         )
+        return 0
+    if args.user_events:
+        assert since is not None
+        _print_events(_user_events_since(collected, since))
         return 0
 
     _print_events(_default_events(collected, unresolved))
