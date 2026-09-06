@@ -605,6 +605,55 @@ class TestRecursiveHomeSearchCheck:
         assert "high-capacity user directory" not in _additional_context(result)
 
 
+class TestUnboundedHomeTraversalCheck:
+    """対象限定の無い`find`・`ls -R`による高容量領域の走査の警告。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find ~ -name '*.md'",
+            "find $HOME",
+            "find ~/.local ~/.codex -type f",
+            "ls -R ~/.local",
+            "ls -aR ~/.claude",
+            "ls -R ~/.local ~/.claude",
+        ],
+    )
+    def test_warns_for_unbounded_home_traversal(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "除外設定を持たない走査コマンド" in _additional_context(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find ~ -maxdepth 2",
+            "find ~/.local -prune -o -print",
+            "find /tmp/repository",
+            "find ~ -xdev",
+            "find ~ -mount",
+            "find ~/.local /tmp/repository",
+            "find",
+            "find ~ -unknown",
+            "ls -R /tmp/repository",
+            "ls -R ~/.local /tmp/repository",
+            "ls -R",
+            "ls --unknown -R ~/.local",
+            "ls ~/.local",
+            "echo find ~",
+        ],
+    )
+    def test_bounded_or_non_target_traversal_is_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "除外設定を持たない走査コマンド" not in _agent_messages(result)
+
+    def test_heredoc_is_silent(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF'\nfind ~\nEOF"}})
+        assert result.returncode == 0
+        assert "除外設定を持たない走査コマンド" not in _agent_messages(result)
+
+
 class TestNonEditToolWarnings:
     """WebFetchとSendMessageの入力警告。"""
 

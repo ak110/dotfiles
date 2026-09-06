@@ -75,15 +75,22 @@ class TestBashCommandContractWarnings:
         assert result.returncode == 0
         assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
 
-    @pytest.mark.parametrize(
-        "command", ["atk --help; atk agents --help", "atk --help; atk wi list", "atk wi --help && atk wi show a.md"]
-    )
+    @pytest.mark.parametrize("command", ["atk --help; atk wi list", "atk wi --help && atk wi show a.md"])
     def test_help_with_same_executable_warns(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "ヘルプ取得と同じ実行ファイル" in _additional_context(result)
 
-    @pytest.mark.parametrize("command", ["grep -h foo a.txt; grep -h bar b.txt", "atk --help", "atk wi list"])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "grep -h foo a.txt; grep -h bar b.txt",
+            "atk --help",
+            "atk wi list",
+            "atk --help; atk agents --help",
+            "uvx pyfltr grep --help && echo ===== && uvx pyfltr replace --help",
+        ],
+    )
     def test_help_single_or_short_option_forms_are_silent(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0

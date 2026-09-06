@@ -37,6 +37,7 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
+- 高容量のユーザー領域を対象限定なしに走査する`find`・`ls -R`の検出 (warn)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
@@ -1209,9 +1210,10 @@ def _check_bash_state_change_command_chaining(command: str) -> str | None:
 
 
 def _check_bash_help_with_execution(command: str) -> str | None:
-    """同じ実行ファイルのヘルプ取得と別区間の並置を警告する。
+    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を警告する。
 
     `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
+    ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
     """
     if _contains_heredoc(command):
         return None
@@ -1224,7 +1226,16 @@ def _check_bash_help_with_execution(command: str) -> str | None:
         and "--help" in segment.tokens[1:]
         and all(token == "--help" for token in segment.tokens[1:] if token.startswith("-"))
     }
-    if any(names.count(name) >= 2 for name in help_names):
+    non_help_names = {
+        name
+        for name, segment in zip(names, segments, strict=True)
+        if not (
+            "--" not in segment.tokens[1:]
+            and "--help" in segment.tokens[1:]
+            and all(token == "--help" for token in segment.tokens[1:] if token.startswith("-"))
+        )
+    }
+    if help_names & non_help_names:
         return _llm_notice(
             "warn: 同じシェル呼び出しの中でヘルプ取得と同じ実行ファイルの実行が並んでいる。"
             "前段のヘルプ出力は同じ呼び出しの中では取得できないため、"
@@ -1633,6 +1644,241 @@ def _check_bash_recursive_home_search(command: str) -> str | None:
         "対象ディレクトリを狭め、不要領域を除外し、検索対象と出力に上限を設けるか、"
         "`rg`・再帰`grep`を使う前に分離した実行コンテキストで検索する。",
         tag=_WARN_TAG,
+    )
+
+
+_FIND_GLOBAL_OPTIONS = frozenset({"-H", "-L", "-P"})
+_FIND_BOUNDS = frozenset({"-prune", "-maxdepth", "-xdev", "-mount"})
+_FIND_KNOWN_EXPRESSION_OPTIONS = frozenset(
+    {
+        "-amin",
+        "-anewer",
+        "-atime",
+        "-cmin",
+        "-cnewer",
+        "-ctime",
+        "-daystart",
+        "-delete",
+        "-depth",
+        "-empty",
+        "-exec",
+        "-execdir",
+        "-executable",
+        "-false",
+        "-files0-from",
+        "-fls",
+        "-follow",
+        "-fprint",
+        "-fprint0",
+        "-fprintf",
+        "-fstype",
+        "-gid",
+        "-group",
+        "-ignore_readdir_race",
+        "-ilname",
+        "-iname",
+        "-inum",
+        "-ipath",
+        "-iregex",
+        "-iwholename",
+        "-links",
+        "-lname",
+        "-ls",
+        "-mmin",
+        "-mtime",
+        "-name",
+        "-newer",
+        "-nogroup",
+        "-noignore_readdir_race",
+        "-noleaf",
+        "-nouser",
+        "-nowarn",
+        "-ok",
+        "-okdir",
+        "-path",
+        "-perm",
+        "-print",
+        "-print0",
+        "-printf",
+        "-quit",
+        "-readable",
+        "-regex",
+        "-regextype",
+        "-samefile",
+        "-size",
+        "-true",
+        "-type",
+        "-uid",
+        "-used",
+        "-user",
+        "-warn",
+        "-wholename",
+        "-writable",
+        "-xtype",
+    }
+)
+_LS_SHORT_OPTIONS_WITHOUT_VALUE = frozenset("ABCDFGHKLNQRSUXZabcdfghiklmnopqrstvux1")
+_LS_SHORT_OPTIONS_WITH_VALUE = frozenset({"I", "T", "w"})
+_LS_LONG_OPTIONS_WITHOUT_VALUE = frozenset(
+    {
+        "--all",
+        "--almost-all",
+        "--author",
+        "--context",
+        "--directory",
+        "--dereference",
+        "--dereference-command-line",
+        "--dereference-command-line-symlink-to-dir",
+        "--dired",
+        "--escape",
+        "--file-type",
+        "--full-time",
+        "--group-directories-first",
+        "--help",
+        "--hide-control-chars",
+        "--human-readable",
+        "--ignore-backups",
+        "--inode",
+        "--kibibytes",
+        "--literal",
+        "--no-group",
+        "--numeric-uid-gid",
+        "--quote-name",
+        "--recursive",
+        "--reverse",
+        "--show-control-chars",
+        "--si",
+        "--size",
+        "--version",
+        "--zero",
+    }
+)
+_LS_LONG_OPTIONS_WITH_VALUE = frozenset(
+    {
+        "--block-size",
+        "--classify",
+        "--color",
+        "--format",
+        "--hide",
+        "--hyperlink",
+        "--ignore",
+        "--indicator-style",
+        "--quoting-style",
+        "--sort",
+        "--tabsize",
+        "--time",
+        "--time-style",
+        "--width",
+    }
+)
+_LS_LONG_OPTIONS_WITH_OPTIONAL_VALUE = frozenset({"--classify", "--color", "--hyperlink"})
+
+
+def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """`find`区間が高容量領域だけを対象とし、走査範囲を限定しない場合に真を返す。"""
+    index = 1
+    while index < len(tokens) and tokens[index] in _FIND_GLOBAL_OPTIONS:
+        index += 1
+    paths: list[str] = []
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("-") or token in {"(", "!", ","}:
+            break
+        paths.append(token)
+        index += 1
+    if not paths or not all(_is_high_capacity_home_target(path) for path in paths):
+        return False
+    expression = tokens[index:]
+    if any(token in _FIND_BOUNDS for token in expression):
+        return False
+    return all(
+        not token.startswith("-")
+        or token in _FIND_KNOWN_EXPRESSION_OPTIONS
+        or token.startswith("-newer")
+        and len(token) == len("-newer") + 2
+        for token in expression
+    )
+
+
+def _ls_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """`ls`区間が再帰指定と高容量領域だけのoperandを持つ場合に真を返す。"""
+    operands: list[str] = []
+    recursive = False
+    option_terminator = False
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if option_terminator or token == "-" or not token.startswith("-"):
+            operands.append(token)
+            index += 1
+            continue
+        if token == "--":
+            option_terminator = True
+            index += 1
+            continue
+        name, separator, _ = token.partition("=")
+        if name in _LS_LONG_OPTIONS_WITH_VALUE:
+            if name in _LS_LONG_OPTIONS_WITH_OPTIONAL_VALUE:
+                index += 1
+            else:
+                index += 1 if separator else 2
+            continue
+        if token in _LS_LONG_OPTIONS_WITHOUT_VALUE and not separator:
+            recursive = recursive or token == "--recursive"
+            index += 1
+            continue
+        if token.startswith("--"):
+            return False
+        short_options = token[1:]
+        value_option_index = next(
+            (position for position, character in enumerate(short_options) if character in _LS_SHORT_OPTIONS_WITH_VALUE),
+            None,
+        )
+        if value_option_index is not None:
+            leading = short_options[:value_option_index]
+            if any(character not in _LS_SHORT_OPTIONS_WITHOUT_VALUE for character in leading):
+                return False
+            recursive = recursive or "R" in leading
+            index += 1 if value_option_index < len(short_options) - 1 else 2
+            continue
+        if not short_options or any(character not in _LS_SHORT_OPTIONS_WITHOUT_VALUE for character in short_options):
+            return False
+        recursive = recursive or "R" in short_options
+        index += 1
+    return recursive and bool(operands) and all(_is_high_capacity_home_target(path) for path in operands)
+
+
+def _pipeline_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """対象限定を伴わずに高容量のユーザー領域だけを走査する`find`と`ls -R`を判定する。
+
+    `find`では`-prune`・`-maxdepth`・`-xdev`・`-mount`のいずれかを対象限定とみなす。
+    `ls`は除外の手段を持たないため、再帰指定と高容量領域の指定だけで判定する。
+    `fd`はoperandのパターンとパスを構文だけでは判別できず、既定で除外設定を反映するため対象にしない。
+    """
+    if not tokens:
+        return False
+    if tokens[0] == "find":
+        return _find_has_unbounded_home_traversal(tokens)
+    if tokens[0] == "ls":
+        return _ls_has_unbounded_home_traversal(tokens)
+    return False
+
+
+def _check_bash_unbounded_home_traversal(command: str) -> str | None:
+    """対象限定の無い`find`・`ls -R`による高容量領域の走査へ警告を返す。"""
+    if _contains_heredoc(command):
+        return None
+    if not any(
+        segment.resolved and _pipeline_has_unbounded_home_traversal(segment.tokens)
+        for pipeline in _extract_execution_pipelines(command)
+        for segment in pipeline
+    ):
+        return None
+    return _llm_notice(
+        "warn: 除外設定を持たない走査コマンドが大容量のユーザーディレクトリを無限定に走査している。"
+        "`find`では`-prune`と`-maxdepth`で対象集合を先に限定し、"
+        "ファイル一覧の取得には除外設定を反映する`rg --files`を使う。",
+        tag="warn",
     )
 
 
