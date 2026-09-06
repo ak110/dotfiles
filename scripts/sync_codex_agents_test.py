@@ -9,14 +9,20 @@ import sync_codex_agents as subject
 _TWO_LAYER_WAIT_HEADING = "### agents_serverの二層待機"
 
 
-def _root(tmp_path: Path, *, project: str = "project\n", max_bytes: int = 128 * 1024) -> Path:
+def _root(
+    tmp_path: Path,
+    *,
+    project: str = "project\n",
+    max_bytes: int = 128 * 1024,
+    warn_ratio: float = 0.8,
+) -> Path:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
     (tmp_path / subject.CODEX_CONFIG).write_text(
-        f"project_doc_max_bytes = {max_bytes}\n",
+        f"project_doc_max_bytes = {max_bytes}\nproject_doc_warn_ratio = {warn_ratio}\n",
         encoding="utf-8",
     )
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
@@ -109,6 +115,28 @@ def test_size_failure_does_not_replace_output(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="超える"):
         subject.sync(root)
     assert target.read_text(encoding="utf-8") == "old\n"
+
+
+def test_sync_warns_at_threshold_and_writes_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = _root(tmp_path, max_bytes=1_000, warn_ratio=0.1)
+    (root / "agent-toolkit/rules/01-a.md").write_text("rule\n", encoding="utf-8")
+
+    assert subject.sync(root) is True
+    assert "警告: Codex instruction chainが" in capsys.readouterr().err
+    assert (root / subject.TARGET).is_file()
+
+
+def test_sync_does_not_warn_below_threshold(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = _root(tmp_path, max_bytes=10_000, warn_ratio=0.8)
+    assert subject.sync(root) is True
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("warn_ratio", [0, -0.1, 1.1])
+def test_sync_rejects_out_of_range_warn_ratio(tmp_path: Path, warn_ratio: float) -> None:
+    root = _root(tmp_path, warn_ratio=warn_ratio)
+    with pytest.raises(ValueError, match="0より大きく1以下"):
+        subject.sync(root)
 
 
 def test_config_template_uses_shared_project_doc_limit() -> None:
