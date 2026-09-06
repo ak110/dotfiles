@@ -356,6 +356,13 @@ class SessionResumeState:
         )
 
 
+def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandidate | None:
+    """sessionの起動時に確定した候補を返す。"""
+    if session.model is None or session.effort is None:
+        return None
+    return session.engine, session.model, session.effort
+
+
 def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:
     """新しいturnの開始前に共有状態を初期化する。"""
     session.turn_id = ""

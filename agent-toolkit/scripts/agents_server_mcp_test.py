@@ -395,7 +395,7 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
     assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
     assert "session retention expired" in tools["wait"].description
-    assert "configuration changed" in tools["send_message"].description
+    assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
     assert "unknown session" in tools["send_message"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
     assert "sessionとbackend processは破棄しない" in tools["kill"].description
@@ -989,11 +989,11 @@ async def test_send_message_continues_with_selected_first_remaining_candidate(
 
 
 @pytest.mark.asyncio
-async def test_send_message_reports_changed_candidate_fields_without_discarding_session(
+async def test_send_message_continues_when_selected_candidate_is_replaced(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """採用済み候補が消えた場合は変更項目を示し、sessionを保持して拒否する。"""
+    """採用済み候補が置換されても起動時のsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
@@ -1001,21 +1001,19 @@ async def test_send_message_reports_changed_candidate_fields_without_discarding_
     session_id = response["session_id"]
     current[:] = [("claude", "replacement", "medium")]
 
-    expected = (
-        f"configuration changed: {session_id}; engine: codex -> claude, model: first -> replacement, effort: high -> medium"
-    )
-    with pytest.raises(ValueError, match=expected):
-        await manager.send_message(session_id, "続行")
+    result = await manager.send_message(session_id, "続行")
+
+    assert result["delivery"] == "steered"
     assert session_id in manager.sessions
-    assert backend.send_calls == 0
+    assert backend.send_calls == 1
 
 
 @pytest.mark.asyncio
-async def test_send_message_reports_when_no_candidate_remains_without_discarding_session(
+async def test_send_message_continues_when_no_configured_candidate_remains(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補が残らない場合は理由を示し、sessionを保持して継続を拒否する。"""
+    """候補が残らない場合も起動時のsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
@@ -1023,10 +1021,11 @@ async def test_send_message_reports_when_no_candidate_remains_without_discarding
     session_id = response["session_id"]
     current.clear()
 
-    with pytest.raises(ValueError, match=f"configuration changed: {session_id}; no candidate remains"):
-        await manager.send_message(session_id, "続行")
+    result = await manager.send_message(session_id, "続行")
+
+    assert result["delivery"] == "steered"
     assert session_id in manager.sessions
-    assert backend.send_calls == 0
+    assert backend.send_calls == 1
 
 
 @pytest.mark.asyncio

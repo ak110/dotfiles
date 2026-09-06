@@ -36,6 +36,7 @@ from _agents_server.state import (
     _validate_shell_request,
     add_touch_listener,
     remove_touch_listener,
+    selected_candidate,
 )
 from _atk import config as _atk_config
 from _common import inherited_venv as _inherited_venv
@@ -369,9 +370,10 @@ class AgentsServerManager:
                     f"source model_type={source.model_type}, launch_kind={source.launch_kind}; "
                     f"requested model_type={model_type}, launch_kind={launch_kind}"
                 )
-            if source.model is None or source.effort is None:
+            selected = selected_candidate(source)
+            if selected is None:
                 raise ValueError(f"exclude_session_id has no selected candidate: {exclude_session_id}")
-            excluded = source.excluded_candidates | frozenset({(source.engine, source.model, source.effort)})
+            excluded = source.excluded_candidates | frozenset({selected})
         remaining = [item for item in candidates if item not in excluded]
         if not remaining:
             raise ValueError(f"no model candidates remain for model_type: {model_type}")
@@ -790,23 +792,6 @@ class AgentsServerManager:
         _validate_prompt(prompt)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ValueError("timeout must be positive")
-        route_state = self._route_state(session_id, unknown_label="session")
-        if route_state.model_type is not None:
-            candidates = _atk_config.resolve_model_candidates(route_state.model_type)
-            actual = (route_state.engine, route_state.model, route_state.effort)
-            if actual not in candidates:
-                expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
-                if expected is None:
-                    change = "no candidate remains"
-                else:
-                    names = ("engine", "model", "effort")
-                    changes = [
-                        f"{name}: {before} -> {after}"
-                        for name, before, after in zip(names, actual, expected, strict=True)
-                        if before != after
-                    ]
-                    change = ", ".join(changes)
-                raise ValueError(f"configuration changed: {session_id}; {change}")
         try:
             async with asyncio.timeout(float(timeout)):
                 while True:
@@ -1187,11 +1172,9 @@ async def send_message(
     応答は`delivery`で配送結果を示し、`turn_seq`を含む。
     `turn_seq`は、`atk agents-wait`でこのturnを待つ場合に`--turn`へそのまま渡す。
     直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
-    `configuration changed: <session_id>`は、
-    当該sessionが採用しているengine・model・effortが工程別モデル設定の候補列から外れたことを示す。
-    本文が続けて変わった項目と変更前後の値を示すため、検収済み状態を渡して新規起動する。
-    候補列の記述だけが変わり採用済みの値が候補列に残る場合は、同じsessionの継続に成功する。
-    `unknown session: <session_id>`だけが継続不能を示す。
+    sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
+    採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
+    保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
     return await _MANAGER.send_message(session_id, prompt, timeout)
 
