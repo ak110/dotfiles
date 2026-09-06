@@ -1,3 +1,6 @@
+# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# ruff: noqa: E402,F401,F821,I001
+# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,unused-import,used-before-assignment,wrong-import-order
 """計画ファイルの構造検査の共通モジュール。
 
 構造検査（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
@@ -24,6 +27,8 @@ PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果�
 - 同名節の重複、親節の違い
 """
 
+from __future__ import annotations
+
 import functools
 import pathlib
 import re
@@ -39,939 +44,178 @@ import markdown_it.token
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-PLAN_H2_OVERVIEW: str = "概要"
-PLAN_H2_ACTION: str = "実施内容"
-PLAN_H2_AGENT_JUDGMENT: str = "エージェント提案詳細"
-PLAN_H2_MATERIALS: str = "提示素材"
-PLAN_H2_HISTORY: str = "変更履歴（計画時）"
-PLAN_H2_VERIFICATION: str = "検証区分"
-PLAN_H2_TERMINATION: str = "終端工程"
-PLAN_H2_BUG: str = "バグ調査結果"
-PLAN_H2_PERMANENCE: str = "恒久化・リファクタリング内容"
-PLAN_H2_IMPLEMENTATION: str = "実装資料"
-PLAN_H2_COMPLETION: str = "完了条件"
-PLAN_H2_PROGRESS: str = "進捗ログ（実行時）"
 
-PLAN_H2_LEGACY_HISTORY: str = "変更履歴"
-PLAN_H2_LEGACY_PROGRESS: str = "進捗ログ"
-PLAN_H2_LEGACY_AGENT_JUDGMENT: str = "エージェント判断"
-
-PLAN_H2_ALIASES: dict[str, tuple[str, ...]] = {
-    PLAN_H2_AGENT_JUDGMENT: (PLAN_H2_AGENT_JUDGMENT, PLAN_H2_LEGACY_AGENT_JUDGMENT),
-    PLAN_H2_HISTORY: (PLAN_H2_HISTORY, PLAN_H2_LEGACY_HISTORY),
-    PLAN_H2_PROGRESS: (PLAN_H2_PROGRESS, PLAN_H2_LEGACY_PROGRESS),
-}
-"""新書式の固定H2と、読み取り互換で受理する旧見出しの対応。"""
-
-_PLAN_H2_CANONICAL_BY_ALIAS: dict[str, str] = {
-    alias: canonical for canonical, aliases in PLAN_H2_ALIASES.items() for alias in aliases
-}
-
-PLAN_MAIN_H2_ORDER: tuple[str, ...] = (
-    PLAN_H2_OVERVIEW,
-    PLAN_H2_ACTION,
-    PLAN_H2_AGENT_JUDGMENT,
-    PLAN_H2_HISTORY,
-    PLAN_H2_VERIFICATION,
-    PLAN_H2_TERMINATION,
-    PLAN_H2_PROGRESS,
-)
-"""新書式の計画ファイル（メイン）が固定順で持つH2。"""
-
-PLAN_TWO_FILE_MAIN_H2_ORDER: tuple[str, ...] = (
-    PLAN_H2_OVERVIEW,
-    PLAN_H2_ACTION,
-    PLAN_H2_AGENT_JUDGMENT,
-    PLAN_H2_MATERIALS,
-    PLAN_H2_HISTORY,
-    PLAN_H2_VERIFICATION,
-    PLAN_H2_TERMINATION,
-    PLAN_H2_PROGRESS,
-)
-"""改訂前の二ファイル計画が持つ固定H2順序。読み取り互換専用。"""
-
-PLAN_LEGACY_MAIN_H2_ORDER: tuple[str, ...] = (
-    PLAN_H2_OVERVIEW,
-    PLAN_H2_ACTION,
-    PLAN_H2_MATERIALS,
-    PLAN_H2_LEGACY_HISTORY,
-    PLAN_H2_VERIFICATION,
-    PLAN_H2_TERMINATION,
-    PLAN_H2_LEGACY_PROGRESS,
-)
-"""改訂前の二ファイル計画が持つ固定H2順序。読み取り互換専用。"""
-
-PLAN_DETAIL_H2_ORDER: tuple[str, ...] = (PLAN_H2_PERMANENCE, PLAN_H2_IMPLEMENTATION, PLAN_H2_COMPLETION)
-"""新書式の計画ファイル（詳細）が固定順で持つH2（`バグ調査結果`を除く）。"""
-
-PLAN_DETAIL_SUFFIX: str = ".detail.md"
-"""計画ファイル（詳細）の固定サフィックス。計画ファイル（メイン）と対応する。"""
-
-PLAN_PERMANENCE_H3: tuple[str, ...] = ("恒久化", "リファクタリング")
-"""`## 恒久化・リファクタリング内容`直下に固定順で置くH3。"""
-
-PLAN_LEGACY_PERMANENCE_H3: tuple[str, ...] = ("類似見直し",)
-"""廃止済みのH3。既存計画の読み取りでだけ受理し、新規作成では置かない。"""
-
-PLAN_METADATA_H3: str = "計画メタ情報"
-PLAN_EXCLUSION_H3: str = "合意済みの除外・保持"
-PLAN_IMPLEMENTATION_UNITS_H3: str = "実装単位"
-
-PLAN_METADATA_FIELDS: tuple[str, ...] = ("起動経路", "対象リポジトリ", "作業種別", "ベースコミット")
-"""計画メタ情報の正規形が持つ項目と順序（旧形式単一ファイル・新書式計画ファイル（詳細）は本4項目のみ）。"""
-
-PLAN_METADATA_DETAIL_FIELD: str = "計画ファイル（詳細）"
-"""改訂前の二ファイル計画が持つ計画ファイル（詳細）の参照項目。読み取り互換専用。"""
-
-PLAN_METADATA_RELATED_WI_FIELD: str = "関連WI"
-"""新書式計画ファイル（メイン）が入力の正本ファイル名と要約を持つ項目。"""
-
-PLAN_METADATA_LEGACY_DETAIL_FIELD: str = "実装詳細"
-"""読み取り互換で受理する旧形式の計画ファイル（詳細）参照項目。"""
-
-PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD: str = "関連フィードバック"
-"""読み取り互換で受理する改名前の`関連WI`項目。"""
-
-PLAN_METADATA_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
-    PLAN_METADATA_DETAIL_FIELD: (PLAN_METADATA_DETAIL_FIELD, PLAN_METADATA_LEGACY_DETAIL_FIELD),
-    PLAN_METADATA_RELATED_WI_FIELD: (PLAN_METADATA_RELATED_WI_FIELD, PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD),
-}
-"""計画メタ情報の項目名と、読み取り互換で受理する旧名称の対応。"""
-
-_PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS: dict[str, str] = {
-    alias: canonical for canonical, aliases in PLAN_METADATA_FIELD_ALIASES.items() for alias in aliases
-}
-
-PLAN_METADATA_MAIN_FIELDS: tuple[str, ...] = (
-    "起動経路",
-    "対象リポジトリ",
-    PLAN_METADATA_RELATED_WI_FIELD,
-    "作業種別",
-    "ベースコミット",
-)
-"""新書式計画ファイル（メイン）の計画メタ情報が持つ項目と順序。"""
-
-PLAN_METADATA_TWO_FILE_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
-"""改訂前の二ファイル計画が持つ計画メタ情報の項目と順序。読み取り互換専用。"""
-
-PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset(
-    {"起動経路", "対象リポジトリ", "ベースコミット", PLAN_METADATA_DETAIL_FIELD}
-)
-"""値をバッククォートで囲む項目。`関連WI`と`作業種別`は裸で書く。"""
-
-PLAN_WORK_TYPES: tuple[str, ...] = ("バグ対応", "通常変更")
-
-PLAN_METADATA_FALLBACK_H2: tuple[str, ...] = ("目的", "実装契約", "背景")
-"""正規配置を持たない既存計画で計画メタ情報を読み取る旧配置。読み取り専用の互換経路とする。"""
-
-PLAN_HISTORY_USER_EVENT_PREFIX: str = "ユーザー発言"
-"""`## 変更履歴（計画時）`でユーザー発言の逐語記録を置くH3見出しの接頭辞。"""
-PLAN_HISTORY_USER_EVENT_PATTERN = re.compile(rf"^{PLAN_HISTORY_USER_EVENT_PREFIX}(?P<sequence>[1-9][0-9]*)$")
-"""ユーザー発言見出しの書式。接頭辞に1から始まる連番だけを続ける。"""
-PLAN_LEGACY_HISTORY_USER_EVENT_PATTERN = re.compile(rf"^{PLAN_HISTORY_USER_EVENT_PREFIX}: .+$")
-"""要旨を見出しへ書く旧書式。既存計画の読み取りでだけ受理する。"""
-
-PLAN_HISTORY_TABLE_HEADER: tuple[str, ...] = ("ID", "起点", "指摘内容", "採否・現在の結論", "同期先")
-PLAN_HISTORY_ORIGINS: tuple[str, ...] = ("ユーザー発言", "レビュー指摘", "方針転換")
-PLAN_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^R(?P<round>[0-9]+)-(?P<track>[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$")
-"""レビュー指摘行のID書式。ラウンド番号と系統名を一意に分離できる形に限定する。"""
-PLAN_HISTORY_TRACK_VALUES: tuple[str, ...] = ("plan-review", "plan-conformance", "independent")
-"""レビュー表CLIと共通する新形式の系統名。"""
-PLAN_LEGACY_HISTORY_TRACK_VALUES: tuple[str, ...] = ("conformance",)
-"""旧形式で既存計画に残る系統名の読み取り互換値。"""
-PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN = re.compile(r"^C-[0-9]{3}$")
-"""旧形式の単一ファイルだけで読み取り互換として受理するレビュー指摘行のID書式。"""
-PLAN_PROGRESS_TABLE_HEADER: tuple[str, ...] = ("日時", "完了した工程", "結果・特記事項")
-PLAN_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "素材・要求参照", "確認方法")
-PLAN_LEGACY_EXCLUSION_TABLE_HEADER: tuple[str, ...] = ("合意内容", "対象と箇所", "原文参照", "確認方法")
-PLAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "採否", "ユーザー指示との関係", "根拠")
-PLAN_LEGACY_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "ユーザー指示との関係", "根拠")
-PLAN_HUMAN_ACTION_TABLE_HEADER: tuple[str, ...] = ("実施内容", "由来", "採否", "根拠")
-PLAN_HUMAN_JUDGMENT_TABLE_HEADER: tuple[str, ...] = ("実施内容", "観測事象", "ユーザー要求との関係", "具体化した内容", "根拠")
-PLAN_HUMAN_WI_ORIGIN: str = "人間由来のWI"
-"""正本の`source`と機械判定できる明示由来から照合する由来の区分。"""
-
-PLAN_AGENT_WI_ORIGIN: str = "エージェント由来のWI"
-"""正本が機械判定できる明示由来を持たない場合の由来の区分。"""
-
-PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN: str = "人間由来のフィードバック"
-"""読み取り互換で受理する改名前の人間由来の区分。"""
-
-PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN: str = "エージェント由来のフィードバック"
-"""読み取り互換で受理する改名前のエージェント由来の区分。"""
-
-PLAN_WI_ORIGIN_ALIASES: dict[str, tuple[str, ...]] = {
-    PLAN_HUMAN_WI_ORIGIN: (PLAN_HUMAN_WI_ORIGIN, PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN),
-    PLAN_AGENT_WI_ORIGIN: (PLAN_AGENT_WI_ORIGIN, PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN),
-}
-"""WI由来の`由来`欄が持つ区分と、読み取り互換で受理する旧名称の対応。"""
-
-_PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS: dict[str, str] = {
-    alias: canonical for canonical, aliases in PLAN_WI_ORIGIN_ALIASES.items() for alias in aliases
-}
-
-PLAN_HUMAN_ORIGINS: tuple[str, ...] = (
-    PLAN_HUMAN_WI_ORIGIN,
-    PLAN_AGENT_WI_ORIGIN,
-    "ユーザー指示",
-    "エージェント提案",
-)
-PLAN_HUMAN_REVIEW_ORIGIN_PATTERN = re.compile(r"^計画レビュー第(?P<round>[1-9][0-9]*)ラウンド$")
-PLAN_WI_ORIGIN_PATTERN = re.compile(
-    "(?P<kind>" + "|".join(re.escape(alias) for alias in _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS) + ") "
-    r"\((?P<name>[^/\\()\s]+\.md)\)(?P<note> \[対話由来\])?"
-)
-"""WI由来の`由来`欄。機械判定できない明示由来には`[対話由来]`注記を付ける。"""
-
-PLAN_WI_SOURCE_KEY: str = "source"
-"""WIの正本のfrontmatterで投入元スキルを表すキー。"""
-
-PLAN_WI_USER_COMMENT_HEADING: str = "ユーザーコメント"
-"""WIの正本の末尾に置く、ユーザー専用の記入欄の見出し。"""
-
-PLAN_WI_ANSWER_HEADING: str = "回答"
-"""UWIの正本でユーザーの回答を記録する見出し。"""
-
-_FRONTMATTER_DELIMITER: str = "---"
-_FRONTMATTER_SOURCE_PATTERN = re.compile(rf"^{PLAN_WI_SOURCE_KEY}:[ \t]*\S")
-PLAN_HUMAN_REVIEW_ROOT_PATTERN = re.compile(r"^(?P<path>/.*?\.tsv)のround (?P<round>[1-9][0-9]*)(?:。(?P<reason>.+))?$")
-PLAN_ACTION_DECISIONS: tuple[str, ...] = ("採用", "部分採用", "不採用", "充足済み", "保留", "対象外", "移管")
-"""計画ファイル（メイン）の実施内容表が受理する採否値。"""
-PLAN_ACTION_NON_ADOPTED_DECISIONS: tuple[str, ...] = ("不採用", "充足済み", "保留", "対象外", "移管")
-"""実装単位を持たない採否値。根拠へ理由の記載を要求し、`ユーザー指示との関係`へ`非該当`を許容する。"""
-PLAN_ACTION_RELATIONS: tuple[str, ...] = ("指示どおり", "具体化", "エージェント追加")
-PLAN_BUG_FILE_REFERENCE_PREFIX: str = "- 計画ファイル（バグ）:"
-PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX: str = "- バグ調査ファイル:"
-
-PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
-    "単位ID",
-    "目的",
-    "先行依存",
-    "統合順",
-    "近接検証",
-)
-PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
-    "実装単位",
-    "目的",
-    "先行依存",
-    "統合順",
-    "近接検証",
-)
-PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER: tuple[str, ...] = (
-    "単位ID",
-    "目的",
-    "対象の実施内容",
-    "先行依存",
-    "統合順",
-    "近接検証",
-)
-PLAN_IMPLEMENTATION_UNIT_ID_PATTERN = re.compile(r"^U-[0-9]{3}$")
-"""計画ファイル（詳細）の実装単位表が持つ固定列と単位ID書式。"""
-
-PLAN_VERIFICATION_TABLE_HEADER: tuple[str, ...] = ("区分", "検証コマンド")
-PLAN_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("レーン内検証", "統合後検証")
-"""`## 検証区分`が持つ固定2行2列表。行は`レーン内検証`・`統合後検証`の順で固定する。"""
-
-PLAN_MATERIAL_TABLE_HEADER: tuple[str, ...] = ("素材ID", "種別", "キューID", "投入元", "引用範囲")
-PLAN_REQUIREMENT_TABLE_HEADER: tuple[str, ...] = (
-    "要求ID",
-    "素材参照",
-    "実装に必要な要件",
-    "採否",
-    "採用範囲",
-    "除外範囲",
-    "根拠",
-)
-PLAN_MATERIAL_TYPES: tuple[str, ...] = (
-    "フィードバック",
-    "ユーザー指示",
-    "ユーザー合意",
-    "利用者指示",
-    "利用者合意",
-    "参考素材",
-    "処理対象資料",
-    "起動事実",
-)
-"""新規表記と既存計画の読み取り互換表記を含む提示素材の種別。"""
-PLAN_NON_QUEUE_VALUE: str = "非該当"
-PLAN_MATERIAL_ID_PATTERN = re.compile(r"^P-[0-9A-Za-z][0-9A-Za-z_-]*$")
-PLAN_REQUIREMENT_ID_PATTERN = re.compile(r"^R-(?P<material>P-[0-9A-Za-z][0-9A-Za-z_-]*)-(?P<sequence>[0-9]{3})$")
-PLAN_QUEUE_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9]{3,}\.md$")
-
-PLAN_BUG_TABLE_HEADER: tuple[str, ...] = ("項目", "内容")
-PLAN_BUG_CAUSE_TABLE_HEADER: tuple[str, ...] = ("要因系統", "L1 現象", "L2 判断", "L3 構造", "L4 システム")
-PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し要因")
-"""バグ単位の原因分析表の固定5列2行。`agent-toolkit:bugfix`の原因分析の段階と対応させる。"""
-
-PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "現象",
-    "期待する契約",
-    "直接的原因",
-    "原因分析の根拠",
-    "対策",
-    "類似見直し観点",
-    "類似見直し結果",
-    "再発防止策",
-)
-"""バグ調査表の固定行。行名と順序を`agent-toolkit:bugfix`の原因分析契約と対応させる。
-
-根本原因は原因分析表の到達した最深段のセルへ、原因分析の品質確認は原因分析の工程へ、
-設計意図の記録は`再発防止策`の記載内容へ統合したため、いずれも独立した行を持たない。
-"""
-
-PLAN_LEGACY_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "観測事象",
-    "期待する契約",
-    "直接的原因",
-    "根本原因",
-    "原因分析の根拠",
-    "原因分析の品質確認",
-    "類似見直しの観点",
-    "類似見直し結果",
-    "是正処置",
-    "横展開処置",
-    "再発防止処置",
-    "設計意図の記録",
-)
-"""統廃合前のバグ調査表の固定行。原因分析表を伴う既存計画の読み取り互換にだけ用いる。"""
-
-PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS: tuple[str, ...] = (
-    "観測事象",
-    "期待する契約",
-    "直接的原因",
-    "混入要因",
-    "動機的要因",
-    "見逃し原因",
-    "根本原因",
-    "原因分析の根拠",
-    "類似見直しの観点",
-    "類似見直し結果",
-    "是正処置",
-    "横展開処置",
-    "再発防止処置",
-    "設計意図の記録",
-)
-"""原因分析表を持たない旧バグ調査表の固定行。既存計画の読み取り互換にだけ用いる。"""
-
-PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
-"""通常変更の恒久化表の固定4列。バグ対応はバグ調査表を正本とする。"""
-
-PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
-"""`### リファクタリング`が対象ごとに置く固定4行。対象が無い場合は表を置かず地の文とする。"""
-
-PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
-"""検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""
-
-PLUGIN_MANIFEST_PATH: str = "agent-toolkit/.claude-plugin/plugin.json"
-"""`scripts/agent_toolkit_bump.py`が更新するagent-toolkitプラグインmanifestの相対パス。"""
-
-MARKETPLACE_MANIFEST_PATH: str = ".claude-plugin/marketplace.json"
-"""`scripts/agent_toolkit_bump.py`が更新するmarketplace manifestの相対パス。"""
-
-BUMP_MANIFEST_PATHS: frozenset[str] = frozenset({PLUGIN_MANIFEST_PATH, MARKETPLACE_MANIFEST_PATH})
-"""`scripts/agent_toolkit_bump.py`が更新するmanifestファイルの相対パス集合。
-
-`agent_toolkit_bump.py`側のリテラルとの一致は`scripts/agent_toolkit_bump_test.py`が検証する。
-"""
-
-
-def markdown_body_start_index(content: str) -> int:
-    """先頭フロントマターの直後にあるMarkdown本文の0始まり行番号を返す。"""
-    lines = content.splitlines()
-    if not lines or lines[0].rstrip() != "---":
-        return 0
-    for index, line in enumerate(lines[1:], start=1):
-        if line.rstrip() in ("---", "..."):
-            return index + 1
-    return len(lines)
-
-
-def _is_escaped(text: str, index: int) -> bool:
-    """指定位置の文字が直前のバックスラッシュでエスケープされているかを返す。"""
-    backslashes = 0
-    while index > backslashes and text[index - backslashes - 1] == "\\":
-        backslashes += 1
-    return backslashes % 2 == 1
-
-
-def _code_span_comment_starts(content: str, inline_tokens: list[markdown_it.token.Token]) -> set[int]:
-    """各inline blockのコードスパン内にあるHTMLコメント開始位置を返す。"""
-    parser = markdown_it.MarkdownIt("commonmark")
-    spans: list[tuple[int, int]] = []
-
-    def record_backtick(state: markdown_it.rules_inline.StateInline, silent: bool) -> bool:
-        start = state.pos
-        token_count = len(state.tokens)
-        matched = markdown_it.rules_inline.backtick(state, silent)
-        if matched and not silent and len(state.tokens) > token_count and state.tokens[-1].type == "code_inline":
-            spans.append((start, state.pos))
-        return matched
-
-    parser.inline.ruler.at("backticks", record_backtick)
-
-    def protected_markers(source: str) -> list[bool]:
-        spans.clear()
-        parser.parseInline(source)
-        markers: list[bool] = []
-        cursor = 0
-        while (marker := source.find("<!--", cursor)) >= 0:
-            markers.append(any(start <= marker < end for start, end in spans))
-            cursor = marker + len("<!--")
-        return markers
-
-    lines = content.splitlines(keepends=True)
-    line_offsets = [0]
-    for line in lines:
-        line_offsets.append(line_offsets[-1] + len(line))
-
-    tokens_by_line_range: dict[tuple[int, int], list[markdown_it.token.Token]] = {}
-    for token in inline_tokens:
-        assert token.map is not None
-        tokens_by_line_range.setdefault((token.map[0], token.map[1]), []).append(token)
-
-    protected: set[int] = set()
-    for (start_line, end_line), block_tokens in tokens_by_line_range.items():
-        source_start = line_offsets[start_line]
-        source_end = line_offsets[end_line]
-        source = content[source_start:source_end]
-        if len(block_tokens) == 1:
-            marker_flags = protected_markers(source)
-        else:
-            marker_flags = []
-            for token in block_tokens:
-                marker_flags.extend(protected_markers(token.content))
-
-        cursor = 0
-        marker_index = 0
-        while (marker := source.find("<!--", cursor)) >= 0:
-            if marker_index >= len(marker_flags) or marker_flags[marker_index]:
-                protected.add(source_start + marker)
-            marker_index += 1
-            cursor = marker + len("<!--")
-    return protected
-
-
-def _markdown_excluded_line_indices(content: str) -> set[int]:
-    """CommonMarkのフェンスと複数行HTMLコメントに属する0始まり行番号を返す。"""
-    excluded: set[int] = set()
-    inline_tokens: list[markdown_it.token.Token] = []
-    parser = markdown_it.MarkdownIt("commonmark").enable("table")
-    for token in parser.parse(content):
-        if token.type == "fence" and token.map is not None:
-            start, end = token.map
-            excluded.update(range(start, end))
-        elif token.type == "html_block" and token.map is not None and token.content.lstrip().startswith("<!--"):
-            start, end = token.map
-            if end - start > 1:
-                excluded.update(range(start, end))
-        elif token.type == "inline" and token.map is not None:
-            inline_tokens.append(token)
-
-    code_span_comment_starts = _code_span_comment_starts(content, inline_tokens)
-    cursor = 0
-    while (comment_start := content.find("<!--", cursor)) >= 0:
-        start_line = content.count("\n", 0, comment_start)
-        if start_line in excluded or _is_escaped(content, comment_start) or comment_start in code_span_comment_starts:
-            cursor = comment_start + len("<!--")
-            continue
-        match = markdown_it.common.html_re.HTML_TAG_RE.match(content[comment_start:])
-        if match is None or not match.group().startswith("<!--"):
-            cursor = comment_start + len("<!--")
-            continue
-        comment_end = comment_start + len(match.group())
-        end_line = content.count("\n", 0, comment_end - 1)
-        if end_line > start_line:
-            excluded.update(range(start_line, end_line + 1))
-        cursor = comment_end
-    return excluded
-
-
-def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
-    """Markdown本文の有効行を、ファイル先頭基準1始まりの行番号付きで順に生成する。
-
-    以下の領域内の行は生成対象外とする（行番号もスキップされる）。
-
-    - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
-    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける）。
-      開始・終了行自体も生成対象外
-    - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
-
-    H2見出し・H3見出し・箇条書き行を含む全ての非除外行を生成する。
-    見出し抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
-    """
-    lines = content.splitlines()
-    body_start = markdown_body_start_index(content)
-    body = "\n".join(lines[body_start:])
-    excluded = _markdown_excluded_line_indices(body)
-    for body_index, line in enumerate(lines[body_start:]):
-        if body_index not in excluded:
-            yield body_start + body_index + 1, line
-
-
-def markdown_body_text(content: str) -> str:
-    """Markdown本文の有効行だけを連結したテキストを返す。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    本文を文字列パターンで走査する処理は、除外領域内の記述を対象にしないため、
-    本関数または`iter_markdown_body_lines`を経由して入力を得る。
-    """
-    return "\n".join(line for _lineno, line in iter_markdown_body_lines(content))
-
-
-@dataclass(frozen=True)
-class PlanHeading:
-    """Markdown本文で有効な見出し1件を表す。"""
-
-    lineno: int
-    level: int
-    text: str
-
-
-_HEADING_PATTERN = re.compile(r"^(#{1,6}) +(.*?)\s*$")
-
-
-def extract_headings(content: str) -> list[PlanHeading]:
-    """本文の有効行から全階層の見出しを出現順に抽出する。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    """
-    headings: list[PlanHeading] = []
-    for lineno, line in iter_markdown_body_lines(content):
-        match = _HEADING_PATTERN.match(line)
-        if match is not None:
-            headings.append(PlanHeading(lineno, len(match.group(1)), match.group(2)))
-    return headings
-
-
-def check_duplicate_headings(content: str) -> list[str]:
-    """同じ祖先見出しの下に同じ文言の見出しが複数現れる状態を検出する。
-
-    節の置換で撤回済みの記述が重複ブロックとして残ると、実装担当が旧案を確定文面として読む。
-    判定キーへ祖先見出しの文言列を含めるのは、同じ文言の見出しが別の親の下に現れる構成が
-    計画書式では正当なためである（既存計画531件の実測で、経路による判定の一致は0件、
-    文言だけの判定の一致は2ファイル）。
-    """
-    seen: dict[tuple[str, ...], int] = {}
-    stack: list[PlanHeading] = []
-    errors: list[str] = []
-    for heading in extract_headings(content):
-        while stack and stack[-1].level >= heading.level:
-            stack.pop()
-        key = tuple(item.text for item in stack) + (heading.text,)
-        first = seen.get(key)
-        if first is None:
-            seen[key] = heading.lineno
-        else:
-            parent = "/".join(key[:-1]) or "文書直下"
-            errors.append(
-                f"同じ見出しが重複している: `{'#' * heading.level} {heading.text}`"
-                f"（{parent}配下、{first}行目と{heading.lineno}行目）"
-            )
-        stack.append(heading)
-    return errors
-
-
-def heading_subtree_range(headings: list[PlanHeading], index: int) -> tuple[int, int | None]:
-    """指定見出しの本文範囲を(見出し行番号, 次の同位以上の見出し行番号)で返す。
-
-    末尾まで続く場合は第2要素を`None`とする。
-    """
-    level = headings[index].level
-    for following in headings[index + 1 :]:
-        if following.level <= level:
-            return headings[index].lineno, following.lineno
-    return headings[index].lineno, None
-
-
-def lines_within(lines: list[tuple[int, str]], start: int, end: int | None) -> list[tuple[int, str]]:
-    """行番号付き行列から`start`超過かつ`end`未満の範囲を切り出す。"""
-    return [(lineno, line) for lineno, line in lines if lineno > start and (end is None or lineno < end)]
-
-
-def child_headings(headings: list[PlanHeading], index: int, level: int) -> list[tuple[int, PlanHeading]]:
-    """指定見出しの本文範囲にある指定階層の見出しを(索引, 見出し)で返す。"""
-    start, end = heading_subtree_range(headings, index)
-    return [
-        (position, heading)
-        for position, heading in enumerate(headings)
-        if heading.level == level and heading.lineno > start and (end is None or heading.lineno < end)
-    ]
-
-
-def canonical_h2_name(text: str) -> str:
-    """固定H2の旧別名を新書式の正規名へ写す。未知の見出しはそのまま返す。"""
-    return _PLAN_H2_CANONICAL_BY_ALIAS.get(text, text)
-
-
-def h2_aliases(text: str) -> tuple[str, ...]:
-    """固定H2の正規名に対応する受理名を返す。"""
-    canonical = canonical_h2_name(text)
-    return PLAN_H2_ALIASES.get(canonical, (canonical,))
-
-
-def canonical_metadata_field(field: str) -> str:
-    """計画メタ情報の項目名の旧名称を正規名へ写す。未知の項目名はそのまま返す。"""
-    return _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS.get(field, field)
-
-
-def canonical_wi_origin(origin: str) -> str:
-    """`由来`欄のWI区分の旧名称を正規名へ写す。未知の区分はそのまま返す。"""
-    return _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS.get(origin, origin)
-
-
-def find_heading_index(headings: list[PlanHeading], level: int, text: str) -> int | None:
-    """指定階層・指定見出し文（旧別名を含む）の最初の索引を返す。"""
-    accepted = h2_aliases(text) if level == 2 else (text,)
-    return next(
-        (index for index, heading in enumerate(headings) if heading.level == level and heading.text in accepted),
-        None,
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from _plan.structure.constants import (
+        BUMP_MANIFEST_PATHS,
+        MARKETPLACE_MANIFEST_PATH,
+        PLAN_ACTION_DECISIONS,
+        PLAN_ACTION_NON_ADOPTED_DECISIONS,
+        PLAN_ACTION_RELATIONS,
+        PLAN_ACTION_TABLE_HEADER,
+        PLAN_AGENT_WI_ORIGIN,
+        PLAN_BUG_CAUSE_TABLE_HEADER,
+        PLAN_BUG_CAUSE_TABLE_ROWS,
+        PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX,
+        PLAN_BUG_FILE_REFERENCE_PREFIX,
+        PLAN_BUG_TABLE_HEADER,
+        PLAN_BUG_TABLE_ROWS,
+        PLAN_DETAIL_H2_ORDER,
+        PLAN_DETAIL_SUFFIX,
+        PLAN_EXCLUSION_H3,
+        PLAN_EXCLUSION_TABLE_HEADER,
+        PLAN_H2_ACTION,
+        PLAN_H2_AGENT_JUDGMENT,
+        PLAN_H2_ALIASES,
+        PLAN_H2_BUG,
+        PLAN_H2_COMPLETION,
+        PLAN_H2_HISTORY,
+        PLAN_H2_IMPLEMENTATION,
+        PLAN_H2_LEGACY_AGENT_JUDGMENT,
+        PLAN_H2_LEGACY_HISTORY,
+        PLAN_H2_LEGACY_PROGRESS,
+        PLAN_H2_MATERIALS,
+        PLAN_H2_OVERVIEW,
+        PLAN_H2_PERMANENCE,
+        PLAN_H2_PROGRESS,
+        PLAN_H2_TERMINATION,
+        PLAN_H2_VERIFICATION,
+        PLAN_HISTORY_ORIGINS,
+        PLAN_HISTORY_REVIEW_ID_PATTERN,
+        PLAN_HISTORY_TABLE_HEADER,
+        PLAN_HISTORY_TRACK_VALUES,
+        PLAN_HISTORY_USER_EVENT_PATTERN,
+        PLAN_HISTORY_USER_EVENT_PREFIX,
+        PLAN_HUMAN_ACTION_TABLE_HEADER,
+        PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_HUMAN_JUDGMENT_TABLE_HEADER,
+        PLAN_HUMAN_ORIGINS,
+        PLAN_HUMAN_REVIEW_ORIGIN_PATTERN,
+        PLAN_HUMAN_REVIEW_ROOT_PATTERN,
+        PLAN_HUMAN_WI_ORIGIN,
+        PLAN_IMPLEMENTATION_UNITS_H3,
+        PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_IMPLEMENTATION_UNIT_ID_PATTERN,
+        PLAN_LEGACY_ACTION_TABLE_HEADER,
+        PLAN_LEGACY_AGENT_FEEDBACK_ORIGIN,
+        PLAN_LEGACY_BUG_TABLE_ROWS,
+        PLAN_LEGACY_EXCLUSION_TABLE_HEADER,
+        PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN,
+        PLAN_LEGACY_HISTORY_TRACK_VALUES,
+        PLAN_LEGACY_HISTORY_USER_EVENT_PATTERN,
+        PLAN_LEGACY_HUMAN_FEEDBACK_ORIGIN,
+        PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER,
+        PLAN_LEGACY_MAIN_H2_ORDER,
+        PLAN_LEGACY_PERMANENCE_H3,
+        PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS,
+        PLAN_MAIN_H2_ORDER,
+        PLAN_MATERIAL_ID_PATTERN,
+        PLAN_MATERIAL_TABLE_HEADER,
+        PLAN_MATERIAL_TYPES,
+        PLAN_METADATA_DETAIL_FIELD,
+        PLAN_METADATA_FALLBACK_H2,
+        PLAN_METADATA_FIELDS,
+        PLAN_METADATA_FIELD_ALIASES,
+        PLAN_METADATA_H3,
+        PLAN_METADATA_LEGACY_DETAIL_FIELD,
+        PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD,
+        PLAN_METADATA_MAIN_FIELDS,
+        PLAN_METADATA_QUOTED_FIELDS,
+        PLAN_METADATA_RELATED_WI_FIELD,
+        PLAN_METADATA_TWO_FILE_FIELDS,
+        PLAN_NON_QUEUE_VALUE,
+        PLAN_PERMANENCE_H3,
+        PLAN_PERMANENCE_TABLE_HEADER,
+        PLAN_PLACEHOLDER_WORDS,
+        PLAN_PROGRESS_TABLE_HEADER,
+        PLAN_QUEUE_ID_PATTERN,
+        PLAN_REFACTORING_TABLE_ROWS,
+        PLAN_REQUIREMENT_ID_PATTERN,
+        PLAN_REQUIREMENT_TABLE_HEADER,
+        PLAN_TWO_FILE_MAIN_H2_ORDER,
+        PLAN_VERIFICATION_TABLE_HEADER,
+        PLAN_VERIFICATION_TABLE_ROWS,
+        PLAN_WI_ANSWER_HEADING,
+        PLAN_WI_ORIGIN_ALIASES,
+        PLAN_WI_ORIGIN_PATTERN,
+        PLAN_WI_SOURCE_KEY,
+        PLAN_WI_USER_COMMENT_HEADING,
+        PLAN_WORK_TYPES,
+        PLUGIN_MANIFEST_PATH,
+        _FRONTMATTER_DELIMITER,
+        _FRONTMATTER_SOURCE_PATTERN,
+        _PLAN_H2_CANONICAL_BY_ALIAS,
+        _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS,
+        _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS,
+    )
+    from _plan.structure.markdown import (
+        MarkdownTable,
+        PlanHeading,
+        _code_span_comment_starts,
+        _is_escaped,
+        _markdown_excluded_line_indices,
+        _table_parser,
+        _table_row_cells,
+        check_duplicate_headings,
+        child_headings,
+        extract_headings,
+        extract_tables,
+        find_heading_index,
+        heading_subtree_range,
+        iter_markdown_body_lines,
+        lines_within,
+        markdown_body_start_index,
+        markdown_body_text,
+    )
+    from _plan.structure.parsing import (
+        AGENT_DOC_TARGET_BASENAMES,
+        AGENT_DOC_TARGET_PATTERNS,
+        PlanImplementationUnit,
+        PlanMaterials,
+        PlanMetadata,
+        _HEADING_PATTERN,
+        _HUMAN_MATERIAL_LINE_PATTERN,
+        _INTERNAL_PLAN_ID_PATTERN,
+        _LEGACY_MATERIAL_ID_PATTERN,
+        _MATERIAL_FENCE_PATTERN,
+        _MATERIAL_ID_CANDIDATE_PATTERN,
+        _METADATA_BASE_COMMIT_LINE,
+        _METADATA_ENTRY_PATTERN,
+        _METADATA_RELATED_WI_PATTERN,
+        _REFERENCE_SEPARATOR_PATTERN,
+        _STRICT_INTERNAL_PLAN_ID_PATTERN,
+        _detail_expected_h2,
+        _find_table_with_rows,
+        _is_placeholder_only,
+        _legacy_expected_h2,
+        _strip_backticks,
+        canonical_h2_name,
+        canonical_metadata_field,
+        canonical_wi_origin,
+        extract_implementer_region,
+        h2_aliases,
+        is_agent_doc_target_file,
+        is_agent_facing_md,
+        parse_plan_implementation_units,
+        parse_plan_materials,
+        parse_plan_metadata,
+    )
+    from _plan.structure.references import (
+        _check_action_decisions,
+        _check_action_references,
+        _check_action_relations,
+        _check_exclusion_table,
+        _check_history_rows,
+        _check_reference_ids,
+        _check_requirement_coverage,
     )
 
 
-@dataclass(frozen=True)
-class MarkdownTable:
-    """パイプ表1件の見出し行と本文行を表す。"""
-
-    lineno: int
-    header: tuple[str, ...]
-    rows: tuple[tuple[str, ...], ...]
-
-    def row_labels(self) -> tuple[str, ...]:
-        """各行の第1列を返す。"""
-        return tuple(row[0] if row else "" for row in self.rows)
-
-
-@dataclass(frozen=True)
-class PlanMaterials:
-    """計画の提示素材と要求の解析結果を表す。"""
-
-    material_ids: frozenset[str]
-    requirement_ids: frozenset[str]
-    is_legacy: bool
-    adopted_requirement_ids: frozenset[str] = frozenset()
-    terminal_only_requirement_ids: frozenset[str] = frozenset()
-    is_human_readable: bool = False
-    material_paths: frozenset[str] = frozenset()
-    feedback_queue_ids: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True)
-class PlanImplementationUnit:
-    """計画ファイル（詳細）の実装単位表1行を表す。"""
-
-    unit_id: str
-    purpose: str
-    dependencies: tuple[str, ...]
-    integration_order: int
-    verification: str
-
-
-@functools.cache
-def _table_parser() -> markdown_it.MarkdownIt:
-    """GFM表を解釈するMarkdownパーサーを返す。
-
-    パーサーは解析ごとの状態を持たないため、生成コストを避けて使い回す。
-    """
-    return markdown_it.MarkdownIt("commonmark").enable("table")
-
-
-def _table_row_cells(line: str) -> tuple[str, ...]:
-    """表の1行を、その行が実際に持つ列数のままセルへ分割する。
-
-    GFMのbody行はheaderの列数へ切り詰められて解釈されるため、
-    行単体をheader行として解析し直し、列数不一致を後段で検出できるようにする。
-    区切り行の列数はheader行の列数と一致した場合だけ表として解釈される性質を使い、
-    パイプの数から上限を定めて一致する列数を探す。
-    """
-    parser = _table_parser()
-    for count in range(1, line.count("|") + 2):
-        delimiter = "|" + "|".join(["---"] * count) + "|"
-        tokens = parser.parse(f"{line}\n{delimiter}\n")
-        if not any(token.type == "table_open" for token in tokens):
-            continue
-        return tuple(token.content.strip() for token in tokens if token.type == "inline")
-    return (line.strip(),)
-
-
-def extract_tables(lines: list[tuple[int, str]]) -> list[MarkdownTable]:
-    """行番号付き本文行からGFMの表を出現順に抽出する。
-
-    表の境界判定とセル分割はmarkdown-it-pyのtable拡張へ委ね、
-    区切り行のダッシュ数、整列コロン、行頭パイプの省略といった記法差を吸収する。
-    行番号は入力行の並びから復元し、ファイル先頭基準1始まりで返す。
-    """
-    source_lines = [line for _lineno, line in lines]
-    tables: list[MarkdownTable] = []
-    lineno = 0
-    header: tuple[str, ...] = ()
-    rows: list[tuple[str, ...]] = []
-    in_body = False
-    for token in _table_parser().parse("\n".join(source_lines)):
-        if token.type == "table_open":
-            assert token.map is not None
-            lineno = lines[token.map[0]][0]
-            header, rows, in_body = (), [], False
-        elif token.type == "thead_open":
-            assert token.map is not None
-            header = _table_row_cells(source_lines[token.map[0]])
-        elif token.type == "tbody_open":
-            in_body = True
-        elif token.type == "tr_open" and in_body:
-            assert token.map is not None
-            rows.append(_table_row_cells(source_lines[token.map[0]]))
-        elif token.type == "table_close":
-            tables.append(MarkdownTable(lineno, header, tuple(rows)))
-    return tables
-
-
-@dataclass(frozen=True)
-class PlanMetadata:
-    """計画メタ情報の解析結果を表す。"""
-
-    parent: str
-    """メタ情報を収めていた親H2の見出し文。正規形では`概要`となる。"""
-
-    entries: tuple[tuple[str, str], ...]
-    """記載順の(項目名, 生の値)。順序と記法の検査に使う。"""
-
-    values: dict[str, str]
-    """認識した項目の値。バッククォートは除去済みで、欠落項目は含めない。"""
-
-    related_wi: tuple[tuple[str, str], ...]
-    """`関連WI`の(正本ファイル名, 1行要約)。記載順を保持する。"""
-
-    base_commit_candidates: tuple[str, ...]
-    """`ベースコミット`と旧別名`基準コミット`から抽出した16進値の全候補。"""
-
-    @property
-    def is_canonical(self) -> bool:
-        """正規配置（`## 概要`直下）から読み取ったかを返す。"""
-        return self.parent == PLAN_H2_OVERVIEW
-
-
-_METADATA_ENTRY_PATTERN = re.compile(r"^- (?P<field>[^:]+):(?: (?P<value>.*?))?\s*$")
-_METADATA_RELATED_WI_PATTERN = re.compile(r"^  - (?P<filename>[^:]+):(?: (?P<summary>.*?))?\s*$")
-_METADATA_BASE_COMMIT_LINE = re.compile(r"^\s*-\s*(?:ベースコミット|基準コミット):\s*`(?P<oid>[0-9a-fA-F]+)`.*$")
-"""ベースコミットを記載した箇条書きからOIDを読み取る互換パターン。
-
-正規形の記法検査は`entries`側で行うため、値抽出は既存計画の記法差を受け入れる。
-行頭の字下げ、コロン前後の空白、閉じバッククォート以降の注記を許容し、
-旧別名`基準コミット`も対象とする。
-"""
-
-
-def _strip_backticks(value: str) -> str:
-    """前後のバッククォートを1組だけ取り除く。"""
-    if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
-        return value[1:-1]
-    return value
-
-
-def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
-    """計画メタ情報を正規配置優先で解析し、(解析結果, 曖昧性エラー)を返す。
-
-    `## 概要`直下の`### 計画メタ情報`を正規配置とする。
-    正規配置が無い既存計画に限り`PLAN_METADATA_FALLBACK_H2`の旧配置を読み取り互換として使う。
-    同一親に複数の`### 計画メタ情報`がある場合と、旧配置の候補が複数の親に散在する場合は
-    曖昧として解析結果を返さない。
-    """
-    body = list(iter_markdown_body_lines(content))
-    headings = extract_headings(content)
-    sections: dict[str, list[int]] = {}
-    for index, heading in enumerate(headings):
-        if heading.level != 3 or heading.text != PLAN_METADATA_H3:
-            continue
-        parent = next(
-            (candidate.text for candidate in reversed(headings[:index]) if candidate.level == 2),
-            "",
-        )
-        sections.setdefault(parent, []).append(index)
-
-    if PLAN_H2_OVERVIEW in sections:
-        parent = PLAN_H2_OVERVIEW
-    else:
-        fallback_parents = [name for name in PLAN_METADATA_FALLBACK_H2 if name in sections]
-        if not fallback_parents:
-            return None, []
-        if len(fallback_parents) > 1:
-            return None, [f"計画メタ情報の配置が複数のH2に分かれています: {fallback_parents}"]
-        parent = fallback_parents[0]
-
-    indices = sections[parent]
-    if len(indices) > 1:
-        return None, [f"`## {parent}`直下の`### {PLAN_METADATA_H3}`が1件ではありません: 実際={len(indices)}件"]
-
-    start, end = heading_subtree_range(headings, indices[0])
-    section = lines_within(body, start, end)
-    entries: list[tuple[str, str]] = []
-    for _lineno, line in section:
-        match = _METADATA_ENTRY_PATTERN.fullmatch(line)
-        if match is not None:
-            entries.append((match.group("field").strip(), match.group("value") or ""))
-
-    related_wi: list[tuple[str, str]] = []
-    in_related_wi = False
-    for _lineno, line in section:
-        entry_match = _METADATA_ENTRY_PATTERN.fullmatch(line)
-        if entry_match is not None:
-            in_related_wi = canonical_metadata_field(entry_match.group("field").strip()) == PLAN_METADATA_RELATED_WI_FIELD
-            continue
-        if not in_related_wi:
-            continue
-        child_match = _METADATA_RELATED_WI_PATTERN.fullmatch(line)
-        if child_match is not None:
-            related_wi.append((child_match.group("filename").strip(), (child_match.group("summary") or "").strip()))
-        elif line.strip():
-            in_related_wi = False
-
-    values: dict[str, str] = {}
-    conflicts: list[str] = []
-    for field, raw_value in entries:
-        canonical_field = canonical_metadata_field(field)
-        if canonical_field not in (*PLAN_METADATA_MAIN_FIELDS, PLAN_METADATA_DETAIL_FIELD):
-            continue
-        normalized = _strip_backticks(raw_value)
-        if canonical_field in values and values[canonical_field] != normalized:
-            conflicts.append(f"計画メタ情報の`{canonical_field}`に競合する値があります")
-        values.setdefault(canonical_field, normalized)
-    base_candidates = [
-        match.group("oid") for _lineno, line in section if (match := _METADATA_BASE_COMMIT_LINE.fullmatch(line)) is not None
-    ]
-    if conflicts:
-        return None, conflicts
-    return PlanMetadata(parent, tuple(entries), values, tuple(related_wi), tuple(base_candidates)), []
-
-
-def extract_implementer_region(content: str) -> list[tuple[int, str]]:
-    """`## 変更履歴`直後から`## 進捗ログ`直前までの本文行を返す。"""
-    body = list(iter_markdown_body_lines(content))
-    headings = extract_headings(content)
-    history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
-    if history_index is None:
-        return []
-    _history_start, history_end = heading_subtree_range(headings, history_index)
-    if history_end is None:
-        return []
-    progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
-    region_end = headings[progress_index].lineno if progress_index is not None else None
-    return [(lineno, line) for lineno, line in body if lineno >= history_end and (region_end is None or lineno < region_end)]
-
-
-def is_agent_facing_md(rel_path: str) -> bool:
-    """パス文字列がコーディングエージェント向けMarkdownの対象種別かを判定する。
-
-    対象は拡張子`.md`のファイルのうち、次のいずれかに該当するもの。
-    ルートの`AGENTS.md`・`CLAUDE.md`。パス部品に`rules`を含むもの
-    （`agent-toolkit/rules/`・`.claude/rules/`・`.chezmoi-source/dot_claude/rules/`等）。
-    末尾から3番目のパス部品が`skills`かつファイル名が`SKILL.md`のもの
-    （`agent-toolkit/skills/<name>/SKILL.md`・`.claude/skills/<name>/SKILL.md`・
-    `.chezmoi-source/dot_claude/skills/<name>/SKILL.md`等）。
-    パス部品に`references`と`skills`の両方を含むもの。パス部品に`agents`を含むもの。
-    パス部品の完全一致で判定し、部分文字列一致は行わない。
-    `posttooluse.py`の条件付き禁止形の警告通知が対象種別の判定に使う。
-    """
-    p = pathlib.PurePosixPath(rel_path.replace("\\", "/"))
-    parts = p.parts
-    name = p.name
-    if not name.endswith(".md"):
-        return False
-    if len(parts) == 1 and name in ("AGENTS.md", "CLAUDE.md"):
-        return True
-    if "rules" in parts[:-1]:
-        return True
-    if len(parts) >= 3 and parts[-3] == "skills" and name == "SKILL.md":
-        return True
-    if "references" in parts[:-1] and "skills" in parts[:-1]:
-        return True
-    return "agents" in parts[:-1]
-
-
-# `(^|/)`接頭辞で先頭一致・任意の親ディレクトリ配下一致の両方を許容する
-# （`pretooluse.py`側が絶対パス・tmp_path配下等の任意接頭辞パスを渡す既存挙動を保つ）。
-AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(^|/)agent-toolkit/share/rules-[^/]+\.md$"),
-    re.compile(r"(^|/)agent-toolkit/rules/.+\.md$"),
-    re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
-    re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
-    re.compile(r"(^|/)agent-toolkit/agents/.+\.md$"),
-    # chezmoi配布元のテンプレート（`<name>.md.tmpl`）も配布先ではエージェント向け文書として読み込まれるため、
-    # `.tmpl`終端を受理する。原本側だけが対象から外れると、テンプレート経由の規範改訂を検査が素通りさせる。
-    re.compile(r"(^|/)\.chezmoi-source/dot_claude/rules/.+\.md(\.tmpl)?$"),
-    re.compile(r"(^|/)\.chezmoi-source/dot_claude/skills/.+\.md(\.tmpl)?$"),
-    # ユーザーのプロジェクトが直接持つ規範文書。配布元固有パスだけを対象にすると、
-    # プラグインとして配布された先のプロジェクトで検査が素通りする。
-    # `skills`配下の粒度は`agent-toolkit/skills/`側と揃え、`SKILL.md`と`references/`配下に限定する。
-    re.compile(r"(^|/)\.claude/rules/.+\.md$"),
-    re.compile(r"(^|/)\.claude/skills/[^/]+/SKILL\.md$"),
-    re.compile(r"(^|/)\.claude/skills/[^/]+/references/.+\.md$"),
-)
-# basenameで照合するコーディングエージェント向け文書判定対象ファイル名。
-# ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
-AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
-
-
-def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
-    """パス文字列がコーディングエージェント向け文書判定対象かを判定する。
-
-    `agent-toolkit/scripts/_hooks/pretooluse.py`と`agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が
-    参照する対象パス判定のSSOTとする。
-    `AGENT_DOC_TARGET_PATTERNS`のいずれかへ一致するか、
-    basenameが`AGENT_DOC_TARGET_BASENAMES`に含まれる場合に真を返す。
-    `is_agent_facing_md`とは判定対象範囲が異なる。
-    利用箇所ごとに対象範囲を調整し、連続直接編集の抑止検査はプロジェクト固有文書を独自に除外する。
-    """
-    normalized = str(file_path).replace("\\", "/")
-    if not normalized:
-        return False
-    if any(pat.search(normalized) for pat in AGENT_DOC_TARGET_PATTERNS):
-        return True
-    return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
-
-
-# --- 人間向け固定領域の構造検査 ---
-
-_LEGACY_MATERIAL_ID_PATTERN = re.compile(r"^(?P<id>[A-Za-z0-9][0-9A-Za-z_-]*):$")
-_MATERIAL_ID_CANDIDATE_PATTERN = re.compile(r"^P-[0-9A-Za-z][0-9A-Za-z_-]*(?:(?:（[^）\n]+）|\([^)\n]+\)):|:\s+\S.*)$")
-_MATERIAL_FENCE_PATTERN = re.compile(r"^\s*(?:`{3,}|~{3,})text\s*$")
-_REFERENCE_SEPARATOR_PATTERN = re.compile(r"[、,・/\s]+")
-_HUMAN_MATERIAL_LINE_PATTERN = re.compile(r"^\s*-\s+(?P<path>[^/\\\s]+\.md)\s*$")
-_STRICT_INTERNAL_PLAN_ID_PATTERN = re.compile(
-    r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![0-9A-Za-z_-])"
-)
-# `P-256`は外部仕様でも使われるため、自由文では旧素材IDとの区別を断定しない。
-_INTERNAL_PLAN_ID_PATTERN = re.compile(
-    r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-(?!256(?![0-9A-Za-z_-]))[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![0-9A-Za-z_-])"
-)
-
-
-def _is_placeholder_only(lines: list[tuple[int, str]]) -> bool:
-    """本文が結論語だけで構成されているかを返す。"""
-    contents = [line.strip().lstrip("-*+ ").strip("。 ") for _lineno, line in lines if line.strip()]
-    contents = [content for content in contents if content and not content.startswith("#")]
-    if not contents:
-        return True
-    return all(content in PLAN_PLACEHOLDER_WORDS for content in contents)
-
-
-def _find_table_with_rows(tables: list[MarkdownTable], rows: tuple[str, ...]) -> MarkdownTable | None:
-    """行名と順序が一致する表を返す。見つからない場合は`None`を返す。"""
-    return next((table for table in tables if table.row_labels() == rows), None)
-
-
-def _legacy_expected_h2(work_type: str | None) -> list[str]:
-    """旧形式（単一ファイル9節）の固定H2順序を返す。"""
-    expected = [PLAN_H2_OVERVIEW, PLAN_H2_ACTION, PLAN_H2_MATERIALS, PLAN_H2_LEGACY_HISTORY]
-    if work_type == "バグ対応":
-        expected.append(PLAN_H2_BUG)
-    expected.extend((PLAN_H2_PERMANENCE, PLAN_H2_IMPLEMENTATION, PLAN_H2_COMPLETION, PLAN_H2_LEGACY_PROGRESS))
-    return expected
-
-
-def _detail_expected_h2(work_type: str | None) -> list[str]:
-    """新書式の計画ファイル（詳細）の固定H2順序を返す。"""
-    expected = [PLAN_H2_BUG] if work_type == "バグ対応" else []
-    expected.extend(PLAN_DETAIL_H2_ORDER)
-    return expected
+from _plan.structure.constants import *  # noqa: F403
+from _plan.structure.markdown import *  # noqa: F403
+from _plan.structure.parsing import *  # noqa: F403
 
 
 def _check_fixed_h2_layout(
@@ -1281,29 +525,6 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
     ), errors
 
 
-def parse_plan_materials(content: str) -> tuple[PlanMaterials | None, list[str]]:
-    """提示素材を新形式または旧形式として解析する。"""
-    body = list(iter_markdown_body_lines(content))
-    headings = extract_headings(content)
-    index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)
-    if index is None:
-        return None, ["固定H2の提示素材を検査できない"]
-    section = _materials_section(content, headings, index)
-    tables = extract_tables(section)
-    if (
-        not any(table.header in {PLAN_MATERIAL_TABLE_HEADER, PLAN_REQUIREMENT_TABLE_HEADER} for table in tables)
-        and not any(_LEGACY_MATERIAL_ID_PATTERN.fullmatch(line.strip()) for _lineno, line in section)
-        and not any(_MATERIAL_ID_CANDIDATE_PATTERN.fullmatch(line.strip()) for _lineno, line in section)
-    ):
-        human_materials, human_errors = _check_human_materials(section)
-        if human_materials is not None:
-            return human_materials, human_errors
-    if any(table.header in {PLAN_MATERIAL_TABLE_HEADER, PLAN_REQUIREMENT_TABLE_HEADER} for table in tables):
-        return _check_new_materials(section)
-    identifiers, errors = _check_materials(content, body, headings, index)
-    return PlanMaterials(frozenset(identifiers), frozenset(), True), errors
-
-
 def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials | None, list[str]]:
     """新規書式の`## 提示素材`にファイル名だけが列挙されていることを検査する。"""
     nonempty = [(lineno, line.strip()) for lineno, line in section if line.strip()]
@@ -1400,122 +621,6 @@ def _check_fixed_table(
 def _comma_separated_values(value: str) -> tuple[str, ...]:
     """ASCIIカンマ区切りの値を前後の空白を除いて返す。"""
     return tuple(part.strip() for part in value.split(","))
-
-
-def parse_plan_implementation_units(
-    content: str,
-) -> tuple[tuple[PlanImplementationUnit, ...] | None, list[str]]:
-    """計画ファイル（詳細）の`### 実装単位`の固定表を解析して構造違反を返す。
-
-    単位表は新書式の計画ファイル（詳細）だけの必須契約であり、違反は計画を実装順へ分解できないためerrorとする。
-    旧6列表は読み取り互換として受理し、`対象の実施内容`列の値を検査しない。
-    """
-    body = list(iter_markdown_body_lines(content))
-    headings = extract_headings(content)
-    implementation_index = find_heading_index(headings, 2, PLAN_H2_IMPLEMENTATION)
-    if implementation_index is None:
-        return None, []
-    matching_headings = [
-        (position, heading)
-        for position, heading in child_headings(headings, implementation_index, 3)
-        if heading.text == PLAN_IMPLEMENTATION_UNITS_H3
-    ]
-    if len(matching_headings) != 1:
-        return None, [
-            f"`## {PLAN_H2_IMPLEMENTATION}`直下に`### {PLAN_IMPLEMENTATION_UNITS_H3}`を1件置く: 実際={len(matching_headings)}件"
-        ]
-
-    position, _heading = matching_headings[0]
-    start, end = heading_subtree_range(headings, position)
-    tables = extract_tables(lines_within(body, start, end))
-    matching = [
-        candidate
-        for candidate in tables
-        if candidate.header
-        in (
-            PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
-            PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER,
-            PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER,
-        )
-    ]
-    if not matching:
-        return None, [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`は{list(PLAN_IMPLEMENTATION_UNITS_TABLE_HEADER)}の列を持つ表にする"]
-    table = matching[0]
-    errors = [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の固定表は1件必要: 実際={len(matching)}件"] if len(matching) != 1 else []
-    if not table.rows:
-        errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に1行以上の内容が必要")
-    for row in table.rows:
-        if len(row) != len(table.header) or any(not cell for cell in row):
-            errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {list(row)}")
-
-    is_human = table.header == PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER
-    units: list[PlanImplementationUnit] = []
-    for row in table.rows:
-        if len(row) != len(table.header) or any(not cell for cell in row):
-            continue
-        if table.header == PLAN_LEGACY_IMPLEMENTATION_UNITS_TABLE_HEADER:
-            unit_id, purpose, _action_value, dependency_value, order_value, verification = row
-        else:
-            unit_id, purpose, dependency_value, order_value, verification = row
-        if not is_human and PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(unit_id) is None:
-            errors.append(f"実装単位IDは`U-[0-9]{{3}}`形式にする: {unit_id}")
-        if is_human and (
-            _STRICT_INTERNAL_PLAN_ID_PATTERN.fullmatch(unit_id)
-            or _INTERNAL_PLAN_ID_PATTERN.search(unit_id)
-            or unit_id in {"なし", "-"}
-        ):
-            errors.append(f"実装単位は合成IDではない説明的な名前にする: {unit_id}")
-        if is_human and "," in unit_id:
-            errors.append(f"実装単位名へASCIIカンマを含めない: {unit_id}")
-
-        if dependency_value == "なし":
-            dependencies: tuple[str, ...] = ()
-        else:
-            dependencies = _comma_separated_values(dependency_value)
-            if any(not value for value in dependencies):
-                errors.append(f"実装単位`{unit_id}`の`先行依存`に空の値を置かない")
-            if not is_human and any(PLAN_IMPLEMENTATION_UNIT_ID_PATTERN.fullmatch(value) is None for value in dependencies):
-                errors.append(f"実装単位`{unit_id}`の`先行依存`は実装単位ID又は`なし`にする")
-            if tuple(dict.fromkeys(dependencies)) != dependencies:
-                errors.append(f"実装単位`{unit_id}`の`先行依存`は重複なしで列挙する")
-
-        if not order_value.isdecimal() or int(order_value) < 1:
-            errors.append(f"実装単位`{unit_id}`の`統合順`は1以上の整数にする")
-            integration_order = 0
-        else:
-            integration_order = int(order_value)
-        units.append(
-            PlanImplementationUnit(
-                unit_id,
-                purpose,
-                dependencies,
-                integration_order,
-                verification,
-            )
-        )
-
-    unit_ids = tuple(unit.unit_id for unit in units)
-    if is_human:
-        if len(set(unit_ids)) != len(unit_ids):
-            errors.append("実装単位は表内で一意の説明的な名前にする")
-    else:
-        expected_ids = tuple(f"U-{index:03d}" for index in range(1, len(units) + 1))
-        if unit_ids != expected_ids:
-            errors.append(f"実装単位IDは`U-001`から欠番なく昇順に置く: 実際={list(unit_ids)}")
-
-    integration_orders = tuple(unit.integration_order for unit in units)
-    if integration_orders != tuple(range(1, len(units) + 1)):
-        errors.append(f"実装単位の`統合順`は1から欠番なく昇順に置く: 実際={list(integration_orders)}")
-
-    units_by_id = {unit.unit_id: unit for unit in units}
-    for unit in units:
-        for dependency in unit.dependencies:
-            dependency_unit = units_by_id.get(dependency)
-            if dependency_unit is None:
-                errors.append(f"実装単位`{unit.unit_id}`の`先行依存`が実装単位表に無い: {dependency}")
-            elif dependency_unit.integration_order >= unit.integration_order:
-                errors.append(f"実装単位`{unit.unit_id}`の`先行依存`が`統合順`より前にない: {dependency}")
-    return tuple(units), errors
 
 
 def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
@@ -2558,219 +1663,4 @@ def check_plan_detail_structure(content: str, work_type: str | None) -> list[str
     errors.extend(unit_errors)
     allowed_h3_parents = {PLAN_H2_BUG, PLAN_H2_PERMANENCE}
     errors.extend(_check_h3_and_deeper(headings, allowed_h3_parents, frozenset({PLAN_H2_IMPLEMENTATION})))
-    return errors
-
-
-def _check_action_references(
-    table: MarkdownTable,
-    requirement_ids: set[str],
-    adopted_requirement_ids: set[str],
-) -> list[str]:
-    """実施内容表の採否に応じた根拠の記載と要求参照を検査する。"""
-    column = table.header.index("根拠")
-    errors: list[str] = []
-
-    if table.header == PLAN_LEGACY_ACTION_TABLE_HEADER:
-        for row in table.rows:
-            if len(row) <= column or not row[column]:
-                errors.append("`## 実施内容`の`根拠`へ要求IDを1件以上記載する")
-                continue
-            references = _requirement_references(row[column])
-            if not references:
-                errors.append(f"`## 実施内容`の`根拠`は要求IDを参照する: {row[column]}")
-                continue
-            for reference in references:
-                if reference not in requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
-                elif reference not in adopted_requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
-        return errors
-
-    decision_column = table.header.index("採否")
-    for row in table.rows:
-        if len(row) <= decision_column:
-            continue
-        decision = row[decision_column]
-        root = row[column] if len(row) > column else ""
-        if decision in ("採用", "部分採用"):
-            if not root:
-                errors.append("`## 実施内容`の採用系の`根拠`は採用要求IDを1件以上記載する")
-                continue
-            references = _requirement_references(root)
-            if not references:
-                errors.append(f"`## 実施内容`の採用系の`根拠`は採用要求IDを参照する: {root}")
-                continue
-            for reference in references:
-                if reference not in requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
-                elif reference not in adopted_requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`へ不採用要求を参照できない: {reference}")
-            continue
-        if decision in PLAN_ACTION_NON_ADOPTED_DECISIONS:
-            if not root:
-                errors.append("`## 実施内容`の非採用系の`根拠`は理由を記載する")
-                continue
-            for reference in _requirement_references(root):
-                if reference not in requirement_ids:
-                    errors.append(f"`## 実施内容`の`根拠`が提示素材の要求表に無い: {reference}")
-    return errors
-
-
-def _check_requirement_coverage(
-    action_table: MarkdownTable,
-    exclusion_table: MarkdownTable | None,
-    materials: PlanMaterials,
-) -> list[str]:
-    """採用要求IDが`## 実施内容`の`根拠`又は`### 合意済みの除外・保持`の`素材・要求参照`で被覆されるかを検査する。
-
-    `採用範囲`が`終端工程のみ`で始まる採用要求は被覆対象から除く。
-    合意表が存在しない、または新形式でない場合は`根拠`列だけで被覆を判定する。
-    """
-    covered: set[str] = set()
-    action_column = action_table.header.index("根拠")
-    decision_column = action_table.header.index("採否") if action_table.header == PLAN_ACTION_TABLE_HEADER else None
-    for row in action_table.rows:
-        if len(row) > action_column and (
-            decision_column is None or (len(row) > decision_column and row[decision_column] in ("採用", "部分採用"))
-        ):
-            covered.update(_requirement_references(row[action_column]))
-    if exclusion_table is not None and "素材・要求参照" in exclusion_table.header:
-        exclusion_column = exclusion_table.header.index("素材・要求参照")
-        for row in exclusion_table.rows:
-            if len(row) > exclusion_column:
-                covered.update(_requirement_references(row[exclusion_column]))
-    target = set(materials.adopted_requirement_ids) - set(materials.terminal_only_requirement_ids)
-    uncovered = target - covered
-    return [
-        f"`## 実施内容`の`根拠`又は`### 合意済みの除外・保持`の`素材・要求参照`が採用要求を被覆しない: {requirement_id}"
-        for requirement_id in sorted(uncovered)
-    ]
-
-
-def _check_exclusion_table(
-    lines: list[tuple[int, str]],
-    label: str,
-) -> tuple[MarkdownTable | None, list[str], bool]:
-    """新旧の合意表を新形式優先で検査し、形式を返す。"""
-    tables = extract_tables(lines)
-    if any(table.header == PLAN_EXCLUSION_TABLE_HEADER for table in tables):
-        table, errors = _check_fixed_table(lines, PLAN_EXCLUSION_TABLE_HEADER, label)
-        return table, errors, True
-    if any(table.header == PLAN_LEGACY_EXCLUSION_TABLE_HEADER for table in tables):
-        table, errors = _check_fixed_table(lines, PLAN_LEGACY_EXCLUSION_TABLE_HEADER, label)
-        return table, errors, False
-    return None, [f"{label}は{list(PLAN_EXCLUSION_TABLE_HEADER)}の列を持つ表にする"], True
-
-
-def _check_reference_ids(
-    table: MarkdownTable,
-    identifiers: set[str],
-    requirement_ids: set[str],
-    label: str,
-    is_new: bool,
-) -> list[str]:
-    """新旧合意表の素材・要求参照を検査する。"""
-    column_name = "素材・要求参照" if is_new else "原文参照"
-    column = table.header.index(column_name)
-    errors: list[str] = []
-    valid_ids = identifiers | requirement_ids
-    for row in table.rows:
-        if len(row) <= column or not row[column]:
-            continue
-        references = _split_material_references(row[column])
-        for token in references:
-            if token not in valid_ids:
-                errors.append(f"{label}の{column_name}が提示素材に無い: {token}")
-        if is_new:
-            if not any(token in identifiers for token in references):
-                errors.append(f"{label}の{column_name}へ素材IDを1件以上記載する: {row[column]}")
-            if not any(token in requirement_ids for token in references):
-                errors.append(f"{label}の{column_name}へ要求IDを1件以上記載する: {row[column]}")
-    return errors
-
-
-def _check_history_rows(
-    table: MarkdownTable,
-    identifiers: set[str],
-    *,
-    allow_legacy_review_ids: bool = False,
-    allow_legacy_review_tracks: bool = False,
-) -> list[str]:
-    """変更履歴の起点、レビューID及びユーザー発言行の素材ID記法を検査する。"""
-    errors: list[str] = []
-    review_ids: set[str] = set()
-    review_keys: set[tuple[str, int]] = set()
-    for row in table.rows:
-        if len(row) < len(PLAN_HISTORY_TABLE_HEADER):
-            continue
-        origin, detail = row[1], row[2]
-        if origin not in PLAN_HISTORY_ORIGINS:
-            errors.append(f"`## 変更履歴`の`起点`は{list(PLAN_HISTORY_ORIGINS)}のいずれかにする: {origin}")
-        if origin == "レビュー指摘":
-            review_id = row[0]
-            if review_id in review_ids:
-                errors.append(f"`## 変更履歴`のレビュー指摘行は`ID`を重複させない: {review_id}")
-            review_ids.add(review_id)
-            if allow_legacy_review_tracks:
-                continue
-            if allow_legacy_review_ids and PLAN_LEGACY_HISTORY_REVIEW_ID_PATTERN.fullmatch(review_id):
-                continue
-            match = PLAN_HISTORY_REVIEW_ID_PATTERN.fullmatch(review_id)
-            if match is None or int(match["round"]) == 0:
-                errors.append(f"`## 変更履歴`のレビュー指摘行の`ID`は`R<正の整数>-<系統名>`形式にする: {review_id}")
-            elif match["track"] not in (
-                *PLAN_HISTORY_TRACK_VALUES,
-                *(PLAN_LEGACY_HISTORY_TRACK_VALUES if allow_legacy_review_ids else ()),
-            ):
-                errors.append(
-                    f"`## 変更履歴`のレビュー指摘行の`ID`は`R<正の整数>-<系統名>`形式にする。系統名は"
-                    f"{list(PLAN_HISTORY_TRACK_VALUES)}のいずれかにする: {review_id}"
-                )
-            else:
-                review_key = (match["track"], int(match["round"]))
-                if review_key in review_keys:
-                    errors.append(
-                        f"`## 変更履歴`のレビュー指摘行は系統・ラウンドを重複させない: {review_key[0]}, {review_key[1]}"
-                    )
-                review_keys.add(review_key)
-        if origin != "ユーザー発言":
-            continue
-        references = [token for token in re.split(r",\s*", detail) if token]
-        if not references or any(PLAN_MATERIAL_ID_PATTERN.fullmatch(token) is None for token in references):
-            errors.append(f"`## 変更履歴`のユーザー発言行は`指摘内容`へ素材IDだけを書く: {detail}")
-        for reference in references:
-            if reference not in identifiers:
-                errors.append(f"`## 変更履歴`のユーザー発言行が参照する素材IDが提示素材に無い: {reference}")
-    return errors
-
-
-def _check_action_decisions(table: MarkdownTable) -> list[str]:
-    """新形式の実施内容表の`採否`が宣言済みの値であることを検査する。"""
-    if table.header != PLAN_ACTION_TABLE_HEADER:
-        return []
-    column = table.header.index("採否")
-    return [
-        f"`## 実施内容`の`採否`は{list(PLAN_ACTION_DECISIONS)}のいずれかにする: {row[column]}"
-        for row in table.rows
-        if len(row) > column and row[column] and row[column] not in PLAN_ACTION_DECISIONS
-    ]
-
-
-def _check_action_relations(table: MarkdownTable) -> list[str]:
-    """実施内容表の`ユーザー指示との関係`の許容値を採否別に検査する。"""
-    column = table.header.index("ユーザー指示との関係")
-    decision_column = table.header.index("採否") if table.header == PLAN_ACTION_TABLE_HEADER else None
-    errors: list[str] = []
-    for row in table.rows:
-        if len(row) <= column or not row[column]:
-            continue
-        allowed = PLAN_ACTION_RELATIONS
-        if (
-            decision_column is not None
-            and len(row) > decision_column
-            and row[decision_column] in PLAN_ACTION_NON_ADOPTED_DECISIONS
-        ):
-            allowed = (*PLAN_ACTION_RELATIONS, PLAN_NON_QUEUE_VALUE)
-        if row[column] not in allowed:
-            errors.append(f"`## 実施内容`の`ユーザー指示との関係`は{list(allowed)}のいずれかにする: {row[column]}")
     return errors
