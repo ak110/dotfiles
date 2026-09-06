@@ -906,11 +906,11 @@ async def test_start_shell_rejects_empty_command_and_summary_policy(tmp_path: pa
 
 
 @pytest.mark.asyncio
-async def test_send_message_rejects_changed_first_candidate_without_discarding_session(
+async def test_send_message_continues_when_selected_candidate_remains(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """現在の先頭候補が起動値と異なる場合はsessionを保持して継続を拒否する。"""
+    """候補の順序が変わっても採用済み候補が残るsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
     manager, backend = _manager_with_fake("codex")
@@ -918,7 +918,79 @@ async def test_send_message_rejects_changed_first_candidate_without_discarding_s
     session_id = response["session_id"]
     current[:] = [("codex", "replacement", "high"), ("codex", "first", "high")]
 
-    with pytest.raises(ValueError, match=f"configuration changed: {session_id}"):
+    result = await manager.send_message(session_id, "続行")
+
+    assert result["delivery"] == "steered"
+    assert session_id in manager.sessions
+    assert backend.send_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_continues_without_model_type(tmp_path: pathlib.Path) -> None:
+    """候補列を直接指定したsessionは工程別モデル設定を比較せず継続する。"""
+    manager, backend = _manager_with_fake("codex")
+    session = await backend.start("調査", str(tmp_path), "direct", "high")
+
+    result = await manager.send_message(session.session_id, "続行")
+
+    assert result["delivery"] == "steered"
+    assert backend.send_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_continues_with_selected_first_remaining_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """採用済み候補が除外後の先頭にあるsessionを継続する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+    first = await manager.start("plan", "調査", str(tmp_path))
+    second = await manager.start("plan", "調査", str(tmp_path), first["session_id"])
+
+    result = await manager.send_message(second["session_id"], "続行")
+
+    assert result["delivery"] == "steered"
+    assert backend.send_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_send_message_reports_changed_candidate_fields_without_discarding_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """採用済み候補が消えた場合は変更項目を示し、sessionを保持して拒否する。"""
+    current = [("codex", "first", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    manager, backend = _manager_with_fake("codex")
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = response["session_id"]
+    current[:] = [("claude", "replacement", "medium")]
+
+    expected = (
+        f"configuration changed: {session_id}; engine: codex -> claude, model: first -> replacement, effort: high -> medium"
+    )
+    with pytest.raises(ValueError, match=expected):
+        await manager.send_message(session_id, "続行")
+    assert session_id in manager.sessions
+    assert backend.send_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_send_message_reports_when_no_candidate_remains_without_discarding_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """候補が残らない場合は理由を示し、sessionを保持して継続を拒否する。"""
+    current = [("codex", "first", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: current)
+    manager, backend = _manager_with_fake("codex")
+    response = await manager.start("plan", "調査", str(tmp_path))
+    session_id = response["session_id"]
+    current.clear()
+
+    with pytest.raises(ValueError, match=f"configuration changed: {session_id}; no candidate remains"):
         await manager.send_message(session_id, "続行")
     assert session_id in manager.sessions
     assert backend.send_calls == 0
@@ -1903,6 +1975,14 @@ def test_shell_system_prompt_requires_background_result_collection() -> None:
     assert "背景実行へ移行した場合は、移行の通知を結果として報告しない" in state.SHELL_SYSTEM_PROMPT
     assert "起動結果が返す出力ファイルを読み" in state.SHELL_SYSTEM_PROMPT
     assert "終了状態を確定してから報告する" in state.SHELL_SYSTEM_PROMPT
+
+
+def test_lightweight_system_prompts_require_limit_reporting() -> None:
+    """軽量起動は上限到達を報告し、不完全な結果から確定しない契約を受領する。"""
+    assert "その事実と切り詰められた範囲を要約へ必ず含める" in state.SHELL_SYSTEM_PROMPT
+    assert "切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない" in state.SHELL_SYSTEM_PROMPT
+    assert "その事実と到達した上限を報告へ必ず含める" in state.EXPLORE_SYSTEM_PROMPT
+    assert "上限に達した結果から、網羅性、件数、不在のいずれも結論しない" in state.EXPLORE_SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio

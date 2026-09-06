@@ -705,10 +705,20 @@ class AgentsServerManager:
         route_state = self._route_state(session_id, unknown_label="session")
         if route_state.model_type is not None:
             candidates = _atk_config.resolve_model_candidates(route_state.model_type)
-            expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
             actual = (route_state.engine, route_state.model, route_state.effort)
-            if expected != actual:
-                raise ValueError(f"configuration changed: {session_id}")
+            if actual not in candidates:
+                expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
+                if expected is None:
+                    change = "no candidate remains"
+                else:
+                    names = ("engine", "model", "effort")
+                    changes = [
+                        f"{name}: {before} -> {after}"
+                        for name, before, after in zip(names, actual, expected, strict=True)
+                        if before != after
+                    ]
+                    change = ", ".join(changes)
+                raise ValueError(f"configuration changed: {session_id}; {change}")
         try:
             async with asyncio.timeout(float(timeout)):
                 while True:
@@ -1076,7 +1086,10 @@ async def send_message(
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`で配送結果を示す。直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
-    `configuration changed: <session_id>`は工程別モデル設定の候補列が変わったことを示すため、検収済み状態を渡して新規起動する。
+    `configuration changed: <session_id>`は、
+    当該sessionが採用しているengine・model・effortが工程別モデル設定の候補列から外れたことを示す。
+    本文が続けて変わった項目と変更前後の値を示すため、検収済み状態を渡して新規起動する。
+    候補列の記述だけが変わり採用済みの値が候補列に残る場合は、同じsessionの継続に成功する。
     `unknown session: <session_id>`だけが継続不能を示す。
     """
     return await _MANAGER.send_message(session_id, prompt, timeout)
