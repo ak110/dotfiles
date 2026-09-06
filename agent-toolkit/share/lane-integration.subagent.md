@@ -1,6 +1,6 @@
 # 統合担当タスク
 
-`agent-toolkit:process-wi`のレーンの統合を担い、計画最終化、通常型AWIの計画型変換、`統合区分`に対応する統合、AWI行ごとの終端及び所有資源の回収を完遂する。
+`agent-toolkit:process-wi`のレーンの統合を担い、`統合区分`に対応する統合、計画最終化、通常型AWIの計画型変換、AWI行ごとの終端及び所有資源の回収を完遂する。
 実装単位の実装、実装レビューの実施、作業対象リポジトリへのpushと再レビューの依頼は担当しない。
 最初に受領した統合指示の全項目を確認し、`統合区分`に対応する手順だけを実行する。
 
@@ -22,11 +22,6 @@
 受領した権限を超える不可逆操作へ着手せず、当該操作と対象を完了報告で呼び出し元へ返す。
 計画作業rootの計画ファイルを更新する操作と、`atk`がキュー管理リポジトリ及び計画保存先へ行う反映は、作業対象リポジトリへのpushの禁止の対象外とする。
 
-## 計画最終化と計画型変換
-
-計画最終化を要する場合は、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の「実装レビュー後の計画最終化」に従って、実装時の進捗を作業rootの計画へ反映する。続けて`atk plans commit <受領したメイン計画ファイル名>`を1回実行し、保存実体と作業側の消失を確認する。
-計画型変換を要する場合は、最終化の完了後に`atk wi convert-to-plan --plan-file=<受領した可搬値> <AWIファイル名>...`を実行する。`--skip-push`を用いない。`atk wi convert-to-plan`は指定した値をそのまま解決したパスの実体を要求するため、最終化より前の位置では非0で終了する。
-
 ## マージありの統合
 
 最新のマージ先tipへrebaseし、競合で実装差分が生じた場合は`implementation-review`のレビュー指摘管理表へ競合箇所、競合内容、解消方針、実際の変更、直接影響範囲、マージ先と対象計画一覧を記録する。
@@ -37,7 +32,13 @@
 
 ## マージなしの統合
 
-rebase、マージ及びレビュー表への記録をしない。計画最終化の完了後、直ちにAWI行の終端へ進む。
+rebase、マージ及びレビュー表への記録をしない。直ちに計画最終化へ進む。
+
+## 計画最終化と計画型変換
+
+計画最終化は、`統合区分`に対応する統合の完了後に実行する。`atk plans commit`が計画ファイルとレビュー指摘管理表を計画作業root`~/.claude/plans`から保存先へ移し、移動前の絶対パスを実体の無いパスにするためである。当該保存より後の工程で、計画ファイルとレビュー指摘管理表のいずれへも書き込まない。
+計画最終化を要する場合は、`${CLAUDE_PLUGIN_ROOT}/share/implementation-review.parent.md`の「実装レビュー後の計画最終化」に従って、実装時の進捗を作業rootの計画へ反映する。続けて`atk plans commit <受領したメイン計画ファイル名>`を1回実行し、保存実体と作業側の消失を確認する。
+計画型変換を要する場合は、最終化の完了後に`atk wi convert-to-plan --plan-file=<受領した可搬値> <AWIファイル名>...`を実行する。`--skip-push`を用いない。`atk wi convert-to-plan`は指定した値をそのまま解決したパスの実体を要求するため、最終化より前の位置では非0で終了する。
 
 ## AWI行の終端
 
@@ -50,7 +51,7 @@ rebase、マージ及びレビュー表への記録をしない。計画最終�
 所有するworktreeを削除する前に、シェルの作業ディレクトリを複製元リポジトリのルートへ移す。削除したworktree配下を作業ディレクトリとしたままでは、以降のコマンドがディレクトリを解決できずに失敗し、回収の完了報告へ返す実測値を取得できないためである。
 回収は`統合区分`に対応する次の手順で行う。対象外worktree、複製元及び管理外領域は削除しない。
 
-- `マージあり`では、マージを実行した作業ツリーの絶対パスとマージ先branch名を後始末まで保持する。branchの削除の直前に、`git -C <保持した作業ツリーの絶対パス> symbolic-ref --short HEAD`の出力が保持したマージ先branch名と一致することを照合する。一致した場合だけ、先に`git -C <記録した対象リポジトリの絶対パス> worktree remove <記録した所有worktreeの絶対パス>`で専用worktreeを削除する。Gitは所有branchをcheckoutしている専用worktreeが存在する間は当該branchを削除しないため、worktreeの削除をbranchの削除より先に行う。続けて`git -C <保持した作業ツリーの絶対パス> branch -d <所有branch名>`を実行する。`git branch -d`は、対象branchにupstreamが設定されている場合、実行した作業ツリーが指すbranchではなくupstreamを統合判定の基準にする。所有branchのupstreamがマージ先branchのリモート追跡refを指し、当該refがマージ済みのローカルcommitをまだ含まない間は、正しい作業ツリーと正しい現在branchで実行しても削除が拒否される。拒否された場合は、`git -C <保持した作業ツリーの絶対パス> merge-base --is-ancestor <所有branch名> <保持したマージ先branch名>`を実行する。終了コードが0で所有branchがマージ先branchへ到達済みである場合だけ、`git -C <保持した作業ツリーの絶対パス> branch -D <所有branch名>`で削除する。一致しない場合、worktreeの削除が失敗した場合、到達確認の終了コードが0以外の場合及び`-D`による削除が失敗した場合は以降を削除せず、保持した絶対パス、期待するマージ先branch名及び観測した出力を`needs_escalation`で返す。upstreamを統合判定の基準にする挙動は、2026年9月3日にgit version 2.43.0で、upstreamに`origin/develop`を設定した専用branchをローカルの`develop`へff統合した直後に`branch -d`が未統合として拒否されることを実測した。再検証は`git branch -vv`で対象branchの追跡先を確認したうえで、同じ状態の`branch -d`の終了コードを観測する。
+- `マージあり`では、マージを実行した作業ツリーの絶対パスとマージ先branch名を後始末まで保持する。branchの削除の直前に、`git -C <保持した作業ツリーの絶対パス> symbolic-ref --short HEAD`の出力が保持したマージ先branch名と一致することを照合する。一致した場合だけ、先に`git -C <記録した対象リポジトリの絶対パス> worktree remove <記録した所有worktreeの絶対パス>`で専用worktreeを削除する。Gitは所有branchをcheckoutしている専用worktreeが存在する間は当該branchを削除しないため、worktreeの削除をbranchの削除より先に行う。続けて`git -C <保持した作業ツリーの絶対パス> merge-base --is-ancestor <所有branch名> <保持したマージ先branch名>`を実行する。終了コードが0で所有branchがマージ先branchへ到達済みである場合だけ、`git -C <保持した作業ツリーの絶対パス> branch -D <所有branch名>`で削除する。`git branch -d`を先に試さない。`git branch -d`は、対象branchにupstreamが設定されている場合、実行した作業ツリーが指すbranchではなくupstreamを統合判定の基準にする。所有branchにupstreamが設定されている場合、当該upstreamはマージ先branchのリモート追跡refを指し、レーンは作業対象リポジトリをpushしないため当該refはマージ済みのローカルcommitを含まない。この条件では`-d`が常に拒否され、到達確認を経た`-D`だけが成功するため、`-d`の実行と拒否の観測を経路から外す。一致しない場合、worktreeの削除が失敗した場合、到達確認の終了コードが0以外の場合及び`-D`による削除が失敗した場合は以降を削除せず、保持した絶対パス、期待するマージ先branch名及び観測した出力を`needs_escalation`で返す。upstreamを統合判定の基準にする挙動は、2026年9月3日にgit version 2.43.0で、upstreamに`origin/develop`を設定した専用branchをローカルの`develop`へff統合した直後に`branch -d`が未統合として拒否されることを実測した。再検証は`git branch -vv`で対象branchの追跡先を確認したうえで、同じ状態の`branch -d`の終了コードを観測する。
 - `マージなし`では、`git -C <記録した所有worktreeの絶対パス> status --porcelain=v1`の出力が空であることを照合する。続いて、`git -C <記録した所有worktreeの絶対パス> symbolic-ref --short HEAD`が記録した専用branch名と一致することを照合する。`git -C <記録した所有worktreeの絶対パス> rev-parse HEAD`が専用worktree作成時のHEAD完全OIDと一致することも照合する。全て一致した場合だけ、`git -C <記録した対象リポジトリの絶対パス> worktree remove <所有worktreeの絶対パス>`でworktreeを削除する。次に`git -C <記録した対象リポジトリの絶対パス> update-ref -d refs/heads/<所有branch名> <専用worktree作成時のHEAD完全OID>`を実行する。これにより、期待OIDから更新されていない所有branchだけを削除する。いずれかが一致しない場合、worktree又はbranchの削除が失敗した場合は以降を削除しない。この場合は、記録値、観測値及び残存対象を`needs_escalation`で返す。
 
 branchとworktreeの回収後に、記録したレーンmanaged-tempを照合して削除する。失敗時は残存対象を`needs_escalation`へ返す。
