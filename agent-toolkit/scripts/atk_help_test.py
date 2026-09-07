@@ -63,7 +63,10 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
         assert all(line.startswith("  ") for line in examples.splitlines()), command
 
 
-@pytest.mark.parametrize("argv", [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"]])
+@pytest.mark.parametrize(
+    "argv",
+    [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"], ["session-review-queue"]],
+)
 def test_command_without_subcommand_prints_help(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],

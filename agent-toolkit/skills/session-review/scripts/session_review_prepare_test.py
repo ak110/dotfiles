@@ -165,6 +165,50 @@ def test_prepare_omits_target_repo(
     assert _calls(log_path) == [["managed-temp", "create", "--prefix", "session-review"]]
 
 
+def test_prepare_resolves_claude_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ClaudeセッションIDはprojects配下で一意に一致するtranscriptへ解決する。"""
+    _install_atk_stub(monkeypatch, tmp_path)
+    home = tmp_path / "home"
+    transcript = home / ".claude" / "projects" / "project" / "session-1.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(pathlib.Path, "home", lambda: home)
+
+    assert prepare.main(["--claude-session-id", "session-1"], now=_FIXED_NOW) == 0
+
+    captured = capsys.readouterr()
+    assert not captured.err
+    record = json.loads(captured.out)
+    assert record["transcript_path"] == str(transcript.resolve())
+    assert record["codex_thread_id"] is None
+
+
+@pytest.mark.parametrize("count", [0, 2])
+def test_prepare_rejects_non_unique_claude_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    count: int,
+) -> None:
+    """ClaudeセッションIDの一致が0件又は複数件ならtranscript不足として拒否する。"""
+    home = tmp_path / "home"
+    for index in range(count):
+        transcript = home / ".claude" / "projects" / f"project-{index}" / "session-1.jsonl"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(pathlib.Path, "home", lambda: home)
+
+    assert prepare.main(["--claude-session-id", "session-1"], now=_FIXED_NOW) == 2
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err == "不足: transcript_path\n"
+
+
 def test_prepare_reports_missing_items(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -173,15 +217,10 @@ def test_prepare_reports_missing_items(
     """記録の識別子と抽出器が成立しない場合は不足項目を返す。"""
     transcript = _write_transcript(tmp_path)
 
-    for arguments in (
-        [],
-        ["--transcript", str(transcript), "--codex-thread-id", "thread-1"],
-        ["--transcript", str(tmp_path / "missing.jsonl")],
-    ):
-        assert prepare.main(arguments, now=_FIXED_NOW) == 2
-        captured = capsys.readouterr()
-        assert not captured.out
-        assert captured.err == "不足: transcript_path\n"
+    assert prepare.main(["--transcript", str(tmp_path / "missing.jsonl")], now=_FIXED_NOW) == 2
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert captured.err == "不足: transcript_path\n"
 
     monkeypatch.setattr(prepare, "__file__", str(tmp_path / "detached" / "session_review_prepare.py"))
 

@@ -25,8 +25,10 @@ from typing import Any
 def _build_parser() -> argparse.ArgumentParser:
     """コマンドライン引数を定義する。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
-    parser.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
+    session = parser.add_mutually_exclusive_group(required=True)
+    session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
+    session.add_argument("--claude-session-id", metavar="ID", help="Claude CodeのセッションID。")
+    session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
     parser.add_argument("--target-repo", metavar="PATH", help="未処理項目を取得する対象リポジトリ。")
     return parser
 
@@ -92,14 +94,16 @@ def _cleanup(executable: str, path: pathlib.Path) -> None:
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """準備項目を取得して1行のJSONを出力する。"""
     args = _build_parser().parse_args(argv)
-    if (args.transcript is None) == (args.codex_thread_id is None):
-        return _missing("transcript_path")
-
     evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
     if not evidence_script.is_file():
         return _missing("evidence_script")
 
     transcript_path = pathlib.Path(args.transcript).expanduser().resolve() if args.transcript is not None else None
+    if args.claude_session_id is not None:
+        matches = list((pathlib.Path.home() / ".claude" / "projects").glob(f"**/{args.claude_session_id}.jsonl"))
+        if len(matches) != 1:
+            return _missing("transcript_path")
+        transcript_path = matches[0].resolve()
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
 
