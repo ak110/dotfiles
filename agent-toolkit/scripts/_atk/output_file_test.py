@@ -38,3 +38,18 @@ def test_relative_output_file_is_rejected(tmp_path: pathlib.Path) -> None:
         atk.main(["plans", "list", "--output-file", "relative.txt"], home=tmp_path)
 
     assert exc_info.value.code == 2
+
+
+def test_redirect_reports_saved_output_when_system_exit_propagates(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "system-exit.txt"
+
+    with pytest.raises(SystemExit) as exc_info, output_file.redirect(output_path):
+        print("終了前")
+        raise SystemExit(7)
+
+    assert exc_info.value.code == 7
+    assert output_path.read_text(encoding="utf-8") == "終了前\n"
+    assert capsys.readouterr().out == f"保存先: {output_path.resolve()}\n行数: 1\n"

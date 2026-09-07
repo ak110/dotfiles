@@ -24,13 +24,15 @@ def add_output_file_arg(parser: argparse.ArgumentParser) -> None:
 def redirect(path: pathlib.Path) -> Iterator[None]:
     """標準出力をUTF-8ファイルへ保存し、離脱時に保存先と行数を報告する。"""
     resolved = path.resolve(strict=False)
-    with resolved.open("w", encoding="utf-8", newline="") as stream:
-        try:
-            with contextlib.redirect_stdout(stream):
-                yield
-        finally:
+    stream = resolved.open("w", encoding="utf-8", newline="")
+    try:
+        with stream, contextlib.redirect_stdout(stream):
+            yield
+    finally:
+        if not stream.closed:
             stream.flush()
-    with resolved.open(encoding="utf-8", newline="") as stream:
-        line_count = sum(1 for _line in stream)
-    print(f"保存先: {resolved}")
-    print(f"行数: {line_count}")
+            stream.close()
+        with resolved.open(encoding="utf-8", newline="") as saved_stream:
+            line_count = sum(1 for _line in saved_stream)
+        print(f"保存先: {resolved}")
+        print(f"行数: {line_count}")
