@@ -60,6 +60,7 @@ if TYPE_CHECKING:
         _windows_information_identity,
         _windows_managed_root_security_is_valid,
         _windows_path_handle,
+        _windows_reparse_identity,
         _windows_replace_security,
         _windows_secure_path,
         _windows_security_base_is_valid,
@@ -596,7 +597,7 @@ def _windows_reparse_entry(
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}") from None
     if not target.is_absolute() or not target.is_relative_to(root):
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
-    device, inode = _path_identity(path)
+    device, inode = _windows_reparse_identity(path)
     return kind, device, inode, stored_target
 
 

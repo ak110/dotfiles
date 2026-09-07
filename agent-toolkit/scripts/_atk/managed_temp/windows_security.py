@@ -243,6 +243,8 @@ def _windows_equal_sids(first: bytes, second: bytes) -> bool:
 def _windows_path_handle(
     path: pathlib.Path,
     access: int,
+    *,
+    allow_reparse: bool = False,
 ) -> typing.Iterator[tuple[int, _ByHandleFileInformation]]:
     """再解析ポイントを追跡しないパスハンドルと属性を返す。"""
     kernel32 = _windows_dll("kernel32")
@@ -277,7 +279,7 @@ def _windows_path_handle(
         information = _ByHandleFileInformation()
         if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
             raise _windows_error("Windows path属性を取得できない", path)
-        if information.attributes & _WINDOWS_REPARSE_POINT:
+        if not allow_reparse and information.attributes & _WINDOWS_REPARSE_POINT:
             raise ManagedTempError(f"Windows reparse pointは管理対象にできない: {path}")
         yield handle, information
     finally:
@@ -638,4 +640,10 @@ def _windows_managed_root_security_is_valid(security: _WindowsSecurity, current_
 def _windows_identity(path: pathlib.Path) -> tuple[int, int]:
     """Reparse pointを開かず、WindowsハンドルからボリュームとファイルのIDを返す。"""
     with _windows_path_handle(path, _WINDOWS_READ_ATTRIBUTES) as (_, information):
+        return _windows_information_identity(information)
+
+
+def _windows_reparse_identity(path: pathlib.Path) -> tuple[int, int]:
+    """Reparse point自体のWindowsハンドルからボリュームとファイルのIDを返す。"""
+    with _windows_path_handle(path, _WINDOWS_READ_ATTRIBUTES, allow_reparse=True) as (_, information):
         return _windows_information_identity(information)

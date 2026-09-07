@@ -79,6 +79,64 @@ def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
 class TestManagedTempWindows:
     """WindowsのSID・ACL・reparse point・cleanupを実環境で確認する。"""
 
+    def test_normal_identity_rejects_a_reparse_point(self, tmp_path: pathlib.Path) -> None:
+        """通常のidentity取得はreparse pointを受理しない。"""
+        destination = tmp_path / "normal-identity-destination"
+        destination.mkdir()
+        junction = tmp_path / "normal-identity-junction"
+        _make_junction(junction, destination)
+
+        with pytest.raises(subject.ManagedTempError, match="reparse point"):
+            subject._windows_identity(junction)
+
+    def test_reparse_identity_identifies_the_link_object(self, tmp_path: pathlib.Path) -> None:
+        """専用経路はリンク先ではなくreparse point自体を識別する。"""
+        destination = tmp_path / "reparse-identity-destination"
+        destination.mkdir()
+        first = tmp_path / "first-reparse-identity-junction"
+        second = tmp_path / "second-reparse-identity-junction"
+        _make_junction(first, destination)
+        _make_junction(second, destination)
+
+        first_identity = subject._windows_reparse_identity(first)
+
+        assert first_identity == subject._windows_reparse_identity(first)
+        assert first_identity != subject._windows_reparse_identity(second)
+        assert first_identity != subject._windows_identity(destination)
+
+    @pytest.mark.parametrize("directory", [False, True])
+    def test_cleanup_accepts_a_symbolic_link_within_the_managed_root(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        directory: bool,
+    ) -> None:
+        """管理root内を指すfile・directory symlinkはリンク先を保持して回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-symlink")
+        destination = tmp_path / "symlink-destination"
+        if directory:
+            destination.mkdir()
+        else:
+            destination.write_text("keep", encoding="utf-8")
+        link = target / "link"
+        link.symlink_to(destination, target_is_directory=directory)
+        registry = subject._registry_path(target)
+
+        with pytest.raises(subject.ManagedTempError, match="reparse point"):
+            subject._windows_identity(link)
+        identity = subject._windows_reparse_identity(link)
+        assert identity == subject._windows_reparse_identity(link)
+        assert identity != subject._windows_identity(destination)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert not registry.exists()
+        assert destination.exists()
+        if not directory:
+            assert destination.read_text(encoding="utf-8") == "keep"
+
     def test_cleanup_restores_registry_from_marker_only_when_requested(
         self,
         monkeypatch: pytest.MonkeyPatch,
