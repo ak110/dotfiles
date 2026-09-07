@@ -116,10 +116,14 @@ def _cmd_process_loop_status() -> None:
 
 
 def _dialog_timeout_settings() -> str:
-    """メイン会話のプロンプトキャッシュTTLに対応する質問・ダイアログのタイムアウト設定を返す。"""
+    """メイン会話の質問タイムアウトとRemote Control無効化の設定を返す。
+
+    Remote Controlのbridgeが接続されると質問の自動送出が無効になるため、
+    process-loopが起動するセッションでは起動時の接続を無効にする。
+    """
     if _wait_schedule.get_prompt_cache_ttl("main") == "5m":
-        return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s"}'
-    return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}'
+        return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}'
+    return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}'
 
 
 def _child_env() -> dict[str, str]:
@@ -527,7 +531,7 @@ def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
     try:
         value = _config.resolve_mutable_setting("orchestrate_model")
     except ValueError as error:
-        default = _config._ORCHESTRATE_MODEL_DEFAULT  # pylint: disable=protected-access
+        default = _config._MUTABLE_KEY_DEFAULTS["orchestrate_model"]  # pylint: disable=protected-access
         env_name = "AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL"
         raw_value = os.environ.get(env_name, "") or _config._load_config().get(  # pylint: disable=protected-access
             "orchestrate_model", default

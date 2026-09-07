@@ -99,6 +99,7 @@ from _plan.structure.constants import (
     _FRONTMATTER_DELIMITER,
     _FRONTMATTER_SOURCE_PATTERN,
     PLAN_HUMAN_REVIEW_ROOT_PATTERN,
+    plan_human_review_path_is_absolute,
     PLAN_ACTION_DECISIONS,
     PLAN_ACTION_NON_ADOPTED_DECISIONS,
     PLAN_ACTION_RELATIONS,
@@ -461,4 +462,5 @@ __all__ = [
     "parse_plan_implementation_units",
     "parse_plan_materials",
     "parse_plan_metadata",
+    "plan_human_review_path_is_absolute",
 ]

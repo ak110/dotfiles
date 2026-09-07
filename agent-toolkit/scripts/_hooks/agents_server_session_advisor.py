@@ -1,13 +1,15 @@
 """観測を試みていないagents_serverの作業をStop時に警告する。
 
-`start`・`start_explore`・`start_shell`と配送が成立した`send_message`は、委譲先に
-新しい作業を発生させる。PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し、
+`start`・`start_explore`・`start_shell`と新しいturnを起こす`send_message`は、委譲先に
+新しい作業を発生させる。実行中turnへの`steered`配送は新しい作業の発生に含めない。
+PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し、
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
 判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
 `wait`は応答の`status`を問わず観測を試みたことになり、`kill`は結果を意図的に
-破棄するため、いずれも`pending_observation`を解消する。実行環境が`wait`・`kill`を
-背景タスクへ移し、構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
+破棄するため、いずれも`pending_observation`を解消する。Bash経由で起動した
+`atk agents-wait`も観測の試みとして解消する。実行環境が`wait`・`kill`を背景タスクへ移し、
+構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
 一度解消したsessionでも、
 `send_message`が新しい作業を配送すれば再び警告対象になる。
 
@@ -21,6 +23,7 @@
 import json
 
 from _hooks.agent_id import resolve_hook_agent_id
+from _hooks.notice import _WARN_TAG, set_warning_session_id
 from _hooks.notice import formatter as _notice_formatter
 from _hooks.session_state import read_state
 from _hooks.stop_gate import parse_stop_session
@@ -34,7 +37,7 @@ _WARNING_BODY = (
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )
 
-_notice = _notice_formatter(_HOOK_ID, default_tag="warn")
+_notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 
 def _approve() -> None:
@@ -62,6 +65,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
+    set_warning_session_id(session_id)
     if payload.get("stop_hook_active") is True:
         return "approve", ""
 

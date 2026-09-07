@@ -21,6 +21,8 @@ def _root(
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / ".chezmoi-source/dot_claude/rules").mkdir(parents=True)
+    (tmp_path / subject.PERSONAL_SOURCE).write_text("personal\n", encoding="utf-8")
     (tmp_path / subject.CODEX_CONFIG).write_text(
         f"project_doc_max_bytes = {max_bytes}\nproject_doc_warn_ratio = {warn_ratio}\n",
         encoding="utf-8",
@@ -67,6 +69,17 @@ def test_render_excludes_claude_code_specific_rule(tmp_path: Path) -> None:
     assert "BEGIN: agent-toolkit/rules/99-claude-code.md" not in content
     assert "END: agent-toolkit/rules/99-claude-code.md" not in content
     assert "claude only" not in content
+
+
+def test_render_embeds_personal_project_rule(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    (root / "agent-toolkit/rules/01-a.md").write_text("rule\n", encoding="utf-8")
+
+    content = subject.render(root)
+
+    marker = subject.PERSONAL_SOURCE.as_posix()
+    assert f"<!-- BEGIN: {marker} -->\npersonal\n<!-- END: {marker} -->" in content
+    assert content.index(marker) < content.index("BEGIN: agent-toolkit/rules/01-a.md")
 
 
 def test_sync_is_idempotent(tmp_path: Path) -> None:

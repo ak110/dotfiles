@@ -13,6 +13,33 @@ import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wron
 from _testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
+def test_output_file_saves_events_and_prints_path_and_line_count(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
+    output_path = tmp_path / "events.jsonl"
+
+    assert evidence.main([str(transcript), "--output-file", str(output_path)]) == 0
+
+    assert json.loads(output_path.read_text(encoding="utf-8")) == {
+        "kind": "user",
+        "text": "入力",
+        "line": 1,
+        "sequence": 1,
+        "record": "main",
+    }
+    assert capsys.readouterr().out == f"保存先: {output_path.resolve()}\n行数: 1\n"
+
+
+def test_output_file_rejects_relative_path(capsys: pytest.CaptureFixture[str]) -> None:
+    assert evidence.main(["unused.jsonl", "--output-file", "relative.jsonl"]) == 2
+    assert json.loads(capsys.readouterr().out) == {
+        "kind": "error",
+        "text": "--output-fileには絶対パスを指定してください。",
+    }
+
+
 def test_extracts_selected_events_in_order(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
@@ -779,7 +806,7 @@ def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
         "次を繰り返す。"
     )
     elapsed_boundary_rule = (
-        "メインは振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
+        "振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
     )
 
     assert fixed_point_rule in problem_candidates

@@ -24,21 +24,22 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、当該定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
 - Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、「工程別モデル設定」の表が定めるキーを持つ工程の委譲先は、engineの別によらず`agents_server`で起動する。当該工程は同表のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けず、当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
-- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
+- `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない
   - `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
   - 起動直後にモデル実行環境の可用性で終端した候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ再起動を重ねない
-  - 起動後の実行中にモデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start(model_type, prompt, cwd, exclude_session_id=<失敗したsession_id>)`を呼ぶ。サーバーは当該sessionが使った候補を除外集合へ加え、残る候補の先頭で新しいsessionを開始する。次の候補を使うかどうかは呼び出し側が`wait`の状態とエラー本文から判断する。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない
-  - `start`・`start_explore`・`start_shell`が`no model candidates remain for model_type: <model_type>`を返した場合は、`exclude_session_id`の累積で当該起動条件の候補が尽きた状態であり、設定の不備ではない。同じ起動条件で`start`・`start_explore`・`start_shell`を再発行しない。委譲せずに当該作業を自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合は当該工程を`needs_escalation`または未完了として呼び出し元へ返す。設定キーの変更と実行環境の切り替えは行わない
-  - `exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。`start_explore`では、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件が一致しないsession IDを渡すと、サーバーはbackendの起動前にエラーを返す。別の設定キーの候補が除外集合へ混入して候補順序が崩れることを防ぐためである
+  - 起動後の実行中にモデル実行環境の可用性に起因する失敗を観測した場合は、同じ`model_type`で`start`を呼び直す。呼び出し側はsession識別子を渡さない。可用性を理由として終端したsessionの採用候補をサーバーが起動条件ごとに保持し、次の起動で除外集合の初期値へ充てるためである。委譲した作業自体の失敗と、開始応答が確定しないままrunningのsessionでは、この再起動をしない。同じ`model_type`で2回続けて可用性の失敗を観測した場合は再起動を重ねず、委譲せずに自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合は当該工程を`needs_escalation`または未完了として呼び出し元へ返す
+  - `start`・`start_explore`・`start_shell`が`no model candidates remain for model_type: <model_type>`を返した場合は、サーバーによる自動除外と持ち越し除外の累積で当該起動条件の候補が尽きた状態であり、設定の不備ではない。同じ起動条件で`start`・`start_explore`・`start_shell`を再発行しない。委譲せずに当該作業を自ら実施できる場合は自ら実施し、委譲が成立しなければ工程を進められない場合は当該工程を`needs_escalation`または未完了として呼び出し元へ返す。設定キーの変更と実行環境の切り替えは行わない
   - 調査だけを委譲する場合は`start_explore(prompt, cwd)`を使う。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、プロジェクト指示の読込を減らした軽量な起動条件で開始する。`fast`の既定は真であり、軽量側の候補で判断材料が不足する調査だけ偽を指定する。委譲先は起動時のシステム指示でファイルを作成、変更及び削除しない契約を受領するため、成果ファイルの出力を依頼せず、結論と根拠を完了報告で受領する。成果をファイルへ残す調査は`start`で起動し、書込先とする管理対象一時領域の絶対パスを`prompt`へ渡す。委譲先は、検索と読取について件数上限、容量超過、期限超過のいずれかに達した場合に、その事実と到達した上限を報告へ含める契約も受領する。当該記載を含む報告の結果は、網羅性、件数、不在のいずれの根拠にも用いない
   - 出力量が大きいコマンドの実行だけを委譲する場合は`start_shell(command, cwd, summary_policy)`を使う。`start_explore`と同じ軽量な起動条件で開始し、終了状態と要約だけを受け取る。委譲先は起動時のシステム指示で指示にない操作を追加しない契約を受領する。読み取り専用の制約は課さないため、検査コマンドなど対象を変更する実行を渡せる。委譲先は、実行ツールが出力の切り詰め、容量超過、期限超過のいずれかを通知した場合に、その事実と切り詰められた範囲を要約へ含める契約も受領する。当該記載を含む要約の結果は、網羅性、件数、終端のいずれの根拠にも用いない
   - `start_explore`と`start_shell`のどちらを使う場合も、委譲と直接実行の分岐は各ツールの説明が示す採算の目安で判定する
   - `wait`で進捗を観測し、終端時は結果本文を同じ応答から取得する。固有のtimeout要件がなければ`timeout`を省略し、サブエージェントは`request_bucket`へ`subagent`を渡す。Codexの二層待機では内側の`wait`が本項の対象となり、詳細は`agent-toolkit/share/codex-agents-base.md`「agents_serverの二層待機」節に従う。未回収の終端結果は保持期限の経過後も`wait`が返す。`wait`が`session retention expired: <session_id>`を返すのは終端結果を回収済みの場合であり、会話再開用の最小状態は保持されている。同じ`session_id`への`send_message`が暗黙再開するため、この失敗を継続不能の根拠にしない。`wait`の応答の`notices`は、委譲先が実行中に送った即時報告である。再待機の要否は`notices`の有無ではなく`status`で判定し、`status`が`running`の応答だけへ同じ`session_id`の`wait`を再発行する。`status`が`completed`、`failed`、`interrupted`のいずれかである応答が`notices`を含む場合は、当該本文と終端結果をともに受領して終端処理へ進む。通知の取得のために別のコマンド、ポーリング又は追加の待機ループを実行しない
   - 同じ担当へ追加指示を返す場合は`send_message`を使う。実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じ`session_id`のreplyを開始する。終端結果の保持期限を過ぎている場合と、sessionを所有する実行主体が終了している場合も、保持済みの実効条件から同じ会話を暗黙に再開する。固有のtimeout要件がなければ`timeout`を省略する。上限到達時は配送の成否が確定しないため`wait`で状態を確認する
   - 実行中turnを明示的に中断する場合は`kill`を使う。停止は最終手段とし、`send_message`による訂正では足りないことと、当該作業の継続自体が不要であることを確認してから発行する。`TimeoutError`が返った場合もsessionとbackend processは破棄されないため、`wait`で状態を確認してから次の操作を選ぶ
+  - 再開する予定の無い委譲先は`stop`で明示的に破棄する（努力目標）。破棄したsessionはstatusLineの表示対象と`list`の応答のいずれにも現れず、backendが当該sessionのために保持していた接続が解放される。同じ`session_id`への`send_message`は破棄後も暗黙再開するため、再開の余地を残したまま破棄してよい。実行中turnを持つsessionは破棄できないため、中断が必要な場合は先に`kill`を発行する。結果本文の受領と破棄を1回の呼び出しで済ませる場合は、`wait`又は`kill`へ`stop=true`を渡す。既定の`false`では現行と同じ応答と状態を返し、`true`では終端結果を返した応答に限って破棄する
+  - `stop`の呼び出しは努力目標とし、呼び出し漏れを検出、警告又は強制する仕組みと、経過時間その他の契機で自動的に破棄する仕組みを追加してはならない。呼び出さずにターンを終えた場合の挙動は、保持期限までの表示と保持期限後の暗黙再開のままとする
   - `agents_server`で起動した委譲先が自身のturnを終端させずに委譲元へ本文を届ける場合は、当該委譲先が`atk agents-notify`を実行する。宛先は環境変数`AGENT_TOOLKIT_OWNER_SESSION`が示すルートセッションの共有状態ディレクトリであり、送信元は当該委譲先自身のsession識別子とする。委譲元は次の`wait`の応答の`notices`で受け取る。当該環境変数を保持しない実行主体と、コマンドが非0で終了した場合は、同じ事象を完了報告へ含める
-  - 保持中のsessionの状態をまとめて確認する場合は`list`を使う。開始順に並べたsessionごとの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返し、結果本文は返さない。終端結果の保持期限を過ぎたsessionは`status`へ`expired`を設定して含め、未回収の終端結果を保持する場合は`result_available`を真にする。保持していた`session_id`を失った場合の回復と、複数の委譲先を並行させたときの残作業の把握へ用いる。個別sessionの終端の観測は`wait`で行う
+  - 保持中のsessionの状態をまとめて確認する場合は`list`を使う。開始順に並べたsessionごとの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返し、結果本文は返さない。`label`は起動文又はコマンドの先頭から100文字までとし、切り詰めた場合は末尾へ`…`を付す。終端結果の保持期限を過ぎたsessionは`status`へ`expired`を設定して含め、未回収の終端結果を保持する場合は`result_available`を真にする。既定では、`result_available`が偽であり、かつ終端済み又は`expired`であるsessionを応答から除き、除いた件数を`omitted`へ返す。全件が必要な場合だけ`include_terminated`へ真を渡す。このとき除外はせず`omitted`は0となる。保持していた`session_id`を失った場合の回復と、複数の委譲先を並行させたときの残作業の把握へ用いる。個別sessionの終端の観測は`wait`で行う
   - 計画の最初のfast担当とCI修正は新規threadで起動する。同じ計画の実装単位は1つのfast担当が順に実装する。fast担当からfix担当への引継ぎと通常実装モードのレビュー修正は、後段の継続条件で継続又は新規起動を確定する
   - 継続接続は同じ担当へ同じタスクの後続作業を返す場合と、同じworktreeを所有するthreadの担当種別をfast担当とfix担当の間で切り替える場合だけ使う
 
@@ -59,7 +60,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の③の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び③の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `session_review_model` | セッション振り返りの問題候補の抽出 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
+| `session_review_model` | セッション振り返りの問題候補の抽出と、別セッション経路の振り返り全体 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 
 `model_type`へは、`atk config`が持つ`<種別>_model`のキー名から`_model`を除いた種別を渡せる。上表が対応工程を定めるのは`pick_wi`、`plan`、`plan_review`、`execute_fast`、`execute`、`execute_review`及び`session_review`である。
 これに加えて`orchestrate`も受理する。当該種別は`atk wi process-loop`がオーケストレーターの新しいセッションを起動する設定であり、本節の委譲工程では渡さない。
@@ -96,10 +97,10 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    同じworktreeを所有するthreadの担当種別をfast担当とfix担当の間で切り替える場合だけ使う。
    継続直前に、現在のthreadの起動へ用いた`model_type`と、これから委譲する工程の`model_type`を比較する。
    両者が一致する場合だけ同じ`session_id`へ`send_message`を送る。
-   engine、model及びeffortの実効値はサーバーが保持し、継続時に、当該sessionが採用済みの値が現在の設定の候補列に残るかをサーバーが判定する。
-   残る場合は、候補列の内容又は順序が変わっていても同じsessionの継続に成功する。
-   残らない場合は`send_message`が`configuration changed: <session_id>`に続けて変わった項目と変更前後の値を返すため、呼び出し側は検収済み状態を渡して新規起動する。
-   この判定により、可用性の失敗で後続候補へ切り替わった担当と、候補列の記述だけが変わった担当へは継続を送り、採用済みの値が候補列から外れた場合だけ新規起動する。
+   engine、model及びeffortの実効値はサーバーが保持し、継続時は起動時に確定した当該値をそのまま用いる。
+   候補列の内容又は順序が起動後に変わっても、同じsessionの継続に成功する。
+   保持済みのsessionを失った場合だけ`send_message`が`unknown session: <session_id>`を返すため、呼び出し側は検収済み状態を渡して新規起動する。
+   これにより、可用性の失敗で後続候補へ切り替わった担当と、候補列が変わった担当のいずれへも継続を送る。
    fast担当へfix担当の作業を移す場合は、`execute_model`の`model_type`を現在のthreadの起動に用いた`model_type`と比較し、
    継続本文へ担当種別を`fix担当`へ切り替える旨と、エスカレーション内容かレビュー指摘の所在を含める。
    fix担当が完了した後に残りの実装単位へ進む場合は、最初の単位の開始前に保持した`model_type`を現在のfix担当threadの`model_type`と比較する。
@@ -132,7 +133,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
    新しい担当は、レビュー指摘管理表で解消済みと記録された行を再走査せず、未解消の行と当該ラウンドの走査範囲だけを対象とする。
 
 本節の代替起動はAgentツール経路にだけ適用する。
-`agents_server`経路では、設定の候補列によるサーバー側の自動切替と`exclude_session_id`による次候補の起動が同じ役割を担うため、本節の代替起動を重ねて適用しない。
+`agents_server`経路では、設定の候補列によるサーバー側の自動切替が同じ役割を担うため、本節の代替起動を重ねて適用しない。
 指定した組合せを一時的に利用できない事象を実際に観測した場合に限り、当該工程の設定を解決して委譲を起動した主体は、当該セッション内の起動時指定だけで代替の組合せへ切り替えて再起動してよい。
 この判断は当該主体が行い、当該主体自身がサブエージェントとして起動されているかを問わない。
 対象は、実行経路が返す過負荷、レート制限、サーバー障害、指定したモデルや経路の利用不能など、モデル実行環境の可用性に起因すると観測できる失敗に限る。

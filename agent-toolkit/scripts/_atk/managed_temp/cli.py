@@ -31,6 +31,7 @@ import unicodedata
 from ctypes import wintypes
 
 from _atk import help_text as _atk_help
+from _atk import output_file as _output_file
 
 
 from typing import TYPE_CHECKING
@@ -199,9 +200,11 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     cleanup_parser = _atk_help.add_command(subparsers, "cleanup", **_atk_help.HELP["atk managed-temp cleanup"])
     cleanup_parser.add_argument(
         "--path",
-        required=True,
         type=pathlib.Path,
-        help="後始末する管理対象一時ディレクトリの絶対パス。作成時に出力された値を指定する。",
+        help=(
+            "後始末する管理対象一時ディレクトリの絶対パス。作成時に出力された値を指定する。"
+            "省略した場合は現在の管理対象の絶対パスを示して終了する。"
+        ),
     )
     cleanup_parser.add_argument(
         "--recover-registry",
@@ -210,6 +213,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     )
     list_parser = _atk_help.add_command(subparsers, "list", **_atk_help.HELP["atk managed-temp list"])
     list_parser.add_argument("--prefix", help="列挙する領域を用途識別子で限定する。")
+    _output_file.add_output_file_arg(list_parser)
 
 
 def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
@@ -224,6 +228,19 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                 )
             )
         elif getattr(args, command_dest) == "cleanup":
+            if args.path is None:
+                entries = list_managed_temp()
+                if not entries:
+                    raise ManagedTempError("--pathを指定してください。現在の管理対象はありません。")
+                if len(entries) == 1:
+                    raise ManagedTempError(
+                        "--pathを指定してください。現在の管理対象は1件です。"
+                        f"atk managed-temp cleanup --path {entries[0]['path']} を実行してください。"
+                    )
+                paths = "\n".join(entry["path"] for entry in entries)
+                raise ManagedTempError(
+                    f"--pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n{paths}"
+                )
             cleanup_managed_temp(args.path, recover_registry=getattr(args, "recover_registry", False))
         else:
             entries = list_managed_temp(args.prefix, report_recovery_candidates=True)

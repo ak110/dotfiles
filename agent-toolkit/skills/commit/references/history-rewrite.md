@@ -28,7 +28,8 @@ autosquash成功後に書換え後HEADへ最終単位の修正を実装し、近
 autosquash成功後に`git rev-parse HEAD`で書換え後HEADの完全OIDを取得し、書換え前の各対象OIDと書換え後の全実装単位OIDの対応を履歴検収用に保持する。
 autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換する。開始済みの同じ実装担当が最終単位の修正差分だけを適用して近接検証を実行し、stageした後、amend直前の再判定成功後に書換え後HEADへamendする。
 
-- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う
+- 直前のコミットと変更目的・対象範囲が一致し、そのコミットを完成させる修正は`git commit --amend --no-edit`を使う。
+  実行の直前に`git log --oneline --decorate`を単独のBash呼び出しで実行し、履歴と対象コミットの公開状態を確認する
 - それより前の未プッシュコミットを完成させる修正は、統合後のメッセージ変更要否でfixup形式を選ぶ
   - メッセージを変更しない場合は`git commit --fixup=<sha>`を使う
   - メッセージへ帰属情報などを追加または更新する場合は`git commit --fixup=amend:<sha>`を使う
@@ -62,13 +63,16 @@ autosquash成功後の2回目のpush済み判定対象を当該OIDへ置換す�
   いずれも対象OIDから得た統合先件名との完全一致を確認する。
   期待件名と一致しない場合はautosquashを実行せず、`## 失敗時の扱い`に従う
 - 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`で行う
-  （`<base>`は対象コミットの親以前を指す）
+  （`<base>`は対象コミットの親以前を指す）。
+  fixupの作成は履歴確認の記録をリセットするため、autosquashの直前に`git log --oneline --decorate`を単独のBash呼び出しで再度実行する
 - `amend:`または`reword:`では統合先の既存メッセージと異なるtrailerを保持し、
   追加または更新する帰属情報を統合後に1回だけ残す
 
 ## 失敗時の扱い
 
 `pre_fixup`・`fixup`・`autosquash`・`amend`のいずれかが失敗した場合は、自ら復旧操作を実行せず、同じ指摘の履歴統合を再試行しない（失敗時点の履歴とindexの状態は失敗の種別ごとに異なり、状態を確定しない復旧操作と再試行はcommitの消失を招くため）。
+ただし、autosquashが内容競合で停止した場合は、同じ実装担当が次の条件を満たす範囲に限って競合を解消してよい。競合箇所が採用済みの指摘に対する修正と統合先commitの変更だけから成り、解消後も当該中間commitの公開契約を維持できることを条件とする。解消したパスだけをstageし、`git log --oneline --decorate`を単独で実行して履歴と継続対象を確認した直後に`git rebase --continue`を実行する。再び内容競合で停止した場合も同じ条件を改めて判定する。
+競合箇所へ担当外の変更が含まれる場合、修正の帰属を確定できない場合又は中間commitの公開契約を維持できない場合は、競合を解消せず、同じ指摘の履歴統合を再試行しない。
 失敗した操作、終了コード、標準エラー出力、失敗時点の`git status --short`及び`git log --oneline -5`の観測結果を添えて`needs_escalation`で返す。
 
 ## merge進行中の退避

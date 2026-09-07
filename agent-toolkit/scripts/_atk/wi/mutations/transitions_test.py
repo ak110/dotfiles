@@ -877,6 +877,32 @@ def test_edit_entry_to_plan_rejects_invalid_structured_materials_before_changes(
 class TestStartProcessingMultiple:
     """start-processingサブコマンド: 複数件指定で単一コミットへまとめる。"""
 
+    def test_uwi_moves_to_processing_and_can_be_adopted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """UWIをprocessingへ移し、続けてadoptで終端できること。"""
+        notes = _setup_notes(tmp_path)
+        filename = "uwi-001.md"
+        (notes / "inbox" / filename).write_text(
+            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\n確認事項\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as start_result:
+            atk.main(["wi", "start-processing", filename], home=tmp_path)
+
+        assert start_result.value.code == 0
+        assert (notes / "processing" / filename).exists()
+
+        with pytest.raises(SystemExit) as adopt_result:
+            atk.main(["wi", "adopt", filename], home=tmp_path)
+
+        assert adopt_result.value.code == 0
+        assert (notes / "adopted" / filename).exists()
+
     def test_multiple_files_moved_single_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1031,6 +1057,9 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "edit", filename, "編集後"], home=tmp_path)
 
-    assert exc_info.value.code == 0
+    assert exc_info.value.code == 1
     position = captured["expected"].index("編集後") + 1
-    assert f"    body_match: 不一致（最初の差異: {position}文字目）\n" in capsys.readouterr().out
+    error = capsys.readouterr().err
+    assert f"最初の差異: {position}文字目" in error
+    assert "送信元本文:" in error
+    assert "保存本文:" in error

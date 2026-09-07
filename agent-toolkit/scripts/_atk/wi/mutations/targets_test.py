@@ -410,7 +410,6 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "plan_file": "/tmp/plan.md",
         "depends_on": ["dependency.md"],
         "body_match": "一致",
-        "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
         mutations,

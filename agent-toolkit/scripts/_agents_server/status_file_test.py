@@ -18,6 +18,20 @@ from _agents_server import status_file as subject
 @pytest.mark.parametrize(
     ("environment", "expected"),
     [
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, "owner"),
+        ({"CLAUDE_CODE_SESSION_ID": "root-session"}, "root-session"),
+        ({}, None),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "../invalid"}, None),
+    ],
+)
+def test_resolve_root_session_id(environment: dict[str, str], expected: str | None) -> None:
+    """読取対象のルートsessionは書込主体の識別要件から独立して解決する。"""
+    assert subject.resolve_root_session_id(environment) == expected
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [
         (
             {"CLAUDE_CODE_SESSION_ID": "root-session"},
             subject.StatusFileIdentity("root-session", "root.json", None),
@@ -40,6 +54,7 @@ from _agents_server import status_file as subject
             subject.StatusFileIdentity("owner", "codex-child.json", "codex-child"),
         ),
         ({}, None),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, None),
         ({"CLAUDE_CODE_SESSION_ID": "../invalid"}, None),
         (
             {
@@ -51,7 +66,7 @@ from _agents_server import status_file as subject
     ],
 )
 def test_resolve_status_file_identity(environment: dict[str, str], expected: subject.StatusFileIdentity | None) -> None:
-    """ルート・Claude委譲先・Codex委譲先と不正識別子を区別する。"""
+    """ルート・両backendの委譲先・識別不能な所有session・不正識別子を区別する。"""
     assert subject.resolve_status_file_identity(environment) == expected
 
 
@@ -69,6 +84,37 @@ def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.Mo
     assert subject.status_directory("root") == (
         tmp_path / "home" / ".local" / "state" / "agent-toolkit" / "agents-server" / "root"
     )
+
+
+def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp_path: pathlib.Path) -> None:
+    """不正通知を保持し、正常通知だけを送信時刻とファイル名の順で回収する。"""
+    directory = subject.notices_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    payloads = {
+        "invalid-version.json": {"version": 2, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"},
+        "invalid-session.json": {"version": 1, "session_id": "other", "sent_at": "2026-09-07T01:00:00Z", "body": "本文"},
+        "invalid-sent-at.json": {"version": 1, "session_id": "target", "sent_at": 1, "body": "本文"},
+        "invalid-body.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": ["本文"]},
+        "valid-late.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T02:00:00Z", "body": "後"},
+        "valid-same-b.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "同時刻B"},
+        "valid-same-a.json": {"version": 1, "session_id": "target", "sent_at": "2026-09-07T01:00:00Z", "body": "同時刻A"},
+    }
+    for name, payload in payloads.items():
+        (directory / name).write_text(json.dumps(payload), encoding="utf-8")
+
+    notices = subject.take_notices("root", "target", tmp_path)
+
+    assert notices == [
+        {"sent_at": "2026-09-07T01:00:00Z", "body": "同時刻A"},
+        {"sent_at": "2026-09-07T01:00:00Z", "body": "同時刻B"},
+        {"sent_at": "2026-09-07T02:00:00Z", "body": "後"},
+    ]
+    assert {path.name for path in directory.iterdir()} == {
+        "invalid-version.json",
+        "invalid-session.json",
+        "invalid-sent-at.json",
+        "invalid-body.json",
+    }
 
 
 @pytest.mark.asyncio
@@ -284,6 +330,39 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
 
 
 @pytest.mark.asyncio
+async def test_manager_removes_previous_result_when_new_turn_starts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """同じsessionの新しいturnを開始した時点で前の結果を削除する。"""
+    writer = _status_writer(tmp_path)
+    manager = agents_server_mcp.AgentsServerManager(writer)
+    backend = _FakeStatusBackend(manager.sessions)
+    manager._codex = backend
+    monkeypatch.setattr(
+        agents_server_mcp._atk_config,
+        "resolve_model_candidates",
+        lambda _model_type: [("codex", "model", "medium")],
+    )
+    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+    writer.activate()
+    started = await manager.start("execute", "実装", str(tmp_path))
+    session = manager.sessions[started["session_id"]]
+    session.status = "completed"
+    session.agent_message = "前の結果"
+    session.turn_completed = True
+    session.touch()
+    writer.flush()
+    result_path = subject.results_directory("root", tmp_path) / f"{session.session_id}.json"
+    assert result_path.exists()
+
+    await manager.send_message(session.session_id, "続行")
+
+    assert not result_path.exists()
+    await manager.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("delayed", [False, True])
 async def test_manager_writes_only_announced_candidate_after_fallback(
     delayed: bool,
@@ -449,6 +528,12 @@ class _FakeStatusBackend:
 
     async def close(self) -> None:
         """外部資源を持たないため何もしない。"""
+
+    async def send_message(self, session: state.SessionState, _prompt: str) -> dict[str, object]:
+        """新しいreply turnを開始する。"""
+        session.turn_seq += 1
+        state._initialize_turn(session)
+        return {"delivery": "reply_started", "previous_result": None}
 
 
 class _UnavailableStatusBackend(_FakeStatusBackend):

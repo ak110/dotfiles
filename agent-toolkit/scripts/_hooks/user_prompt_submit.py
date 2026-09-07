@@ -25,7 +25,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from _plan.locations import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-from _hooks.notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _WARN_TAG,
+    set_warning_session_id,
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_WI_SKILL_NAMES,
@@ -140,6 +146,7 @@ def main(payload_text: str) -> int:
     session_id = payload.get("session_id", "")
     if not isinstance(session_id, str) or not session_id:
         return 0
+    set_warning_session_id(session_id)
 
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt:
@@ -156,7 +163,7 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not first_line.startswith(command_prefix)
     additional_context = None
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
-        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag="warn")
+        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_WARN_TAG)
 
     # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
     # Codexはスキル起動の状態記録だけを行い、計画名を出力しない。

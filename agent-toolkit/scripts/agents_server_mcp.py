@@ -11,9 +11,10 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
-import json
 import logging
 import os
+import pathlib
+import re
 import warnings
 from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
@@ -21,7 +22,7 @@ from uuid import UUID
 
 from _agents_server import claude as claude_backend
 from _agents_server import codex as codex_backend
-from _agents_server import status_file
+from _agents_server import session_registry, status_file
 from _agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
@@ -34,8 +35,13 @@ from _agents_server.state import (
     _validate_model_effort,
     _validate_prompt,
     _validate_shell_request,
+    add_terminal_listener,
     add_touch_listener,
+    finalize_pending_result,
+    record_unobserved_sessions,
+    remove_terminal_listener,
     remove_touch_listener,
+    selected_candidate,
 )
 from _atk import config as _atk_config
 from _common import inherited_venv as _inherited_venv
@@ -66,6 +72,10 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 529（overloaded_error）へ限定する。500（api_error）はサービス内部の失敗であり、
 # 候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({429, 529})
+_TASK_DOCUMENT_PATTERN = re.compile(r"^(?P<path>/\S+\.subagent\.md)(?:\s|$)")
+_REQUIRED_INPUT_PREFIX = "必須入力名: "
+_REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
+_SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 
 
 @dataclasses.dataclass
@@ -115,6 +125,43 @@ def _shell_prompt(command: str, summary_policy: str) -> str:
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
+def _validate_required_prompt_inputs(prompt: str) -> str | None:
+    """通常委譲の起動文をタスク文書の必須入力名と照合する。"""
+    lines = prompt.splitlines()
+    match = _TASK_DOCUMENT_PATTERN.match(lines[0] if lines else "")
+    if match is None:
+        return "必須入力検査を実施できません: 起動文の1行目からタスク文書の絶対パスを取得できません。"
+    task_document = pathlib.Path(match.group("path")).resolve()
+    if not task_document.is_relative_to(_SHARE_DIRECTORY):
+        return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
+    try:
+        document_lines = task_document.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
+    try:
+        input_heading = document_lines.index("## 入力")
+    except ValueError:
+        return f"必須入力検査を実施できません: タスク文書に## 入力がありません: {task_document}"
+    section = document_lines[input_heading + 1 :]
+    next_heading = next((index for index, line in enumerate(section) if line.startswith("## ")), len(section))
+    section = section[:next_heading]
+    try:
+        fence = section.index("```text")
+        marker = section[fence + 1]
+    except (ValueError, IndexError):
+        return f"必須入力検査を実施できません: ## 入力にtextコードブロックがありません: {task_document}"
+    if not marker.startswith(_REQUIRED_INPUT_PREFIX):
+        return f"必須入力検査を実施できません: 必須入力名を取得できません: {task_document}"
+    required_names = marker.removeprefix(_REQUIRED_INPUT_PREFIX).split(",")
+    if not required_names or any(not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name) for name in required_names):
+        return f"必須入力検査を実施できません: 必須入力名の書式が不正です: {task_document}"
+    prompt_lines = lines[1:]
+    missing = [name for name in required_names if not any(line.startswith(f"{name}:") for line in prompt_lines)]
+    if missing:
+        raise ValueError(f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}")
+    return None
+
+
 _DEFAULT_STATUS_WRITER = object()
 
 
@@ -129,21 +176,23 @@ class AgentsServerManager:
             status_writer.sessions if isinstance(status_writer, status_file.StatusFileWriter) else {}
         )
         self.expired_sessions: dict[str, SessionResumeState] = {}
+        self.stopped_sessions: dict[str, SessionResumeState] = {}
         self._pending_resumes: dict[str, _PendingResume] = {}
         self._condition = asyncio.Condition()
         self._resume_lock = asyncio.Lock()
         self._codex: Any = None
         self._claude: Any = None
         self._wait_timeouts: dict[str, float] = {}
+        self._carried_unavailable_candidates: dict[tuple[str, LaunchKind], ModelCandidate] = {}
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = status_file.resolve_status_file_identity(os.environ)
             self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer
-        self._notices_directory = self._status_writer.path.parent / "notices" if self._status_writer is not None else None
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
+        add_terminal_listener(self._carry_over_unavailable_candidate)
 
     def activate(self) -> None:
         """状態ファイル出力を有効化する。"""
@@ -153,7 +202,11 @@ class AgentsServerManager:
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
             if self._codex is None:
-                self._codex = codex_backend.AppServerManager(self.sessions, self._condition)
+                self._codex = codex_backend.AppServerManager(
+                    self.sessions,
+                    self._condition,
+                    publish_registry=True,
+                )
             return self._codex
         if engine == "claude":
             if self._claude is None:
@@ -161,6 +214,7 @@ class AgentsServerManager:
                     self.sessions,
                     self._condition,
                     expire_session=self._expire_session,
+                    publish_registry=True,
                 )
             return self._claude
         raise ValueError(f"unsupported engine: {engine}")
@@ -251,87 +305,126 @@ class AgentsServerManager:
             response["model_type"] = resume_state.model_type
         return response
 
-    def _route_state(
-        self,
-        session_id: str,
+    @staticmethod
+    def _listed_session(
+        session: SessionState | SessionResumeState,
         *,
-        unknown_label: str = "exclude_session_id",
-    ) -> SessionState | SessionResumeState:
-        """全保持状態からsessionを返し、未解決値だけを体系と喪失に分ける。"""
-        if not isinstance(session_id, str) or not session_id:
-            raise ValueError("exclude_session_id must be a non-empty string")
-        session = self.sessions.get(session_id)
-        if session is not None:
-            return session
-        resume_state = self.expired_sessions.get(session_id)
-        if resume_state is not None:
-            return resume_state
-        pending = self._pending_resumes.get(session_id)
-        if pending is not None:
-            return pending.state
-        raise self._unresolved_session_error(session_id, label=unknown_label)
+        status: str,
+        progress: str,
+        result_available: bool,
+    ) -> dict[str, Any]:
+        """sessionを一覧向けの公開項目へ射影する。"""
+        label = session.label
+        if len(label) > 100:
+            label = f"{label[:100]}…"
+        return {
+            "session_id": session.session_id,
+            "status": status,
+            "progress": progress,
+            "model_type": session.model_type,
+            "launch_kind": session.launch_kind,
+            "label": label,
+            "result_available": result_available,
+        }
 
-    def list_sessions(self) -> dict[str, list[dict[str, Any]]]:
-        """保持中のsessionを開始時刻順の公開項目へ射影する。"""
+    def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
+        """保持中のsessionを開始時刻順の公開項目へ射影する。
+
+        未回収結果を持つsessionは、終端済み又は期限切れでも既定の一覧へ残す。
+        """
         loop_time = asyncio.get_running_loop().time()
         for session_id, session in tuple(self.sessions.items()):
             if session.retention_deadline is not None and loop_time >= session.retention_deadline:
                 self._expire_session(session_id)
 
-        listed: dict[str, dict[str, Any]] = {}
+        listed: dict[str, tuple[str, dict[str, Any]]] = {}
         for session in self.sessions.values():
-            listed[session.session_id] = {
-                "session_id": session.session_id,
-                "engine": session.engine,
-                "model": session.model,
-                "effort": session.effort,
-                "model_type": session.model_type,
-                "launch_kind": session.launch_kind,
-                "status": session.status,
-                "progress": session.progress,
-                "label": session.label,
-                "started_at": session.started_at,
-                "updated_at": session.updated_at,
-                "result_available": session.result_available,
-            }
+            listed[session.session_id] = (
+                session.started_at,
+                self._listed_session(
+                    session,
+                    status=session.status,
+                    progress=session.progress,
+                    result_available=session.result_available,
+                ),
+            )
         for pending in self._pending_resumes.values():
             session = pending.state
             listed.setdefault(
                 session.session_id,
-                {
-                    "session_id": session.session_id,
-                    "engine": session.engine,
-                    "model": session.model,
-                    "effort": session.effort,
-                    "model_type": session.model_type,
-                    "launch_kind": session.launch_kind,
-                    "status": "running",
-                    "progress": "",
-                    "label": session.label,
-                    "started_at": session.started_at,
-                    "updated_at": session.updated_at,
-                    "result_available": False,
-                },
+                (
+                    session.started_at,
+                    self._listed_session(session, status="running", progress="", result_available=False),
+                ),
             )
         for session in self.expired_sessions.values():
             listed.setdefault(
                 session.session_id,
-                {
-                    "session_id": session.session_id,
-                    "engine": session.engine,
-                    "model": session.model,
-                    "effort": session.effort,
-                    "model_type": session.model_type,
-                    "launch_kind": session.launch_kind,
-                    "status": "expired",
-                    "progress": "",
-                    "label": session.label,
-                    "started_at": session.started_at,
-                    "updated_at": session.updated_at,
-                    "result_available": not session.result_delivered and session.finalized_at is not None,
-                },
+                (
+                    session.started_at,
+                    self._listed_session(
+                        session,
+                        status="expired",
+                        progress="",
+                        result_available=not session.result_delivered and session.finalized_at is not None,
+                    ),
+                ),
             )
-        return {"sessions": sorted(listed.values(), key=lambda session: session["started_at"])}
+        sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: item[0])]
+        if include_terminated:
+            return {"sessions": sessions, "omitted": 0}
+        visible = [
+            session
+            for session in sessions
+            if session["result_available"] or session["status"] not in TERMINAL_STATUSES | {"expired"}
+        ]
+        return {"sessions": visible, "omitted": len(sessions) - len(visible)}
+
+    async def stop(self, session_id: str) -> dict[str, Any]:
+        """終端済みsessionを破棄し、会話再開用の最小状態だけを保持する。"""
+        if not isinstance(session_id, str) or not session_id:
+            raise ValueError("session_id must be a non-empty string")
+        if session_id in self._pending_resumes:
+            raise ValueError(f"session is running: {session_id}; issue kill before stop if interruption is required")
+        session = self.sessions.get(session_id)
+        if (
+            session is not None
+            and session.retention_deadline is not None
+            and asyncio.get_running_loop().time() >= session.retention_deadline
+        ):
+            self._expire_session(session_id)
+            session = None
+        if session is not None:
+            if not session.terminal:
+                raise ValueError(f"session is running: {session_id}; issue kill before stop if interruption is required")
+            resume_state = SessionResumeState.from_session(session)
+        else:
+            resume_state = self.expired_sessions.get(session_id)
+            if resume_state is None:
+                raise self._unresolved_session_error(session_id, label="session")
+        self.sessions.pop(session_id, None)
+        self.expired_sessions.pop(session_id, None)
+        self.stopped_sessions[session_id] = resume_state
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session_id)
+            self._status_writer.schedule()
+        await self._backend(resume_state.engine).release_session(session_id)
+        response: dict[str, Any] = {
+            "session_id": session_id,
+            "engine": resume_state.engine,
+            "status": "stopped",
+            "progress": "",
+            "turn_seq": resume_state.turn_seq,
+        }
+        if resume_state.model_type is not None:
+            response["model_type"] = resume_state.model_type
+        return response
+
+    async def _stop_after_terminal_response(self, response: dict[str, Any], stop: bool) -> dict[str, Any]:
+        """要求された終端応答に限りsessionを破棄し、元の応答を維持する。"""
+        if stop and response.get("status") in {*TERMINAL_STATUSES, "expired"}:
+            await self.stop(response["session_id"])
+        return response
 
     @staticmethod
     def _unresolved_session_error(session_id: str, *, label: str) -> ValueError:
@@ -356,33 +449,40 @@ class AgentsServerManager:
         model_type: str,
         *,
         launch_kind: LaunchKind,
-        exclude_session_id: str | None,
     ) -> tuple[list[ModelCandidate], frozenset[ModelCandidate]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。"""
         candidates = _atk_config.resolve_model_candidates(model_type)
-        excluded: frozenset[ModelCandidate] = frozenset()
-        if exclude_session_id is not None:
-            source = self._route_state(exclude_session_id)
-            if source.model_type != model_type or source.launch_kind != launch_kind:
-                raise ValueError(
-                    "exclude_session_id start conditions differ: "
-                    f"source model_type={source.model_type}, launch_kind={source.launch_kind}; "
-                    f"requested model_type={model_type}, launch_kind={launch_kind}"
-                )
-            if source.model is None or source.effort is None:
-                raise ValueError(f"exclude_session_id has no selected candidate: {exclude_session_id}")
-            excluded = source.excluded_candidates | frozenset({(source.engine, source.model, source.effort)})
+        if not candidates:
+            raise ValueError(f"no model candidates remain for model_type: {model_type}")
+        key = (model_type, launch_kind)
+        carried = self._carried_unavailable_candidates.get(key)
+        excluded = frozenset({carried}) if carried is not None else frozenset()
         remaining = [item for item in candidates if item not in excluded]
         if not remaining:
-            raise ValueError(f"no model candidates remain for model_type: {model_type}")
+            self._carried_unavailable_candidates.pop(key, None)
+            return candidates, frozenset()
         return remaining, excluded
+
+    def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
+        """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。
+
+        終端結果が確定した時点の通知として`SessionState.touch`から呼ぶ。
+        結果本文の受領、`stop`による破棄、保持期限切れのいずれを経ても記録が漏れないよう、
+        記録の契機を終端の確定点だけに置く。共有の通知先は全managerへ届くため、
+        自身が保持するsessionだけを記録の対象とする。
+        """
+        if self.sessions.get(session.session_id) is not session:
+            return
+        candidate = selected_candidate(session)
+        if not _engine_unavailable(session) or candidate is None or session.model_type is None:
+            return
+        self._carried_unavailable_candidates[(session.model_type, session.launch_kind)] = candidate
 
     async def start(
         self,
         model_type: str,
         prompt: str,
         cwd: str,
-        exclude_session_id: str | None = None,
         *,
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
@@ -397,7 +497,6 @@ class AgentsServerManager:
         candidates, excluded = self._resolve_start_candidates(
             model_type,
             launch_kind=launch_kind,
-            exclude_session_id=exclude_session_id,
         )
         _validate_prompt(prompt)
         _validate_cwd(cwd)
@@ -435,6 +534,7 @@ class AgentsServerManager:
                 "turn_seq": session.turn_seq,
             }
             if not _engine_unavailable(session):
+                self._carried_unavailable_candidates.pop((model_type, launch_kind), None)
                 session.label = display_label
                 session.announced = True
                 session.touch()
@@ -469,7 +569,6 @@ class AgentsServerManager:
         fast: bool,
         prompt: str,
         cwd: str,
-        exclude_session_id: str | None = None,
     ) -> dict[str, Any]:
         """探索専用の軽量な起動条件でturnを開始する。"""
         model_type = "explore_fast" if fast else "explore"
@@ -477,7 +576,6 @@ class AgentsServerManager:
             model_type,
             prompt,
             cwd,
-            exclude_session_id,
             launch_kind="explore",
         )
 
@@ -486,7 +584,6 @@ class AgentsServerManager:
         command: str,
         cwd: str,
         summary_policy: str,
-        exclude_session_id: str | None = None,
     ) -> dict[str, Any]:
         """コマンド実行専用の軽量な起動条件でturnを開始する。"""
         _validate_shell_request(command, summary_policy)
@@ -494,7 +591,6 @@ class AgentsServerManager:
             "explore_fast",
             _shell_prompt(command, summary_policy),
             cwd,
-            exclude_session_id,
             launch_kind="shell",
             label=command,
         )
@@ -511,14 +607,20 @@ class AgentsServerManager:
         self._wait_timeouts[request_bucket] = resolved
         return resolved
 
-    async def wait(self, session_id: str, timeout: float | None = None, request_bucket: str = "main") -> dict[str, Any]:
+    async def wait(
+        self,
+        session_id: str,
+        timeout: float | None = None,
+        request_bucket: str = "main",
+        stop: bool = False,
+    ) -> dict[str, Any]:
         """sessionの終端を待ち、登録簿の現在値から結果本文を返す。
 
         `timeout`が`None`の場合は、プロンプトキャッシュの保持期間から導出した上限を使う。
         """
         expired_response = self._expired_result_response(session_id)
         if expired_response is not None:
-            return expired_response
+            return await self._stop_after_terminal_response(expired_response, stop)
         if timeout is None:
             timeout = await self._resolve_wait_timeout(request_bucket)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
@@ -529,9 +631,10 @@ class AgentsServerManager:
         if pending is not None:
             notices = self._take_notices(session_id)
             if notices:
-                return self._response_with_notices(self._pending_resume_status(pending), notices)
+                response = self._response_with_notices(self._pending_resume_status(pending), notices)
+                return await self._stop_after_terminal_response(response, stop)
             if timeout == 0:
-                return self._pending_resume_status(pending)
+                return await self._stop_after_terminal_response(self._pending_resume_status(pending), stop)
             while self._pending_resumes.get(session_id) is pending and not pending.task.done():
                 remaining = deadline - loop.time()
                 if remaining <= 0:
@@ -541,13 +644,19 @@ class AgentsServerManager:
                 except TimeoutError:
                     notices = self._take_notices(session_id)
                     if notices:
-                        return self._response_with_notices(self._pending_resume_status(pending), notices)
+                        response = self._response_with_notices(self._pending_resume_status(pending), notices)
+                        return await self._stop_after_terminal_response(response, stop)
         session = self._get_session(session_id)
+        await self._advance_child_session_wait(session)
         notices = self._take_notices(session_id)
         if session.result_available or notices:
-            return self._response_with_notices(self._result_response(session), notices)
+            response = self._response_with_notices(self._result_response(session), notices)
+            return await self._stop_after_terminal_response(response, stop)
         if not session.result_available:
             while not session.result_available:
+                await self._advance_child_session_wait(session)
+                if session.result_available:
+                    break
                 remaining = deadline - loop.time()
                 if remaining <= 0:
                     break
@@ -557,44 +666,56 @@ class AgentsServerManager:
                             self._condition.wait_for(
                                 lambda: (current := self.sessions.get(session_id)) is None or current.result_available
                             ),
-                            timeout=min(1.0, remaining),
+                            timeout=min(0.1 if session.awaiting_auto_resume else 1.0, remaining),
                         )
                 session = self._get_session(session_id)
+                await self._advance_child_session_wait(session)
                 notices = self._take_notices(session_id)
                 if session.result_available or notices:
-                    return self._response_with_notices(self._result_response(session), notices)
-        return self._result_response(self._get_session(session_id))
+                    response = self._response_with_notices(self._result_response(session), notices)
+                    return await self._stop_after_terminal_response(response, stop)
+        return await self._stop_after_terminal_response(self._result_response(self._get_session(session_id)), stop)
+
+    async def _advance_child_session_wait(self, session: SessionState) -> None:
+        """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
+        if not session.awaiting_auto_resume or session.pending_result is None:
+            return
+        terminal = {session_id for session_id in session.live_child_session_ids if session_registry.is_terminal(session_id)}
+        for session_id in terminal:
+            session.live_child_session_ids.discard(session_id)
+            session.terminal_child_session_ids.add(session_id)
+            session_registry.remove(session_id)
+
+        if not session.live_child_session_ids and session.terminal_child_session_ids and not session.live_task_ids:
+            identifiers = sorted(session.terminal_child_session_ids)
+            prompt = (
+                "あなたが`agents_server`で起動した次のsessionは終端した。\n"
+                f"終端したsession: {', '.join(identifiers)}\n"
+                "各sessionの結果を確認し、所定の返却形式を返せ。"
+            )
+            session.auto_resume_consumed = True
+            finalize_pending_result(session, touch=False)
+            try:
+                await self._backend(session.engine).send_message(session, prompt)
+            except Exception:
+                session.touch()
+                raise
+            if self._status_writer is not None:
+                self._status_writer.delete_result(session.session_id)
+            return
+
+        deadline = session.auto_resume_deadline
+        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+            unobserved = set(session.live_child_session_ids)
+            finalize_pending_result(session)
+            if unobserved:
+                record_unobserved_sessions(session, unobserved)
 
     def _take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
-        if self._notices_directory is None:
+        if self._status_writer is None:
             return []
-        try:
-            paths = tuple(self._notices_directory.iterdir())
-        except FileNotFoundError:
-            return []
-        matched: list[tuple[str, str, dict[str, str]]] = []
-        for path in paths:
-            if not path.is_file() or path.suffix != ".json":
-                continue
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
-                continue
-            if (
-                not isinstance(payload, dict)
-                or payload.get("version") != 1
-                or payload.get("session_id") != session_id
-                or not isinstance(payload.get("sent_at"), str)
-                or not isinstance(payload.get("body"), str)
-            ):
-                continue
-            notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
-            matched.append((payload["sent_at"], path.name, notice))
-        matched.sort(key=lambda item: (item[0], item[1]))
-        for _sent_at, file_name, _notice in matched:
-            (self._notices_directory / file_name).unlink()
-        return [notice for _sent_at, _file_name, notice in matched]
+        return self._status_writer.take_notices(session_id)
 
     @staticmethod
     def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
@@ -644,6 +765,8 @@ class AgentsServerManager:
                 excluded_candidates=resume_state.excluded_candidates,
                 turn_seq=resume_state.turn_seq,
             )
+            if self._status_writer is not None:
+                self._status_writer.delete_result(session_id)
             session.announced = True
             session.touch()
             return session
@@ -673,6 +796,7 @@ class AgentsServerManager:
         """期限切れ状態を一意な進行中再開操作へ原子的に移す。"""
         session_id = resume_state.session_id
         self.expired_sessions.pop(session_id, None)
+        self.stopped_sessions.pop(session_id, None)
         resume_prompt = ResumePrompt(prompt)
         task = asyncio.create_task(self._run_resume(resume_state, resume_prompt))
         pending = _PendingResume(
@@ -790,23 +914,6 @@ class AgentsServerManager:
         _validate_prompt(prompt)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ValueError("timeout must be positive")
-        route_state = self._route_state(session_id, unknown_label="session")
-        if route_state.model_type is not None:
-            candidates = _atk_config.resolve_model_candidates(route_state.model_type)
-            actual = (route_state.engine, route_state.model, route_state.effort)
-            if actual not in candidates:
-                expected = next((item for item in candidates if item not in route_state.excluded_candidates), None)
-                if expected is None:
-                    change = "no candidate remains"
-                else:
-                    names = ("engine", "model", "effort")
-                    changes = [
-                        f"{name}: {before} -> {after}"
-                        for name, before, after in zip(names, actual, expected, strict=True)
-                        if before != after
-                    ]
-                    change = ", ".join(changes)
-                raise ValueError(f"configuration changed: {session_id}; {change}")
         try:
             async with asyncio.timeout(float(timeout)):
                 while True:
@@ -829,6 +936,8 @@ class AgentsServerManager:
                         ):
                             self._expire_session(session_id)
                         resume_state = self.expired_sessions.get(session_id)
+                        if resume_state is None:
+                            resume_state = self.stopped_sessions.get(session_id)
                         if resume_state is not None:
                             return await self._resume_and_reply(resume_state, prompt)
                         session = self._get_session(session_id)
@@ -852,6 +961,8 @@ class AgentsServerManager:
                                 previous_result,
                                 previous_result_deadline,
                             )
+                    if self._status_writer is not None:
+                        self._status_writer.delete_result(session_id)
                     delivery = result["delivery"]
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
@@ -866,7 +977,12 @@ class AgentsServerManager:
                 f"send_message timed out: {session_id}; delivery is undetermined, observe the session with wait"
             ) from exc
 
-    async def kill(self, session_id: str, timeout: float = DEFAULT_KILL_TIMEOUT) -> dict[str, Any]:
+    async def kill(
+        self,
+        session_id: str,
+        timeout: float = DEFAULT_KILL_TIMEOUT,
+        stop: bool = False,
+    ) -> dict[str, Any]:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
@@ -885,18 +1001,18 @@ class AgentsServerManager:
             if interrupt_requested:
                 response = self._result_response(session)
                 response["kill_requested"] = True
-                return response
+                return await self._stop_after_terminal_response(response, stop)
         else:
             expired_response = self._expired_kill_response(session_id)
             if expired_response is not None:
-                return expired_response
+                return await self._stop_after_terminal_response(expired_response, stop)
             session = self._get_session(session_id)
         started_terminal = session.terminal
         requested_before_call = session.interrupt_requested
         if started_terminal:
             response = self._result_response(session)
             response["kill_requested"] = False
-            return response
+            return await self._stop_after_terminal_response(response, stop)
 
         requested = requested_before_call
         backend = self._backend(session.engine)
@@ -928,7 +1044,7 @@ class AgentsServerManager:
                     if session.terminal:
                         response = self._result_response(session)
                         response["kill_requested"] = False
-                        return response
+                        return await self._stop_after_terminal_response(response, stop)
                 session.interrupt_requested = True
                 session.touch()
                 try:
@@ -955,7 +1071,7 @@ class AgentsServerManager:
         if not requested:
             response = self._result_response(session)
             response["kill_requested"] = False
-            return response
+            return await self._stop_after_terminal_response(response, stop)
         if timeout > 0:
             assert deadline is not None
             try:
@@ -970,7 +1086,7 @@ class AgentsServerManager:
                 ) from exc
         response = self._result_response(session)
         response["kill_requested"] = True
-        return response
+        return await self._stop_after_terminal_response(response, stop)
 
     async def _notify_waiters(self) -> None:
         async with self._condition:
@@ -990,6 +1106,7 @@ class AgentsServerManager:
         backends = tuple(backend for backend in (self._codex, self._claude) if backend is not None)
         for backend in backends:
             await backend.close()
+        remove_terminal_listener(self._carry_over_unavailable_candidate)
         if self._status_writer is not None:
             remove_touch_listener(self._status_writer.schedule)
             self._status_writer.deactivate()
@@ -1016,7 +1133,7 @@ with warnings.catch_warnings():
             "CodexまたはClaudeへの非同期委譲。承認操作は公開しない。\n"
             "`start`と`start_explore`でsessionを開始し、`start_shell`でコマンドの実行と要約を委譲する。"
             "`wait`で終端と結果本文を受け取る。`list`は保持中のsessionの状態をまとめて返す。"
-            "継続は`send_message`、実行中turnの中断は`kill`で行う。\n"
+            "継続は`send_message`、実行中turnの中断は`kill`、終端済みsessionの明示的な破棄は`stop`で行う。\n"
             "`start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、"
             "同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。"
             "観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。\n"
@@ -1040,25 +1157,20 @@ async def start(
     ],
     prompt: str,
     cwd: str,
-    exclude_session_id: Annotated[
-        str | None,
-        Field(
-            description=(
-                "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
-                "同じ`model_type`で開始した通常起動のsessionだけを渡す。"
-            )
-        ),
-    ] = None,
 ) -> dict[str, Any]:
     """工程別モデル設定の候補から委譲先turnを開始する。
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
-    応答は`session_id`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
+    応答は`session_id`、`turn_seq`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
     全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
     これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
     """
-    return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
+    input_validation_warning = _validate_required_prompt_inputs(prompt)
+    response = await _MANAGER.start(model_type, prompt, cwd)
+    if input_validation_warning is not None:
+        response["input_validation_warning"] = input_validation_warning
+    return response
 
 
 @mcp.tool(name="start_explore", structured_output=True)
@@ -1074,15 +1186,6 @@ async def start_explore(
             )
         ),
     ] = True,
-    exclude_session_id: Annotated[
-        str | None,
-        Field(
-            description=(
-                "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
-                "同じ`fast`の値で開始した探索起動のsessionだけを渡す。"
-            )
-        ),
-    ] = None,
 ) -> dict[str, Any]:
     """探索専用の軽量な起動条件で委譲先turnを開始する。
 
@@ -1096,7 +1199,7 @@ async def start_explore(
     文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
-    return await _MANAGER.start_explore(fast, prompt, cwd, exclude_session_id)
+    return await _MANAGER.start_explore(fast, prompt, cwd)
 
 
 @mcp.tool(name="start_shell", structured_output=True)
@@ -1104,15 +1207,6 @@ async def start_shell(
     command: Annotated[str, Field(description="実行するコマンド。委譲先がシェルで実行する。")],
     cwd: Annotated[str, Field(description="実行時の作業ディレクトリ。既存ディレクトリの絶対パスとする。")],
     summary_policy: Annotated[str, Field(description="結果の要約方針。報告へ含める値と粒度を書く。")],
-    exclude_session_id: Annotated[
-        str | None,
-        Field(
-            description=(
-                "既に起動したsessionのID。渡したsessionが選択した候補を除外集合へ加え、残る候補の先頭で起動する。"
-                "シェル実行起動のsessionだけを渡す。"
-            )
-        ),
-    ] = None,
 ) -> dict[str, Any]:
     """コマンドを実行して結果を要約する委譲先turnを開始する。
 
@@ -1126,7 +1220,7 @@ async def start_shell(
     文脈量が小さいセッションの初期では直接実行が相対的に有利になる。
     応答と、候補が尽きた場合の扱いは`start`と同じである。
     """
-    return await _MANAGER.start_shell(command, cwd, summary_policy, exclude_session_id)
+    return await _MANAGER.start_shell(command, cwd, summary_policy)
 
 
 @mcp.tool(name="wait", structured_output=True)
@@ -1142,11 +1236,19 @@ async def wait(
         str,
         Field(description="既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"),
     ] = "main",
+    stop: Annotated[
+        bool,
+        Field(description="終端結果を返した応答に限り、同じsessionを応答後に破棄する。"),
+    ] = False,
 ) -> dict[str, Any]:
     """委譲先の終端を待ち、終端時だけ結果本文を返す。
 
     `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
+    呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
+    本ツールの背景移行で待たず、`atk agents-wait <session_id>`を
+    実行ホストの背景ジョブとして起動して待機表明でターンを終える。
+    当該背景ジョブの完了通知を受領した後に`timeout=0`の本ツールを1回発行し、結果本文の配送を確定させる。
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
@@ -1157,7 +1259,7 @@ async def wait(
     `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して`wait`を再発行しない。
     応答へ載せた通知は回収済みとして再び返さない。
     """
-    return await _MANAGER.wait(session_id, timeout, request_bucket)
+    return await _MANAGER.wait(session_id, timeout, request_bucket, stop)
 
 
 @mcp.tool(name="send_message", structured_output=True)
@@ -1178,12 +1280,11 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`で配送結果を示す。直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
-    `configuration changed: <session_id>`は、
-    当該sessionが採用しているengine・model・effortが工程別モデル設定の候補列から外れたことを示す。
-    本文が続けて変わった項目と変更前後の値を示すため、検収済み状態を渡して新規起動する。
-    候補列の記述だけが変わり採用済みの値が候補列に残る場合は、同じsessionの継続に成功する。
-    `unknown session: <session_id>`だけが継続不能を示す。
+    応答は`delivery`で配送結果を示し、`turn_seq`を含む。
+    直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
+    sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
+    採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
+    保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
     return await _MANAGER.send_message(session_id, prompt, timeout)
 
@@ -1197,6 +1298,10 @@ async def kill(
             description="中断要求後に終端を待つ上限秒数。固有のtimeout要件がなければ引数を省略して通常既定を使う。0は中断要求配送後の現状態を返す。"
         ),
     ] = DEFAULT_KILL_TIMEOUT,
+    stop: Annotated[
+        bool,
+        Field(description="終端結果を返した応答に限り、同じsessionを応答後に破棄する。"),
+    ] = False,
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終端を待つ。
 
@@ -1208,19 +1313,32 @@ async def kill(
     timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`progress`へ空文字列、`kill_requested`へ`false`を設定した応答を返す。応答の項目は他の成功応答と同じとする。
     """
-    return await _MANAGER.kill(session_id, timeout)
+    return await _MANAGER.kill(session_id, timeout, stop)
+
+
+@mcp.tool(name="stop", structured_output=True)
+async def stop_session(session_id: str) -> dict[str, Any]:
+    """再開する予定の無い終端済みsessionを明示的に破棄する。
+
+    statusLineの表示対象と`list`の応答から除き、backendがsession専用に保持する資源を解放する。
+    実行中turnを持つsessionは破棄しない。中断が必要な場合は先に`kill`を発行する。
+    破棄後も同じ`session_id`への`send_message`で会話を暗黙再開できる。
+    """
+    return await _MANAGER.stop(session_id)
 
 
 @mcp.tool(name="list", structured_output=True)
-async def list_sessions() -> dict[str, list[dict[str, Any]]]:
+async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
-    各sessionの`session_id`、`engine`、`model`、`effort`、`model_type`、`launch_kind`、`status`、`progress`、`label`、`started_at`、`updated_at`及び`result_available`を返す。
+    各sessionの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返す。
+    `label`は起動文又はコマンドの先頭100文字までとし、切り詰めた場合は末尾へ`…`を付す。
     結果本文は返さないため、終端の観測と結果の受領は`wait`で行う。
-    終端結果の保持期限を過ぎたsessionは`status`へ`expired`、`progress`へ空文字列を設定して含める。
+    既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。
+    全件が必要な場合は`include_terminated`へ真を渡す。このとき`omitted`は0となる。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
-    return _MANAGER.list_sessions()
+    return _MANAGER.list_sessions(include_terminated=include_terminated)
 
 
 def _prepare_child_environment() -> None:

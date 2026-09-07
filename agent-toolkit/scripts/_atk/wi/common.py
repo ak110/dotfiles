@@ -214,9 +214,8 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
         (state_dir / ".gitkeep").touch()
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
     _run_git(["add", "-A"], cwd=root)
-    subprocess.run(
+    _run_git(
         [
-            "git",
             "-c",
             "user.email=agent-toolkit@localhost",
             "-c",
@@ -226,7 +225,6 @@ def _init_local_private_notes_repo(root: pathlib.Path) -> None:
             "chore: initialize local private-notes repository",
         ],
         cwd=root,
-        check=True,
     )
 
 
@@ -250,7 +248,7 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
     """gitコマンドをcwdで実行し、失敗時は例外を送出する。"""
-    _git_command.run(args, cwd, check=True)
+    _git_command.run_quiet(args, cwd)
 
 
 def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:
@@ -704,8 +702,7 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
 def entry_type_from_metadata(path: pathlib.Path, metadata: Mapping[str, object]) -> str:
     """解析済みfrontmatterの種別を検証して返す。
 
-    保存値は読み取り互換として正規化する。`atk wi migrate`の実行後は現行の値だけが残るため、
-    正規化は移行前の保存値を持つ項目だけを通る。
+    保存値は読み取り互換として正規化する。旧値を持つ項目は現行の種別として扱う。
     """
     entry_type = normalized_wi_type(metadata.get("type"))
     if entry_type is None:

@@ -6,6 +6,7 @@ import subprocess
 import typing
 from pathlib import Path
 
+import httpx
 import pytest
 
 from pytools._internal import claude_common, winutils
@@ -41,6 +42,7 @@ class _MiseSubprocessStub:
         sub_args = tuple(cmd[1:])
         self.records.append(
             {
+                "cmd": list(cmd),
                 "args": list(sub_args),
                 "env_overrides": kwargs.get("env_overrides"),
                 "timeout": kwargs.get("timeout"),
@@ -112,12 +114,78 @@ class TestFindMiseBinary:
         assert _setup_mise.find_mise_binary() is None
 
 
-class TestRunWithoutMise:
-    """mise バイナリ未検出時は何もしない。"""
+class TestRunMiseInstallation:
+    """mise未検出時の自動導入と再解決を検証する。"""
 
-    def test_skips_when_binary_missing(self, monkeypatch: pytest.MonkeyPatch):
+    def test_run_installs_mise_then_continues(self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub):
+        binaries = iter((None, Path("/fake/mise")))
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: next(binaries))
+        installs: list[bool] = []
+
+        def install() -> bool:
+            installs.append(True)
+            return True
+
+        monkeypatch.setattr(_setup_mise, "_ensure_mise_installed", install)
+
+        assert _setup_mise.run() is True
+        assert installs == [True]
+        assert mise_stub.calls_for("install")
+
+    def test_run_skips_when_install_does_not_resolve(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
         monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: None)
+        installs: list[bool] = []
+
+        def install() -> bool:
+            installs.append(True)
+            return False
+
+        monkeypatch.setattr(_setup_mise, "_ensure_mise_installed", install)
+
         assert _setup_mise.run() is False
+        assert installs == [True]
+        assert not mise_stub.records
+
+    def test_run_does_not_install_when_mise_is_resolved(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
+        monkeypatch.setattr(
+            _setup_mise,
+            "_ensure_mise_installed",
+            lambda: pytest.fail("導入済み環境でインストーラーを呼んだ"),
+        )
+        assert _setup_mise.run() is True
+        assert mise_stub.calls_for("install")
+
+    def test_run_skips_when_installer_download_fails(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: None)
+
+        class _FailingClient:
+            def get(self, _url: str) -> typing.NoReturn:
+                raise httpx.ConnectError("offline")
+
+            def close(self) -> None:
+                return None
+
+        monkeypatch.setattr(_setup_mise.httpx, "Client", lambda **_kwargs: _FailingClient())
+        assert _setup_mise.run() is False
+        assert not mise_stub.records
+
+    def test_run_installs_mise_with_winget_on_windows(
+        self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub
+    ) -> None:
+        binaries = iter((None, Path("/fake/mise")))
+        monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: next(binaries))
+        monkeypatch.setattr(_setup_mise, "_is_windows", lambda: True)
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+
+        assert _setup_mise.run() is True
+        assert [record["cmd"] for record in mise_stub.records].count(["winget", "install", "jdx.mise"]) == 1
+        assert mise_stub.calls_for("install")
 
 
 class TestEnsureMiseUpToDate:
@@ -319,6 +387,15 @@ class TestRunInstallStep:
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
         assert _setup_mise.run() is True
         assert mise_stub.calls_for("install")[0]["cwd"] is None
+
+    def test_run_reshims_after_install(self, mise_stub: _MiseSubprocessStub) -> None:
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+
+        _setup_mise.run()
+
+        assert len(mise_stub.calls_for("reshim")) == 1
+        commands = [record["args"][0] for record in mise_stub.records]
+        assert commands.index("reshim") > commands.index("install")
 
 
 class _WinregFake:

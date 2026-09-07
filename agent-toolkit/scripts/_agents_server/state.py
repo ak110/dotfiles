@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import datetime
+import json
 import pathlib
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal
+
+from _agents_server import session_registry
 
 RESULT_RETENTION_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
@@ -55,6 +58,8 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
 AUTO_RESUME_NOTICE = (
     "この実行経路は、あなたが起動した委譲先（サブエージェント）の完了通知により、"
     "同じsessionを一度だけ自動的に再開する。\n"
+    "`agents_server`で起動したsessionを待つ場合も、当該sessionの終端後に同じ再開が働き、"
+    "当該ターンにつき一度だけ継続指示が届く。\n"
     "当該委譲先の完了を待つ場合は`待機中: <待機対象>`の1行だけを出力して当該ターンを終え、"
     "再開したターンで所定の返却形式を返す。\n"
     "背景ジョブはこの自動再開の対象ではない。背景ジョブの終了状態は同じターンの中で確定してから報告する。"
@@ -62,6 +67,7 @@ AUTO_RESUME_NOTICE = (
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
+_TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
 
 
 def add_touch_listener(listener: Callable[[], None]) -> None:
@@ -72,6 +78,16 @@ def add_touch_listener(listener: Callable[[], None]) -> None:
 def remove_touch_listener(listener: Callable[[], None]) -> None:
     """session状態の更新通知先を解除する。"""
     _TOUCH_LISTENERS.discard(listener)
+
+
+def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
+    """turnの終端結果が確定したsessionの通知先を登録する。"""
+    _TERMINAL_LISTENERS.add(listener)
+
+
+def remove_terminal_listener(listener: Callable[[SessionState], None]) -> None:
+    """turnの終端結果が確定したsessionの通知先を解除する。"""
+    _TERMINAL_LISTENERS.discard(listener)
 
 
 class SessionOwnerGoneError(RuntimeError):
@@ -228,6 +244,9 @@ class SessionState:
     turn_completed: bool = False
     failure_pending_completion: bool = False
     live_task_ids: set[str] = dataclasses.field(default_factory=set)
+    live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
+    terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
+    child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
     awaiting_auto_resume: bool = False
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
@@ -238,6 +257,9 @@ class SessionState:
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
     _progress_text: str = dataclasses.field(default="", repr=False)
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
+    publish_registry: bool = dataclasses.field(default=False, repr=False)
+    _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
+    _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
     def terminal(self) -> bool:
@@ -247,7 +269,7 @@ class SessionState:
     @property
     def result_available(self) -> bool:
         """終端結果を返せる状態であるかを返す。"""
-        return self.terminal and self.turn_completed and not self.turn_start_ambiguous
+        return self.terminal and self.turn_completed and not self.turn_start_ambiguous and not self.awaiting_auto_resume
 
     @property
     def progress(self) -> str:
@@ -265,7 +287,11 @@ class SessionState:
         self.progress_items.clear()
 
     def touch(self) -> None:
-        """状態の更新時刻を現在時刻へ更新する。"""
+        """状態の更新時刻を現在時刻へ更新する。
+
+        turnの終端結果が確定した時点で、登録済みの終端通知先へ当該sessionを1回だけ渡す。
+        turnを再開した後の終端では、同じ通知を改めて1回行う。
+        """
         self.updated_at = _utc_now()
         if self.result_available:
             if self.finalized_at is None:
@@ -274,6 +300,16 @@ class SessionState:
                 self.retention_deadline = asyncio.get_running_loop().time() + RESULT_RETENTION_SECONDS
         else:
             self.retention_deadline = None
+        registry_terminal = self.result_available
+        if self.publish_registry and not self.result_delivered and registry_terminal != self._published_registry_terminal:
+            session_registry.publish(self.session_id, terminal=registry_terminal)
+            self._published_registry_terminal = registry_terminal
+        if not registry_terminal:
+            self._terminal_notified = False
+        elif not self._terminal_notified:
+            self._terminal_notified = True
+            for terminal_listener in tuple(_TERMINAL_LISTENERS):
+                terminal_listener(self)
         for listener in tuple(_TOUCH_LISTENERS):
             listener()
 
@@ -356,6 +392,13 @@ class SessionResumeState:
         )
 
 
+def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandidate | None:
+    """sessionの起動時に確定した候補を返す。"""
+    if session.model is None or session.effort is None:
+        return None
+    return session.engine, session.model, session.effort
+
+
 def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:
     """新しいturnの開始前に共有状態を初期化する。"""
     session.turn_id = ""
@@ -374,6 +417,9 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     session.interrupt_requested = False
     session.turn_completed = False
     session.failure_pending_completion = False
+    session.live_child_session_ids.clear()
+    session.terminal_child_session_ids.clear()
+    session.child_tool_uses.clear()
     session.awaiting_auto_resume = False
     session.auto_resume_consumed = False
     session.auto_resume_deadline = None
@@ -384,6 +430,135 @@ def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> N
     if reset_progress:
         session.reset_progress()
     session.touch()
+
+
+def consume_claude_agents_server_message(session: SessionState, message: Any) -> None:
+    """Claude SDKのツール利用と結果から孫sessionの状態を更新する。"""
+    for block in _content_blocks(message):
+        tool_use_id = _block_value(block, "id")
+        tool_name = _block_value(block, "name")
+        tool_input = _block_value(block, "input")
+        if isinstance(tool_use_id, str) and isinstance(tool_name, str):
+            normalized = _agents_server_tool_name(tool_name)
+            if normalized is not None:
+                arguments = dict(tool_input) if isinstance(tool_input, Mapping) else {}
+                session.child_tool_uses[tool_use_id] = (normalized, arguments)
+                continue
+
+        tool_use_id = _block_value(block, "tool_use_id")
+        if not isinstance(tool_use_id, str):
+            continue
+        tool_use = session.child_tool_uses.pop(tool_use_id, None)
+        if tool_use is None:
+            continue
+        result = _structured_tool_result(_block_value(block, "content"))
+        if result is not None:
+            consume_agents_server_tool_result(session, tool_use[0], tool_use[1], result)
+
+
+def consume_agents_server_tool_result(
+    session: SessionState,
+    tool_name: str,
+    arguments: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    """agents_serverツールの結果を孫session集合へ反映する。"""
+    normalized = _agents_server_tool_name(tool_name)
+    if normalized in {"start", "start_explore", "start_shell"}:
+        session_id = result.get("session_id")
+        if isinstance(session_id, str) and session_id:
+            session.live_child_session_ids.add(session_id)
+        return
+    if normalized not in {"wait", "kill"}:
+        return
+    session_id = arguments.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return
+    if result.get("status") in TERMINAL_STATUSES | {"expired"}:
+        session.live_child_session_ids.discard(session_id)
+        session.terminal_child_session_ids.add(session_id)
+        session_registry.remove(session_id)
+
+
+def finalize_pending_result(session: SessionState, *, touch: bool = True) -> None:
+    """保留したturn結果を公開可能な終端状態へ移す。"""
+    result = session.pending_result
+    if result is None:
+        raise RuntimeError("auto-resume wait has no pending result")
+    session.awaiting_auto_resume = False
+    session.auto_resume_deadline = None
+    session.pending_result = None
+    session.status = result["status"]
+    session.agent_message = result["agent_message"]
+    session.error = result["error"]
+    session.turn_completed = True
+    session.turn_start_ambiguous = False
+    if touch:
+        session.touch()
+
+
+def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:
+    """未観測の孫session識別子を既存のerror項目へ併合する。"""
+    identifiers = sorted(session_ids)
+    current = session.error
+    error: dict[str, Any]
+    if isinstance(current, dict):
+        error = dict(current)
+    elif _nonempty_error(current):
+        error = {"message": str(current)}
+    else:
+        error = {}
+    error["unobservedSessions"] = identifiers
+    session.error = error
+    session.touch()
+
+
+def _agents_server_tool_name(tool_name: str) -> str | None:
+    prefix = "mcp__agents_server__"
+    if tool_name.startswith(prefix):
+        return tool_name.removeprefix(prefix)
+    if tool_name in {"start", "start_explore", "start_shell", "wait", "kill"}:
+        return tool_name
+    return None
+
+
+def _content_blocks(message: Any) -> tuple[Any, ...]:
+    content = _block_value(message, "content")
+    return tuple(content) if isinstance(content, list | tuple) else ()
+
+
+def _block_value(block: Any, name: str) -> Any:
+    return block.get(name) if isinstance(block, Mapping) else getattr(block, name, None)
+
+
+def _structured_tool_result(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, Mapping):
+        structured = value.get("structuredContent")
+        if isinstance(structured, Mapping):
+            return dict(structured)
+        if isinstance(value.get("session_id"), str) or "status" in value:
+            return dict(value)
+        for key in ("content", "result"):
+            nested = _structured_tool_result(value.get(key))
+            if nested is not None:
+                return nested
+        text = value.get("text")
+        if isinstance(text, str):
+            return _structured_tool_result(text)
+        return None
+    if isinstance(value, list | tuple):
+        for item in value:
+            result = _structured_tool_result(item)
+            if result is not None:
+                return result
+        return None
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return _structured_tool_result(decoded)
+    return None
 
 
 def _begin_reply(session: SessionState) -> None:

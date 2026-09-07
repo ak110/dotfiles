@@ -59,6 +59,8 @@ def test_human_readable_main_accepts_satisfied_action() -> None:
     [
         ("計画レビュー第0ラウンド", "-", "`由来`は"),
         ("計画レビュー第1ラウンド", "{path}のround 2", "計画レビュー由来"),
+        ("計画レビュー第1ラウンド", "rel/review.tsvのround 1", "計画レビュー由来"),
+        ("計画レビュー第1ラウンド", "{path}.txtのround 1", "計画レビュー由来"),
     ],
 )
 def test_human_readable_action_rejects_invalid_review_origin_or_root(

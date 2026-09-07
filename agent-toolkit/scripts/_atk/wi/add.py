@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 
+from _common import body_match as _body_match
 from _plan import locations as _plan_file
 
 from _atk.wi import frontmatter as _frontmatter
@@ -39,25 +40,6 @@ from _atk.wi.formatters import _shorten_home
 from _atk.wi.repo import _resolve_repo_id, resolve_add_target, resolve_head_commit
 
 
-def _normalized_for_body_match(text: str) -> str:
-    """末尾改行の有無だけをそろえた比較用の本文を返す。"""
-    return text[:-1] if text.endswith("\n") else text
-
-
-def _body_match_verdict(expected_body: str, saved_body: str) -> str:
-    """書き込み前に確定した本文と保存本文の一致判定を固定の文言で返す。
-
-    比較は末尾改行の有無だけをそろえた全文比較とし、一致しない場合は最初に差異が現れた位置を併記する。
-    """
-    expected = _normalized_for_body_match(expected_body)
-    saved = _normalized_for_body_match(saved_body)
-    if expected == saved:
-        return "一致"
-    limit = min(len(expected), len(saved))
-    position = next((index for index in range(limit) if expected[index] != saved[index]), limit)
-    return f"不一致（最初の差異: {position + 1}文字目）"
-
-
 def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
     """保存済みエントリを再読込し、一致判定とユーザーが照合するメタデータを返す。
 
@@ -71,13 +53,21 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     data, _body = parsed
     raw_dependencies = data.get("depends_on")
     depends_on = [value for value in raw_dependencies if isinstance(value, str)] if isinstance(raw_dependencies, list) else []
+    body_match = _body_match.verdict(expected_body, saved_body)
+    if body_match != "一致":
+        position = _body_match.first_difference(expected_body, saved_body)
+        raise WebInputError(
+            f"保存本文が送信元本文と一致しない: {path.name}\n"
+            f"最初の差異: {position}文字目\n"
+            f"送信元本文:\n{expected_body}\n"
+            f"保存本文:\n{saved_body}"
+        )
     return {
-        "body_match": _body_match_verdict(expected_body, saved_body),
+        "body_match": body_match,
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
         "depends_on": depends_on,
-        "saved_body": saved_body,
     }
 
 
@@ -92,8 +82,6 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
     )
     print(f"    depends_on: {rendered_dependencies}")
     print(f"    body_match: {details['body_match']}")
-    print("    saved_body:")
-    print(details["saved_body"])
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
@@ -479,10 +467,11 @@ def _cmd_add(
                     "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
                     "ユーザーの発言は本文中へ出所を示して引用してください。"
                 )
-            reject_message_file_path(
-                message,
-                file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
-            )
+            if not body_files:
+                reject_message_file_path(
+                    message,
+                    file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
+                )
             parse_entry_message(message, entry_type=args.type)
         except WebInputError as error:
             if str(error) == _EMPTY_AWI_ERROR:

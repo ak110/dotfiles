@@ -233,13 +233,13 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("pretooluse.py:683 本文", "blocked: {tool_name}.{field}に文字化け（`U+FFFD`）を検出した。該当箇所: {sample!r}"),
     ("pretooluse.py:683 解消手段", "`U+FFFD`を意図した文字へ置き換えて再実行する。"),
     (
-        "pretooluse.py:707 本文",
+        "content_checks.py _check_ps1_eol 本文",
         "blocked: {tool_name}.{field}の内容が`LF`だけの改行になっている。"
-        "`PowerShell` 5.1は`LF`改行の`.ps1`ファイルを解析できず、"
-        "`CRLF`が必要である。対象: {file_path}",
+        "この書き込みでは`UTF-8 BOM`が失われて日本語が文字化けし、"
+        "`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
     ),
     (
-        "pretooluse.py:707 解消手段",
+        "content_checks.py _check_ps1_eol 解消手段",
         "既存ファイルは`Edit`ツールで編集する（`CRLF`をそのまま保つ）。"
         "新規ファイルは`Bash`経由で`UTF-8 BOM`と`CRLF`改行を付けて書き"
         "出"

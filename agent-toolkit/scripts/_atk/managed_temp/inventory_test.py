@@ -30,6 +30,17 @@ _MARKER_NAME = ".agent-toolkit-managed-temp.json"
 from _atk.managed_temp.test_support_test import *  # noqa: F403
 
 
+def _make_junction(link: pathlib.Path, target: pathlib.Path) -> None:
+    """Windowsのdirectory junctionを作成する。"""
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_windows_ctypes_structures_match_sdk_layout() -> None:
     """Windows APIへ渡す固定幅structureのsizeとSID offsetを確認する。"""
     assert ctypes.sizeof(subject._AceHeader) == 4
@@ -67,6 +78,64 @@ def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
 @pytest.mark.skipif(os.name != "nt", reason="Windows固有のSID・ACL・reparse検証")
 class TestManagedTempWindows:
     """WindowsのSID・ACL・reparse point・cleanupを実環境で確認する。"""
+
+    def test_normal_identity_rejects_a_reparse_point(self, tmp_path: pathlib.Path) -> None:
+        """通常のidentity取得はreparse pointを受理しない。"""
+        destination = tmp_path / "normal-identity-destination"
+        destination.mkdir()
+        junction = tmp_path / "normal-identity-junction"
+        _make_junction(junction, destination)
+
+        with pytest.raises(subject.ManagedTempError, match="reparse point"):
+            subject._windows_identity(junction)
+
+    def test_reparse_identity_identifies_the_link_object(self, tmp_path: pathlib.Path) -> None:
+        """専用経路はリンク先ではなくreparse point自体を識別する。"""
+        destination = tmp_path / "reparse-identity-destination"
+        destination.mkdir()
+        first = tmp_path / "first-reparse-identity-junction"
+        second = tmp_path / "second-reparse-identity-junction"
+        _make_junction(first, destination)
+        _make_junction(second, destination)
+
+        first_identity = subject._windows_reparse_identity(first)
+
+        assert first_identity == subject._windows_reparse_identity(first)
+        assert first_identity != subject._windows_reparse_identity(second)
+        assert first_identity != subject._windows_identity(destination)
+
+    @pytest.mark.parametrize("directory", [False, True])
+    def test_cleanup_accepts_a_symbolic_link_within_the_managed_root(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        directory: bool,
+    ) -> None:
+        """管理root内を指すfile・directory symlinkはリンク先を保持して回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-symlink")
+        destination = tmp_path / "symlink-destination"
+        if directory:
+            destination.mkdir()
+        else:
+            destination.write_text("keep", encoding="utf-8")
+        link = target / "link"
+        link.symlink_to(destination, target_is_directory=directory)
+        registry = subject._registry_path(target)
+
+        with pytest.raises(subject.ManagedTempError, match="reparse point"):
+            subject._windows_identity(link)
+        identity = subject._windows_reparse_identity(link)
+        assert identity == subject._windows_reparse_identity(link)
+        assert identity != subject._windows_identity(destination)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert not registry.exists()
+        assert destination.exists()
+        if not directory:
+            assert destination.read_text(encoding="utf-8") == "keep"
 
     def test_cleanup_restores_registry_from_marker_only_when_requested(
         self,
@@ -452,24 +521,146 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        managed_root = tmp_path / "managed-root"
+        managed_root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
         target = subject.create_managed_temp("windows-reparse")
         outside = tmp_path / "outside"
         outside.mkdir()
         sentinel = outside / "sentinel.txt"
         sentinel.write_text("keep", encoding="utf-8")
         junction = target / "junction"
-        result = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert result.returncode == 0, result.stderr or result.stdout
+        _make_junction(junction, outside)
         with pytest.raises(subject.ManagedTempError, match="reparse point"):
             subject.cleanup_managed_temp(target)
         assert sentinel.read_text(encoding="utf-8") == "keep"
         assert target.exists()
+
+    def test_cleanup_accepts_a_junction_within_the_managed_root(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """管理root内を指すJunctionはリンク先を保持して回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-junction")
+        destination = tmp_path / "junction-destination"
+        destination.mkdir()
+        sentinel = destination / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        _make_junction(target / "junction", destination)
+        registry = subject._registry_path(target)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert not registry.exists()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    def test_cleanup_accepts_nested_junctions_independent_of_enumeration_order(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """多階層のJunctionを深い順に解除し、列挙順へ依存しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-nested-junctions")
+        first_destination = tmp_path / "z-destination"
+        second_destination = tmp_path / "a-destination"
+        first_destination.mkdir()
+        second_destination.mkdir()
+        nested = target / "nested" / "deeper"
+        nested.mkdir(parents=True)
+        _make_junction(target / "a-link", first_destination)
+        _make_junction(nested / "z-link", second_destination)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert first_destination.exists()
+        assert second_destination.exists()
+
+    def test_cleanup_accepts_a_junction_whose_target_was_removed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """格納値だけを検証し、到達不能なリンク先へ削除を波及させない。"""
+        managed_root = tmp_path / "managed-root"
+        managed_root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
+        target = subject.create_managed_temp("windows-broken-junction")
+        destination = managed_root / "removed-destination"
+        destination.mkdir()
+        junction = target / "junction"
+        _make_junction(junction, destination)
+        destination.rmdir()
+        outside = tmp_path / "outside-sentinel.txt"
+        outside.write_text("keep", encoding="utf-8")
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert outside.read_text(encoding="utf-8") == "keep"
+
+    def test_cleanup_rejects_a_junction_redirected_after_snapshot(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """走査後に管理root外へ向け直されたJunctionを解除しない。"""
+        managed_root = tmp_path / "managed-root"
+        managed_root.mkdir()
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
+        target = subject.create_managed_temp("windows-redirected-junction")
+        destination = managed_root / "accepted-destination"
+        outside = tmp_path / "outside-junction-destination"
+        destination.mkdir()
+        outside.mkdir()
+        sentinel = outside / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        junction = target / "junction"
+        _make_junction(junction, destination)
+        registry = subject._registry_path(target)
+        original_snapshot = subject._tree_snapshot
+
+        def snapshot_then_redirect(root: pathlib.Path) -> typing.Any:
+            snapshot = original_snapshot(root)
+            if root.name.startswith(".agent-toolkit-cleanup-"):
+                redirected = root / "junction"
+                os.rmdir(redirected)
+                _make_junction(redirected, outside)
+            return snapshot
+
+        monkeypatch.setattr(subject, "_tree_snapshot", snapshot_then_redirect)
+
+        with pytest.raises(subject.ManagedTempError, match="reparse point"):
+            subject.cleanup_managed_temp(target)
+
+        assert target.exists()
+        assert registry.exists()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    def test_cleanup_resumes_a_quarantine_containing_an_accepted_junction(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """隔離済み状態からも管理root内を指すJunctionを回収する。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("windows-quarantine-junction")
+        destination = tmp_path / "quarantine-destination"
+        destination.mkdir()
+        _make_junction(target / "junction", destination)
+        consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
+
+        subject.cleanup_managed_temp(target)
+
+        assert not target.exists()
+        assert not quarantine.exists()
+        assert not subject._registry_path(target).exists()
+        assert not consuming.exists()
+        assert destination.exists()
 
     @pytest.mark.parametrize("tamper", ["wrong-mask", "deny", "multiple", "current-user-extra"])
     def test_acl_tamper_is_rejected_and_preserved(

@@ -9,6 +9,7 @@
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
 {{- $config = setValueAtPath "model_reasoning_summary" "auto" $config -}}
 {{- $config = setValueAtPath "hide_agent_reasoning" false $config -}}
+{{- $config = setValueAtPath "features.context_management.experimental_mode" true $config -}}
 {{- $config = setValueAtPath "agents.max_concurrent_threads_per_session" 100 $config -}}
 {{- $config = deleteValueAtPath "agents.default_subagent_model" $config -}}
 {{- $config = deleteValueAtPath "agents.default_subagent_reasoning_effort" $config -}}

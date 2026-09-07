@@ -63,7 +63,10 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
         assert all(line.startswith("  ") for line in examples.splitlines()), command
 
 
-@pytest.mark.parametrize("argv", [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"]])
+@pytest.mark.parametrize(
+    "argv",
+    [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"], ["session-review-queue"]],
+)
 def test_command_without_subcommand_prints_help(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],
@@ -172,12 +175,32 @@ def test_worktree_stash_help_covers_save_restore_and_drop() -> None:
     assert "atk worktree-stash drop refs/worktree/<ラベル>" in help_text
 
 
+def test_wait_schedule_help_explains_request_bucket_resolution() -> None:
+    """wait-scheduleはbucket指定がTTLとcron式の解決に必要な理由を示す。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    description = commands["atk wait-schedule"].description
+
+    assert description is not None
+    assert "呼び出し主体のbucketを待機TTLとcron式の解決へ入力" in description
+    assert "呼び出し主体のbucketを自動解決できない" in description
+
+
 def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
     commands = {command: parser for command, parser, _summary in _walk_commands()}
     help_text = commands["atk managed-temp create"].format_help()
 
     for description, _satisfied in _managed_temp._PREFIX_RULES:  # pylint: disable=protected-access
         assert description in help_text
+
+
+def test_review_table_init_help_describes_dialogue_review_table() -> None:
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    parser = commands["atk review-table init"]
+    help_text = parser.format_help()
+
+    assert "対話由来の小規模是正の実行レビュー表" in help_text
+    assert "dlg-<実装着手前の完全OID>.exec-review.tsv" in help_text
+    assert "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`" in help_text
 
 
 def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:

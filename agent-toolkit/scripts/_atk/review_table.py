@@ -18,10 +18,12 @@ import unicodedata
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from _common import body_match as _body_match
 from _common import file_lock as _file_lock
 from _common.atomic_file import atomic_write
 
 from _atk import help_text as _atk_help
+from _atk import output_file as _output_file
 
 # 配布物独立性のため、Web表示側`_atk_serve_plans.py`の`_REVIEW_TABLE_HEADERS`と同じ列順を二重に持つ。
 # 列を増減する場合は双方を同期し、旧形式の読み取り互換も両側で更新する。
@@ -50,7 +52,8 @@ _RECOVERY_GUIDANCE = (
 )
 _INPUT_GUIDANCE = (
     "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`、または原因commit完全OID由来の"
-    "`ci-<OID>.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
+    "`ci-<OID>.exec-review.tsv`、実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を"
+    "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプ及びプロセス置換は受理しない"
 )
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
@@ -254,7 +257,23 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
         return [*rows, row]
 
     rows = _locked_update(target, updater)
+    saved_rows = [saved_row for saved_row in _read(target) if _key(saved_row) == _key(row)]
+    if len(saved_rows) != 1:
+        raise ValueError(f"追加した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
+    saved_row = saved_rows[0]
+    for column, expected, saved in (("location", location, saved_row[2]), ("issue", issue, saved_row[3])):
+        if _body_match.verdict(expected, saved) != "一致":
+            position = _body_match.first_difference(expected, saved)
+            raise ValueError(
+                f"保存本文が送信元本文と一致しない: {target}\n"
+                f"不一致の列: {column}\n"
+                f"最初の差異: {position}文字目\n"
+                f"送信元本文:\n{expected}\n"
+                f"保存本文:\n{saved}"
+            )
     print(f"追加成功: {target} ({len(rows)}件)")
+    print("location_body_match: 一致")
+    print("issue_body_match: 一致")
     return 0
 
 
@@ -331,7 +350,24 @@ def respond(
         return updated
 
     _locked_update(target, updater)
+    saved_rows = [row for row in _read(target) if all(_normalized(row[column_index]) == value for column_index, value in given)]
+    if len(saved_rows) != 1:
+        raise ValueError(f"更新した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
+    saved_row = saved_rows[0]
+    saved_body = saved_row[6] if needed == "yes" else saved_row[7]
+    expected_body = replacement if needed == "yes" else reason
+    if _body_match.verdict(expected_body, saved_body) != "一致":
+        position = _body_match.first_difference(expected_body, saved_body)
+        column = "response" if needed == "yes" else "no_response_reason"
+        raise ValueError(
+            f"保存本文が送信元本文と一致しない: {target}\n"
+            f"不一致の列: {column}\n"
+            f"最初の差異: {position}文字目\n"
+            f"送信元本文:\n{expected_body}\n"
+            f"保存本文:\n{saved_body}"
+        )
     print(f"応答更新成功: {target}")
+    print("body_match: 一致")
     return 0
 
 
@@ -421,7 +457,8 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
     path_help = (
         "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か"
-        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
+        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`、"
+        "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を指定する。"
     )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk review-table add"])
@@ -502,6 +539,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         default="tsv",
         help="出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する。",
     )
+    _output_file.add_output_file_arg(show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",

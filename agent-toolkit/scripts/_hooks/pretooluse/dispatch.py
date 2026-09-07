@@ -136,6 +136,7 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
 from _hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import _WARN_TAG, set_warning_session_id  # noqa: E402
 from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -186,6 +187,8 @@ if TYPE_CHECKING:
         _check_bash_recursive_home_search,
         _check_bash_sleep_poll_pattern,
         _check_bash_state_change_command_chaining,
+        _check_bash_unverified_atk_help,
+        _check_bash_unbounded_home_traversal,
         _check_bash_uv_run_python,
     )
 
@@ -246,6 +249,7 @@ def main(payload_text: str) -> int:
         return 0
     session_id_raw = payload.get("session_id", "")
     session_id = session_id_raw if isinstance(session_id_raw, str) else ""
+    set_warning_session_id(session_id)
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     # ホスト判定はpayload読込直後に一度だけ行い、以降の検査選択と入力アダプターへ同じ値を渡す。
@@ -263,7 +267,7 @@ def main(payload_text: str) -> int:
     # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
     pending_notices: list[str] = []
     if language_warning_body is not None:
-        pending_notices.append(_llm_notice(language_warning_body, tag="warn"))
+        pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG))
 
     def emit_json(result: dict) -> None:
         for notice in pending_notices:
@@ -418,14 +422,16 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
+    if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
         _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
+        _check_bash_unbounded_home_traversal(command),
         _check_bash_recursive_grep_without_exclusion(command, cwd),
-        _check_bash_state_change_command_chaining(command),
-        _check_bash_help_with_execution(command),
+        _check_bash_unverified_atk_help(command, session_id),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),

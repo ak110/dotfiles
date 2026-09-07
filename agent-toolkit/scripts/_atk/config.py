@@ -20,20 +20,53 @@ from _atk import help_text as _atk_help
 
 _CONFIG_FILENAME = "config.json"
 
-_DEFAULT_STAGE_MODEL = "codex:gpt-5.6-sol/medium"
-_ORCHESTRATE_MODEL_DEFAULT = "claude:opus[1m]/medium"
-_MUTABLE_KEY_DEFAULTS = {
-    "explore_model": _DEFAULT_STAGE_MODEL,
-    "explore_fast_model": "codex:gpt-5.6-terra/medium",
-    "pick_wi_model": _DEFAULT_STAGE_MODEL,
-    "plan_model": _DEFAULT_STAGE_MODEL,
-    "plan_review_model": _DEFAULT_STAGE_MODEL,
-    "execute_fast_model": _DEFAULT_STAGE_MODEL,
-    "execute_model": _DEFAULT_STAGE_MODEL,
-    "execute_review_model": _DEFAULT_STAGE_MODEL,
-    "session_review_model": _DEFAULT_STAGE_MODEL,
-    "orchestrate_model": _ORCHESTRATE_MODEL_DEFAULT,
+_MODEL_SETTING_CATEGORIES = {
+    "explore_model": "上位",
+    "explore_fast_model": "軽量",
+    "pick_wi_model": "軽量",
+    "plan_model": "計画",
+    "plan_review_model": "軽量",
+    "execute_fast_model": "軽量",
+    "execute_model": "上位",
+    "execute_review_model": "軽量",
+    "session_review_model": "上位",
+    "orchestrate_model": "上位",
 }
+_CATEGORY_ENGINE_MODELS = {
+    "上位": {
+        "codex": "codex:gpt-5.6-sol/medium",
+        "claude": "claude:opus[1m]/medium",
+    },
+    "軽量": {
+        "codex": "codex:gpt-5.6-terra/medium",
+        "claude": "claude:sonnet[1m]/medium",
+    },
+    "計画": {
+        "codex": "codex:gpt-6-astra/medium",
+        "claude": "claude:opus[1m]/medium",
+    },
+}
+_PRESET_ENGINE_ORDERS = {
+    "codex-balanced": ("codex", frozenset({"plan_model", "orchestrate_model"})),
+    "codex-primary": ("codex", frozenset()),
+    "claude-balanced": ("claude", frozenset({"explore_model", "explore_fast_model", "execute_fast_model"})),
+    "claude-primary": ("claude", frozenset()),
+}
+
+
+def _preset_settings(preset: str) -> dict[str, str]:
+    """プリセットのengine順と用途区分から工程別モデル設定を導出する。"""
+    primary_engine, reversed_keys = _PRESET_ENGINE_ORDERS[preset]
+    other_engine = "claude" if primary_engine == "codex" else "codex"
+    settings: dict[str, str] = {}
+    for key, category in _MODEL_SETTING_CATEGORIES.items():
+        first_engine, second_engine = (other_engine, primary_engine) if key in reversed_keys else (primary_engine, other_engine)
+        models = _CATEGORY_ENGINE_MODELS[category]
+        settings[key] = f"{models[first_engine]},{models[second_engine]}"
+    return settings
+
+
+_MUTABLE_KEY_DEFAULTS = _preset_settings("codex-balanced")
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex):[^/,\s]+(?:/[^/,\s]+)?$")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
@@ -198,6 +231,16 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         )
 
 
+def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
+    """apply-presetサブコマンド: 工程別モデル設定10キーを一括保存する。"""
+    settings = _preset_settings(args.preset)
+    config = _load_config()
+    config.update(settings)
+    _save_config(config)
+    for key, value in settings.items():
+        print(f"{key}: {value}")
+
+
 def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
     """検証済み設定値をengine・model・effort（未指定はNone）へ分解する。"""
     engine, _, rest = value.partition(":")
@@ -233,7 +276,7 @@ def resolve_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
 
 
 def build_parser(config: argparse.ArgumentParser) -> None:
-    """`config`サブパーサ配下にshow/get/setサブコマンドを登録する。"""
+    """`config`サブパーサ配下にshow/get/set/apply-presetを登録する。"""
     sub = _atk_help.add_subcommands(config, dest="config_subcommand", required=False)
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
     get = _atk_help.add_command(sub, "get", **_atk_help.HELP["atk config get"])
@@ -241,6 +284,8 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     set_ = _atk_help.add_command(sub, "set", **_atk_help.HELP["atk config set"])
     set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(sorted(_MUTABLE_KEY_DEFAULTS))}")
     set_.add_argument("value", metavar="VALUE", help="設定する値。複数候補はASCIIカンマ区切りで指定できる。")
+    apply_preset = _atk_help.add_command(sub, "apply-preset", **_atk_help.HELP["atk config apply-preset"])
+    apply_preset.add_argument("preset", choices=tuple(_PRESET_ENGINE_ORDERS), help="適用するプリセット名。")
 
 
 def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
@@ -251,6 +296,8 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> None:
             _cmd_config_show(home)
         elif sub == "get":
             _cmd_config_get(args, home)
+        elif sub == "apply-preset":
+            _cmd_config_apply_preset(args)
         else:
             _cmd_config_set(args)
     except ValueError as error:

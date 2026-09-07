@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import json
 import pathlib
 from types import SimpleNamespace
 from typing import Any
@@ -11,7 +12,8 @@ from typing import Any
 import agents_server_mcp as subject
 import pytest
 from _agents_server import claude as claude_backend
-from _agents_server import state
+from _agents_server import codex as codex_backend
+from _agents_server import session_registry, state, status_file
 
 _STREAM_END = object()
 
@@ -56,10 +58,25 @@ class ResultMessage:
         *,
         origin: dict[str, str] | None = None,
         terminal_reason: str | None = None,
+        is_error: bool = False,
+        errors: list[str] | None = None,
     ) -> None:
         self.result = result
         self.origin = origin
         self.terminal_reason = terminal_reason
+        self.is_error = is_error
+        self.errors = [] if errors is None else errors
+
+
+class AssistantMessage:
+    """Claude SDKのツール利用を含むassistantメッセージを再現する。"""
+
+    def __init__(self, content: list[Any]) -> None:
+        self.content = content
+
+
+class UserMessage(AssistantMessage):
+    """Claude SDKのツール結果を含むuserメッセージを再現する。"""
 
 
 class ControlledClaudeClient:
@@ -139,6 +156,299 @@ async def _await_state(predicate: Any) -> None:
             return
         await asyncio.sleep(0.01)
     raise AssertionError("状態遷移が完了しなかった")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_session_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """各検体のsession登録簿を一時ディレクトリへ隔離する。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+
+
+def _emit_child_start(client: ControlledClaudeClient, session_id: str) -> None:
+    """agents_server.startの利用と結果をClaudeメッセージとして投入する。"""
+    client.emit(
+        AssistantMessage(
+            [
+                SimpleNamespace(
+                    id="tool-start",
+                    name="mcp__agents_server__start",
+                    input={"model_type": "execute"},
+                )
+            ]
+        )
+    )
+    client.emit(
+        UserMessage(
+            [
+                SimpleNamespace(
+                    tool_use_id="tool-start",
+                    content=[{"type": "text", "text": json.dumps({"session_id": session_id, "status": "running"})}],
+                )
+            ]
+        )
+    )
+
+
+async def _auto_resume_after_child_termination(
+    manager: subject.AgentsServerManager,
+    client: ControlledClaudeClient,
+    session: state.SessionState,
+    child_session_id: str,
+) -> dict[str, Any]:
+    """孫sessionを終端させ、継続指示後の結果を返す。"""
+    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+    await _await_state(lambda: session.awaiting_auto_resume)
+    assert wait_task.done() is False
+    session_registry.publish(child_session_id, terminal=True)
+    await _await_state(lambda: len(client.queries) == 2)
+    client.emit(ResultMessage("孫session確認後の結果"))
+    return await wait_task
+
+
+@pytest.mark.asyncio
+async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
+    """状態writerを伴う再開はbackend応答後に前turnの結果を削除する。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+
+    class ResumeBackend:
+        async def resume(
+            self,
+            session_id: str,
+            _prompt: state.ResumePrompt,
+            cwd: str,
+            model: str | None,
+            effort: str | None,
+            **kwargs: Any,
+        ) -> state.SessionState:
+            resumed = state.SessionState(
+                session_id,
+                cwd,
+                model=model,
+                effort=effort,
+                engine="codex",
+                model_type=kwargs["model_type"],
+                turn_seq=kwargs["turn_seq"] + 1,
+            )
+            manager.sessions[session_id] = resumed
+            return resumed
+
+        async def close(self) -> None:
+            """外部資源を持たないため何もしない。"""
+
+    manager._codex = ResumeBackend()
+    source = state.SessionState(
+        "resume-result",
+        str(tmp_path),
+        model="model",
+        effort="medium",
+        engine="codex",
+        model_type="execute",
+        turn_seq=1,
+    )
+    result_path = status_file.results_directory("root", tmp_path) / f"{source.session_id}.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text("{}\n", encoding="utf-8")
+    writer.activate()
+    try:
+        resumed = await manager._run_resume(
+            state.SessionResumeState.from_session(source),
+            state.ResumePrompt("続行"),
+        )
+
+        assert resumed.turn_seq == 2
+        assert not result_path.exists()
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_defers_result_until_child_session_terminates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """孫sessionが終端するまで初回結果を返さず、確認後の結果を返す。"""
+    client = ControlledClaudeClient("claude-child-wait")
+    manager, backend = _manager(client, monkeypatch)
+    child_session_id = "child-wait"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child_session_id, terminal=False)
+        _emit_child_start(client, child_session_id)
+        client.emit(ResultMessage("孫session待機中"))
+
+        result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
+
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "孫session確認後の結果"
+        assert child_session_id in client.queries[1]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_response_keys_are_unchanged_with_child_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """孫session追跡用の内部状態をwait応答へ追加しない。"""
+    client = ControlledClaudeClient("claude-child-keys")
+    manager, backend = _manager(client, monkeypatch)
+    child_session_id = "child-keys"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child_session_id, terminal=False)
+        _emit_child_start(client, child_session_id)
+        client.emit(ResultMessage("孫session待機中"))
+
+        result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
+
+        assert set(result) == {
+            "agent_message",
+            "engine",
+            "model_type",
+            "progress",
+            "session_id",
+            "status",
+            "turn_seq",
+        }
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_unobserved_child_sessions_appear_in_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """保持期限まで終端しない孫sessionを既存のerror項目へ示す。"""
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
+    client = ControlledClaudeClient("claude-child-deadline")
+    manager, backend = _manager(client, monkeypatch)
+    child_session_id = "child-deadline"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child_session_id, terminal=False)
+        _emit_child_start(client, child_session_id)
+        client.emit(ResultMessage("孫session待機中"))
+
+        result = await manager.wait(session.session_id, timeout=1)
+
+        assert result["error"] == {"unobservedSessions": [child_session_id]}
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_unobserved_child_sessions_merge_into_existing_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """既存の失敗内容を保ったまま未観測sessionをerrorへ併合する。"""
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
+    client = ControlledClaudeClient("claude-child-error")
+    manager, backend = _manager(client, monkeypatch)
+    child_session_id = "child-error"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(child_session_id, terminal=False)
+        _emit_child_start(client, child_session_id)
+        client.emit(ResultMessage("失敗結果", is_error=True, errors=["既存エラー"]))
+
+        result = await manager.wait(session.session_id, timeout=1)
+
+        assert result["error"] == {
+            "message": "既存エラー",
+            "unobservedSessions": [child_session_id],
+        }
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_codex_child_session_triggers_auto_resume(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """CodexのMCP完了項目から孫sessionを追跡して同じthreadを再開する。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
+    manager._codex = backend
+    session = state.SessionState(
+        "codex-parent",
+        str(tmp_path),
+        engine="codex",
+        model_type="execute",
+        turn_seq=1,
+        turn_id="turn-1",
+    )
+    manager.sessions[session.session_id] = session
+    writer.activate()
+    result_path = status_file.results_directory("root", tmp_path) / f"{session.session_id}.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text("{}\n", encoding="utf-8")
+    child_session_id = "codex-child"
+    session_registry.publish(child_session_id, terminal=False)
+    await backend._handle_notification(
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": session.session_id,
+                "turnId": session.turn_id,
+                "item": {
+                    "id": "mcp-1",
+                    "type": "mcpToolCall",
+                    "server": "agents_server",
+                    "tool": "start",
+                    "arguments": {"model_type": "execute"},
+                    "status": "completed",
+                    "result": {
+                        "content": [],
+                        "structuredContent": {"session_id": child_session_id, "status": "running"},
+                    },
+                },
+            },
+        }
+    )
+    await backend._handle_notification(
+        {
+            "method": "turn/completed",
+            "params": {
+                "threadId": session.session_id,
+                "turn": {"id": session.turn_id, "status": "completed", "error": None, "items": []},
+            },
+        }
+    )
+
+    async def complete_reply(actual: state.SessionState, prompt: str) -> dict[str, Any]:
+        assert child_session_id in prompt
+        state._begin_reply(actual)
+        actual.status = "completed"
+        actual.agent_message = "Codex再開結果"
+        actual.turn_completed = True
+        actual.touch()
+        return {"delivery": "reply_started", **actual.public_status()}
+
+    monkeypatch.setattr(backend, "send_message", complete_reply)
+    session_registry.publish(child_session_id, terminal=True)
+    try:
+        result = await manager.wait(session.session_id, timeout=1)
+        assert result["agent_message"] == "Codex再開結果"
+        assert session.live_child_session_ids == set()
+        assert not result_path.exists()
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

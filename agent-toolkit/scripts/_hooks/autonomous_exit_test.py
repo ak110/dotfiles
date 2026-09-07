@@ -95,8 +95,8 @@ class TestApproveConditions:
         decision = _parse_decision(result)
         assert "decision" not in decision
 
-    def test_stop_hook_active_approves(self, tmp_path: pathlib.Path):
-        """`stop_hook_active`が真なら再帰呼び出し抑止のためapproveする。"""
+    def test_stop_hook_active_still_blocks(self, tmp_path: pathlib.Path):
+        """`stop_hook_active`が真でも終了スキル未起動ならblockする。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {
@@ -107,7 +107,7 @@ class TestApproveConditions:
             state_dir=tmp_path,
         )
         decision = _parse_decision(result)
-        assert "decision" not in decision
+        assert decision.get("decision") == "block"
 
     def test_delegated_session_approves(self, tmp_path: pathlib.Path) -> None:
         """process-loop環境を継承した委譲先では終了工程を再促しない。"""

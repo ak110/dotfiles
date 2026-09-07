@@ -3,6 +3,7 @@
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 """
 
+import contextlib
 import json
 import logging
 import ntpath
@@ -10,9 +11,11 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import typing
 from pathlib import Path
 
+import httpx
 import platformdirs
 
 from pytools._internal import claude_common, log_format, winutils
@@ -84,17 +87,74 @@ def run() -> bool:
     """
     mise_bin = find_mise_binary()
     if mise_bin is None:
-        logger.info(log_format.format_status("mise", "未検出のためスキップ"))
-        return False
+        _ensure_mise_installed()
+        mise_bin = find_mise_binary()
+        if mise_bin is None:
+            logger.info(log_format.format_status("mise", "未検出のためスキップ"))
+            return False
 
     changed = False
     changed |= _ensure_mise_up_to_date(mise_bin)
     changed |= _ensure_working_tree_trusted(mise_bin)
     changed |= _ensure_global_node(mise_bin)
     changed |= _ensure_tools_installed(mise_bin)
+    changed |= _ensure_orphan_shims_removed(mise_bin)
     if _is_windows():
         changed |= _ensure_windows_user_path_has_shims()
     return changed
+
+
+def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
+    """mise本体を導入し、後続のmise管理ツール導入を同じ実行で可能にする。
+
+    mise不在を正常終了として扱うと管理ツールが全て未導入のまま残るため、不在時は
+    Windowsではwinget、その他では公式インストーラーを使う。既存のself-update方針と
+    矛盾させないため`MISE_VERSION`は渡さず、導入版を固定しない。
+    """
+    if _is_windows():
+        try:
+            result = claude_common.run_subprocess(
+                ["winget", "install", "jdx.mise"],
+                timeout=_MISE_INSTALL_TIMEOUT,
+                tag="mise",
+            )
+        except Exception as error:  # noqa: BLE001  # 導入失敗で後続のセットアップ全体を止めない
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {error}"))
+            return False
+        if result is None or result.returncode != 0:
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {claude_common.format_cli_error(result)}"))
+            return False
+        return True
+
+    owns_client = client is None
+    active_client: httpx.Client | None = client
+    temp_path: Path | None = None
+    try:
+        active_client = active_client or httpx.Client(timeout=30.0, follow_redirects=True)
+        response = active_client.get("https://mise.run")
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as temp:
+            temp.write(response.content)
+            temp_path = Path(temp.name)
+        result = claude_common.run_subprocess(
+            ["sh", str(temp_path)],
+            timeout=_MISE_INSTALL_TIMEOUT,
+            tag="mise",
+            env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
+        )
+        if result is None or result.returncode != 0:
+            logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {claude_common.format_cli_error(result)}"))
+            return False
+        return True
+    except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
+        logger.warning(log_format.format_status("mise", f"本体の導入に失敗: {error}"))
+        return False
+    finally:
+        if temp_path is not None:
+            with contextlib.suppress(OSError):
+                temp_path.unlink()
+        if owns_client and active_client is not None:
+            active_client.close()
 
 
 def find_mise_binary() -> Path | None:
@@ -259,6 +319,24 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
         logger.info(log_format.format_status("mise", f"`install` に失敗: {stderr}"))
         return True
     logger.info(log_format.format_status("mise", "`install` を実行しました"))
+    return True
+
+
+def _ensure_orphan_shims_removed(mise_bin: Path) -> bool:
+    """`mise reshim`で、実体を失って別コマンドの探索と衝突する孤児shimを除去する。
+
+    miseはツールの版を削除しても既存shimを自動では削除しない。残った`gettext.sh`が
+    Gitの国際化スクリプトとして誤実行されるとtmuxプラグイン更新が失敗するため、
+    `mise install`の後にshimを再構築する。
+    """
+    result = _run_mise(mise_bin, ["reshim"])
+    if result is None:
+        logger.info(log_format.format_status("mise", "`reshim` がタイムアウトまたは例外で中断"))
+        return False
+    if result.returncode != 0:
+        logger.info(log_format.format_status("mise", f"`reshim` に失敗: {result.stderr.strip()}"))
+        return False
+    logger.info(log_format.format_status("mise", "`reshim` を実行しました"))
     return True
 
 

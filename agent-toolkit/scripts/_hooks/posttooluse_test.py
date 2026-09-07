@@ -110,6 +110,53 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+class TestAtkHelpObservation:
+    """成功したヘルプ専用の`atk`呼び出しだけを状態へ記録する。"""
+
+    def test_claude_help_only_call_records_resolved_subcommand(self, tmp_path: pathlib.Path) -> None:
+        session_id = "record-atk-help"
+        result = _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi add --help"},
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert _read_state(tmp_path, session_id)["observed_atk_help"] == ["atk wi add"]
+
+    def test_codex_help_only_call_is_not_recorded_without_exit_code(self, tmp_path: pathlib.Path) -> None:
+        session_id = "ignore-codex-atk-help"
+        result = _run(
+            {
+                "session_id": session_id,
+                "turn_id": "turn-codex",
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi add --help"},
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert "observed_atk_help" not in _read_state(tmp_path, session_id)
+
+    def test_non_help_call_is_not_recorded(self, tmp_path: pathlib.Path) -> None:
+        session_id = "ignore-atk-non-help"
+        result = _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi add example"},
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        assert "observed_atk_help" not in _read_state(tmp_path, session_id)
+
+
 class TestTestExecution:
     """テスト実行検出。"""
 
@@ -279,6 +326,7 @@ class TestTestExecution:
         )
         assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__start_explore") is not None
         assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__kill") is not None
+        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__stop") is not None
 
     @pytest.mark.parametrize(
         "tool_name",
@@ -288,6 +336,7 @@ class TestTestExecution:
             "mcp__plugin_agent-toolkit_agents_server__send_message",
             "mcp__plugin_agent-toolkit_agents_server__wait",
             "mcp__plugin_agent-toolkit_agents_server__kill",
+            "mcp__plugin_agent-toolkit_agents_server__stop",
         ],
     )
     def test_posttooluse_failure_matcher_excludes_agents_server(self, tool_name: str):
@@ -1267,7 +1316,7 @@ class TestAmendPendingStatusCheck:
 class TestAgentsServerSessionState:
     """agents_serverのツール応答とsessionごとのcwd状態記録を検証する。"""
 
-    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill"))
+    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill", "stop"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
@@ -1327,9 +1376,9 @@ class TestAgentsServerSessionState:
         assert "cwd" not in state["agents_server_sessions"]["thread-start"]
         assert state["agents_server_sessions"]["thread-start"]["owner_agent_id"] == "main"
 
-    @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill"))
+    @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """wait・send_message・killはcwd mapを参照し、session記録へcwdを保存しない。"""
+        """継続・観測・中断・破棄ツールはcwd mapを参照し、session記録へcwdを保存しない。"""
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
         state = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
@@ -1355,6 +1404,47 @@ class TestAgentsServerSessionState:
         current = _read_state(tmp_path, sid)
         assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
         assert "cwd" not in current["agents_server_sessions"][remote_session_id]
+
+    def test_stop_clears_pending_observation(self, tmp_path: pathlib.Path) -> None:
+        """stop成功応答で未観測作業を解消する。"""
+        sid = "pending-stop"
+        remote_session_id = "remote-stop"
+        state = {
+            "agents_server_cwd_by_session": {remote_session_id: str(tmp_path)},
+            "agents_server_sessions": {
+                remote_session_id: {
+                    "session_id": remote_session_id,
+                    "status": "completed",
+                    "pending_observation": True,
+                }
+            },
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
+        )
+
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__stop",
+                "tool_input": {"session_id": remote_session_id},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": remote_session_id,
+                        "engine": "codex",
+                        "status": "stopped",
+                        "progress": "",
+                        "turn_seq": 1,
+                    }
+                },
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["status"] == "stopped"
+        assert record["pending_observation"] is False
 
     def test_missing_cwd_map_does_not_fallback_to_session_record(self, tmp_path: pathlib.Path) -> None:
         """cwd map欠落時も古いsession記録のcwdへフォールバックしない。"""
@@ -1435,7 +1525,7 @@ class TestAgentsServerSessionState:
             assert run_operation(sid, remote_session_id, "start", status="running") is True
             assert run_operation(sid, remote_session_id, "wait", status=status) is False
 
-        for delivery in ("steered", "reply_started", "reply_ambiguous"):
+        for delivery in ("reply_started", "reply_ambiguous"):
             sid = f"pending-send-{delivery}"
             remote_session_id = f"remote-send-{delivery}"
             assert run_operation(sid, remote_session_id, "start", status="running") is True
@@ -1450,6 +1540,21 @@ class TestAgentsServerSessionState:
                 )
                 is True
             )
+
+        sid = "pending-send-steered"
+        remote_session_id = "remote-send-steered"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert run_operation(sid, remote_session_id, "wait", status="running") is False
+        assert (
+            run_operation(
+                sid,
+                remote_session_id,
+                "send_message",
+                status="running",
+                delivery="steered",
+            )
+            is False
+        )
 
         sid = "pending-send-reply-failed"
         remote_session_id = "remote-send-reply-failed"

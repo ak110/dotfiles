@@ -17,7 +17,8 @@
 
 サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
 `atk agents-notify`・`atk wait-schedule`・
-`atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`形式とする。
+`atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
+`atk review-audit <sub>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
 
 - mq add/list/show: エントリの投入・一覧・本文表示。
@@ -36,7 +37,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
-- agents-wait: agents_serverが保存した指定turn以降の終端結果を1行で出力する
+- agents-wait: agents_serverが保存した終端結果又は通知を1行で出力する
 - agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
@@ -64,8 +65,11 @@ from _atk import config as _config_cmd  # noqa: E402
 from _atk import git_sync as _atk_git_sync  # noqa: E402
 from _atk import help_text as _atk_help  # noqa: E402
 from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
+from _atk import output_file as _output_file  # noqa: E402
 from _atk import plans as _plans  # noqa: E402
+from _atk import review_audit as _review_audit  # noqa: E402
 from _atk import review_table as _review_table  # noqa: E402
+from _atk import session_review_queue as _session_review_queue  # noqa: E402
 from _atk import watch as _watch  # noqa: E402
 from _atk import worktree_stash as _worktree_stash  # noqa: E402
 from _atk.wi import add as _add  # noqa: E402
@@ -73,7 +77,6 @@ from _atk.wi import batch as _batch  # noqa: E402
 from _atk.wi import common as _common  # noqa: E402
 from _atk.wi import grep as _grep  # noqa: E402
 from _atk.wi import listing as _list  # noqa: E402
-from _atk.wi import migrate as _migrate  # noqa: E402
 from _atk.wi import mutations as _mutations  # noqa: E402
 from _atk.wi import process_loop as _process_loop  # noqa: E402
 from _atk.wi import show as _show  # noqa: E402
@@ -404,6 +407,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
     )
     _add_mq_read_sync_args(list_)
+    _output_file.add_output_file_arg(list_)
 
     show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk wi show"])
     show.add_argument(
@@ -418,6 +422,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
     _add_target_repo_arg(show)
+    _output_file.add_output_file_arg(show)
     show.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
@@ -447,7 +452,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         "filenames",
         metavar="FILENAME",
         nargs="+",
-        help="処理開始するinboxファイル名（1個以上）。",
+        help="処理開始するinboxのAWI又はUWIのファイル名（1個以上）。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
     _add_target_repo_arg(start_processing, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 
@@ -609,6 +614,12 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         ),
     )
     edit.add_argument(
+        "--body-file",
+        metavar="PATH",
+        default=None,
+        help="UTF-8ファイルの内容を本文として読み込む。MESSAGEとは併用できない。",
+    )
+    edit.add_argument(
         "--append",
         action="store_true",
         help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。UWIは対象外。",
@@ -703,6 +714,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(grep)
     _add_mq_read_sync_args(grep)
+    _output_file.add_output_file_arg(grep)
     grep.set_defaults(subparser=grep)
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
@@ -713,13 +725,6 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     _add_target_repo_arg(answer)
 
     _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
-    migrate = _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk wi migrate"])
-    migrate.add_argument(
-        "--private-notes",
-        default=None,
-        help="変換対象のprivate-notesの絶対パス（既定: atk config get private_notesの値）。",
-    )
-    migrate.add_argument("--skip-push", action="store_true", help="commitまでを行い、pushを行わない。")
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
@@ -866,12 +871,6 @@ def _build_parser() -> argparse.ArgumentParser:
     agents_wait = _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
     agents_wait.add_argument("session_id", help="待機対象のsession識別子。")
     agents_wait.add_argument(
-        "--turn",
-        type=int,
-        required=True,
-        help="待機対象のturn番号。結果の`turn_seq`がこの値以上になるまで待つ。",
-    )
-    agents_wait.add_argument(
         "--timeout",
         type=float,
         default=3600.0,
@@ -893,6 +892,8 @@ def _build_parser() -> argparse.ArgumentParser:
     watch = _atk_help.add_command(top, "watch", **_atk_help.HELP["atk watch"])
     _watch.build_parser(watch)
     _review_table.build_parser(top)
+    _review_audit.build_parser(top)
+    _session_review_queue.build_parser(top)
     return parser
 
 
@@ -954,6 +955,7 @@ def main(
     *,
     home: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
+    _output_file_active: bool = False,
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
@@ -974,6 +976,13 @@ def main(
     args = parser.parse_args(raw_argv)
     if args._help_parser is not None:
         args._help_parser.print_help()
+        return
+    output_path = getattr(args, "output_file", None)
+    if output_path is not None and not _output_file_active:
+        if not output_path.is_absolute():
+            args.subparser.error("--output-fileには絶対パスを指定してください。")
+        with _output_file.redirect(output_path):
+            main(argv, home=home, now=now, _output_file_active=True)
         return
     if now is None:
         now = datetime.datetime.now()
@@ -1025,11 +1034,9 @@ def main(
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
     if args.command == "agents-wait":
-        if args.turn < 1:
-            args.subparser.error("--turnには1以上の整数を指定してください。")
         if args.timeout < 0:
             args.subparser.error("--timeoutには0以上の数値を指定してください。")
-        sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.turn, args.timeout))
+        sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.timeout))
     if args.command == "agents-notify":
         body = args.body
         if args.body_file is not None:
@@ -1091,6 +1098,18 @@ def main(
         except ValueError as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
+    if args.command == "review-audit":
+        try:
+            sys.exit(_review_audit.dispatch(args))
+        except ValueError as error:
+            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
+    if args.command == "session-review-queue":
+        try:
+            sys.exit(_session_review_queue.dispatch(args))
+        except ValueError as error:
+            print(f"操作を拒否しました: {error}", file=sys.stderr)
+            sys.exit(1)
     if args.command != "wi":
         parser.error(f"未知のトップレベルコマンド: {args.command}")
     sub = args.wi_subcommand
@@ -1125,7 +1144,6 @@ def main(
         "answer": lambda: _uwi._cmd_answer(args, private_notes),
         "commit": lambda: _mutations._cmd_commit(private_notes),
         "process-loop": lambda: _process_loop._cmd_process_loop(args, private_notes),
-        "migrate": lambda: _migrate.cmd_migrate(args, private_notes),
     }
     try:
         exit_code = dispatch[sub]() or 0

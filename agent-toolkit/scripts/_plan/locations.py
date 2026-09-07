@@ -90,6 +90,8 @@ def resolve_owner_session_id() -> str | None:
 
     委譲先には委譲元が`AGENT_TOOLKIT_OWNER_SESSION`で自身の識別子を渡す。
     当該値が無い場合は、実行中のセッション自身を示す`CLAUDE_CODE_SESSION_ID`を用いる。
+    Codex CLIが直接起動するMCPサーバーにはいずれの識別子も渡らないため、
+    当該経路で作成した計画バンドルは所有記録を持たない。
     いずれも非空の値を持たない場合は解決しない。
     """
     for key in _OWNER_SESSION_ENVIRONMENT_KEYS:

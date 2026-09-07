@@ -37,10 +37,17 @@
 - `node`・`ruby`・`bash -c`・`sh -c`のようにコード実行やワンライナー評価を伴うコマンドは、
   実行前に「何をするか」「何を読むまたは書くか」「何を確認したいか」を日本語で説明する
 - プロジェクト内に定義された正式なtest・lint・formatコマンドを優先する
-- 複数ファイルの全文読取又は広範囲検索の結果を1回の出力へ集約する場合は、
-  先に行数又はバイト数を確認し、出力予算内に収まる組へ分割して実行する
+- 複数のツール結果を1回の実行セルの出力へ集約する場合は、集約後の合計出力量を集約前に見積もり、
+  実行セルの出力予算に収まる組だけを1回へまとめる。見積もりの基準は内側の各ツールの出力上限ではなく、実行セルが返す合計量とする
+- 合計出力量を確定できない全文読取は、1ファイルにつき1回の実行セルで取得する
 - 出力量が不明な検索結果は、全文読取と同じ呼び出しへ混在させない
+- 集約した実行セルが切り詰めを通知した場合は、当該出力を読了、網羅性又は件数の根拠にせず、対象を分割して取得し直す
 - 数件の小規模な並列取得は本項の対象外とする
+- 実行ホストがコマンド文字列を解釈する経路では、パイプ、論理演算子、リダイレクトなどの制御演算子をデータ値としてコマンド文字列へ含めない。
+  当該経路はシェルの起動前にコマンド文字列を分割するため、ANSI-Cクォートと変数展開による引用は当該分割を防がない
+- 制御演算子を含むデータを外部コマンドへ渡す場合は、当該コマンドが受理する構造化引数又は標準入力を使う。
+  いずれも受理しない場合は、制御演算子を含まない複数の呼び出しへ分けるか、管理対象一時領域へ保存した入力ファイルを渡す
+- コマンド文字列を組み立てる前にデータ値へ制御演算子が含まれるかを判定し、実行後は起動した対象が意図した単一のコマンドだけであることを確認する
 
 ## テスト
 
@@ -148,7 +155,7 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | `TaskStop` | 実際の別主体へ委譲した経路の中断操作を使い、返された識別子で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
-| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`（agents_serverの委譲・探索委譲・シェル実行委譲・継続・中断） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
+| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`・`mcp__agents_server__list`・`mcp__agents_server__stop`（agents_serverの委譲・探索委譲・シェル実行委譲・観測・継続・中断・一覧・破棄） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeではユーザーへ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
@@ -158,8 +165,8 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
 
-Claude Code側の`agents_server`は、`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`の6ツールでCodexまたはClaudeへ委譲する。
-`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。engineの可用性で起動できない候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ呼び出し側が再起動を重ねない。起動後の実行中に可用性の失敗を観測した場合だけ、同じ`model_type`と`exclude_session_id`で次の候補を起動する。`exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。
+Claude Code側の`agents_server`は、`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールでCodexまたはClaudeへ委譲し、当該sessionを管理する。
+`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。engineの可用性で起動できない候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ呼び出し側が再起動を重ねない。起動後の実行中に可用性の失敗を観測した場合だけ、同じ`model_type`で`start`を呼び直す。可用性を理由として終端したsessionの採用候補をサーバーが起動条件ごとに保持して次の起動から除外するため、呼び出し側はsession識別子を渡さない。
 `start_explore`は調査専用の軽量な起動条件でthreadを開始し、Codex backendではプロジェクト指示の読込を省く。`start_shell`は同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。どちらも委譲と直接実行の分岐を、各ツールの説明が示す採算の目安で判定する。
 Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
 

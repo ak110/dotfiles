@@ -18,6 +18,7 @@ import datetime
 import enum
 import hashlib
 import json
+import ntpath
 import os
 import pathlib
 import re
@@ -59,6 +60,7 @@ if TYPE_CHECKING:
         _windows_information_identity,
         _windows_managed_root_security_is_valid,
         _windows_path_handle,
+        _windows_reparse_identity,
         _windows_replace_security,
         _windows_secure_path,
         _windows_security_base_is_valid,
@@ -223,6 +225,12 @@ class _QuarantineJudgement(typing.NamedTuple):
     reason: str = ""
 
 
+type _TreeEntry = tuple[str, int, int] | tuple[str, int, int, str]
+
+_WINDOWS_MOUNT_POINT_REPARSE_TAG = 0xA0000003
+_WINDOWS_SYMLINK_REPARSE_TAG = 0xA000000C
+
+
 def _lstat_or_none(path: pathlib.Path) -> os.stat_result | None:
     """存在しない場合だけNoneを返す。検査できない場合は例外を送出する。"""
     try:
@@ -308,6 +316,8 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
                 os.close(descriptor)
             os.rmdir(quarantine)
         else:
+            expected_tree = _tree_snapshot(quarantine)
+            _unlink_windows_reparse_points(quarantine, expected_tree)
             shutil.rmtree(quarantine)
     except OSError as error:
         raise ManagedTempError(
@@ -555,9 +565,45 @@ def _restore_posix_quarantine(
         os.rename(quarantine.name, target_name, src_dir_fd=root_descriptor, dst_dir_fd=root_descriptor)
 
 
-def _tree_snapshot(root: pathlib.Path) -> dict[str, tuple[str, int, int]]:
-    """cleanup開始前のtree identityを取得し、reparse pointを拒否する。"""
-    snapshot: dict[str, tuple[str, int, int]] = {}
+def _windows_stored_path(path: str) -> pathlib.PureWindowsPath:
+    """Windows namespace接頭辞を除き、格納値を字句比較できる形にする。"""
+    if path.startswith("\\\\?\\UNC\\"):
+        path = f"\\\\{path[8:]}"
+    elif path.startswith("\\\\?\\"):
+        path = path[4:]
+    return pathlib.PureWindowsPath(ntpath.normpath(path))
+
+
+def _windows_reparse_entry(
+    path: pathlib.Path,
+    metadata: os.stat_result,
+    managed_root: pathlib.Path,
+) -> _TreeEntry:
+    """受理できるreparse pointの種別、identity及び格納値を返す。"""
+    tag = getattr(metadata, "st_reparse_tag", None)
+    if tag == _WINDOWS_MOUNT_POINT_REPARSE_TAG:
+        kind = "junction"
+    elif tag == _WINDOWS_SYMLINK_REPARSE_TAG:
+        kind = (
+            "symlink-dir" if getattr(metadata, "st_file_attributes", 0) & _WINDOWS_FILE_ATTRIBUTE_DIRECTORY else "symlink-file"
+        )
+    else:
+        raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
+    try:
+        stored_target = os.readlink(path)
+        target = _windows_stored_path(stored_target)
+        root = _windows_stored_path(str(managed_root))
+    except (OSError, ValueError):
+        raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}") from None
+    if not target.is_absolute() or not target.is_relative_to(root):
+        raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
+    device, inode = _windows_reparse_identity(path)
+    return kind, device, inode, stored_target
+
+
+def _tree_snapshot(root: pathlib.Path) -> dict[str, _TreeEntry]:
+    """cleanup開始前のtree identityを取得し、安全なreparse pointだけを記録する。"""
+    snapshot: dict[str, _TreeEntry] = {}
     pending = [root]
     while pending:
         parent = pending.pop()
@@ -565,7 +611,8 @@ def _tree_snapshot(root: pathlib.Path) -> dict[str, tuple[str, int, int]]:
             path = pathlib.Path(entry.path)
             metadata = path.lstat()
             if os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-                raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
+                snapshot[str(path.relative_to(root))] = _windows_reparse_entry(path, metadata, root.parent)
+                continue
             kind = "dir" if stat.S_ISDIR(metadata.st_mode) else "leaf"
             device, inode = _path_identity(path)
             relative = str(path.relative_to(root))
@@ -573,6 +620,20 @@ def _tree_snapshot(root: pathlib.Path) -> dict[str, tuple[str, int, int]]:
             if kind == "dir":
                 pending.append(path)
     return snapshot
+
+
+def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, _TreeEntry]) -> None:
+    """検証済みreparse pointを深い順に、リンク先を追跡せず解除する。"""
+    links = [(relative, entry) for relative, entry in expected_tree.items() if len(entry) == 4]
+    for relative, expected in sorted(links, key=lambda item: len(pathlib.PurePath(item[0]).parts), reverse=True):
+        path = root / relative
+        metadata = path.lstat()
+        if _windows_reparse_entry(path, metadata, root.parent) != expected:
+            raise ManagedTempError(f"Windows reparse pointが後始末中に置換された: {path}")
+        if expected[0] in ("junction", "symlink-dir"):
+            os.rmdir(path)
+        else:
+            os.unlink(path)
 
 
 def _consume_registry(validated: _ValidatedTemp) -> pathlib.Path:
@@ -642,7 +703,7 @@ def _cleanup_posix(
     root: pathlib.Path,
     validated: _ValidatedTemp,
     quarantine: pathlib.Path,
-    expected_tree: dict[str, tuple[str, int, int]],
+    expected_tree: dict[str, _TreeEntry],
 ) -> None:
     expected_root = _ValidatedRoot(
         validated.root_device,
@@ -717,7 +778,7 @@ def _cleanup_windows(
     root: pathlib.Path,
     validated: _ValidatedTemp,
     quarantine: pathlib.Path,
-    expected_tree: dict[str, tuple[str, int, int]],
+    expected_tree: dict[str, _TreeEntry],
 ) -> None:
     expected_root = _ValidatedRoot(
         validated.root_device,
@@ -735,6 +796,7 @@ def _cleanup_windows(
         if _tree_snapshot(quarantine) != expected_tree:
             raise ManagedTempError(f"管理対象の内容が隔離時に置換された: {validated.path}")
         _validate_root(root, expected=expected_root)
+        _unlink_windows_reparse_points(quarantine, expected_tree)
         shutil.rmtree(quarantine)
     except OSError as error:
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error

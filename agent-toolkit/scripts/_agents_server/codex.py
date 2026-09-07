@@ -28,7 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _plan import locations as _plan_file  # pylint: disable=wrong-import-position
 
+from _agents_server import state as shared_state  # pylint: disable=wrong-import-position
 from _agents_server.state import (  # pylint: disable=wrong-import-position
+    AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
     TERMINAL_STATUSES,
@@ -42,6 +44,7 @@ from _agents_server.state import (  # pylint: disable=wrong-import-position
     _validate_cwd,
     _validate_model_effort,
     _validate_prompt,
+    consume_agents_server_tool_result,
 )
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -355,10 +358,12 @@ class AppServerManager:
         self,
         sessions: dict[str, SessionState] | None = None,
         condition: asyncio.Condition | None = None,
+        publish_registry: bool = False,
     ) -> None:
         self.client: JsonRpcProcess | None = None
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
+        self._publish_registry = publish_registry
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
 
@@ -367,6 +372,30 @@ class AppServerManager:
         task: asyncio.Task[None] = asyncio.create_task(awaitable)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+
+    async def _finalize_pending_result_after_deadline(
+        self,
+        session: SessionState,
+        deadline: float,
+    ) -> None:
+        """自動再開を待つ期限に、保留した結果を終端状態へ戻す。"""
+        await asyncio.sleep(max(0.0, deadline - asyncio.get_running_loop().time()))
+        if not session.awaiting_auto_resume or session.auto_resume_deadline != deadline:
+            return
+        self._finalize_pending_result(session, record_unobserved=True)
+        await self._notify_waiters()
+
+    @staticmethod
+    def _finalize_pending_result(
+        session: SessionState,
+        *,
+        record_unobserved: bool = False,
+    ) -> None:
+        """子sessionの観測完了又は期限到来時に保留した結果を公開する。"""
+        unobserved = set(session.live_child_session_ids)
+        shared_state.finalize_pending_result(session)
+        if record_unobserved and unobserved:
+            shared_state.record_unobserved_sessions(session, unobserved)
 
     async def _ensure_client(self) -> JsonRpcProcess:
         async with self._lock:
@@ -415,7 +444,7 @@ class AppServerManager:
             params["model"] = model
         if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
             params["config"] = {"project_doc_max_bytes": 0}
-        params["developerInstructions"] = LAUNCH_SYSTEM_PROMPTS[launch_kind]
+        params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
         thread_response = await client.request("thread/start", params)
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
@@ -431,6 +460,7 @@ class AppServerManager:
             effort=effort,
             engine="codex",
             turn_seq=1,
+            publish_registry=self._publish_registry,
         )
         self.sessions[session_id] = session
         _initialize_turn(session)
@@ -471,6 +501,7 @@ class AppServerManager:
             effort=effort,
             engine="codex",
             turn_seq=turn_seq + 1,
+            publish_registry=self._publish_registry,
         )
         self.sessions[session_id] = session
         _initialize_turn(session)
@@ -566,6 +597,14 @@ class AppServerManager:
                 **session.public_status(),
             }
 
+    async def release_session(self, session_id: str) -> None:
+        """Codex backendにはsession専用の接続が無いため、資源を解放しない。
+
+        `codex app-server`はbackend単位で共有する。`thread/unsubscribe`後の
+        `thread/resume`による会話復元を実測していないため、unsubscribeは行わない。
+        """
+        del session_id
+
     async def interrupt(self, session: SessionState) -> None:
         """公開killから対象turnへ中断要求を送り、受理を待つ。"""
         if session.terminal:
@@ -621,7 +660,7 @@ class AppServerManager:
             resume_params["model"] = session.model
         if session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
             resume_params["config"] = {"project_doc_max_bytes": 0}
-        resume_params["developerInstructions"] = LAUNCH_SYSTEM_PROMPTS[session.launch_kind]
+        resume_params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[session.launch_kind]}\n{AUTO_RESUME_NOTICE}"
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
@@ -808,6 +847,17 @@ class AppServerManager:
             session.failure_pending_completion = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
+            if session.live_child_session_ids and not session.auto_resume_consumed:
+                session.pending_result = {
+                    "status": session.status,
+                    "agent_message": session.agent_message,
+                    "error": session.error,
+                }
+                session.awaiting_auto_resume = True
+                session.auto_resume_deadline = asyncio.get_running_loop().time() + shared_state.RESULT_RETENTION_SECONDS
+                self._schedule(self._finalize_pending_result_after_deadline(session, session.auto_resume_deadline))
+                session.status = "running"
+                session.turn_completed = False
         elif method == "turn/plan/updated":
             plan = params.get("plan")
             if isinstance(plan, list):
@@ -839,6 +889,8 @@ class AppServerManager:
                 session.set_progress(session.commentary)
         elif method in {"item/fileChange/outputDelta", "item/fileChange/patchUpdated"}:
             session.diff_changed = True
+        if session.awaiting_auto_resume and not session.live_child_session_ids:
+            self._finalize_pending_result(session)
         session.touch()
         await self._notify_waiters()
 
@@ -996,6 +1048,12 @@ class AppServerManager:
                 session.plan = [{"text": text, "status": "completed"}]
         elif item_type == "fileChange":
             session.diff_changed = True
+        elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
+            arguments = item.get("arguments")
+            result = item.get("result")
+            structured = result.get("structuredContent") if isinstance(result, dict) else None
+            if isinstance(arguments, dict) and isinstance(structured, dict):
+                consume_agents_server_tool_result(session, str(item.get("tool", "")), arguments, structured)
 
     async def close(self) -> None:
         """自身が起動したApp Server接続を終了する。"""

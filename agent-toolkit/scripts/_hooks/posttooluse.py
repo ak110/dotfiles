@@ -17,7 +17,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
-6. agents_server MCP呼び出し後のsession状態記録
+6. agents_server MCP呼び出しと`atk agents-wait`実行後のsession状態記録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)
 8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
@@ -44,6 +44,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills" / "plan-mode" / "scripts"))
 from _agents_server import state as _agents_server_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _atk.wi import process_loop_log as _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -57,9 +58,16 @@ from _hooks import tool_input as _hook_tool_input  # noqa: E402  # pylint: disab
 from _hooks import uwi_completion as _uwi_completion  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hooks.agent_id import resolve_hook_agent_id  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    extract_execution_segments,
     extract_git_events,
 )
-from _hooks.notice import formatter as _notice_formatter  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    _WARN_TAG,
+    set_warning_session_id,
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 # pylint: disable=wrong-import-position,import-error
@@ -179,8 +187,13 @@ _AGENTS_SERVER_START_TOOLS = frozenset(
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_STOP_TOOLS = frozenset(f"{namespace}stop" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
+    _AGENTS_SERVER_START_TOOLS
+    | _AGENTS_SERVER_WAIT_TOOLS
+    | _AGENTS_SERVER_SEND_TOOLS
+    | _AGENTS_SERVER_KILL_TOOLS
+    | _AGENTS_SERVER_STOP_TOOLS
 )
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
 
@@ -331,10 +344,11 @@ def _record_agents_server_session_state(
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
             delivery = structured.get("delivery")
-            if delivery in {"steered", "reply_started", "reply_ambiguous"}:
+            # steerはturn_seqを変えず、当該turnの終端を既存の観測が待つ。
+            if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
-        elif operation in {"wait", "kill"}:
+        elif operation in {"wait", "kill", "stop"}:
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
@@ -398,6 +412,90 @@ def _record_agents_server_observation_attempt(session_id: str, tool_input: dict,
         if not isinstance(record, dict) or record.get("pending_observation") is False:
             return None
         record["pending_observation"] = False
+        return state
+
+    update_state(session_id, _mutator)
+
+
+def _agents_wait_session_id(tokens: tuple[str, ...]) -> str | None:
+    """`atk agents-wait`の実行トークン列からsession識別子を返す。"""
+    if len(tokens) < 3:
+        return None
+    executable = tokens[0].replace("\\", "/")
+    if executable.rsplit("/", 1)[-1] not in {"atk", "atk.py"} or tokens[1] != "agents-wait":
+        return None
+    index = 2
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--timeout":
+            index += 2
+            continue
+        if token.startswith("--timeout="):
+            index += 1
+            continue
+        if token == "--":
+            return tokens[index + 1] if index + 1 < len(tokens) else None
+        if token.startswith("-"):
+            return None
+        return token
+    return None
+
+
+def _record_agents_wait_observation_attempt(session_id: str, command: str) -> None:
+    """成功したBash入力内の`atk agents-wait`を観測の試みとして記録する。"""
+    remote_session_ids = {
+        remote_session_id
+        for segment in extract_execution_segments(command)
+        if segment.resolved and (remote_session_id := _agents_wait_session_id(segment.tokens)) is not None
+    }
+    if not remote_session_ids:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict):
+            return None
+        changed = False
+        for remote_session_id in remote_session_ids:
+            record = sessions.get(remote_session_id)
+            if isinstance(record, dict) and record.get("pending_observation") is True:
+                record["pending_observation"] = False
+                changed = True
+        return state if changed else None
+
+    update_state(session_id, _mutator)
+
+
+def _record_atk_help_observation(session_id: str, command: str) -> None:
+    """成功した`atk`のヘルプ専用呼び出しを観測済みとして記録する。"""
+    help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
+    observed_now: set[str] = set()
+    for segment in extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        if pathlib.PurePosixPath(segment.tokens[0]).name not in {"atk", "atk.py"}:
+            continue
+        arguments = segment.tokens[1:]
+        if (
+            "--" in arguments
+            or "--help" not in arguments
+            or any(token != "--help" for token in arguments if token.startswith("-"))
+        ):
+            continue
+        tokens = ("atk", *arguments)
+        matches = [key for key, prefix in help_keys if tokens[: len(prefix)] == prefix]
+        if matches:
+            observed_now.add(max(matches, key=lambda key: len(key.split())))
+    if not observed_now:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        observed_raw = state.get("observed_atk_help", [])
+        observed = [item for item in observed_raw if isinstance(item, str)] if isinstance(observed_raw, list) else []
+        additions = sorted(observed_now - set(observed))
+        if not additions:
+            return None
+        state["observed_atk_help"] = [*observed, *additions]
         return state
 
     update_state(session_id, _mutator)
@@ -566,7 +664,7 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
         return
     warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
     if warnings:
-        notices.append(_llm_notice("\n".join(warnings), tag="warn"))
+        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG))
 
 
 def _plan_main_path_for(display_path: str) -> str:
@@ -596,9 +694,12 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     )
 
 
-def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
+def _handle_bash_tool(session_id: str, command: str, cwd: str, *, record_atk_help: bool) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
+    _record_agents_wait_observation_attempt(session_id, command)
+    if record_atk_help:
+        _record_atk_help_observation(session_id, command)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
@@ -651,6 +752,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     if parsed is None:
         return 0
     payload, session_id, tool_name, tool_input, cwd = parsed
+    set_warning_session_id(session_id)
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
@@ -736,7 +838,13 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if task_id is not None:
             _record_background_task_id(session_id, task_id)
 
-    _handle_bash_tool(session_id, command, cwd)
+    turn_id = payload.get("turn_id")
+    _handle_bash_tool(
+        session_id,
+        command,
+        cwd,
+        record_atk_help=not (isinstance(turn_id, str) and bool(turn_id)),
+    )
     return 0
 
 

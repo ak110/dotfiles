@@ -36,6 +36,7 @@ _LOCK_SUFFIX = ".lock"
 _TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
 _SESSION_TITLE_KEY = "last_hook_session_title"
 _INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
+_WARN_NOTICE_COUNTS_KEY = "warn_notice_counts"
 _TRANSCRIPT_SESSION_ID_KEYS = ("sessionId", "session_id")
 
 STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
@@ -243,6 +244,25 @@ def update_state(session_id: str, mutator: Callable[[dict], dict | None]) -> boo
             return True
     except OSError:
         return False
+
+
+def increment_warn_notice_count(session_id: str, key: str) -> int:
+    """警告原因の発生件数を排他ロック下で増やし、増加後の値を返す。"""
+    count = 1
+
+    def _increment(current: dict) -> dict:
+        nonlocal count
+        counts = current.get(_WARN_NOTICE_COUNTS_KEY)
+        if not isinstance(counts, dict):
+            counts = {}
+        previous = counts.get(key)
+        count = previous + 1 if isinstance(previous, int) and previous >= 0 else 1
+        counts[key] = count
+        current[_WARN_NOTICE_COUNTS_KEY] = counts
+        return current
+
+    update_state(session_id, _increment)
+    return count
 
 
 def claim_session_title(session_id: str, title: str) -> bool:

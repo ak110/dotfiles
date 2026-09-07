@@ -2,6 +2,7 @@
 
 import pathlib
 import subprocess
+import sys
 
 
 def run(
@@ -21,6 +22,25 @@ def run(
         capture_output=capture_output,
         text=text,
         timeout=timeout,
+    )
+
+
+def run_quiet(args: list[str], cwd: str | pathlib.Path) -> None:
+    """gitの出力を成功時は抑止し、失敗時だけ標準エラーへ転送する。"""
+    result = run(args, cwd, check=False, capture_output=True, text=True)
+    if result.returncode == 0:
+        return
+    assert isinstance(result.stdout, str)
+    assert isinstance(result.stderr, str)
+    if result.stdout:
+        print(result.stdout, file=sys.stderr, end="")
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    raise subprocess.CalledProcessError(
+        result.returncode,
+        ["git", *args],
+        output=result.stdout,
+        stderr=result.stderr,
     )
 
 

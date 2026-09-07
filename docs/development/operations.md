@@ -99,8 +99,18 @@ Windowsはtmux運用外のため対象外とする。
 
 Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
 `askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
-端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
-フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
+`askUserQuestionTimeout`による自動継続は、Remote Controlのbridgeが接続したセッションではarmedされない。
+ダイアログの内部表現が持つ`hasExternalRacer`がbridgeの接続で真になり、自動継続のarmed条件が当該値の否定を含むためである。
+`~/.claude/settings.json`は`remoteControlAtStartup`が真であり、対話TUIのセッションはこの条件へ該当する。
+armedされた場合の中止条件はタイマー発火以降のユーザー操作と端末フォーカスの保持であり、端末とtmuxのアクティブペインにフォーカスが当たっている間は自動継続しない。
+`dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
+既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3経路だけであり、当該質問の転送経路はいずれにも該当しない。
+このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。
+常駐実行のセッションでは別端末からの回答ができなくなるが、質問待ちに上限を与える利益を優先する。
+本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定した。
+再検証では、バイナリから`hasExternalRacer`を設定する箇所と、当該値の否定を含む自動継続のarmed条件を読む。続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、当該質問の転送経路が含まれないことを確認する。
+
+本節が記録する配布の事実が規範の判断へ及ぼす帰結は、[concepts.md](concepts.md)の「確認・合意の運用」が保持する。
 
 `dialogExpiry`の対象は、リモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
 及びHELD状態のcross-sessionメッセージが承認を待つ時間である。
@@ -110,7 +120,7 @@ Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_setti
 既定値の`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
 環境変数`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`を設定した環境では、当該値が設定ファイルの値より優先する。
 
-`atk wi process-loop`のClaude起動だけが`--settings`で両設定の値を明示する。
+`atk wi process-loop`のClaude起動だけが`--settings`で両設定の値と`remoteControlAtStartup`を明示する。
 自律実行では無期限の駐留が工程の停止を招くため、配布値の`never`を常駐実行だけ有限値へ上書きする。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
 TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_common/wait_schedule.py`の
@@ -185,6 +195,32 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 1. Codexを停止したまま、`~/.codex/`、`/dev/shm/codex-<UID>-*`、競合スナップショットの3集合を照合する
 2. SQLiteのDB、WAL、SHMを一組として復旧し、通常ストレージ側の内容を検証する
 3. 復旧結果を確認した後に限り、共有メモリー側の旧`target`と競合スナップショットを手動で回収する
+
+## Codexの実験的コンテキスト管理
+
+`.chezmoi-source/dot_codex/modify_private_config.toml`は、Codex設定の
+`features.context_management.experimental_mode`を`true`に設定する。
+2026年9月6日に`codex-cli 0.153.4`の`codex features list`で、有効化前の値が`false`であることを確認した。
+
+有効化前の基準はセッション`cd6180fe-097a-4d97-bc6b-ea5c9bdc159c`で計測し、
+コンパクションは合計69回だった。内訳は次のとおりである。
+
+- メインのClaudeセッション: 5回、合計1284.9秒
+- Claude委譲先: 10回、合計2230.3秒
+- Codex委譲先: 54回。このうちセッション`01a074b5-f8d5-7850-bca7-a10144a3b742`は6.8時間で10回
+
+有効化後の比較値は未計測である。本節の値は有効化前の基準だけを表す。
+計測は次の手順で行う。
+まず`~/.claude/projects/`配下から`agent-toolkit:process-wi`のメインセッション記録を1件選ぶ。
+選定条件は、最初のレコードの`timestamp`が有効化commit`248ec7cec313fe36d5a0210b561656340e4dc3c4`の
+commit時刻（2026-09-06T14:57:05Z）より後であり、かつ当該セッションが終端済みであることとする。
+次に`uv run --script agent-toolkit/skills/session-review/scripts/session_review_evidence.py --stats <当該記録の絶対パス>`を実行する。
+出力の`stats-compaction-total`の`by_record`から、キーが`codex:`で始まる項目の値の合計を求める。
+当該合計をCodex委譲先のコンパクション回数とする。
+最後に、選んだセッション識別子と当該合計を上記の有効化前の値とともに本節へ追記する。
+2026年9月7日の時点で選定条件を満たすセッションは無い。
+直近の`agent-toolkit:process-wi`セッション`9af72711-b905-4602-b5df-93843ad1af8a`は2026-09-06T14:25:51Zに開始している。
+当該セッションは有効化より前に開始したCodex委譲先を含むため対象にしない。
 
 ## 特定ホストでの常駐サービス自動起動
 

@@ -18,7 +18,7 @@ atk wi process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、`agent-toolkit:completion-report`が必須の`agent-toolkit:session-review`と固定報告を完了し、続いて`agent-toolkit:exit-session`が`/goal`で登録した目的とセッションを終了する。
+ready項目がなくなると、`agent-toolkit:completion-report`が①で完了した振り返りの結果を含む固定報告を完了し、続いて`agent-toolkit:exit-session`が`/goal`で登録した目的とセッションを終了する。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗又は値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
@@ -84,13 +84,14 @@ CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値
 `fast`の既定は真であり、より軽量な探索の起動条件を使う。所在の特定や該当箇所の列挙のように結論だけで後続の判断が成立する調査は既定のまま使い、軽量な探索では判断材料が不足する調査だけ偽を指定して通常の探索の起動条件へ切り替える。
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
-公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`の6つである。`start`、`start_explore`及び`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
+公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つである。`start`、`start_explore`及び`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
 完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。固有のtimeout要件がなければ`timeout`を省略し、呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。`timeout=0`は待機せず現状態を返す。
 `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 timeout超過時もsessionを保持し、`wait`または終端後の`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。`kill`の`kill_requested`、
 `send_message`の`delivery`及び`wait`の終端応答で要求・配送・結果を確認する。
+`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。`stop(session_id)`は保持中で終端済みのsessionを破棄し、実行中turnを持つsessionは拒否する。`wait`と`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。破棄したsessionへの`send_message`は暗黙再開する。
 
 backendから承認・入力・認証・attestationなどの非対話要求を受信した場合は、MCPが非対応エラーを返し、
 対応turnを`failed`としてwaiterを起床させる。承認・ユーザー入力・一覧操作は公開せず、明示的な中断は`kill`で行う。

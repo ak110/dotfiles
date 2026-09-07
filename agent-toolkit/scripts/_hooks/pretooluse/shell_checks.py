@@ -37,6 +37,7 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
+- 高容量のユーザー領域を対象限定なしに走査する`find`・`ls -R`の検出 (warn)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
@@ -104,6 +105,7 @@ from _common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-po
     locked_rotate_and_append as _locked_rotate_and_append,
 )
 from _git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
@@ -136,6 +138,7 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
 from _hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import _WARN_TAG  # noqa: E402
 from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -743,7 +746,7 @@ def _check_bash_sleep_poll_pattern(
         return "block"
     return _llm_notice(
         f"warn: 前景の`sleep`の後に別のコマンドが続いており、反復ポーリングになる可能性がある。\n{guidance}",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
@@ -860,7 +863,10 @@ _STATE_CHANGING_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("gh", "pr", "create"),
     ("gh", "pr", "merge"),
 )
-"""出力が後続の検収の唯一の入力となる状態変更コマンドの前置き。"""
+"""出力に生成したファイル名と構造検収の対象となるメタデータだけが現れる状態変更コマンドの前置き。
+
+本文の照合はCLI内部で完結し、出力を根拠としない。
+"""
 _COMPLETE_OUTPUT_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("atk", "wi", "show"),
     ("atk", "review-table", "show"),
@@ -868,7 +874,8 @@ _COMPLETE_OUTPUT_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 """状態を変更せず、出力の全量が後続の照合の根拠となるコマンドの前置語。
 
 `atk wi show`は一括取得の契約が全項目の出力を本文採用の条件とし、`atk review-table show`は
-記録後の保存本文の取得手段である。いずれも一部だけを読むと照合の根拠が失われる。
+未解消の指摘と対応状況を確認する手段であり、不一致を検出した場合に差異を特定する手段でもある。
+いずれも一部だけを読むと判断の根拠が失われる。
 状態変更コマンドは`_STATE_CHANGING_COMMAND_PREFIXES`で別に判定する。
 """
 _COMPLETE_OUTPUT_EXCLUDED_PREFIXES: tuple[tuple[str, ...], ...] = (
@@ -1108,12 +1115,53 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
     return segment.resolved and segment.tokens[: len(prefix)] == prefix
 
 
+def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
+    """区間が`--help`以外のオプションを持たないヘルプ専用呼び出しかを返す。"""
+    arguments = segment.tokens[1:]
+    return (
+        segment.resolved
+        and "--" not in arguments
+        and "--help" in arguments
+        and all(token == "--help" for token in arguments if token.startswith("-"))
+    )
+
+
+def _check_bash_unverified_atk_help(command: str, session_id: str) -> str | None:
+    """同一セッションでヘルプ未観測の`atk`サブコマンド実行を警告する。"""
+    if not session_id or _contains_heredoc(command):
+        return None
+    help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
+    targets: set[str] = set()
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
+            continue
+        if pathlib.PurePosixPath(segment.tokens[0]).name not in {"atk", "atk.py"}:
+            continue
+        tokens = ("atk", *segment.tokens[1:])
+        matches = [key for key, prefix in help_keys if tokens[: len(prefix)] == prefix]
+        if matches:
+            targets.add(max(matches, key=lambda key: len(key.split())))
+    if not targets:
+        return None
+    observed_raw = read_state(session_id).get("observed_atk_help", [])
+    observed = {item for item in observed_raw if isinstance(item, str)} if isinstance(observed_raw, list) else set()
+    unverified = sorted(targets - observed)
+    if not unverified:
+        return None
+    return _llm_notice(
+        "warn: 同一セッションでヘルプ出力を観測していない`atk`のサブコマンドを実行しようとしている。"
+        f"対象: {'、'.join(unverified)}\n"
+        "Fix: 先に当該サブコマンドへ`--help`だけを付けて単独で実行し、受理形式と出力形式を確定する。",
+        tag=_WARN_TAG,
+    )
+
+
 def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
     """区間が列挙済みの状態変更コマンドであるかを返す。
 
     Gitはサブコマンド前のグローバルオプションを許容するため、既存のGitイベント解析でサブコマンドを解決する。
     """
-    if not segment.resolved or not segment.tokens:
+    if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
         return False
     if segment.tokens[0] != "git":
         return any(_segment_starts_with(segment, prefix) for prefix in _STATE_CHANGING_COMMAND_PREFIXES)
@@ -1184,52 +1232,55 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     "warn: 除外設定を反映しない再帰`grep`をディレクトリへ実行している。"
                     "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
                     "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。",
-                    tag="warn",
+                    tag=_WARN_TAG,
                 )
     return None
 
 
 def _check_bash_state_change_command_chaining(command: str) -> str | None:
-    """状態変更コマンドが最後の直列区間でない場合に警告する。
+    """状態変更コマンドが最後の直列区間でない場合に遮断する。
 
     最後の区間では当該コマンドの終了コードがシェルの終了コードとなるため対象外とする。
+    代替手段が当該コマンドの単独実行に一意に定まり、同じターンで実行できるため遮断する。
     """
     if _contains_heredoc(command):
         return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for serial_command in serial_commands[:-1]:
         if any(_segment_is_state_changing(segment) for segment in _extract_execution_segments(serial_command)):
-            return _llm_notice(
-                "warn: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。"
-                "当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
-                tag="warn",
+            print(
+                _block_notice(
+                    "block: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。",
+                    fix="当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
+                ),
+                file=sys.stderr,
             )
+            return "block"
     return None
 
 
 def _check_bash_help_with_execution(command: str) -> str | None:
-    """同じ実行ファイルのヘルプ取得と別区間の並置を警告する。
+    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を遮断する。
 
     `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
+    ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
+    代替手段がヘルプの先行実行と後続実行の分離に一意に定まり、同じターンで実行できるため遮断する。
     """
     if _contains_heredoc(command):
         return None
     segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
     names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
-    help_names = {
-        name
-        for name, segment in zip(names, segments, strict=True)
-        if "--" not in segment.tokens[1:]
-        and "--help" in segment.tokens[1:]
-        and all(token == "--help" for token in segment.tokens[1:] if token.startswith("-"))
-    }
-    if any(names.count(name) >= 2 for name in help_names):
-        return _llm_notice(
-            "warn: 同じシェル呼び出しの中でヘルプ取得と同じ実行ファイルの実行が並んでいる。"
-            "前段のヘルプ出力は同じ呼び出しの中では取得できないため、"
-            "受理形式を確定してから実行を分けて呼び出す。",
-            tag="warn",
+    help_names = {name for name, segment in zip(names, segments, strict=True) if _segment_is_help_only(segment)}
+    non_help_names = {name for name, segment in zip(names, segments, strict=True) if not _segment_is_help_only(segment)}
+    if help_names & non_help_names:
+        print(
+            _block_notice(
+                "block: 同じシェル呼び出しの中でヘルプの取得と同じ実行ファイルの実行が並んでいる。",
+                fix="先にヘルプだけを実行して受理形式を確定し、実行は別の呼び出しへ分ける。",
+            ),
+            file=sys.stderr,
         )
+        return "block"
     return None
 
 
@@ -1517,7 +1568,7 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
             return _llm_notice(
                 "warn: 出力を切り詰めるパイプラインの後にある`$?`は、対象コマンドではなく"
                 "`head`・`tail`の終了状態を示す。出力を切り詰める前に対象コマンドの終了状態を保持する。",
-                tag="warn",
+                tag=_WARN_TAG,
             )
     return None
 
@@ -1631,6 +1682,241 @@ def _check_bash_recursive_home_search(command: str) -> str | None:
         "warn: 再帰検索が大容量のユーザーディレクトリを対象としている。"
         "対象ディレクトリを狭め、不要領域を除外し、検索対象と出力に上限を設けるか、"
         "`rg`・再帰`grep`を使う前に分離した実行コンテキストで検索する。",
+        tag=_WARN_TAG,
+    )
+
+
+_FIND_GLOBAL_OPTIONS = frozenset({"-H", "-L", "-P"})
+_FIND_BOUNDS = frozenset({"-prune", "-maxdepth", "-xdev", "-mount"})
+_FIND_KNOWN_EXPRESSION_OPTIONS = frozenset(
+    {
+        "-amin",
+        "-anewer",
+        "-atime",
+        "-cmin",
+        "-cnewer",
+        "-ctime",
+        "-daystart",
+        "-delete",
+        "-depth",
+        "-empty",
+        "-exec",
+        "-execdir",
+        "-executable",
+        "-false",
+        "-files0-from",
+        "-fls",
+        "-follow",
+        "-fprint",
+        "-fprint0",
+        "-fprintf",
+        "-fstype",
+        "-gid",
+        "-group",
+        "-ignore_readdir_race",
+        "-ilname",
+        "-iname",
+        "-inum",
+        "-ipath",
+        "-iregex",
+        "-iwholename",
+        "-links",
+        "-lname",
+        "-ls",
+        "-mmin",
+        "-mtime",
+        "-name",
+        "-newer",
+        "-nogroup",
+        "-noignore_readdir_race",
+        "-noleaf",
+        "-nouser",
+        "-nowarn",
+        "-ok",
+        "-okdir",
+        "-path",
+        "-perm",
+        "-print",
+        "-print0",
+        "-printf",
+        "-quit",
+        "-readable",
+        "-regex",
+        "-regextype",
+        "-samefile",
+        "-size",
+        "-true",
+        "-type",
+        "-uid",
+        "-used",
+        "-user",
+        "-warn",
+        "-wholename",
+        "-writable",
+        "-xtype",
+    }
+)
+_LS_SHORT_OPTIONS_WITHOUT_VALUE = frozenset("ABCDFGHKLNQRSUXZabcdfghiklmnopqrstvux1")
+_LS_SHORT_OPTIONS_WITH_VALUE = frozenset({"I", "T", "w"})
+_LS_LONG_OPTIONS_WITHOUT_VALUE = frozenset(
+    {
+        "--all",
+        "--almost-all",
+        "--author",
+        "--context",
+        "--directory",
+        "--dereference",
+        "--dereference-command-line",
+        "--dereference-command-line-symlink-to-dir",
+        "--dired",
+        "--escape",
+        "--file-type",
+        "--full-time",
+        "--group-directories-first",
+        "--help",
+        "--hide-control-chars",
+        "--human-readable",
+        "--ignore-backups",
+        "--inode",
+        "--kibibytes",
+        "--literal",
+        "--no-group",
+        "--numeric-uid-gid",
+        "--quote-name",
+        "--recursive",
+        "--reverse",
+        "--show-control-chars",
+        "--si",
+        "--size",
+        "--version",
+        "--zero",
+    }
+)
+_LS_LONG_OPTIONS_WITH_VALUE = frozenset(
+    {
+        "--block-size",
+        "--classify",
+        "--color",
+        "--format",
+        "--hide",
+        "--hyperlink",
+        "--ignore",
+        "--indicator-style",
+        "--quoting-style",
+        "--sort",
+        "--tabsize",
+        "--time",
+        "--time-style",
+        "--width",
+    }
+)
+_LS_LONG_OPTIONS_WITH_OPTIONAL_VALUE = frozenset({"--classify", "--color", "--hyperlink"})
+
+
+def _find_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """`find`区間が高容量領域だけを対象とし、走査範囲を限定しない場合に真を返す。"""
+    index = 1
+    while index < len(tokens) and tokens[index] in _FIND_GLOBAL_OPTIONS:
+        index += 1
+    paths: list[str] = []
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("-") or token in {"(", "!", ","}:
+            break
+        paths.append(token)
+        index += 1
+    if not paths or not all(_is_high_capacity_home_target(path) for path in paths):
+        return False
+    expression = tokens[index:]
+    if any(token in _FIND_BOUNDS for token in expression):
+        return False
+    return all(
+        not token.startswith("-")
+        or token in _FIND_KNOWN_EXPRESSION_OPTIONS
+        or token.startswith("-newer")
+        and len(token) == len("-newer") + 2
+        for token in expression
+    )
+
+
+def _ls_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """`ls`区間が再帰指定と高容量領域だけのoperandを持つ場合に真を返す。"""
+    operands: list[str] = []
+    recursive = False
+    option_terminator = False
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if option_terminator or token == "-" or not token.startswith("-"):
+            operands.append(token)
+            index += 1
+            continue
+        if token == "--":
+            option_terminator = True
+            index += 1
+            continue
+        name, separator, _ = token.partition("=")
+        if name in _LS_LONG_OPTIONS_WITH_VALUE:
+            if name in _LS_LONG_OPTIONS_WITH_OPTIONAL_VALUE:
+                index += 1
+            else:
+                index += 1 if separator else 2
+            continue
+        if token in _LS_LONG_OPTIONS_WITHOUT_VALUE and not separator:
+            recursive = recursive or token == "--recursive"
+            index += 1
+            continue
+        if token.startswith("--"):
+            return False
+        short_options = token[1:]
+        value_option_index = next(
+            (position for position, character in enumerate(short_options) if character in _LS_SHORT_OPTIONS_WITH_VALUE),
+            None,
+        )
+        if value_option_index is not None:
+            leading = short_options[:value_option_index]
+            if any(character not in _LS_SHORT_OPTIONS_WITHOUT_VALUE for character in leading):
+                return False
+            recursive = recursive or "R" in leading
+            index += 1 if value_option_index < len(short_options) - 1 else 2
+            continue
+        if not short_options or any(character not in _LS_SHORT_OPTIONS_WITHOUT_VALUE for character in short_options):
+            return False
+        recursive = recursive or "R" in short_options
+        index += 1
+    return recursive and bool(operands) and all(_is_high_capacity_home_target(path) for path in operands)
+
+
+def _pipeline_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
+    """対象限定を伴わずに高容量のユーザー領域だけを走査する`find`と`ls -R`を判定する。
+
+    `find`では`-prune`・`-maxdepth`・`-xdev`・`-mount`のいずれかを対象限定とみなす。
+    `ls`は除外の手段を持たないため、再帰指定と高容量領域の指定だけで判定する。
+    `fd`はoperandのパターンとパスを構文だけでは判別できず、既定で除外設定を反映するため対象にしない。
+    """
+    if not tokens:
+        return False
+    if tokens[0] == "find":
+        return _find_has_unbounded_home_traversal(tokens)
+    if tokens[0] == "ls":
+        return _ls_has_unbounded_home_traversal(tokens)
+    return False
+
+
+def _check_bash_unbounded_home_traversal(command: str) -> str | None:
+    """対象限定の無い`find`・`ls -R`による高容量領域の走査へ警告を返す。"""
+    if _contains_heredoc(command):
+        return None
+    if not any(
+        segment.resolved and _pipeline_has_unbounded_home_traversal(segment.tokens)
+        for pipeline in _extract_execution_pipelines(command)
+        for segment in pipeline
+    ):
+        return None
+    return _llm_notice(
+        "warn: 除外設定を持たない走査コマンドが大容量のユーザーディレクトリを無限定に走査している。"
+        "`find`では`-prune`と`-maxdepth`で対象集合を先に限定し、"
+        "ファイル一覧の取得には除外設定を反映する`rg --files`を使う。",
         tag="warn",
     )
 

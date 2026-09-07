@@ -64,7 +64,7 @@ class GitSyncError(RuntimeError):
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> None:
     """Gitコマンドを実行し、失敗時に例外を送出する。"""
-    _git_command.run(args, cwd, check=True)
+    _git_command.run_quiet(args, cwd)
 
 
 def _run_git_result(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:

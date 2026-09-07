@@ -27,6 +27,7 @@ from _plan import structure as _plan_format
 
 from _atk import git_sync as _atk_git_sync
 from _atk import help_text as _atk_help
+from _atk import output_file as _output_file
 from _atk.wi import common as _common
 from _atk.wi import frontmatter as _frontmatter
 
@@ -73,7 +74,8 @@ def build_parser(parser) -> None:
         metavar="PLAN_FILE",
         help=("plans rootからの相対メイン計画パス、またはci/ci-{原因commit完全OID}.exec-review.tsv。"),
     )
-    _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
+    list_parser = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
+    _output_file.add_output_file_arg(list_parser)
     _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
@@ -720,7 +722,7 @@ def commit_plan(
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
         saved_bundle_exists = saved_main.is_file()
         if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
-            _git_command.run(["fetch"], cwd=private_notes, check=True)
+            _git_command.run_quiet(["fetch"], cwd=private_notes)
         elif not working_bundle or not saved_bundle_exists:
             if not skip_push:
                 _atk_git_sync.push_pending_commits(private_notes)
@@ -816,7 +818,7 @@ def commit_ci_review(
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved = _plan_file.new_plans_root(private_notes) / relative
         if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
-            _git_command.run(["fetch"], cwd=private_notes, check=True)
+            _git_command.run_quiet(["fetch"], cwd=private_notes)
         elif not saved.exists():
             if not skip_push:
                 _atk_git_sync.push_pending_commits(private_notes)

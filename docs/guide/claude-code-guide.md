@@ -126,14 +126,16 @@ claude plugin list
 `claude mcp get codex`は旧User scope定義の有無を確認する診断である。`agents_server` MCPは
 Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin list`と`claude plugin list`で各pluginの状態を確認する。
 
-委譲は`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`の6ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
+委譲と当該sessionの管理は`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールで行う。`start`は工程別モデル設定のキー名から`_model`を除いた`model_type`、
 `prompt`、既存ディレクトリの絶対`cwd`を受け取り、完了を待たず`session_id`を返す。engine、model及びeffortは`atk config`の当該キーの候補列からサーバーが解決し、
-応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`と失敗した`session_id`を`exclude_session_id`へ渡して次の候補を起動する。
-`start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、既定は`true`とする。`exclude_session_id`へ渡せるのは、同じ`fast`の値で開始した探索起動のsessionだけとする。起動条件の一致しないsession IDは、別の設定キーの候補が除外へ混入するため開始前にエラーとなる。
+応答へ採用した値を含める。可用性に起因する失敗を観測した呼び出し側は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終端した候補をサーバーが保持して除外することで成立する。
+`start_explore`は`prompt`、絶対`cwd`、`fast`を受け取り、調査専用の軽量な起動条件でthreadを開始する。`fast=false`は`explore_model`、`fast=true`は`explore_fast_model`の設定を使い、既定は`true`とする。
 `start_shell`は`command`、絶対`cwd`、`summary_policy`を受け取り、`start_explore`と同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。読み取り専用の制約は課さず、検査コマンドなど対象を変更する実行を受け付ける。`start_explore`と`start_shell`の各説明は、委譲と直接実行のどちらが安いかを事前に判定する採算の目安を持つ。
 軽量化はプロジェクト指示とスキルの読込を省くものであり、書込の禁止ではない。対象を変更させない場合は`prompt`へその旨を明示する。
-`send_message`は、現在の設定の候補列から当該sessionの除外済み候補を除いた先頭の候補が、起動に使った実効値と一致しない場合に`configuration changed`を返す。呼び出し側は検収済み状態を渡して新規起動する。
+`send_message`は、起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
 `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
+`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。
+`stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`wait`と`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。
 `wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。`timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。固有のtimeout要件がなければ`timeout`を省略し、呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。`timeout=0`は待機せず現状態を返し、
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
@@ -145,6 +147,10 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、`atk config show`と`atk config get`が当該値を返し、
 委譲の起動でも当該値を使う。環境変数は保存済みの設定より優先し、当該変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
+`atk config apply-preset <プリセット名>`は、工程別モデル設定の10キーを1回の実行で一括保存する。
+受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
+プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
+設定を保存していない環境の既定値は`codex-balanced`と同じ候補列とする。
 
 ## Claude Codeの推奨設定
 
@@ -225,6 +231,7 @@ AWIは人間向けの作業要求であり、実装を伴う場合は変更量�
 | `atk wi add` | 依頼内容が既に固まっており、本文をそのまま登録したい |
 | `atk wi add --batch` | 別環境の`atk wi show --all`の出力を複数件まとめて移行・復元したい |
 | `/agent-toolkit:add-awi` | 依頼内容を対話で確定してから登録したい |
+| `/agent-toolkit:fast-process-wi` | 軽微なAWIを計画ファイルなしで直接実施したい |
 | `/agent-toolkit:plan-and-add-awi` | 計画の作成とレビューまで先に済ませ、実装だけを自律実行へ渡したい |
 
 ### 通常型ファイル名を指定した計画作成
@@ -447,6 +454,7 @@ Claude Codeで有効化する。
   レビュー担当にはコードレビュー・ドキュメントレビューの実施基準を、レビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領したレビューイーには修正要否の立証、安全な修正、自己点検と公開可能性の検証基準を与える
 - `agent-toolkit:wi-standards`: AWIとUWIの本文、由来、状態、承認及び投入の共通規範
 - `agent-toolkit:add-awi`: 利用者向け要件を対話で確定し、通常型AWI又はUWIを手動投入する
+- `agent-toolkit:fast-process-wi`: 既存の方針と実装から変更内容を一意に導けるAWIを、計画ファイルを作成せずに主作業ツリーで直接実装して終端する
 - `agent-toolkit:process-wi`: ①選定とレーン分け、②並列レーン実行、③全レーン後のpush・CI・終了の3段階でAWIを処理する。
   計画型は既存計画を、通常型は1レーン1計画を使い、全ての実装要求に計画・計画レビュー・実装・実行レビューを要求する。
   実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
@@ -458,7 +466,7 @@ Claude Codeで有効化する。
 - `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で1回だけ報告する
-- `agent-toolkit:session-review`: 通常の読み取り専用サブエージェントがセッション全体の問題候補を列挙し、メインが列挙証拠から原因と恒久対策を確定する。手動起動又は`agent-toolkit:completion-report`から起動する
+- `agent-toolkit:session-review`: セッション全体の問題候補を列挙し、原因と恒久対策を確定する。手動起動と`agent-toolkit:completion-report`からの起動では当該セッションを対象とし、`agent-toolkit:process-wi`からの起動では前のセッションを対象として1件のサブエージェントが全工程を担う
 
 ## 更新方法
 

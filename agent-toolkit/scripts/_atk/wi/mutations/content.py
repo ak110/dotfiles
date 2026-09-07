@@ -317,12 +317,45 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     return _frontmatter.serialize_frontmatter(updated_data, updated_body)
 
 
+def _resolve_edit_message(args: argparse.Namespace) -> str | None:
+    """MESSAGE又は本文ファイルを単一の編集本文へ解決する。"""
+    if args.body_file is None:
+        return args.message
+    if args.message is not None:
+        args.subparser.error("--body-fileとMESSAGEは併用できません。")
+    try:
+        return _add.read_body_files([args.body_file])[0]
+    except WebInputError as error:
+        print(f"編集を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _reject_positional_edit_file_path(args: argparse.Namespace, message: str) -> None:
+    """位置引数MESSAGEだけを、編集種別に対応する案内付きで検査する。"""
+    if args.body_file is not None:
+        return
+    if args.plan_file is not None:
+        operation = "計画型編集"
+        hint = "ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。"
+    elif args.append:
+        operation = "追記"
+        hint = "MESSAGEには追記する本文を指定してください。"
+    else:
+        operation = "編集"
+        hint = "ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。"
+    try:
+        _add.reject_message_file_path(message, file_input_hint=hint)
+    except WebInputError as error:
+        print(f"{operation}を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
+
+
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """editサブコマンド: MESSAGE又は$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
-    message = args.message
+    message = _resolve_edit_message(args)
     if args.depends_on and args.plan_file is None:
         args.subparser.error("--depends-onは--plan-fileとともに指定してください。")
     if args.plan_file is not None:
@@ -332,11 +365,18 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             args.subparser.error("--plan-fileと--appendは併用できません。")
         assert args.filename is not None
         assert message is not None
+    elif args.append:
+        if args.filename is None or message is None:
+            args.subparser.error("--appendではFILENAMEとMESSAGEを指定してください。")
+        assert message is not None
+    elif message is not None and args.filename is None:
+        args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
+    if message is not None:
+        _reject_positional_edit_file_path(args, message)
+    if args.plan_file is not None:
+        assert args.filename is not None
+        assert message is not None
         try:
-            _add.reject_message_file_path(
-                message,
-                file_input_hint="ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。",
-            )
             target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
             if local_worktree is None:
                 local_worktree = _candidate_local_worktree(args.target_repo)
@@ -389,23 +429,11 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _add._print_entry_details(details)  # pylint: disable=protected-access
         return
     if args.append:
-        if args.filename is None or message is None:
-            args.subparser.error("--appendではFILENAMEとMESSAGEを指定してください。")
-        _cmd_append(args, private_notes)
+        assert message is not None
+        _cmd_append(args, private_notes, message)
         return
-    if message is not None and args.filename is None:
-        args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
-    if message is not None:
-        try:
-            _add.reject_message_file_path(
-                message,
-                file_input_hint="ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。",
-            )
-        except WebInputError as error:
-            print(f"編集を拒否しました: {error}", file=sys.stderr)
-            sys.exit(1)
-        if _reject_agent_user_comment_message(message):
-            sys.exit(1)
+    if message is not None and _reject_agent_user_comment_message(message):
+        sys.exit(1)
     editor = None
     if message is None:
         editor = os.environ.get("EDITOR")
@@ -492,19 +520,10 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     )
 
 
-def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
     """Edit --appendサブコマンド: 既存raw bytesを保ってMESSAGEを末尾へ追記する。"""
     assert args.filename is not None
-    assert args.message is not None
-    try:
-        _add.reject_message_file_path(
-            args.message,
-            file_input_hint="MESSAGEには追記する本文を指定してください。",
-        )
-    except WebInputError as error:
-        print(f"追記を拒否しました: {error}", file=sys.stderr)
-        sys.exit(1)
-    if _reject_agent_user_comment_message(args.message):
+    if _reject_agent_user_comment_message(message):
         sys.exit(1)
 
     inbox_dir = private_notes / WI_STATE_INBOX
@@ -527,11 +546,11 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         content = (
             before_user_comment.encode("utf-8")
             + b"\n\n"
-            + args.message.encode("utf-8")
+            + message.encode("utf-8")
             + (b"\n\n" + saved_user_comment.encode("utf-8") if saved_user_comment else b"")
         )
     else:
-        content = snapshot + b"\n\n" + args.message.encode("utf-8")
+        content = snapshot + b"\n\n" + message.encode("utf-8")
     finalized_content: dict[str, str] = {}
     try:
         append_entry_content(

@@ -22,7 +22,7 @@
 
 起動文を組む前に`agent-toolkit:delegation`をSkill機能で起動する。
 `agents_server`の`start`へ`model_type="session_review"`を渡し、通常の読み取り専用サブエージェントを1つ起動する。
-engine、model及びeffortはサーバーが解決するため指定しない。専用agent定義、固定モデル、代替モデルのいずれも使わない。
+engine、model及びeffortはサーバーが解決するため指定しない。専用agent定義、固定モデル、代替モデルのいずれも、`model_type`による工程別モデル設定の解決を経由しないため使わない。
 
 起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/session-review-evidence.subagent.md`を指す。
 次を名前付き必須入力とし、これ以外を渡さない。

@@ -99,17 +99,17 @@ def test_add_reloads_saved_details_while_holding_lock(
     )
 
     assert saved_details[generated[0]]["target_repo"] == "github.com/example/repo"
-    assert saved_details[generated[0]]["saved_body"] == (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    assert "saved_body" not in saved_details[generated[0]]
     assert saved_details[generated[0]]["body_match"] == "一致"
 
 
-def test_cli_add_outputs_each_saved_body_without_indentation(
+def test_cli_add_does_not_output_saved_bodies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数件投入でも保存本文を区切り、字下げや切り詰めなしで出力する。"""
-    notes = _setup_notes(tmp_path)
+    """複数件投入でも一致判定だけを出力し、保存本文を再掲しない。"""
+    _setup_notes(tmp_path)
     messages = [
         '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
         "2件目。\n\n```text\n字下げしない本文\n```",
@@ -125,17 +125,10 @@ def test_cli_add_outputs_each_saved_body_without_indentation(
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    filenames = [f"{_FIXED_DT:%Y%m%d-%H%M%S}-{index:03d}.md" for index in (1, 2)]
-    for index, filename in enumerate(filenames):
-        marker_start = output.index("    saved_body:\n", output.index(filename)) + len("    saved_body:\n")
-        if index + 1 < len(filenames):
-            next_filename_index = output.index(filenames[index + 1], marker_start)
-            marker_end = output.rfind("\n", marker_start, next_filename_index)
-        else:
-            marker_end = output.index("\ninbox:", marker_start)
-        rendered = output[marker_start:marker_end]
-        saved = (notes / "inbox" / filename).read_text(encoding="utf-8")
-        assert rendered.rstrip("\n") == saved.rstrip("\n")
+    assert output.count("    body_match: 一致\n") == 2
+    assert "saved_body" not in output
+    assert messages[0] not in output
+    assert messages[1] not in output
 
 
 @pytest.mark.parametrize("target_commit", [_FIXED_HEAD_COMMIT, "a" * 64])
@@ -1642,6 +1635,28 @@ class TestAddBodyFile:
         assert any("1件目の本文" in body for body in bodies)
         assert any("2件目の本文" in body for body in bodies)
 
+    def test_body_file_accepts_existing_file_path_as_content(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """本文ファイル内の既存ファイルパスを本文として投入する。"""
+        notes = _setup_notes(tmp_path)
+        repo = tmp_path / "myrepo"
+        repo.mkdir()
+        _patch_add_git(monkeypatch, repo)
+        message_file = tmp_path / "message.txt"
+        message_file.write_text("本文ファイルが参照する既存ファイル", encoding="utf-8")
+        body_path = tmp_path / "body.md"
+        body_path.write_text(str(message_file), encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
+
+        assert exc_info.value.code == 0
+        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        assert f"\n{message_file}\n" in content
+
     def test_body_file_rejects_positional_message(
         self,
         tmp_path: pathlib.Path,
@@ -1839,17 +1854,21 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
     monkeypatch.setattr(add_module, "_read_saved_entry_details", read_after_alteration)
     saved_details: dict[str, dict[str, object | None]] = {}
 
-    generated = add_module.add_entries(
-        notes,
-        messages=["本文"],
-        target_repo="github.com/example/repo",
-        source="test",
-        now=_FIXED_DT,
-        saved_details=saved_details,
-    )
+    with pytest.raises(add_module.WebInputError) as exc_info:
+        add_module.add_entries(
+            notes,
+            messages=["本文"],
+            target_repo="github.com/example/repo",
+            source="test",
+            now=_FIXED_DT,
+            saved_details=saved_details,
+        )
 
     position = captured["expected"].index("本文") + 1
-    assert saved_details[generated[0]]["body_match"] == f"不一致（最初の差異: {position}文字目）"
+    message = str(exc_info.value)
+    assert f"最初の差異: {position}文字目" in message
+    assert "送信元本文:" in message
+    assert "保存本文:" in message
 
 
 def test_add_reports_body_match_for_trailing_newline_difference_only(
@@ -1914,12 +1933,12 @@ def test_add_reports_body_match_for_crlf_inputs(
     assert saved_details[generated[0]]["body_match"] == "一致"
 
 
-def test_cli_add_outputs_body_match_before_saved_body(
+def test_cli_add_outputs_body_match_without_saved_body(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """投入の出力は保存本文の直前へ一致判定を書く。"""
+    """投入の出力は一致判定だけを書き、保存本文を再掲しない。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
 
@@ -1932,4 +1951,6 @@ def test_cli_add_outputs_body_match_before_saved_body(
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    assert "    body_match: 一致\n    saved_body:\n" in output
+    assert "    body_match: 一致\n" in output
+    assert "saved_body" not in output
+    assert "投入本文" not in output

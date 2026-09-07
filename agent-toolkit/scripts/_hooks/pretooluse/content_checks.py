@@ -136,6 +136,7 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
 from _hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import _WARN_TAG  # noqa: E402
 from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -261,7 +262,7 @@ def _is_ps1(file_path: str) -> bool:
 
 
 def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """PowerShellスクリプトへのLF-only書き込みを検出したらTrueを返す。"""
+    """BOMなしのLF-only書き込みと改行規約の不一致を検出したらTrueを返す。"""
     for field, value in fields:
         if "\n" not in value:
             continue
@@ -270,7 +271,8 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
         print(
             _block_notice(
                 f"blocked: `{tool_name}.{field}`にLFだけの内容を検出した。"
-                f"PowerShell 5.1はLF改行の`.ps1`を解析できないため、CRLFが必要である。対象: {file_path}",
+                "この書き込みではUTF-8 BOMが失われて日本語が文字化けし、"
+                f"`.gitattributes`の`*.ps1 text eol=crlf`規約とも一致しない。対象: {file_path}",
                 fix=(
                     "既存ファイルにはEditツールを使う（CRLFを透過的に維持する）。"
                     "新規ファイルはBashでUTF-8 BOMとCRLF改行を指定して書き込む。"
@@ -415,7 +417,7 @@ def _check_manifest(tool_name: str, file_path: str) -> str | None:
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _MANIFEST_RULES:
         if pattern.search(normalized):
-            return _llm_notice(f"`{tool_name}`で`{label}`を編集しようとしている。{hint}", tag="warn")
+            return _llm_notice(f"`{tool_name}`で`{label}`を編集しようとしている。{hint}", tag=_WARN_TAG)
     return None
 
 
@@ -499,7 +501,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
                 f"`{tool_name}.{field}`にホームディレクトリの絶対パス（{home}）を検出した。"
                 "版管理対象のファイルでは、環境依存のパスを避けるため`~`、`$HOME`、"
                 f"または`pathlib.Path.home()`を使う。文脈: {sample!r}",
-                tag="warn",
+                tag=_WARN_TAG,
             )
     return None
 
@@ -558,7 +560,7 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
                 "検出箇所を含む文全体を、正式な書き言葉（標準的な技術用語、辞書形、比喩的な動詞を使わない表現）へ"
                 "`agent-toolkit/rules/01-agent.md`「日本語」節に従って書き換える。"
                 f"単語だけを同義語へ置き換えず、文全体を組み直す。{target}",
-                tag="warn",
+                tag=_WARN_TAG,
             )
     return None
 
@@ -606,7 +608,7 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
         f"{tool_name}による編集で「`X`を根拠に`Y`しない」「`X`を理由に`Y`しない」形のメタ規範表現が増加した。"
         f"対象: {file_path}。この形は「`X`でなければ`Y`してよい」と読み違えられる。"
         "全称否定形（「いかなる理由（例: `X`）があっても`Y`しない」）への書き換えを検討する。",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
@@ -708,7 +710,7 @@ def _check_body_section_reference_exists(tool_name: str, content: str, file_path
         "規範文書の本文が持つ節参照が実在しない可能性がある"
         f"（{tool_name}、対象: {file_path}）: {'; '.join(reasons)}。"
         "参照先のファイルと節名が一致することを確認する。",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
@@ -763,7 +765,7 @@ def _check_plan_mode_skill_first(
         "委譲した計画をレビューし、成果物と根拠から一意に定まる値だけを訂正する場合は、"
         "訂正内容と根拠を`## 変更履歴`へ記録したうえで、`plan-mode`をやり直さずに続行する。"
         "計画を確定する前に、`plan-mode`の直接委譲の手順でこの警告を解消して検証する。",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
@@ -985,7 +987,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             f"warn: `plan-mode`スキルの起動後、計画ファイルを作成しないままagent-toolkit配下を対象とする"
             f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。次の同種の編集は遮断する。"
             "先に`~/.claude/plans/`配下へ計画ファイルを作成する。",
-            tag="warn",
+            tag=_WARN_TAG,
         )
     return False, None
 

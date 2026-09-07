@@ -41,7 +41,7 @@ def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
         source = (package_dir.parent / f"{module_name}.py").read_text(encoding="utf-8")
     offenders = _stderr_warn_offenders(source)
     if module_name == "pretooluse":
-        assert len(offenders) == 1
+        assert offenders == []
     else:
         assert offenders == [], module_name
 
@@ -73,6 +73,22 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     )
     expected_lineno = source.splitlines().index("    print(notice, file=sys.stderr)") + 1
     assert _stderr_warn_offenders(source) == [expected_lineno]
+
+
+def test_bash_unverified_atk_help_is_added_to_context(tmp_path: pathlib.Path) -> None:
+    """Bashハンドラーが未観測の`atk`ヘルプ警告をadditionalContextへ載せる。"""
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk config get private_notes"},
+            "session_id": "dispatch-unverified-atk-help",
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "対象: atk config get" in output["hookSpecificOutput"]["additionalContext"]
 
 
 class TestMojibakeCheck:
@@ -131,6 +147,8 @@ class TestPs1EolCheck:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "C:/x/a.ps1", "content": content}})
         assert result.returncode == 2
         assert "LFだけの内容" in result.stderr
+        assert "UTF-8 BOMが失われて日本語が文字化け" in result.stderr
+        assert "*.ps1 text eol=crlf" in result.stderr
         assert "Fix: 既存ファイルにはEditツールを使う" in result.stderr
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
@@ -601,6 +619,55 @@ class TestRecursiveHomeSearchCheck:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
         assert "high-capacity user directory" not in _additional_context(result)
+
+
+class TestUnboundedHomeTraversalCheck:
+    """対象限定の無い`find`・`ls -R`による高容量領域の走査の警告。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find ~ -name '*.md'",
+            "find $HOME",
+            "find ~/.local ~/.codex -type f",
+            "ls -R ~/.local",
+            "ls -aR ~/.claude",
+            "ls -R ~/.local ~/.claude",
+        ],
+    )
+    def test_warns_for_unbounded_home_traversal(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "除外設定を持たない走査コマンド" in _additional_context(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "find ~ -maxdepth 2",
+            "find ~/.local -prune -o -print",
+            "find /tmp/repository",
+            "find ~ -xdev",
+            "find ~ -mount",
+            "find ~/.local /tmp/repository",
+            "find",
+            "find ~ -unknown",
+            "ls -R /tmp/repository",
+            "ls -R ~/.local /tmp/repository",
+            "ls -R",
+            "ls --unknown -R ~/.local",
+            "ls ~/.local",
+            "echo find ~",
+        ],
+    )
+    def test_bounded_or_non_target_traversal_is_silent(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 0
+        assert "除外設定を持たない走査コマンド" not in _agent_messages(result)
+
+    def test_heredoc_is_silent(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF'\nfind ~\nEOF"}})
+        assert result.returncode == 0
+        assert "除外設定を持たない走査コマンド" not in _agent_messages(result)
 
 
 class TestNonEditToolWarnings:

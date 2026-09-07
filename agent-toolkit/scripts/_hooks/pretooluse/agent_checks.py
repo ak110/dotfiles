@@ -136,6 +136,7 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
 from _hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
+from _hooks.notice import _WARN_TAG  # noqa: E402
 from _hooks.notice import formatter as _notice_formatter  # noqa: E402
 from _hooks.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -226,7 +227,7 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
             return current
 
         update_state(session_id, _set_threshold)
-        print(_llm_notice(_response_language_check.BLOCK_BODY, tag="warn"), file=sys.stderr)
+        print(_llm_notice(_response_language_check.BLOCK_BODY, tag=_WARN_TAG), file=sys.stderr)
         return (2, None)
 
     return (None, body)
@@ -269,7 +270,7 @@ def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
         "WebFetchは要約モデルを経由するため、その出力は逐語引用の根拠にならない。"
         "逐語で引用する場合は、同じURLの生データをagent-toolkitの管理対象一時領域へ保存し、"
         "保存した本文から該当箇所だけを引用する。",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
@@ -281,7 +282,7 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
     return _llm_notice(
         "エージェント種別名はSendMessageの到達可能な宛先ではない。"
         "通常の完了報告はツール結果として1回返し、即時通知は実行環境が渡した呼び出し元識別子へだけ送る。",
-        tag="warn",
+        tag=_WARN_TAG,
     )
 
 
