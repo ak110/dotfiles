@@ -1,6 +1,6 @@
 # 統合担当の起動と受領
 
-`agent-toolkit:process-wi`の②のレーンと③のCI修正レーンで、呼び出し元が本書を全文読み、統合担当の起動、入力の受け渡し及び返却値の検収へ適用する。
+`agent-toolkit:process-wi`の②のレーンで、呼び出し元が本書を全文読み、統合担当の起動、入力の受け渡し及び返却値の検収へ適用する。
 呼び先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`が定める。本書へ呼び先固有の作業手順を書かない。
 
 ## 起動経路
