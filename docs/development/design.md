@@ -559,6 +559,13 @@ Codexメイン向け条文をAGENTS.mdへ生成器で埋め込む案は、Codex�
 委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印に依存し、未設定の環境で条文が欠落するため採らない。
 Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案は、Claude委譲先の中で起動したCodex委譲先がstatusline表示でClaude委譲先と誤判定されるため採らない。
 
+`agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持し、起動時のシステム指示と区別する。
+また、`agent-toolkit/share/rules-subagent.md`を起動時のシステム指示として保持する。
+`agent-toolkit/share/rules-main.md`は保持しない。
+2026年9月7日に当該経路で委譲先を1件起動し、受領した規範文書の一覧と個別条文の有無を返させて確認した。
+再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと当該文書の任意の条文の有無を返させる。
+委譲先へ届く条文の範囲は実測で確定し、届いている条文を`agent-toolkit/share/rules-subagent.md`へ重複して置かない。
+
 AWI本文が示す文言案、列挙及び節配置は、投入元識別子にかかわらず利用者合意とみなさない。
 計画担当は目的と指定された外部可視要素を維持する文面を技術判断で確定し、原文との差異と根拠を採否記録と計画へ残す。
 採用済み本文が明示する変更は確認事項又は実装前提にしない。
