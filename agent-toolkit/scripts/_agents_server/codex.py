@@ -373,6 +373,30 @@ class AppServerManager:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
+    async def _finalize_pending_result_after_deadline(
+        self,
+        session: SessionState,
+        deadline: float,
+    ) -> None:
+        """自動再開を待つ期限に、保留した結果を終端状態へ戻す。"""
+        await asyncio.sleep(max(0.0, deadline - asyncio.get_running_loop().time()))
+        if not session.awaiting_auto_resume or session.auto_resume_deadline != deadline:
+            return
+        self._finalize_pending_result(session, record_unobserved=True)
+        await self._notify_waiters()
+
+    @staticmethod
+    def _finalize_pending_result(
+        session: SessionState,
+        *,
+        record_unobserved: bool = False,
+    ) -> None:
+        """子sessionの観測完了又は期限到来時に保留した結果を公開する。"""
+        unobserved = set(session.live_child_session_ids)
+        shared_state.finalize_pending_result(session)
+        if record_unobserved and unobserved:
+            shared_state.record_unobserved_sessions(session, unobserved)
+
     async def _ensure_client(self) -> JsonRpcProcess:
         async with self._lock:
             if self.client is not None and not self.client.closed and self.client.reader_failure is None:
@@ -831,6 +855,7 @@ class AppServerManager:
                 }
                 session.awaiting_auto_resume = True
                 session.auto_resume_deadline = asyncio.get_running_loop().time() + shared_state.RESULT_RETENTION_SECONDS
+                self._schedule(self._finalize_pending_result_after_deadline(session, session.auto_resume_deadline))
                 session.status = "running"
                 session.turn_completed = False
         elif method == "turn/plan/updated":
@@ -864,6 +889,8 @@ class AppServerManager:
                 session.set_progress(session.commentary)
         elif method in {"item/fileChange/outputDelta", "item/fileChange/patchUpdated"}:
             session.diff_changed = True
+        if session.awaiting_auto_resume and not session.live_child_session_ids:
+            self._finalize_pending_result(session)
         session.touch()
         await self._notify_waiters()
 
