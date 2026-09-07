@@ -2198,15 +2198,21 @@ async def test_codex_resume_passes_delegate_instructions(tmp_path: pathlib.Path)
     client = FakeCodexClient()
     normal_session = subject.SessionState("thread-normal", str(tmp_path), engine="codex")
     explore_session = subject.SessionState("thread-explore", str(tmp_path), engine="codex", launch_kind="explore")
+    shell_session = subject.SessionState("thread-shell", str(tmp_path), engine="codex", launch_kind="shell")
 
     await codex_backend.AppServerManager._resume_thread(normal_session, client)
     await codex_backend.AppServerManager._resume_thread(explore_session, client)
+    await codex_backend.AppServerManager._resume_thread(shell_session, client)
 
     normal_resume = client.requests[0][1]
     explore_resume = client.requests[1][1]
+    shell_resume = client.requests[2][1]
     assert normal_resume["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert "config" not in normal_resume
     assert explore_resume["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert explore_resume["config"] == {"project_doc_max_bytes": 0}
+    assert shell_resume["developerInstructions"] == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert shell_resume["config"] == {"project_doc_max_bytes": 0}
 
 
 @pytest.mark.asyncio
