@@ -91,9 +91,28 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
             let file_name = path.file_name()?.to_str()?.to_string();
             let raw = fs::read_to_string(path).ok()?;
             let value = serde_json::from_str::<Value>(&raw).ok()?;
-            parse_state_file(file_name, &value)
+            let mut state_file = parse_state_file(file_name, &value)?;
+            retain_sessions_with_results(&mut state_file, |session_id| {
+                directory
+                    .join("results")
+                    .join(format!("{session_id}.json"))
+                    .is_file()
+            });
+            Some(state_file)
         })
         .collect()
+}
+
+fn retain_sessions_with_results(
+    state_file: &mut StateFile,
+    mut result_exists: impl FnMut(&str) -> bool,
+) {
+    state_file.sessions.retain(|session| {
+        !matches!(
+            session.status.as_str(),
+            "completed" | "failed" | "interrupted"
+        ) || result_exists(&session.session_id)
+    });
 }
 
 fn is_state_file(path: &Path) -> bool {
@@ -490,6 +509,52 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         assert_eq!(render_state_files(&[file], 80, now).len(), 1);
+    }
+
+    #[test]
+    fn terminal_sessions_require_result_files() {
+        let mut file = state_file(
+            "root.json",
+            Value::Null,
+            serde_json::json!([
+                session(
+                    "running",
+                    "claude",
+                    Value::Null,
+                    ("unused", "shell"),
+                    ("", "running"),
+                    "2025-12-31T23:59:30+00:00"
+                ),
+                session(
+                    "collected",
+                    "claude",
+                    Value::Null,
+                    ("unused", "shell"),
+                    ("", "collected"),
+                    "2025-12-31T23:59:31+00:00"
+                ),
+                session(
+                    "retained",
+                    "claude",
+                    Value::Null,
+                    ("unused", "shell"),
+                    ("", "retained"),
+                    "2025-12-31T23:59:32+00:00"
+                )
+            ]),
+        );
+        file.sessions[1].status = "completed".to_string();
+        file.sessions[2].status = "failed".to_string();
+
+        retain_sessions_with_results(&mut file, |session_id| session_id == "retained");
+
+        assert_eq!(
+            file.sessions
+                .iter()
+                .map(|session| session.session_id.as_str())
+                .collect::<Vec<_>>(),
+            ["running", "retained"]
+        );
     }
 
     #[test]

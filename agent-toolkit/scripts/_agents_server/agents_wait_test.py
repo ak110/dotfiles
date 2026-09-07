@@ -37,6 +37,7 @@ def test_agents_wait_outputs_matching_result(
     assert json.loads(captured.out) == payload
     assert captured.out.count("\n") == 1
     assert not captured.err
+    assert not (wait_environment / "session-1.json").exists()
 
 
 @pytest.mark.parametrize("result_body", [None, "[]"])
@@ -151,4 +152,5 @@ def test_agents_wait_adds_notices_to_terminal_result(
 
     payload["notices"] = [{"sent_at": notice["sent_at"], "body": notice["body"]}]
     assert json.loads(capsys.readouterr().out) == payload
+    assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())

@@ -37,6 +37,7 @@ def wait_for_result(
             if notices:
                 result["notices"] = notices
             print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+            result_path.unlink(missing_ok=True)
             return 0
         if notices:
             response = {"session_id": session_id, "status": "running", "notices": notices}

@@ -153,17 +153,25 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     assert payload["sessions"][0]["progress"] == "進捗"
     datetime.datetime.fromisoformat(payload["sessions"][0]["started_at"])
 
-    visible.result_delivered = True
+    visible.status = "completed"
+    visible.agent_message = "完了"
+    visible.turn_completed = True
     visible.touch()
     writer.flush()
+    result_path = subject.results_directory("root", tmp_path) / "visible.json"
+    assert result_path.exists()
+    result_path.unlink()
+    writer.flush()
     assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    assert visible.result_delivered is True
+    assert not result_path.exists()
     writer.deactivate()
     assert not writer.path.parent.exists()
 
 
 @pytest.mark.asyncio
 async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """期限到達後はsession表示を除き、未回収の結果を残す。"""
+    """期限到達後はsession表示と未回収の結果を除く。"""
     session = state.SessionState("retained", str(tmp_path), announced=True, turn_seq=1)
     session.status = "completed"
     session.agent_message = "完了"
@@ -187,7 +195,35 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
     assert writer._retention_handle is not None
     await asyncio.sleep(0.05)
     assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    assert not result_path.exists()
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_removes_retained_result_without_live_session_at_deadline(tmp_path: pathlib.Path) -> None:
+    """破棄済みsessionから保持した結果も期限到達後に掃引する。"""
+    session = state.SessionState("stopped", str(tmp_path), announced=True)
+    session.status = "completed"
+    session.agent_message = "完了"
+    session.turn_completed = True
+    session.touch()
+    session.retention_deadline = asyncio.get_running_loop().time() + 0.03
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    writer.activate()
+    writer.retain_result(session)
+    writer.flush()
+    result_path = subject.results_directory("root", tmp_path) / "stopped.json"
     assert result_path.exists()
+    assert writer._retention_handle is not None
+
+    await asyncio.sleep(0.05)
+
+    assert not result_path.exists()
     writer.deactivate()
 
 

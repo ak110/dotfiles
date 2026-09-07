@@ -193,12 +193,14 @@ class StatusFileWriter:
             return
         self._flush_handle = None
         now = asyncio.get_running_loop().time()
+        self._remove_expired_results(now)
+        self._write_terminal_results(now)
         visible = [
             session
             for session in self._sessions.values()
             if session.announced
-            and not session.result_delivered
             and (session.retention_deadline is None or session.retention_deadline > now)
+            and (not session.result_available or self.result_exists(session.session_id))
         ]
         visible.sort(key=lambda session: session.started_at)
         payload: dict[str, Any] = {
@@ -208,7 +210,6 @@ class StatusFileWriter:
             "sessions": [_serialize_session(session) for session in visible],
         }
         atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
-        self._write_terminal_results()
         self._schedule_retention(visible, now)
 
     def deactivate(self) -> None:
@@ -250,18 +251,37 @@ class StatusFileWriter:
         path.unlink(missing_ok=True)
         self._result_deadlines.pop(session_id, None)
 
+    def result_exists(self, session_id: str) -> bool:
+        """指定sessionの終端結果ファイルが存在するかを返す。"""
+        if not valid_session_id(session_id):
+            raise ValueError(f"invalid session_id: {session_id}")
+        return (results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json").is_file()
+
     def take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収する。"""
         return take_notices(self._identity.root_session_id, session_id, self._state_root)
 
-    def _write_terminal_results(self) -> None:
+    def _write_terminal_results(self, now: float) -> None:
         for session in self._sessions.values():
             if session.result_delivered:
                 self.delete_result(session.session_id)
                 continue
             if not session.result_available:
                 continue
+            if session.retention_deadline is not None and session.retention_deadline <= now:
+                session.result_delivered = True
+                self.delete_result(session.session_id)
+                continue
+            if session.session_id in self._result_deadlines and not self.result_exists(session.session_id):
+                session.result_delivered = True
+                self._result_deadlines.pop(session.session_id, None)
+                continue
             self._write_terminal_result(session)
+
+    def _remove_expired_results(self, now: float) -> None:
+        expired = [session_id for session_id, deadline in self._result_deadlines.items() if deadline <= now]
+        for session_id in expired:
+            self.delete_result(session_id)
 
     def _write_terminal_result(self, session: SessionState) -> None:
         assert session.finalized_at is not None
@@ -301,6 +321,7 @@ class StatusFileWriter:
             for session in sessions
             if session.retention_deadline is not None and session.retention_deadline > now
         ]
+        deadlines.extend(deadline for deadline in self._result_deadlines.values() if deadline > now)
         self._retention_handle = None
         if deadlines:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)

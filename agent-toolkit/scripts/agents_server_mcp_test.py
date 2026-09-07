@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import dataclasses
 import json
 import os
 import pathlib
@@ -3723,7 +3724,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限経過時にSDKを切断し、未回収の結果を退避する。"""
+    """保持期限経過時にSDKを切断し、結果本文を破棄して再開状態を退避する。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
@@ -3757,11 +3758,13 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             status="completed",
             agent_message="完了",
             finalized_at=session.finalized_at,
+            result_delivered=True,
+            retention_deadline=session.retention_deadline,
         )
     }
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
-    with pytest.raises(ValueError, match="session retention expired: claude-expired"):
-        await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait(session.session_id, timeout=0)
+    assert response["status"] == "expired"
+    assert "agent_message" not in response
 
 
 @pytest.mark.asyncio
@@ -3877,29 +3880,37 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
 async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, tmp_path: pathlib.Path) -> None:
-    """両engineで期限切れの未回収結果を1回返す。"""
+    """両engineで期限切れの結果本文を返さずexpiredを返す。"""
     manager, _ = _manager_with_fake(engine)
     session = subject.SessionState("expired", str(tmp_path), engine=engine)
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
-    with pytest.raises(ValueError, match="session retention expired: expired"):
-        await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait(session.session_id, timeout=0)
+    assert response["status"] == "expired"
+    assert "agent_message" not in response
+    assert (await manager.wait(session.session_id, timeout=0))["status"] == "expired"
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
 
 
 @pytest.mark.asyncio
 async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: pathlib.Path) -> None:
-    """退避済みの未回収結果もwaitが1回返す。"""
+    """退避済みの期限切れ状態から結果本文を返さない。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState("expired", str(tmp_path))
     _complete(session, message="退避結果")
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
-    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is True
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "退避結果"
+    manager.expired_sessions[session.session_id] = dataclasses.replace(
+        manager.expired_sessions[session.session_id],
+        result_delivered=True,
+    )
+
+    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
+    response = await manager.wait(session.session_id, timeout=0)
+    assert response["status"] == "expired"
+    assert "agent_message" not in response
     assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
 
 
@@ -3933,6 +3944,8 @@ async def test_stop_discards_terminal_session(
     assert "terminal" not in manager.expired_sessions
     assert manager.stopped_sessions["terminal"].session_id == "terminal"
     assert backend.release_calls == ["terminal"]
+    with pytest.raises(ValueError, match="identifier scheme mismatch: terminal"):
+        await manager.wait("terminal", timeout=0)
 
 
 @pytest.mark.asyncio
@@ -4039,6 +4052,7 @@ async def test_send_message_resumes_stopped_session(tmp_path: pathlib.Path) -> N
 
     assert response["delivery"] == "reply_started"
     assert response["session_id"] == session.session_id
+    assert "previous_result" not in response
     assert backend.resume_calls == [session.session_id]
     assert session.session_id not in manager.stopped_sessions
 
@@ -4059,6 +4073,7 @@ async def test_wait_stop_discards_only_after_terminal_result(tmp_path: pathlib.P
     assert response["status"] == "completed"
     assert response["agent_message"] == "完了"
     assert session.session_id in manager.stopped_sessions
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
     assert backend.release_calls == [session.session_id]
 
 
@@ -4080,7 +4095,106 @@ async def test_kill_stop_discards_only_after_terminal_result(tmp_path: pathlib.P
     assert response["status"] == "interrupted"
     assert response["kill_requested"] is False
     assert session.session_id in manager.stopped_sessions
+    retained = await manager.kill(session.session_id, timeout=0)
+    assert retained["status"] == "interrupted"
+    assert retained["agent_message"] == "完了"
+    assert retained["kill_requested"] is False
     assert backend.release_calls == [session.session_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["wait", "kill"])
+async def test_stopped_result_expires_before_later_observation(
+    operation: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """stop=trueで保持した結果は期限到来後に本文を伴わないexpiredへ移る。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState(f"stopped-{operation}", str(tmp_path), engine="codex")
+    _complete(session, message="保持結果")
+    manager.sessions[session.session_id] = session
+    await manager.wait(session.session_id, timeout=0, stop=True)
+    retained = manager.stopped_sessions[session.session_id]
+    assert retained.retention_deadline == session.retention_deadline
+    manager.stopped_sessions[session.session_id] = dataclasses.replace(
+        retained,
+        retention_deadline=asyncio.get_running_loop().time() - 1,
+    )
+
+    if operation == "wait":
+        response = await manager.wait(session.session_id, timeout=0)
+        assert response["status"] == "expired"
+        assert "agent_message" not in response
+    else:
+        response = await manager.kill(session.session_id, timeout=0)
+        assert response["status"] == "expired"
+        assert response["kill_requested"] is False
+        assert "agent_message" not in response
+    assert session.session_id not in manager.stopped_sessions
+    assert manager.expired_sessions[session.session_id].result_delivered is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expired", [False, True])
+async def test_send_message_includes_stopped_previous_result_only_before_deadline(
+    expired: bool,
+    tmp_path: pathlib.Path,
+) -> None:
+    """stop=true後の再開は期限内だけ直前結果を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState(f"stopped-send-{expired}", str(tmp_path), engine="codex")
+    _complete(session, message="直前結果")
+    manager.sessions[session.session_id] = session
+    await manager.wait(session.session_id, timeout=0, stop=True)
+    if expired:
+        manager.stopped_sessions[session.session_id] = dataclasses.replace(
+            manager.stopped_sessions[session.session_id],
+            retention_deadline=asyncio.get_running_loop().time() - 1,
+        )
+
+    response = await manager.send_message(session.session_id, "再開")
+
+    if expired:
+        assert "previous_result" not in response
+    else:
+        assert response["previous_result"]["agent_message"] == "直前結果"
+
+
+@pytest.mark.asyncio
+async def test_wait_stop_retains_result_for_agents_wait(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """stop=trueで破棄した結果をatk agents-waitからも回収できる。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    manager._codex = backend
+    writer.activate()
+    session = subject.SessionState("wait-stop-cli", str(tmp_path), engine="codex", announced=True)
+    _complete(session, message="CLI回収")
+    manager.sessions[session.session_id] = session
+
+    await manager.wait(session.session_id, timeout=0, stop=True)
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
+    assert result_path.exists()
+    assert (
+        agents_wait.wait_for_result(
+            session.session_id,
+            0,
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["agent_message"] == "CLI回収"
+    assert not result_path.exists()
+    await manager.close()
 
 
 @pytest.mark.asyncio

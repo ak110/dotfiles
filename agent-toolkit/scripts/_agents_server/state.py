@@ -367,6 +367,7 @@ class SessionResumeState:
     error: Any = None
     finalized_at: str | None = None
     result_delivered: bool = False
+    retention_deadline: float | None = None
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
@@ -389,6 +390,7 @@ class SessionResumeState:
             error=session.error,
             finalized_at=session.finalized_at,
             result_delivered=session.result_delivered,
+            retention_deadline=session.retention_deadline,
         )
 
 
