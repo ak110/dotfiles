@@ -256,7 +256,7 @@ jobs:
         run: uv sync --all-groups --all-extras
 
       - name: Playwright Chromiumの導入
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
         run: make setup-browser
 
       - name: Python 3.13 pytest
@@ -273,8 +273,8 @@ jobs:
         # Claude plugin manifest検査だけを無効化する。
         run: pyfltr ci --disable=claude-plugin-validate
 
-      - name: Python 3.14 E2E
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
+      - name: Python 3.13 E2E
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
         env:
           AGENT_TOOLKIT_SERVE_BROWSER_TESTS: "1"
         run: >-

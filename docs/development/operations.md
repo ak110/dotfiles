@@ -99,8 +99,16 @@ Windowsはtmux運用外のため対象外とする。
 
 Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
 `askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
-端末とtmuxのアクティブペインにフォーカスが当たっている間は、設定値によらずタイムアウトは発火しない。
-フォーカスを失った後に計時が進み、キー入力があればその時点から再計測される。
+`askUserQuestionTimeout`による自動継続は、Remote Controlのbridgeが接続したセッションではarmedされない。
+ダイアログの内部表現が持つ`hasExternalRacer`がbridgeの接続で真になり、自動継続のarmed条件が当該値の否定を含むためである。
+`~/.claude/settings.json`は`remoteControlAtStartup`が真であり、対話TUIのセッションはこの条件へ該当する。
+armedされた場合の中止条件はタイマー発火以降のユーザー操作と端末フォーカスの保持であり、端末とtmuxのアクティブペインにフォーカスが当たっている間は自動継続しない。
+`dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
+既定値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3経路だけであり、当該質問の転送経路はいずれにも該当しない。
+このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。
+常駐実行のセッションでは別端末からの回答ができなくなるが、質問待ちに上限を与える利益を優先する。
+本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定した。
+再検証では、バイナリから`hasExternalRacer`を設定する箇所と、当該値の否定を含む自動継続のarmed条件を読む。続けて`dialogExpiry`の既定値を解決する関数の呼び出し元を列挙し、当該質問の転送経路が含まれないことを確認する。
 
 `dialogExpiry`の対象は、リモートクライアントへ転送された権限ダイアログとユーザーダイアログが回答を待って駐留できる上限、
 及びHELD状態のcross-sessionメッセージが承認を待つ時間である。
@@ -110,7 +118,7 @@ Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は、`share/claude_setti
 既定値の`5m`のままでは離席が5分を超えた時点で自動キャンセルされる。
 環境変数`CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS`を設定した環境では、当該値が設定ファイルの値より優先する。
 
-`atk wi process-loop`のClaude起動だけが`--settings`で両設定の値を明示する。
+`atk wi process-loop`のClaude起動だけが`--settings`で両設定の値と`remoteControlAtStartup`を明示する。
 自律実行では無期限の駐留が工程の停止を招くため、配布値の`never`を常駐実行だけ有限値へ上書きする。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
 TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/scripts/_common/wait_schedule.py`の
