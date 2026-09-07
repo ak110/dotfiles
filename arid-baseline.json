@@ -1,0 +1,1255 @@
+{
+  "version": 1,
+  "normalization": {
+    "ignore_comments": true,
+    "ignore_docstrings": true,
+    "ignore_imports": true,
+    "ignore_signatures": true
+  },
+  "groups": [
+    {
+      "fingerprint": "sha256:04b67d6654468bf14bf7aa7f477e0a78c2511330fe17f46c61243bbe81bbbdd3",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:08784506e27994e420c4d8be514652f18d170be2bac80ed0fb569dd73c43d96c",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/remote.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:09a57d16156969c4c8373f188caeb870d0eedcc494493bb5d77f4dfd15474abb",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/plans_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:09aac0c1104d6a2568f735e1699c0af618531a2b85807a88e21a898091662ea9",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_hooks/pretooluse/agent_checks_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:0b4e8fd18886e4112d9bfd26bccf920494ccd385eb69bad1cc242694703c3393",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/uwi_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:0be979689c1c309f52661abb53872076158af83efce4c15a6852b0373c76b951",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:0efbc0202831cb354a6ccdd633e561a0d067ce517be974ce512f53e0734fd35b",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:129368ba67e6fb0da05327d754eb982ac60a5dbde7ef50f8720b717084207b72",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:150bdf0e58e8d7edd30c9409f0e795d9d13def1378827ff5de4be90436faa36b",
+      "lines": 18,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:162b26abd8da7f75cb3a91d9f3f426c52d794d04e64febbd3a04c519a6c4fc6b",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:189bcc6048f3ec0b472d69216e401ed9c0cf4f6a1f6eec0b42cd969ea40f54ed",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_agents_server/status_file_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:1942a7773b01895e2d824cf57fe93e4eebb0283ceddecd45d57bb5275aa137d2",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/managed_temp/inventory_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:1c7de5345e19ed5ba6aa224e64b1423384463695d7b4882de0ccf38cff584c7c",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/browser_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:213796a901b0dfac1b9f278bbc2e880dccd8c22414f5f42b5f90c71a910949f2",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:2167a3955998ecbeaaf4e39c2516c24c24d3aee147c9337fcbc22c6dd14838b3",
+      "lines": 20,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/ctime_index.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/atk_serve_plans_remote_helper.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:287bca37f667c6606c9fb24228192e97d3de93fc5397b03efb8196906ad8ccde",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/warm_agents_server.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/warmup_hook_scripts.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:29181289a096fb03fe8858c07aa2cc3690a5cf49096b526ec02157a8c4889027",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/skills/plan-mode/scripts/check_plan_file_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:320b0fe78675cdd6a9a285ad802fecf8f7194bce418ac26ab9dfa9641bfaaaf9",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:320e3f03bf6a08bf4054da3373ee7785ef6a98656c0daf674c6b16df6f7da0be",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/listing_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/show_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:3825d26c6e56eb3a767726fe909d9b30b51a98aa942a133f8981de034c055e41",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:39ea7bbe753477a3febdb82da73794f17cb6831b346ce584a1b7ac2e9b59b0e7",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/content_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/transitions_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:3f5f3816ce14c0d9bb148dd2a233a35c60090be13404412407e54aeacecfc417",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:4f712718b93b90ca018505ee67b61d953f0159d492fd4dc8aa06884838ba1c89",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/systemd_user_unit.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:51c423be85f77fa1393763d8b15d86fd3a3f19540c86d92273000d44a38bd04a",
+      "lines": 18,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/atk_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:532da1f42610be33e418b7e63c328d54c3237730205ee87cfb0acd8fb6ea4d88",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/plans.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:5ca3b058a1962a1f14d57335cc866b2a14be684b4d603569f39d9b14ffadd55d",
+      "lines": 17,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/dependencies_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:5f433b6cd2173b51772c2de88d91ae96f5e369f24cbc3c352ef094e986f447b7",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:609c91ba1946cb3dde332f49f81153f75909aa1ce6f1eb72c4512edda8e657aa",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:64cd25339086c8f7d78a93bb77658e18f3cdaabada8fd1480835e81e6a00de70",
+      "lines": 17,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/warm_agents_server.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/warmup_hook_scripts.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:65e95811353be8ac6bc5dc70d19e68d9e56350a774f48424397cb8171743a657",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/process_loop_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:672428cb2013cb0259fa0d88411b38ea50d6161f9f4aeff51fbbf60497fa30b1",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "install_claude_sh_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:689856046dd24b3b9ed2263e5e43fc1c0483bd7e093e334013df6adc7cccbf2b",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/process_loop_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:68b9cd78095e6e506ae1a3678c722411a3c0f281b93e3c839b4016fc0dcfad1f",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:6a950eacb15703d730b7c56ecdb72a63d739ceac1b0d2e62af754af8b514c8d4",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/skills/session-review/scripts/session_review_evidence_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:6d8c474365bb45260db7a8c49d00d3b47aaee67f2413024689916969c1af5c3b",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/update_claude_settings.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:7233fc269c991d04e3b051234711b43b83a180a6ec2140cd7f364ab340b4ed55",
+      "lines": 19,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/remote.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:78adc02d7c6ac82ebd132920113ff4786c39863575a0404cb1daf5b6f1b1d6bf",
+      "lines": 21,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:7c0499e5e1de115187badf1c183742387878e6f140c3e7f9f824c2434065bcaa",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:7f3c222fdd1379e406fafdca1223a84a2a14891299cd6a87c872e36a0bd93e27",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "install_claude_sh_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:800ed9bd4edee943c55306a45b7deb14a4b55b3f597939f7288fa78d3568c4e1",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_agents_server/status_file_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:8468768fb2e0644cd87602dcb15b10c2a2cf0acad20ca54af8d0bba12e701092",
+      "lines": 19,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/atk_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:84f2da93ed0abb53a17e0a59b0199ea2283de22dc7e003ff80eca14762ab2dd7",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/content_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:8579724d62b1754401a76d8f7c5249db98f410caef9f932b7b2878bb8ac2b09c",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_hooks/pretooluse/shell_checks.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:87be47ba907e1e376a54e9f2ef7230dabfd69ee42df602cfb1123d15078aa08e",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/update_claude_settings_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:87bfb23163c437f1bb6cabdf1f5fe5dfbe7c2210594f8f8c71a5d9e56c7ee4ee",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/managed_temp/__init__.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/__init__.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/__init__.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:883abcc79f14ead03a57ac3a19e494ab35c255a2ec09222243c1a255061e0721",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/warm_agents_server.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/warmup_hook_scripts.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:8a1be8fc5d6e1d833dab3a533b39555d34dbc862333fc9e68263a8c95de9943c",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_codex_cli_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:8a37606c42f327803706d9719d668107a0e807f14f301ae4ffd42e66e5f335fb",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:8a8bcf4fa2b524160d9e7dbaabe31e3760ab85fd4bbc08b9ed0366d2fac0dd94",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/hook.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/hook_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:8ba1fb87a6ca66545d1982f425192567b70643c6f78c572adc2e5ba3fead3080",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_codex_cli_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:929c4603aa0f33736dae44afb8bead5f172eceb342aca25b562a817d61578239",
+      "lines": 19,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/hook.py",
+          "count": 1
+        },
+        {
+          "path": "scripts/claude_hook.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:98714e56a0b13ac8b317925f246b19a34f42746492f7dad06597d197cf5c0e29",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/managed_temp/inventory_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/managed_temp/windows_security_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:9ae57a81177738fe896f7c8d237e28963fa5cd23ed45d882b2a56e18299feb7e",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_main_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:9b45843a75d44bc16c7e26c3c22d2db8ded56905a34a02a8f69ecb17441e2958",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "pytools/repack_archive_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:9bdc644dce9c01f82c1493510023e48bbb1f7c9e78c0aa7cbd794181768b16d8",
+      "lines": 17,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/constants_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/markdown_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/parsing_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/references_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/sections_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/test_support_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:9cfa32a3072914de9ea53de1d9bcde63c4947fea46f989cbebf8165decf0d15f",
+      "lines": 20,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:9dc4031905c4cced0bada4e0822f2c457aec879f1ed5417b987136c8a269bb5e",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/claude_session_export_test.py",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:a21bc6cfaa4742dd70c6130829675b554d7b74aeafe0c1f5e4fa9143d24373b4",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:a61b43a474b945b7654c3652f24d6028eb81e5a6688c2dab00501f12ebe623a2",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:a8ef309a79d370a25add0ee0977b6a17469d6c92f5fc640945c85802236f6ab0",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_common/file_lock_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:aa5c3c83065dfa2c5651731a0e042e8e26f749b74e48602a15d4c1e09c70e86a",
+      "lines": 25,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/remote.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:acd9aa6b65950734d197021324ef732f38ee8ad6d6a057a14ae0d780831dde84",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:ad7a9f6aaf995fb686ad1f698c644ebf180c6e4d1ab58240c9d4e27af5b3ce79",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/warm_agents_server.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/warmup_hook_scripts.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:af7feb1f5d422c918cd4a9ad489dc729e3228eb1cb5567f87c130dad88e99d41",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "dot_bashrc_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b1db8a7ba37c67e9f4381e809efcfb93be0d47fe4ef767507c5bbe9a769dd5ce",
+      "lines": 14,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/state_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b4082a7366817a54b9b5f5693497fa6d717c7fa30d6c9ba47a4af22005fb52b5",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/managed_temp/creation_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/managed_temp/registry_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b45641f93deb5548b6941dc2bc543b7dfca94202468706d3a17b13f1164a2994",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b6249bc8beff400d5db8216821ef7959cdb5e8cb32e530599a888db24e114dbb",
+      "lines": 42,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/atk_serve_sessions_remote_helper.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b6c54a8a28a6e32d3a944cfcecb4db444be30750a2af57fb327e3e2cb2bfde59",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/process_loop_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b787355fd9a8fdf1abd762fbfcff77795f5c1a9b8d043c648789d77db45ad49e",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/process_loop_restart_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b81644998b2c058ecd8922a2d6123d31b8ac5db85b5428fecedfab8d694f10eb",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/atk_serve_plans_remote_helper.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b89fca085b7d8806ae6339775ee44450962d0853f685c84a1183c3c32051820e",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b8d4a3f58b49d1713c83299648fcf71d8bf62f6c6cfdd016bae66da05600e102",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:b9588235d6aceb2c1fdd72df056a23e5c0aab77d933f4218b8ea0219bd9f1ce4",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/skills/plan-mode/scripts/create_plan_files_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:bd919ccf9ea5335d8566f4dc2fb59c560c0d480ada6004eea261db201b7e6876",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:be2452192e5e415bdbd876c3733c6a7fd8380576a146ca66100c22d098818cbe",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "install_claude_sh_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:be4147bdc33bca31a76174607ccf4feacec7075e94885da5597bb6fbfa2f57b1",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:bf425ada6b0433720c2b619921dd8131308cd5e29160a482c930aab20024c952",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:c06634dc960c0ec9bc79d638525918be8716d0113037b82869a706ab1c6b4ed4",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/claude_marketplace_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_repair_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:c2a2666bebcc6e92a01d9930e10113782a0104573d1888552909ac7b370dd535",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/atk_serve_plans_remote_helper.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/file_lock.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:c57710115ffc7883a99864fc240fe3e27ebcd297e99eb1aa5357a904ee26f32c",
+      "lines": 21,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/warm_agents_server.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/warmup_hook_scripts.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:c8ca00f32f4ba67cd98a5765b7254e3009d8ba99e8afb61d431d63c58f5aca8e",
+      "lines": 31,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/ctime_index.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/atk_serve_plans_remote_helper.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:ccfef40fca8f33b20443af5aad640ead6853b7e959d27a81af98a97579fe63a3",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:d001114db55d0aabca12ec242ab44ed87c854dd6bd091292237d4f77bdcafeb0",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/skills/plan-mode/scripts/create_plan_files_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:d1a1cd2338775578967c31fdfdb7e7e23f035457163952bd0958cfae481a8a9b",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_hooks/posttooluse_conditional_prohibition_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_hooks/posttooluse_session_edited_files_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:d25e9fd1842615cd27df451b3e31dcc7a0defd775f9797f840d683f2d435c363",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:d6446097f83855cb29ed1b050b3226e717db8dce34108fca74784084d71bb48e",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/systemd_user_unit.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:d7168d2e9ec80abcca672dd0c8257744afdc4acb32d9c3abde95d58817776d91",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_registry_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:ddd32210dfdc954618c63c7dffcaaddb5935adf60d66bc2f9c08e89fb978e280",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_hooks/session_end_cleanup_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:de8d1c54bcd126514d187a781072540a775fcf1b5f98f27462aa7fe94bbb2825",
+      "lines": 17,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:e0e4bc3033525fe577d838d68a2fab7e10ac1fc959998c0548995796ca0ea876",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/config_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:e40074acec7246e5214cd6fdac70b42383e247bdd384a2cbce436058c8ef1358",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/wait_ci_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:e5b7fe9f09b526e02e072627557e0a99e4b6f94d77c4a09e9c7025e59f4c0ded",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/setup_registry_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:e6177b8aa7ed11b8bcb9f89db1292674ae66dd31ced4ccabf253b40b646f9909",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:eabf1ee5822aef15e70666a158909075299130d02e8118b4f3e79d8260c97b91",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:eac0935ea72a74ebb624de406cbd79dac160d0697069278f2a1dada65005e3d9",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_settings_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:eb4db593e03b6361204870ef1b50120d85539117aed4b11ca45cdf5fb9a4088d",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_hooks/pretooluse/shell_checks_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:ebacf0178440401f4fe88481886dc8a7cf8a38929c87f1fb227076b9ad727340",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "pytools/_internal/install_claude_plugins_main_test.py",
+          "count": 1
+        },
+        {
+          "path": "pytools/_internal/install_claude_plugins_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:ed83849fb7e4dad099a5a796124e1cf9d80c7e7f78e63e84cb9cbe1124f35b7f",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:eedadbd914acd6024bdf43350be330b0e0296ee98a2322017bb955e2ba386855",
+      "lines": 11,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/assets_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f1715e181f32fe21b56eae2986a5949c74ae3cb59578f653fdb2792953e14d8a",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/config.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/config_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f31c8e69b557afb739e66befad3702f5a47e654d9c464d7b80b6a1dba8a32f8f",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f4b1d51f94e60aa23f64af3089759e853aae4f32e870061b8bbf7aa626bff1c4",
+      "lines": 27,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/plans/ctime_index.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/atk_serve_plans_remote_helper.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f525b8a74ec5b77c488e2e57816f6e2195d90315a84c25ded9fa6a494c0286d1",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "pytools/repack_archive.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f56697f12716175c32393bb7b0c298f1f87a415922b071ba14b19f586a60b480",
+      "lines": 13,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_hooks/stop_gate_task_id_fallback_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:f5b3b332bbba95fb2d6522e925a5756e6b4369706bfbbdc76e67883d0b311d53",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/browser_test.py",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:fc589305a6e8fcaea446980666c085571292c72266bdf07dfd98398ded552577",
+      "lines": 10,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/cli_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:ffa6c86e232ea67992280db477890f26f13b029249d486951d40b1c06988f7f5",
+      "lines": 12,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "count": 3
+        }
+      ]
+    }
+  ]
+}

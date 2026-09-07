@@ -246,8 +246,8 @@ class AgentsServerManager:
                 self._status_writer.delete_result(session_id)
                 self._status_writer.schedule()
 
-    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
-        """期限切れsessionなら結果本文を伴わない応答を返す。"""
+    def _resolve_expired_session(self, session_id: str) -> SessionResumeState | None:
+        """保持期限を反映し、期限切れsessionの再開状態を返す。"""
         if not isinstance(session_id, str) or not session_id:
             return None
         session = self.sessions.get(session_id)
@@ -257,7 +257,11 @@ class AgentsServerManager:
             and asyncio.get_running_loop().time() >= session.retention_deadline
         ):
             self._expire_session(session_id)
-        resume_state = self.expired_sessions.get(session_id)
+        return self.expired_sessions.get(session_id)
+
+    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
+        """期限切れsessionなら結果本文を伴わない応答を返す。"""
+        resume_state = self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
         return {"status": "expired"}
@@ -300,16 +304,7 @@ class AgentsServerManager:
 
     def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
-        if not isinstance(session_id, str) or not session_id:
-            return None
-        session = self.sessions.get(session_id)
-        if (
-            session is not None
-            and session.retention_deadline is not None
-            and asyncio.get_running_loop().time() >= session.retention_deadline
-        ):
-            self._expire_session(session_id)
-        resume_state = self.expired_sessions.get(session_id)
+        resume_state = self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
         return {"status": "expired", "kill_requested": False}
