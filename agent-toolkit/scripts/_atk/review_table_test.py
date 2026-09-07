@@ -1011,7 +1011,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
                 "--track",
             ),
         ),
-        ("show", ["review.tsv", "--all"], ("--format", "--round", "--track")),
+        ("show", ["review.tsv", "--all"], ("--format", "--output-file", "--round", "--track")),
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
