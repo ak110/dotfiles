@@ -2166,11 +2166,9 @@ async def test_codex_explore_changes_thread_start_only(
     normal_thread = normal_client.requests[0][1]
     explore_thread = explore_client.requests[0][1]
     assert "config" not in normal_thread
-    assert normal_thread["developerInstructions"] == state.DELEGATE_SYSTEM_PROMPT
+    assert normal_thread["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert explore_thread["config"] == {"project_doc_max_bytes": 0}
-    assert explore_thread["developerInstructions"] == state.EXPLORE_SYSTEM_PROMPT
-    assert state.AUTO_RESUME_NOTICE not in normal_thread["developerInstructions"]
-    assert state.AUTO_RESUME_NOTICE not in explore_thread["developerInstructions"]
+    assert explore_thread["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert normal_client.requests[1][1] == explore_client.requests[1][1]
 
 
@@ -2191,8 +2189,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
 
     thread_params = client.requests[0][1]
     assert thread_params["config"] == {"project_doc_max_bytes": 0}
-    assert thread_params["developerInstructions"] == state.SHELL_SYSTEM_PROMPT
-    assert state.AUTO_RESUME_NOTICE not in thread_params["developerInstructions"]
+    assert thread_params["developerInstructions"] == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
 
 
 @pytest.mark.asyncio
@@ -2207,9 +2204,9 @@ async def test_codex_resume_passes_delegate_instructions(tmp_path: pathlib.Path)
 
     normal_resume = client.requests[0][1]
     explore_resume = client.requests[1][1]
-    assert normal_resume["developerInstructions"] == state.DELEGATE_SYSTEM_PROMPT
+    assert normal_resume["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert "config" not in normal_resume
-    assert explore_resume["developerInstructions"] == state.EXPLORE_SYSTEM_PROMPT
+    assert explore_resume["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
 
 
 @pytest.mark.asyncio
@@ -2512,7 +2509,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
             "model": "gpt-test",
-            "developerInstructions": state.DELEGATE_SYSTEM_PROMPT,
+            "developerInstructions": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
         },
     )
     assert client.requests[1][0] == "turn/start"
