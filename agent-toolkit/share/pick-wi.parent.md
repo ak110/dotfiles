@@ -14,10 +14,13 @@
 メインはキュー一覧とAWI本文を自ら取得せず、pickerへ選定させる。
 `agents_server`の`start`へ`model_type="pick_wi"`と対象リポジトリの絶対パスを渡して起動する。engine、model及びeffortはサーバーが解決するため指定しない。
 
+起動の前に`atk managed-temp create --prefix pick-wi`を1回実行し、終了コード0と単一行の絶対パスを確認する。当該ディレクトリ直下の`pick-wi.txt`を選定結果の出力先ファイルとし、メインが当該領域を所有する。
+
 起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`を指す。次を名前付き必須入力とし、これ以外を渡さない。
 
 - 対象リポジトリの絶対パス
 - プロジェクト規範の絶対パス
+- 選定結果の出力先ファイルの絶対パス
 - ユーザーが処理対象のAWIを明示した場合は、当該ファイル名の一覧
 
 ユーザーが本スキルの起動時又は起動後の追加指示で処理対象を明示した場合もpickerを省略せず、指定ファイル名を選定制約として渡す。
@@ -25,8 +28,9 @@
 
 ## 出力の受領
 
-pickerは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める形式で、処理開始まで完了した集合を`completed`として返す。
+pickerは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`が定める形式で、処理開始まで完了した集合を`status: completed`として出力先ファイルへ書き込み、ツール戻り値へは`status`、`output_file`、`lines`の3行だけを返す。
 候補集合の自己検査と処理開始はpickerが同じターンで行い、メインは受理の往復を置かない。
+メインはツール戻り値の`output_file`が起動文で渡した絶対パスと一致することを確認し、当該ファイルを読んで以降の検収へ用いる。一致しない場合と当該ファイルを読み取れない場合は、観測値を添えて同じpicker threadへ再取得を指示する。
 メインは出力のファイル名、選定時点の状態、要求単位の由来、区分、レーン、計画ファイル、再開位置、確認境界、固有順序、上流投入の区分、投入先、要求及び`answered_uwis`を検収する。
 確認境界には、充足済み候補で実在を確認したコミット又は実装箇所の最小情報を含めることができる。
 上流投入の区分が`なし`以外の場合は投入先と要求が`なし`でないこと、区分が`なし`の場合は両方が`なし`であることを確認する。
@@ -62,6 +66,7 @@ pickerの出力を検収した後、メインが本節を適用して当該セ�
 
 処理開始はpickerが実行する。メインは`atk wi start-processing`を自ら実行しない。
 メインは`atk wi list --target-repo=<repo> --skip-pull`を1回実行する。`decisions[].awi`の全件が`processing`にあることと、`answered_uwis`のうち`decisions`へ現れないファイル名が`processing`にないことを、同じ出力から1回のコマンドで照合する。
+①の完了後に、`atk managed-temp cleanup --path <起動前に作成した領域の絶対パス>`を1回実行して出力先ファイルを回収し、終了コード0を確認する。②へ進まずに①を終える場合も同じ領域を回収する。
 `decisions`に無いファイル名が`processing`にあることは、当該回の処理対象ではないため①の完了を妨げない。ユーザーが処理対象を明示した処理回では、当該項目が`processing`に残ることが正常であるためである。
 配置されていない項目が1件でもある場合は、計画ファイル、managed-temp、worktree及び実装担当の起動を含む②へ進まない。
 
