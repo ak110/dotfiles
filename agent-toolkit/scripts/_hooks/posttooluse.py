@@ -694,11 +694,12 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     )
 
 
-def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
+def _handle_bash_tool(session_id: str, command: str, cwd: str, *, record_atk_help: bool) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
     _record_agents_wait_observation_attempt(session_id, command)
-    _record_atk_help_observation(session_id, command)
+    if record_atk_help:
+        _record_atk_help_observation(session_id, command)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
@@ -837,7 +838,13 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         if task_id is not None:
             _record_background_task_id(session_id, task_id)
 
-    _handle_bash_tool(session_id, command, cwd)
+    turn_id = payload.get("turn_id")
+    _handle_bash_tool(
+        session_id,
+        command,
+        cwd,
+        record_atk_help=not (isinstance(turn_id, str) and bool(turn_id)),
+    )
     return 0
 
 
