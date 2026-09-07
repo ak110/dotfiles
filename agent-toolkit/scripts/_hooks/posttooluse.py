@@ -425,10 +425,10 @@ def _agents_wait_session_id(tokens: tuple[str, ...]) -> str | None:
     index = 2
     while index < len(tokens):
         token = tokens[index]
-        if token in {"--turn", "--timeout"}:
+        if token == "--timeout":
             index += 2
             continue
-        if token.startswith(("--turn=", "--timeout=")):
+        if token.startswith("--timeout="):
             index += 1
             continue
         if token == "--":

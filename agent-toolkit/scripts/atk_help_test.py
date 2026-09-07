@@ -172,6 +172,16 @@ def test_worktree_stash_help_covers_save_restore_and_drop() -> None:
     assert "atk worktree-stash drop refs/worktree/<ラベル>" in help_text
 
 
+def test_wait_schedule_help_explains_request_bucket_resolution() -> None:
+    """wait-scheduleはbucket指定がTTLとcron式の解決に必要な理由を示す。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    description = commands["atk wait-schedule"].description
+
+    assert description is not None
+    assert "呼び出し主体のbucketを待機TTLとcron式の解決へ入力" in description
+    assert "呼び出し主体のbucketを自動解決できない" in description
+
+
 def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
     commands = {command: parser for command, parser, _summary in _walk_commands()}
     help_text = commands["atk managed-temp create"].format_help()

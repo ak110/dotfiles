@@ -37,7 +37,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
-- agents-wait: agents_serverが保存した指定turn以降の終端結果を1行で出力する
+- agents-wait: agents_serverが保存した終端結果又は通知を1行で出力する
 - agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
@@ -866,12 +866,6 @@ def _build_parser() -> argparse.ArgumentParser:
     agents_wait = _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
     agents_wait.add_argument("session_id", help="待機対象のsession識別子。")
     agents_wait.add_argument(
-        "--turn",
-        type=int,
-        required=True,
-        help="待機対象のturn番号。結果の`turn_seq`がこの値以上になるまで待つ。",
-    )
-    agents_wait.add_argument(
         "--timeout",
         type=float,
         default=3600.0,
@@ -1026,11 +1020,9 @@ def main(
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
     if args.command == "agents-wait":
-        if args.turn < 1:
-            args.subparser.error("--turnには1以上の整数を指定してください。")
         if args.timeout < 0:
             args.subparser.error("--timeoutには0以上の数値を指定してください。")
-        sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.turn, args.timeout))
+        sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.timeout))
     if args.command == "agents-notify":
         body = args.body
         if args.body_file is not None:

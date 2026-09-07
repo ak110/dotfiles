@@ -1,4 +1,4 @@
-"""agents_serverが保存した指定turn以降の終端結果を待つ。"""
+"""agents_serverが保存した終端結果又は通知を待つ。"""
 
 from __future__ import annotations
 
@@ -15,13 +15,12 @@ from _agents_server import status_file
 
 def wait_for_result(
     session_id: str,
-    turn_seq: int,
     timeout: float,
     *,
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
 ) -> int:
-    """指定turn以降の終端結果を標準出力へ書き、終了コードを返す。"""
+    """終端結果又は通知を標準出力へ書き、終了コードを返す。"""
     if not status_file.valid_session_id(session_id):
         print(f"session_idの形式が不正です: {session_id}", file=sys.stderr)
         return 5
@@ -33,8 +32,15 @@ def wait_for_result(
     deadline = time.monotonic() + timeout
     while True:
         result = _read_result(result_path)
-        if result is not None and _result_turn_seq(result) >= turn_seq:
+        notices = status_file.take_notices(root_session_id, session_id, state_root)
+        if result is not None:
+            if notices:
+                result["notices"] = notices
             print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+            return 0
+        if notices:
+            response = {"session_id": session_id, "status": "running", "notices": notices}
+            print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
             return 0
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -51,8 +57,3 @@ def _read_result(path: pathlib.Path) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
-
-
-def _result_turn_seq(result: dict[str, Any]) -> int:
-    value = result.get("turn_seq")
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0

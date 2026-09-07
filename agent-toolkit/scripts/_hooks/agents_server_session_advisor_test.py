@@ -246,8 +246,8 @@ def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
 def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> None:
     """Bash経由のatk agents-waitが未観測作業を解消する。"""
     commands = (
-        "atk agents-wait remote-direct --turn=1",
-        "uv run --no-project --script /plugin/agent-toolkit/scripts/atk.py agents-wait --turn 1 remote-script",
+        "atk agents-wait remote-direct --timeout=1",
+        "uv run --no-project --script /plugin/agent-toolkit/scripts/atk.py agents-wait --timeout 1 remote-script",
     )
     for index, command in enumerate(commands):
         local_session_id = f"agents-wait-{index}"
@@ -278,7 +278,7 @@ def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathli
         encoding="utf-8",
     )
 
-    _record_bash(tmp_path, local_session_id, f"atk agents-wait {remote_session_id} --turn=1")
+    _record_bash(tmp_path, local_session_id, f"atk agents-wait {remote_session_id} --timeout=1")
 
     assert _run_stop(tmp_path, local_session_id) == ""
 
@@ -289,7 +289,7 @@ def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_pat
     remote_session_id = "remote-argument"
     _record_start(tmp_path, local_session_id, remote_session_id)
 
-    _record_bash(tmp_path, local_session_id, f"printf '%s' 'atk agents-wait {remote_session_id} --turn=1'")
+    _record_bash(tmp_path, local_session_id, f"printf '%s' 'atk agents-wait {remote_session_id} --timeout=1'")
 
     assert _run_stop(tmp_path, local_session_id)
 

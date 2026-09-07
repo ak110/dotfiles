@@ -25,13 +25,13 @@ def test_agents_wait_outputs_matching_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """指定番号以上の終端結果を1行JSONで返す。"""
+    """終端結果を1行JSONで返す。"""
     wait_environment.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-wait", "session-1", "--turn=2", "--timeout=0"])
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == payload
@@ -39,22 +39,19 @@ def test_agents_wait_outputs_matching_result(
     assert not captured.err
 
 
-@pytest.mark.parametrize("result_turn", [None, 1])
-def test_agents_wait_times_out_without_matching_result(
+@pytest.mark.parametrize("result_body", [None, "[]"])
+def test_agents_wait_times_out_without_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    result_turn: int | None,
+    result_body: str | None,
 ) -> None:
-    """結果が無い場合と古いturnだけの場合は終了コード3を返す。"""
-    if result_turn is not None:
+    """結果が無い場合と辞書でない結果の場合は終了コード3を返す。"""
+    if result_body is not None:
         wait_environment.mkdir(parents=True)
-        (wait_environment / "session-1.json").write_text(
-            json.dumps({"session_id": "session-1", "turn_seq": result_turn}),
-            encoding="utf-8",
-        )
+        (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "session-1", "--turn=2", "--timeout=0"])
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -72,17 +69,17 @@ def test_agents_wait_rejects_invalid_session_before_path_resolution(
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
 
     with pytest.raises(SystemExit, match="5"):
-        atk.main(["agents-wait", session_id, "--turn=1", "--timeout=0"])
+        atk.main(["agents-wait", session_id, "--timeout=0"])
 
     captured = capsys.readouterr()
     assert not captured.out
     assert "session_idの形式が不正" in captured.err
 
 
-def test_agents_wait_requires_turn(capsys: pytest.CaptureFixture[str]) -> None:
-    """turn指定の欠落はargparseの終了コード2で拒否する。"""
+def test_agents_wait_rejects_turn(capsys: pytest.CaptureFixture[str]) -> None:
+    """撤去したturn指定はargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit, match="2"):
-        atk.main(["agents-wait", "session-1"])
+        atk.main(["agents-wait", "session-1", "--" + "turn=1"])
     assert not capsys.readouterr().out
 
 
@@ -95,8 +92,63 @@ def test_agents_wait_reports_unresolved_state_directory(
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
 
     with pytest.raises(SystemExit, match="4"):
-        atk.main(["agents-wait", "session-1", "--turn=1", "--timeout=0"])
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
 
     captured = capsys.readouterr()
     assert not captured.out
     assert "状態ディレクトリを解決できません" in captured.err
+
+
+def test_agents_wait_returns_notices_while_running(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """終端前の通知を回収し、running状態とともに1行で返す。"""
+    notices = wait_environment.parent / "notices"
+    notices.mkdir(parents=True)
+    for sequence, sent_at, body in (
+        (2, "2026-09-07T00:00:02+00:00", "後の通知"),
+        (1, "2026-09-07T00:00:01+00:00", "先の通知"),
+    ):
+        payload = {"version": 1, "session_id": "session-1", "sent_at": sent_at, "body": body}
+        (notices / f"session-1.{sequence}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    response = json.loads(capsys.readouterr().out)
+    assert response == {
+        "session_id": "session-1",
+        "status": "running",
+        "notices": [
+            {"sent_at": "2026-09-07T00:00:01+00:00", "body": "先の通知"},
+            {"sent_at": "2026-09-07T00:00:02+00:00", "body": "後の通知"},
+        ],
+    }
+    assert not any(notices.iterdir())
+
+
+def test_agents_wait_adds_notices_to_terminal_result(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同じ周回の通知を終端結果へ加える。"""
+    wait_environment.mkdir(parents=True)
+    payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
+    (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+    notices = wait_environment.parent / "notices"
+    notices.mkdir()
+    notice = {
+        "version": 1,
+        "session_id": "session-1",
+        "sent_at": "2026-09-07T00:00:01+00:00",
+        "body": "終端時の通知",
+    }
+    (notices / "session-1.1.json").write_text(json.dumps(notice), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    payload["notices"] = [{"sent_at": notice["sent_at"], "body": notice["body"]}]
+    assert json.loads(capsys.readouterr().out) == payload
+    assert not any(notices.iterdir())

@@ -630,14 +630,12 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert send_tool is not None
 
     assert "`turn_seq`" in start_tool.description
-    assert "`atk agents-wait`" in start_tool.description
-    assert "`--turn`へそのまま渡す" in start_tool.description
+    assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`/goal`が設定され" in wait_tool.description
-    assert "`atk agents-wait <session_id> --turn=<turn_seq>`" in wait_tool.description
+    assert "`atk agents-wait <session_id>`" in wait_tool.description
     assert "`timeout=0`の本ツールを1回発行" in wait_tool.description
     assert "`turn_seq`" in send_tool.description
-    assert "`atk agents-wait`" in send_tool.description
-    assert "`--turn`へそのまま渡す" in send_tool.description
+    assert "`--" + "turn`へそのまま渡す" not in send_tool.description
 
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
@@ -1149,7 +1147,6 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
         asyncio.to_thread(
             agents_wait.wait_for_result,
             session.session_id,
-            5,
             1,
             environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
             state_root=tmp_path,
@@ -1170,8 +1167,8 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
 
 @pytest.mark.asyncio
-async def test_owner_gone_resume_keeps_previous_result_file_until_deadline(tmp_path: pathlib.Path) -> None:
-    """所有主体終了による再開は期限前の旧結果ファイルを削除しない。"""
+async def test_owner_gone_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
+    """所有主体終了による再開は新しいturnの開始時に旧結果を削除する。"""
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root-session", "root.json", None),
@@ -1195,8 +1192,7 @@ async def test_owner_gone_resume_keeps_previous_result_file_until_deadline(tmp_p
     )
 
     assert {response["turn_seq"] for response in responses} == {5}
-    assert json.loads(result_path.read_text(encoding="utf-8"))["agent_message"] == "旧結果"
-    assert json.loads(result_path.read_text(encoding="utf-8"))["turn_seq"] == 4
+    assert not result_path.exists()
     await manager.close()
 
 
@@ -1672,7 +1668,6 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
         asyncio.to_thread(
             agents_wait.wait_for_result,
             session.session_id,
-            2,
             1,
             environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
             state_root=tmp_path,

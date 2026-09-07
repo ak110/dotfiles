@@ -13,7 +13,7 @@ import agents_server_mcp as subject
 import pytest
 from _agents_server import claude as claude_backend
 from _agents_server import codex as codex_backend
-from _agents_server import session_registry, state
+from _agents_server import session_registry, state, status_file
 
 _STREAM_END = object()
 
@@ -206,6 +206,68 @@ async def _auto_resume_after_child_termination(
 
 
 @pytest.mark.asyncio
+async def test_run_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
+    """状態writerを伴う再開はbackend応答後に前turnの結果を削除する。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+
+    class ResumeBackend:
+        async def resume(
+            self,
+            session_id: str,
+            _prompt: state.ResumePrompt,
+            cwd: str,
+            model: str | None,
+            effort: str | None,
+            **kwargs: Any,
+        ) -> state.SessionState:
+            resumed = state.SessionState(
+                session_id,
+                cwd,
+                model=model,
+                effort=effort,
+                engine="codex",
+                model_type=kwargs["model_type"],
+                turn_seq=kwargs["turn_seq"] + 1,
+            )
+            manager.sessions[session_id] = resumed
+            return resumed
+
+        async def close(self) -> None:
+            """外部資源を持たないため何もしない。"""
+
+    manager._codex = ResumeBackend()
+    source = state.SessionState(
+        "resume-result",
+        str(tmp_path),
+        model="model",
+        effort="medium",
+        engine="codex",
+        model_type="execute",
+        turn_seq=1,
+    )
+    result_path = status_file.results_directory("root", tmp_path) / f"{source.session_id}.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text("{}\n", encoding="utf-8")
+    writer.activate()
+    try:
+        resumed = await manager._run_resume(
+            state.SessionResumeState.from_session(source),
+            state.ResumePrompt("続行"),
+        )
+
+        assert resumed.turn_seq == 2
+        assert not result_path.exists()
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_wait_defers_result_until_child_session_terminates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -314,7 +376,13 @@ async def test_codex_child_session_triggers_auto_resume(
     tmp_path: pathlib.Path,
 ) -> None:
     """CodexのMCP完了項目から孫sessionを追跡して同じthreadを再開する。"""
-    manager = subject.AgentsServerManager(status_writer=None)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
     manager._codex = backend
     session = state.SessionState(
@@ -326,6 +394,10 @@ async def test_codex_child_session_triggers_auto_resume(
         turn_id="turn-1",
     )
     manager.sessions[session.session_id] = session
+    writer.activate()
+    result_path = status_file.results_directory("root", tmp_path) / f"{session.session_id}.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text("{}\n", encoding="utf-8")
     child_session_id = "codex-child"
     session_registry.publish(child_session_id, terminal=False)
     await backend._handle_notification(
@@ -374,6 +446,7 @@ async def test_codex_child_session_triggers_auto_resume(
         result = await manager.wait(session.session_id, timeout=1)
         assert result["agent_message"] == "Codex再開結果"
         assert session.live_child_session_ids == set()
+        assert not result_path.exists()
     finally:
         await manager.close()
 

@@ -11,7 +11,6 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
-import json
 import logging
 import os
 import warnings
@@ -145,7 +144,6 @@ class AgentsServerManager:
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer
-        self._notices_directory = self._status_writer.path.parent / "notices" if self._status_writer is not None else None
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
 
@@ -673,6 +671,8 @@ class AgentsServerManager:
             except Exception:
                 session.touch()
                 raise
+            if self._status_writer is not None:
+                self._status_writer.delete_result(session.session_id)
             return
 
         deadline = session.auto_resume_deadline
@@ -684,34 +684,9 @@ class AgentsServerManager:
 
     def _take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
-        if self._notices_directory is None:
+        if self._status_writer is None:
             return []
-        try:
-            paths = tuple(self._notices_directory.iterdir())
-        except FileNotFoundError:
-            return []
-        matched: list[tuple[str, str, dict[str, str]]] = []
-        for path in paths:
-            if not path.is_file() or path.suffix != ".json":
-                continue
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
-                continue
-            if (
-                not isinstance(payload, dict)
-                or payload.get("version") != 1
-                or payload.get("session_id") != session_id
-                or not isinstance(payload.get("sent_at"), str)
-                or not isinstance(payload.get("body"), str)
-            ):
-                continue
-            notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
-            matched.append((payload["sent_at"], path.name, notice))
-        matched.sort(key=lambda item: (item[0], item[1]))
-        for _sent_at, file_name, _notice in matched:
-            (self._notices_directory / file_name).unlink()
-        return [notice for _sent_at, _file_name, notice in matched]
+        return self._status_writer.take_notices(session_id)
 
     @staticmethod
     def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
@@ -761,6 +736,8 @@ class AgentsServerManager:
                 excluded_candidates=resume_state.excluded_candidates,
                 turn_seq=resume_state.turn_seq,
             )
+            if self._status_writer is not None:
+                self._status_writer.delete_result(session_id)
             session.announced = True
             session.touch()
             return session
@@ -955,6 +932,8 @@ class AgentsServerManager:
                                 previous_result,
                                 previous_result_deadline,
                             )
+                    if self._status_writer is not None:
+                        self._status_writer.delete_result(session_id)
                     delivery = result["delivery"]
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
@@ -1163,7 +1142,6 @@ async def start(
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
     応答は`session_id`、`turn_seq`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
-    `turn_seq`は、`atk agents-wait`でこのturnを待つ場合に`--turn`へそのまま渡す。
     全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
     これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
     """
@@ -1261,9 +1239,8 @@ async def wait(
     `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
     呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
-    本ツールの背景移行で待たず、`atk agents-wait <session_id> --turn=<turn_seq>`を
+    本ツールの背景移行で待たず、`atk agents-wait <session_id>`を
     実行ホストの背景ジョブとして起動して待機表明でターンを終える。
-    `<turn_seq>`には`start`又は`send_message`の応答値をそのまま渡す。
     当該背景ジョブの完了通知を受領した後に`timeout=0`の本ツールを1回発行し、結果本文の配送を確定させる。
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
@@ -1297,7 +1274,6 @@ async def send_message(
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`で配送結果を示し、`turn_seq`を含む。
-    `turn_seq`は、`atk agents-wait`でこのturnを待つ場合に`--turn`へそのまま渡す。
     直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。

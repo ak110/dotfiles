@@ -91,6 +91,46 @@ def notices_directory(root_session_id: str, state_root: pathlib.Path | None = No
     return status_directory(root_session_id, state_root) / "notices"
 
 
+def take_notices(
+    root_session_id: str,
+    session_id: str,
+    state_root: pathlib.Path | None = None,
+) -> list[dict[str, str]]:
+    """待機対象sessionの正常な通知を回収し、送信時刻順に返す。"""
+    directory = notices_directory(root_session_id, state_root)
+    try:
+        paths = tuple(directory.iterdir())
+    except FileNotFoundError:
+        return []
+    matched: list[tuple[str, str, dict[str, str]]] = []
+    for path in paths:
+        if not path.is_file() or path.suffix != ".json":
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            not isinstance(payload, dict)
+            or payload.get("version") != 1
+            or payload.get("session_id") != session_id
+            or not isinstance(payload.get("sent_at"), str)
+            or not isinstance(payload.get("body"), str)
+        ):
+            continue
+        notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
+        matched.append((payload["sent_at"], path.name, notice))
+    matched.sort(key=lambda item: (item[0], item[1]))
+    taken: list[dict[str, str]] = []
+    for _sent_at, file_name, notice in matched:
+        try:
+            (directory / file_name).unlink()
+        except FileNotFoundError:
+            continue
+        taken.append(notice)
+    return taken
+
+
 def normalize_label(value: str) -> str:
     """依頼本文又はコマンドの最初の空でない行を表示用に正規化する。"""
     line = next((line for line in value.splitlines() if line.strip()), "")
@@ -209,6 +249,10 @@ class StatusFileWriter:
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
         path.unlink(missing_ok=True)
         self._result_deadlines.pop(session_id, None)
+
+    def take_notices(self, session_id: str) -> list[dict[str, str]]:
+        """待機対象sessionの正常な通知を回収する。"""
+        return take_notices(self._identity.root_session_id, session_id, self._state_root)
 
     def _write_terminal_results(self) -> None:
         for session in self._sessions.values():
