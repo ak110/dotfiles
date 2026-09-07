@@ -167,16 +167,6 @@ def _is_in_verified_managed_temp(file_path: str) -> bool:
         return False
 
 
-def _contains_heredoc(command: str) -> bool:
-    """コマンド本文がヒアドキュメント（`<<`）を含むかを返す。
-
-    ヒアドキュメント本文は実行されないリテラルだが、区間分割と実行位置解析は本文を
-    実行コマンド列として扱う。本文中のリテラル一致による誤検出を避けるため、
-    誤検出側の実害が誤検出しない側を上回る検査は当該コマンドを対象から外す。
-    """
-    return "<<" in command
-
-
 # --- Bash: git amend / rebaseをlog未確認でブロック ---
 
 
@@ -686,12 +676,12 @@ def _git_subcommand_index(tokens: tuple[str, ...]) -> int | None:
 def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
     r"""Git logに--decorateがない場合、自動で挿入したupdatedInputを返す。
 
-    ヒアドキュメント本文を除く各区間について、実行位置のgitサブコマンドと元コマンド上の
+    ヒアドキュメント本文をマスクした各区間について、実行位置のgitサブコマンドと元コマンド上の
     語の位置を同時に解決する。引用符内の字面や位置対応を確定できない区間は変更しない。
     """
-    analysis = command.split("<<", 1)[0]
+    analysis = _bash_command_parser.mask_heredoc_bodies(command)
     previous_end = 0
-    for segment in split_bash_segments(analysis):
+    for segment in split_bash_segments(command):
         segment_start = analysis.find(segment, previous_end)
         if segment_start < 0:
             continue

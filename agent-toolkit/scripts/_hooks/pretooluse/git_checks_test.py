@@ -29,6 +29,16 @@ from _hooks.pretooluse import git_checks as pretooluse
 from _hooks.pretooluse.test_support_test import *  # noqa: F403
 
 
+def test_git_log_decorate_is_inserted_after_heredoc() -> None:
+    """heredoc本文を変えず、終端後のgit logへdecorateを追加する。"""
+    command = "cat <<'EOF'\ngit log in body\nEOF\ngit log -3"
+    result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+
+    assert result.returncode == 0
+    updated = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+    assert updated == "cat <<'EOF'\ngit log in body\nEOF\ngit log --decorate -3"
+
+
 class TestManifestSsot:
     """Claude Code向け正本manifest間のSSOT整合性。
 

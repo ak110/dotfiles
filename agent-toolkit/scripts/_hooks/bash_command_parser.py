@@ -553,13 +553,133 @@ class GitEvent:
     unresolved_expression: str | None = None
 
 
+def _heredoc_declarations(line: str) -> list[tuple[str, bool]]:
+    """コマンド行にあるheredocの区切り語とtab除去指定を出現順に返す。"""
+    declarations: list[tuple[str, bool]] = []
+    quote: str | None = None
+    escaped = False
+    arithmetic_depth = 0
+    word_boundary = True
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if escaped:
+            escaped = False
+            word_boundary = False
+            index += 1
+            continue
+        if char == "\\" and quote != "'":
+            escaped = True
+            index += 1
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if arithmetic_depth:
+            if char == "(":
+                arithmetic_depth += 1
+            elif char == ")":
+                arithmetic_depth -= 1
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            word_boundary = False
+            index += 1
+            continue
+        if line.startswith("$((", index):
+            arithmetic_depth = 2
+            word_boundary = False
+            index += 3
+            continue
+        if line.startswith("((", index):
+            arithmetic_depth = 2
+            word_boundary = False
+            index += 2
+            continue
+        if char == "#" and word_boundary:
+            break
+        if not line.startswith("<<", index) or line.startswith("<<<", index):
+            word_boundary = char in " \t;&|()"
+            index += 1
+            continue
+
+        cursor = index + 2
+        strip_tabs = cursor < len(line) and line[cursor] == "-"
+        if strip_tabs:
+            cursor += 1
+        while cursor < len(line) and line[cursor] in {" ", "\t"}:
+            cursor += 1
+        if cursor >= len(line):
+            break
+        if line[cursor] in {"'", '"'}:
+            delimiter_quote = line[cursor]
+            end = line.find(delimiter_quote, cursor + 1)
+            if end < 0:
+                break
+            delimiter = line[cursor + 1 : end]
+            cursor = end + 1
+        else:
+            end = cursor
+            while end < len(line) and line[end] not in " \t\r\n;|&<>()":
+                end += 1
+            delimiter = line[cursor:end]
+            cursor = end
+        if delimiter:
+            declarations.append((delimiter, strip_tabs))
+        word_boundary = False
+        index = cursor
+    return declarations
+
+
+def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = False) -> None:
+    """改行を保ち、指定範囲の行内容を空白又は区切り標識へ置換する。"""
+    for index in range(start, end):
+        if masked[index] not in {"\r", "\n"}:
+            masked[index] = " "
+    if separator and start < end:
+        masked[start] = ";"
+
+
+def mask_heredoc_bodies(command: str) -> str:
+    """heredoc本文を同じ長さの空白へ置換し、本文外の位置と改行数を保つ。"""
+    masked = list(command)
+    line_start = 0
+    while line_start < len(command):
+        line_end = command.find("\n", line_start)
+        if line_end < 0:
+            line_end = len(command)
+        declarations = _heredoc_declarations(command[line_start:line_end])
+        cursor = line_end + (line_end < len(command))
+        if not declarations:
+            line_start = cursor
+            continue
+        for delimiter, strip_tabs in declarations:
+            while cursor < len(command):
+                body_line_end = command.find("\n", cursor)
+                if body_line_end < 0:
+                    body_line_end = len(command)
+                content_end = body_line_end - (body_line_end > cursor and command[body_line_end - 1] == "\r")
+                content = command[cursor:content_end]
+                candidate = content.lstrip("\t") if strip_tabs else content
+                is_terminator = candidate == delimiter
+                _blank_line(masked, cursor, body_line_end, separator=is_terminator)
+                cursor = body_line_end + (body_line_end < len(command))
+                if is_terminator:
+                    break
+        line_start = cursor
+    return "".join(masked)
+
+
 def split_bash_segments(command: str) -> list[str]:
     """Bashコマンドを`;`・`&&`・`||`・`|`・`&`で分割する。
 
     クォート（`'`・`"`）内のメタ文字は分割対象外とする。
-    バックスラッシュエスケープやheredocは厳密に扱わないため、heredocを含む
-    コマンドは呼び出し側で除外する想定。
+    heredoc本文は同じ長さの空白へ置換してから分割し、本文外の位置を保つ。
     """
+    command = mask_heredoc_bodies(command)
     segments: list[str] = []
     buf: list[str] = []
     in_single = False

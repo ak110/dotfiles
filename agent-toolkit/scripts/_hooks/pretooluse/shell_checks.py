@@ -153,7 +153,6 @@ if TYPE_CHECKING:
         _has_uv_terminal_option,
         _is_python_token,
     )
-    from _hooks.pretooluse.git_checks import _contains_heredoc
     from _hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
@@ -205,8 +204,6 @@ def _check_bash_uv_run_python(command: str, cwd: str) -> bool:
 
     判定詳細は本関数の冒頭コメントを参照する。真を返すとblock（exit 2）。
     """
-    if _contains_heredoc(command):
-        return False
     segments = split_bash_segments(command)
     current_cwd = CwdResolution(cwd, bool(cwd))
     for segment in segments:
@@ -412,6 +409,7 @@ def _split_serial_shell_commands(
     クォート外の`#`（Bashコメント開始）から行末までをスキップし、
     コメント内の演算子を区切りとして誤検出しない。
     """
+    command = _bash_command_parser.mask_heredoc_bodies(command)
     segments: list[str] = []
     buffer: list[str] = []
     quote: str | None = None
@@ -721,11 +719,10 @@ def _check_bash_sleep_poll_pattern(
     当該範囲の外にある`sleep`は、同一のBash呼び出しにループが含まれる場合も通常どおり判定する。
 
     簡略化: クォート外の`;`・`&&`直列連結だけを検出する,
-    既知の限界: サブシェルで包んだ状態確認は検出しない。ヒアドキュメントを含むコマンドは
-    本文中のリテラル混入で誤検出するため対象から外す,
+    既知の限界: サブシェルで包んだ状態確認は検出しない,
     見直し契機: サブシェル包みの反復ポーリングを実測した場合
     """
-    if run_in_background or _contains_heredoc(command):
+    if run_in_background:
         return None
     if not _has_foreground_sleep_wait(_split_serial_shell_commands(command)):
         return None
@@ -804,11 +801,10 @@ def _check_bash_process_kill_by_pattern(command: str) -> bool:
 
     対象の所有権を確認できないパターン一致の一括終了は事故の危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文は解析対象から外す。禁止語が実行位置ではなく、安全な引数位置の
+    ヒアドキュメント本文をマスクした文字列を解析し、禁止語が実行位置ではなく、安全な引数位置の
     リテラルだと確定できる区間だけを許可する。
     """
-    analysis = command.split("<<", 1)[0]
-    matching_segments = [segment for segment in split_bash_segments(analysis) if _PROCESS_KILL_BY_PATTERN_RE.search(segment)]
+    matching_segments = [segment for segment in split_bash_segments(command) if _PROCESS_KILL_BY_PATTERN_RE.search(segment)]
     if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
         return False
     print(
@@ -1128,7 +1124,7 @@ def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
 
 def _check_bash_unverified_atk_help(command: str, session_id: str) -> str | None:
     """同一セッションでヘルプ未観測の`atk`サブコマンド実行を警告する。"""
-    if not session_id or _contains_heredoc(command):
+    if not session_id:
         return None
     help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
     targets: set[str] = set()
@@ -1212,8 +1208,6 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
 
 def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
     """除外指定の無い再帰`grep`がディレクトリを読む場合に警告する。"""
-    if _contains_heredoc(command):
-        return None
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
@@ -1243,8 +1237,6 @@ def _check_bash_state_change_command_chaining(command: str) -> str | None:
     最後の区間では当該コマンドの終了コードがシェルの終了コードとなるため対象外とする。
     代替手段が当該コマンドの単独実行に一意に定まり、同じターンで実行できるため遮断する。
     """
-    if _contains_heredoc(command):
-        return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for serial_command in serial_commands[:-1]:
         if any(_segment_is_state_changing(segment) for segment in _extract_execution_segments(serial_command)):
@@ -1266,8 +1258,6 @@ def _check_bash_help_with_execution(command: str) -> str | None:
     ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
     代替手段がヘルプの先行実行と後続実行の分離に一意に定まり、同じターンで実行できるため遮断する。
     """
-    if _contains_heredoc(command):
-        return None
     segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
     names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
     help_names = {name for name, segment in zip(names, segments, strict=True) if _segment_is_help_only(segment)}
@@ -1491,8 +1481,6 @@ def _check_bash_output_truncation(command: str, session_id: str) -> str | None:
     含むだけの場合は検出しない。実行位置を確定できない区間と、実行位置以外で起動される対象コマンドも
     検出しない（助言であり非検出側の誤差の実害が小さいため）。
     """
-    if _contains_heredoc(command):
-        return None
     if not any(_pipeline_truncates_required_output(pipeline) for pipeline in _extract_execution_pipelines(command)):
         return None
     del session_id
@@ -1558,8 +1546,6 @@ def _status_report_follows_truncation(command: str) -> bool:
 
 def _check_bash_output_status_after_truncation(command: str) -> str | None:
     """切り詰め直後の`$?`報告が検証コマンドの状態を隠す場合に診断を返す。"""
-    if _contains_heredoc(command):
-        return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for index, serial_command in enumerate(serial_commands[:-1]):
         if not any(_pipeline_truncates_required_output(pipeline) for pipeline in _extract_execution_pipelines(serial_command)):
@@ -1670,8 +1656,6 @@ def _pipeline_has_recursive_home_search(tokens: Sequence[str]) -> bool:
 
 def _check_bash_recursive_home_search(command: str) -> str | None:
     """高容量のユーザー領域を無限定に再帰検索する実行位置へ警告を返す。"""
-    if _contains_heredoc(command):
-        return None
     if not any(
         segment.resolved and _pipeline_has_recursive_home_search(segment.tokens)
         for pipeline in _extract_execution_pipelines(command)
@@ -1905,8 +1889,6 @@ def _pipeline_has_unbounded_home_traversal(tokens: Sequence[str]) -> bool:
 
 def _check_bash_unbounded_home_traversal(command: str) -> str | None:
     """対象限定の無い`find`・`ls -R`による高容量領域の走査へ警告を返す。"""
-    if _contains_heredoc(command):
-        return None
     if not any(
         segment.resolved and _pipeline_has_unbounded_home_traversal(segment.tokens)
         for pipeline in _extract_execution_pipelines(command)
@@ -1936,8 +1918,6 @@ def _check_bash_codex_exec(command: str) -> str | None:
     実行位置を確定できない区間と、実行位置以外で起動される`codex exec`も検出しない
     （助言であり非検出側の誤差の実害が小さいため）。
     """
-    if _contains_heredoc(command):
-        return None
     for segment in _extract_execution_segments(command):
         if not _segment_starts_with(segment, _CODEX_EXEC_PREFIX):
             continue

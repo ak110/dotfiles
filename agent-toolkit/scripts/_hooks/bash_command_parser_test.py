@@ -19,6 +19,7 @@ from _hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-
     GitEvent,
     extract_execution_segments,
     extract_git_events,
+    mask_heredoc_bodies,
     split_bash_segments,
 )
 
@@ -64,6 +65,33 @@ class TestSplitBashSegments:
     )
     def test_split(self, command: str, expected: list[str]) -> None:
         assert split_bash_segments(command) == expected
+
+    def test_heredoc_body_is_masked_and_outside_is_split(self) -> None:
+        cases = [
+            ("cat <<EOF && echo after\nbody && hidden\nEOF\nrg needle .", ["cat <<EOF", "echo after", "rg needle ."]),
+            ("cat <<-'EOF'\n\tbody | hidden\n\tEOF\nkill 123", ["cat <<-'EOF'", "kill 123"]),
+            ('cat <<"END"\nbody; hidden\nEND\ngit log', ['cat <<"END"', "git log"]),
+            (
+                "cat <<FIRST <<'SECOND'\nfirst && hidden\nFIRST\nsecond | hidden\nSECOND\ngit status",
+                ["cat <<FIRST <<'SECOND'", "git status"],
+            ),
+            ("cat <<EOF\nunterminated && hidden", ["cat <<EOF"]),
+        ]
+        for command, expected in cases:
+            masked = mask_heredoc_bodies(command)
+            assert len(masked) == len(command)
+            assert masked.count("\n") == command.count("\n")
+            assert split_bash_segments(command) == expected
+
+        here_string = "cat <<< 'value && literal'; git status"
+        assert mask_heredoc_bodies(here_string) == here_string
+        assert split_bash_segments(here_string) == ["cat <<< 'value && literal'", "git status"]
+
+        for arithmetic in ("echo $((1 << 2)) && git status", "((value << 2)); git status"):
+            assert mask_heredoc_bodies(arithmetic) == arithmetic
+
+        comment = "echo ok # <<EOF\nnext command"
+        assert mask_heredoc_bodies(comment) == comment
 
 
 class TestExtractGitEvents:

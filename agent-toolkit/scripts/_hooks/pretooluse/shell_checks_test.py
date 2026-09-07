@@ -1243,3 +1243,32 @@ class TestBashHeredocLiteralExclusion:
         assert result.returncode == 0
         assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
         assert "終了状態を示す" not in _agent_messages(result)
+
+    def test_state_change_chaining_before_heredoc_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """heredocより前の状態変更コマンドを通常の直列連結と同じく遮断する。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk review-table init; cat <<'EOF'\n本文\nEOF"},
+                "session_id": "heredoc-state-change-before",
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 2
+        assert "状態を変更するコマンドを他のコマンド" in result.stderr
+
+    def test_recursive_grep_after_heredoc_is_warned(self, tmp_path: pathlib.Path) -> None:
+        """heredoc終端後の再帰grepを通常の入力と同じく警告する。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "cat <<'EOF'\n本文\nEOF\ngrep -R needle ."},
+                "session_id": "heredoc-recursive-grep-after",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        assert "除外設定を反映しない再帰`grep`" in _additional_context(result)
