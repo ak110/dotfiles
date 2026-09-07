@@ -6,7 +6,7 @@ import pathlib
 import shlex
 
 import pytest
-from _testing.helpers import _write_transcript
+from _testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
 
 from _hooks import stop
 from _hooks import stop_gate as _stop_gate
@@ -19,6 +19,23 @@ def _replace_checks(monkeypatch: pytest.MonkeyPatch, results: dict[str, tuple[st
     for module_name, result in results.items():
         module = importlib.import_module(f"_hooks.{module_name}")
         monkeypatch.setattr(module, "evaluate", lambda _payload, result=result: result)
+
+
+def _state_path(directory: pathlib.Path, session_id: str) -> pathlib.Path:
+    """検体のセッション状態ファイルを返す。"""
+    return directory / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+
+
+def _read_state(directory: pathlib.Path, session_id: str) -> dict:
+    """検体のセッション状態を返す。"""
+    return json.loads(_state_path(directory, session_id).read_text(encoding="utf-8"))
+
+
+def _set_state_directory(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Path) -> None:
+    """セッション状態とStop判定ログの一時ディレクトリを固定する。"""
+    monkeypatch.setenv("TMPDIR", str(directory))
+    monkeypatch.setenv("TEMP", str(directory))
+    monkeypatch.setenv("TMP", str(directory))
 
 
 def test_blocks_and_notifications_are_aggregated_in_check_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,6 +78,85 @@ def test_all_approve_returns_empty_object(monkeypatch: pytest.MonkeyPatch) -> No
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
 
     assert not stop.evaluate("{}")
+
+
+def test_block_below_limit_increments_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """上限未満のblockは遮断を維持し、連続回数を増やす。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    _replace_checks(monkeypatch, {"autonomous_exit": ("block", "自律終了")})
+    session_id = "below-limit"
+    _state_path(tmp_path, session_id).write_text(
+        json.dumps({"stop_consecutive_block_count": 6}),
+        encoding="utf-8",
+    )
+
+    result = stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True}))
+
+    assert result["decision"] == "block"
+    assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 7
+
+
+def test_block_limit_approves_resets_count_and_logs_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """上限到達時はapproveし、回数と遮断判定を記録する。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    _replace_checks(monkeypatch, {"autonomous_exit": ("block", "自律終了")})
+    session_id = "at-limit"
+    _state_path(tmp_path, session_id).write_text(
+        json.dumps({"stop_consecutive_block_count": 7, "autonomous_exit_invoked": False}),
+        encoding="utf-8",
+    )
+
+    assert not stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True}))
+    assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 0
+    log_text = (tmp_path / f"claude-agent-toolkit-stop-{session_id}.log").read_text(encoding="utf-8")
+    assert "decision=approve_block_limit_reached" in log_text
+    assert '"blocking_checks": ["autonomous_exit"]' in log_text
+    assert '"autonomous_exit_invoked": false' in log_text
+
+
+def test_first_block_starts_count_at_one(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """再入でない入力は既存値にかかわらず連続回数を1から始める。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    _replace_checks(monkeypatch, {"pending_question_advisor": ("block", "問いかけ")})
+    session_id = "first-block"
+    _state_path(tmp_path, session_id).write_text(
+        json.dumps({"stop_consecutive_block_count": 5}),
+        encoding="utf-8",
+    )
+
+    result = stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": False}))
+
+    assert result["decision"] == "block"
+    assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 1
+
+
+def test_approve_resets_consecutive_block_count(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """遮断が無い入力は連続回数を0へ戻す。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    session_id = "approve-reset"
+    _state_path(tmp_path, session_id).write_text(
+        json.dumps({"stop_consecutive_block_count": 4}),
+        encoding="utf-8",
+    )
+
+    assert not stop.evaluate(json.dumps({"session_id": session_id, "stop_hook_active": True}))
+    assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 0
 
 
 def test_exception_isolated_per_check(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

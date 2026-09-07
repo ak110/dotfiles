@@ -233,8 +233,9 @@ Claude CodeのUserPromptSubmit payloadから現在のセッション名を取得
 
 ## Stop/SubagentStopフックの再帰呼び出し対策
 
-Stop/SubagentStopフックは、入力payloadの`stop_hook_active`が真の場合、
-判定処理を行わず終了を許可する応答を返す。出力経路によらず両イベントで必須とする。
+Stopの集約入口は連続blockの上限を管理し、上限へ到達した場合に遮断を打ち切る。
+個々の判定は、入力payloadの`stop_hook_active`だけを根拠とする無条件approveを行わない。
+上限到達時は、打ち切りの事実と遮断していた判定名をStop判定ログへ記録する。
 `stop_hook_active`は、直前の同フック呼び出しが当該ターンの終了を一度阻止したことを示す。
 
 Stop/SubagentStopの`decision: "block"`は、対象主体が同一ターン内の行動で解消できる条件に限る（厳守規定）。

@@ -73,10 +73,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_process_loop_session", {})
         return "approve", ""
 
-    if payload.get("stop_hook_active") is True:
-        append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
-        return "approve", ""
-
     raw_transcript = payload.get("transcript_path", "")
     transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     if is_pending_async_work(

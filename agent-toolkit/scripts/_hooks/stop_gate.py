@@ -266,7 +266,7 @@ def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes:
     """Stop hookの最終判定根拠を常時ログへ1行追記する。
 
     `decision`は呼び出し側が渡す最終判定ラベル（`approve_no_env`・
-    `approve_pending_async`・`approve_exit_invoked`・`approve_stop_hook_active`・
+    `approve_pending_async`・`approve_exit_invoked`・`approve_block_limit_reached`・
     `block_autonomous_exit`など）。`context`は任意のkey-valueの辞書で、
     `last_tool`・`launched`・`pending`・`pending_ids`等を呼び出し側が任意で埋める。
 

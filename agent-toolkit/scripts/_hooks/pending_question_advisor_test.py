@@ -138,8 +138,8 @@ def test_allows_when_question_is_in_quote(tmp_path: pathlib.Path) -> None:
     assert not _decision(result)
 
 
-def test_allows_when_stop_hook_active(tmp_path: pathlib.Path) -> None:
-    """遮断の再帰を避けるため、`stop_hook_active`が真の入力は通過する。"""
+def test_blocks_when_stop_hook_active(tmp_path: pathlib.Path) -> None:
+    """`stop_hook_active`が真でも問いかけが残っていれば遮断する。"""
     transcript = _transcript_with_response(tmp_path, "どちらを採用しますか？")
 
     result = _run(
@@ -147,7 +147,7 @@ def test_allows_when_stop_hook_active(tmp_path: pathlib.Path) -> None:
         state_dir=tmp_path,
     )
 
-    assert not _decision(result)
+    assert _decision(result)["decision"] == "block"
 
 
 def test_allows_when_transcript_missing(tmp_path: pathlib.Path) -> None:

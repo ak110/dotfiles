@@ -13,10 +13,11 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 1. 新旧いずれのセッション識別子も`"1"`でない: 常駐ループ外のセッションのため無条件approve
 2. 委譲先セッションの印が`"1"`: 常駐ループの最上位ではないため無条件approve
-3. `stop_hook_active`が真: 連続ブロック上限回避のため無条件approve
-4. `is_pending_async_work`が真: サブエージェント継続時の誤発火防止のためapprove
-5. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
-6. 上記いずれでもない: blockして順序制約の再促文を返す
+3. `is_pending_async_work`が真: サブエージェント継続時の誤発火防止のためapprove
+4. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
+5. 上記いずれでもない: blockして順序制約の再促文を返す
+
+連続blockの上限は共通入口`stop.py`が管理する。
 
 LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 `decision: "block"`＋`reason`フィールドへ載せて返す。
@@ -81,12 +82,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
         append_stop_log(session_id, "approve_delegated_session", {})
-        return "approve", ""
-
-    # Stop hookが直前のターンで既にブロック済みの再呼び出し。
-    # 同一判定を繰り返すと連続ブロック上限に達して強制終了するため、即座にapproveする。
-    if payload.get("stop_hook_active") is True:
-        append_stop_log(session_id, "approve_stop_hook_active", {"stop_hook_active": True})
         return "approve", ""
 
     raw_transcript = payload.get("transcript_path", "")

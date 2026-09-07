@@ -111,7 +111,6 @@ def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
     ("state", "payload_extra", "environment"),
     [
         ({"working_plan_save_notified": True}, {}, {}),
-        ({}, {"stop_hook_active": True}, {}),
         ({}, {"background_tasks": [{"type": "subagent", "id": "pending"}]}, {}),
         ({}, {}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
         ({}, {}, {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}),
@@ -142,6 +141,28 @@ def test_suppression_conditions_approve(
     )
 
     assert not _decision(result)
+
+
+def test_stop_hook_active_still_blocks_before_notification(tmp_path: pathlib.Path) -> None:
+    """`stop_hook_active`が真でも未通知の所有計画があれば遮断する。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "plan.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    session_id = "stop-hook-active"
+    _plan_file.write_owner_record(plan, session_id=session_id)
+    transcript = _write_transcript(tmp_path, [])
+
+    result = _decision(
+        _run(
+            _payload(session_id, transcript, stop_hook_active=True),
+            state_dir=tmp_path,
+            home=home,
+        )
+    )
+
+    assert result["decision"] == "block"
 
 
 def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
