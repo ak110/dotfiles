@@ -44,10 +44,16 @@ class StatusFileIdentity:
     host_session_id: str | None
 
 
+def resolve_root_session_id(environment: Mapping[str, str]) -> str | None:
+    """環境変数から読取対象のルートsessionを解決する。"""
+    owner = environment.get("AGENT_TOOLKIT_OWNER_SESSION") or environment.get("CLAUDE_CODE_SESSION_ID")
+    return owner if owner is not None and valid_session_id(owner) else None
+
+
 def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileIdentity | None:
     """環境変数から状態ファイルの書込主体を解決し、識別できない場合は`None`を返す。"""
-    owner = environment.get("AGENT_TOOLKIT_OWNER_SESSION") or environment.get("CLAUDE_CODE_SESSION_ID")
-    if owner is None or not valid_session_id(owner):
+    owner = resolve_root_session_id(environment)
+    if owner is None:
         return None
 
     host_session_id: str | None = None

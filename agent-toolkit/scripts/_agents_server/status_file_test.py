@@ -18,6 +18,20 @@ from _agents_server import status_file as subject
 @pytest.mark.parametrize(
     ("environment", "expected"),
     [
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, "owner"),
+        ({"CLAUDE_CODE_SESSION_ID": "root-session"}, "root-session"),
+        ({}, None),
+        ({"AGENT_TOOLKIT_OWNER_SESSION": "../invalid"}, None),
+    ],
+)
+def test_resolve_root_session_id(environment: dict[str, str], expected: str | None) -> None:
+    """読取対象のルートsessionは書込主体の識別要件から独立して解決する。"""
+    assert subject.resolve_root_session_id(environment) == expected
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [
         (
             {"CLAUDE_CODE_SESSION_ID": "root-session"},
             subject.StatusFileIdentity("root-session", "root.json", None),

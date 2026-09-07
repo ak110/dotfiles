@@ -25,11 +25,11 @@ def wait_for_result(
     if not status_file.valid_session_id(session_id):
         print(f"session_idの形式が不正です: {session_id}", file=sys.stderr)
         return 5
-    identity = status_file.resolve_status_file_identity(os.environ if environment is None else environment)
-    if identity is None:
+    root_session_id = status_file.resolve_root_session_id(os.environ if environment is None else environment)
+    if root_session_id is None:
         print("agents_serverの状態ディレクトリを解決できません。", file=sys.stderr)
         return 4
-    result_path = status_file.results_directory(identity.root_session_id, state_root) / f"{session_id}.json"
+    result_path = status_file.results_directory(root_session_id, state_root) / f"{session_id}.json"
     deadline = time.monotonic() + timeout
     while True:
         result = _read_result(result_path)
