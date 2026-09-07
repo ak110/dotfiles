@@ -18,7 +18,7 @@ atk wi process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、`agent-toolkit:completion-report`が必須の`agent-toolkit:session-review`と固定報告を完了し、続いて`agent-toolkit:exit-session`が`/goal`で登録した目的とセッションを終了する。
+ready項目がなくなると、`agent-toolkit:completion-report`が①で完了した振り返りの結果を含む固定報告を完了し、続いて`agent-toolkit:exit-session`が`/goal`で登録した目的とセッションを終了する。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗又は値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。

@@ -337,7 +337,10 @@
 - 2026年9月5日: push直後には未着だったGitHub Copilotレビューを終了前に再取得せず、過去PRのreview本文と未解決threadも残した。
   直接原因: 自動レビュー監査をsession-reviewと並列実行し、監査対象を未解決threadだけに限定した。
   対策: `agent-toolkit:process-wi`ではsession-review後に能動的に待機せず1回監査し、
-  全PRのreview本文、inline comment及びthreadをpagination終端まで取得する恒久手順を専用referenceへ置く
+  全PRのreview本文、inline comment及びthreadをpagination終端まで取得する恒久手順を専用referenceへ置く。
+  後継方針（2026年9月7日）: 全PRのreview本文とthreadをpagination終端まで取得する範囲は変えない。
+  監査は次のセッションの①で振り返りと並行して1回実行する。
+  前のセッションが公開した後に到着したレビューを対象へ含められるため、実行順による限定を設けない
 - 2026年9月1日: 実装レビュー担当3件が必須入力の`review_contract`を受領できず、いずれも`needs_escalation`で停止した。
   直接原因: 受信側だけが`review_contract`を必須入力として定義し、生成主体、生成時機、粒度及び起動時の受渡し形式を呼び出し側へ定めていなかった。
   対策: `plan-executor`が初回実装レビューの直前に既存の計画記述、開始時点の実体、計画外の明示入力から条項を生成し、契約本文又は一意な参照先と出典を固定形式で起動入力へ渡す
