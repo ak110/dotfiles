@@ -147,6 +147,10 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない値を持つ間は、`atk config show`と`atk config get`が当該値を返し、
 委譲の起動でも当該値を使う。環境変数は保存済みの設定より優先し、当該変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
+`atk config apply-preset <プリセット名>`は、工程別モデル設定の10キーを1回の実行で一括保存する。
+受理するプリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`とする。主に使うengineがcodexとclaudeのどちらかと、上位のモデルを割り当てるキーの有無で選ぶ。
+プリセット名を省略した実行と未知の名前を指定した実行は終了コード2で終わり、利用できるプリセット名を表示する。
+設定を保存していない環境の既定値は`codex-balanced`と同じ候補列とする。
 
 ## Claude Codeの推奨設定
 

@@ -162,7 +162,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config": {
         "summary": "XDG関連パスと工程別モデル設定を確認・変更する",
-        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`だけである。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は既定値を表示する。\n復元・後始末: `set`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
+        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、工程別モデル設定を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は既定値を表示する。\n復元・後始末: `set`又は`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes",
     },
     "atk config show": {
@@ -179,6 +179,11 @@ HELP: dict[str, dict[str, str]] = {
         "summary": "変更可能な設定値を更新する",
         "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデルと推論の深さを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位の単一値であり、全てのセッションが共有する。\n前提: KEYは変更できるキー、VALUEは`<claude|codex>:<モデル>[/<effort>]`の形式で指定する。複数の候補はASCIIカンマ区切りで並べる。\n復元・後始末: 元の値へ戻す場合は、同じコマンドで以前の値を設定する。並行して稼働するセッションへも新しい値が波及する。",
         "epilog": "実行例:\n\n  atk config set plan_model codex:gpt-5.6-sol/medium",
+    },
+    "atk config apply-preset": {
+        "summary": "工程別モデル設定をプリセットから一括保存する",
+        "description": "目的: 工程別モデル設定の10キーを1回の実行で一括保存する。\n利用場面: 主に使うengineをcodex又はclaudeへ切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`へ10キーを保存し、保存した各キーと値を標準出力へ表示する。\n前提: プリセット名は`codex-balanced`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかを指定する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。",
+        "epilog": "実行例:\n\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
         "summary": "委譲待機に使うcron式を公開情報から判定する",

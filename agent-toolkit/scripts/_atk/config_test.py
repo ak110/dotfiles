@@ -1,6 +1,6 @@
 """`atk config`サブコマンド（`_atk_config`モジュール）のテスト。
 
-`atk config show`（既定動作）・`get`・`set`の3操作と、XDG関連パスの解決結果を検証する。
+`atk config show`（既定動作）・`get`・`set`・`apply-preset`の4操作と、XDG関連パスの解決結果を検証する。
 """
 
 import json
@@ -14,6 +14,43 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import atk  # noqa: E402  # pylint: disable=wrong-import-position
 
 from _atk import config as config_module  # noqa: E402  # pylint: disable=wrong-import-position
+
+_EXPECTED_CATEGORIES = {
+    "explore_model": "上位",
+    "explore_fast_model": "軽量",
+    "pick_wi_model": "軽量",
+    "plan_model": "計画",
+    "plan_review_model": "軽量",
+    "execute_fast_model": "軽量",
+    "execute_model": "上位",
+    "execute_review_model": "軽量",
+    "session_review_model": "上位",
+    "orchestrate_model": "上位",
+}
+_EXPECTED_MODELS = {
+    "上位": {
+        "codex": "codex:gpt-5.6-sol/medium",
+        "claude": "claude:opus[1m]/medium",
+    },
+    "軽量": {
+        "codex": "codex:gpt-5.6-terra/medium",
+        "claude": "claude:sonnet[1m]/medium",
+    },
+    "計画": {
+        "codex": "codex:gpt-6-astra/medium",
+        "claude": "claude:opus[1m]/medium",
+    },
+}
+
+
+def _expected_preset_settings(primary_engine: str, reversed_keys: set[str]) -> dict[str, str]:
+    """計画の区分表と候補順表から、実装と独立に期待値を導出する。"""
+    other_engine = "claude" if primary_engine == "codex" else "codex"
+    expected = {}
+    for key, category in _EXPECTED_CATEGORIES.items():
+        first_engine, second_engine = (other_engine, primary_engine) if key in reversed_keys else (primary_engine, other_engine)
+        expected[key] = f"{_EXPECTED_MODELS[category][first_engine]},{_EXPECTED_MODELS[category][second_engine]}"
+    return expected
 
 
 @pytest.fixture(autouse=True)
@@ -40,20 +77,10 @@ class TestConfigShow:
         assert f"state_dir: {tmp_path / 'state'}" in out
         assert f"data_dir: {tmp_path / 'data'}" in out
         assert "private_notes:" in out
-        for key in (
-            "pick_wi_model",
-            "plan_model",
-            "plan_review_model",
-            "execute_fast_model",
-            "execute_model",
-            "execute_review_model",
-            "session_review_model",
-        ):
-            assert f"{key}: codex:gpt-5.6-sol/medium" in out
+        expected = _expected_preset_settings("codex", {"plan_model", "orchestrate_model"})
+        for key, value in expected.items():
+            assert f"{key}: {value}" in out
         assert "execute_fix_model:" not in out
-        assert "orchestrate_model: claude:opus[1m]/medium" in out
-        assert "explore_model: codex:gpt-5.6-sol/medium" in out
-        assert "explore_fast_model: codex:gpt-5.6-terra/medium" in out
         assert "codex_model:" not in out
         assert "merge_model:" not in out
 
@@ -114,15 +141,15 @@ class TestConfigGet:
     @pytest.mark.parametrize(
         ("key", "expected"),
         [
-            ("execute_fast_model", "codex:gpt-5.6-sol/medium"),
-            ("execute_model", "codex:gpt-5.6-sol/medium"),
-            ("session_review_model", "codex:gpt-5.6-sol/medium"),
+            ("execute_fast_model", "codex:gpt-5.6-terra/medium,claude:sonnet[1m]/medium"),
+            ("execute_model", "codex:gpt-5.6-sol/medium,claude:opus[1m]/medium"),
+            ("session_review_model", "codex:gpt-5.6-sol/medium,claude:opus[1m]/medium"),
         ],
     )
     def test_get_execute_model_defaults(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str, expected: str
     ) -> None:
-        """未設定の工程別モデルは共通の既定値を返す。"""
+        """未設定の工程別モデルはcodex-balancedの候補列を返す。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", key], home=tmp_path)
 
@@ -130,12 +157,12 @@ class TestConfigGet:
         assert capsys.readouterr().out == f"{expected}\n"
 
     def test_get_orchestrate_model_default(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """未設定のオーケストレーター設定はClaude Codeの既定値を返す。"""
+        """未設定のオーケストレーター設定はcodex-balancedの反転候補列を返す。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "claude:opus[1m]/medium\n"
+        assert capsys.readouterr().out == "claude:opus[1m]/medium,codex:gpt-5.6-sol/medium\n"
 
     def test_get_multiple_keys_in_requested_order(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """複数キーの値を指定順に1行ずつ出力する。"""
@@ -231,7 +258,7 @@ class TestConfigGet:
             atk.main(["config", "get", "plan_model"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out == "codex:gpt-5.6-sol/medium\n"
+        assert capsys.readouterr().out == "claude:opus[1m]/medium,codex:gpt-6-astra/medium\n"
 
     def test_immutable_environment_name_does_not_override_private_notes(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -248,6 +275,63 @@ class TestConfigGet:
 
         assert exc_info.value.code == 0
         assert capsys.readouterr().out == original
+
+
+class TestConfigApplyPreset:
+    """`atk config apply-preset`の4プリセットと入力検証を検証する。"""
+
+    @pytest.mark.parametrize(
+        ("preset", "primary_engine", "reversed_keys"),
+        [
+            ("codex-balanced", "codex", {"plan_model", "orchestrate_model"}),
+            ("codex-primary", "codex", set()),
+            ("claude-balanced", "claude", {"explore_model", "explore_fast_model", "execute_fast_model"}),
+            ("claude-primary", "claude", set()),
+        ],
+    )
+    def test_apply_preset_saves_expected_values_and_preserves_other_settings(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        preset: str,
+        primary_engine: str,
+        reversed_keys: set[str],
+    ) -> None:
+        """10キーを表から導出した値で上書きし、他の保存値を維持する。"""
+        config_file = tmp_path / "config" / "config.json"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(json.dumps({"other_setting": "keep"}) + "\n", encoding="utf-8")
+        expected = _expected_preset_settings(primary_engine, reversed_keys)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "apply-preset", preset], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert not captured.err
+        assert captured.out.splitlines() == [f"{key}: {value}" for key, value in expected.items()]
+        assert json.loads(config_file.read_text(encoding="utf-8")) == {"other_setting": "keep", **expected}
+
+    def test_defaults_equal_codex_balanced(self) -> None:
+        """未設定時の10キーはcodex-balancedの期待値と一致する。"""
+        expected = _expected_preset_settings("codex", {"plan_model", "orchestrate_model"})
+        actual = {key: config_module.resolve_mutable_setting(key) for key in expected}
+
+        assert actual == expected
+
+    @pytest.mark.parametrize("arguments", [[], ["unknown-preset"]])
+    def test_apply_preset_rejects_omitted_or_unknown_name(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
+    ) -> None:
+        """プリセット名の省略と未知名は候補4件を表示してexit 2とする。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "apply-preset", *arguments], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert not captured.out
+        for preset in ("codex-balanced", "codex-primary", "claude-balanced", "claude-primary"):
+            assert preset in captured.err
 
 
 class TestConfigSet:
@@ -429,7 +513,10 @@ class TestConfigSet:
 
     def test_resolve_model_candidates_maps_model_type_and_rejects_unknown(self) -> None:
         """model_typeを対応設定の候補へ解決し、未知値は両方の受理形式を示して拒否する。"""
-        assert config_module.resolve_model_candidates("explore_fast") == [("codex", "gpt-5.6-terra", "medium")]
+        assert config_module.resolve_model_candidates("explore_fast") == [
+            ("codex", "gpt-5.6-terra", "medium"),
+            ("claude", "sonnet[1m]", "medium"),
+        ]
         with pytest.raises(ValueError, match=r"unknown model_type: no-such.*explore_fast.*plan"):
             config_module.resolve_model_candidates("no-such")
         with pytest.raises(ValueError, match=r"or pass candidates like codex:gpt-5\.6-sol/medium"):
