@@ -448,7 +448,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         "filenames",
         metavar="FILENAME",
         nargs="+",
-        help="処理開始するinboxファイル名（1個以上）。",
+        help="処理開始するinboxのAWI又はUWIのファイル名（1個以上）。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
     _add_target_repo_arg(start_processing, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
 

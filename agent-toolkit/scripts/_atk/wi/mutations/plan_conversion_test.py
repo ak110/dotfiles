@@ -381,7 +381,6 @@ def test_cmd_convert_to_plan_displays_commit_for_single_hold_input(
         "plan_file": "/tmp/plan.md",
         "depends_on": [],
         "body_match": "一致",
-        "saved_body": "保存本文\n",
     }
     monkeypatch.setattr(
         mutations._add,  # pylint: disable=protected-access
@@ -407,6 +406,76 @@ def test_cmd_convert_to_plan_displays_commit_for_single_hold_input(
     output = capsys.readouterr().out
     assert "変換commit: " + "c" * 40 in output
     assert "push: 完了" in output
+
+
+def test_convert_to_plan_reports_body_mismatch_and_omits_body_on_success(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """計画型変換は正常出力へ本文を含めず、保存後の本文改変を診断して失敗する。"""
+    notes = _setup_notes(tmp_path)
+    success_entry = _write_convert_awi(notes, "success.md")
+    target = _write_convert_awi(notes, "target.md")
+    success_plan = _write_integration_plan(tmp_path / "success", "a" * 40, (success_entry.name,))
+    target_plan = _write_integration_plan(tmp_path / "target", "a" * 40, (target.name,))
+    _disable_convert_git(monkeypatch)
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "resolve_add_target",
+        lambda _value: ("github.com/example/foo", None),
+    )
+
+    with pytest.raises(SystemExit) as success:
+        atk.main(
+            [
+                "wi",
+                "convert-to-plan",
+                success_entry.name,
+                "--plan-file",
+                str(success_plan),
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+        )
+
+    assert success.value.code == 0
+    assert "本文" not in capsys.readouterr().out
+    original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    captured: dict[str, str] = {}
+
+    def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+        captured["expected"] = expected_body
+        path.write_text(expected_body.replace("本文", "改文", 1), encoding="utf-8")
+        return original_read(path, expected_body=expected_body)
+
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "_read_saved_entry_details",
+        read_after_alteration,
+    )
+
+    with pytest.raises(SystemExit) as mismatch:
+        atk.main(
+            [
+                "wi",
+                "convert-to-plan",
+                target.name,
+                "--plan-file",
+                str(target_plan),
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+        )
+
+    assert mismatch.value.code == 1
+    position = captured["expected"].index("本文") + 1
+    error = capsys.readouterr().err
+    assert f"最初の差異: {position}文字目" in error
+    assert "送信元本文:" in error
+    assert "保存本文:" in error
 
 
 def test_plain_return_clears_existing_cooldown(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

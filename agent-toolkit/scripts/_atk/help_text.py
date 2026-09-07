@@ -27,7 +27,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: AWI又はUWIをinboxへ1件以上投入し、保存本文を標準出力へ表示する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書くため、送信元本文との照合に追加の`atk wi show`を要しない。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
+        "description": "目的: AWI又はUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
         "epilog": '実行例:\n\n  atk wi add "認証エラーの再現手順を整理する"',
     },
     "atk wi list": {
@@ -46,8 +46,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": '実行例:\n\n  atk wi grep "worktree-stash" --status=all',
     },
     "atk wi start-processing": {
-        "summary": "AWIをprocessingへ移して処理中にする",
-        "description": "目的: inboxのAWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "summary": "AWI又はUWIをprocessingへ移して処理中にする",
+        "description": "目的: inboxのAWI又はUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。事後承認型UWIの回答が是正を求め、当該是正を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。\n前提: 対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
@@ -82,7 +82,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。本文へ引用符又は改行を含む場合は`--body-file`を使う。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定、及び保存本文を標準出力へ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--body-file`はMESSAGE位置引数と併用できない。`--append`はUWIを対象にしない。コーディングエージェントの実行環境から起動した場合、MESSAGEへ`## ユーザーコメント`節を含めると編集を拒否する。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存項目の本文とメタデータを、非対話又は$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。本文へ引用符又は改行を含む場合は`--body-file`を使う。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。コーディングエージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。`--body-file`はMESSAGE位置引数と併用できない。`--append`はUWIを対象にしない。コーディングエージェントの実行環境から起動した場合、MESSAGEへ`## ユーザーコメント`節を含めると編集を拒否する。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": '実行例:\n\n  atk wi edit 20260901-072734-001.md "更新後の本文"',
     },
     "atk wi convert-to-plan": {
@@ -263,12 +263,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、追加した行ごとに、保存済みの表から読み直した指摘箇所と指摘内容について送信した本文との一致判定を`location_body_match`、`issue_body_match`の順で標準出力へ書く。保存本文そのものは書かない。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、追加した行ごとに、保存済みの表から読み直した指摘箇所と指摘内容について送信した本文との一致判定を`location_body_match`、`issue_body_match`の順で標準出力へ書く。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`及び`--level`を指定し、指摘箇所と指摘内容を位置引数か対応するオプションで与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
         "epilog": '実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review --level=詳細 "実装資料" "検索コマンドが未記載"',
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: 行を一意に特定できる列を指定して、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、対応の内容か対応が不要である理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方を、送信した本文との一致判定`body_match`とともに標準出力へ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: `round`、`track`、`location`、`issue`のうち、行を一意に特定できる列を指定する。`--issue`には復号した後の本文を渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "description": "目的: 行を一意に特定できる列を指定して、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、対応の内容か対応が不要である理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方について、送信した本文との一致判定`body_match`だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: `round`、`track`、`location`、`issue`のうち、行を一意に特定できる列を指定する。`--issue`には復号した後の本文を渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
         "epilog": '実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv --round=1 --track=plan-review --response-needed=yes --response="検索コマンドを追記した"',
     },
     "atk review-table show": {

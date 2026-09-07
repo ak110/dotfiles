@@ -7,6 +7,7 @@ import pathlib
 import re
 from concurrent.futures import ThreadPoolExecutor
 
+import atk
 import pytest
 from _common import body_match
 
@@ -259,18 +260,23 @@ def test_add_rereads_decoded_cells_after_storage_write(
 
     monkeypatch.setattr(table, "atomic_write", write_with_changed_location)
 
-    assert table.add(path, "1", _TRACK, "module.py:10", "修正が必要") == 0
+    with pytest.raises(ValueError) as exc_info:
+        table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
 
-    assert capsys.readouterr().out == (
-        f"追加成功: {path} (1件)\nlocation_body_match: 不一致（最初の差異: 1文字目）\nissue_body_match: 一致\n"
-    )
+    message = str(exc_info.value)
+    assert str(path) in message
+    assert "不一致の列: location" in message
+    assert "最初の差異: 1文字目" in message
+    assert "送信元本文:" in message
+    assert "保存本文:" in message
+    assert capsys.readouterr().out == ""
 
 
 def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応要では引用符・逆斜線・タブ・改行を復号済み本文として出力する。"""
+    """対応要では復号済み本文を照合し、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     response = '応答本文へ"二重引用符"と\\逆斜線を含める。\nタブ\tも含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -278,14 +284,98 @@ def test_respond_reports_decoded_response_and_match(
 
     assert table.respond(path, "1", _TRACK, "位置", "指摘", "yes", response, "") == 0
 
-    assert capsys.readouterr().out == (f"応答更新成功: {path}\nbody_match: 一致\nsaved_body:\n{response}\n")
+    output = capsys.readouterr().out
+    assert output == f"応答更新成功: {path}\nbody_match: 一致\n"
+    assert response not in output
+
+
+def test_respond_reports_body_mismatch_when_saved_response_is_altered(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """応答の保存経路で本文が改変された場合、CLIは差異の診断を出力して失敗する。"""
+    path = tmp_path / "review.tsv"
+    response = "送信元の対応本文"
+    altered_response = "保存後に改変された対応本文"
+    table.add(path, "1", _TRACK, "位置", "指摘")
+    capsys.readouterr()
+    original_atomic_write = table.atomic_write
+
+    def write_with_changed_response(target: pathlib.Path, content: str, *, fsync: bool = False) -> None:
+        cells = content.rstrip("\n").split("\t")
+        cells[6] = json.dumps(altered_response, ensure_ascii=False)
+        original_atomic_write(target, "\t".join(cells) + "\n", fsync=fsync)
+
+    monkeypatch.setattr(table, "atomic_write", write_with_changed_response)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "review-table",
+                "respond",
+                str(path),
+                "--round=1",
+                f"--track={_TRACK}",
+                "--response-needed=yes",
+                f"--response={response}",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "最初の差異: 1文字目" in error
+    assert f"送信元本文:\n{response}" in error
+    assert f"保存本文:\n{altered_response}" in error
+
+
+def test_respond_reports_body_mismatch_when_saved_no_response_reason_is_altered(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """対応不要理由が保存時に改変された場合、CLIは差異の診断を出力して失敗する。"""
+    path = tmp_path / "review.tsv"
+    reason = "送信元の対応不要理由"
+    altered_reason = "保存後に改変された対応不要理由"
+    table.add(path, "1", _TRACK, "位置", "指摘")
+    capsys.readouterr()
+    original_atomic_write = table.atomic_write
+
+    def write_with_changed_reason(target: pathlib.Path, content: str, *, fsync: bool = False) -> None:
+        cells = content.rstrip("\n").split("\t")
+        cells[7] = json.dumps(altered_reason, ensure_ascii=False)
+        original_atomic_write(target, "\t".join(cells) + "\n", fsync=fsync)
+
+    monkeypatch.setattr(table, "atomic_write", write_with_changed_reason)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "review-table",
+                "respond",
+                str(path),
+                "--round=1",
+                f"--track={_TRACK}",
+                "--response-needed=no",
+                f"--no-response-reason={reason}",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err
+    assert "最初の差異: 1文字目" in error
+    assert f"送信元本文:\n{reason}" in error
+    assert f"保存本文:\n{altered_reason}" in error
 
 
 def test_respond_reports_only_decoded_no_response_reason(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応不要では更新した理由だけを復号済み本文として出力する。"""
+    """対応不要では更新した理由を照合し、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     reason = '対象外の理由へ"引用符"、\\逆斜線、タブ\t及び\n改行を含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -294,7 +384,8 @@ def test_respond_reports_only_decoded_no_response_reason(
     assert table.respond(path, "1", _TRACK, "位置", "指摘", "no", "", reason) == 0
 
     output = capsys.readouterr().out
-    assert output == f"応答更新成功: {path}\nbody_match: 一致\nsaved_body:\n{reason}\n"
+    assert output == f"応答更新成功: {path}\nbody_match: 一致\n"
+    assert reason not in output
     assert "response:" not in output
 
 

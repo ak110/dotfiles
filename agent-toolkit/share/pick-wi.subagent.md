@@ -1,7 +1,7 @@
 # AWI選定とレーン分けタスク
 
 対象リポジトリのWIキューを自ら取得し、1処理回の処理対象、処理区分及びレーン分けを確定して返す。
-処理対象を確定した直後に、回答済みで終端可能なUWIを終端し、選定時点で`inbox`のAWIを`processing`へ移す。
+処理対象を確定した直後に、回答済みで終端可能なUWIのうち是正を求めないものを終端し、是正を求めるUWIと選定時点で`inbox`のAWIを`processing`へ移す。
 計画の起草と実装、`reject`、AWIの`adopt`は担当しない。
 
 本タスクの完了報告と、本タスクで作成する成果物はすべて日本語で書く。本書が書式を固定する機械可読な返却値と固定文字列は、その書式のままとする。
@@ -38,7 +38,9 @@
 `depends_on`の全てが処理対象の候補と`answered_uwis`のいずれかに入る項目は、処理対象に含める。
 `answered_uwis`は、`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo> --skip-pull`が返すファイル名とする。
 対象は、回答済みで終端可能な`inbox`又は`processing`のUWIである。
-pickerが処理開始の前に当該UWIを終端するため、依存の充足として扱う。
+各UWIの`atk wi show`で`## 回答`を読み、回答が是正を求めるかを判定する。
+是正を求めないUWIはpickerが処理開始の前に終端するため、依存の充足として扱う。
+是正を求めるUWIは、回答本文が求める是正を実施する作業要求として`decisions`へ含め、`## 調査とレーン分け`の割当対象に加える。
 
 既存の`hold`項目は、候補、優先度、依存判断又は固有指示の入力へ含めない。
 処理回の進行中に追加されたAWIを、確定済みの出力へ混ぜない。
@@ -88,6 +90,9 @@ private notesによるGit復旧、専用の失敗分類及び別の選定キュ�
 コストはレーン数へほぼ比例するため、この重み付けでは、レーン数を2倍にして所要時間が13分の1にならない限り
 レーンを増やす利益が生じない。したがってレーン数は最小にする。
 所要時間の短縮は、この交換条件を満たす場合だけレーンを増やす根拠になる。
+
+処理対象が1件だけの場合と、`depends_on`の連結成分が1つだけであり件数が目安以内である場合は、次の手順を実行せずに1レーンへ割り当てる。
+レーン数が他の値を取り得ないため、手順が求める案の列挙と比較が結果を変えないためである。
 
 1. 処理対象の各項目を、既存の方針と実装から変更内容を一意に導ける軽量な項目と、設計判断又は既存契約の変更を要する項目へ分ける
 2. 後者を1件以上含む場合は1レーンの目安を7件、軽量な項目だけの場合は10件とする。後者で目安を下げるのは、当該項目が計画レビューと実行レビューのラウンド数を増やすためである。7件は、2026年9月2日のセッションで担当7件のレーンが1件あたりのトークン量と所要時間の双方で同じセッションの担当4件の3レーンをいずれも下回った実測による。現在の工程構造では担当8件以上のレーンの実測が無いため、目安を7件で止める
@@ -161,20 +166,19 @@ AWI本文に固有の処理順、公開、確認と検証指示がある場合�
 `needs_escalation`で返す場合を除き、候補出力を返す前に、`ready_awis`のファイル名集合と`decisions[].awi`のファイル名集合が一致し、各ファイル名が`decisions`へ1回だけ現れることを1回のコマンドで検査する。
 同じAWIファイル名が複数のレーンへ割り当てられていないことも同じコマンドで検査する。
 いずれかが成立しない場合は候補出力を返さず、`decisions`を修正して検査をやり直す。
-検査に合格した候補集合を`awaiting_acceptance`として返し、呼び出し元から当該集合を受理した旨を受領するまでキューを変更しない。
-受理後も、候補集合、`decisions`及び`answered_uwis`を候補出力から変更しない。
+検査に合格した場合は呼び出し元へ受理を求めず、同じターンで処理開始まで実行する。
+検査の合格後は、候補集合、`decisions`及び`answered_uwis`を変更しない。
 
-候補集合が受理された後、AWIを`processing`へ移す前に、`answered_uwis`のファイル名だけを引数として
-`atk wi adopt <filename>... --target-repo=<repo-path>`を1回実行する。`answered_uwis`が`なし`の場合は実行しない。
+AWIを`processing`へ移す前に、`answered_uwis`のうち回答が是正を求めないファイル名だけを引数として
+`atk wi adopt <filename>... --target-repo=<repo-path>`を1回実行する。該当するファイル名が1件も無い場合は実行しない。
 実行後は、各ファイル名が`atk wi list --type=uwi --status=adopted --target-repo=<repo-path> --skip-pull`へ現れることを確認する。
-続けて、`atk wi list --type=uwi --answered=yes --status=processable --target-repo=<repo-path> --skip-pull`へ現れないことを確認する。
 これにより、今回終端したUWIへの依存が充足したことを確認する。
 選出済みAWIへの先行依存だけで`dependency-unmet`が残る項目は処理対象から除外せず、同一レーン内の依存順を維持する。
 先行AWI Aと、A及び今回終端した回答済みUWI Uの双方へ依存するAWI Bを選出した場合、Uの終端後もBを保持し、Aの終端後にBを実施する。
 警告、失敗又は部分状態を検出した場合は対象を再取得し、全件が`adopted`なら再実行しない。
 未終端の項目が残る場合や原因不明の場合は`needs_escalation`で返し、AWIを`processing`へ移さない。
 
-候補集合が受理された後、選定時点の保存状態が`inbox`である項目のファイル名だけを引数として`atk wi start-processing <filename>... --target-repo=<repo-path>`を1回実行する。
+続けて、選定時点の保存状態が`inbox`である`decisions`の項目のファイル名だけを引数として`atk wi start-processing <filename>... --target-repo=<repo-path>`を1回実行する。
 選定時点で既に`processing`だった再開項目を引数へ含めない。引数となる項目が1件も無い場合は実行しない。
 引数へ渡すファイル名の集合が、`decisions`のうち選定時点の保存状態が`inbox`である項目のファイル名集合と一致することを、当該実行の前に1回のコマンドで検査する。一致しない場合は`start-processing`を実行せず、差分のファイル名を`阻害要因`へ挙げて`needs_escalation`で返す。
 実行後は`atk wi list --target-repo=<repo-path> --skip-pull`を実行し、引数へ渡した全件が`processing`へ配置されたことを確認する。
@@ -185,14 +189,14 @@ AWI本文に固有の処理順、公開、確認と検証指示がある場合�
 
 ## 出力
 
-次の内容を候補集合の検査時と処理開始の完了時に返す。同じレーンの項目は実装依存順で連続して並べる。
+次の内容を処理開始の完了時に1回返す。同じレーンの項目は実装依存順で連続して並べる。
 
 ```text
-status: awaiting_acceptance | completed | needs_escalation
+status: completed | needs_escalation
 ready_awis:
 - <候補集合のAWIファイル名>
 decisions:
-- awi: <AWIファイル名>
+- awi: <AWIファイル名。是正を求める回答が保存されたUWIのファイル名も取り得る>
   state: <選定時点の保存状態。inbox又はprocessing>
   origin: <要求単位ごとの由来。人間由来又はエージェント由来>
   category: <処理区分>
@@ -205,7 +209,7 @@ decisions:
   upstream_target_repo: [<投入先の上流リポジトリ識別子。1件以上>] | なし
   upstream_request: <上流へ投入する要求と、改訂後に対象リポジトリで行う作業又は「なし」>
 answered_uwis:
-- <回答済みで未終端のUWIのファイル名。1件も無い場合は「なし」>
+- <回答済みで未終端のUWIのファイル名。是正を求める回答が保存されたものは`decisions`にも現れる。1件も無い場合は「なし」>
 阻害要因:
 - <needs_escalationの場合の確認事項。完了時は「なし」>
 ```
@@ -216,7 +220,7 @@ answered_uwis:
 `upstream_submission`が`なし`以外の場合は、`upstream_target_repo`へ全投入先を角括弧内のリポジトリ識別子として列挙し、`upstream_request`へ上流要求と上流改訂後の対象リポジトリ側の作業を記載する。条件に該当する投入先だけへ要求する場合は、投入の要否を実測できる条件も`upstream_request`へ記載する。対象リポジトリ側の作業が無い場合は、その旨を`upstream_request`へ記載する。`upstream_submission`が`なし`の場合は、両方を`なし`とする。
 
 成功時の出力は、呼び出し元がレーンの起動と①の完了確認へ用いる上記の項目だけとする。
-候補集合の検査に合格した時点では`status: awaiting_acceptance`、呼び出し元による受理後に処理開始まで完了した時点では`status: completed`とする。
+処理開始まで完了した時点で`status: completed`とする。
 `ready_awis`には候補集合の全ファイル名を重複なく記載し、`decisions`と同じ実装依存順で並べる。
 `answered_uwis`は、`decisions`の各項目が依存する範囲に限らず、対象リポジトリで回答済みかつ終端可能な`inbox`又は`processing`のUWIを全て挙げる。回答本文と解除される元項目の内容は出力へ含めない。
 充足済み候補で実在を確認したコミット又は実装箇所は、`confirmation_or_hold`の最小情報として出力できる。

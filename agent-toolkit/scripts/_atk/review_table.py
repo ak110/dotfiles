@@ -259,9 +259,19 @@ def add(path: str | Path, round_value: str, track: str, location: str, issue: st
     if len(saved_rows) != 1:
         raise ValueError(f"追加した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
     saved_row = saved_rows[0]
+    for column, expected, saved in (("location", location, saved_row[2]), ("issue", issue, saved_row[3])):
+        if _body_match.verdict(expected, saved) != "一致":
+            position = _body_match.first_difference(expected, saved)
+            raise ValueError(
+                f"保存本文が送信元本文と一致しない: {target}\n"
+                f"不一致の列: {column}\n"
+                f"最初の差異: {position}文字目\n"
+                f"送信元本文:\n{expected}\n"
+                f"保存本文:\n{saved}"
+            )
     print(f"追加成功: {target} ({len(rows)}件)")
-    print(f"location_body_match: {_body_match.verdict(location, saved_row[2])}")
-    print(f"issue_body_match: {_body_match.verdict(issue, saved_row[3])}")
+    print("location_body_match: 一致")
+    print("issue_body_match: 一致")
     return 0
 
 
@@ -337,13 +347,25 @@ def respond(
         updated[matches[0]] = [*updated[matches[0]][:_KEY_COLUMN_COUNT], updated[matches[0]][4], needed, replacement, reason]
         return updated
 
-    rows = _locked_update(target, updater)
-    saved_row = next(row for row in rows if all(_normalized(row[column_index]) == value for column_index, value in given))
+    _locked_update(target, updater)
+    saved_rows = [row for row in _read(target) if all(_normalized(row[column_index]) == value for column_index, value in given)]
+    if len(saved_rows) != 1:
+        raise ValueError(f"更新した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
+    saved_row = saved_rows[0]
     saved_body = saved_row[6] if needed == "yes" else saved_row[7]
+    expected_body = replacement if needed == "yes" else reason
+    if _body_match.verdict(expected_body, saved_body) != "一致":
+        position = _body_match.first_difference(expected_body, saved_body)
+        column = "response" if needed == "yes" else "no_response_reason"
+        raise ValueError(
+            f"保存本文が送信元本文と一致しない: {target}\n"
+            f"不一致の列: {column}\n"
+            f"最初の差異: {position}文字目\n"
+            f"送信元本文:\n{expected_body}\n"
+            f"保存本文:\n{saved_body}"
+        )
     print(f"応答更新成功: {target}")
-    print(f"body_match: {_body_match.verdict(replacement if needed == 'yes' else reason, saved_body)}")
-    print("saved_body:")
-    print(saved_body)
+    print("body_match: 一致")
     return 0
 
 

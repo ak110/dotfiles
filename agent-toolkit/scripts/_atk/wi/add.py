@@ -53,13 +53,21 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     data, _body = parsed
     raw_dependencies = data.get("depends_on")
     depends_on = [value for value in raw_dependencies if isinstance(value, str)] if isinstance(raw_dependencies, list) else []
+    body_match = _body_match.verdict(expected_body, saved_body)
+    if body_match != "一致":
+        position = _body_match.first_difference(expected_body, saved_body)
+        raise WebInputError(
+            f"保存本文が送信元本文と一致しない: {path.name}\n"
+            f"最初の差異: {position}文字目\n"
+            f"送信元本文:\n{expected_body}\n"
+            f"保存本文:\n{saved_body}"
+        )
     return {
-        "body_match": _body_match.verdict(expected_body, saved_body),
+        "body_match": body_match,
         "target_repo": data.get("target_repo"),
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
         "depends_on": depends_on,
-        "saved_body": saved_body,
     }
 
 
@@ -74,8 +82,6 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
     )
     print(f"    depends_on: {rendered_dependencies}")
     print(f"    body_match: {details['body_match']}")
-    print("    saved_body:")
-    print(details["saved_body"])
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:

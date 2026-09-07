@@ -595,13 +595,13 @@ def test_agent_environment_rejects_add_with_user_comment(
 
 
 @pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
-def test_cli_edit_outputs_saved_body_for_each_write_route(
+def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
     route: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各編集経路が保存結果から読み直した全文を字下げせず出力する。"""
+    """各編集経路が一致判定だけを出力し、保存本文を再掲しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="編集前")
@@ -641,12 +641,74 @@ def test_cli_edit_outputs_saved_body_for_each_write_route(
         atk.main(argv, home=tmp_path)
 
     assert exc_info.value.code == 0
-    saved = path.read_text(encoding="utf-8")
     output = capsys.readouterr().out
-    marker = "    saved_body:\n"
-    assert output.count(marker) == 1
-    assert "    body_match: 一致\n" + marker in output
-    assert output.split(marker, maxsplit=1)[1].rstrip("\n") == saved.rstrip("\n")
+    assert output.count("    body_match: 一致\n") == 1
+    assert "saved_body" not in output
+    assert message not in output
+
+
+def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """依存更新は正常出力へ本文を含めず、保存後の本文改変を診断して失敗する。"""
+    notes = _setup_notes(tmp_path)
+    _write_convert_awi(notes, "dependency.md")
+    _write_convert_awi(notes, "success.md")
+    target = _write_convert_awi(notes, "target.md")
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as success:
+        atk.main(
+            [
+                "wi",
+                "set-dependencies",
+                "success.md",
+                "--depends-on",
+                "dependency.md",
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+        )
+
+    assert success.value.code == 0
+    assert "本文" not in capsys.readouterr().out
+    original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
+    captured: dict[str, str] = {}
+
+    def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
+        captured["expected"] = expected_body
+        path.write_text(expected_body.replace("本文", "改文", 1), encoding="utf-8")
+        return original_read(path, expected_body=expected_body)
+
+    monkeypatch.setattr(
+        mutations._add,  # pylint: disable=protected-access
+        "_read_saved_entry_details",
+        read_after_alteration,
+    )
+
+    with pytest.raises(SystemExit) as mismatch:
+        atk.main(
+            [
+                "wi",
+                "set-dependencies",
+                target.name,
+                "--depends-on",
+                "dependency.md",
+                "--target-repo",
+                "github.com/example/foo",
+            ],
+            home=tmp_path,
+        )
+
+    assert mismatch.value.code == 1
+    position = captured["expected"].index("本文") + 1
+    error = capsys.readouterr().err
+    assert f"最初の差異: {position}文字目" in error
+    assert "送信元本文:" in error
+    assert "保存本文:" in error
 
 
 class TestEditNoArg:

@@ -439,7 +439,7 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
 
 
 def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """start-processingサブコマンド: inboxからprocessing/へ移動しcommit・push。
+    """start-processingサブコマンド: inboxのAWI又はUWIをprocessing/へ移動しcommit・push。
 
     後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
     （最終処理結果の記録は`adopt`・`reject`側で行う）。
