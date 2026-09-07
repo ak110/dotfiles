@@ -100,7 +100,7 @@ def _record_send_message(state_directory: pathlib.Path, local_session_id: str, r
         state_directory,
         local_session_id,
         "send_message",
-        {"session_id": remote_session_id, "status": "running", "delivery": "steered"},
+        {"session_id": remote_session_id, "status": "running", "delivery": "reply_started"},
     )
 
 

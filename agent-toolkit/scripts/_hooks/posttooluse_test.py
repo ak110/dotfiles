@@ -1478,7 +1478,7 @@ class TestAgentsServerSessionState:
             assert run_operation(sid, remote_session_id, "start", status="running") is True
             assert run_operation(sid, remote_session_id, "wait", status=status) is False
 
-        for delivery in ("steered", "reply_started", "reply_ambiguous"):
+        for delivery in ("reply_started", "reply_ambiguous"):
             sid = f"pending-send-{delivery}"
             remote_session_id = f"remote-send-{delivery}"
             assert run_operation(sid, remote_session_id, "start", status="running") is True
@@ -1493,6 +1493,21 @@ class TestAgentsServerSessionState:
                 )
                 is True
             )
+
+        sid = "pending-send-steered"
+        remote_session_id = "remote-send-steered"
+        assert run_operation(sid, remote_session_id, "start", status="running") is True
+        assert run_operation(sid, remote_session_id, "wait", status="running") is False
+        assert (
+            run_operation(
+                sid,
+                remote_session_id,
+                "send_message",
+                status="running",
+                delivery="steered",
+            )
+            is False
+        )
 
         sid = "pending-send-reply-failed"
         remote_session_id = "remote-send-reply-failed"

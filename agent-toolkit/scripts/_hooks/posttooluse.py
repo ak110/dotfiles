@@ -343,7 +343,8 @@ def _record_agents_server_session_state(
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
             delivery = structured.get("delivery")
-            if delivery in {"steered", "reply_started", "reply_ambiguous"}:
+            # steerはturn_seqを変えず、当該turnの終端を既存の観測が待つ。
+            if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
         elif operation in {"wait", "kill", "stop"}:
