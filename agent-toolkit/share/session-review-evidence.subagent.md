@@ -13,6 +13,10 @@
 
 起動文での受領形式は`agent-toolkit:delegation`のSKILL.mdの`## 送信`が定める。
 
+```text
+必須入力名: 抽出器,記録の識別子,管理対象一時領域,観測境界,対象リポジトリ,未処理項目
+```
+
 - 抽出器の絶対パス
 - 記録の識別子。Claude Codeではtranscriptの絶対パス、CodexではCodexのthread IDを受領する
 - 管理対象一時領域の絶対パス

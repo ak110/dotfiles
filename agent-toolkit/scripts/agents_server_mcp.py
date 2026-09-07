@@ -13,6 +13,8 @@ import contextlib
 import dataclasses
 import logging
 import os
+import pathlib
+import re
 import warnings
 from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
@@ -68,6 +70,10 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 529（overloaded_error）へ限定する。500（api_error）はサービス内部の失敗であり、
 # 候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({429, 529})
+_TASK_DOCUMENT_PATTERN = re.compile(r"^(?P<path>/\S+\.subagent\.md)(?:\s|$)")
+_REQUIRED_INPUT_PREFIX = "必須入力名: "
+_REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
+_SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 
 
 @dataclasses.dataclass
@@ -115,6 +121,43 @@ def _engine_unavailable(session: SessionState) -> bool:
 def _shell_prompt(command: str, summary_policy: str) -> str:
     """コマンドと要約方針を、シェル実行委譲先への指示本文へ組み立てる。"""
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
+
+
+def _validate_required_prompt_inputs(prompt: str) -> str | None:
+    """通常委譲の起動文をタスク文書の必須入力名と照合する。"""
+    lines = prompt.splitlines()
+    match = _TASK_DOCUMENT_PATTERN.match(lines[0] if lines else "")
+    if match is None:
+        return "必須入力検査を実施できません: 起動文の1行目からタスク文書の絶対パスを取得できません。"
+    task_document = pathlib.Path(match.group("path")).resolve()
+    if not task_document.is_relative_to(_SHARE_DIRECTORY):
+        return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
+    try:
+        document_lines = task_document.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        return f"必須入力検査を実施できません: タスク文書をUTF-8で読めません: {task_document}: {error}"
+    try:
+        input_heading = document_lines.index("## 入力")
+    except ValueError:
+        return f"必須入力検査を実施できません: タスク文書に## 入力がありません: {task_document}"
+    section = document_lines[input_heading + 1 :]
+    next_heading = next((index for index, line in enumerate(section) if line.startswith("## ")), len(section))
+    section = section[:next_heading]
+    try:
+        fence = section.index("```text")
+        marker = section[fence + 1]
+    except (ValueError, IndexError):
+        return f"必須入力検査を実施できません: ## 入力にtextコードブロックがありません: {task_document}"
+    if not marker.startswith(_REQUIRED_INPUT_PREFIX):
+        return f"必須入力検査を実施できません: 必須入力名を取得できません: {task_document}"
+    required_names = marker.removeprefix(_REQUIRED_INPUT_PREFIX).split(",")
+    if not required_names or any(not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name) for name in required_names):
+        return f"必須入力検査を実施できません: 必須入力名の書式が不正です: {task_document}"
+    prompt_lines = lines[1:]
+    missing = [name for name in required_names if not any(line.startswith(f"{name}:") for line in prompt_lines)]
+    if missing:
+        raise ValueError(f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}")
+    return None
 
 
 _DEFAULT_STATUS_WRITER = object()
@@ -1145,7 +1188,11 @@ async def start(
     全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
     これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
     """
-    return await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
+    input_validation_warning = _validate_required_prompt_inputs(prompt)
+    response = await _MANAGER.start(model_type, prompt, cwd, exclude_session_id)
+    if input_validation_warning is not None:
+        response["input_validation_warning"] = input_validation_warning
+    return response
 
 
 @mcp.tool(name="start_explore", structured_output=True)

@@ -1,11 +1,23 @@
 # 計画担当タスク
 
 `agent-toolkit:plan-mode`から起動される計画担当として、調査、計画ファイルの起草、計画構造検査、自己監査及び指摘の採否と修正を担う。レビュー担当の起動判断、実装、キュー操作、マージは担当しない。
-起動文での受領形式は`agent-toolkit:delegation`のSKILL.mdの`## 送信`が定める。必須入力の項目は`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`の`## 起動`が定める。
+起動文での受領形式と必須入力の項目は`## 入力`が定める。
 
 最初に`agent-toolkit:plan-mode`をSkill機能で起動し、同スキルの計画ファイル基準（`references/plan-file-standards.md`）を全文読む。本書は同スキルのSKILL.mdと`plan-file-standards.md`が定める手順を複製せず、計画構造検査、自己監査及び指摘の検収と修正だけを定める。
 
 本タスクの完了報告と、本タスクで作成する成果物はすべて日本語で書く。本書が書式を固定する機械可読な返却値と固定文字列は、その書式のままとする。
+
+## 入力
+
+起動文での受領形式は`agent-toolkit:delegation`のSKILL.mdの`## 送信`が定める。
+各項目へ渡す値の確定規則は`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`の`## 起動`が定める。
+
+```text
+必須入力名: 対象,要求単位の由来,採否,不採用確認結果,元のユーザー指示,外部可視変更の承認,対象リポジトリ,プロジェクト規範,作成規範,AWI固有の指示,計画ファイルの保存先
+```
+
+AWI由来の計画では、同じ対象リポジトリかつ同じ条件の正本AWIファイル名の全件を併せて受領する。
+`agent-toolkit:process-wi`の経路では`起動経路`を、既存計画の指摘対応では`起動区分`を受領する。
 
 ## 起動区分
 

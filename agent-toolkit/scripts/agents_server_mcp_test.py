@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -636,6 +637,96 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert "`timeout=0`の本ツールを1回発行" in wait_tool.description
     assert "`turn_seq`" in send_tool.description
     assert "`--" + "turn`へそのまま渡す" not in send_tool.description
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_prompt_missing_required_input(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """startはタスク文書の必須入力が欠けた起動文をbackendへ渡さない。"""
+    task_document = tmp_path / "task.subagent.md"
+    task_document.write_text(
+        "# タスク\n\n## 入力\n\n```text\n必須入力名: 対象,目的\n```\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(subject, "_SHARE_DIRECTORY", tmp_path)
+    called = False
+
+    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+
+    with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
+        await subject.start("execute", f"{task_document} の手順を実行せよ。\n対象: 値", str(tmp_path))
+
+    assert called is False
+
+
+@pytest.mark.asyncio
+async def test_start_accepts_exec_review_prompt_with_documented_input_names(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """startは実行レビュー文書が列挙する通常の入力名を受理する。"""
+    task_document = subject._SHARE_DIRECTORY / "exec-review.subagent.md"
+    called = False
+
+    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+    prompt = "\n".join(
+        [
+            f"{task_document} の手順を実行せよ。",
+            "レビュー基準: 計画",
+            f"対象リポジトリ: {tmp_path}",
+            f"対象worktree: {tmp_path}",
+            "プロジェクト規範: AGENTS.md",
+            "適用する作成規範スキル: agent-toolkit:writing-standards",
+            "agent-toolkit:review-standardsのSKILL.md: /plugin/review-standards/SKILL.md",
+            "開始時点の完全OID: 0000000000000000000000000000000000000000",
+            "レビュー対象HEADの完全OID: 1111111111111111111111111111111111111111",
+            "変更ファイル一覧: 対象.py",
+            "検証結果: 成功",
+            "review_contract: 契約",
+            "レビュー指摘管理表: /tmp/review.tsv",
+            "track: exec-review",
+            "round: 1",
+        ]
+    )
+
+    response = await subject.start("execute_review", prompt, str(tmp_path))
+
+    assert response == {"status": "running"}
+    assert called is True
+
+
+@pytest.mark.asyncio
+async def test_start_warns_and_continues_without_required_input_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """必須入力名を取得できないタスク文書では警告を応答へ添えて起動する。"""
+    task_document = tmp_path / "task.subagent.md"
+    task_document.write_text("# タスク\n\n## 入力\n\n- 対象\n", encoding="utf-8")
+    monkeypatch.setattr(subject, "_SHARE_DIRECTORY", tmp_path)
+
+    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        return {"status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+
+    response = await subject.start("execute", f"{task_document} の手順を実行せよ。", str(tmp_path))
+
+    assert response["status"] == "running"
+    assert "必須入力検査を実施できません" in response["input_validation_warning"]
+    assert str(task_document) in response["input_validation_warning"]
 
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:

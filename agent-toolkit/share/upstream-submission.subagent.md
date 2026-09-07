@@ -7,6 +7,10 @@
 
 ## 入力
 
+```text
+必須入力名: 対象リポジトリ,元項目と投入先の組
+```
+
 - 元項目を保持する対象リポジトリの絶対パス
 - 元項目と投入先の組ごとの、元項目のAWIファイル名、1件の`upstream_target_repo`及び`upstream_request`
 - 失敗後の再開では、保存済みの組に限り`upstream_filename`
