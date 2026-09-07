@@ -114,7 +114,7 @@ class TestFindMiseBinary:
         assert _setup_mise.find_mise_binary() is None
 
 
-class TestRunWithoutMise:
+class TestRunMiseInstallation:
     """mise未検出時の自動導入と再解決を検証する。"""
 
     def test_run_installs_mise_then_continues(self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub):
