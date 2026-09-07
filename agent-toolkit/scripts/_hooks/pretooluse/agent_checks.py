@@ -275,9 +275,15 @@ def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
 
 
 def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
-    """SendMessageの宛先にエージェント種別名を指定した場合に警告する。"""
+    """SendMessageの宛先にエージェント種別名を指定した場合に警告する。
+
+    実行環境が渡す呼び出し元識別子は`uds:/tmp/cc-socks/1939480.sock`のように
+    経路の区切りを持つ一方、`plugin-dev:skill-reviewer`のようなエージェント種別名は
+    経路の区切りを持たない。警告本文が前者への送信を解消手段として指示するため、
+    経路の区切りを含む宛先は警告しない。
+    """
     recipient = tool_input.get("to")
-    if not isinstance(recipient, str) or ":" not in recipient:
+    if not isinstance(recipient, str) or ":" not in recipient or "/" in recipient:
         return None
     return _llm_notice(
         "エージェント種別名はSendMessageの到達可能な宛先ではない。"

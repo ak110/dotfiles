@@ -6,7 +6,9 @@
 
 自己監査を完了後、メインが`agent-toolkit:delegation`に従って計画レビュー担当を起動する。
 計画レビューの`track`は`plan-review`とし、計画ごとに1つの表を全ラウンドで使う。
-メインはレビュー担当の新規起動時に`agents_server.start`へ`model_type="plan_review"`を渡し、
+メインはレビュー担当の新規起動時に`agents_server.start`へ`model_type="plan_review"`を渡す。
+現在のthreadを継続できるのは、その起動に用いた`model_type`が`plan_review`と一致する場合だけとする。
+一致しない場合は`model_type="plan_review"`で新規起動する。
 継続接続では同じ`model_type`を保持する。経路は`agent-toolkit:delegation`の工程別モデル設定に従う。
 起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/plan-review.subagent.md`を指す。次の入力、今回のレビュー種別（`初回レビュー`又は`引き継ぎ再レビュー`）及び`round: <ラウンド番号>`を全レビュー共通の名前付き必須入力とする。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
 初回・再レビュー固有の入力は、後続の規定に従って追加する。

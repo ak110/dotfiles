@@ -2439,17 +2439,20 @@ async def test_sync_state_restores_when_response_settles_while_away(
     await playwright.async_api.expect(refresh).to_be_disabled()
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
     preview_before = await page.locator("#preview").inner_text()
     release.set()
     await asyncio.wait_for(fulfilled.wait(), timeout=5)
-    await page.wait_for_timeout(50)
-    assert await page.locator("#preview").inner_text() == preview_before
     await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     await playwright.async_api.expect(refresh).to_have_text("今すぐ同期")
     await playwright.async_api.expect(refresh).to_be_enabled()
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     await playwright.async_api.expect(page.locator("#global-error")).to_be_hidden()
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    assert await page.locator("#preview").inner_text() == preview_before
     await page.unroute("**/api/sync", delay_sync)
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     async with page.expect_response("**/api/sync"):
         await refresh.click()
 

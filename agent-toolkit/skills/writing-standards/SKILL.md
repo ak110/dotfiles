@@ -64,7 +64,7 @@ description: >
 
 - Tailwind CSS（v4系、依存名`tailwindcss`）: `references/tailwindcss.md`
 - Alpine.js（v3系、依存名`alpinejs`または`<script>`読み込み）: `references/alpinejs.md`
-- Playwright Test（v1系、依存名`@playwright/test`）: `references/playwright.md`
+- Playwright（Test v1系は依存名`@playwright/test`、Pythonバインディングは依存名`playwright`）: `references/playwright.md`
 - Drizzle ORM/Drizzle Kit（0.x系、依存名`drizzle-orm`・`drizzle-kit`）: `references/drizzle.md`
 - Svelte 5/SvelteKit 2（依存名`svelte`・`@sveltejs/kit`）: `references/svelte.md`
 
