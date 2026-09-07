@@ -1,0 +1,6 @@
+interface:
+  display_name: "AWIを追加"
+  short_description: "裏付けと対話確定を経てエージェント作業項目を登録する"
+
+policy:
+  allow_implicit_invocation: false

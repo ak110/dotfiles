@@ -531,7 +531,7 @@ def _resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
     try:
         value = _config.resolve_mutable_setting("orchestrate_model")
     except ValueError as error:
-        default = _config._ORCHESTRATE_MODEL_DEFAULT  # pylint: disable=protected-access
+        default = _config._MUTABLE_KEY_DEFAULTS["orchestrate_model"]  # pylint: disable=protected-access
         env_name = "AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL"
         raw_value = os.environ.get(env_name, "") or _config._load_config().get(  # pylint: disable=protected-access
             "orchestrate_model", default
