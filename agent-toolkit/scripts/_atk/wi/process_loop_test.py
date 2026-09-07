@@ -533,7 +533,7 @@ class TestProcessLoopPromptAndEnv:
             assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
         assert command[4:11] == [
             "--settings",
-            '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s"}',
+            '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -840,7 +840,7 @@ class TestProcessLoopPromptAndEnv:
         _hook_debug_log(command)
         assert command[4:11] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}',
+            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             expected_model,
@@ -1216,7 +1216,7 @@ class TestProcessLoopPromptAndEnv:
         assert first_debug_log != second_debug_log
         assert first_command[4:] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}',
+            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--model",
             "opus[1m]",
             "--effort",
@@ -1225,7 +1225,7 @@ class TestProcessLoopPromptAndEnv:
         ]
         assert second_command[4:11] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}',
+            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -1269,7 +1269,7 @@ class TestProcessLoopPromptAndEnv:
         assert _hook_debug_log(first_command) != _hook_debug_log(second_command)
         assert first_command[4:] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}',
+            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--model",
             "opus[1m]",
             "--effort",
@@ -1278,7 +1278,7 @@ class TestProcessLoopPromptAndEnv:
         ]
         assert second_command[4:11] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}',
+            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -1342,7 +1342,7 @@ class TestProcessLoopPromptAndEnv:
         assert _hook_debug_log(claude_calls[0]["cmd"]) != _hook_debug_log(claude_calls[1]["cmd"])
         assert claude_calls[0]["cmd"][4:] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}',
+            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--model",
             "opus[1m]",
             "--effort",

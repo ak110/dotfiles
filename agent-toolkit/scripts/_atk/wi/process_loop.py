@@ -116,10 +116,14 @@ def _cmd_process_loop_status() -> None:
 
 
 def _dialog_timeout_settings() -> str:
-    """メイン会話のプロンプトキャッシュTTLに対応する質問・ダイアログのタイムアウト設定を返す。"""
+    """メイン会話の質問タイムアウトとRemote Control無効化の設定を返す。
+
+    Remote Controlのbridgeが接続されると質問の自動送出が無効になるため、
+    process-loopが起動するセッションでは起動時の接続を無効にする。
+    """
     if _wait_schedule.get_prompt_cache_ttl("main") == "5m":
-        return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s"}'
-    return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m"}'
+        return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}'
+    return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}'
 
 
 def _child_env() -> dict[str, str]:
