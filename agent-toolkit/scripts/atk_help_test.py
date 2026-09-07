@@ -190,6 +190,16 @@ def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
         assert description in help_text
 
 
+def test_review_table_init_help_describes_dialogue_review_table() -> None:
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    parser = commands["atk review-table init"]
+    help_text = parser.format_help()
+
+    assert "対話由来の小規模是正の実行レビュー表" in help_text
+    assert "dlg-<実装着手前の完全OID>.exec-review.tsv" in help_text
+    assert "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`" in help_text
+
+
 def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
     commands = {command: parser for command, parser, _summary in _walk_commands()}
     description = commands["atk plans checkout"].description

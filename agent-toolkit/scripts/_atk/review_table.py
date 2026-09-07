@@ -51,7 +51,8 @@ _RECOVERY_GUIDANCE = (
 )
 _INPUT_GUIDANCE = (
     "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`、または原因commit完全OID由来の"
-    "`ci-<OID>.exec-review.tsv`を通常ファイルの絶対パスで指定する。"
+    "`ci-<OID>.exec-review.tsv`、実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を"
+    "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプ及びプロセス置換は受理しない"
 )
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
@@ -455,7 +456,8 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
     path_help = (
         "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か"
-        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
+        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`、"
+        "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を指定する。"
     )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk review-table add"])

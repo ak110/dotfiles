@@ -258,7 +258,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table init": {
         "summary": "空のレビュー表を作成する",
-        "description": "目的: 行を持たない空のレビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: レビューを開始する前に、計画ファイルと同じstemの表、又は原因commitに対応する計画契約がない処理の独立CI実行レビュー表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.plan-review.tsv`か`<計画stem>.exec-review.tsv`、又は計画作業root直下の`ci-<起点OID>.exec-review.tsv`で指定する。\n復元・後始末: 誤って作成した表は、当該ファイルを削除して取り除く。",
+        "description": "目的: 行を持たない空のレビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: レビューを開始する前に、計画ファイルと同じstemの表、原因commitに対応する計画契約がない処理の独立CI実行レビュー表、又は対話由来の小規模是正の実行レビュー表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.plan-review.tsv`か`<計画stem>.exec-review.tsv`、計画作業root直下の`ci-<起点OID>.exec-review.tsv`、又は管理対象一時領域直下の`dlg-<実装着手前の完全OID>.exec-review.tsv`で指定する。\n復元・後始末: 誤って作成した表は、当該ファイルを削除して取り除く。",
         "epilog": "実行例:\n\n  atk review-table init /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
     "atk review-table add": {
