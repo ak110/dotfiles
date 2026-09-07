@@ -191,6 +191,8 @@ merge進行中でなければ`atk worktree-stash save --label <退避ラベル>`
 未commitの担当範囲の変更を残したまま完了を報告すると、当該変更がベースbranchへ入らないためである。
 完了報告はツール戻り値で1回返し、`SendMessage`で能動送付しない。
 
+実行中に想定外の結果を観測し、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が定める即時報告のいずれの手段でも送れない場合に限り、本節が定める返却形式の末尾へ`想定外事象: <事象と対処>`の1行を追加する。この1行は、本節が返却値を限定する記述より優先する。
+
 ## 統合
 
 統合指示を受領した場合は、受領した`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`を全文読み、同書が定める責務と手順に従って統合する。
