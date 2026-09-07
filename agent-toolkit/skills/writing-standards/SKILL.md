@@ -92,3 +92,7 @@ description: >
 - 大量の文書読込、大規模ブロック置換、plugin資源のroot失効: `references/tool-operations.md`
 
 意味を変えない誤字・句読点・リンクの修正だけの編集では、`references/llm-characteristics.md`の読込を省いてよい。
+
+## 品質検査の実行時に読む資料
+
+- formatter、linter、tester又はプロジェクト固有の検査を起動する時点: `references/check-execution.md`

@@ -95,7 +95,7 @@ description: >
 
 利用者からの要求又は採用済みのAWIによる明示的な更新要求が一括更新コマンドの生成範囲に属する場合は、
 ロックファイルの最終コミット日時にかかわらず、対象プロジェクトの一括更新コマンドを1回実行する。
-一括更新コマンドは、各プロジェクトが正式に定義する`make update`か`mise run update`相当の入口とする。
+一括更新コマンドは、各プロジェクトが正式に定義する入口とする。`Makefile`が`update`ターゲットを持つ`dotfiles`・`pyfltr`・`pytilpack`・`smpr`・`glatasks`では`make update`、`Makefile`を持たず`mise.toml`が`[tasks.update]`を持つ`gv`・`lc`では`mise run update`を使う。
 実行後はコマンドが生成した差分全体を検収し、同一のコミットへ含める。
 
 明示的な更新要求がない個人プロジェクトのAWI処理では、対象プロジェクトのロックファイルの
@@ -117,7 +117,9 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 
 ## リリース運用
 
-`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは`releaser`コマンドで起動する。
+`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは`releaser <patch|minor|major>`で起動する。
+`releaser`は対象リポジトリの`release.yaml`ワークフローを起動するラッパーであり、各リポジトリの`AGENTS.md`が記載する`gh workflow run release.yaml`と同じワークフローを起動する。
+引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示するだけでリリースを起動しないため、未リリース分の確認に使う。
 バージョン区分は次のとおりとする。
 
 - バグ修正・軽微な機能追加: パッチ
