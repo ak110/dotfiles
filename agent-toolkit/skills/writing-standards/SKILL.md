@@ -32,7 +32,7 @@ description: >
 
 - 計画ファイルの起草で新しい概念名・識別子を導入する場面、命名場面、及び同名・同種の対象を複数の主体間で記述する場面: `references/referent-table.md`
 - コード・スクリプトへコメントを書く前: `references/comment-granularity.md`
-- 表記検査時、lint違反の対処時、lint設定を緩和する時、及び口調の自己点検時は次の5件を併読する
+- 節又は文書を新規に起草する場面、表記検査時、lint違反の対処時、lint設定を緩和する時、及び口調の自己点検時は次の5件を併読する
   - `references/notation-rules.md`
   - `references/textlint-violations.md`
   - `references/lint-relax-criteria.md`
