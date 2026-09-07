@@ -862,7 +862,10 @@ _STATE_CHANGING_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("gh", "pr", "create"),
     ("gh", "pr", "merge"),
 )
-"""出力が後続の検収の唯一の入力となる状態変更コマンドの前置き。"""
+"""出力に生成したファイル名と構造検収の対象となるメタデータだけが現れる状態変更コマンドの前置き。
+
+本文の照合はCLI内部で完結し、出力を根拠としない。
+"""
 _COMPLETE_OUTPUT_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
     ("atk", "wi", "show"),
     ("atk", "review-table", "show"),
@@ -870,7 +873,8 @@ _COMPLETE_OUTPUT_COMMAND_PREFIXES: tuple[tuple[str, ...], ...] = (
 """状態を変更せず、出力の全量が後続の照合の根拠となるコマンドの前置語。
 
 `atk wi show`は一括取得の契約が全項目の出力を本文採用の条件とし、`atk review-table show`は
-未解消の指摘と対応状況を確認する手段である。いずれも一部だけを読むと判断の根拠が失われる。
+未解消の指摘と対応状況を確認する手段であり、不一致を検出した場合に差異を特定する手段でもある。
+いずれも一部だけを読むと判断の根拠が失われる。
 状態変更コマンドは`_STATE_CHANGING_COMMAND_PREFIXES`で別に判定する。
 """
 _COMPLETE_OUTPUT_EXCLUDED_PREFIXES: tuple[tuple[str, ...], ...] = (
@@ -1192,28 +1196,33 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
 
 
 def _check_bash_state_change_command_chaining(command: str) -> str | None:
-    """状態変更コマンドが最後の直列区間でない場合に警告する。
+    """状態変更コマンドが最後の直列区間でない場合に遮断する。
 
     最後の区間では当該コマンドの終了コードがシェルの終了コードとなるため対象外とする。
+    代替手段が当該コマンドの単独実行に一意に定まり、同じターンで実行できるため遮断する。
     """
     if _contains_heredoc(command):
         return None
     serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     for serial_command in serial_commands[:-1]:
         if any(_segment_is_state_changing(segment) for segment in _extract_execution_segments(serial_command)):
-            return _llm_notice(
-                "warn: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。"
-                "当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
-                tag=_WARN_TAG,
+            print(
+                _block_notice(
+                    "block: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。",
+                    fix="当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
+                ),
+                file=sys.stderr,
             )
+            return "block"
     return None
 
 
 def _check_bash_help_with_execution(command: str) -> str | None:
-    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を警告する。
+    """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を遮断する。
 
     `-h`は実行ファイルごとに意味が異なるためヘルプ指定として扱わない。
     ヘルプ取得だけを並べた呼び出しは、警告が求める実行の分離を適用する区間を持たないため対象にしない。
+    代替手段がヘルプの先行実行と後続実行の分離に一意に定まり、同じターンで実行できるため遮断する。
     """
     if _contains_heredoc(command):
         return None
@@ -1236,12 +1245,14 @@ def _check_bash_help_with_execution(command: str) -> str | None:
         )
     }
     if help_names & non_help_names:
-        return _llm_notice(
-            "warn: 同じシェル呼び出しの中でヘルプ取得と同じ実行ファイルの実行が並んでいる。"
-            "前段のヘルプ出力は同じ呼び出しの中では取得できないため、"
-            "受理形式を確定してから実行を分けて呼び出す。",
-            tag=_WARN_TAG,
+        print(
+            _block_notice(
+                "block: 同じシェル呼び出しの中でヘルプの取得と同じ実行ファイルの実行が並んでいる。",
+                fix="先にヘルプだけを実行して受理形式を確定し、実行は別の呼び出しへ分ける。",
+            ),
+            file=sys.stderr,
         )
+        return "block"
     return None
 
 

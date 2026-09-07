@@ -64,10 +64,11 @@ class TestBashCommandContractWarnings:
         "command",
         ["atk wi unhold a.md && atk wi edit b.md", "git commit -m x; echo done", "git -C . commit -m x; echo done"],
     )
-    def test_state_change_before_last_serial_command_warns(self, command: str) -> None:
+    def test_state_change_before_last_serial_command_blocks(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "状態を変更するコマンドを他のコマンド" in _additional_context(result)
+        assert result.returncode == 2
+        assert "状態を変更するコマンドを他のコマンド" in result.stderr
+        assert "当該コマンドを単独で実行" in result.stderr
 
     @pytest.mark.parametrize("command", ["cd /tmp && atk wi add --title x", "atk wi list && atk wi show a.md"])
     def test_safe_serial_commands_are_silent(self, command: str) -> None:
@@ -76,10 +77,11 @@ class TestBashCommandContractWarnings:
         assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
 
     @pytest.mark.parametrize("command", ["atk --help; atk wi list", "atk wi --help && atk wi show a.md"])
-    def test_help_with_same_executable_warns(self, command: str) -> None:
+    def test_help_with_same_executable_blocks(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-        assert result.returncode == 0
-        assert "ヘルプ取得と同じ実行ファイル" in _additional_context(result)
+        assert result.returncode == 2
+        assert "ヘルプの取得と同じ実行ファイル" in result.stderr
+        assert "先にヘルプだけを実行" in result.stderr
 
     @pytest.mark.parametrize(
         "command",
