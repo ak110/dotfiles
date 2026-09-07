@@ -1,5 +1,7 @@
 """private-notes共通Git同期の対象限定commitとpush保留を検証する。"""
 
+# pylint: disable=protected-access
+
 import pathlib
 import subprocess
 
@@ -25,6 +27,15 @@ def _init_repo(root: pathlib.Path) -> None:
     (root / "unrelated.txt").write_text("before\n", encoding="utf-8")
     _git(root, "add", ".")
     _git(root, "commit", "-m", "base")
+
+
+def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """同期基盤のGit実行は成功時に標準出力と標準エラーへ書かない。"""
+    _atk_git_sync._run_git(["init", "--initial-branch=main"], tmp_path)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 def _init_diverged_mq_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:

@@ -720,7 +720,7 @@ def commit_plan(
         saved_main = _plan_file.new_plans_root(private_notes) / relative_main
         saved_bundle_exists = saved_main.is_file()
         if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
-            _git_command.run(["fetch"], cwd=private_notes, check=True)
+            _git_command.run_quiet(["fetch"], cwd=private_notes)
         elif not working_bundle or not saved_bundle_exists:
             if not skip_push:
                 _atk_git_sync.push_pending_commits(private_notes)
@@ -816,7 +816,7 @@ def commit_ci_review(
     with _atk_git_sync.repo_lock(private_notes, timeout=lock_timeout):
         saved = _plan_file.new_plans_root(private_notes) / relative
         if checkout_record is not None and _atk_git_sync.has_remote(private_notes):
-            _git_command.run(["fetch"], cwd=private_notes, check=True)
+            _git_command.run_quiet(["fetch"], cwd=private_notes)
         elif not saved.exists():
             if not skip_push:
                 _atk_git_sync.push_pending_commits(private_notes)

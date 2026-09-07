@@ -1,5 +1,7 @@
 """`atk wi`共通の警告・通知処理を検証する。"""
 
+# pylint: disable=protected-access
+
 import datetime
 import os
 import pathlib
@@ -16,12 +18,22 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from _common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position
 
 from _atk.wi import common as _common  # noqa: E402  # pylint: disable=wrong-import-position
 from _atk.wi import readiness as _readiness  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+
+
+def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """WI共通処理のGit実行は成功時に標準出力と標準エラーへ書かない。"""
+    _common._run_git(["init", "--initial-branch=main"], tmp_path)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 @pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
@@ -1271,6 +1283,23 @@ class TestPrivateNotesAutoCreate:
         assert exclude.splitlines().count(_file_lock.PLAN_LOCK_IGNORE_PATTERN) == 1
         assert not (root / ".gitignore").exists()
         assert not _git_stdout(root, "status", "--porcelain")
+
+    def test_wi_list_initializes_local_repo_without_git_output(
+        self,
+        tmp_path: pathlib.Path,
+        capfd: pytest.CaptureFixture[str],
+    ) -> None:
+        """初回の`wi list`はローカルリポジトリを生成してもGitの成功出力を残さない。"""
+        home = tmp_path / "home"
+        home.mkdir()
+
+        with pytest.raises(SystemExit) as excinfo:
+            atk.main(["wi", "list"], home=home)
+
+        captured = capfd.readouterr()
+        assert excinfo.value.code == 0
+        assert captured.out == ""
+        assert captured.err == ""
 
     def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
         """2回連続で呼んでも2回目は既存のローカルリポジトリをそのまま返す（再初期化しない）。"""

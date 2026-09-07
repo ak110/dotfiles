@@ -31,6 +31,37 @@ from _atk.managed_temp.test_support_test import *  # noqa: F403
 
 
 @pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        ([], "error: --pathを指定してください。現在の管理対象はありません。\n"),
+        (
+            [{"path": "/tmp/first"}],
+            "error: --pathを指定してください。現在の管理対象は1件です。"
+            "atk managed-temp cleanup --path /tmp/first を実行してください。\n",
+        ),
+        (
+            [{"path": "/tmp/first"}, {"path": "/tmp/second"}],
+            "error: --pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n/tmp/first\n/tmp/second\n",
+        ),
+    ],
+)
+def test_cleanup_without_path_reports_managed_targets(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entries: list[subject._ManagedTempEntry],
+    expected: str,
+) -> None:
+    """path欠落時は管理対象の件数に応じた再実行情報を示す。"""
+    monkeypatch.setattr(subject, "list_managed_temp", lambda: entries)
+    monkeypatch.setattr(subject, "cleanup_managed_temp", lambda *_args, **_kwargs: pytest.fail("cleanupを呼んだ"))
+
+    assert subject.main(["cleanup"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == expected
+
+
+@pytest.mark.parametrize(
     ("directory", "existing_owner", "full_open_error", "expected_handle", "owner_changed"),
     [
         (False, b"current-owner", None, 101, False),
