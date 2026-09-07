@@ -15,6 +15,7 @@ from _common.atomic_file import atomic_write
 
 from _atk import config as _config
 from _atk import help_text as _atk_help
+from _atk import output_file as _output_file
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _IDENTIFIER_RE = re.compile(r"^[1-9][0-9]*$")
@@ -102,6 +103,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     list_parser = _atk_help.add_command(subcommands, "list", **_atk_help.HELP["atk review-audit list"])
     list_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
+    _output_file.add_output_file_arg(list_parser)
     mark_parser = _atk_help.add_command(subcommands, "mark", **_atk_help.HELP["atk review-audit mark"])
     mark_parser.add_argument("--repo", required=True, help="対象リポジトリ。<owner>/<repo>形式で指定する。")
     mark_parser.add_argument("identifiers", nargs="+", help="記録するreviewのdatabaseId。正の整数で指定する。")

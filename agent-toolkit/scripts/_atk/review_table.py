@@ -23,6 +23,7 @@ from _common import file_lock as _file_lock
 from _common.atomic_file import atomic_write
 
 from _atk import help_text as _atk_help
+from _atk import output_file as _output_file
 
 # 配布物独立性のため、Web表示側`_atk_serve_plans.py`の`_REVIEW_TABLE_HEADERS`と同じ列順を二重に持つ。
 # 列を増減する場合は双方を同期し、旧形式の読み取り互換も両側で更新する。
@@ -538,6 +539,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         default="tsv",
         help="出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する。",
     )
+    _output_file.add_output_file_arg(show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
         "--allow-unanswered",

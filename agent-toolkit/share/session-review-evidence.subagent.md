@@ -41,16 +41,19 @@
 
 `--bundle`へ受領した管理対象一時領域の絶対パスを渡した集約実行を1回行い、続けて必要な`--grep`と`--detail`をそれぞれ1回の実行へまとめて行う。
 全ての実行へ`--observation-boundary`と受領した観測境界を付ける。
+全ての実行へ`--output-file`を付け、当該領域内の実行ごとに異なるファイル名を渡す。
+標準出力へは保存先パスと行数だけが返るため、当該ファイルを読んで内容を確認する。
 Codexのthread IDを受領した場合は、`--codex-thread-id`へ当該IDを渡す。
 
 ```sh
-uv run --no-project --script <抽出器の絶対パス> <transcriptの絶対パス> --observation-boundary <観測境界> --bundle <管理対象一時領域の絶対パス>
-uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <thread ID> --observation-boundary <観測境界> --bundle <管理対象一時領域の絶対パス>
+uv run --no-project --script <抽出器の絶対パス> <transcriptの絶対パス> --observation-boundary <観測境界> --bundle <管理対象一時領域の絶対パス> --output-file <当該領域内のファイルの絶対パス>
+uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <thread ID> --observation-boundary <観測境界> --bundle <管理対象一時領域の絶対パス> --output-file <当該領域内のファイルの絶対パス>
 ```
 
-集約実行は通常表示、`--warn`、`--stats`及び`--hook-notices`の走査を1回の記録読み込みで行い、走査ごとの全量を当該領域のファイルへ書き、標準出力へは走査ごとの要約だけを返す。
+集約実行は通常表示、`--warn`、`--stats`及び`--hook-notices`の走査を1回の記録読み込みで行い、走査ごとの全量を当該領域のファイルへ書く。
+走査ごとの要約は`--output-file`が指すファイルへ書く。
 深掘りする候補が複数ある場合も、`--detail`のオプションを同じ実行の中で繰り返して指定し、候補ごとに実行を分けない。
-標準出力の要約だけで候補を確定できない走査に限り、当該領域の全量ファイルを読む。
+要約のファイルを読んで候補を限定し、当該ファイルだけで候補を確定できない走査に限り、当該領域の全量ファイルを読む。
 各実行は全ての記録を走査し、イベントの`record`欄が由来する記録を示す。`--detail`の行番号は`<記録>:<行番号>`形式で指定する。
 証拠の保持は集約実行が担うため、走査ごとにリダイレクトを分けない。
 

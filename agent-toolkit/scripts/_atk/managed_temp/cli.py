@@ -31,6 +31,7 @@ import unicodedata
 from ctypes import wintypes
 
 from _atk import help_text as _atk_help
+from _atk import output_file as _output_file
 
 
 from typing import TYPE_CHECKING
@@ -212,6 +213,7 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
     )
     list_parser = _atk_help.add_command(subparsers, "list", **_atk_help.HELP["atk managed-temp list"])
     list_parser.add_argument("--prefix", help="列挙する領域を用途識別子で限定する。")
+    _output_file.add_output_file_arg(list_parser)
 
 
 def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:

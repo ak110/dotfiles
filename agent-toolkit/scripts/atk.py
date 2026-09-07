@@ -65,6 +65,7 @@ from _atk import config as _config_cmd  # noqa: E402
 from _atk import git_sync as _atk_git_sync  # noqa: E402
 from _atk import help_text as _atk_help  # noqa: E402
 from _atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
+from _atk import output_file as _output_file  # noqa: E402
 from _atk import plans as _plans  # noqa: E402
 from _atk import review_audit as _review_audit  # noqa: E402
 from _atk import review_table as _review_table  # noqa: E402
@@ -406,6 +407,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="JSON Linesの既定を無効にし、従来のテキスト形式で出力する。",
     )
     _add_mq_read_sync_args(list_)
+    _output_file.add_output_file_arg(list_)
 
     show = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk wi show"])
     show.add_argument(
@@ -420,6 +422,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
     _add_target_repo_arg(show)
+    _output_file.add_output_file_arg(show)
     show.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="出力対象種別（既定: all）。")
     show.add_argument(
         "--status",
@@ -711,6 +714,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
     )
     _add_target_repo_arg(grep)
     _add_mq_read_sync_args(grep)
+    _output_file.add_output_file_arg(grep)
     grep.set_defaults(subparser=grep)
 
     answer = _atk_help.add_command(sub, "answer", **_atk_help.HELP["atk wi answer"])
@@ -951,6 +955,7 @@ def main(
     *,
     home: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
+    _output_file_active: bool = False,
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
@@ -971,6 +976,13 @@ def main(
     args = parser.parse_args(raw_argv)
     if args._help_parser is not None:
         args._help_parser.print_help()
+        return
+    output_path = getattr(args, "output_file", None)
+    if output_path is not None and not _output_file_active:
+        if not output_path.is_absolute():
+            args.subparser.error("--output-fileには絶対パスを指定してください。")
+        with _output_file.redirect(output_path):
+            main(argv, home=home, now=now, _output_file_active=True)
         return
     if now is None:
         now = datetime.datetime.now()
