@@ -646,7 +646,7 @@ async def test_start_rejects_prompt_missing_required_input(
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
     with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
-        await subject.start("execute", f"{task_document} の手順を実行せよ。\n対象: 値", str(tmp_path))
+        await subject.start("execute", f"{task_document}の手順を実行せよ。\n対象: 値", str(tmp_path))
 
     assert called is False
 
