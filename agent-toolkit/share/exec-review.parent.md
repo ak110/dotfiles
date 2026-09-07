@@ -54,7 +54,7 @@ review_contract:
 レビュー担当へ渡す開始時点の完全OIDは、渡す直前に`git -C <対象worktreeの絶対パス> rev-parse --verify --quiet <検収したOID>^{commit}`を実行し、終了コード0で出力された文字列をそのまま渡す。
 終了コードが0でない場合はレビュー担当を起動せず、実行したコマンドと終了コードを呼び出し元へ返す。記憶、転記又は短縮形からの復元でOIDを組み立てない。
 
-同worktreeだけへ単一の修正用の実装担当を割り当て、新規起動では`agents_server.start`へ`model_type="execute"`を渡す。継続接続では同じ`model_type`を保持する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
+同worktreeだけへ単一の修正用の実装担当を割り当て、新規起動では`agents_server.start`へ`model_type="execute"`を渡す。現在のthreadを継続できるのは、その起動に用いた`model_type`が`execute`と一致する場合だけとする。一致しない場合は`model_type="execute"`で新規起動する。継続接続では同じ`model_type`を保持する。初回実装担当routeと今回routeの遷移は`agent-toolkit:delegation`の経路選択契約に従う。
 
 新規起動は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を指す。
 必須入力の項目は同書の`## 入力`が列挙するものとし、`担当種別`の値を`レビュー修正担当`とする。
