@@ -806,7 +806,7 @@ def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
         "次を繰り返す。"
     )
     elapsed_boundary_rule = (
-        "メインは振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
+        "振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
     )
 
     assert fixed_point_rule in problem_candidates
