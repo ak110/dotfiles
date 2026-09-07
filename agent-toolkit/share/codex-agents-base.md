@@ -166,7 +166,7 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
 
 Claude Code側の`agents_server`は、`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールでCodexまたはClaudeへ委譲し、当該sessionを管理する。
-`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。engineの可用性で起動できない候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ呼び出し側が再起動を重ねない。起動後の実行中に可用性の失敗を観測した場合だけ、同じ`model_type`と`exclude_session_id`で次の候補を起動する。`exclude_session_id`へ渡せるのは、同じ`model_type`で開始した通常起動のsessionだけとする。
+`start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。engineの可用性で起動できない候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ呼び出し側が再起動を重ねない。起動後の実行中に可用性の失敗を観測した場合だけ、同じ`model_type`で`start`を呼び直す。可用性を理由として終端したsessionの採用候補をサーバーが起動条件ごとに保持して次の起動から除外するため、呼び出し側はsession識別子を渡さない。
 `start_explore`は調査専用の軽量な起動条件でthreadを開始し、Codex backendではプロジェクト指示の読込を省く。`start_shell`は同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。どちらも委譲と直接実行の分岐を、各ツールの説明が示す採算の目安で判定する。
 Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。
 

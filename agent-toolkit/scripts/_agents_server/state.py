@@ -67,6 +67,7 @@ AUTO_RESUME_NOTICE = (
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
+_TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
 
 
 def add_touch_listener(listener: Callable[[], None]) -> None:
@@ -77,6 +78,16 @@ def add_touch_listener(listener: Callable[[], None]) -> None:
 def remove_touch_listener(listener: Callable[[], None]) -> None:
     """session状態の更新通知先を解除する。"""
     _TOUCH_LISTENERS.discard(listener)
+
+
+def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
+    """turnの終端結果が確定したsessionの通知先を登録する。"""
+    _TERMINAL_LISTENERS.add(listener)
+
+
+def remove_terminal_listener(listener: Callable[[SessionState], None]) -> None:
+    """turnの終端結果が確定したsessionの通知先を解除する。"""
+    _TERMINAL_LISTENERS.discard(listener)
 
 
 class SessionOwnerGoneError(RuntimeError):
@@ -248,6 +259,7 @@ class SessionState:
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
+    _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
     def terminal(self) -> bool:
@@ -275,7 +287,11 @@ class SessionState:
         self.progress_items.clear()
 
     def touch(self) -> None:
-        """状態の更新時刻を現在時刻へ更新する。"""
+        """状態の更新時刻を現在時刻へ更新する。
+
+        turnの終端結果が確定した時点で、登録済みの終端通知先へ当該sessionを1回だけ渡す。
+        turnを再開した後の終端では、同じ通知を改めて1回行う。
+        """
         self.updated_at = _utc_now()
         if self.result_available:
             if self.finalized_at is None:
@@ -288,6 +304,12 @@ class SessionState:
         if self.publish_registry and not self.result_delivered and registry_terminal != self._published_registry_terminal:
             session_registry.publish(self.session_id, terminal=registry_terminal)
             self._published_registry_terminal = registry_terminal
+        if not registry_terminal:
+            self._terminal_notified = False
+        elif not self._terminal_notified:
+            self._terminal_notified = True
+            for terminal_listener in tuple(_TERMINAL_LISTENERS):
+                terminal_listener(self)
         for listener in tuple(_TOUCH_LISTENERS):
             listener()
 
