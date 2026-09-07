@@ -33,10 +33,22 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
-  auto modeでのブロック等はPermissionDeniedフックが処理する
+  auto modeでのブロック等はPermissionDeniedフックが処理する。
+  2026年9月8日、Claude Code 2.1.263で次を実測した。
+  存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、
+  当該セッションの状態ファイルの`git_log_checked`は未設定のままだった。
+  続けて実在するworktreeを指す同じ形の`git log`を実行すると、当該cwdのキーが真になった。
+  再検証は、この2つのコマンドを単独で順に実行し、
+  `{tempdir}/claude-agent-toolkit-<session_id>.json`の`git_log_checked`を前後で比較する
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、コマンドの成否を前提とする状態記録へ使わない。
-  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる
+  `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる。
+  失敗したシェル実行でPostToolUseが発火するかは未検証とする。
+  codex-cli 0.153.4で`agents_server`の軽量起動により再現を試みたが、
+  当該起動は設定の読込先を空にするため本プラグインのフックが動作せず、状態ファイルが作成されなかった。
+  再検証は、通常起動のCodexセッションで失敗するシェル実行を1回行い、
+  同じ状態ファイルの`test_executed`と`git_log_checked`の変化を確認する。
+  発火の有無によらず終了コードが届かないため、成否を前提とする記録はCodexでは行わない
 - Bashコマンドを対象とする検査は、コマンド文字列全体への部分一致で発火させず、
   区間分割とトークン化により対象が実行位置にある場合だけ発火させる
   （検索語・引数として名前が現れるだけの読み取り操作を検出しないため）。

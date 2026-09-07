@@ -13,9 +13,12 @@
 - `inherited_from_session_id`: 背景化などで現行`session_id`の状態が不在となった場合に、一意に特定した前身`session_id`を記録する。共通hook入口が前身の全状態キーと同時に1回だけ書き込み、現行状態が存在する間は再継承しない
 
 - `test_executed`: PostToolUseがBashの検証コマンドまたはpyfltr MCPの`run_for_agent`成功時に記録し、
-  `git commit`未検証警告の抑制に使う。セッション終了まで保持する
-- `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する
-- `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う
+  `git commit`未検証警告の抑制に使う。セッション終了まで保持する。
+  Bash経由の記録元は、失敗した実行でPostToolUseが発火しないClaude Codeに限る
+- `git_log_checked`: PostToolUse(Bash)が`git log`観測時に記録する。
+  Bash経由の記録元は`test_executed`と同じくClaude Codeに限る
+- `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う。
+  Bash経由の記録元は`test_executed`と同じくClaude Codeに限る
 - `sleep_poll_detected`: PreToolUse(Bash)が入れ子でなく早期離脱のない`for`・`while true`・`while :`本体のsleepポーリング、又は対象外のsleep直後の状態確認連結を検出した場合に記録する。入れ子ループは判定対象外とする
 - `session_edited_files`: PostToolUseが成功した編集の対象パスを重複なく記録し、
   PreToolUse(Bash)の一括stage警告が自セッション編集済み集合として読む。セッション終了まで保持し、

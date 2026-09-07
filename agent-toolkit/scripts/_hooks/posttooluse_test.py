@@ -157,6 +157,64 @@ class TestAtkHelpObservation:
         assert "observed_atk_help" not in _read_state(tmp_path, session_id)
 
 
+class TestCodexBashStateRecording:
+    """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
+
+    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents-wait remote-session"
+
+    def test_codex_bash_does_not_record_success_dependent_state(self, tmp_path: pathlib.Path) -> None:
+        session_id = "codex-success-dependent-state"
+        result = _run(
+            {
+                "session_id": session_id,
+                "turn_id": "turn-codex",
+                "tool_name": "Bash",
+                "tool_input": {"command": self._COMMAND},
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        state = _read_state(tmp_path, session_id)
+        assert "test_executed" not in state
+        assert "git_log_checked" not in state
+        assert "amend_pending_status_check" not in state
+
+    def test_codex_bash_still_records_agents_wait_observation(self, tmp_path: pathlib.Path) -> None:
+        session_id = "codex-wait-observation"
+        remote_session_id = "remote-session"
+        state = {
+            "agents_server_sessions": {
+                remote_session_id: {
+                    "session_id": remote_session_id,
+                    "status": "running",
+                    "pending_observation": True,
+                }
+            }
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)).write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
+        )
+        result = _run(
+            {
+                "session_id": session_id,
+                "turn_id": "turn-codex",
+                "tool_name": "Bash",
+                "tool_input": {"command": self._COMMAND},
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        current = _read_state(tmp_path, session_id)
+        assert current["agents_server_sessions"][remote_session_id]["pending_observation"] is False
+        assert "test_executed" not in current
+        assert "git_log_checked" not in current
+        assert "amend_pending_status_check" not in current
+
+
 class TestTestExecution:
     """テスト実行検出。"""
 
