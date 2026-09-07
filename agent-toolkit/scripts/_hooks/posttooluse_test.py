@@ -5,6 +5,8 @@ plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`postto
 `session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へ分割している。
 """
 
+# pylint: disable=protected-access
+
 import asyncio
 import functools
 import importlib.util
@@ -45,6 +47,28 @@ def _load_posttooluse_module() -> types.ModuleType:
 
 # モジュールレベルでキャッシュ済みモジュールを参照し、引数注入では到達不能な内部関数を直接検査する。
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
+
+
+def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """所有session環境でないフックは応答sessionを含むルートの索引を書く。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    root = tmp_path / "agents-server" / "root-session"
+    root.mkdir(parents=True)
+    (root / "root.json").write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}), encoding="utf-8"
+    )
+
+    _POSTTOOLUSE_MODULE._record_agents_server_session_state(
+        "current-session",
+        {"session_id": "remote-session", "status": "running"},
+        operation="start",
+        owner_agent_id="main",
+    )
+
+    alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
+    assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "root-session"}
 
 
 class TestAgentsServerBackgroundResponse:

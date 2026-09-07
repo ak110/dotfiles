@@ -36,6 +36,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 """
 
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -43,7 +44,15 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills" / "plan-mode" / "scripts"))
-from _agents_server import state as _agents_server_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# pylint: disable-next=wrong-import-position,import-error
+from _agents_server import (
+    state as _agents_server_state,
+)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from _agents_server import (
+    status_file as _agents_server_status_file,
+)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _atk.wi import process_loop_log as _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -314,6 +323,29 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
     return missing
 
 
+def _agents_server_root_for_remote_session(remote_session_id: str) -> str | None:
+    """共有状態から委譲先sessionを含むルートsession識別子を返す。"""
+    directory = _agents_server_status_file.aliases_directory().parent
+    try:
+        roots = sorted(path for path in directory.iterdir() if path.is_dir() and path.name != "aliases")
+    except FileNotFoundError:
+        return None
+    for root in roots:
+        if not _agents_server_status_file.valid_session_id(root.name):
+            continue
+        for path in sorted(root.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            sessions = payload.get("sessions") if isinstance(payload, dict) else None
+            if isinstance(sessions, list) and any(
+                isinstance(session, dict) and session.get("session_id") == remote_session_id for session in sessions
+            ):
+                return root.name
+    return None
+
+
 def _record_agents_server_session_state(
     session_id: str,
     structured: dict,
@@ -373,6 +405,10 @@ def _record_agents_server_session_state(
         return state if changed else None
 
     update_state(session_id, _mutator)
+    if operation in {"start", "start_explore", "start_shell"} and not os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
+        root_session_id = _agents_server_root_for_remote_session(remote_session_id)
+        if root_session_id is not None:
+            _agents_server_status_file.write_root_alias(session_id, root_session_id)
 
 
 def _log_tracked_session_end(session_id: str, structured: dict) -> None:

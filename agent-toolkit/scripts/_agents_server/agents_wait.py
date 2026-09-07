@@ -24,7 +24,9 @@ def wait_for_result(
     if not status_file.valid_session_id(session_id):
         print(f"session_idの形式が不正です: {session_id}", file=sys.stderr)
         return 5
-    root_session_id = status_file.resolve_root_session_id(os.environ if environment is None else environment)
+    root_session_id = status_file.resolve_conversation_root_session_id(
+        os.environ if environment is None else environment, state_root
+    )
     if root_session_id is None:
         print("agents_serverの状態ディレクトリを解決できません。", file=sys.stderr)
         return 4

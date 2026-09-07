@@ -29,6 +29,38 @@ def test_resolve_root_session_id(environment: dict[str, str], expected: str | No
     assert subject.resolve_root_session_id(environment) == expected
 
 
+def test_conversation_root_resolution_uses_only_alias_with_existing_target(tmp_path: pathlib.Path) -> None:
+    """索引が無い場合と参照先が無い場合は現行識別子へ戻り、有効な索引だけを採用する。"""
+    environment = {"CLAUDE_CODE_SESSION_ID": "current-session"}
+    assert subject.resolve_conversation_root_session_id(environment, tmp_path) == "current-session"
+
+    aliases = subject.aliases_directory(tmp_path)
+    aliases.mkdir(parents=True)
+    alias_path = aliases / "current-session.json"
+    alias_path.write_text(json.dumps({"version": 1, "root_session_id": "root-session"}), encoding="utf-8")
+    assert subject.resolve_conversation_root_session_id(environment, tmp_path) == "current-session"
+
+    subject.status_directory("root-session", tmp_path).mkdir()
+    assert subject.resolve_conversation_root_session_id(environment, tmp_path) == "root-session"
+
+
+def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib.Path) -> None:
+    """索引更新時に参照先ディレクトリを失った既存索引を回収する。"""
+    subject.status_directory("root-session", tmp_path).mkdir(parents=True)
+    aliases = subject.aliases_directory(tmp_path)
+    aliases.mkdir()
+    stale = aliases / "stale-session.json"
+    stale.write_text(json.dumps({"version": 1, "root_session_id": "missing-root"}), encoding="utf-8")
+
+    subject.write_root_alias("current-session", "root-session", tmp_path)
+
+    assert json.loads((aliases / "current-session.json").read_text(encoding="utf-8")) == {
+        "version": 1,
+        "root_session_id": "root-session",
+    }
+    assert not stale.exists()
+
+
 @pytest.mark.parametrize(
     ("environment", "expected"),
     [

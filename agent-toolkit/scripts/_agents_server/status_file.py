@@ -76,6 +76,56 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     return root / "agents-server" / root_session_id
 
 
+def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """現行session識別子からルートsession識別子を引く索引ディレクトリを返す。"""
+    root = _atk_config.state_dir() if state_root is None else state_root
+    return root / "agents-server" / "aliases"
+
+
+def resolve_conversation_root_session_id(environment: Mapping[str, str], state_root: pathlib.Path | None = None) -> str | None:
+    """現行会話のsession識別子を索引経由でルートsession識別子へ解決する。"""
+    current_session_id = resolve_root_session_id(environment)
+    if current_session_id is None:
+        return None
+    alias_path = aliases_directory(state_root) / f"{current_session_id}.json"
+    try:
+        payload = json.loads(alias_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return current_session_id
+    root_session_id = payload.get("root_session_id") if isinstance(payload, dict) else None
+    if (
+        isinstance(payload, dict)
+        and payload.get("version") == 1
+        and isinstance(root_session_id, str)
+        and valid_session_id(root_session_id)
+        and status_directory(root_session_id, state_root).is_dir()
+    ):
+        return root_session_id
+    return current_session_id
+
+
+def write_root_alias(
+    current_session_id: str,
+    root_session_id: str,
+    state_root: pathlib.Path | None = None,
+) -> None:
+    """現行session識別子のルート索引を書き、参照先を失った索引を回収する。"""
+    if not valid_session_id(current_session_id) or not valid_session_id(root_session_id):
+        raise ValueError("invalid session_id")
+    directory = aliases_directory(state_root)
+    if directory.exists():
+        for path in directory.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            target = payload.get("root_session_id") if isinstance(payload, dict) else None
+            if isinstance(target, str) and valid_session_id(target) and not status_directory(target, state_root).is_dir():
+                path.unlink(missing_ok=True)
+    payload = {"version": 1, "root_session_id": root_session_id}
+    atomic_write(directory / f"{current_session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
+
+
 def valid_session_id(session_id: str) -> bool:
     """session識別子が状態ファイル名へ使用できる形式かを返す。"""
     return bool(session_id and _SESSION_ID_PATTERN.fullmatch(session_id))

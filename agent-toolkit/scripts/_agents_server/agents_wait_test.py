@@ -40,6 +40,28 @@ def test_agents_wait_outputs_matching_result(
     assert not (wait_environment / "session-1.json").exists()
 
 
+def test_agents_wait_resolves_changed_conversation_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """会話のsession識別子が変わった後も索引先の終端結果を回収する。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_atk_config, "state_dir", lambda: tmp_path)
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir(parents=True)
+    payload = {"session_id": "session-1", "status": "completed"}
+    (results / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+    status_file.write_root_alias("current-session", "root-session", tmp_path)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    assert json.loads(capsys.readouterr().out) == payload
+    assert not (results / "session-1.json").exists()
+
+
 @pytest.mark.parametrize("result_body", [None, "[]"])
 def test_agents_wait_times_out_without_result(
     wait_environment: pathlib.Path,
