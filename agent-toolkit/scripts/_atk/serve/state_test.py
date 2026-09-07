@@ -60,13 +60,25 @@ def test_assets_define_dismissible_global_error_region() -> None:
         '<button id="global-error-close-button" class="global-error-close" type="button" '
         'aria-label="エラーメッセージを閉じる">×</button>'
     ) in assets.HTML
-    global_error = re.search(r"\.global-error \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    global_error = re.search(
+        r'body\[data-screen="wi"\] \.global-error \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert global_error is not None
     assert "display: flex;" in global_error.group(1)
-    message = re.search(r"\.global-error-message \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    message = re.search(
+        r'body\[data-screen="wi"\] \.global-error-message \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert message is not None
     assert "overflow-wrap: anywhere;" in message.group(1)
-    close = re.search(r"\.global-error-close \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    close = re.search(
+        r'body\[data-screen="wi"\] \.global-error-close \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert close is not None
     assert "width: 2.75rem;" in close.group(1)
     assert "height: 2.75rem;" in close.group(1)
@@ -76,20 +88,33 @@ def test_assets_define_dismissible_global_error_region() -> None:
 
 def test_assets_style_markdown_and_inputs_by_purpose() -> None:
     """本文、コード、用途別入力、モバイル操作の表示契約を固定する。"""
-    assert ".markdown-body :not(pre) > code {" in assets.CSS
-    pre_rule = re.search(r"\.markdown-body pre \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert 'body[data-screen="wi"] .markdown-body :not(pre) > code {' in assets.CSS
+    pre_rule = re.search(
+        r'body\[data-screen="wi"\] \.markdown-body pre \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert pre_rule is not None
     assert "white-space: pre-wrap;" in pre_rule.group(1)
     assert "overflow-wrap: anywhere;" in pre_rule.group(1)
-    assert ".markdown-body pre code { padding: 0; background: transparent; }" in assets.CSS
-    for selector in ("#edit-content", "#answer-input", "#create-content", "#create-choices"):
+    assert 'body[data-screen="wi"] .markdown-body pre code {' in assets.CSS
+    assert "padding: 0;" in assets.CSS
+    assert "background: transparent;" in assets.CSS
+    for selector in (
+        'body[data-screen="wi"] #edit-content',
+        'body[data-screen="wi"] #answer-input',
+        'body[data-screen="wi"] #create-content',
+        'body[data-screen="wi"] #create-choices',
+    ):
         rule = re.search(rf"{re.escape(selector)} \{{([^}}]+)\}}", assets.CSS)
         assert rule is not None
         assert "clamp(" in rule.group(1)
     mobile = assets.CSS.partition("@media (max-width: 700px) {")[2]
     # ヘッダーの1列化は`shell.css`が3画面共通で定め、画面固有のCSSは水平方向の余白だけを上書きする。
-    assert ".app-header { padding-inline: var(--space-2); }" in mobile
-    assert ".dialog-footer button { width: auto; }" in mobile
+    assert 'body[data-screen="wi"] .app-header {' in mobile
+    assert "padding-inline: var(--space-2);" in mobile
+    assert 'body[data-screen="wi"] .dialog-footer button {' in mobile
+    assert "width: auto;" in mobile
     assert "button,\n  input,\n  select,\n  textarea" not in mobile
     shell_mobile = assets.SHELL_CSS.partition("@media (max-width: 700px) {")[2]
     assert "grid-template-columns: minmax(0, 1fr);" in shell_mobile

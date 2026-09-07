@@ -99,7 +99,12 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert "dataset.unansweredUwi" in assets.JS
     assert "種別不明" in assets.JS
 
-    grid = re.search(r"\.entry-columns, \.entry-row \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    grid = re.search(
+        r'body\[data-screen="wi"\] \.entry-columns,\s+'
+        r'body\[data-screen="wi"\] \.entry-row \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert grid is not None
     template = re.search(r"grid-template-columns:(.*?);", grid.group(1), re.DOTALL)
     assert template is not None
@@ -113,7 +118,8 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     ]
     assert "grid-column: 1 / 5;" in assets.CSS
     assert "grid-template-columns: subgrid;" in assets.CSS
-    assert ".entry-copy { grid-column: 5;" in assets.CSS
+    assert 'body[data-screen="wi"] .entry-copy {' in assets.CSS
+    assert "grid-column: 5;" in assets.CSS
 
 
 def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:

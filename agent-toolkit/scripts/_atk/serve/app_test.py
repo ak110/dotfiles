@@ -73,7 +73,7 @@ def test_assets_define_pagination_and_dismissible_operation_notice() -> None:
     ) in assets.HTML
     assert "parameters.set('page', String(page));" in assets.JS
     assert "new URLSearchParams({q: searchTerm, page: String(currentPage)})" in assets.JS
-    assert 'operation-notice[data-error="true"]' in assets.CSS
+    assert 'body[data-screen="wi"] .operation-notice[data-error="true"]' in assets.CSS
 
 
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:

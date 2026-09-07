@@ -2301,6 +2301,96 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
 
 @pytest.mark.asyncio
+async def test_navigation_keeps_all_stylesheets_enabled(screen_harness: _ScreenHarness) -> None:
+    """3画面の資産を読み込んだ後も、全スタイルシートを有効に保つ。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/")
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+
+    assert await page.evaluate("() => Array.from(document.styleSheets).every(sheet => !sheet.disabled)")
+
+
+@pytest.mark.asyncio
+async def test_navigation_preserves_runtime_body_classes(screen_harness: _ScreenHarness) -> None:
+    """画面固有クラスだけを入れ替え、実行時に追加したクラスを保持する。"""
+    page = screen_harness.page
+
+    async def add_screen_classes(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        body = (await response.text()).replace(
+            '<body data-screen="plans">',
+            '<body class="plans-screen" data-screen="plans">',
+        )
+        await route.fulfill(response=response, body=body)
+
+    await page.route("**/plans", add_screen_classes)
+    await page.goto(screen_harness.base_url + "/")
+    await page.evaluate("() => document.body.classList.add('runtime-marker')")
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    assert await page.locator("body").evaluate("element => element.classList.contains('plans-screen')")
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+
+    assert await page.locator("body").evaluate("element => element.classList.contains('runtime-marker')")
+    assert not await page.locator("body").evaluate("element => element.classList.contains('plans-screen')")
+
+
+@pytest.mark.asyncio
+async def test_navigation_marks_pending_screen_load(screen_harness: _ScreenHarness) -> None:
+    """画面資産の取得中だけ遷移中の属性を付ける。"""
+    page = screen_harness.page
+    requested = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delay_plans(route: playwright.async_api.Route) -> None:
+        requested.set()
+        await release.wait()
+        await route.continue_()
+
+    await page.route("**/plans", delay_plans)
+    await page.goto(screen_harness.base_url + "/")
+    await asyncio.wait_for(requested.wait(), timeout=5)
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click(no_wait_after=True)
+    await playwright.async_api.expect(page.locator("body")).to_have_attribute("data-navigating", "true")
+    release.set()
+    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("body")).not_to_have_attribute("data-navigating", "true")
+
+
+@pytest.mark.asyncio
+async def test_session_list_is_prefetched_before_navigation(screen_harness: _ScreenHarness) -> None:
+    """初期画面の表示後に一覧を先読みし、遷移直後は保持済み応答で描画する。"""
+    page = screen_harness.page
+    first_fulfilled = asyncio.Event()
+    refresh_requested = asyncio.Event()
+    release_refresh = asyncio.Event()
+    request_count = 0
+
+    async def control_list_requests(route: playwright.async_api.Route) -> None:
+        nonlocal request_count
+        request_count += 1
+        if request_count == 1:
+            response = await route.fetch()
+            await route.fulfill(response=response)
+            first_fulfilled.set()
+            return
+        refresh_requested.set()
+        await release_refresh.wait()
+        await route.continue_()
+
+    await page.route("**/api/sessions/list", control_list_requests)
+    await page.goto(screen_harness.base_url + "/")
+    await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
+    await page.wait_for_timeout(50)
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click(no_wait_after=True)
+    await asyncio.wait_for(refresh_requested.wait(), timeout=5)
+    await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
+    release_refresh.set()
+    await page.unroute_all(behavior="wait")
+
+
+@pytest.mark.asyncio
 async def test_navigation_connects_only_the_visible_screen_dom(screen_harness: _ScreenHarness) -> None:
     """画面往復後も`#screen-root`は表示中の1件だけをDOMへ接続する。"""
     page = screen_harness.page
@@ -3074,7 +3164,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
         )
     assert developer_background != default_background
     assert developer_background not in existing_backgrounds
-    assert not await developer.evaluate("element => element.open")
+    assert await developer.evaluate("element => element.open")
     assert not await compacted.evaluate("element => element.open")
     assert "/home/aki/other" in await harness.page.locator("#detail-title").inner_text()
     shell_summary = harness.page.locator("#detail .kind-tool_call", has_text="shell").locator("summary")
@@ -3128,6 +3218,19 @@ async def test_session_details_use_exclusive_default_closed_sections(screen_harn
     await sections.nth(1).locator("summary").click()
     await playwright.async_api.expect(sections.nth(0)).not_to_have_attribute("open", "")
     await playwright.async_api.expect(sections.nth(1)).to_have_attribute("open", "")
+
+
+@pytest.mark.asyncio
+async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
+    """利用者、アシスタント及び開発者の本文を既定で開く。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator('#sessions .session-item[data-engine="codex"]').click()
+
+    for kind in ("user", "assistant", "developer"):
+        section = page.locator(f"#detail .kind-{kind}").first
+        await section.wait_for(state="visible")
+        assert await section.evaluate("element => element.open")
 
 
 @pytest.mark.asyncio

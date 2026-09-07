@@ -35,6 +35,25 @@ body {
   overflow: hidden;
 }
 
+body[data-navigating="true"]::after {
+  position: fixed;
+  z-index: 100;
+  top: 50%;
+  left: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: -1.25rem 0 0 -1.25rem;
+  border: 0.3rem solid rgb(49 87 213 / 0.25);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: shell-navigation-spin 0.8s linear infinite;
+  content: "";
+}
+
+@keyframes shell-navigation-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* 画面の入れ替え単位。ヘッダーを固定したflex配置へ各画面の本文を直接参加させるため、
    包む要素自身はレイアウトへ関与させない。画面固有の本文要素が残りの高さとスクロールを担う。 */
 #screen-root {
@@ -124,7 +143,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 
 /* 計画ファイル画面は本文用の`markdown.css`も読み込むため、見出しの寸法を本ファイルで明示して打ち消す。 */
-.app-header h1 {
+html body > .app-header h1 {
   margin: 0;
   padding: 0;
   border: none;

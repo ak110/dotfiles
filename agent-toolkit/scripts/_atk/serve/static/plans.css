@@ -1,154 +1,248 @@
-  body {
-    margin: 0;
-    max-width: none;
-    padding: 0;
-  }
-  /* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
-  #app { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
-  aside {
-    border-right: 1px solid #e6e6e6;
-    overflow: auto;
-    background: #f9fafb;
-    padding: 0;
-  }
-  aside .toolbar {
-    position: sticky;
-    top: 0;
-    background: #f9fafb;
-    padding: 10px;
-    border-bottom: 1px solid #e6e6e6;
-  }
-  aside input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 6px 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-  }
-  .file {
-    padding: 10px 12px;
-    border-bottom: 1px solid #e6e6e6;
-    cursor: pointer;
-  }
-  .file:hover, .file.active { background: #eef2ff; }
-  /* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
+body[data-screen="plans"] {
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+/* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
+body[data-screen="plans"] #app {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+}
+body[data-screen="plans"] aside {
+  border-right: 1px solid #e6e6e6;
+  overflow: auto;
+  background: #f9fafb;
+  padding: 0;
+}
+body[data-screen="plans"] aside .toolbar {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  padding: 10px;
+  border-bottom: 1px solid #e6e6e6;
+}
+body[data-screen="plans"] aside input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+body[data-screen="plans"] .file {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e6e6e6;
+  cursor: pointer;
+}
+body[data-screen="plans"] .file:hover,
+body[data-screen="plans"] .file.active {
+  background: #eef2ff;
+}
+/* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
       IntersectionObserverの可視化検出に使う。一覧の行高に影響を与えない。 */
-  #files-sentinel { height: 1px; margin: 0; padding: 0; }
-  .name { font-size: 13px; font-weight: 600; word-break: break-all; }
-  .meta {
-    margin-top: 4px;
+body[data-screen="plans"] #files-sentinel {
+  height: 1px;
+  margin: 0;
+  padding: 0;
+}
+body[data-screen="plans"] .name {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+body[data-screen="plans"] .meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+body[data-screen="plans"] .meta .host {
+  word-break: break-all;
+}
+body[data-screen="plans"] .meta .ctime {
+  white-space: nowrap;
+}
+body[data-screen="plans"] #root-warnings {
+  padding: 8px 12px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  font-size: 11px;
+}
+/* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
+body[data-screen="plans"] .host-badge {
+  display: none;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: #4b5563;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+body[data-screen="plans"] .host-badge.connecting,
+body[data-screen="plans"] .host-badge.disconnected {
+  display: inline-block;
+}
+body[data-screen="plans"] main {
+  overflow: auto;
+  box-sizing: border-box;
+}
+body[data-screen="plans"] main .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e6e6e6;
+}
+/* 配色・境界・角丸・無効時表示・寸法は`shell.css`の共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
+body[data-screen="plans"] main .toolbar {
+  flex-wrap: nowrap;
+}
+body[data-screen="plans"] main .toolbar .spacer {
+  flex: 1;
+}
+body[data-screen="plans"] main .toolbar button {
+  white-space: nowrap;
+}
+body[data-screen="plans"] main .toolbar .nav-btn {
+  min-width: 36px;
+}
+body[data-screen="plans"] .short-label {
+  display: none;
+}
+/* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */
+body[data-screen="plans"] #menu-btn {
+  display: none;
+}
+body[data-screen="plans"] #meta-mobile {
+  display: none;
+}
+body[data-screen="plans"] #drawer-backdrop {
+  display: none;
+}
+body[data-screen="plans"] main article {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+/* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
+     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
+body[data-screen="plans"] main article:has(> .review-table) {
+  max-width: none;
+}
+body[data-screen="plans"] .review-table {
+  width: 100%;
+}
+body[data-screen="plans"] .diagram {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+}
+body[data-screen="plans"] .diagram-output {
+  max-width: 100%;
+}
+body[data-screen="plans"] .mermaid-output {
+  overflow-x: auto;
+  text-align: center;
+}
+body[data-screen="plans"] .svg-output {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+}
+body[data-screen="plans"] .diagram-source {
+  margin-top: 0.75rem;
+}
+body[data-screen="plans"] .diagram-source summary {
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 13px;
+}
+body[data-screen="plans"] .diagram-source pre {
+  margin-bottom: 0;
+  text-align: left;
+}
+body[data-screen="plans"] .diagram-error {
+  margin: 0.75rem 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+/* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
+@media (max-width: 768px) {
+  body[data-screen="plans"] #app {
+    grid-template-columns: 1fr;
+  }
+  body[data-screen="plans"] aside {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    max-width: 85vw;
+    height: 100svh;
+    z-index: 20;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease-out;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+  }
+  body[data-screen="plans"].drawer-open aside {
+    transform: translateX(0);
+  }
+  body[data-screen="plans"] #drawer-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100svh;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10;
+  }
+  body[data-screen="plans"].drawer-open #drawer-backdrop {
+    display: block;
+  }
+  body[data-screen="plans"] #menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  body[data-screen="plans"] .wide-label {
+    display: none;
+  }
+  body[data-screen="plans"] .short-label {
+    display: inline;
+  }
+  body[data-screen="plans"] #meta-mobile {
+    display: block;
+    padding: 8px 16px;
     font-size: 11px;
     color: #6b7280;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .meta .host { word-break: break-all; }
-  .meta .ctime { white-space: nowrap; }
-  #root-warnings {
-    padding: 8px 12px;
-    color: #b91c1c;
-    background: #fef2f2;
-    border-bottom: 1px solid #fecaca;
-    font-size: 11px;
-  }
-  /* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
-  .host-badge {
-    display: none;
-    margin-left: 4px;
-    padding: 0 4px;
-    font-size: 10px;
-    color: #4b5563;
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    vertical-align: baseline;
-  }
-  .host-badge.connecting, .host-badge.disconnected { display: inline-block; }
-  main { overflow: auto; box-sizing: border-box; }
-  main .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    justify-content: flex-end;
-    padding: 8px 16px;
-    background: #ffffff;
+    background: #f9fafb;
     border-bottom: 1px solid #e6e6e6;
+    word-break: break-all;
   }
-  /* 配色・境界・角丸・無効時表示・寸法は`shell.css`の共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
-  main .toolbar { flex-wrap: nowrap; }
-  main .toolbar .spacer { flex: 1; }
-  main .toolbar button { white-space: nowrap; }
-  main .toolbar .nav-btn { min-width: 36px; }
-  .short-label { display: none; }
-  /* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */
-  #menu-btn { display: none; }
-  #meta-mobile { display: none; }
-  #drawer-backdrop { display: none; }
-  main article { max-width: 860px; margin: 0 auto; padding: 1rem; box-sizing: border-box; }
-  /* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
-     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
-  main article:has(> .review-table) { max-width: none; }
-  .review-table { width: 100%; }
-  .diagram {
-    margin: 1.5rem 0;
-    padding: 1rem;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    background: #ffffff;
-  }
-  .diagram-output { max-width: 100%; }
-  .mermaid-output { overflow-x: auto; text-align: center; }
-  .svg-output { display: block; height: auto; margin: 0 auto; }
-  .diagram-source { margin-top: 0.75rem; }
-  .diagram-source summary { color: #4b5563; cursor: pointer; font-size: 13px; }
-  .diagram-source pre { margin-bottom: 0; text-align: left; }
-  .diagram-error {
-    margin: 0.75rem 0 0;
-    color: #b91c1c;
+  body[data-screen="plans"] #meta-mobile .meta-host {
     font-weight: 600;
+    color: #374151;
   }
-  /* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
-  @media (max-width: 768px) {
-    #app { grid-template-columns: 1fr; }
-    aside {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 280px;
-      max-width: 85vw;
-      height: 100svh;
-      z-index: 20;
-      transform: translateX(-100%);
-      transition: transform 0.2s ease-out;
-      box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
-    }
-    body.drawer-open aside { transform: translateX(0); }
-    #drawer-backdrop {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100svh;
-      background: rgba(0, 0, 0, 0.4);
-      z-index: 10;
-    }
-    body.drawer-open #drawer-backdrop { display: block; }
-    #menu-btn { display: inline-flex; align-items: center; justify-content: center; }
-    .wide-label { display: none; }
-    .short-label { display: inline; }
-    #meta-mobile {
-      display: block;
-      padding: 8px 16px;
-      font-size: 11px;
-      color: #6b7280;
-      background: #f9fafb;
-      border-bottom: 1px solid #e6e6e6;
-      word-break: break-all;
-    }
-    #meta-mobile .meta-host { font-weight: 600; color: #374151; }
-    #meta-mobile .meta-path { display: block; margin-top: 2px; }
-    #meta-mobile .meta-ctime { display: inline-block; margin-left: 8px; }
-    #meta-mobile.empty { display: none; }
+  body[data-screen="plans"] #meta-mobile .meta-path {
+    display: block;
+    margin-top: 2px;
   }
+  body[data-screen="plans"] #meta-mobile .meta-ctime {
+    display: inline-block;
+    margin-left: 8px;
+  }
+  body[data-screen="plans"] #meta-mobile.empty {
+    display: none;
+  }
+}
