@@ -63,7 +63,7 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
 
 計画を投入せず終了する場合や継続不能時は、確認済みの元本文を入力として`agent-toolkit:wi-standards`をSkill機能で起動し、source `plan-and-add-awi`と要求単位の由来を明示して同一セッション内で再投入する。元項目をrejectで計画へ吸収する経路は持たない。
 
-本スキルは協調モードで動作する。ユーザーの選好は計画確定前に確認し、完成済み本文を`agent-toolkit:wi-standards`へ渡した後は問い直さない。
+本スキルは協調モードで動作する。`agent-toolkit:wi-standards`の「投入と取得」が協調モードの投入へ求める投入前の調査と確定は計画の確定前に完了し、完成済み本文を`agent-toolkit:wi-standards`へ渡した後は問い直さない。
 
 ## 計画バンドルの保存
 
