@@ -29,6 +29,43 @@ from _hooks.pretooluse import dispatch as pretooluse
 from _hooks.pretooluse.test_support_test import *  # noqa: F403
 
 
+class TestBashHelpOnlyStateChangeCommands:
+    """ヘルプ専用呼び出しを状態変更コマンドの直列実行遮断から除外する。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk review-table init --help; atk review-table add --help",
+            "git commit --help; git push --help",
+            "gh pr create --help; gh pr merge --help",
+        ],
+    )
+    def test_help_only_chaining_is_allowed(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+
+        assert result.returncode == 0
+        assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "atk review-table init; echo done",
+            "atk review-table init --help --title x; echo done",
+            "atk review-table init -- --help; echo done",
+            "printf -- '--help'; echo done",
+        ],
+    )
+    def test_non_help_only_classifications_are_unchanged(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+
+        if command.startswith("printf"):
+            assert result.returncode == 0
+            assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
+        else:
+            assert result.returncode == 2
+            assert "状態を変更するコマンドを他のコマンド" in result.stderr
+
+
 class TestBashUvRunPythonBlock:
     """`uv run python <path>`形式の起動ブロック。
 

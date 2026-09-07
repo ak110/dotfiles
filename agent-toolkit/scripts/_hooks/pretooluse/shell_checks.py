@@ -1114,12 +1114,23 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
     return segment.resolved and segment.tokens[: len(prefix)] == prefix
 
 
+def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
+    """区間が`--help`以外のオプションを持たないヘルプ専用呼び出しかを返す。"""
+    arguments = segment.tokens[1:]
+    return (
+        segment.resolved
+        and "--" not in arguments
+        and "--help" in arguments
+        and all(token == "--help" for token in arguments if token.startswith("-"))
+    )
+
+
 def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
     """区間が列挙済みの状態変更コマンドであるかを返す。
 
     Gitはサブコマンド前のグローバルオプションを許容するため、既存のGitイベント解析でサブコマンドを解決する。
     """
-    if not segment.resolved or not segment.tokens:
+    if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
         return False
     if segment.tokens[0] != "git":
         return any(_segment_starts_with(segment, prefix) for prefix in _STATE_CHANGING_COMMAND_PREFIXES)
@@ -1228,22 +1239,8 @@ def _check_bash_help_with_execution(command: str) -> str | None:
         return None
     segments = [segment for segment in _extract_execution_segments(command) if segment.resolved and segment.tokens]
     names = [pathlib.PurePosixPath(segment.tokens[0]).name for segment in segments]
-    help_names = {
-        name
-        for name, segment in zip(names, segments, strict=True)
-        if "--" not in segment.tokens[1:]
-        and "--help" in segment.tokens[1:]
-        and all(token == "--help" for token in segment.tokens[1:] if token.startswith("-"))
-    }
-    non_help_names = {
-        name
-        for name, segment in zip(names, segments, strict=True)
-        if not (
-            "--" not in segment.tokens[1:]
-            and "--help" in segment.tokens[1:]
-            and all(token == "--help" for token in segment.tokens[1:] if token.startswith("-"))
-        )
-    }
+    help_names = {name for name, segment in zip(names, segments, strict=True) if _segment_is_help_only(segment)}
+    non_help_names = {name for name, segment in zip(names, segments, strict=True) if not _segment_is_help_only(segment)}
     if help_names & non_help_names:
         print(
             _block_notice(
