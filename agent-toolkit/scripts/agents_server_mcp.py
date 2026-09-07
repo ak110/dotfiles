@@ -260,16 +260,7 @@ class AgentsServerManager:
         resume_state = self.expired_sessions.get(session_id)
         if resume_state is None:
             return None
-        response: dict[str, Any] = {
-            "session_id": session_id,
-            "engine": resume_state.engine,
-            "status": "expired",
-            "progress": "",
-            "turn_seq": resume_state.turn_seq,
-        }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
-        return response
+        return {"status": "expired"}
 
     def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
         """破棄済みsessionを返し、保持期限の到来を期限切れ状態へ反映する。"""
@@ -300,15 +291,9 @@ class AgentsServerManager:
         if resume_state.result_delivered or resume_state.status not in TERMINAL_STATUSES or resume_state.finalized_at is None:
             return None
         response: dict[str, Any] = {
-            "session_id": resume_state.session_id,
-            "engine": resume_state.engine,
             "status": resume_state.status,
-            "progress": "",
-            "turn_seq": resume_state.turn_seq,
             "agent_message": resume_state.agent_message,
         }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
         return response
@@ -327,17 +312,7 @@ class AgentsServerManager:
         resume_state = self.expired_sessions.get(session_id)
         if resume_state is None:
             return None
-        response: dict[str, Any] = {
-            "session_id": session_id,
-            "engine": resume_state.engine,
-            "status": "expired",
-            "progress": "",
-            "kill_requested": False,
-            "turn_seq": resume_state.turn_seq,
-        }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
-        return response
+        return {"status": "expired", "kill_requested": False}
 
     @staticmethod
     def _listed_session(
@@ -459,16 +434,7 @@ class AgentsServerManager:
             self._status_writer.schedule()
         if not already_stopped:
             await self._backend(resume_state.engine).release_session(session_id)
-        response: dict[str, Any] = {
-            "session_id": session_id,
-            "engine": resume_state.engine,
-            "status": "stopped",
-            "progress": "",
-            "turn_seq": resume_state.turn_seq,
-        }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
-        return response
+        return {}
 
     async def _stop_after_terminal_response(
         self,
@@ -582,12 +548,15 @@ class AgentsServerManager:
             session.engine = engine
             await self._await_start_outcome(session)
             response = {
-                **session.public_status(),
+                "session_id": session.session_id,
+                "status": session.status,
+                "engine": engine,
                 "model_type": model_type,
                 "model": model,
                 "effort": effort,
-                "turn_seq": session.turn_seq,
             }
+            if self._status_writer is not None:
+                response["root_session_id"] = self._status_writer.root_session_id
             if not _engine_unavailable(session):
                 self._carried_unavailable_candidates.pop((model_type, launch_kind), None)
                 session.label = display_label
@@ -794,29 +763,28 @@ class AgentsServerManager:
         return response
 
     @staticmethod
-    def _result_response(session: SessionState) -> dict[str, Any]:
+    def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
         """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。"""
         response = session.public_status(include_result=session.result_available)
+        if not include_progress:
+            response.pop("progress", None)
         if "agent_message" in response:
             session.result_delivered = True
             session.touch()
         return response
+
+    def _kill_result_response(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
+        """killの応答を組み立て、回収した通知がある場合だけ付ける。"""
+        response = self._result_response(session, include_progress=False)
+        response["kill_requested"] = kill_requested
+        return self._response_with_notices(response, self._take_notices(session.session_id))
 
     def _pending_resume_status(self, pending: _PendingResume) -> dict[str, Any]:
         """進行中の再開操作を通常のrunning状態として射影する。"""
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
             return self._result_response(session)
-        result: dict[str, Any] = {
-            "session_id": pending.state.session_id,
-            "engine": pending.state.engine,
-            "status": "running",
-            "progress": "",
-            "turn_seq": pending.state.turn_seq + 1,
-        }
-        if pending.state.model_type is not None:
-            result["model_type"] = pending.state.model_type
-        return result
+        return {"status": "running", "progress": ""}
 
     async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:
         """backendの再開を完了し、失敗時だけ再試行用状態を復元する。"""
@@ -896,10 +864,7 @@ class AgentsServerManager:
             pending.prompt.cancel(ticket)
             raise
         delivery = "reply_failed" if session.result_available else "reply_started"
-        response: dict[str, Any] = {
-            "delivery": delivery,
-            **session.public_status(include_result=session.result_available),
-        }
+        response: dict[str, Any] = {"delivery": delivery}
         previous_result = pending.take_previous_result()
         if previous_result:
             response["previous_result"] = previous_result
@@ -1045,7 +1010,7 @@ class AgentsServerManager:
                     delivery = result["delivery"]
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
-                    response: dict[str, Any] = {"delivery": delivery, **session.public_status()}
+                    response: dict[str, Any] = {"delivery": delivery}
                     if delivery in REPLY_DELIVERIES:
                         previous_result = result["previous_result"]
                         if previous_result:
@@ -1085,8 +1050,7 @@ class AgentsServerManager:
             except TimeoutError as exc:
                 raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
             if interrupt_requested:
-                response = self._result_response(session)
-                response["kill_requested"] = True
+                response = self._kill_result_response(session, kill_requested=True)
                 return await self._stop_after_terminal_response(session_id, response, stop)
         else:
             expired_response = self._expired_kill_response(session_id)
@@ -1096,8 +1060,7 @@ class AgentsServerManager:
         started_terminal = session.terminal
         requested_before_call = session.interrupt_requested
         if started_terminal:
-            response = self._result_response(session)
-            response["kill_requested"] = False
+            response = self._kill_result_response(session, kill_requested=False)
             return await self._stop_after_terminal_response(session_id, response, stop)
 
         requested = requested_before_call
@@ -1128,8 +1091,7 @@ class AgentsServerManager:
                     except TimeoutError as exc:
                         raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
                     if session.terminal:
-                        response = self._result_response(session)
-                        response["kill_requested"] = False
+                        response = self._kill_result_response(session, kill_requested=False)
                         return await self._stop_after_terminal_response(session_id, response, stop)
                 session.interrupt_requested = True
                 session.touch()
@@ -1155,8 +1117,7 @@ class AgentsServerManager:
             session.turn_control_lock.release()
 
         if not requested:
-            response = self._result_response(session)
-            response["kill_requested"] = False
+            response = self._kill_result_response(session, kill_requested=False)
             return await self._stop_after_terminal_response(session_id, response, stop)
         if timeout > 0:
             assert deadline is not None
@@ -1170,8 +1131,7 @@ class AgentsServerManager:
                 raise TimeoutError(
                     f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate"
                 ) from exc
-        response = self._result_response(session)
-        response["kill_requested"] = True
+        response = self._kill_result_response(session, kill_requested=True)
         return await self._stop_after_terminal_response(session_id, response, stop)
 
     async def _notify_waiters(self) -> None:
@@ -1248,9 +1208,10 @@ async def start(
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
-    応答は`session_id`、`turn_seq`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
-    全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
-    これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
+    応答は`session_id`、`status`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
+    状態ファイルの書込先を解決できる場合は、PostToolUseフックが索引へ使う`root_session_id`も含む。
+    全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
+    全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
     """
     input_validation_warning = _validate_required_prompt_inputs(prompt)
     response = await _MANAGER.start(model_type, prompt, cwd)
@@ -1338,7 +1299,7 @@ async def wait(
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
-    `session retention expired: <session_id>`は終端結果の保持期限が過ぎたことだけを示し、会話再開用の最小状態は保持されている。
+    終端結果の保持期限を過ぎたsessionでは、`status`が`expired`の応答だけを返す。
     委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
     再待機の要否は`notices`の有無ではなく`status`で判定する。
     `status: running`の応答は終端前の復帰であり、同じ`session_id`へ`wait`を再発行して待機を継続する。
@@ -1366,7 +1327,7 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`で配送結果を示し、`turn_seq`を含む。
+    応答は`delivery`と、未回収の終端結果がある場合の`previous_result`だけを含む。
     直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
@@ -1397,7 +1358,7 @@ async def kill(
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。
-    終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`progress`へ空文字列、`kill_requested`へ`false`を設定した応答を返す。応答の項目は他の成功応答と同じとする。
+    終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
     """
     return await _MANAGER.kill(session_id, timeout, stop)
 
@@ -1409,6 +1370,7 @@ async def stop_session(session_id: str) -> dict[str, Any]:
     statusLineの表示対象と`list`の応答から除き、backendがsession専用に保持する資源を解放する。
     実行中turnを持つsessionは破棄しない。中断が必要な場合は先に`kill`を発行する。
     破棄後も同じ`session_id`への`send_message`で会話を暗黙再開できる。
+    成功時は空のオブジェクトを返し、失敗は例外で示す。
     """
     return await _MANAGER.stop(session_id)
 

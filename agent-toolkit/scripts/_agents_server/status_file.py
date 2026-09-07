@@ -215,6 +215,11 @@ class StatusFileWriter:
         return self._path
 
     @property
+    def root_session_id(self) -> str:
+        """自身が状態ファイルを書き込むルートsession識別子を返す。"""
+        return self._identity.root_session_id
+
+    @property
     def sessions(self) -> dict[str, SessionState]:
         """射影元の共有session辞書を返す。"""
         return self._sessions

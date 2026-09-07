@@ -318,16 +318,10 @@ class SessionState:
             listener()
 
     def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
-        """公開契約へ状態を射影する。内部のturn識別子は含めない。"""
-        result: dict[str, Any] = {
-            "session_id": self.session_id,
-            "engine": self.engine,
-            "status": self.status,
-            "progress": self.progress,
-            "turn_seq": self.turn_seq,
-        }
-        if self.model_type is not None:
-            result["model_type"] = self.model_type
+        """waitとkillが消費する状態を公開契約へ射影する。"""
+        result: dict[str, Any] = {"status": self.status}
+        if self.status == "running":
+            result["progress"] = self.progress
         if include_result and self.result_available:
             result["agent_message"] = self.agent_message
             if _nonempty_error(self.error):
@@ -339,11 +333,8 @@ class SessionState:
         if self.result_delivered:
             return {}
         result: dict[str, Any] = {
-            "session_id": self.session_id,
-            "engine": self.engine,
             "status": self.status,
             "agent_message": self.agent_message,
-            "turn_seq": self.turn_seq,
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
