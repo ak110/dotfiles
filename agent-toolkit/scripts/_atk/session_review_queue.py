@@ -116,11 +116,13 @@ def _done(target_repo: str | None, session_ids: list[str]) -> int:
     with _record_lock():
         records = _read_records(path)
         repository_records = _repository_records(records, repository)
-        records[repository] = repository_records
+        remaining = repository_records.copy()
         for session_id in session_ids:
-            repository_records.pop(session_id, None)
-        _write_records(path, records)
-        _print_entries(repository_records)
+            remaining.pop(session_id, None)
+        if remaining != repository_records:
+            records[repository] = remaining
+            _write_records(path, records)
+        _print_entries(remaining)
     return 0
 
 

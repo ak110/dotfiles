@@ -132,6 +132,68 @@ def test_done_removes_only_named_entries_and_is_idempotent(
     assert _output(capsys) == [{"engine": "codex", "session_id": "keep", "registered_at": remaining["registered_at"]}]
 
 
+@pytest.mark.parametrize(
+    "initial",
+    [
+        None,
+        '{"github.com/ak110/other": {"other": {"engine": "codex", "registered_at": "2026-09-07T01:00:00+00:00"}}}',
+    ],
+)
+def test_done_does_not_write_when_session_id_is_unregistered(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    initial: str | None,
+) -> None:
+    """未登録の対象リポジトリと識別子に対するdoneは記録を変更しない。"""
+    record_path = _prepare(monkeypatch, tmp_path)
+    if initial is not None:
+        record_path.parent.mkdir()
+        record_path.write_text(initial, encoding="utf-8")
+
+    assert queue.dispatch(_args(session_review_queue_subcommand="done", session_ids=["missing"])) == 0
+
+    assert _output(capsys) == []
+    if initial is None:
+        assert not record_path.exists()
+    else:
+        assert record_path.read_text(encoding="utf-8") == initial
+
+
+def test_claim_isolates_entries_by_target_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """claimは対象リポジトリごとの未処理エントリーだけを返す。"""
+    record_path = _prepare(monkeypatch, tmp_path)
+    first_repository = "github.com/ak110/first"
+    second_repository = "github.com/ak110/second"
+
+    assert queue.dispatch(_args(target_repo=first_repository, codex_thread_id="first")) == 0
+    assert _output(capsys) == []
+    assert queue.dispatch(_args(target_repo=second_repository, codex_thread_id="second")) == 0
+    assert _output(capsys) == []
+    stored = json.loads(record_path.read_text(encoding="utf-8"))
+
+    assert queue.dispatch(_args(target_repo=first_repository, codex_thread_id="first-current")) == 0
+    assert _output(capsys) == [
+        {
+            "engine": "codex",
+            "session_id": "first",
+            "registered_at": stored[first_repository]["first"]["registered_at"],
+        }
+    ]
+    assert queue.dispatch(_args(target_repo=second_repository, codex_thread_id="second-current")) == 0
+    assert _output(capsys) == [
+        {
+            "engine": "codex",
+            "session_id": "second",
+            "registered_at": stored[second_repository]["second"]["registered_at"],
+        }
+    ]
+
+
 def test_writes_records_with_fsync(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
