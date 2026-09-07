@@ -1297,12 +1297,13 @@ repository設定ではマージコミットを有効にし、squash merge、reba
 既定branchは`master`のまま維持する。
 
 `master-release-pr`という固定名のactiveなbranch rulesetを1件だけ使用する。
-rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の6必須check、削除禁止及びforce push禁止を設定する。
+rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決、最新の`master`を含む次の7必須check、削除禁止及びforce push禁止を設定する。
 
 - `test-linux`
 - `test-windows`
 - `python-lint (3.13)`
 - `python-lint (3.14)`
+- `browser-e2e`
 - `rust-lint`
 - `statusline-version`
 
@@ -1311,29 +1312,34 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 共通CIは`push`と`master`向け`pull_request`の全経路でjobを開始し、job表示名とmatrixを評価する。
 共通jobにはjob-level `if`を置かず、step-level条件で非所有markerと既存実処理を切り替える。
 
-| イベント | head repository | head branch | base branch | 共通5 jobの実処理所有者 | 表示名 |
+| イベント | head repository | head branch | base branch | 共通6 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | 任意 | 該当なし | `push` run | 5件のrequired check名 |
-| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 5件の`(non-owner)`名 |
-| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 5件のrequired check名 |
-| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 5件のrequired check名 |
+| `push` | base repository | 任意 | 該当なし | `push` run | 6件のrequired check名 |
+| `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 6件の`(non-owner)`名 |
+| `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 6件のrequired check名 |
+| `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 6件のrequired check名 |
 
 同一repositoryのheadが`develop`、baseが`master`のpull requestでは、共通jobの先頭で非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
 このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
 非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、`test-windows`は`pwsh`、その他の共通jobは`bash`を明示する。
 `rust-lint`の既存job既定作業場所は維持し、非所有markerだけがworkspace rootを明示して既定を上書きする。
 
-job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の5件の表示名を保証できない。
+job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の6件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
 pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示すが、check runの`head_sha`はstatusを関連付けるpull request head commitを示すため、両者を同一視しない。
 `master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
 
+実ブラウザーE2Eは、共通`python-lint`から分離した`browser-e2e` jobが所有する。
+同jobはPython 3.14でPlaywright Chromiumを導入し、`agent-toolkit/scripts/_atk/serve/browser_test.py`だけを実行する。
+分離により、律速となる`python-lint (3.14)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
+`browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
+
 statuslineのCargo versionとbase・head version及びtagの検査は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
 同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。
-ruleset `21524717`のrequired checkは共通5名と`statusline-version`の6件とし、既存5名を変更しない。
+ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを検査する。検査した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
-ruleset更新の本文は管理対象一時領域のJSONファイルへ保存し、送信前に当該ファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、6件のrequired check名を検査する。
+ruleset更新の本文は管理対象一時領域のJSONファイルへ保存し、送信前に当該ファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、7件のrequired check名を検査する。
 検査に成功した同じファイルを`gh api --method PUT --input <当該ファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
 更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検査時から変化しておらず、失敗の原因が本文の搬送であって送信経路をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
 現行状態を取得できない場合、現行状態が更新前状態と一致しない場合、更新後の検査が期待値と一致しない場合は再送せず、変更前状態と現行状態を保持して`needs_escalation`で終端する。

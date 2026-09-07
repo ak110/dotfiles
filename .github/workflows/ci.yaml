@@ -215,11 +215,10 @@ jobs:
         # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
         # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
         # libarchive13 の共有ライブラリを必要とする。
-        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y --no-install-recommends poppler-utils libarchive13 make zstd
+          apt-get install -y --no-install-recommends poppler-utils libarchive13 zstd
 
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
@@ -255,10 +254,6 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: uv sync --all-groups --all-extras
 
-      - name: Playwright Chromiumの導入
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
-        run: make setup-browser
-
       - name: Python 3.13 pytest
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
         run: pyfltr ci --commands=pytest
@@ -273,18 +268,62 @@ jobs:
         # Claude plugin manifest検査だけを無効化する。
         run: pyfltr ci --disable=claude-plugin-validate
 
-      - name: Python 3.13 E2E
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
+      - name: Prune uv cache for CI
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: uv cache prune --ci
+
+  browser-e2e:
+    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+      # Playwrightのシステム依存をaptで導入するため root で実行する
+      # （既定ユーザーは非 root・sudo 無し）
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    env:
+      # 開発モード: DeprecationWarning などの隠れた問題を早期検出する
+      PYTHONDEVMODE: "1"
+      # サプライチェーン攻撃対策: uv が lockfile を常に尊重する
+      UV_FROZEN: "1"
+      # 実ブラウザーE2Eは最新のPythonで実行する
+      UV_PYTHON: "3.14"
+    steps:
+      - name: 共通CI非所有経路
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+      - name: safe.directory の設定
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
+        # git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: ネイティブ依存インストール
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends make
+      - name: Install dependencies
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: uv sync --all-groups --all-extras
+      - name: Playwright Chromiumの導入
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        run: make setup-browser
+      - name: ブラウザーE2E
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         env:
           AGENT_TOOLKIT_SERVE_BROWSER_TESTS: "1"
         run: >-
           uv run pytest
           agent-toolkit/scripts/_atk/serve/browser_test.py
           -o addopts='' -p no:cacheprovider
-
-      - name: Prune uv cache for CI
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
-        run: uv cache prune --ci
 
   rust-lint:
     name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'rust-lint (non-owner)' || 'rust-lint' }}

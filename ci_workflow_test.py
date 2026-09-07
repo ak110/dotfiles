@@ -107,7 +107,7 @@ def test_common_jobs_start_with_explicit_non_owner_marker(workflow_data: dict[st
 def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: dict[str, object]) -> None:
     """「共通CIは`push`と`master`向け`pull_request`の全経路でjobを開始し、job表示名とmatrixを評価する。」を検証する。
 
-    表の「共通5 job」「5件のrequired check名」「5件の`(non-owner)`名」も入力とする。
+    表の「共通6 job」「6件のrequired check名」「6件の`(non-owner)`名」も入力とする。
     """
     for job in _common_jobs(workflow_data):
         display_name = typing.cast(str, job["name"])
@@ -125,7 +125,7 @@ def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: 
 def test_statusline_version_is_an_independent_master_pull_request_check(
     workflow_data: dict[str, object],
 ) -> None:
-    "次の設計契約を検証する。\n\n`statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。\n同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。\nruleset `21524717`のrequired checkは共通5名と`statusline-version`の6件とし、既存5名を変更しない。"  # noqa: E501
+    "次の設計契約を検証する。\n\n`statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。\n同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。\nruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。"  # noqa: E501
     statusline_jobs = [
         job for value in _jobs(workflow_data).values() if (job := _mapping(value)).get("name") == "statusline-version"
     ]
@@ -140,9 +140,10 @@ def test_statusline_version_is_an_independent_master_pull_request_check(
 
 
 def test_job_and_step_cardinality(workflow_data: dict[str, object]) -> None:
-    """表の「共通5 job」と次の設計契約を検証する。
+    """表の「共通6 job」と次の設計契約を検証する。
 
-    ruleset `21524717`のrequired checkは共通5名と`statusline-version`の6件とし、既存5名を変更しない。
+    ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、
+    `statusline-version`以外は共通CIのjob表示名と一致させる。
     """
     common_jobs = _common_jobs(workflow_data)
     expanded_common_job_count = 0
@@ -160,9 +161,35 @@ def test_job_and_step_cardinality(workflow_data: dict[str, object]) -> None:
     statusline_jobs = [
         job for value in _jobs(workflow_data).values() if (job := _mapping(value)).get("name") == "statusline-version"
     ]
-    assert expanded_common_job_count == 5
+    assert expanded_common_job_count == 6
     assert len(statusline_jobs) == 1
-    assert expanded_common_job_count + len(statusline_jobs) == 6
+    assert expanded_common_job_count + len(statusline_jobs) == 7
+
+
+def test_browser_e2e_job_runs_playwright_tests_on_python_314(workflow_data: dict[str, object]) -> None:
+    """次の設計契約を検証する。
+
+    ブラウザーE2Eは共通`python-lint`から分離した`browser-e2e` jobが所有し、Python 3.14で実行する。
+    `python-lint`はChromiumの導入とブラウザーE2Eを実行しない。
+    """
+    browser_job = _job_by_display_name(workflow_data, "browser-e2e")
+    assert _mapping(browser_job["env"])["UV_PYTHON"] == "3.14"
+    browser_commands = [str(step.get("run", "")) for step in _steps(browser_job)]
+    assert any("make setup-browser" in command for command in browser_commands)
+    assert any("_atk/serve/browser_test.py" in command for command in browser_commands)
+
+    python_lint_job = _job_by_display_name(workflow_data, "python-lint")
+    python_lint_commands = [str(step.get("run", "")) for step in _steps(python_lint_job)]
+    assert all("setup-browser" not in command for command in python_lint_commands)
+    assert all("browser_test.py" not in command for command in python_lint_commands)
+
+    browser_test_enabled_values = {"1", "true", "yes", "on"}
+    python_lint_environments = [_mapping(python_lint_job.get("env", {}))]
+    python_lint_environments.extend(_mapping(step.get("env", {})) for step in _steps(python_lint_job))
+    assert all(
+        str(environment.get("AGENT_TOOLKIT_SERVE_BROWSER_TESTS", "")).lower() not in browser_test_enabled_values
+        for environment in python_lint_environments
+    )
 
 
 def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
