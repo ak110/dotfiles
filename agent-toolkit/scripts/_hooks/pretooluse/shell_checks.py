@@ -105,6 +105,7 @@ from _common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-po
     locked_rotate_and_append as _locked_rotate_and_append,
 )
 from _git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
@@ -1122,6 +1123,36 @@ def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
         and "--" not in arguments
         and "--help" in arguments
         and all(token == "--help" for token in arguments if token.startswith("-"))
+    )
+
+
+def _check_bash_unverified_atk_help(command: str, session_id: str) -> str | None:
+    """同一セッションでヘルプ未観測の`atk`サブコマンド実行を警告する。"""
+    if not session_id or _contains_heredoc(command):
+        return None
+    help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
+    targets: set[str] = set()
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
+            continue
+        if pathlib.PurePosixPath(segment.tokens[0]).name not in {"atk", "atk.py"}:
+            continue
+        tokens = ("atk", *segment.tokens[1:])
+        matches = [key for key, prefix in help_keys if tokens[: len(prefix)] == prefix]
+        if matches:
+            targets.add(max(matches, key=lambda key: len(key.split())))
+    if not targets:
+        return None
+    observed_raw = read_state(session_id).get("observed_atk_help", [])
+    observed = {item for item in observed_raw if isinstance(item, str)} if isinstance(observed_raw, list) else set()
+    unverified = sorted(targets - observed)
+    if not unverified:
+        return None
+    return _llm_notice(
+        "warn: 同一セッションでヘルプ出力を観測していない`atk`のサブコマンドを実行しようとしている。"
+        f"対象: {'、'.join(unverified)}\n"
+        "Fix: 先に当該サブコマンドへ`--help`だけを付けて単独で実行し、受理形式と出力形式を確定する。",
+        tag=_WARN_TAG,
     )
 
 

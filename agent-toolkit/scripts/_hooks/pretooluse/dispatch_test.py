@@ -75,6 +75,22 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
+def test_bash_unverified_atk_help_is_added_to_context(tmp_path: pathlib.Path) -> None:
+    """Bashハンドラーが未観測の`atk`ヘルプ警告をadditionalContextへ載せる。"""
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk config get private_notes"},
+            "session_id": "dispatch-unverified-atk-help",
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert "対象: atk config get" in output["hookSpecificOutput"]["additionalContext"]
+
+
 class TestMojibakeCheck:
     """文字化け（U+FFFD）検出。"""
 

@@ -44,6 +44,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills" / "plan-mode" / "scripts"))
 from _agents_server import state as _agents_server_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from _atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _atk.wi import process_loop_log as _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -465,6 +466,41 @@ def _record_agents_wait_observation_attempt(session_id: str, command: str) -> No
     update_state(session_id, _mutator)
 
 
+def _record_atk_help_observation(session_id: str, command: str) -> None:
+    """成功した`atk`のヘルプ専用呼び出しを観測済みとして記録する。"""
+    help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
+    observed_now: set[str] = set()
+    for segment in extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        if pathlib.PurePosixPath(segment.tokens[0]).name not in {"atk", "atk.py"}:
+            continue
+        arguments = segment.tokens[1:]
+        if (
+            "--" in arguments
+            or "--help" not in arguments
+            or any(token != "--help" for token in arguments if token.startswith("-"))
+        ):
+            continue
+        tokens = ("atk", *arguments)
+        matches = [key for key, prefix in help_keys if tokens[: len(prefix)] == prefix]
+        if matches:
+            observed_now.add(max(matches, key=lambda key: len(key.split())))
+    if not observed_now:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        observed_raw = state.get("observed_atk_help", [])
+        observed = [item for item in observed_raw if isinstance(item, str)] if isinstance(observed_raw, list) else []
+        additions = sorted(observed_now - set(observed))
+        if not additions:
+            return None
+        state["observed_atk_help"] = [*observed, *additions]
+        return state
+
+    update_state(session_id, _mutator)
+
+
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
     """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
@@ -662,6 +698,7 @@ def _handle_bash_tool(session_id: str, command: str, cwd: str) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
     _record_agents_wait_observation_attempt(session_id, command)
+    _record_atk_help_observation(session_id, command)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
