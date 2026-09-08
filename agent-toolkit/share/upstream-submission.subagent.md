@@ -50,13 +50,14 @@ submissions:
 - awi: <元項目のAWIファイル名>
   upstream_target_repo: <投入先リポジトリ識別子>
   result: completed | condition_not_met | needs_escalation
-  upstream_filename: <投入先で作成又は確認したAWIファイル名。未作成の場合は「なし」>
+  upstream_filename: <投入先で作成又は確認したAWIファイル名。既定値は「なし」>
   条件判定: <「無条件」、成立した条件と実測根拠、不成立の条件と実測根拠、又は判定不能の理由>
-  阻害要因: <needs_escalationの理由。その他は「なし」>
+  阻害要因: <needs_escalationの理由。既定値は「なし」>
 ```
 
 入力の各組を`submissions`へ重複なく1回ずつ記録する。全文比較まで成功した組は`result`を`completed`とし、条件が成立しない組は`condition_not_met`、修復できない組は`needs_escalation`とする。全組の`result`が`completed`又は`condition_not_met`の場合だけ全体の`status`を`completed`とし、1組以上が`needs_escalation`の場合は全体も`needs_escalation`とする。
-`upstream_filename`には結果にかかわらず、投入結果として得た文字列をそのまま用いる。保存されなかった場合だけ`なし`とする。
+`upstream_filename`には結果にかかわらず、投入結果として得た文字列をそのまま用いる。
+`upstream_filename`と`阻害要因`は、値が既定値`なし`と一致する場合に当該行を出力しない。呼び出し元は当該行の不在を当該既定値として解釈し、欠落として扱わない。
 
 この形式は`agent-toolkit/rules/02-agent-operations.md`が定める「返却形式の文面だけを出力し、地の文を加えない」規定の対象内であり、指定形式の一部として返す。
 

@@ -1418,7 +1418,6 @@ async def wait(
     終端結果の保持期限を過ぎたsessionでは、`status`が`expired`の応答だけを返す。
     委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
     再待機の要否は`notices`の有無ではなく`status`で判定する。
-    `status: running`の応答は終端前の復帰であり、同じ`session_id`へ`wait`を再発行して待機を継続する。
     `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して`wait`を再発行しない。
     応答へ載せた通知は回収済みとして再び返さない。
     """
