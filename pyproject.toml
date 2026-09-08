@@ -130,8 +130,6 @@ lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
     "agent-toolkit/scripts/_atk/serve/static/index.html",
-    "agent-toolkit/scripts/_atk/serve/static/plans.html",
-    "agent-toolkit/scripts/_atk/serve/static/sessions.html",
 ]
 # profile_ipy/はIPython自動生成プロファイル、
 # tone-examples.md・tone-examples-llm-tone.mdは意図的な違反例を収録するため検査対象外とする。

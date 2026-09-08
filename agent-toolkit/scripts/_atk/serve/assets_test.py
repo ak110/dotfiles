@@ -100,8 +100,8 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert "種別不明" in assets.JS
 
     grid = re.search(
-        r'body\[data-screen="wi"\] \.entry-columns,\s+'
-        r'body\[data-screen="wi"\] \.entry-row \{(.*?)\n\}',
+        r"#screen-wi \.entry-columns,\s+"
+        r"#screen-wi \.entry-row \{(.*?)\n\}",
         assets.CSS,
         re.DOTALL,
     )
@@ -118,7 +118,7 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     ]
     assert "grid-column: 1 / 5;" in assets.CSS
     assert "grid-template-columns: subgrid;" in assets.CSS
-    assert 'body[data-screen="wi"] .entry-copy {' in assets.CSS
+    assert "#screen-wi .entry-copy {" in assets.CSS
     assert "grid-column: 5;" in assets.CSS
 
 
@@ -446,19 +446,21 @@ async def test_state_discards_pending_notification_when_stopped(
 
 
 def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Path) -> None:
-    """3画面のページ経路とナビゲーションの表示順・表記を固定する。"""
+    """単一HTML内の3画面とナビゲーションの表示順・表記を固定する。"""
     app = _three_screen_app(tmp_path)
     rules = {rule.rule for rule in app.url_map.iter_rules()}
     assert {"/", "/plans", "/sessions"} <= rules
-    for document in (assets.HTML, assets.PLANS_HTML, assets.SESSIONS_HTML):
-        navigation = re.search(r'<nav class="app-nav"[^>]*>(.*?)</nav>', document, re.DOTALL)
-        assert navigation is not None
-        assert re.findall(r">([^<>]+)</a>", navigation.group(1)) == ["ワークアイテム", "計画ファイル", "セッション"]
-        assert re.findall(r'href="__BASE_PATH_HTML__(/[a-z]*)"', navigation.group(1)) == ["/", "/plans", "/sessions"]
-    # 現在の画面だけが`aria-current`を持つ。
-    assert assets.HTML.count('aria-current="page"') == 1
-    assert assets.PLANS_HTML.count('aria-current="page"') == 1
-    assert assets.SESSIONS_HTML.count('aria-current="page"') == 1
+    assert [match.group(1) for match in re.finditer(r'<section id="(screen-[^"]+)"', assets.HTML)] == [
+        "screen-wi",
+        "screen-plans",
+        "screen-sessions",
+    ]
+    navigations = re.findall(r'<nav class="app-nav"[^>]*>(.*?)</nav>', assets.HTML, re.DOTALL)
+    assert len(navigations) == 3
+    for navigation in navigations:
+        assert re.findall(r">([^<>]+)</a>", navigation) == ["ワークアイテム", "計画ファイル", "セッション"]
+        assert re.findall(r'href="__BASE_PATH_HTML__(/[a-z]*)"', navigation) == ["/", "/plans", "/sessions"]
+    assert 'data-screen="__INITIAL_SCREEN__"' in assets.HTML
 
 
 @pytest.mark.asyncio
