@@ -124,6 +124,9 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_AWI_ERROR = "AWI本文が実質空です"
+_FEASIBILITY_FIELD_PATTERN = re.compile(r"^\s*-\s*実現性\s*[:：]\s*(?P<value>.*)$")
+_CODE_FENCE_OPEN_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
+_CODE_FENCE_CLOSE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})[ \t]*$")
 
 
 def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, object], str]:
@@ -134,6 +137,39 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     if entry_type != WI_TYPE_AWI:
         _uwi.reject_reserved_uwi_markup(body)
     return frontmatter, body
+
+
+def _require_agent_awi_feasibility(
+    body: str,
+    frontmatter: dict[str, object],
+    *,
+    entry_type: str,
+    source: str | None,
+    plan_file: str | None,
+) -> None:
+    """エージェント由来の通常AWIに非空の`実現性`欄があることを検証する。"""
+    raw_source = frontmatter.get("source", source)
+    item_source = raw_source if isinstance(raw_source, str) else source
+    if entry_type != WI_TYPE_AWI or plan_file is not None or not item_source:
+        return
+    match = None
+    open_fence: str | None = None
+    for line in body.splitlines():
+        if open_fence is not None:
+            closing_match = _CODE_FENCE_CLOSE_PATTERN.match(line)
+            if closing_match is not None:
+                closing_fence = closing_match.group("fence")
+                if closing_fence[0] == open_fence[0] and len(closing_fence) >= len(open_fence):
+                    open_fence = None
+            continue
+        if (opening_match := _CODE_FENCE_OPEN_PATTERN.match(line)) is not None:
+            open_fence = opening_match.group("fence")
+            continue
+        if (matched := _FEASIBILITY_FIELD_PATTERN.match(line)) is not None:
+            match = matched
+            break
+    if match is None or not match.group("value").strip():
+        raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須欄です。")
 
 
 def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
@@ -484,7 +520,14 @@ def _cmd_add(
                     message,
                     file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
                 )
-            parse_entry_message(message, entry_type=args.type)
+            frontmatter, body = parse_entry_message(message, entry_type=args.type)
+            _require_agent_awi_feasibility(
+                body,
+                frontmatter,
+                entry_type=args.type,
+                source=args.source,
+                plan_file=args.plan_file,
+            )
         except WebInputError as error:
             if str(error) == _EMPTY_AWI_ERROR:
                 preview = message.strip().splitlines()[0] if message.strip() else "(空文字列)"

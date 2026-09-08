@@ -53,7 +53,13 @@ class TestAddSourceOption:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--source=session-review", str(myrepo), "メッセージ"],
+                [
+                    "wi",
+                    "add",
+                    "--source=session-review",
+                    str(myrepo),
+                    "メッセージ\n\n- 実現性: テスト用の投入経路を確認済み",
+                ],
                 home=tmp_path,
                 now=_FIXED_DT,
             )

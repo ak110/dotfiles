@@ -6,6 +6,9 @@
 共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
 """
 
+# pylint: disable=protected-access
+
+import argparse
 import contextlib
 import pathlib
 import subprocess
@@ -39,6 +42,209 @@ def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pat
     monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+
+def _cmd_add_args(
+    message: str,
+    *,
+    source: str | None = None,
+    entry_type: str = "awi",
+    plan_file: str | None = None,
+) -> argparse.Namespace:
+    """`_cmd_add`の単体テストへ必要な引数を返す。"""
+    return argparse.Namespace(
+        body_file=None,
+        messages=[message],
+        repo_path_override=None,
+        target_repo="github.com/example/repo",
+        type=entry_type,
+        depends_on=[],
+        source=source,
+        scope=None,
+        question_type="free-form" if entry_type == WI_TYPE_UWI else None,
+        choices=None,
+        plan_file=plan_file,
+        subparser=None,
+    )
+
+
+def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_cmd_add`の対象解決・remote同期・commitを差し替える。"""
+    monkeypatch.setattr(
+        add_module,
+        "resolve_add_target",
+        lambda _value: ("github.com/example/repo", None),
+    )
+    monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(add_module, "_pull", lambda _path: None)
+    monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+
+def test_cmd_add_rejects_agent_awi_without_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """sourceを持つ通常AWIは`実現性`欄の欠落を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args("本文", source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "実現性" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_rejects_agent_awi_with_empty_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """sourceを持つ通常AWIは値が空の`実現性`欄を拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args("本文\n- 実現性:   ", source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "実現性" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+@pytest.mark.parametrize(
+    ("opening_fence", "closing_fence"),
+    [("```markdown", "```"), ("~~~markdown", "~~~")],
+)
+def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
+    opening_fence: str,
+    closing_fence: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """コードフェンス内の同名行を固定書式の`実現性`欄として数えない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    message = f"本文\n\n{opening_fence}\n- 実現性: 見かけだけ\n{closing_fence}"
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "実現性" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+@pytest.mark.parametrize(
+    ("opening_fence", "non_closing_fence", "closing_fence"),
+    [("````markdown", "```", "````"), ("~~~markdown", "```", "~~~")],
+)
+def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
+    opening_fence: str,
+    non_closing_fence: str,
+    closing_fence: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """短いフェンス又は異種文字のフェンスを閉じフェンスとして数えない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    message = f"本文\n\n{opening_fence}\nコード例\n{non_closing_fence}\n- 実現性: 見かけだけ\n{closing_fence}"
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "実現性" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """開きフェンス以上の長さの同種フェンスで閉じた後の`実現性`欄を数える。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    message = "本文\n\n```markdown\n- 実現性: 見かけだけ\n````\n- 実現性: 対象実装を確認済み"
+    add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
+def test_cmd_add_accepts_agent_awi_with_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sourceを持つ通常AWIは非空の`実現性`欄があれば保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    add_module._cmd_add(
+        _cmd_add_args("本文\n- 実現性: 対象実装を確認済み", source="test"),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
+def test_cmd_add_accepts_human_awi_without_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sourceを持たない通常AWIは`実現性`欄が無くても保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    add_module._cmd_add(_cmd_add_args("本文"), notes, _FIXED_DT, tmp_path)
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
+def test_cmd_add_accepts_uwi_without_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """UWIはsourceを持っても`実現性`欄が無い本文を保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    add_module._cmd_add(
+        _cmd_add_args("質問本文", source="test", entry_type=WI_TYPE_UWI),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
+def test_cmd_add_accepts_plan_awi_without_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """計画実装型AWIはsourceを持っても`実現性`欄が無い本文を保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    plan = notes / "plans" / "2026" / "09" / "test.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# 計画\n", encoding="utf-8")
+
+    add_module._cmd_add(
+        _cmd_add_args("計画本文", source="test", plan_file=str(plan)),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
+
+    assert len(list((notes / "inbox").iterdir())) == 1
 
 
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1215,7 +1421,7 @@ class TestAddRepoPathOverrideCli:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", str(myrepo), "--source", "session-review", "本文"],
+                ["wi", "add", str(myrepo), "--source", "session-review", "本文\n\n- 実現性: テスト用の投入経路を確認済み"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -1964,7 +2170,7 @@ def test_cli_add_outputs_source_and_extra_frontmatter(
     """投入の出力はsourceと非予約frontmatterを表示する。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
-    message = "---\ncustom_key: 値\n---\n投入本文"
+    message = "---\ncustom_key: 値\n---\n投入本文\n\n- 実現性: テスト用の投入経路を確認済み"
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
