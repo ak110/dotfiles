@@ -1581,6 +1581,8 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 知識境界として、記録の有無を判定へ反映する手順は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。記録の保存形式とパス解決は`agent-toolkit/scripts/_atk/review_audit.py`が持つ。
 記録を無効化する機構は設けない。記録した分類は現行成果物から再導出できる補助情報であり、成果物の変更で再判定が必要になった指摘は別のdatabaseIdを持つ新しいreviewとして到着するためである。記録時のHEADを併記して差分がある場合に無効化する案は採用しない。ベースbranchがほぼ毎セッション進むため、記録がほぼ常に無効となり目的を達成しないためである。
 
+判定結果は、`atk review-audit`のローカル記録に加えて対象GitHubリポジトリへも残す。目的は、判定の妥当性をユーザーと後続のセッションがGitHubのPull Request画面だけで確認できるようにすることである。構造の理由は、分類と根拠を保持する主体を、判定を再導出できる索引であるローカル記録と、人間が読む正本であるGitHubの本文へ分けた点にある。未解決のreview threadへは`addPullRequestReviewThreadReply`で分類と根拠を返信してから`resolveReviewThread`で解決し、threadを伴わないreview本文へは`gh pr comment`で投稿する。知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持ち、監査担当の実行範囲は`agent-toolkit/share/pick-wi.parent.md`が持つ。`dismissPullRequestReview`で分類を残す案は、Copilotのreviewが`COMMENTED`状態で到着し、当該mutationが当該状態を受理しないため採用しない。`resolveReviewThread`の`resolutionReason`を分類の正本にする案は、読み取り型`PullRequestReviewThread`が当該フィールドを返さず、後続のセッションが機械的に取得できないため採用しない。
+
 ## atkサブコマンドの引数拒否形式
 
 目的は、`atk`の利用主体であるコーディングエージェントが、受理しないオプション名を与えた場合に、1回の出力から正しい呼び出し形式へ到達できるようにすることである。

@@ -1,6 +1,8 @@
 # GitHub Copilotレビュー監査
 
 `agent-toolkit:process-wi`の自動コードレビュー監査を担当する主体が、対象GitHubリポジトリの成果物を変更せずに実行する。
+本書でいう成果物は、対象リポジトリの追跡ファイルとその履歴を指す。
+Pull Requestのreview threadへの返信、Pull Requestへのコメント投稿及びthreadの解決は成果物の変更に当たらず、本書が定める範囲で監査担当が実行する。
 新しいレビューの生成を要求せず、到着を能動的に待機せず、呼び出し時点の保存結果を1回監査する。
 
 ## 対象
@@ -57,14 +59,50 @@ pagination終端へ到達できない場合は、監査を完了として扱わ�
 
 判定の対象に残った各指摘を現行成果物、過去の採否及び根拠へ照合し、要修正、是正済み、根拠付き対応不要のいずれかへ分類する。
 要修正は所在と対処案を返し、同一セッションの是正とAWIへの記録は呼び出し元が確定する。
-是正済み又は根拠付き対応不要で未解決のthreadは、解決対象として呼び出し元へ返す。
+是正済み又は根拠付き対応不要と分類した指摘は、「判定結果のGitHubへの記録」に従って分類と根拠をGitHubへ残す。
 全Pull RequestのCopilot由来のreview本文と、未解決threadを持つPull RequestのCopilot由来のinline commentについて、所在、分類及び処置をメインへ返す。inline commentの取得対象へ入らなかったPull Request番号と、その判定に用いたクエリーの結果も併せて返す。
+
+## 判定結果のGitHubへの記録
+
+是正済み又は根拠付き対応不要と分類した指摘は、監査担当が分類と根拠を対象GitHubリポジトリへ書き込む。
+判定根拠の正本は本節が投稿する本文とし、`atk review-audit`のローカル記録を根拠の保管先にしない。
+当該書き込みは、操作、対象及び範囲を明示した人間由来のWIで承認済みであり、監査のたびに確認経路へ送らない。
+要修正と分類した指摘へは書き込まず、当該threadを解決しない。
+
+未解決のreview threadでは、解決の前に分類と根拠を当該threadへ返信し、返信の成功を確認してから当該threadを解決する。
+返信の本文はファイルへ保存して渡し、コマンド文字列へ本文を連結しない。
+
+```sh
+gh api graphql -F threadId=<THREAD_ID> -F body=@<BODY_FILE> -f query='mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{url}}}'
+gh api graphql -F threadId=<THREAD_ID> -f reason=<RESOLUTION_REASON> -f query='mutation($threadId:ID!,$reason:PullRequestReviewThreadResolutionReason!){resolveReviewThread(input:{threadId:$threadId,resolutionReason:$reason}){thread{isResolved}}}'
+```
+
+`<RESOLUTION_REASON>`へ渡す値は分類ごとに次の表で一意に定まる。実行例へ特定の値を固定せず、本表を当該値の正本とする。
+
+| 分類 | `<RESOLUTION_REASON>` |
+| --- | --- |
+| 是正済み | `ADDRESSED` |
+| 根拠付き対応不要 | `WONT_FIX` |
+
+読み取り型`PullRequestReviewThread`は`resolutionReason`を返さないため、当該値を後続の判定の入力にしない。
+
+threadを伴わないreview本文では、分類と根拠を当該Pull Requestへコメントとして投稿する。
+
+```sh
+gh pr comment <PR> --repo <OWNER>/<REPO> --body-file <BODY_FILE>
+```
+
+返信とコメントの本文には、対象の指摘を一意に示す識別子、確定した分類、及び当該分類の根拠を書く。
+識別子は、review本文ではdatabaseId、review threadでは対象ファイルと行とする。
+根拠には、照合した現行成果物の位置、又は対応不要と判断した理由を書く。
+
+書き込みが非0で終了した指摘は、記録済みとして扱わず「判定済みの記録」の記録も行わない。
 
 ## 判定済みの記録
 
-是正済み又は根拠付き対応不要と分類したreview本文のdatabaseIdを、`atk review-audit mark --repo <OWNER>/<REPO> <ID>...`で記録する。
+「判定結果のGitHubへの記録」の書き込みが成功したreview本文のdatabaseIdを、`atk review-audit mark --repo <OWNER>/<REPO> <ID>...`で記録する。
 要修正と分類したreview本文のdatabaseIdは記録せず、当該指摘を記録したAWIが終端するまで判定の対象に残す。
 inline commentのdatabaseIdは記録の対象にしない。未解決threadの解決状態が同じ役割を果たすためである。
 記録の読み書きは`atk review-audit`だけで行う。記録ファイルのパス解決と保存形式を当該コマンドが正本として持ち、別の手段で同じファイルを読み書きすると形式が分岐するためである。
 記録先は対象GitHubリポジトリの外にある状態ディレクトリであり、本記録は成果物を変更しない制約の対象に当たらない。
-記録は分類の再導出を省く目的だけに用いる。成果物の変更により再判定が必要になった指摘は、当該変更に対する新しいreviewが別のdatabaseIdで到着するため、記録を無効化する手順を設けない。
+記録は分類の再導出を省く目的だけに用いる。本記録は分類と根拠を保持しない索引であり、GitHubへ残す記録の代替にしない。成果物の変更により再判定が必要になった指摘は、当該変更に対する新しいreviewが別のdatabaseIdで到着するため、記録を無効化する手順を設けない。
