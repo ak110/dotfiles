@@ -107,10 +107,11 @@ class TestCheckText:
             "status: checkpoint\ntype: review_round\nround: 2\nfindings_count: 3\nrequirement_spec_count: 0",
             "status: checkpoint\ntype: merge_request",
             (
-                "計画実行完了\n"
+                "統合完了\n"
                 "merged_head: 0123456789abcdef0123456789abcdef01234567\n"
+                "deferred_adopt_commits: 20260101-ccc.md=0123456789abcdef0123456789abcdef01234567\n"
                 "adopted: 20260101-aaa.md, 20260101-bbb.md\n"
-                "released: /home/u/repo/.claude/worktrees/lane-a, awi-lane-a, /tmp/lane-a-xxxxxxxx"
+                "rejected: なし"
             ),
             "needs_escalation",
             "status: needs_escalation",
