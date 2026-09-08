@@ -57,7 +57,7 @@ description: >
 
 1. 適用規範、変更対象、定義・参照・呼び出し元、既存テスト、生成・配布経路、類似実装のうち、計画ファイルへ書く内容を確定するために必要な範囲を調査する
 2. 計画の変更対象又は採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit/rules/01-agent.md`「協調と自律」の確認要否判定を適用する。直接起動では`references/grilling.md`に従って確認を完了し、`agent-toolkit:process-wi`経路では確認事項をUWIへ登録する。計画担当として起動された場合は、いずれも行わず`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の完了報告が定めるエスカレーションで呼び出し元へ返す
-3. `references/plan-file-standards.md`を全文読み、計画ファイル初版を起草する
+3. 計画ファイル初版の起草は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`に従って計画担当へ委譲することを既定とする。実行環境が当該委譲の起動手段を提供しない場合と、自身が計画担当として起動された場合に限り、`references/plan-file-standards.md`を全文読んで自ら起草する
 4. 初版を起草した主体が`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`に従って計画構造検査と自己監査を完了する
 5. 起動経路に対応する次の1行だけを実施して終端する
 
@@ -66,5 +66,7 @@ description: >
 | `agent-toolkit:plan-mode`の直接起動 | `${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を読み、`plan_review_model`で計画レビュー担当を起動して各ラウンドを受領し、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「ラウンドの遷移」に従って計画レビューの収束を確定する。起動から完了報告の受領までは計画ファイルを読み取り専用として扱う | 計画レビュー後も`~/.claude/plans`の実体を維持する。計画ファイル、成立させる結果、ユーザー指示との差分及びレビュー反映状況を提示し、ユーザー承認後に`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`を読み、同書が定めるモデル区分の対応表に従って実装担当を起動する。実行レビュー収束後の移動と保存は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の「実行レビュー後の計画最終化」を正本とする |
 | `agent-toolkit:plan-and-add-awi`からの起動 | なし | 計画ファイル（メイン）・計画ファイル（詳細）の絶対パスを呼出元へ返す。計画レビューは呼出元が行い、実装引き継ぎは行わない |
 | `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を受領した計画担当としての起動 | なし | 同書の完了報告契約に従って呼出元へ返す。計画レビュー担当の起動判断と実装引き継ぎを行わない |
+
+計画レビュー指摘の採否と計画本文への反映は、初版を起草した主体が行う。計画担当へ委譲した場合は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`の「指摘の配送」に従って同じ計画担当へ配送する。メインが自ら起草した場合は、メインが`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の「指摘の検収と修正」に従って自ら反映する。
 
 本スキルの起動後は、計画ファイルを作成するまで対象規範配下（`agent-toolkit/`等のコーディングエージェント向け規範文書）を直接編集しない（計画とレビューを経ない直接編集で、ユーザーが合意していない規範が確定した事例に由来する。連続する直接編集はPreToolUseフックが遮断する）。
