@@ -322,7 +322,7 @@ jobs:
           AGENT_TOOLKIT_SERVE_BROWSER_TESTS: "1"
         run: >-
           uv run pytest
-          agent-toolkit/scripts/_atk/serve/browser_test.py
+          agent-toolkit/agent_toolkit/_atk/serve/browser_test.py
           -o addopts='' -p no:cacheprovider
 
   rust-lint:
