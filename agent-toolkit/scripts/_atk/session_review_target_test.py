@@ -52,8 +52,11 @@ def _write_record(path: pathlib.Path, records: list[object], modified_at: int) -
     os.utime(path, (modified_at, modified_at))
 
 
-def _claude_record(cwd: pathlib.Path, *, entrypoint: str = "cli") -> dict[str, object]:
-    return {"type": "user", "entrypoint": entrypoint, "cwd": str(cwd)}
+def _claude_record(cwd: pathlib.Path, *, entrypoint: str = "cli", timestamp: str | None = None) -> dict[str, object]:
+    record: dict[str, object] = {"type": "user", "entrypoint": entrypoint, "cwd": str(cwd)}
+    if timestamp is not None:
+        record["timestamp"] = timestamp
+    return record
 
 
 def _codex_record(cwd: pathlib.Path, *, originator: str = "codex-tui") -> dict[str, object]:
@@ -111,7 +114,7 @@ def test_dispatch_returns_latest_main_session_across_engines(
     day = codex_home / "sessions" / "2026" / "09" / "07"
 
     _write_record(project / "claude-main.jsonl", [_claude_record(repository), _claude_process_wi_record()], 10)
-    _write_record(project / "current.jsonl", [_claude_record(repository)], 100)
+    _write_record(project / "current.jsonl", [_claude_record(repository, timestamp="1970-01-01T00:01:40Z")], 100)
     _write_record(project / "sdk.jsonl", [_claude_record(repository, entrypoint="sdk-cli")], 110)
     _write_record(project / "other.jsonl", [_claude_record(other_repository)], 90)
     _write_record(project / "malformed.jsonl", ["not-json"], 80)
@@ -141,6 +144,7 @@ def test_dispatch_accepts_previous_day_and_skips_malformed_lines(
     claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
     project = claude_home / "projects" / "-target"
     _write_record(project / "malformed.jsonl", ["not-json"], 20)
+    _write_record(project / "current.jsonl", [_claude_record(repository, timestamp="1970-01-01T00:00:20Z")], 20)
     _write_record(
         project / "previous.jsonl",
         ["not-json", _claude_record(repository), _claude_process_wi_record()],
@@ -152,7 +156,7 @@ def test_dispatch_accepts_previous_day_and_skips_malformed_lines(
     assert _output(capsys) == {"engine": "claude", "session_id": "previous"}
 
 
-def test_dispatch_prints_nothing_when_main_session_does_not_exist(
+def test_dispatch_returns_error_when_current_session_record_does_not_exist(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -160,9 +164,11 @@ def test_dispatch_prints_nothing_when_main_session_does_not_exist(
     repository = _repository(tmp_path, "target")
     _prepare_homes(monkeypatch, tmp_path)
 
-    assert target.dispatch(_arguments(repository, "--codex-thread-id=current")) == 0
+    assert target.dispatch(_arguments(repository, "--codex-thread-id=current")) == 2
 
-    assert _output(capsys) is None
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "現在のセッションの開始時刻を解決できません: current\n"
 
 
 def test_dispatch_resolves_each_cwd_once(
@@ -175,6 +181,7 @@ def test_dispatch_resolves_each_cwd_once(
     other_repository = _repository(tmp_path, "other")
     claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
     project = claude_home / "projects" / "-target"
+    _write_record(project / "current.jsonl", [_claude_record(repository, timestamp="1970-01-01T00:00:40Z")], 40)
     _write_record(project / "other-new.jsonl", [_claude_record(other_repository)], 30)
     _write_record(project / "other-old.jsonl", [_claude_record(other_repository)], 20)
     _write_record(project / "target.jsonl", [_claude_record(repository), _claude_process_wi_record()], 10)
@@ -203,6 +210,7 @@ def test_dispatch_skips_latest_session_without_process_wi_marker(
     repository = _repository(tmp_path, "target")
     claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
     project = claude_home / "projects" / "-target"
+    _write_record(project / "current.jsonl", [_claude_record(repository, timestamp="1970-01-01T00:00:30Z")], 30)
     _write_record(project / "latest.jsonl", [_claude_record(repository)], 20)
     _write_record(
         project / "process-wi.jsonl",
@@ -213,6 +221,55 @@ def test_dispatch_skips_latest_session_without_process_wi_marker(
     assert target.dispatch(_arguments(repository, "--codex-thread-id=current")) == 0
 
     assert _output(capsys) == {"engine": "claude", "session_id": "process-wi"}
+
+
+def test_dispatch_skips_session_updated_after_current_session_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """現在の開始以後に更新された稼働中候補を返さず、終了済み候補を選ぶ。"""
+    repository = _repository(tmp_path, "target")
+    claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
+    project = claude_home / "projects" / "-target"
+    _write_record(project / "current.jsonl", [_claude_record(repository, timestamp="1970-01-01T00:00:20Z")], 20)
+    _write_record(
+        project / "running.jsonl",
+        [_claude_record(repository), _claude_process_wi_record()],
+        30,
+    )
+    _write_record(
+        project / "completed.jsonl",
+        [_claude_record(repository), _claude_process_wi_record()],
+        10,
+    )
+
+    assert target.dispatch(_arguments(repository, "--transcript=/records/current.jsonl")) == 0
+
+    assert _output(capsys) == {"engine": "claude", "session_id": "completed"}
+
+
+def test_dispatch_returns_error_when_current_session_start_is_unresolvable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """現在の記録に解析可能なtimestampが無い場合は対象を返さず診断する。"""
+    repository = _repository(tmp_path, "target")
+    claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
+    project = claude_home / "projects" / "-target"
+    _write_record(project / "current.jsonl", [_claude_record(repository), {"timestamp": "invalid"}], 20)
+    _write_record(
+        project / "completed.jsonl",
+        [_claude_record(repository), _claude_process_wi_record()],
+        10,
+    )
+
+    assert target.dispatch(_arguments(repository, "--transcript=/records/current.jsonl")) == 2
+
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == "現在のセッションの開始時刻を解決できません: current\n"
 
 
 @pytest.mark.parametrize("value", ["", "nested/id", "nested\\id"])
