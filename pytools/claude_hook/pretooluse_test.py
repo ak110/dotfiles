@@ -1,4 +1,4 @@
-"""scripts/claude_hook_pretooluse.py のテスト。
+"""pytools/claude_hook/pretooluse.py のテスト。
 
 dotfiles 個人環境専用の PreToolUse フックのテスト。
 mojibake / PS1 EOL は plugin 側 (agent-toolkit) が担う。
@@ -10,18 +10,14 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 
 import pytest
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit"))
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._testing import fork_runner as _fork_runner  # noqa: E402
+from agent_toolkit._testing import fork_runner as _fork_runner
 
 _HOME = pathlib.Path.home()
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
-_DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
+_DOTFILES_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 _AT_RULES_DIR = _AT_DIR / "rules"

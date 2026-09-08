@@ -1,4 +1,4 @@
-"""scripts/claude_hook_stop_bell.py のテスト。
+"""pytools/claude_hook/stop_bell.py のテスト。
 
 応答終了で入力待ちになった場合だけ端末ベルを鳴らすStopフックのテスト。独立スクリプトなので
 fork-server経由（フォールバック時はsubprocess）で起動しstdout（JSON）を検証する。
@@ -9,13 +9,10 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit"))
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._testing import fork_runner as _fork_runner  # noqa: E402
+from agent_toolkit._testing import fork_runner as _fork_runner
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
 
 _ENV_PROCESS_LOOP = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_PROCESS_LOOP = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"

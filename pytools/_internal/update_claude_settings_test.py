@@ -33,6 +33,9 @@ _LEGACY_WINDOWS_AUTONOMOUS_EXIT_COMMAND = (
     'powershell -NoProfile -ExecutionPolicy Bypass -Command "& { uv run --no-project --script '
     "'__HOME__\\dotfiles\\scripts\\claude_hook.py' autonomous_exit; exit 0 }\""
 )
+_WINDOWS_POSTTOOLUSE_COMMAND = (
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "& { dotfiles-claude-hook posttooluse; exit 0 }"'
+)
 
 MANAGED_ALLOW = [
     "Bash",
@@ -234,11 +237,9 @@ class TestProductionManagedSettings:
         data = json.loads(path.read_text(encoding="utf-8"))
         stop_groups = data["hooks"].get("Stop", [])
         commands = [hook["command"] for group in stop_groups for hook in group["hooks"]]
-        assert sum("claude_hook.py" in command and "autonomous_exit" in command for command in commands) == 0
-        assert sum("claude_hook.py" in command and "stop_bell" in command for command in commands) == (
-            1 if suffix == "posix" else 0
-        )
-        assert all("claude_hook.py stop;" not in command for command in commands)
+        assert sum("dotfiles-claude-hook autonomous_exit" in command for command in commands) == 0
+        assert sum("dotfiles-claude-hook stop_bell" in command for command in commands) == (1 if suffix == "posix" else 0)
+        assert "dotfiles-claude-hook stop" not in commands
         assert ("Stop" in data["hooks"]) is (suffix == "posix")
 
     def test_managed_settings_declares_no_deny_rules(self):
@@ -246,8 +247,8 @@ class TestProductionManagedSettings:
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "deny" not in data["permissions"]
 
-    def test_windows_hook_commands_use_home_placeholder(self):
-        """Windows個人hookの実行パスがプレースホルダー形式である。"""
+    def test_windows_hook_commands_use_console_script(self):
+        """Windows個人hookがpytoolsのconsole scriptを起動する。"""
         path = _PROD_MANAGED_SETTINGS.with_suffix(".win32.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         commands = [
@@ -257,10 +258,84 @@ class TestProductionManagedSettings:
             for hook in group["hooks"]
             if hook.get("type") == "command"
         ]
-        python_hook_commands = [command for command in commands if "claude_hook.py" in command]
-        assert len(python_hook_commands) == 1
-        assert all("__HOME__\\dotfiles\\scripts\\claude_hook.py" in command for command in python_hook_commands)
-        assert all("$env:USERPROFILE\\dotfiles\\scripts\\claude_hook.py" not in command for command in commands)
+        assert _WINDOWS_POSTTOOLUSE_COMMAND in commands
+        assert all("claude_hook.py" not in command for command in commands)
+
+    @pytest.mark.parametrize(
+        ("event", "hook_exit_code", "expected_exit_code"),
+        [
+            ("PreToolUse", 0, 0),
+            ("PreToolUse", 1, 0),
+            ("PreToolUse", 2, 2),
+            ("PostToolUse", 1, 0),
+            ("PostToolUse", 2, 0),
+            ("Stop", 1, 0),
+            ("Stop", 2, 0),
+        ],
+    )
+    def test_posix_hook_commands_preserve_exit_contract(
+        self,
+        tmp_path: Path,
+        event: str,
+        hook_exit_code: int,
+        expected_exit_code: int,
+    ) -> None:
+        """POSIX個人hookはPreToolUseの終了コード2だけを呼び出し元へ伝える。"""
+        path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        command = next(
+            hook["command"]
+            for group in data["hooks"][event]
+            for hook in group["hooks"]
+            if "dotfiles-claude-hook" in hook["command"]
+        )
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        args_path = tmp_path / "hook-args.json"
+        hook_path = bin_dir / "dotfiles-claude-hook"
+        hook_path.write_text(
+            '#!/bin/sh\nprintf \'%s\' "$1" > "$HOOK_ARGS_PATH"\nexit "$HOOK_EXIT_CODE"\n',
+            encoding="utf-8",
+        )
+        hook_path.chmod(0o755)
+        env = os.environ.copy()
+        env.update(
+            {
+                "PATH": os.pathsep.join((str(bin_dir), "/usr/bin", "/bin")),
+                "HOOK_ARGS_PATH": str(args_path),
+                "HOOK_EXIT_CODE": str(hook_exit_code),
+            }
+        )
+
+        result = subprocess.run(["/bin/sh", "-c", command], check=False, env=env)
+
+        assert result.returncode == expected_exit_code
+        expected_subcommand = {
+            "PreToolUse": "pretooluse",
+            "PostToolUse": "posttooluse",
+            "Stop": "stop_bell",
+        }[event]
+        assert args_path.read_text(encoding="utf-8") == expected_subcommand
+
+    @pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse", "Stop"])
+    def test_posix_hook_commands_allow_missing_console_script(self, tmp_path: Path, event: str) -> None:
+        """POSIX個人hookはconsole scriptが存在しない場合も通過させる。"""
+        path = _PROD_MANAGED_SETTINGS.with_suffix(".posix.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        command = next(
+            hook["command"]
+            for group in data["hooks"][event]
+            for hook in group["hooks"]
+            if "dotfiles-claude-hook" in hook["command"]
+        )
+        empty_bin = tmp_path / "bin"
+        empty_bin.mkdir()
+        env = os.environ.copy()
+        env["PATH"] = os.pathsep.join((str(empty_bin), "/usr/bin", "/bin"))
+
+        result = subprocess.run(["/bin/sh", "-c", command], check=False, env=env)
+
+        assert result.returncode == 0
 
     def test_windows_pretooluse_script_preserves_exit_contract(self):
         """PowerShellスクリプトはフックの終了コード2だけを呼び出し元へ伝える。"""
@@ -269,37 +344,19 @@ class TestProductionManagedSettings:
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
         text = raw.decode("utf-8-sig")
-        assert "$hookScript = Join-Path $env:USERPROFILE 'dotfiles\\scripts\\claude_hook.py'" in text
-        assert "Test-Path -LiteralPath $hookScript -PathType Leaf" in text
-        assert "uv run --no-project --script $hookScript pretooluse" in text
+        assert "Get-Command dotfiles-claude-hook -ErrorAction SilentlyContinue" in text
+        assert "& $hook.Source pretooluse" in text
+        assert "uv run" not in text
         assert "if ($LASTEXITCODE -eq 2)" in text
         assert text.rstrip().endswith("exit 0")
 
-    def test_windows_pretooluse_script_allows_missing_hook_via_pwsh(self, tmp_path: Path) -> None:
-        """フック本体が不在の場合はPowerShell実行時も終了コード0で通過する。"""
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
-
-        env = os.environ.copy()
-        env["USERPROFILE"] = str(tmp_path / "missing-home")
-
-        result = subprocess.run(
-            [pwsh, "-NoProfile", "-File", str(_PROD_PRETOOLUSE_SCRIPT)],
-            check=False,
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-
-        assert result.returncode == 0
-
-    @pytest.mark.parametrize("uv_exit_code", [0, 2])
+    @pytest.mark.parametrize(("hook_exit_code", "expected_exit_code"), [(0, 0), (1, 0), (2, 2)])
     @pytest.mark.parametrize("invocation", ["direct", "bash"])
     def test_windows_pretooluse_script_runs_via_pwsh(
         self,
         tmp_path: Path,
-        uv_exit_code: int,
+        hook_exit_code: int,
+        expected_exit_code: int,
         invocation: str,
     ) -> None:
         """PowerShell実行時も引数境界と終了コード契約を維持する。"""
@@ -307,32 +364,28 @@ class TestProductionManagedSettings:
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
 
-        home = tmp_path / "Aki User"
-        hook_script = home / "dotfiles" / "scripts" / "claude_hook.py"
-        hook_script.parent.mkdir(parents=True)
-        hook_script.touch()
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
-        args_path = tmp_path / f"uv-args-{invocation}-{uv_exit_code}.json"
-        stub_path = tmp_path / "uv_stub.py"
+        args_path = tmp_path / f"hook-args-{invocation}-{hook_exit_code}.json"
+        stub_path = tmp_path / "hook_stub.py"
         stub_path.write_text(
             """import json
 import os
 import sys
 from pathlib import Path
 
-Path(os.environ["UV_ARGS_PATH"]).write_text(json.dumps(sys.argv[1:]), encoding="utf-8")
-sys.exit(int(os.environ["UV_EXIT_CODE"]))
+Path(os.environ["HOOK_ARGS_PATH"]).write_text(json.dumps(sys.argv[1:]), encoding="utf-8")
+sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
 """,
             encoding="utf-8",
         )
-        uv_path = bin_dir / "uv"
-        uv_path.write_text(
+        hook_path = bin_dir / "dotfiles-claude-hook"
+        hook_path.write_text(
             f"#!{sys.executable}\nimport runpy\nrunpy.run_path({str(stub_path)!r}, run_name='__main__')\n",
             encoding="utf-8",
         )
-        uv_path.chmod(0o755)
-        (bin_dir / "uv.cmd").write_text(
+        hook_path.chmod(0o755)
+        (bin_dir / "dotfiles-claude-hook.cmd").write_text(
             f'@"{sys.executable}" "{stub_path}" %*\r\n',
             encoding="utf-8",
         )
@@ -341,9 +394,8 @@ sys.exit(int(os.environ["UV_EXIT_CODE"]))
         env.update(
             {
                 "PATH": os.pathsep.join((str(bin_dir), env["PATH"])),
-                "USERPROFILE": str(home),
-                "UV_ARGS_PATH": str(args_path),
-                "UV_EXIT_CODE": str(uv_exit_code),
+                "HOOK_ARGS_PATH": str(args_path),
+                "HOOK_EXIT_CODE": str(hook_exit_code),
             }
         )
         direct_command = [pwsh, "-NoProfile", "-File", str(_PROD_PRETOOLUSE_SCRIPT)]
@@ -357,14 +409,66 @@ sys.exit(int(os.environ["UV_EXIT_CODE"]))
 
         result = subprocess.run(command, check=False, env=env, capture_output=True, text=True)
 
-        assert result.returncode == uv_exit_code
-        assert json.loads(args_path.read_text(encoding="utf-8")) == [
-            "run",
-            "--no-project",
-            "--script",
-            str(hook_script),
-            "pretooluse",
-        ]
+        assert result.returncode == expected_exit_code
+        assert json.loads(args_path.read_text(encoding="utf-8")) == ["pretooluse"]
+
+    def test_windows_pretooluse_script_allows_missing_console_script(self, tmp_path: Path) -> None:
+        """PowerShellスクリプトはconsole scriptが存在しない場合も通過させる。"""
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
+        empty_bin = tmp_path / "bin"
+        empty_bin.mkdir()
+        env = os.environ.copy()
+        env["PATH"] = str(empty_bin)
+
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-File", str(_PROD_PRETOOLUSE_SCRIPT)],
+            check=False,
+            env=env,
+        )
+
+        assert result.returncode == 0
+
+    @pytest.mark.parametrize("hook_exit_code", [0, 1, 2])
+    def test_windows_posttooluse_command_always_succeeds(self, tmp_path: Path, hook_exit_code: int) -> None:
+        """WindowsのPostToolUseはconsole scriptの終了コードを通過させない。"""
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        hook_path = bin_dir / "dotfiles-claude-hook"
+        hook_path.write_text(f"#!/bin/sh\nexit {hook_exit_code}\n", encoding="utf-8")
+        hook_path.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = os.pathsep.join((str(bin_dir), "/usr/bin", "/bin"))
+
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", "& { dotfiles-claude-hook posttooluse; exit 0 }"],
+            check=False,
+            env=env,
+        )
+
+        assert result.returncode == 0
+
+    def test_windows_posttooluse_command_allows_missing_console_script(self, tmp_path: Path) -> None:
+        """WindowsのPostToolUseはconsole scriptが存在しない場合も通過させる。"""
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
+        empty_bin = tmp_path / "bin"
+        empty_bin.mkdir()
+        env = os.environ.copy()
+        env["PATH"] = str(empty_bin)
+
+        result = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", "& { dotfiles-claude-hook posttooluse; exit 0 }"],
+            check=False,
+            env=env,
+        )
+
+        assert result.returncode == 0
 
     def test_windows_hook_generation_quotes_home_path_with_spaces(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Windows個人hookの生成結果は空白を含むホームパスを単一引数として扱う。"""
@@ -387,14 +491,12 @@ sys.exit(int(os.environ["UV_EXIT_CODE"]))
             for group in groups
             for hook in group["hooks"]
             if hook.get("type") == "command"
-            and ("claude_hook.py" in hook.get("command", "") or "claude-hook-pretooluse.ps1" in hook.get("command", ""))
         ]
         assert len(commands) == 2
         assert any(
             '-File "C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"' in command for command in commands
         )
-        python_commands = [command for command in commands if "claude_hook.py" in command]
-        assert all("'C:/Users/Aki User\\dotfiles\\scripts\\claude_hook.py'" in command for command in python_commands)
+        assert _WINDOWS_POSTTOOLUSE_COMMAND in commands
 
 
 class TestUpdateClaudeConfig:

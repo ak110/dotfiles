@@ -58,7 +58,7 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
 - アイドル（`idle_prompt`）はベルの対象に含めない。応答終了の約60秒後に発火するため、
   背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も入力待ちと同じ扱いで発火し、
   利用者の入力を要さない待機でベルが鳴るためである
-- 応答終了そのものは`Stop`のフック（`scripts/claude_hook_stop_bell.py`）で鳴らす。
+- 応答終了そのものは`Stop`のフック（`pytools/claude_hook/stop_bell.py`）で鳴らす。
   常駐ループから起動した自律セッションと、背景のサブエージェント・コマンドが未完了の場合は鳴らさない。
   背景稼働の判定は他のStop系フックと同じ`agent-toolkit/scripts/_hooks/stop_gate.py`の判定を用いる。
   他のStop系フックがターン継続をblockした場合は、当該ターンの終了前にベルが鳴る

@@ -17,11 +17,8 @@ exit codeは常に0（PostToolUseはブロック不可）。
 
 import json
 import pathlib
-import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.session_state import update_state  # noqa: E402
+from agent_toolkit._hooks.session_state import update_state
 
 _AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
 _REFERENCE_DOC_SUFFIXES: tuple[tuple[str, ...], ...] = (

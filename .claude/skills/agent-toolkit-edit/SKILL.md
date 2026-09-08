@@ -85,7 +85,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
-- 配布物文面は実ファイル編集時に`scripts/claude_hook_pretooluse.py`の固有名検査を適用し、
+- 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名検査を適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文でhook内部の実装挙動
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
@@ -244,7 +244,7 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 両方に該当すると判断した場合は、当該チェックがdotfiles固有の運用前提（配布先ディレクトリ構成・個人の命名規約など）へ
 依存するかで判定し、依存しないものをプラグインへ置く。
 
-- `scripts/claude_hook_pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
+- `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にのみマージされる。
   dotfiles固有の運用前提（`~/.claude/`がchezmoi配布先、個人の命名規約など）に依存するチェック向け。
   配置した場合は`share/claude_settings_json_managed.posix.json`および同`win32.json`の
   `matcher`に新しいツール名を追加する必要があるか確認する
@@ -265,9 +265,9 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。
   入口の実装契約は`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める
 
-agent-toolkit配下の編集時、dotfiles固有名の混入を`scripts/claude_hook_pretooluse.py`の専用チェックがブロックする。
+agent-toolkit配下の編集時、dotfiles固有名の混入を`pytools/claude_hook/pretooluse.py`の専用チェックがブロックする。
 個人プロジェクト名固定リストは当該スクリプト内で定義し、OSS公開プロジェクト名はwarning通知に留める。
-スキル名・pytoolsコマンド名・scripts名は、`scripts/claude_hook_pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
+スキル名・pytoolsコマンド名・scripts名は、`pytools/claude_hook/pretooluse.py`がhook実行時にディレクトリをスキャンして動的に取得する。
 外部CLI参照は`_EXTERNAL_CLI_ALLOWED`登録識別子に限り`command -v`等の存在検査経由で許容する。
 
 ## 複数hook共存時の識別子

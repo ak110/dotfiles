@@ -1,4 +1,4 @@
-"""scripts/claude_hook_posttooluse.py のテスト。
+"""pytools/claude_hook/posttooluse.py のテスト。
 
 dotfiles 個人環境専用の PostToolUse フックのテスト。
 独立スクリプトなのでfork-server経由（フォールバック時はsubprocess）で起動し、状態ファイルの中身を検証する。
@@ -8,19 +8,14 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 import threading
 
 import pytest
+from agent_toolkit._hooks.session_state import update_state
+from agent_toolkit._testing import fork_runner as _fork_runner
 
-_SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.session_state import update_state  # noqa: E402
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._testing import fork_runner as _fork_runner  # noqa: E402
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
 
 
 def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:

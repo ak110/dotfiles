@@ -632,7 +632,7 @@
           "count": 1
         },
         {
-          "path": "scripts/claude_hook.py",
+          "path": "pytools/claude_hook/__init__.py",
           "count": 1
         }
       ]

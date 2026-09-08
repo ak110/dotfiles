@@ -68,7 +68,8 @@ def run() -> bool:
     if uv is None:
         logger.info(log_format.format_status(_TAG, "uv CLIが見つからずスキップ"))
         return False
-    atk = root / "agent-toolkit" / "scripts" / "atk.py"
+    project = root / "agent-toolkit"
+    atk = project / "agent_toolkit" / "atk.py"
     if not atk.is_file():
         logger.info(log_format.format_status(_TAG, f"対象スクリプトが見つからずスキップ: {atk}"))
         return False
@@ -79,7 +80,17 @@ def run() -> bool:
         ("ワークアイテム", "wi", _WI_NO_CHANGE),
     ):
         result = claude_common.run_subprocess(
-            [str(uv), "run", "--no-project", "--script", str(atk), subcommand, "migrate"],
+            [
+                str(uv),
+                "run",
+                "--project",
+                str(project),
+                "--locked",
+                "--no-default-groups",
+                str(atk),
+                subcommand,
+                "migrate",
+            ],
             timeout=300,
             tag=_TAG,
         )

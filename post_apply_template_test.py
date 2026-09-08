@@ -257,7 +257,10 @@ def test_expected_shims_cover_project_scripts(template: Path, suffix: str, patte
 def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
-    install = text.index('if uv tool install --editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then')
+    install = text.index(
+        'if uv tool install --editable "{{ .chezmoi.workingTree }}" '
+        '--with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then'
+    )
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')
     failure = text.index("インストールに失敗しました", hash_write)
 

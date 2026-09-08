@@ -2,7 +2,7 @@
 
 import subprocess
 
-from claude_hook_pretooluse_test import _DOTFILES_ROOT, _HOME, _run
+from pytools.claude_hook.pretooluse_test import _DOTFILES_ROOT, _HOME, _run
 
 
 class TestPlanFileDotfilesNamesCheck:

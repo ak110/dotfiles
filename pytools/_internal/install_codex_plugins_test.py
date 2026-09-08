@@ -42,7 +42,7 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         json.dumps({"name": "agent-toolkit", "version": "1.2.3"}),
         encoding="utf-8",
     )
-    (root / "agent-toolkit/scripts").mkdir()
+    (root / "agent-toolkit/agent_toolkit").mkdir()
     (root / "agent-toolkit/agent_toolkit/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")

@@ -4,7 +4,7 @@
 """計画ファイルの構造検査の共通モジュール。
 
 構造検査（`check_plan_file.py`）、AWI登録（`_atk_wi_add.py`）、
-2系統のPreToolUse（`pretooluse.py`・`scripts/claude_hook_pretooluse.py`）、
+2系統のPreToolUse（`pretooluse.py`・`pytools/claude_hook/pretooluse.py`）、
 PostToolUse（`posttooluse.py`）が本モジュールから同じ判定結果を得る。
 成果物契約は`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`が定める。
 本モジュールの構造定数は計画ファイルの見出し、固定H3及び表の行名の正本であり、同書は当該定数から導いた受理形式を記述する。

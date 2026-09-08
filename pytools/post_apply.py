@@ -82,6 +82,13 @@ def _configure_logging() -> tuple[list[logging.Handler], int]:
 
 # chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
+    Path.home() / "dotfiles": [
+        # dotfiles固有hookはpytoolsのconsole scriptへ移設したため、旧入口を除去する。
+        Path("scripts/claude_hook.py"),
+        Path("scripts/claude_hook_pretooluse.py"),
+        Path("scripts/claude_hook_posttooluse.py"),
+        Path("scripts/claude_hook_stop_bell.py"),
+    ],
     Path.home() / ".claude": [
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),

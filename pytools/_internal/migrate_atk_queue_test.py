@@ -67,9 +67,10 @@ def test_run_ignores_non_agent_processes_and_runs_both_migrations(
 
     monkeypatch.setattr(migrate_atk_queue.claude_common, "run_subprocess", fake_run)
     assert migrate_atk_queue.run() is False
+    project = tmp_path / "agent-toolkit"
     assert calls == [
-        [str(uv), "run", "--no-project", "--script", str(atk), "plans", "migrate"],
-        [str(uv), "run", "--no-project", "--script", str(atk), "wi", "migrate"],
+        [str(uv), "run", "--project", str(project), "--locked", "--no-default-groups", str(atk), "plans", "migrate"],
+        [str(uv), "run", "--project", str(project), "--locked", "--no-default-groups", str(atk), "wi", "migrate"],
     ]
 
 

@@ -16,7 +16,7 @@
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
-予期せぬ例外の処理は共通エントリポイント（`scripts/claude_hook.py`）が担う。
+予期せぬ例外の処理は共通エントリポイント（`pytools/claude_hook/__init__.py`）が担う。
 メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
 
 LLM宛て出力は`agent_toolkit._hooks.notice`の整形関数経由で整形する。
@@ -31,28 +31,16 @@ import re
 import sys
 import tomllib
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import (  # noqa: E402
+from agent_toolkit._hooks.notice import (
     block_formatter as _block_notice_formatter,
 )
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.notice import (  # noqa: E402
+from agent_toolkit._hooks.notice import (
     formatter as _notice_formatter,
 )
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.session_state import read_state  # noqa: E402
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks.tool_input import new_content_fields  # noqa: E402
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._plan.locations import new_plans_root  # noqa: E402
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._plan.structure import (  # noqa: E402
+from agent_toolkit._hooks.session_state import read_state
+from agent_toolkit._hooks.tool_input import new_content_fields
+from agent_toolkit._plan.locations import new_plans_root
+from agent_toolkit._plan.structure import (
     is_agent_doc_target_file,
 )
 
@@ -87,7 +75,7 @@ def main(payload_text: str) -> int:
     file_path = file_path_raw if isinstance(file_path_raw, str) else ""
     session_id_raw = payload.get("session_id", "")
     session_id = session_id_raw if isinstance(session_id_raw, str) else ""
-    dotfiles_root = pathlib.Path(__file__).resolve().parent.parent
+    dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
 
     # --- block 系 check（最初の違反で exit 2）---
     if _check_ps1_directives(tool_name, fields, file_path):
@@ -131,7 +119,7 @@ def main(payload_text: str) -> int:
     if warnings:
         # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
         # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
-        # （`agent-toolkit/scripts/_hooks/permissionrequest.py`）で別途処理する。
+        # （`agent-toolkit/agent_toolkit/_hooks/permissionrequest.py`）で別途処理する。
         print(
             json.dumps(
                 {
@@ -397,7 +385,7 @@ def _check_dotfiles_specific_names(
     """
     if not file_path:
         return None, None
-    dotfiles_root = pathlib.Path(__file__).resolve().parent.parent
+    dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
     if not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
         return None, None
     block_names, warn_names = _build_dotfiles_specific_names(dotfiles_root)
@@ -588,7 +576,7 @@ def _agent_toolkit_edit_skill_warning(
     """`agent-toolkit/` 配下編集時の `agent-toolkit-edit` スキル未起動警告を返す。
 
     `agent-toolkit-edit` スキルは bump 種別判定・行数規定・編集手順を提供する。
-    PostToolUse (`claude_hook_posttooluse.py`) が当該スキル呼び出しを観測し
+    PostToolUse (`pytools/claude_hook/posttooluse.py`) が当該スキル呼び出しを観測し
     セッション状態の `agent_toolkit_edit_skill_invoked` を真にする。
     """
     if tool_name not in {"Write", "Edit", "MultiEdit"}:

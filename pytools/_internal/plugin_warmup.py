@@ -72,6 +72,48 @@ def run(targets: Callable[[], list[Path]], *, tag: str, arguments: Sequence[str]
     return False
 
 
+def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
+    """候補から実在する入口を重複なく列挙する。"""
+    targets: list[Path] = []
+    for candidate in candidates:
+        if candidate is None or candidate in targets:
+            continue
+        if not candidate.is_file():
+            logger.info(log_format.format_status(tag, f"対象が存在しないため除外: {log_format.home_short(candidate)}"))
+            continue
+        targets.append(candidate)
+    return targets
+
+
+def claude_plugin_scripts(
+    installed_plugins_path: Path,
+    *,
+    plugin_id: str,
+    relative_path: Path,
+    tag: str,
+) -> list[Path]:
+    """Claude Codeのplugin一覧から指定した入口パスを返す。"""
+    try:
+        data = json.loads(installed_plugins_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        logger.info(log_format.format_status(tag, "Claude Code plugin一覧が存在しないため除外"))
+        return []
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning(log_format.format_status(tag, f"Claude Code plugin一覧を取得できないため除外: {exc}"))
+        return []
+    plugins = data.get("plugins") if isinstance(data, dict) else None
+    entries = plugins.get(plugin_id) if isinstance(plugins, dict) else None
+    if not isinstance(entries, list):
+        logger.info(log_format.format_status(tag, "Claude Code plugin が未導入のため除外"))
+        return []
+    return [
+        Path(install_path) / relative_path
+        for entry in entries
+        if isinstance(entry, dict)
+        if isinstance(install_path := entry.get("installPath"), str)
+    ]
+
+
 def warmup(path: Path, uv: Path, *, tag: str, arguments: Sequence[str] = ()) -> None:
     """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。"""
     started = time.monotonic()

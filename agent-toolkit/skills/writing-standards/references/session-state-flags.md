@@ -50,7 +50,7 @@
 ## 振り返り・モード系
 
 - `agent_toolkit_edit_skill_invoked`: dotfilesリポジトリ固有の
-  `scripts/claude_hook_pretooluse.py`などがagent-toolkit-edit起動を記録し、編集警告の抑制に使う
+  `pytools/claude_hook/pretooluse.py`などがagent-toolkit-edit起動を記録し、編集警告の抑制に使う
 - `dotfiles_reference_docs_read`: dotfilesの個人PostToolUseフックが参照文書へのReadを解決済み絶対パスの一覧として記録し、
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない

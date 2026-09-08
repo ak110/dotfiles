@@ -1,7 +1,6 @@
 """配布設定が登録する隔離実行の経路でフックが動作することを検査する。
 
-既存のフックのテストはプロジェクト環境で起動するため、PEP 723ヘッダーの
-依存の欠落を検出できない。本テストは配布設定と同じ起動形を再現する。
+配布設定からconsole scriptのサブコマンドを抽出し、同じ入口を直接起動する。
 """
 
 import json
@@ -9,10 +8,9 @@ import pathlib
 import re
 import subprocess
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.posix.json"
-_HOOK = _REPO_ROOT / "scripts" / "claude_hook.py"
-_SUBCOMMAND_PATTERN = re.compile(r"claude_hook\.py\s+([a-z_]+)\b")
+_SUBCOMMAND_PATTERN = re.compile(r"dotfiles-claude-hook\s+([a-z_]+)\b")
 
 
 def _registered_subcommands() -> list[str]:
@@ -23,7 +21,7 @@ def _registered_subcommands() -> list[str]:
         for group in groups:
             for hook in group["hooks"]:
                 command = hook["command"]
-                if "claude_hook.py" not in command:
+                if "dotfiles-claude-hook" not in command:
                     continue
                 match = _SUBCOMMAND_PATTERN.search(command)
                 if match is None:
@@ -35,7 +33,7 @@ def _registered_subcommands() -> list[str]:
 def _run_hook(subcommand: str, payload: object) -> subprocess.CompletedProcess[str]:
     """配布設定と同じ隔離実行の形でフックを起動する。"""
     return subprocess.run(
-        ["uv", "run", "--no-project", "--script", str(_HOOK), subcommand],
+        ["dotfiles-claude-hook", subcommand],
         input=json.dumps(payload, ensure_ascii=False),
         capture_output=True,
         check=False,
@@ -45,29 +43,7 @@ def _run_hook(subcommand: str, payload: object) -> subprocess.CompletedProcess[s
 
 
 class TestDistributionPath:
-    """隔離実行の経路での起動を検査する。"""
-
-    def test_missing_hook_script_does_not_block(self, tmp_path: pathlib.Path):
-        """参照先スクリプトが不在でも終了コード0で通過する。"""
-        settings = json.loads(_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        command = next(
-            hook["command"]
-            for group in settings["hooks"]["PreToolUse"]
-            if group["matcher"] == "Write|Edit|MultiEdit"
-            for hook in group["hooks"]
-        )
-        missing_hook = tmp_path / "missing-hook.py"
-        command = command.replace("~/dotfiles/scripts/claude_hook.py", str(missing_hook))
-
-        result = subprocess.run(
-            ["sh", "-c", command],
-            capture_output=True,
-            check=False,
-            cwd=_REPO_ROOT,
-            encoding="utf-8",
-        )
-
-        assert result.returncode == 0, result.stderr
+    """配布設定が参照するconsole scriptの起動を検査する。"""
 
     def test_registered_subcommands_run_without_traceback(self):
         """登録済みの各サブコマンドがtracebackなしで終了する。"""

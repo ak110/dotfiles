@@ -26,7 +26,7 @@
 - `scripts/`: prek・Makefile・Claude Codeフックなどリポジトリ内部から呼ばれるスクリプト置き場
   - chezmoiで配布しない。Linux前提で書いてよい
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
-    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`scripts/claude_hook_pretooluse.py`
+    `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`・`pytools/claude_hook/pretooluse.py`
 - `bin/`: ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
   `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する

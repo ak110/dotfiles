@@ -13,14 +13,14 @@ $ErrorActionPreference = 'Stop'
 
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'
-$currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}'
+$currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}:{{ include (joinPath .chezmoi.workingTree "agent-toolkit/pyproject.toml") | sha256sum }}'
 $cachedHash = ''
 if (Test-Path $hashFile) {
     $cachedHash = (Get-Content $hashFile -Encoding UTF8 -Raw)
 }
 
 # キャッシュ判定は「入力ハッシュ一致」と「期待シム実在」の両方を条件とする。
-# pyproject.toml のハッシュのみで判定すると、過去の uv tool install 部分失敗で
+# プロジェクト定義のハッシュのみで判定すると、過去の uv tool install 部分失敗で
 # シムが欠落したまま再インストールが永久にスキップされる事象が発生するため、
 # post-apply 処理継続に必須のシムの実在もキャッシュキーへ組み込む。
 $expectedShimDir = Join-Path $env:USERPROFILE '.local\bin'
@@ -115,7 +115,7 @@ if ($needsReinstall) {
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 if ($needsReinstall -and -not $reinstallDeferred) {
     if ($currentHash -ne $cachedHash) {
-        Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
+        Write-Host '  [pytools] Pythonプロジェクト定義に変更あり → 再インストール'
     } else {
         Write-Host '  [pytools] 期待シムが欠落 → 再インストール'
     }
@@ -123,7 +123,7 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # $ErrorActionPreference = 'Stop' はネイティブ exe の非ゼロ終了を例外化しないため、
         # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
         # ハッシュ書き込みは uv tool install ・uv tool update-shell ・期待シム実在再確認のすべてが成功した場合のみ実行する。
-        & uv tool install --editable "{{ .chezmoi.workingTree }}"
+        & uv tool install --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
         if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
         & uv tool update-shell
         if ($LASTEXITCODE -ne 0) { throw "uv tool update-shell が失敗しました (exit=$LASTEXITCODE)" }
