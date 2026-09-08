@@ -258,11 +258,6 @@ jobs:
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.13'
         run: pyfltr ci --commands=pytest
 
-      # pyfltr image内の既存導入はsymlink_bins適用前の場合があるため、3.14全検査の前に更新する。
-      - name: Python 3.14 actionlint再導入
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
-        run: mise install --force actionlint
-
       - name: Python 3.14全検査
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master') && matrix.python-version == '3.14'
         env:

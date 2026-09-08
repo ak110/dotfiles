@@ -1,6 +1,7 @@
 min_version = "2026.8.8"
 
 [tools]
+actionlint = "latest"
 pinact = "latest"
 prek = "latest"
 typos = "latest"
@@ -14,13 +15,6 @@ typos = "latest"
 [tools.rust]
 version = "1.98.0"
 components = "rustfmt,clippy"
-
-# インストールrootの`man`ディレクトリがPATHへ入る事象を避ける。理由は
-# `.chezmoi-source/dot_config/mise/config.toml`の同項目のコメントを参照する。
-# optionsを保つためinline tableではなく別テーブルで書く（理由は`[tools.rust]`のコメントと同じ）。
-[tools.actionlint]
-version = "latest"
-symlink_bins = true
 
 [settings]
 lockfile = true

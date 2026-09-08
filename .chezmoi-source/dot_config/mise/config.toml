@@ -1,6 +1,7 @@
 [tools]
 "npm:@google/gemini-cli" = "latest"
 "npm:aws-cdk" = "latest"
+actionlint = "latest"
 chezmoi = "latest"
 # dotnetは共有ランタイムのルートへのsymlinkとして導入される。symlinkで導入済みの版は
 # `latest`のような曖昧な版指定の解決でmise.lockの確定バージョンより優先されるため、
@@ -22,17 +23,6 @@ ripgrep = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 typos = "latest"
-
-# actionlintの配布物はインストールrootへ実行ファイルと並んで`man`・`docs`のディレクトリを展開する。
-# miseは`bin`サブディレクトリを持たないツールのインストールrootをそのままPATHへ追加するため、
-# `man`がPATH上で`/usr/bin/man`より先に解決され、miseのshim経由の`man`がディレクトリをexecして失敗する。
-# `symlink_bins`は実行ファイルだけを`.mise-bins`へ集め、当該ディレクトリをPATHへ追加する。
-# 既にインストール済みの版へは再インストール又は版の更新まで反映されない。
-# optionsを保つためinline tableではなく別テーブルで書く
-# （`mise upgrade --bump`はinline tableを単一の文字列へ平坦化してoptionsを失う）。
-[tools.actionlint]
-version = "latest"
-symlink_bins = true
 
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
