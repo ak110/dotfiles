@@ -14,7 +14,7 @@ description: >
 計画ファイルの成果物契約は`references/plan-file-standards.md`、各工程の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書を正本とし、本書へ再掲しない。
 
 ユーザーが`agent-toolkit:plan-mode`又は`agent-toolkit:plan-and-add-awi`を直接起動した場合は、`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返す。
-起動プロンプトが起動経路として`agent-toolkit:process-wi`を明示している場合は`references/grilling.md`を使わず、必要な確認事項だけをUWIへ登録する。
+起動プロンプトが起動経路として`agent-toolkit:process-wi`と`agent-toolkit:fast-process-wi`のいずれかを明示している場合は`references/grilling.md`を使わず、必要な確認事項だけをUWIへ登録する。
 `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を受領した計画担当として起動された場合は、UWIを自ら登録せず、同書の完了報告が定めるエスカレーションで確認事項を呼び出し元へ返し、回答を受領してから工程を続ける。
 既存の旧単一ファイル形式・旧二ファイル形式の計画を改訂するときだけ、`references/legacy-plan-file-standards.md`を全文読む。
 計画書式の読み取り互換の実装・検査を変更するときも、同書を全文読む。

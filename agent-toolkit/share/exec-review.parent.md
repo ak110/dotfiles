@@ -68,7 +68,7 @@ review_contract:
 
 ## 実行レビュー後の計画最終化
 
-本節は`レビュー基準: 計画`で計画を実装したレーンと、終端担当が`exec-review`を起動した公開工程のCI修正に適用する。
+本節は`レビュー基準: 計画`で計画を実装した主体と、終端担当が`exec-review`を起動した公開工程のCI修正に適用する。`レビュー基準: 計画`で計画を実装した主体は、`agent-toolkit:process-wi`のレーン、`agent-toolkit:plan-mode`の直接起動経路のメイン、`agent-toolkit:fast-process-wi`の計画経路のメインの3つとする。
 保存済み計画の取得と保存の手順は`agent-toolkit:plan-mode`の計画ファイル基準の`## 計画ファイルの保存と参照`が定める。
 保存済み計画を実装するレーンでは、実装の着手前にメインが同節の取得操作を1回実行する。
 最終化では取得した計画ファイルへ実装時の進捗を反映し、同節の保存操作で取得元と同じ保存先へ戻す。
@@ -80,7 +80,7 @@ review_contract:
 全実装単位の実行レビューが指摘0件で収束するか、修正後に再レビュー不要として収束した後に最終化する。
 `レビュー基準: 計画`では、実行レビューで確定した変更と実装時の進捗を作業rootの計画へ反映し、
 `atk plans commit dd-{名称}-{小文字16進数4桁}.md`を1回実行する。
-本節を実行する主体は起動経路で分ける。`agent-toolkit:plan-mode`の直接起動経路ではメインが実行し、実装担当はこの操作へ着手せずメインへ差し戻す。
+本節を実行する主体は起動経路で分ける。`agent-toolkit:plan-mode`の直接起動経路と`agent-toolkit:fast-process-wi`の計画経路ではメインが実行し、実装担当はこの操作へ着手せずメインへ差し戻す。
 `agent-toolkit:process-wi`のレーン工程のレーンでは、メインが呼び出し元となり、統合指示へ最終化と計画型変換の要否と入力を載せる。実行は統合指示を受領した当該レーンの統合担当が担い、手順は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`が定める。公開工程で`exec-review`を起動した場合は、終端担当が主作業ツリーで修正commitを作成し、レビューの収束後は統合工程を経ずに版数とmanifestを再判定して再pushし、CI確認へ戻る。
 統合指示を伴わずに本節だけを求められた実装担当は、いずれの経路でも着手せず呼び出し元へ差し戻す。通常型AWIを計画型へ変換する位置は`agent-toolkit:process-wi`の`skills/process-wi/references/run-lanes.md`「マージとadopt」節が定める。
 この操作は指定stemのメイン、detail、付属素材及びレビュー表をprivate-notesへ移動してcommitとpushを行う。

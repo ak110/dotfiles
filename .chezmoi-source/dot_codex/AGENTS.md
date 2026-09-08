@@ -258,7 +258,7 @@ WIはエージェントワークアイテム（AWI）とユーザーワークア
   回答不要の通知、完了報告、別項目の完了待ち及び時間経過待ちはUWIにしない
 
 AWIの投入は`agent-toolkit:wi-standards`、取得と実施は`agent-toolkit:process-wi`が担う。
-ユーザーが手動で投入を依頼した場合は`agent-toolkit:add-awi`、計画ファイルを作成せずに少数のAWIを直接実施する場合は`agent-toolkit:fast-process-wi`を入口とする。
+ユーザーが手動で投入を依頼した場合は`agent-toolkit:add-awi`、レーンへ分けずに少数のAWIをまとめて実施する場合は`agent-toolkit:fast-process-wi`を入口とする。
 事前承認型のUWIは、`AskUserQuestion`の回答を得られない確認事項の代替として記録し、回答を得た時点で依存する作業を再開する。
 事後承認型のUWIは元の作業を保留せず、回答が是正を求めた場合に当該回答を要求として処理する。
 本文の書式、由来と承認、保存状態、状態遷移、依存、投入及び取得の手順は`agent-toolkit:wi-standards`を正本とする。
