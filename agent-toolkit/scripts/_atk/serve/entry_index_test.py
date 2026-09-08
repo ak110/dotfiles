@@ -88,6 +88,27 @@ def test_index_invalidates_changed_file_and_removes_deleted_file(
     assert parse_calls == 1
 
 
+def test_index_omits_file_moved_during_parse(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """解析中に別の状態へ移動したファイルを元の状態の結果へ含めない。"""
+    path = _write_entry(tmp_path, "inbox", "entry.md", "本文")
+    (tmp_path / "adopted").mkdir()
+    original_parse = entry_index.frontmatter.parse_frontmatter
+
+    def moving_parse(text: str) -> tuple[dict[str, typing.Any], str] | None:
+        path.rename(tmp_path / "adopted" / path.name)
+        return original_parse(text)
+
+    monkeypatch.setattr(entry_index.frontmatter, "parse_frontmatter", moving_parse)
+
+    result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox",))
+
+    assert not result
+    assert not warnings
+
+
 def test_operations_entries_and_target_repos_share_index(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

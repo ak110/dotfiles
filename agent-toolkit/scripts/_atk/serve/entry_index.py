@@ -97,6 +97,15 @@ class EntryIndex:
                     kind = common.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
                     parsed = _ParsedFile(text=text, metadata=metadata, kind=kind)
                     cached = _CacheEntry(mtime_ns=file_stat.st_mtime_ns, size=file_stat.st_size, parsed=parsed)
+                try:
+                    current_stat = path.stat()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
+                    continue
+                if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
+                    continue
                 next_cache[real_path] = cached
                 result.append(
                     IndexedEntry(
