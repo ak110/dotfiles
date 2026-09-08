@@ -359,7 +359,7 @@ jobs:
 
   statusline-version:
     name: statusline-version
-    if: github.event_name == 'pull_request' && github.base_ref == 'master'
+    if: (github.event_name == 'pull_request' && github.base_ref == 'master') || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -374,7 +374,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet "$BASE_SHA" "$CURRENT_SHA" -- rust/claude-statusline/; then
+          if [ -n "$BASE_SHA" ]; then
+            base_sha="$BASE_SHA"
+          else
+            git fetch --no-tags origin master
+            base_sha=$(git merge-base FETCH_HEAD "$CURRENT_SHA")
+          fi
+
+          if git diff --quiet "$base_sha" "$CURRENT_SHA" -- rust/claude-statusline/; then
             echo "statuslineの変更がないため、版数検査を省略する。"
             exit 0
           fi
@@ -391,7 +398,7 @@ jobs:
 
           base_manifest=$(mktemp)
           trap 'rm -f -- "$base_manifest"' EXIT
-          git show "$BASE_SHA:rust/claude-statusline/Cargo.toml" > "$base_manifest"
+          git show "$base_sha:rust/claude-statusline/Cargo.toml" > "$base_manifest"
           base_version=$(read_version "$base_manifest")
           current_version=$(read_version rust/claude-statusline/Cargo.toml)
 

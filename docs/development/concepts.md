@@ -286,7 +286,7 @@ PRのheadはGitHub設定で`develop`だけに制限しない。
 リリースの成否判定とは別に、`agent-toolkit:process-wi`のセッション終端ではベースbranchの公開状態（現在branch、作業ツリーのclean、リモート追跡refへのahead、中断状態）を観測する（2026年9月、利用者指示）。未公開のcommitを残した終了が常駐ループの開始前更新を停止させたためであり、解消できない場合はUWIへ引き継ぐ。
 `agent-toolkit:process-wi`では、前のセッションを対象とする振り返り、即時対応と自動コードレビュー監査を①の開始時に起動して②と並行して進め、③の開始より前に処置を確定する。③では終端担当による公開とCI確認を1回だけ実施する。終端担当の起動後に生じた是正commitはローカルの`develop`へ保持し、次のセッションの③で公開する（2026年9月、利用者指示。2026年9月7日、利用者指示により振り返りと監査を①と②に並行する位置へ移した）。
 
-statusline（`rust/claude-statusline/`配下）を変更した場合は、その版数更新を同じリリースPRへ含める。変更がない場合は版数を更新しない。
+statusline（`rust/claude-statusline/`配下）を変更した場合は、その版数更新を`develop`をpushする時点までに行う。変更がない場合は版数を更新しない。更新漏れは`develop`へのpushとリリースPRの双方で実行されるCIの`statusline-version` jobが検出する。
 `master`のCIが成功したマージコミットに対してだけタグ、Linux・Windowsバイナリ及びGitHub Releaseを作成する。
 マージ後のCI又はReleaseが失敗した場合は外部状態、失敗工程、run URL及び再開点を報告し、状態を自動で巻き戻さない。
 

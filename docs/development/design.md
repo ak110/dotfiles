@@ -1375,7 +1375,9 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 
 statuslineのCargo versionとbase・head version及びtagの検査は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
-`statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
+`statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。
+比較基点は、pull request起点では`github.event.pull_request.base.sha`、push起点では`git fetch --no-tags origin master`の後の`git merge-base`が返す`master`との共通祖先とする。
+push起点を加えるのは、版数更新漏れをrelease pull requestの必須check一式が実行される前に検出するためである。
 同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。
 ruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを検査する。検査した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。

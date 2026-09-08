@@ -119,9 +119,9 @@ def _strip_command_prefixes(command: str) -> str:
 
 _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     # 直接実行系
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?(?:python\s+-m\s+)?pytest\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*)?(?:python\s+-m\s+)?pytest\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
     # タスクランナー経由（make / mise run / npm | pnpm | yarn（run省略可）/ just / task）で
     # test / check / validateアクション

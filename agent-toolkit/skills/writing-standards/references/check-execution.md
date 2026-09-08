@@ -12,7 +12,7 @@
 
 ## pyfltrの起動形
 
-- 通常運用は`uvx pyfltr`を使う。`uv run pyfltr`は、pyfltr自身を開発又は検証する場合に限る
+- pyfltrの起動形は、対象プロジェクトのタスクランナー定義（`Makefile`・`mise.toml`のtasks・`package.json`のscriptsなど）が用いる形へそろえる。当該定義を持たない対象プロジェクトでは`uvx pyfltr`を使う
 - project lockfileを使う`uv run`では`--frozen`を必須とする。prekは親環境の`UV_FROZEN`を引き継がない
 - PEP 723スクリプトを実行する`uv run --script`では、対応するscript lockfileがある場合だけ`--frozen`を付ける。script lockfileが無い対象へ`--frozen`を指定すると、uvは`Unable to find lockfile for Python script`を出力して終了コード2で停止する
 - script lockfileを持たないPEP 723スクリプトで依存解決の結果を固定する場合は、`uv lock --script <スクリプトの絶対パス>`でscript lockfileを作成してから`--frozen`を指定する

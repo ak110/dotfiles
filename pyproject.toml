@@ -112,7 +112,7 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
 # 書き換えないよう、`ruff-format`のlint自動修正を無効にする。
-# lintの自動修正は`make format`（`uvx pyfltr fast`）のfix段が引き続き担う。
+# lintの自動修正は`make format`（`uv run --frozen pyfltr fast`）のfix段が引き続き担う。
 ruff-format-by-check = false
 pylint-args = ["--jobs=4"]
 # リポジトリ直下とagent-toolkit/scripts/の`conftest.py`は、いずれもトップレベルのモジュール`conftest`へ

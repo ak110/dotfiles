@@ -134,7 +134,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
+整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。
@@ -227,7 +227,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
    `["."]`を渡し、SSOTテストを含む全テストが成功することを確認する。
    必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
-   MCPを利用できない場合は`uvx pyfltr run-for-agent`を使う
+   MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
 6. 変更をコミットする
 
 次のいずれかを変更した場合は、変更後の互換起動条件を確認する。

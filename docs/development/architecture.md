@@ -65,7 +65,7 @@
 
 ```bash
 uv run --frozen python scripts/sync_generated_files.py  # 全生成物を冪等同期
-uvx pyfltr fast                                         # 高速ツールと生成物を同期
+uv run --frozen pyfltr fast                             # 高速ツールと生成物を同期
 ```
 
 手書き補完が必要な場合（`bin/`配下コマンドのうち`gen-completions.py`の収集対象外のものなど）は

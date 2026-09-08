@@ -54,14 +54,14 @@ setup-pwsh:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format:
-	uvx pyfltr fast
+	uv run --frozen pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 # `--no-fix`はlinterの自動修正段を抑止する。コミット可否を判定するゲートが判定対象の作業ツリーを
 # 書き換えないようにし、担当範囲外のファイルへ差分が出ないようにする。
 # 自動修正が必要な場合は`make format`を使う。
 test:
-	uvx pyfltr run --no-fix
+	uv run --frozen pyfltr run --no-fix
 
 # 実ブラウザーテストを日常実行
 test-browser:

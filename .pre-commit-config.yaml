@@ -52,7 +52,7 @@ repos:
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uvx pyfltr fast
+        entry: uv run --frozen pyfltr fast
         always_run: true
         require_serial: true
         language: system
