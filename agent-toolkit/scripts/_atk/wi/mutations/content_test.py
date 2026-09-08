@@ -954,6 +954,25 @@ class TestEditBodyFile:
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
 
+    def test_agent_environment_can_edit_hold_item(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エージェント環境でもholdの本文置換を受理する。"""
+        notes = _setup_notes(tmp_path)
+        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        hold = notes / "hold"
+        path = inbox_path.rename(hold / inbox_path.name)
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
+
     def test_agent_environment_rejects_processing_body_replacement(
         self,
         monkeypatch: pytest.MonkeyPatch,
