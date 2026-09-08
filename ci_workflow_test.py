@@ -1,8 +1,10 @@
 """CI workflowの静的契約を検証する。"""
 
+import os
 import re
 import shlex
 import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -169,6 +171,18 @@ def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: 
     assert len(typing.cast(list[object], matrix["python-version"])) == 2
 
 
+def test_python_314_reinstalls_actionlint_before_full_check(workflow_data: dict[str, object]) -> None:
+    """Python 3.14全検査は、image内のactionlintを現行mise設定で再導入してから実行する。"""
+    steps = _steps(_job_by_display_name(workflow_data, "python-lint"))
+    reinstall_index = next(index for index, step in enumerate(steps) if step.get("name") == "Python 3.14 actionlint再導入")
+    full_check_index = next(index for index, step in enumerate(steps) if step.get("name") == "Python 3.14全検査")
+    reinstall = steps[reinstall_index]
+
+    assert reinstall["run"] == "mise install --force actionlint"
+    assert reinstall["if"] == f"({_OWNER_CONDITION}) && matrix.python-version == '3.14'"
+    assert reinstall_index < full_check_index
+
+
 def test_statusline_version_is_an_independent_master_pull_request_check(
     workflow_data: dict[str, object],
 ) -> None:
@@ -208,7 +222,11 @@ def test_statusline_version_develop_push_reaches_version_check(
     result = subprocess.run(
         ["bash"],
         cwd=checkout,
-        env={"PATH": "/usr/bin:/bin", "BASE_SHA": "", "CURRENT_SHA": current_sha},
+        env={
+            "PATH": os.pathsep.join((str(Path(sys.executable).parent), "/usr/bin", "/bin")),
+            "BASE_SHA": "",
+            "CURRENT_SHA": current_sha,
+        },
         input=script,
         check=False,
         capture_output=True,
