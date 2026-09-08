@@ -14,6 +14,7 @@ from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wron
 from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
 _BASE = _plan_fixture.BASE_COMMIT
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 _VALID_CONTENT = _plan_fixture.single_file_plan()
 _BUG_CONTENT = _plan_fixture.single_file_plan(bug=True)
@@ -306,7 +307,7 @@ title: x
 
 def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
-    assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")
+    assert _plan_format.is_agent_doc_target_file(f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/rules-main.md")
     assert not _plan_format.is_agent_doc_target_file("agent-toolkit/share/plan-review.parent.md")

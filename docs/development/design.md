@@ -751,7 +751,7 @@ Claude Code固有の最上位セッションへの即時通知は`agent-toolkit/
 
 振り返りの抽出担当は、対象リポジトリの未処理のキュー項目を自ら取得して候補と照合する。取得手段は`atk wi list`、`atk wi grep`、`atk wi show`とし、どの手段をどの順で使うかは候補の件数と観測事象の語から抽出担当が決める。抽出担当は候補が既存項目と同じ事象を指す場合に該当ファイル名を添え、フックの警告通知だけを根拠とする候補を通知の種別ごとに1件へまとめる。既登録かどうかの照合をメインから抽出側へ移すことで、メインの判定を新しい事象へ限定する。抽出担当が原因、解決案、反映先及び採否を作成しない契約は維持し、候補の提示形式だけを変える。一覧をメインが渡す形は、同じ内容が準備工程の出力と起動文の双方でメインのコンテキストへ載り、抽出担当が照合対象の本文を`atk wi show`で取得し直すため採用しない。メインが候補ごとに照合する形も、候補数に比例してメインのコンテキストを消費するため採用しない。
 
-抽出担当の契約は`agent-toolkit/share/session-review-evidence.parent.md`と同`.subagent.md`の対が持ち、`agent-toolkit:session-review`のSKILL.mdは準備、起動、メイン専用の解決及び再照合だけを持つ。呼び元用と呼び先用を対で置くのは、`agent-toolkit/skills/agent-standards/references/sub-agents.md`「起動文書のペア」が両者の分離を求め、session-reviewが名前付きサブエージェント定義を持たないためである。契約をSKILL.mdの散文に残しメインが起動のたびに起動文へ書き起こす形は、起動文の文面がセッションごとに変わって抽出範囲が揺れるため採用しない。
+抽出担当の契約は`agent-toolkit/share/session-review-evidence.parent.md`と同`.subagent.md`の対が持ち、`agent-toolkit:session-review`のSKILL.mdは準備、起動、メイン専用の解決及び再照合だけを持つ。呼び元用と呼び先用を対で置くのは、`agent-toolkit/skills/writing-standards/references/sub-agents.md`「起動文書のペア」が両者の分離を求め、session-reviewが名前付きサブエージェント定義を持たないためである。契約をSKILL.mdの散文に残しメインが起動のたびに起動文へ書き起こす形は、起動文の文面がセッションごとに変わって抽出範囲が揺れるため採用しない。
 
 準備は`agent-toolkit/skills/session-review/scripts/session_review_prepare.py`が1回の実行で行い、抽出器の実在確認、記録の識別子、管理対象一時領域、観測境界及び対象リポジトリを1つのJSONで返す。同スクリプトはキューを参照しない。準備が成立しない場合は非0の終了コードと不足した項目名を返し、メインが分析失敗として扱う。
 

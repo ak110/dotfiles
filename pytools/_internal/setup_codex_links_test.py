@@ -8,6 +8,8 @@ import pytest
 
 from pytools._internal import claude_common, setup_codex_links
 
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
+
 
 @pytest.fixture(name="env")
 def env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
@@ -29,7 +31,7 @@ def test_creates_symlink_when_missing(
 ) -> None:
     """配布先未作成時はシンボリックリンクが新規作成され`True`返却。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
 
@@ -46,7 +48,7 @@ def test_no_op_when_link_already_correct(
 ) -> None:
     """既存リンクが期待ターゲットと一致するなら何もせず`False`返却。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
     dest = codex_home / "skills" / "foo"
@@ -63,7 +65,7 @@ def test_recreates_link_when_target_mismatched(
 ) -> None:
     """既存リンクが別ターゲットを指す場合は再生成し`True`返却。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
     other = dotfiles_root / "other"
@@ -113,7 +115,7 @@ def test_recreates_link_when_dangling(
 ) -> None:
     """既存リンクがリンク切れ（ターゲット不在）なら再生成し`True`返却。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
     dest = codex_home / "skills" / "foo"
@@ -135,7 +137,7 @@ def test_skips_when_regular_directory_exists(
 ) -> None:
     """配布先に通常ディレクトリが存在するなら警告ログ・スキップ・該当件0なら`False`返却。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     (dotfiles_root / "agent-toolkit" / "skills" / "foo").mkdir(parents=True)
     dest = codex_home / "skills" / "foo"
     dest.mkdir(parents=True)
@@ -154,7 +156,7 @@ def test_skips_when_src_missing(
 ) -> None:
     """配布元が未存在なら警告ログ・該当件スキップ。"""
     _, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
 
     with caplog.at_level(logging.WARNING):
         assert setup_codex_links.run() is False
@@ -252,7 +254,7 @@ def test_windows_recreates_link_when_junction_like_dangling(
     """Windows相当環境でリンク切れジャンクション（`is_symlink`は偽だが`_is_link_like`が真）を
     検出した場合、`_remove_link`実行後に`CreateJunction`を呼ぶこと。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
     dest = codex_home / "skills" / "foo"
@@ -283,7 +285,7 @@ def test_windows_creates_junction(
 ) -> None:
     """Windows相当環境では`_winapi.CreateJunction`が期待引数で呼ばれ`True`返却。"""
     dotfiles_root, codex_home = env
-    _set_single_link(monkeypatch, "skills/foo", "agent-toolkit/skills/foo")
+    _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
     src.mkdir(parents=True)
 

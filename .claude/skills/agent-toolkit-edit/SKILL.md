@@ -19,7 +19,7 @@ description: >
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`: 順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけに適用する規範。
-  振り分けの判定は`agent-toolkit:agent-standards`「規範追記時の判定」に従う
+  振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は

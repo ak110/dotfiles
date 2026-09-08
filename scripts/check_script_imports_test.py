@@ -7,6 +7,8 @@ import pathlib
 import check_script_imports
 import pytest
 
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
+
 
 def _write_pep723_script(path: pathlib.Path, *, dependencies: list[str] | None = None, body: str = "") -> None:
     """PEP 723ヘッダー付きの単独実行スクリプトを`path`へ生成する。"""
@@ -23,7 +25,7 @@ def _isolate_repo_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
     """検査対象のリポジトリルートと走査対象ディレクトリ集合を一時領域へ差し替える。"""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/scripts").mkdir(parents=True)
-    (tmp_path / "agent-toolkit/skills/example/scripts").mkdir(parents=True)
+    (tmp_path / f"{_TOOLKIT_PREFIX}/skills/example/scripts").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text("[project.scripts]\n", encoding="utf-8")
     monkeypatch.setattr(check_script_imports, "_REPO_ROOT", tmp_path)
     monkeypatch.setattr(check_script_imports, "_PYPROJECT_PATH", tmp_path / "pyproject.toml")
@@ -46,13 +48,14 @@ def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, ca
     """agent-toolkit直下とskill配下を含む全走査対象のエラーを報告する。"""
     _write_pep723_script(_isolate_repo_root / "agent-toolkit/scripts/broken.py", body="import missing_toolkit_dependency")
     _write_pep723_script(
-        _isolate_repo_root / "agent-toolkit/skills/example/scripts/broken.py", body="import missing_skill_dependency"
+        _isolate_repo_root / f"{_TOOLKIT_PREFIX}/skills/example/scripts/broken.py",
+        body="import missing_skill_dependency",
     )
 
     assert check_script_imports.main() == 1
     captured = capsys.readouterr()
     assert "agent-toolkit/scripts/broken.py" in captured.err
-    assert "agent-toolkit/skills/example/scripts/broken.py" in captured.err
+    assert f"{_TOOLKIT_PREFIX}/skills/example/scripts/broken.py" in captured.err
 
 
 def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

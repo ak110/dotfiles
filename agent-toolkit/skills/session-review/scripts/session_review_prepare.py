@@ -6,7 +6,7 @@
 """セッション振り返りの証拠抽出に必要な準備項目を1行のJSONで取得する。
 
 本スクリプトは検査スクリプトではなくデータ取得ツールであるため、
-`agent-toolkit:agent-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
+`agent-toolkit:writing-standards`の`references/check-script-design.md`が定める「成功時無出力」規定は適用せず、
 引数誤用と準備項目を取得できない実行前エラーを終了コード2とする区分だけを踏襲する。
 """
 
