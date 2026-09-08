@@ -15,7 +15,7 @@
 いずれもレーン工程と並行して進め、公開工程の開始より前に返却の受領と処置の確定を完了する。レーン工程の全レーンの完了を開始条件にしない。
 
 振り返りは、メインが`agent-toolkit:session-review`をSkill機能で起動し、同スキルの別セッション経路を適用する。
-起動、受領、即時対応の処置及び引き継ぎ経路の終端は`${CLAUDE_PLUGIN_ROOT}/share/session-review-past.parent.md`が定める。
+起動、受領、即時対応の処置及び引き継ぎ経路の終端は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が定める。
 振り返りで同じ時機に修正内容が確定した事象が複数ある場合は、1件の委譲先へまとめて渡す。まとめる対象は、同じ作業ディレクトリで実行でき、書込所有権が競合しない事象とする。事象ごとに委譲先を分ける場合は、その理由を記録する。
 
 対象リポジトリがGitHub上にある場合、自動コードレビューを確認する。GitHub Copilotの取得と判定は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`を全文読んで実行する。GitHub以外の対象リポジトリでは、以降の自動コードレビュー確認を行わない。
