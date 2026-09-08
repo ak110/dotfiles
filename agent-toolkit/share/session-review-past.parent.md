@@ -5,23 +5,23 @@
 
 ## 対象セッションの取得
 
-メインが`atk session-review-queue claim`を1回実行し、終了コード0を確認する。
+メインが`atk session-review-target`を1回実行し、終了コード0を確認する。
 Claude Codeでは現在のtranscriptの絶対パスを`--transcript`へ、Codexでは`CODEX_THREAD_ID`の値を`--codex-thread-id`へ渡す。
 
 ```sh
-atk session-review-queue claim --target-repo=<対象リポジトリの絶対パス> --transcript=<現在のtranscriptの絶対パス>
-atk session-review-queue claim --target-repo=<対象リポジトリの絶対パス> --codex-thread-id=<現在のthread ID>
+atk session-review-target --target-repo=<対象リポジトリの絶対パス> --transcript=<現在のtranscriptの絶対パス>
+atk session-review-target --target-repo=<対象リポジトリの絶対パス> --codex-thread-id=<現在のthread ID>
 ```
 
-当該コマンドは、振り返りが未了のセッションを1件1行のJSONで返し、あわせて現在のセッションを同じ記録へ登録する。
+当該コマンドは、Claude CodeとCodexの保存済みセッション記録から、対象リポジトリで動いた自身以外の本体セッションのうち更新時刻が最新の1件を1行のJSONで返す。
+該当するセッションが無い場合は何も返さない。
 返った行が0件の場合は振り返り担当を起動せず、対象が無い旨を`agent-toolkit:completion-report`の振り返り欄へ渡す。
-返った行が1件以上の場合は、行ごとに1件の振り返り担当を起動する。行の`engine`と`session_id`をそのまま起動文へ渡し、値を組み立て直さない。
+返った行が1件の場合は1件の振り返り担当を起動する。行の`engine`と`session_id`をそのまま起動文へ渡し、値を組み立て直さない。
 
 ## 起動
 
 起動の前に`atk managed-temp create --prefix session-review-past`を1回実行し、終了コード0と単一行の絶対パスを確認する。
 当該ディレクトリの直下の`<session_id>.md`を振り返りの成果の出力先ファイルとし、メインが当該領域を所有する。
-対象セッションが複数ある場合も領域は1つとし、対象ごとに出力先ファイル名を分ける。
 
 起動文を組む前に`agent-toolkit:delegation`をSkill機能で起動する。
 `agents_server`の`start`へ`model_type="session_review"`と対象リポジトリの絶対パスを渡し、通常のサブエージェントを1つ起動する。
@@ -54,28 +54,17 @@ engine、model及びeffortはサーバーが解決するため指定しない。
 `status`が`analysis_failed`の場合は、同じ入力で振り返り担当を1回だけ起動し直す。
 再失敗した場合は`agent-toolkit:wi-standards`に従い、対象セッションの識別子、失敗事象、解除条件及び再開工程をUWIへ登録する。
 
-## 即時対応と終端
+## 即時対応と後始末
 
 メインは成果ファイルの登録したキュー項目について、`agent-toolkit:process-wi`のSKILL.mdの「即時対応」節の判定を適用する。
 振り返り担当が当該項目を既に登録しているため、同節の手順2の登録を重ねて行わない。
 当該項目は当該セッションのレーンへ組み込まず、同節の手順3の委譲文へ正本ファイル名を渡す。
-
-対象セッションについて、`atk session-review-queue done`を1回実行し、終了コード0を確認する。
-実行の時機は、成果ファイルの検収と、即時対応と次セッションへのAWI登録のいずれで処置するかの確定と、確定した処置の実施をすべて完了した後とする。
-`done`は対象を唯一の引き継ぎ記録から除くため、これより前に実行すると、中断した時点で未完了の工程を再開できない。
-この順序では、いずれの中断点でも対象が記録に残り、次の`claim`が同じ対象を返して未完了の工程を続行できる。
-`status`が`analysis_failed`でUWIを登録した対象セッションも同じ操作で終端する。同じ失敗を毎セッションで繰り返さないためである。
-
-```sh
-atk session-review-queue done --target-repo=<対象リポジトリの絶対パス> <session_id>
-```
 
 成果ファイルは、成果の検収、即時対応と次セッションへの登録の確定、確定した処置の実施、
 及び`agent-toolkit:completion-report`の振り返り欄への反映が完了するまで入力として保持する。
 対象セッションごとに、成果ファイルから確定した結論と処置を現在の計画の進捗ログへ記録し、
 登録したキュー項目や対象リポジトリの成果物がある場合は、その正本も同じ記録へ対応付ける。
 未完了工程がある場合は、当該工程と成果ファイルの絶対パスを現在の計画の進捗ログへ記録する。
-成果ファイルを1回読み取ったことも`done`の成功も、それだけでは用途完了として扱わない。
 
 全ての対象について前段の消費工程と恒久記録が完了し、再開時に成果ファイルを再読する工程が残っていないことを確認した後に、
 `atk managed-temp cleanup --path <起動前に作成した領域の絶対パス>`を1回実行し、終了コード0を確認する。

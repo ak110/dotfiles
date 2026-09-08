@@ -69,7 +69,7 @@ from _atk import output_file as _output_file  # noqa: E402
 from _atk import plans as _plans  # noqa: E402
 from _atk import review_audit as _review_audit  # noqa: E402
 from _atk import review_table as _review_table  # noqa: E402
-from _atk import session_review_queue as _session_review_queue  # noqa: E402
+from _atk import session_review_target as _session_review_target  # noqa: E402
 from _atk import watch as _watch  # noqa: E402
 from _atk import worktree_stash as _worktree_stash  # noqa: E402
 from _atk.wi import add as _add  # noqa: E402
@@ -893,7 +893,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _watch.build_parser(watch)
     _review_table.build_parser(top)
     _review_audit.build_parser(top)
-    _session_review_queue.build_parser(top)
+    _session_review_target.build_parser(top)
     return parser
 
 
@@ -1104,9 +1104,9 @@ def main(
         except ValueError as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
-    if args.command == "session-review-queue":
+    if args.command == "session-review-target":
         try:
-            sys.exit(_session_review_queue.dispatch(args))
+            sys.exit(_session_review_target.dispatch(args))
         except ValueError as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)

@@ -296,20 +296,10 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: 分類を確定したreview識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済み又は根拠付き対応不要と分類したreview本文を記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、更新後の当該リポジトリの識別子を昇順で標準出力へ書く。記録済みの識別子は重複させない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へ正の整数の識別子を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
         "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 987654321",
     },
-    "atk session-review-queue": {
-        "summary": "前のセッションの振り返り待ちを記録する",
-        "description": "目的: 終了したセッションの振り返りを次のprocess-wiセッションへ引き継ぐ。\n利用場面: process-wiの開始時に未処理の対象を取得して現在のセッションを登録するとき。処置の確定後に対象を完了するとき。\n対象と出力: 状態ディレクトリの`session-review-queue.json`を対象リポジトリごとに排他更新する。サブコマンドを指定しない場合は一覧を標準出力へ書き、何も変更しない。\n前提: 対象リポジトリを省略した場合はカレント作業ディレクトリから解決する。\n復元・後始末: 未完了の記録は次回のclaimが再取得する。処置の確定後はdoneで対象だけを除く。",
-        "epilog": "実行例:\n\n  atk session-review-queue claim --codex-thread-id=0199aabb-ccdd",
-    },
-    "atk session-review-queue claim": {
-        "summary": "未処理の対象を取得して現在のセッションを登録する",
-        "description": "目的: 対象リポジトリの未処理セッションを取得した後、現在のセッションを次回の対象として登録する。\n利用場面: process-wiの①で前のセッションの振り返りを開始するとき。\n対象と出力: 状態ディレクトリの記録を排他更新し、自身を除く既存エントリーを登録日時順のJSON Linesで標準出力へ書く。\n前提: `--transcript`又は`--codex-thread-id`の一方を指定する。\n復元・後始末: 登録済みの自身は次回のclaimが取得する。振り返りと処置を終えた対象はdoneで除く。",
-        "epilog": "実行例:\n\n  atk session-review-queue claim --transcript=/home/user/.claude/projects/example/session.jsonl",
-    },
-    "atk session-review-queue done": {
-        "summary": "振り返りを完了したセッションを記録から除く",
-        "description": "目的: 振り返りと必要な処置を完了したセッションだけを未処理記録から除く。\n利用場面: 成果の検収と即時対応の処置の確定を終えたとき。分析失敗をUWIへ記録したとき。\n対象と出力: 状態ディレクトリの記録を排他更新し、除去後の残存エントリーを登録日時順のJSON Linesで標準出力へ書く。\n前提: 位置引数へセッション識別子を1件以上指定する。\n復元・後始末: 存在しない識別子は何も変更せず正常終了する。誤って除いた記録の復元手段は設けないため、完了前に実行しない。",
-        "epilog": "実行例:\n\n  atk session-review-queue done 0199aabb-ccdd",
+    "atk session-review-target": {
+        "summary": "前のセッションの振り返り対象を特定する",
+        "description": "目的: 対象リポジトリで動いた自身以外の本体セッションのうち、更新時刻が最新の1件を振り返りの対象として返す。\n利用場面: process-wiの①で前のセッションの振り返りを開始するとき。\n対象と出力: Claude CodeとCodexの保存済みセッション記録を読み取り、該当する1件の実行系とセッション識別子をJSONで標準出力へ書く。該当が無い場合は何も書かない。記録は変更しない。\n前提: `--transcript`又は`--codex-thread-id`の一方へ自身の識別子を指定する。対象リポジトリを省略した場合はカレント作業ディレクトリから解決する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk session-review-target --transcript=/home/user/.claude/projects/example/session.jsonl",
     },
 }
 
