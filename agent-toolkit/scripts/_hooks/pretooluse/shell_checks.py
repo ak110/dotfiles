@@ -1123,7 +1123,7 @@ def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
 
 
 def _check_bash_unverified_atk_help(command: str, session_id: str) -> str | None:
-    """同一セッションでヘルプ未観測の`atk`サブコマンド実行を警告する。"""
+    """同一セッションでヘルプ未観測の`atk`サブコマンド実行を遮断する。"""
     if not session_id:
         return None
     help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
@@ -1144,12 +1144,15 @@ def _check_bash_unverified_atk_help(command: str, session_id: str) -> str | None
     unverified = sorted(targets - observed)
     if not unverified:
         return None
-    return _llm_notice(
-        "warn: 同一セッションでヘルプ出力を観測していない`atk`のサブコマンドを実行しようとしている。"
-        f"対象: {'、'.join(unverified)}\n"
-        "Fix: 先に当該サブコマンドへ`--help`だけを付けて単独で実行し、受理形式と出力形式を確定する。",
-        tag=_WARN_TAG,
+    print(
+        _block_notice(
+            "block: 同一セッションでヘルプ出力を観測していない`atk`のサブコマンドを実行しようとしている。"
+            f"対象: {'、'.join(unverified)}",
+            fix="先に当該サブコマンドへ`--help`だけを付けて単独で実行し、受理形式と出力形式を確定する。",
+        ),
+        file=sys.stderr,
     )
+    return "block"
 
 
 def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:

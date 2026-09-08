@@ -67,18 +67,18 @@ class TestBashHelpOnlyStateChangeCommands:
 
 
 class TestBashUnverifiedAtkHelp:
-    """未観測の`atk`サブコマンドだけを警告する。"""
+    """未観測の`atk`サブコマンドだけを遮断する。"""
 
-    def test_unobserved_subcommand_warns(self, tmp_path: pathlib.Path) -> None:
+    def test_unobserved_subcommand_blocks(self, tmp_path: pathlib.Path) -> None:
         session_id = "unobserved-atk-help"
         result = _run(
             {"tool_name": "Bash", "tool_input": {"command": "atk wi add example"}, "session_id": session_id},
             env_overrides=_plan_file_state_env(tmp_path),
         )
 
-        assert result.returncode == 0
-        assert "対象: atk wi add" in _additional_context(result)
-        assert "Fix: 先に当該サブコマンドへ`--help`だけを付けて単独で実行" in _additional_context(result)
+        assert result.returncode == 2
+        assert "対象: atk wi add" in result.stderr
+        assert "Fix: 先に当該サブコマンドへ`--help`だけを付けて単独で実行" in result.stderr
 
     def test_observed_subcommand_does_not_warn(self, tmp_path: pathlib.Path) -> None:
         session_id = "observed-atk-help"
@@ -90,6 +90,15 @@ class TestBashUnverifiedAtkHelp:
 
         assert result.returncode == 0
         assert "ヘルプ出力を観測していない" not in _additional_context(result)
+
+    def test_empty_session_id_does_not_block(self, tmp_path: pathlib.Path) -> None:
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "atk wi add example"}},
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
+        assert "ヘルプ出力を観測していない" not in result.stderr
 
     def test_unknown_subcommand_does_not_warn(self, tmp_path: pathlib.Path) -> None:
         result = _run(
