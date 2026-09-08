@@ -482,6 +482,7 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
     sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert [item["session_id"] for item in sessions] == [response["session_id"]]
     assert sessions[0]["model"] == "second"
+    assert backend.release_calls == ["session-1"]
     await manager.close()
 
 
@@ -509,6 +510,7 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
     assert [item["session_id"] for item in sessions] == [response["session_id"]]
     assert sessions[0]["model"] == "second"
     assert sessions[0]["status"] == "failed"
+    assert backend.release_calls == ["session-1"]
     await manager.close()
 
 
@@ -585,6 +587,7 @@ class _FakeStatusBackend:
     def __init__(self, sessions: dict[str, state.SessionState]) -> None:
         self.sessions = sessions
         self.count = 0
+        self.release_calls: list[str] = []
 
     async def start(
         self,
@@ -614,6 +617,10 @@ class _FakeStatusBackend:
 
     async def close(self) -> None:
         """外部資源を持たないため何もしない。"""
+
+    async def release_session(self, session_id: str) -> None:
+        """解放対象を検証用に記録する。"""
+        self.release_calls.append(session_id)
 
     async def send_message(self, session: state.SessionState, _prompt: str) -> dict[str, object]:
         """新しいreply turnを開始する。"""

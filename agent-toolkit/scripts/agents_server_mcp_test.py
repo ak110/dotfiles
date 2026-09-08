@@ -18,7 +18,7 @@ from typing import Any, cast
 
 import agents_server_mcp as subject
 import pytest
-from _agents_server import agents_wait, state, status_file
+from _agents_server import agents_wait, session_registry, state, status_file
 from _agents_server import claude as claude_backend
 from _agents_server import codex as codex_backend
 
@@ -820,11 +820,11 @@ async def test_start_rejects_unknown_model_type_before_backend(
 
 
 @pytest.mark.asyncio
-async def test_start_advances_candidate_when_backend_start_raises(
+async def test_start_does_not_advance_candidate_when_backend_start_raises(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """backend開始が例外で失敗した候補を除外し、同じ呼び出しで次候補を起動する。"""
+    """backend開始の例外では、資源の二重作成を避けて候補を進めない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
@@ -844,20 +844,18 @@ async def test_start_advances_candidate_when_backend_start_raises(
         return await original_start(prompt, cwd, model, effort, **kwargs)
 
     monkeypatch.setattr(backend, "start", fail_first_start)
-    response = await manager.start("plan", "調査", str(tmp_path))
+    with pytest.raises(RuntimeError, match="backend unavailable"):
+        await manager.start("plan", "調査", str(tmp_path))
 
-    assert calls == [("first", "high"), ("second", "high")]
-    assert response["model"] == "second"
-    assert response["status"] == "running"
-    assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+    assert calls == [("first", "high")]
 
 
 @pytest.mark.asyncio
-async def test_start_raises_last_failure_when_every_candidate_fails_to_launch(
+async def test_start_raises_first_failure_when_backend_start_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """全候補のbackend開始が例外で失敗した場合だけ、最後の失敗を送出する。"""
+    """backend開始が例外で終わった場合は最初の失敗をそのまま送出する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
     manager, backend = _manager_with_fake("codex")
@@ -874,9 +872,9 @@ async def test_start_raises_last_failure_when_every_candidate_fails_to_launch(
         raise RuntimeError(f"backend unavailable: {model}")
 
     monkeypatch.setattr(backend, "start", fail_start)
-    with pytest.raises(RuntimeError, match="backend unavailable: second"):
+    with pytest.raises(RuntimeError, match="backend unavailable: first"):
         await manager.start("plan", "調査", str(tmp_path))
-    assert calls == [("first", "high"), ("second", "high")]
+    assert calls == [("first", "high")]
 
 
 @pytest.mark.asyncio
@@ -908,6 +906,53 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
     assert response["model"] == "second"
     assert response["status"] == "running"
     assert manager.sessions[response["session_id"]].excluded_candidates == frozenset({candidates[0]})
+
+
+@pytest.mark.asyncio
+async def test_abandoned_candidate_is_released(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """候補切替の前に放棄sessionの保持・結果・backend資源を除く。"""
+    candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    codex = UnavailableStartBackend(manager.sessions, "codex")
+    claude = FakeBackend(manager.sessions, "claude")
+    _install_backend(manager, "codex", codex)
+    _install_backend(manager, "claude", claude)
+    writer.activate()
+    original_start = codex.start
+
+    async def start_and_publish(*args: Any, **kwargs: Any) -> subject.SessionState:
+        session = await original_start(*args, **kwargs)
+        writer.flush()
+        return session
+
+    monkeypatch.setattr(codex, "start", start_and_publish)
+    abandoned_result = status_file.results_directory("root-session", tmp_path) / "codex-session.json"
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert response["session_id"] == "claude-session"
+    assert set(manager.sessions) == {"claude-session"}
+    assert manager.list_sessions(include_terminated=True)["sessions"] == [
+        manager._listed_session(
+            manager.sessions["claude-session"],
+            status="running",
+            progress="",
+            result_available=False,
+        )
+    ]
+    assert not abandoned_result.exists()
+    assert codex.release_calls == ["codex-session"]
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -3931,6 +3976,164 @@ async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: path
     assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
 
 
+def _publish_recovered_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    session_id: str,
+    status: str,
+) -> None:
+    """再起動後の解決に用いるversion 2登録簿を保存する。"""
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    session_registry.publish(
+        session_id,
+        terminal=True,
+        engine="codex",
+        cwd=str(tmp_path),
+        model="model",
+        effort="high",
+        model_type="execute",
+        turn_seq=2,
+        status=cast(Any, status),
+    )
+
+
+@pytest.mark.asyncio
+async def test_recovered_session_wait_reports_result_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿から復元した終端sessionのwaitは本文回収不能を返す。"""
+    _publish_recovered_session(monkeypatch, tmp_path, "recovered-wait", "completed")
+    manager = subject.AgentsServerManager(status_writer=None)
+    backend = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", backend)
+
+    response = await manager.wait("recovered-wait", timeout=0)
+
+    assert response == {"status": "completed", "recovery": "result_unavailable"}
+    assert backend.send_calls == 0
+    assert not backend.resume_calls
+    assert not backend.release_calls
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_recovered_session_kill_reports_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿から復元した終端sessionのkillはbackendへ触れない。"""
+    _publish_recovered_session(monkeypatch, tmp_path, "recovered-kill", "failed")
+    manager = subject.AgentsServerManager(status_writer=None)
+    backend = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", backend)
+
+    response = await manager.kill("recovered-kill", timeout=0)
+
+    assert response == {
+        "status": "failed",
+        "recovery": "result_unavailable",
+        "kill_requested": False,
+    }
+    assert backend.interrupt_calls == 0
+    assert not backend.release_calls
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_recovered_session_stop_keeps_previous_process_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """復元したsessionのstopは前プロセスが公開した結果を変更しない。"""
+    session_id = "recovered-stop"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
+    previous_writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "previous.json", None),
+        state_root=tmp_path,
+    )
+    previous_session = subject.SessionState(session_id, str(tmp_path), engine="codex")
+    _complete(previous_session, message="前プロセスの結果")
+    previous_writer.retain_result(previous_session)
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session_id}.json"
+    previous_result = result_path.read_bytes()
+
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "current.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", backend)
+
+    for retain_result in (True, False, True, False):
+        assert await manager.stop(session_id, retain_result=retain_result) == {}
+        assert result_path.read_bytes() == previous_result
+        assert result_path.exists()
+
+    assert not backend.release_calls
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["completed", "failed", "interrupted"])
+async def test_recovered_session_restores_each_terminal_status(
+    terminal_status: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿に記録した各終端種別を復元応答へ維持する。"""
+    session_id = f"recovered-{terminal_status}"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, terminal_status)
+    manager = subject.AgentsServerManager(status_writer=None)
+
+    response = await manager.wait(session_id, timeout=0)
+
+    assert response == {"status": terminal_status, "recovery": "result_unavailable"}
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_auto_resume_delivery_failure_terminates_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """自動再開の配送失敗を保留本文と復旧情報付きの失敗として返す。"""
+    _publish_recovered_session(monkeypatch, tmp_path, "child-terminal", "completed")
+    manager = subject.AgentsServerManager(status_writer=None)
+    backend = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", backend)
+    session = subject.SessionState("parent-session", str(tmp_path), engine="codex")
+    session.live_child_session_ids.add("child-terminal")
+    state.begin_auto_resume_wait(
+        session,
+        {"status": "completed", "agent_message": "保留していた本文", "error": None},
+    )
+    manager.sessions[session.session_id] = session
+
+    async def fail_delivery(_session: subject.SessionState, _prompt: str) -> dict[str, Any]:
+        backend.send_calls += 1
+        raise RuntimeError("delivery failed")
+
+    monkeypatch.setattr(backend, "send_message", fail_delivery)
+
+    response = await manager.wait(session.session_id, timeout=0)
+
+    assert response["status"] == "failed"
+    assert response["agent_message"] == "保留していた本文"
+    assert response["error"] == {
+        "message": "RuntimeError: delivery failed",
+        "unobservedSessions": ["child-terminal"],
+    }
+    assert session.awaiting_auto_resume is False
+    assert session.pending_result is None
+    assert session.auto_resume_consumed is True
+    assert backend.send_calls == 1
+    await manager.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("engine", "model_type"), (("codex", None), ("claude", "execute_fast")))
 async def test_stop_discards_terminal_session(
@@ -3982,6 +4185,93 @@ async def test_stop_removes_status_file_projection_and_retained_result(tmp_path:
 
     assert json.loads(writer.path.read_text(encoding="utf-8"))["sessions"] == []
     assert not result_path.exists()
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_stop_republishes_result_after_retain_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """結果公開の失敗後は解放を重ねず同じ本文だけを再公開する。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", backend)
+    session = subject.SessionState("retain-retry", str(tmp_path), engine="codex", turn_seq=4)
+    _complete(session, message="保持する結果")
+    manager.sessions[session.session_id] = session
+    original_retain = writer.retain_result
+    retain_calls = 0
+
+    def fail_once(resume_state: state.SessionResumeState) -> None:
+        nonlocal retain_calls
+        retain_calls += 1
+        if retain_calls == 1:
+            raise OSError("retain failed once")
+        original_retain(resume_state)
+
+    monkeypatch.setattr(writer, "retain_result", fail_once)
+
+    with pytest.raises(
+        RuntimeError,
+        match="backend resources released; state synchronization incomplete.*retain failed once",
+    ):
+        await manager.stop(session.session_id, retain_result=True)
+    await manager.stop(session.session_id, retain_result=True)
+
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    assert payload["agent_message"] == "保持する結果"
+    assert payload["turn_seq"] == 4
+    assert retain_calls == 2
+    assert backend.release_calls == [session.session_id]
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_stop_does_not_release_twice_after_state_sync_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """状態同期の再発行では成功済みのbackend解放を繰り返さない。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", backend)
+    session = subject.SessionState("schedule-retry", str(tmp_path), engine="codex")
+    _complete(session, message="保持する結果")
+    manager.sessions[session.session_id] = session
+    original_schedule = writer.schedule
+    schedule_calls = 0
+
+    def fail_once() -> None:
+        nonlocal schedule_calls
+        schedule_calls += 1
+        if schedule_calls == 1:
+            raise OSError("schedule failed once")
+        original_schedule()
+
+    monkeypatch.setattr(writer, "schedule", fail_once)
+
+    with pytest.raises(
+        RuntimeError,
+        match="backend resources released; state synchronization incomplete.*schedule failed once",
+    ):
+        await manager.stop(session.session_id, retain_result=True)
+    await manager.stop(session.session_id, retain_result=True)
+
+    assert schedule_calls == 2
+    assert backend.release_calls == [session.session_id]
+    assert writer.result_state(session.session_id) == "published"
     await manager.close()
 
 

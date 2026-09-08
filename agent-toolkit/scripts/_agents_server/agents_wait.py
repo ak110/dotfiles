@@ -36,7 +36,10 @@ def wait_for_result(
     result_path = status_file.results_directory(root_session_id, state_root) / f"{session_id}.json"
     deadline = time.monotonic() + timeout
     while True:
-        result = _read_result(result_path)
+        result, read_error = _read_result(result_path)
+        if read_error is not None:
+            print(f"終端結果ファイルを読めません: {result_path}: {read_error}", file=sys.stderr)
+            return 6
         notices = status_file.take_notices(root_session_id, session_id, state_root)
         if result is not None:
             if notices:
@@ -55,11 +58,14 @@ def wait_for_result(
         time.sleep(min(1.0, remaining))
 
 
-def _read_result(path: pathlib.Path) -> dict[str, Any] | None:
+def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
+    """終端結果を読み、不在と破損を区別して返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return None
-    except (OSError, json.JSONDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
+        return None, None
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+    if not isinstance(value, dict):
+        return None, "最上位が辞書ではありません"
+    return value, None

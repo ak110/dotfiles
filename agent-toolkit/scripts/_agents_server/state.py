@@ -7,6 +7,7 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal
 
@@ -265,6 +266,8 @@ class SessionState:
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
+    _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
@@ -307,9 +310,30 @@ class SessionState:
         else:
             self.retention_deadline = None
         registry_terminal = self.result_available
-        if self.publish_registry and not self.result_delivered and registry_terminal != self._published_registry_terminal:
-            session_registry.publish(self.session_id, terminal=registry_terminal)
+        if (
+            self.publish_registry
+            and not self.result_delivered
+            and (
+                registry_terminal != self._published_registry_terminal
+                or self.turn_seq != self._published_registry_turn_seq
+                or self.status != self._published_registry_status
+            )
+        ):
+            session_registry.publish(
+                self.session_id,
+                terminal=registry_terminal,
+                engine=self.engine,
+                cwd=self.cwd,
+                model=self.model,
+                effort=self.effort,
+                model_type=self.model_type,
+                launch_kind=self.launch_kind,
+                turn_seq=self.turn_seq,
+                status=typing.cast(typing.Literal["running", "completed", "failed", "interrupted"], self.status),
+            )
             self._published_registry_terminal = registry_terminal
+            self._published_registry_turn_seq = self.turn_seq
+            self._published_registry_status = self.status
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:

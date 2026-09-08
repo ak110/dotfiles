@@ -64,6 +64,7 @@
   `list`で当該sessionの`status`を確認し、同じ`session_id`へ`wait`を再発行して待機を継続する。
   当該失敗を委譲先の停滞、中断又は再起動の根拠にしない
 - `agents_server`の`wait`と`atk agents-wait`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答は終端前の復帰であり、同じ`session_id`へ同じ待機手段を再発行する。`status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も完了報告とともに受領して待機を終える。回収した通知は再び返らないため、受領した本文を保持する
+- `agents_server`のMCPサーバーが再起動した場合、同じ`session_id`はsession登録簿から遅延解決する。終端が確定している記録だけを同じ識別子の結果観測と会話再開へ用いる。終端が確定していない場合は`error.recovery=turn_unobserved`を受領し、同じ作業を新しい`start`でやり直さず、当該sessionが実行中である可能性を添えて呼び出し元へ返す。`missing`、`unreadable`、`no_resume_info`は当該sessionを失われたものとして扱ってよい
 - 1回の`wait`が待てる長さには、実行環境がMCPサーバーへ課すアイドル上限が別に働く。Claude Codeのstdioサーバーの既定は30分であり、`timeout`の省略時にサーバーが導出する上限はこれより短い。終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。1回の待機で終端まで待てない所要時間の委譲先は、この再発行を繰り返して待つ
 
 ## 外部サービスの状態変化を待つ場合

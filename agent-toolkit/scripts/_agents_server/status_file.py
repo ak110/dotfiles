@@ -30,7 +30,13 @@ from typing import Any
 from _atk import config as _atk_config
 from _common.atomic_file import atomic_write
 
-from _agents_server.state import RESULT_RETENTION_SECONDS, SessionState, has_uncollected_result, terminal_result_payload
+from _agents_server.state import (
+    RESULT_RETENTION_SECONDS,
+    SessionResumeState,
+    SessionState,
+    has_uncollected_result,
+    terminal_result_payload,
+)
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 
@@ -158,7 +164,10 @@ def take_notices(
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            if path.name.startswith(f"{session_id}."):
+                path.unlink(missing_ok=True)
+                matched.append(("", path.name, {"sent_at": "", "body": f"破損した上り通知を削除しました: {path}: {exc}"}))
             continue
         if (
             not isinstance(payload, dict)
@@ -167,12 +176,20 @@ def take_notices(
             or not isinstance(payload.get("sent_at"), str)
             or not isinstance(payload.get("body"), str)
         ):
+            if path.name.startswith(f"{session_id}."):
+                path.unlink(missing_ok=True)
+                matched.append(
+                    ("", path.name, {"sent_at": "", "body": f"破損した上り通知を削除しました: {path}: 必須項目が不正です"})
+                )
             continue
         notice = {"sent_at": payload["sent_at"], "body": payload["body"]}
         matched.append((payload["sent_at"], path.name, notice))
     matched.sort(key=lambda item: (item[0], item[1]))
     taken: list[dict[str, str]] = []
     for _sent_at, file_name, notice in matched:
+        if notice["sent_at"] == "":
+            taken.append(notice)
+            continue
         try:
             (directory / file_name).unlink()
         except FileNotFoundError:
@@ -278,9 +295,13 @@ class StatusFileWriter:
         if self._directory.exists() and not any(self._directory.iterdir()):
             self._directory.rmdir()
 
-    def retain_result(self, session: SessionState) -> None:
-        """session本体の破棄後も未回収の終端結果を残す。"""
-        if session.result_available and not session.result_delivered:
+    def retain_result(self, session: SessionState | SessionResumeState) -> None:
+        """保持中又は退避済みsessionの未回収終端結果を残す。"""
+        if (
+            session.finalized_at is not None
+            and session.status in {"completed", "failed", "interrupted"}
+            and not session.result_delivered
+        ):
             self._write_terminal_result(session)
 
     def delete_result(self, session_id: str) -> None:
@@ -329,7 +350,7 @@ class StatusFileWriter:
         for session_id in expired:
             self.delete_result(session_id)
 
-    def _write_terminal_result(self, session: SessionState) -> None:
+    def _write_terminal_result(self, session: SessionState | SessionResumeState) -> None:
         assert session.finalized_at is not None
         assert session.retention_deadline is not None
         payload = terminal_result_payload(session)

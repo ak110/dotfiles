@@ -9,7 +9,7 @@
 
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
-| MCPサーバー | `agent-toolkit/scripts/agents_server_mcp.py` | 会話ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける |
+| MCPサーバー | `agent-toolkit/scripts/agents_server_mcp.py` | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
 | `atk`のCLI | `atk agents-wait`、`atk agents-notify` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
 | フック | `agent-toolkit/scripts/_hooks/posttooluse.py` | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 | statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
@@ -25,7 +25,7 @@ MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Code
 | session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | MCPサーバーだけ |
 | statusline向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline | 当該ルートに属する各MCPサーバー |
 | 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents-wait`、statusline | MCPサーバー（作成と削除）、`atk agents-wait`（削除） |
-| 孫sessionの終端登録 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー | 孫を所有するMCPサーバー |
+| 全sessionの終端登録と再開情報 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー | 当該sessionを所有するMCPサーバー |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents-wait` | `atk agents-notify` |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents-wait` | PostToolUseフック（`start`系応答の`root_session_id`を入力とする） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
@@ -41,9 +41,11 @@ MCPサーバーは状態ファイルの書込先として解決したルートse
 
 - 対象の状態について、上表の「更新できる主体」が2つ以上あるかを確認する。2つ以上ある場合は、片方だけを読んで網羅を判定しない。
 - MCPサーバーのメモリーにだけ存在する状態は、プロセス境界の外にある`atk`のCLIとフックからは更新できない。当該状態を判定へ用いる経路が、CLI経由の操作でも成立するかを個別に確認する。
-- 同じ事実を2つの表現で保持する状態を新設しない。既存の`SessionState.result_delivered`は、結果ファイルを削除する契機を表す内部状態であり、回収済みかどうかの判定には用いない。ファイル表現を持たない経路に限り、未回収判定は`result_delivered`が偽であることを用いる。
+- 同じ事実を2つの表現で保持する状態を新設しない。未回収の終端結果は、当該ファイルを書いた主体の公開台帳とファイルの在否から`published`、`consumed`、`unpublished`へ区分する。回収済みと判定するのは`consumed`だけであり、ファイルが不在であることだけを根拠にしない。`SessionState.result_delivered`はファイルを削除する契機を表す内部状態であり、ファイル表現を持たない経路に限り用いる。
 
 各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルだけを削除できる。`results`および`notices`配下は共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。
+
+- 再起動をまたぐsessionの解決はsession登録簿を正本とする。statusline向け状態ファイルは書込主体を解決できる経路でだけ作られるため、解決の入力にしない。登録簿が終端を示さないsessionは、別プロセスがturnを実行している可能性を排除できないため再開しない。
 
 ## 本書の更新が必要になる変更
 

@@ -62,13 +62,13 @@ def test_agents_wait_resolves_changed_conversation_session(
     assert not (results / "session-1.json").exists()
 
 
-@pytest.mark.parametrize("result_body", [None, "[]"])
+@pytest.mark.parametrize("result_body", [None])
 def test_agents_wait_times_out_without_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     result_body: str | None,
 ) -> None:
-    """結果が無い場合と辞書でない結果の場合は終了コード3を返す。"""
+    """結果が無い場合は終了コード3を返す。"""
     if result_body is not None:
         wait_environment.mkdir(parents=True)
         (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
@@ -79,6 +79,24 @@ def test_agents_wait_times_out_without_result(
     captured = capsys.readouterr()
     assert not captured.out
     assert "待機が上限へ到達" in captured.err
+
+
+@pytest.mark.parametrize("result_body", ["[]", "{"])
+def test_agents_wait_rejects_corrupted_result(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    result_body: str,
+) -> None:
+    """破損した終端結果は待機上限と別の終了コードで停止する。"""
+    wait_environment.mkdir(parents=True)
+    (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="6"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert str(wait_environment / "session-1.json") in captured.err
 
 
 @pytest.mark.parametrize("session_id", ["../outside", ""])

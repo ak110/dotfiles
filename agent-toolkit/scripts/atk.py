@@ -48,6 +48,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 import argparse
 import datetime
 import importlib
+import math
 import os
 import pathlib
 import re
@@ -202,6 +203,17 @@ def _port_type(value: str) -> int:
     if not 1 <= port <= 65535:
         raise argparse.ArgumentTypeError("portは1から65535までの整数で指定してください")
     return port
+
+
+def _nonnegative_finite_float(value: str) -> float:
+    """0以上の有限な浮動小数点数だけをargparseへ渡す。"""
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("0以上の有限な数値を指定してください。") from exc
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError("0以上の有限な数値を指定してください。")
+    return parsed
 
 
 def _worktree_name(value: str) -> str:
@@ -872,7 +884,7 @@ def _build_parser() -> argparse.ArgumentParser:
     agents_wait.add_argument("session_id", help="待機対象のsession識別子。")
     agents_wait.add_argument(
         "--timeout",
-        type=float,
+        type=_nonnegative_finite_float,
         default=3600.0,
         help="待機上限秒数。到達した場合は終了コード3で終わる。",
     )
@@ -1034,8 +1046,6 @@ def main(
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
     if args.command == "agents-wait":
-        if args.timeout < 0:
-            args.subparser.error("--timeoutには0以上の数値を指定してください。")
         sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.timeout))
     if args.command == "agents-notify":
         body = args.body
