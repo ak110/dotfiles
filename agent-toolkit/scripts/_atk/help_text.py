@@ -298,7 +298,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk session-review-target": {
         "summary": "前のセッションの振り返り対象を特定する",
-        "description": "目的: 対象リポジトリで動いた自身以外の本体セッションのうち、更新時刻が最新の1件を振り返りの対象として返す。\n利用場面: process-wiの①で前のセッションの振り返りを開始するとき。\n対象と出力: Claude CodeとCodexの保存済みセッション記録を読み取り、該当する1件の実行系とセッション識別子をJSONで標準出力へ書く。該当が無い場合は何も書かない。記録は変更しない。\n前提: `--transcript`又は`--codex-thread-id`の一方へ自身の識別子を指定する。対象リポジトリを省略した場合はカレント作業ディレクトリから解決する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 対象リポジトリで`agent-toolkit:process-wi`を起動した自身以外の本体セッションのうち、更新時刻が最新の1件を振り返りの対象として返す。\n利用場面: process-wiの①で前のセッションの振り返りを開始するとき。\n対象と出力: Claude CodeとCodexの保存済みセッション記録を読み取り、該当する1件の実行系とセッション識別子をJSONで標準出力へ書く。該当が無い場合は何も書かない。記録は変更しない。\n前提: `--transcript`又は`--codex-thread-id`の一方へ自身の識別子を指定する。対象リポジトリを省略した場合はカレント作業ディレクトリから解決する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk session-review-target --transcript=/home/user/.claude/projects/example/session.jsonl",
     },
 }

@@ -13,7 +13,7 @@ atk session-review-target --target-repo=<対象リポジトリの絶対パス> -
 atk session-review-target --target-repo=<対象リポジトリの絶対パス> --codex-thread-id=<現在のthread ID>
 ```
 
-当該コマンドは、Claude CodeとCodexの保存済みセッション記録から、対象リポジトリで動いた自身以外の本体セッションのうち更新時刻が最新の1件を1行のJSONで返す。
+当該コマンドは、Claude CodeとCodexの保存済みセッション記録から、対象リポジトリで`agent-toolkit:process-wi`を起動した自身以外の本体セッションのうち更新時刻が最新の1件を1行のJSONで返す。
 該当するセッションが無い場合は何も返さない。
 返った行が0件の場合は振り返り担当を起動せず、対象が無い旨を`agent-toolkit:completion-report`の振り返り欄へ渡す。
 返った行が1件の場合は1件の振り返り担当を起動する。行の`engine`と`session_id`をそのまま起動文へ渡し、値を組み立て直さない。

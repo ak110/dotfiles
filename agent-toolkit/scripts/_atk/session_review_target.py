@@ -20,6 +20,9 @@ from _atk.serve.sessions import (
 )
 from _atk.wi.repo import resolve_repo_id
 
+_CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
+_CODEX_PROCESS_WI_PROMPT = "/goal `agent-toolkit:process-wi`を完遂してください。"
+
 
 def _session_id(value: str) -> str:
     """セッション識別子を検証してargparseへ返す。"""
@@ -81,6 +84,41 @@ def _session_cwd(path: pathlib.Path, engine: str) -> str | None:
     return None
 
 
+def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
+    """実行系固有の保存形式にprocess-wiの起動標識があれば真を返す。"""
+    if engine == "claude":
+        message = record.get("message")
+        if record.get("type") != "user" or not isinstance(message, dict):
+            return False
+        content = message.get("content")
+        return isinstance(content, list) and any(
+            isinstance(item, dict) and item.get("type") == "tool_result" and item.get("content") == _CLAUDE_PROCESS_WI_MARKER
+            for item in content
+        )
+
+    payload = record.get("payload")
+    if record.get("type") != "response_item" or not isinstance(payload, dict):
+        return False
+    content = payload.get("content")
+    return (
+        payload.get("type") == "message"
+        and payload.get("role") == "user"
+        and isinstance(content, list)
+        and any(
+            isinstance(item, dict) and item.get("type") == "input_text" and item.get("text") == _CODEX_PROCESS_WI_PROMPT
+            for item in content
+        )
+    )
+
+
+def _invoked_process_wi(path: pathlib.Path, engine: str) -> bool:
+    """保存済み記録にprocess-wiの起動標識があれば真を返す。"""
+    try:
+        return any(_contains_process_wi_marker(record, engine) for record in _parsed_records(path))
+    except OSError:
+        return False
+
+
 def _resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
     """cwdごとにリポジトリ識別子を1回だけ解決する。"""
     if cwd not in cache:
@@ -93,7 +131,7 @@ def _resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
 
 
 def _select_target(target_repo: str, current_session_id: str) -> dict[str, str] | None:
-    """更新時刻が最新の対象リポジトリの本体セッションを返す。"""
+    """process-wiを起動した対象リポジトリの最新本体セッションを返す。"""
     candidates: list[tuple[float, pathlib.Path, str, str]] = []
     for path, engine, session_id in _candidate_paths():
         try:
@@ -108,6 +146,8 @@ def _select_target(target_repo: str, current_session_id: str) -> dict[str, str] 
             continue
         cwd = _session_cwd(path, engine)
         if cwd is None or _resolved_repo(cwd, repository_cache) != target_repo:
+            continue
+        if not _invoked_process_wi(path, engine):
             continue
         return {"engine": engine, "session_id": session_id}
     return None
