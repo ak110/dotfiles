@@ -81,6 +81,63 @@ def test_agents_wait_times_out_without_result(
     assert "待機が上限へ到達" in captured.err
 
 
+def test_agents_wait_returns_expired_when_session_is_absent_from_root(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """終端結果と通知が無いsessionの消失を待機上限より前に返す。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(json.dumps({"version": 1, "sessions": []}), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="7"):
+        atk.main(["agents-wait", "session-1", "--timeout=3600"])
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "expired"}
+    assert captured.out.count("\n") == 1
+    assert not captured.err
+
+
+def test_agents_wait_keeps_waiting_for_retained_session(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """状態ファイルが保持するsessionを消失として返さない。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機が上限へ到達" in captured.err
+
+
+@pytest.mark.parametrize("root_body", ["{", "[]"])
+def test_agents_wait_ignores_unreadable_root_status(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    root_body: str,
+) -> None:
+    """状態ファイルを解釈できない場合は従来の待機を継続する。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(root_body, encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機が上限へ到達" in captured.err
+
+
 @pytest.mark.parametrize("result_body", ["[]", "{"])
 def test_agents_wait_rejects_corrupted_result(
     wait_environment: pathlib.Path,

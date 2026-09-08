@@ -20,7 +20,12 @@ def wait_for_result(
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
 ) -> int:
-    """終端結果又は通知を標準出力へ書き、終了コードを返す。"""
+    """終端結果又は通知を標準出力へ書き、終了コードを返す。
+
+    終端結果と通知が無いまま`root.json`からsessionが消失した場合は、
+    MCPのwaitと同じ`status: expired`を終了コード7で返す。既存の成功と
+    エラーの終了コードから区別し、待機上限まで消失を見逃さないためである。
+    """
     if not status_file.valid_session_id(session_id):
         print(f"session_idの形式が不正です: {session_id}", file=sys.stderr)
         return 5
@@ -51,6 +56,14 @@ def wait_for_result(
             response = {"session_id": session_id, "status": "running", "notices": notices}
             print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
             return 0
+        retained = _session_is_retained(
+            status_file.status_directory(root_session_id, state_root) / "root.json",
+            session_id,
+        )
+        if retained is False:
+            response = {"session_id": session_id, "status": "expired"}
+            print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+            return 7
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(f"sessionの終端待機が上限へ到達しました: {session_id}", file=sys.stderr)
@@ -69,3 +82,17 @@ def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]
     if not isinstance(value, dict):
         return None, "最上位が辞書ではありません"
     return value, None
+
+
+def _session_is_retained(path: pathlib.Path, session_id: str) -> bool | None:
+    """状態ファイルからsessionの保持有無を読み、解釈できない場合は`None`を返す。"""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    sessions = value.get("sessions") if isinstance(value, dict) and value.get("version") == 1 else None
+    if not isinstance(sessions, list):
+        return None
+    if any(not isinstance(session, dict) or not isinstance(session.get("session_id"), str) for session in sessions):
+        return None
+    return any(session["session_id"] == session_id for session in sessions)
