@@ -24,7 +24,7 @@ import quart
 import werkzeug.exceptions
 from _git import remote as _git_remote
 
-from _atk.serve import assets
+from _atk.serve import assets, entry_index
 from _atk.serve import config as serve_config
 from _atk.serve import plans as serve_plans
 from _atk.serve import sessions as serve_sessions
@@ -189,6 +189,7 @@ def _entry(
     state: str,
     text: str,
     metadata: dict[str, typing.Any],
+    updated_at: str | None = None,
 ) -> dict[str, object]:
     answered = common.is_uwi_answered(text) if kind == common.WI_TYPE_UWI else None
     return {
@@ -200,10 +201,9 @@ def _entry(
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),
         "summary": _summary(text, kind),
-        "updated_at": datetime.datetime.fromtimestamp(
-            path.stat().st_mtime,
-            tz=datetime.UTC,
-        ).isoformat(),
+        "updated_at": updated_at
+        if updated_at is not None
+        else datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.UTC).isoformat(),
     }
 
 
@@ -377,34 +377,7 @@ class Operations:
 
     def __init__(self, private_notes: pathlib.Path) -> None:
         self.private_notes = private_notes
-
-    def _iter_entry_files(
-        self,
-        states: typing.Iterable[str],
-        warnings: list[dict[str, str]] | None = None,
-    ) -> typing.Iterator[tuple[str, pathlib.Path, str]]:
-        """指定状態のエントリを`(状態名, パス, 本文)`として順に返す。
-
-        一覧表示と対象リポジトリの候補収集で同じ走査条件を用いるための共通経路とする。
-        読み取れないファイルは除外し、一覧APIの走査では警告へ記録する。
-        """
-        for state in states:
-            try:
-                paths = sorted((self.private_notes / state).iterdir())
-            except FileNotFoundError:
-                continue
-            for path in paths:
-                if path.suffix != ".md":
-                    continue
-                try:
-                    yield state, path, path.read_text(encoding="utf-8")
-                except UnicodeDecodeError:
-                    if warnings is not None:
-                        warnings.append({"filename": path.name, "reason": "UTF-8として読み取れません"})
-                except OSError:
-                    if warnings is not None:
-                        warnings.append({"filename": path.name, "reason": "ファイルを読み取れません"})
-                    continue
+        self._entry_index = entry_index.EntryIndex(private_notes)
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
@@ -412,7 +385,6 @@ class Operations:
         未回答UWIを先頭に置き、残りは種別を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
-        warnings: list[dict[str, str]] = []
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
@@ -424,19 +396,18 @@ class Operations:
         canonical_target_repo = (
             _git_remote.canonical_repo(target_repo_filter, resolver_cache) if target_repo_filter is not None else None
         )
-        for state, path, text in self._iter_entry_files(states, warnings):
-            try:
-                parsed = frontmatter.parse_frontmatter(text)
-                metadata = parsed[0] if parsed is not None else {}
-                kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
-                if kind_filter not in ("all", kind):
-                    continue
-                item = _entry(path, kind or "unknown", state, text, metadata)
-            except FileNotFoundError:
+        indexed_entries, warnings = self._entry_index.scan(states)
+        for indexed in indexed_entries:
+            if kind_filter not in ("all", indexed.kind):
                 continue
-            except OSError:
-                warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
-                continue
+            item = _entry(
+                indexed.path,
+                indexed.kind or "unknown",
+                indexed.state,
+                indexed.text,
+                indexed.metadata,
+                indexed.updated_at,
+            )
             if plan_filter != "all" and item["plan"] != (plan_filter == "plan"):
                 continue
             if answered_filter == "yes" and item["answered"] is not True:
@@ -461,7 +432,7 @@ class Operations:
                 continue
             if filters.get("source_kind") and _source_kind(item["source"]) != filters["source_kind"]:
                 continue
-            searchable = (text, path.name, item["target_repo"], item["source"])
+            searchable = (indexed.text, indexed.path.name, item["target_repo"], item["source"])
             if query and not any(query in str(value or "").casefold() for value in searchable):
                 continue
             result.append(item)
@@ -553,11 +524,9 @@ class Operations:
         """
         found: set[str] = set()
         resolver_cache: dict[str, str | None] = {}
-        for _state, _path, text in self._iter_entry_files(_resolve_states(status)):
-            parsed = frontmatter.parse_frontmatter(text)
-            if parsed is None:
-                continue
-            target_repo = parsed[0].get("target_repo")
+        indexed_entries, _warnings = self._entry_index.scan(_resolve_states(status))
+        for indexed in indexed_entries:
+            target_repo = indexed.metadata.get("target_repo")
             if isinstance(target_repo, str) and target_repo:
                 canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)
                 # 正規化は同一リポジトリの候補統合にだけ用い、解決不能な保存値は原値を保持する。
