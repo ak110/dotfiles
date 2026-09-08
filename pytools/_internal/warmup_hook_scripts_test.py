@@ -50,7 +50,7 @@ def _setup(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
-    _write_script(plugin_cache / "scripts" / "hook.py")
+    _write_script(plugin_cache / "agent_toolkit" / "hook.py")
     installed_path = tmp_path / "installed_plugins.json"
     if installed_plugins is None:
         installed_plugins = {"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(plugin_cache)}]}}
@@ -76,12 +76,12 @@ def _setup(
 
 def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
     """Codexプラグインキャッシュ内のhookスクリプトパスを返す。"""
-    return codex_home / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version / "scripts" / "hook.py"
+    return codex_home / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version / "agent_toolkit" / "hook.py"
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
     """記録済みコマンドからウォームアップ対象パスを取り出す。"""
-    return [cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
+    return [cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
 
 
 class TestPrerequisites:
@@ -121,7 +121,7 @@ class TestTargets:
                     / "ak110-dotfiles"
                     / "agent-toolkit"
                     / "1.0.0"
-                    / "scripts"
+                    / "agent_toolkit"
                     / "hook.py"
                 ),
                 str(codex_script),

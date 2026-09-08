@@ -16,8 +16,10 @@
       "command": "uv",
       "args": [
         "run",
-        "--no-project",
-        "--script",
+        "--project",
+        "${PLUGIN_ROOT}",
+        "--locked",
+        "--no-default-groups",
         "${PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py"
       ]
     }

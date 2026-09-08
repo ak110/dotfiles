@@ -19,11 +19,10 @@
 予期せぬ例外の処理は共通エントリポイント（`scripts/claude_hook.py`）が担う。
 メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
 
-LLM宛て出力は`agent-toolkit/scripts/_hook_notice`の整形関数経由で整形する。
+LLM宛て出力は`agent_toolkit._hooks.notice`の整形関数経由で整形する。
 プレフィックス／サフィックス規約と出力先フィールド（`reason`・`additionalContext`）の詳細は
 `_message_format`モジュールのdocstringを参照する。
-参照経路は`Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"`を
-`sys.path`に追加して解決する。プラグイン無効化時もファイル自体は存在しimportは成立する。
+agent-toolkitはpytoolsの依存パッケージとして通常のimportで解決する。
 """
 
 import json
@@ -32,23 +31,30 @@ import re
 import sys
 import tomllib
 
-# agent-toolkit のメッセージ整形ヘルパーを sys.path 経由で再利用する。
-# plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
-sys.path.insert(
-    0,
-    str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
-)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
 # pylint: disable-next=wrong-import-position,import-error
-from _hooks.notice import (
-    block_formatter as _block_notice_formatter,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.notice import (  # noqa: E402
+    block_formatter as _block_notice_formatter,
 )
 
 # pylint: disable-next=wrong-import-position,import-error
-from _hooks.notice import formatter as _notice_formatter  # noqa: E402
-from _hooks.session_state import read_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _hooks.tool_input import new_content_fields  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan.locations import new_plans_root  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan.structure import is_agent_doc_target_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.notice import (  # noqa: E402
+    formatter as _notice_formatter,
+)
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks.session_state import read_state  # noqa: E402
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks.tool_input import new_content_fields  # noqa: E402
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._plan.locations import new_plans_root  # noqa: E402
+
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._plan.structure import (  # noqa: E402
+    is_agent_doc_target_file,
+)
 
 # このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"

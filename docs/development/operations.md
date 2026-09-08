@@ -214,7 +214,12 @@ Codexが停止中であり、ホームディレクトリ側の3ファイルが�
 まず`~/.claude/projects/`配下から`agent-toolkit:process-wi`のメインセッション記録を1件選ぶ。
 選定条件は、最初のレコードの`timestamp`が有効化commit`248ec7cec313fe36d5a0210b561656340e4dc3c4`の
 commit時刻（2026-09-06T14:57:05Z）より後であり、かつ当該セッションが終端済みであることとする。
-次に`uv run --script agent-toolkit/skills/session-review/scripts/session_review_evidence.py --stats <当該記録の絶対パス>`を実行する。
+次に以下を実行する。
+
+```sh
+uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/skills/session-review/scripts/session_review_evidence.py --stats <当該記録の絶対パス>
+```
+
 出力の`stats-compaction-total`の`by_record`から、キーが`codex:`で始まる項目の値の合計を求める。
 当該合計をCodex委譲先のコンパクション回数とする。
 最後に、選んだセッション識別子と当該合計を上記の有効化前の値とともに本節へ追記する。
@@ -240,7 +245,7 @@ commit時刻（2026-09-06T14:57:05Z）より後であり、かつ当該セッシ
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
 - Web UIはサービス専用ランチャー`~/.local/bin/atk-serve`を経由して起動する
   - agent-toolkitプラグインはバージョン付きディレクトリへ展開されるためunitへ絶対パスを焼き込めない
-  - ランチャーが最新バージョンの`scripts/atk.py`を実行時に解決する
+  - ランチャーが最新バージョンの`agent_toolkit/atk.py`を実行時に解決する
   - `uv`はサービス実行環境のPATHに無いため、導入時に解決した絶対パスをランチャーへ埋め込む
     - 解決順序は`~/.local/bin/uv`（公式インストーラーの導入先）、次にPATH探索とし、
       いずれも得られない場合は設定を見送る

@@ -641,7 +641,7 @@ Jinjaフィルターや正規表現など、コードとして評価される文
 絶対パスを渡す（計画ファイル（詳細）のパスを渡さない）。
 
 ```sh
-uv run --script /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
+uv run --project <plugin rootの絶対パス> --locked --no-default-groups /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
 ```
 
 対象リポジトリがセッションの作業ディレクトリと異なる場合は、

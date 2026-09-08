@@ -47,7 +47,7 @@ def test_run_ignores_non_agent_processes_and_runs_both_migrations(
     process: SimpleNamespace,
 ) -> None:
     """無関係な実行体と接頭辞だけが一致する実行体は移行を抑止しない。"""
-    atk = tmp_path / "agent-toolkit/scripts/atk.py"
+    atk = tmp_path / "agent-toolkit/agent_toolkit/atk.py"
     atk.parent.mkdir(parents=True)
     atk.write_text("", encoding="utf-8")
     uv = tmp_path / "uv"
@@ -118,7 +118,7 @@ def test_run_defers_when_process_information_cannot_be_read(
 
 
 def test_run_reports_changes_and_continues_after_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    atk = tmp_path / "agent-toolkit/scripts/atk.py"
+    atk = tmp_path / "agent-toolkit/agent_toolkit/atk.py"
     atk.parent.mkdir(parents=True)
     atk.write_text("", encoding="utf-8")
     monkeypatch.setattr(migrate_atk_queue.psutil, "process_iter", lambda _fields: [])
@@ -147,7 +147,7 @@ def test_run_skips_when_prerequisite_is_missing(
         migrate_atk_queue.claude_common, "resolve_uv_path", lambda: None if missing == "uv" else tmp_path / "uv"
     )
     if missing != "atk":
-        atk = tmp_path / "agent-toolkit/scripts/atk.py"
+        atk = tmp_path / "agent-toolkit/agent_toolkit/atk.py"
         atk.parent.mkdir(parents=True)
         atk.write_text("", encoding="utf-8")
     assert migrate_atk_queue.run() is False

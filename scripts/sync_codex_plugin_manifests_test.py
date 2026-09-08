@@ -92,8 +92,8 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": "uv run --no-project --script "
-                                    "${CLAUDE_PLUGIN_ROOT}/scripts/hook.py permissionrequest",
+                                    "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups "
+                                    "${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py permissionrequest",
                                 }
                             ],
                         },

@@ -19,12 +19,9 @@ import json
 import pathlib
 import sys
 
-# agent-toolkit のセッション状態ヘルパーを sys.path 経由で再利用する。
-sys.path.insert(
-    0,
-    str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
-)
-from _hooks.session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks.session_state import update_state  # noqa: E402
 
 _AGENT_TOOLKIT_EDIT_SKILL = "agent-toolkit-edit"
 _REFERENCE_DOC_SUFFIXES: tuple[tuple[str, ...], ...] = (

@@ -63,9 +63,9 @@ fi
 if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json" ]; then
     rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
     if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
-        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts"
-        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/hook.py"
-        printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/agents_server_mcp.py"
+        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit"
+        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/hook.py"
+        printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/agents_server_mcp.py"
     fi
     if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"
@@ -190,7 +190,7 @@ def _run(
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
     claude_plugin_root = home / "claude-plugin"
-    claude_plugin_script = claude_plugin_root / "scripts" / "agents_server_mcp.py"
+    claude_plugin_script = claude_plugin_root / "agent_toolkit" / "agents_server_mcp.py"
     claude_plugin_script.parent.mkdir(parents=True, exist_ok=True)
     claude_plugin_script.write_text("agents server\n", encoding="utf-8")
     installed_plugins = home / ".claude" / "plugins" / "installed_plugins.json"
@@ -285,7 +285,10 @@ def test_agents_server_warmup_closes_standard_input() -> None:
     powershell_source = INSTALL_PS1.read_text(encoding="utf-8-sig")
 
     assert '"$script_path" --check-dependencies </dev/null >/dev/null' in shell_source
-    assert "$null | & uv run --no-project --script $scriptPath --check-dependencies *> $null" in powershell_source
+    assert (
+        "$null | & uv run --project $projectRoot --locked --no-default-groups $scriptPath --check-dependencies *> $null"
+        in powershell_source
+    )
 
 
 @pytest.mark.parametrize("kind", _runners())
@@ -297,11 +300,11 @@ def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path
 
     _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    warmups = [line for line in _log_lines(stub_log) if line.startswith("uv run --no-project --script ")]
+    warmups = [line for line in _log_lines(stub_log) if line.startswith("uv run --project ")]
     assert len(warmups) == 2
-    assert any(str(home / "claude-plugin" / "scripts" / "agents_server_mcp.py") in line for line in warmups)
+    assert any(str(home / "claude-plugin" / "agent_toolkit" / "agents_server_mcp.py") in line for line in warmups)
     assert any(
-        str(home / ".codex" / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/scripts/agents_server_mcp.py") in line
+        str(home / ".codex" / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/agents_server_mcp.py") in line
         for line in warmups
     )
 
@@ -333,7 +336,7 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         "codex plugin marketplace add ak110/dotfiles --json",
         "codex plugin marketplace upgrade ak110-dotfiles --json",
         "codex plugin add agent-toolkit@ak110-dotfiles --json",
-        "uv run --no-project --script",
+        "uv run --project",
         "agents_server_mcp.py --check-dependencies",
     ]
     last_index = -1
@@ -419,7 +422,7 @@ def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path
         old_path = cache_root / version
         assert old_path.is_symlink()
         assert old_path.resolve() == (cache_root / "1.2.3").resolve()
-        assert (old_path / "scripts/hook.py").read_text(encoding="utf-8") == "current hook\n"
+        assert (old_path / "agent_toolkit/hook.py").read_text(encoding="utf-8") == "current hook\n"
 
 
 def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, rules_url: str) -> None:
@@ -447,7 +450,7 @@ def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, ru
     restored = cache_root / ".1.2"
     assert restored.is_symlink()
     assert restored.readlink() == pathlib.Path("-1.2")
-    assert (restored / "scripts/hook.py").read_text(encoding="utf-8") == "current hook\n"
+    assert (restored / "agent_toolkit/hook.py").read_text(encoding="utf-8") == "current hook\n"
 
 
 @pytest.mark.parametrize("kind", _runners())

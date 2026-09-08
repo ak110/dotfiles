@@ -311,17 +311,19 @@ if not isinstance(entries, list):
 for entry in entries:
     install_path = entry.get("installPath") if isinstance(entry, dict) else None
     if isinstance(install_path, str):
-        print(pathlib.Path(install_path) / "scripts/agents_server_mcp.py")
+        print(pathlib.Path(install_path) / "agent_toolkit/agents_server_mcp.py")
 PY
 }
 
 _warm_agents_server_path() {
     local script_path="$1"
+    local project_root=""
     if [ ! -f "$script_path" ]; then
         echo "agents_serverのウォームアップ対象が存在しないためスキップします: $script_path" >&2
         return 0
     fi
-    if ! uv run --no-project --script "$script_path" --check-dependencies </dev/null >/dev/null; then
+    project_root="$(dirname "$(dirname "$script_path")")"
+    if ! uv run --project "$project_root" --locked --no-default-groups "$script_path" --check-dependencies </dev/null >/dev/null; then
         echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
     fi
     return 0
@@ -343,7 +345,7 @@ _warm_agents_server() {
         echo "Claude Code plugin一覧からagents_serverのウォームアップ対象を解決できないためClaude Code分をスキップします。" >&2
     fi
     if expected_version=$(_codex_expected_plugin_version); then
-        script_paths+=("$CODEX_PLUGIN_CACHE_ROOT/$expected_version/scripts/agents_server_mcp.py")
+        script_paths+=("$CODEX_PLUGIN_CACHE_ROOT/$expected_version/agent_toolkit/agents_server_mcp.py")
     else
         echo "Codex pluginからagents_serverのウォームアップ対象バージョンを解決できないためCodex分をスキップします。" >&2
     fi

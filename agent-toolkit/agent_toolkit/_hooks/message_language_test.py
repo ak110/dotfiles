@@ -146,7 +146,9 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "pretooluse.py:_UV_RUN_PYTHON_FIX 解消手段",
-        "`PEP 723`スクリプトは`uv run --script <パス>`を使うか、実行可能な`shebang`を直接呼び出す。"
+        "`agent-toolkit`配下の入口は`uv run --project <plugin root> --locked --no-default-groups <パス>`を使う。"
+        "`agent-toolkit/scripts/`に残すリモート補助処理とその他の`PEP 723`スクリプトは"
+        "`uv run --script <パス>`を使うか、実行可能な`shebang`を直接呼び出す。"
         "カレントディレクトリのプロジェクト解決を省く場合は`uv run --no-project python ...`を使う。いずれでもない場合は、"
         "カレントディレクトリまたはその祖先で最初に見つかる`pyproject.toml`が`[project]`節を持つディレクトリで実行する。"
         "静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。作業ディレクトリの変更に未解決のシェル展開があると、"
@@ -311,7 +313,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "posttooluse.py:588 本文",
         "計画ファイル{file_path}を書き込んだ。書き込み後の検査を実行する: "
-        "`uv run --script {shlex.quote(str(check_script))}{work_dir_option} {shlex.quote(file_path)}`。"
+        "`uv run --project {shlex.quote(str(project_root))} --locked --no-default-groups "
+        "{shlex.quote(str(check_script))}{work_dir_option} {shlex.quote(file_path)}`。"
         "計画がセッションの作業ディレクトリ以外のリポジトリを対象とする場合は`--work-dir`を差し替える。",
     ),
     ("posttooluse.py:686 本文", "warn: {display_name}の応答に{', '.join(missing)}が欠けているか不正である。"),

@@ -61,6 +61,9 @@
 
 - 構文の互換範囲: 構文は、公開互換性として宣言された全対応版（`requires-python`等）で受理されることを
   確認する。固定された開発・実行版で受理されることを、構文の公開互換性を狭める根拠にしない
+- agent-toolkit配下のPython入口は、自身のplugin rootを
+  `uv run --project <plugin root> --locked --no-default-groups <対象>`へ指定して起動する。
+  SSH先で動く`agent-toolkit/scripts/`のリモート補助処理だけは独立したPEP 723スクリプトとして起動する
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script` + `# /// script` ブロック）の実行注意点
   - cwdに`pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶと、
     プロジェクトをインストール対象として扱う

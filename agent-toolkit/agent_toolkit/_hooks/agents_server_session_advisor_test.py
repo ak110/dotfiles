@@ -247,7 +247,8 @@ def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> 
     """Bash経由のatk agents-waitが未観測作業を解消する。"""
     commands = (
         "atk agents-wait remote-direct --timeout=1",
-        "uv run --no-project --script /plugin/agent-toolkit/agent_toolkit/atk.py agents-wait --timeout 1 remote-script",
+        "uv run --project /plugin/agent-toolkit --locked --no-default-groups "
+        "/plugin/agent-toolkit/agent_toolkit/atk.py agents-wait --timeout 1 remote-script",
     )
     for index, command in enumerate(commands):
         local_session_id = f"agents-wait-{index}"

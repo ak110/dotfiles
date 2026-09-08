@@ -36,6 +36,9 @@ from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=
 
 _GitCall = dict[str, Any]
 
+_ATK_PATH = pathlib.Path(atk.__file__).resolve()
+_PROJECT_ROOT = _ATK_PATH.parents[1]
+
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
@@ -107,7 +110,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     with subprocess.Popen(  # noqa: S603
-        ["uv", "run", "--script", str(pathlib.Path(atk.__file__).resolve()), *argv],
+        ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
         stdout=write_fd,
         stderr=subprocess.PIPE,
         env=env,
@@ -143,8 +146,11 @@ def test_cli_local_path_filter_notifies_legacy_and_current_uwis(
         [
             "uv",
             "run",
-            "--script",
-            str(pathlib.Path(atk.__file__).resolve()),
+            "--project",
+            str(_PROJECT_ROOT),
+            "--locked",
+            "--no-default-groups",
+            str(_ATK_PATH),
             "wi",
             "list",
             "--count",

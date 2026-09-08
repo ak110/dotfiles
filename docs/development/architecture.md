@@ -110,7 +110,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 ### agents_server MCPの配置と寿命
 
 共有MCP設定の正本が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py`を
-`uv run --no-project --script`で起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
+plugin rootを`uv run --project`へ指定し、lockfileを固定して起動する。生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、
 Codex側では`${PLUGIN_ROOT}`へ変換する。MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 
 公開APIは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、
@@ -124,7 +124,7 @@ MCP終了時は自身が起動した子プロセスをPID指定で終了し、�
 MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。
 プラグイン配置の寿命に依存するローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
 Claude Agent SDKはCodex専用経路の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
-プラグイン導入後のウォームアップは、同じ`uv run --no-project --script`起動形へ`--check-dependencies`を渡し、
+プラグイン導入後のウォームアップは、同じplugin root指定の起動形へ`--check-dependencies`を渡し、
 PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
 
 ## ホーム配下のファイルを編集する前の確認

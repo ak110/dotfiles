@@ -22,13 +22,13 @@ _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVIC
 _LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _LEGACY_SERVICE_UNIT
 
 # ランチャー本文のテンプレート。agent-toolkit プラグインはバージョン付きディレクトリへ
-# 展開されるため、最新バージョンの scripts/atk.py を起動時に解決する。
+# 展開されるため、最新バージョンの agent_toolkit/atk.py を起動時に解決する。
 # uv は systemd user service の PATH に存在しないため、導入時に解決した絶対パスを埋め込む。
 # ~/.local/bin/atk は install-claude.sh がプラグイン単体利用者向けに生成するラッパーで
 # 内容が競合するため、本モジュールはサービス専用の別名を用いる。
 _LAUNCHER_TEMPLATE = """#!/bin/sh
 set -eu
-script=$(find "$HOME/.claude/plugins/cache" -path '*/agent-toolkit/*/scripts/atk.py' \\
+script=$(find "$HOME/.claude/plugins/cache" -path '*/agent-toolkit/*/agent_toolkit/atk.py' \\
   -type f 2>/dev/null | sort -V | tail -1)
 exec "{uv}" run --no-project --script "$script" serve "$@"
 """

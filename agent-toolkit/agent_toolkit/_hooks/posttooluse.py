@@ -733,11 +733,13 @@ def _plan_main_path_for(display_path: str) -> str:
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     """計画ファイル全文書き込み後に実行する計画構造検査の案内文を返す。"""
-    check_script = pathlib.Path(__file__).resolve().parents[2] / "skills/plan-mode/scripts/check_plan_file.py"
+    project_root = pathlib.Path(__file__).resolve().parents[2]
+    check_script = project_root / "skills/plan-mode/scripts/check_plan_file.py"
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
         f"計画ファイル{file_path}へ書き込んだ。書き込み後の検査を実行する:"
-        f" `uv run --script {shlex.quote(str(check_script))}{work_dir_option}"
+        f" `uv run --project {shlex.quote(str(project_root))} --locked --no-default-groups"
+        f" {shlex.quote(str(check_script))}{work_dir_option}"
         f" {shlex.quote(file_path)}`."
         "計画の対象リポジトリが当該セッションの作業ディレクトリと異なる場合は、"
         "`--work-dir`を対象リポジトリへ置き換える。",

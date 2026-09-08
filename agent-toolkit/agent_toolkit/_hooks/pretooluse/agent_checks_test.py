@@ -321,9 +321,12 @@ class TestBashOutputTruncationWarning:
         [
             "uvx pyfltr run-for-agent | tail -20",
             "pytest -q | head -5",
-            "uv run --no-project --script /repo/agent-toolkit/scripts/check_plan_file.py | tail -20",
-            "uv run --script agent-toolkit/scripts/check_plan_file.py | tail -20",
-            "uv run -s agent-toolkit/scripts/check_plan_file.py | tail -20",
+            "uv run --project /repo/agent-toolkit --locked --no-default-groups "
+            "/repo/agent-toolkit/skills/plan-mode/scripts/check_plan_file.py | tail -20",
+            "uv run --project agent-toolkit --locked --no-default-groups "
+            "agent-toolkit/skills/plan-mode/scripts/check_plan_file.py | tail -20",
+            "uv run -p agent-toolkit --locked --no-default-groups "
+            "agent-toolkit/skills/plan-mode/scripts/check_plan_file.py | tail -20",
         ],
     )
     def test_blocks(self, command: str):
@@ -339,7 +342,8 @@ class TestBashOutputTruncationWarning:
     @pytest.mark.parametrize(
         "command",
         [
-            "uv run --script /abs/agent-toolkit/skills/plan-mode/scripts/create_plan_files.py --help 2>&1 | tail -30",
+            "uv run --project /abs/agent-toolkit --locked --no-default-groups "
+            "/abs/agent-toolkit/skills/plan-mode/scripts/create_plan_files.py --help 2>&1 | tail -30",
             "uvx pyfltr --version 2>&1 | head -40",
         ],
     )

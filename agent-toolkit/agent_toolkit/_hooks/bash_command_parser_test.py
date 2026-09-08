@@ -41,6 +41,21 @@ class TestExtractExecutionSegments:
         segments = extract_execution_segments("bash -lc 'uv run --script /repo/create_plan_files.py'")
         assert segments == [ExecutionSegment(("/repo/create_plan_files.py",), True, False)]
 
+    def test_agent_toolkit_project_entry_is_identified(self) -> None:
+        command = "uv run --project /repo/agent-toolkit --locked --no-default-groups /repo/agent-toolkit/agent_toolkit/hook.py"
+        assert extract_execution_segments(command) == [
+            ExecutionSegment(("/repo/agent-toolkit/agent_toolkit/hook.py",), True, True)
+        ]
+
+    @pytest.mark.parametrize("name", ("atk_serve_plans_remote_helper.py", "atk_serve_sessions_remote_helper.py"))
+    def test_remote_helper_script_is_identified(self, name: str) -> None:
+        command = f"uv run --no-project --script /repo/agent-toolkit/scripts/{name}"
+        assert extract_execution_segments(command) == [ExecutionSegment((f"/repo/agent-toolkit/scripts/{name}",), True, True)]
+
+    def test_other_agent_toolkit_pep723_script_is_not_identified(self) -> None:
+        command = "uv run --no-project --script /repo/agent-toolkit/scripts/other.py"
+        assert extract_execution_segments(command) == [ExecutionSegment(("/repo/agent-toolkit/scripts/other.py",), True, False)]
+
 
 class TestSplitBashSegments:
     """`split_bash_segments`によるセグメント分割。"""

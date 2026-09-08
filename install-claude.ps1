@@ -267,7 +267,7 @@ function Get-ClaudePluginScriptPath {
         if ($null -eq $entry) { continue }
         $installPathProperty = $entry.PSObject.Properties['installPath']
         if ($null -ne $installPathProperty -and $installPathProperty.Value -is [string]) {
-            Join-Path $installPathProperty.Value 'scripts/agents_server_mcp.py'
+            Join-Path $installPathProperty.Value 'agent_toolkit/agents_server_mcp.py'
         }
     }
 }
@@ -281,7 +281,7 @@ function Initialize-AgentsServer {
     }
     try {
         $expectedVersion = Get-CodexExpectedPluginVersion
-        $scriptPaths.Add((Join-Path $codexPluginCacheRoot "$expectedVersion/scripts/agents_server_mcp.py"))
+        $scriptPaths.Add((Join-Path $codexPluginCacheRoot "$expectedVersion/agent_toolkit/agents_server_mcp.py"))
     } catch {
         Write-Warning 'Codex pluginからagents_serverのウォームアップ対象バージョンを解決できないためCodex分をスキップします。'
     }
@@ -290,7 +290,8 @@ function Initialize-AgentsServer {
             Write-Warning "agents_serverのウォームアップ対象が存在しないためスキップします: $scriptPath"
             continue
         }
-        $null | & uv run --no-project --script $scriptPath --check-dependencies *> $null
+        $projectRoot = Split-Path (Split-Path $scriptPath -Parent) -Parent
+        $null | & uv run --project $projectRoot --locked --no-default-groups $scriptPath --check-dependencies *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "agents_serverのuv環境ウォームアップに失敗しました: $scriptPath"
         }

@@ -450,7 +450,7 @@ def _resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
 
 
 def _is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, execution_index: int) -> bool:
-    """`uv run --script`のagent-toolkit配下Pythonスクリプトを識別する。"""
+    """pluginプロジェクトの入口と、独立したリモート補助スクリプトを識別する。"""
     index, state = _scan_uv_options(list(tokens), uv_index + 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE)
     if state != "reached" or index >= len(tokens) or tokens[index] != "run":
         return False
@@ -460,13 +460,32 @@ def _is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, ex
         return False
     script_path = tokens[execution_index]
     normalized = script_path.replace("\\", "/")
-    components = tuple(part for part in normalized.split("/") if part)
     run_options = tokens[run_index + 1 : execution_index]
-    return (
-        any(option in run_options for option in ("--script", "-s"))
-        and "agent-toolkit" in components
-        and normalized.endswith(".py")
-    )
+    if any(option in run_options for option in ("--script", "-s")):
+        return normalized.endswith(
+            (
+                "/agent-toolkit/scripts/atk_serve_plans_remote_helper.py",
+                "/agent-toolkit/scripts/atk_serve_sessions_remote_helper.py",
+            )
+        )
+    project = _uv_project_option(run_options)
+    if project is None or not normalized.endswith(".py"):
+        return False
+    normalized_project = project.replace("\\", "/").rstrip("/")
+    if not normalized.startswith(f"{normalized_project}/"):
+        return False
+    relative = normalized.removeprefix(f"{normalized_project}/")
+    return relative.startswith("agent_toolkit/") or (relative.startswith("skills/") and "/scripts/" in relative)
+
+
+def _uv_project_option(options: Sequence[str]) -> str | None:
+    """`uv run`のオプション列から明示されたproject rootを返す。"""
+    for index, option in enumerate(options):
+        if option in ("--project", "-p") and index + 1 < len(options):
+            return options[index + 1]
+        if option.startswith("--project="):
+            return option.partition("=")[2]
+    return None
 
 
 def _scan_uv_options(

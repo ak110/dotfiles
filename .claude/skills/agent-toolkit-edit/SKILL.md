@@ -58,7 +58,7 @@ description: >
 ### agents_serverの共有状態
 
 agents_serverの実装を変更する場合と調査する場合は、着手前に`references/agents-server-shared-state.md`を全文読む。
-対象は`agent-toolkit/scripts/agents_server_mcp.py`と`agent-toolkit/scripts/_agents_server/`配下とする。
+対象は`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下とする。
 `rust/claude-statusline/src/agents_server.rs`も同じ対象とする。
 同書は共有状態ごとの正本と、読む主体・更新できる主体の対応を保持する。
 状態の正本、更新できる主体又は状態ディレクトリ配下のファイル種別を変える実装では、同書を同じ変更単位で更新する。
@@ -200,7 +200,7 @@ SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_
 hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版との差を疑い、
 当該hookが参照する配布先のファイルを`diff`等で比較してから対応する。
 
-常駐するMCPサーバープロセス（`agent-toolkit/scripts/agents_server_mcp.py`等）は、起動時に読み込んだ
+常駐するMCPサーバープロセス（`agent-toolkit/agent_toolkit/agents_server_mcp.py`等）は、起動時に読み込んだ
 Pythonモジュールを保持し続けるため、`agent-toolkit/scripts/`配下の修正は当該プロセスの再起動まで反映されない。
 修正の確定後も同じ事象を観測した場合は、修正が無効であると結論する前に当該プロセスが読み込んだ版を確定する。
 起動時刻だけでは判別できない。別の作業ツリーや別のplugin rootから起動したプロセスは、
@@ -251,15 +251,15 @@ PreToolUseフックの配置先は複数ある。汎用機能はプラグイン�
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布される。
   汎用的な制約・自動化（一般的な文字化け検出、PowerShell互換性チェックなど）向け。
   配置した場合は「バージョン更新」節の手順に従う
-- Claude Codeのhookから起動するPEP 723スクリプトは`uv run --no-project --script`形式で呼び出す
-  （対象は`agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`）
+- agent-toolkitのPython入口は`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。
+  対象は`agent-toolkit/hooks/hooks.json`、MCP manifest、`agent-toolkit/bin/atk`及びスキル補助処理である
 - `agent-toolkit/hooks/hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、
   `agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換入口の残置に従う。
   残置した互換入口はバージョン管理の対象へ含める。
   撤去は、新しい入口を含む版をbumpして配布した後の版数更新以降であり、かつ旧定義を読み込んだセッションが全て終了したことを
   確認できた場合だけ行う。確認できない場合は残置を維持する
-- PEP 723スクリプト（`agent-toolkit/scripts/atk.py`等）の`dependencies`へパッケージを追加・更新する場合、
-  リポジトリ本体の`pyproject.toml`にも同一制約で登録する（テスト実行が間接依存で偶然解決する状態を防ぐため）
+- `agent-toolkit/pyproject.toml`の`dependencies`へパッケージを追加・更新する場合、
+  同projectの`uv.lock`も更新する。`agent-toolkit/scripts/`に残すリモート補助処理だけはPEP 723宣言を維持する
 - 同じイベントへフックを追加する場合は、`agent-toolkit/hooks/hooks.json`と
   `share/claude_settings_json_managed.*.json`のいずれでも新しい登録を並べず、当該イベントの既存の入口へ相乗りさせる。
   matcherが互いに素で同時に発火しない登録は、この方針を満たしているものとして扱う。

@@ -15,11 +15,12 @@ import threading
 import pytest
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
-_AGENT_TOOLKIT_SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks.session_state import update_state  # noqa: E402
 
-sys.path.insert(0, str(_AGENT_TOOLKIT_SCRIPTS))
-from _hooks.session_state import update_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _testing import fork_runner as _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._testing import fork_runner as _fork_runner  # noqa: E402
 
 
 def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:

@@ -193,7 +193,9 @@ _UV_RUN_PYTHON_BLOCK_MSG = (
 )
 
 _UV_RUN_PYTHON_FIX = (
-    "PEP 723スクリプトは`uv run --script <パス>`を使うか、実行可能なshebangを直接呼び出す。"
+    "agent-toolkit配下の入口は`uv run --project <plugin root> --locked --no-default-groups <パス>`を使う。"
+    "`agent-toolkit/scripts/`に残すリモート補助処理とその他のPEP 723スクリプトは"
+    "`uv run --script <パス>`を使うか、実行可能なshebangを直接呼び出す。"
     "カレントディレクトリのプロジェクト解決を省く場合は`uv run --no-project python ...`を使う。"
     "いずれでもない場合は、カレントディレクトリまたはその祖先で最初に見つかる`pyproject.toml`が"
     "`[project]`節を持つディレクトリで実行する。静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。"

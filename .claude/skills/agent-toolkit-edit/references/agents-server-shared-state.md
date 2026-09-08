@@ -2,14 +2,14 @@
 
 `agents_server`の状態は、MCPサーバーのメモリー、状態ディレクトリのファイル、フックが記録するセッション状態及びstatuslineが読む射影の4つの表現に分かれる。
 実行主体ごとに更新できる範囲が異なるため、1つの経路だけを読んで挙動を確定すると、別の経路が同じ状態を更新しない事実を見落とす。
-`agent-toolkit/scripts/agents_server_mcp.py`と`agent-toolkit/scripts/_agents_server/`配下を変更又は調査する主体は、着手前に本書を読む。
+`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下を変更又は調査する主体は、着手前に本書を読む。
 `rust/claude-statusline/src/agents_server.rs`を扱う主体も同じとする。
 
 ## 実行主体
 
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
-| MCPサーバー | `agent-toolkit/scripts/agents_server_mcp.py` | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
+| MCPサーバー | `agent-toolkit/agent_toolkit/agents_server_mcp.py` | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
 | `atk`のCLI | `atk agents-wait`、`atk agents-notify` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
 | フック | `agent-toolkit/scripts/_hooks/posttooluse.py` | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 | statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |

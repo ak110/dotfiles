@@ -2,18 +2,18 @@
 set -euo pipefail
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
-SCRIPT="${SCRIPT_DIR}/scripts/atk.py"
+SCRIPT="${SCRIPT_DIR}/agent_toolkit/atk.py"
 
 # 常駐サブコマンド以外は従来どおり実体へ置き換えて起動する。
 if [ "${1:-}" != "mq" ] || [ "${2:-}" != "process-loop" ]; then
-    exec uv run --no-project --script "${SCRIPT}" "$@"
+    exec uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "$@"
 fi
 
 # 常駐サブコマンドは自己更新のたびに再起動する。実体側で`uv`へ置き換えると
 # 置き換え前の`uv`が子の終了を待って残り、再起動のたびにプロセス階層が1段深くなる。
 # 実体は次の起動対象を受け渡しファイルへ書いて専用の終了コードで終了し、
 # 本スクリプトが同一プロセスで次の実体を起動する。`uv run`を毎回経由するため、
-# 更新でPEP 723ヘッダーの依存が変わっても解決し直される。
+# 更新後のplugin rootが持つlockfileと依存宣言を解決し直す。
 # 停止シグナルは、プロセスグループ全体へ届く経路（端末のCtrl-C、systemdのcgroup単位の停止）で送る。
 # 本スクリプトのPIDだけへシグナルを送った場合、本スクリプトは実体の終了を待たずに終了して
 # 受け渡しファイルを削除し、実体は監督者を失ったまま動作を継続する。
@@ -24,7 +24,8 @@ args=("$@")
 while :; do
     : > "${SPEC}"
     status=0
-    uv run --no-project --script "${SCRIPT}" "${args[@]}" || status=$?
+    SCRIPT_DIR="$(cd "$(dirname "${SCRIPT}")/.." && pwd)"
+    uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "${args[@]}" || status=$?
     if [ "${status}" -ne 75 ]; then
         exit "${status}"
     fi

@@ -1,6 +1,6 @@
-"""起動元ツールのエフェメラル仮想環境を子プロセス環境から取り除く共通処理。
+"""起動元ツールのplugin仮想環境を子プロセス環境から取り除く共通処理。
 
-`uv run --no-project --script`で起動したツールは、PEP 723のエフェメラル環境を指す
+plugin rootを`uv run --project`へ指定して起動したツールは、pluginの仮想環境を指す
 `VIRTUAL_ENV`と、当該環境のコマンド格納ディレクトリを先頭へ挿入した`PATH`を持つ。
 この環境を子セッションへ引き継ぐと、作業対象リポジトリでのパッケージ操作と
 `python`・`pip`・コンソールスクリプトの解決が起動元ツールの環境を対象にする。
@@ -24,7 +24,7 @@ VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
 
 
 def strip_inherited_venv(env: MutableMapping[str, str]) -> None:
-    """起動元ツールのエフェメラル仮想環境を渡された環境から取り除く。
+    """起動元ツールのplugin仮想環境を渡された環境から取り除く。
 
     除去対象は`PATH`の全要素ではなく、除去する`VIRTUAL_ENV`の値から導いた
     コマンド格納ディレクトリと一致する要素だけとする。

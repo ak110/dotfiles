@@ -8,8 +8,10 @@
       "command": "uv",
       "args": [
         "run",
-        "--no-project",
-        "--script",
+        "--project",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "--locked",
+        "--no-default-groups",
         "${CLAUDE_PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py"
       ]
     }

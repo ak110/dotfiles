@@ -27,19 +27,17 @@ import os
 import pathlib
 import sys
 
-# agent-toolkit の共通ゲートモジュールを import する。
-# plugin が無効化されていても dotfiles リポジトリ上にファイルが存在し続けるため import は成立する。
-sys.path.insert(
-    0,
-    str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit" / "scripts"),
-)
-from _hooks.stop_gate import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "agent-toolkit"))
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._hooks.stop_gate import (  # noqa: E402
     append_stop_log,
     is_pending_async_work,
 )
 
 # pylint: disable-next=wrong-import-position,import-error
-from _hooks.stop_gate import parse_stop_session as _parse_stop_session  # noqa: E402
+from agent_toolkit._hooks.stop_gate import (  # noqa: E402
+    parse_stop_session as _parse_stop_session,
+)
 
 # 常駐ループから起動されたセッションであることを示す環境変数名。
 _ENV_PROCESS_LOOP = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"

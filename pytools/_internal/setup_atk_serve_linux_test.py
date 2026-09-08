@@ -191,7 +191,7 @@ class TestRunLauncherDeployment:
 
         content = (prepared / ".local" / "bin" / "atk-serve").read_text(encoding="utf-8")
         assert "run --no-project --script" in content
-        assert "scripts/atk.py" in content
+        assert "agent_toolkit/atk.py" in content
         assert "bin/atk" not in content
         assert "exec uv " not in content
 

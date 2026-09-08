@@ -31,7 +31,10 @@ SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
 def _hook_command(name: str) -> str:
-    return f"uv run --no-project --script ${{CLAUDE_PLUGIN_ROOT}}/agent_toolkit/hook.py {name}"
+    return (
+        "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups "
+        f"${{CLAUDE_PLUGIN_ROOT}}/agent_toolkit/hook.py {name}"
+    )
 
 
 CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")

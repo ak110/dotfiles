@@ -25,6 +25,7 @@ def _isolate_repo_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
     """検査対象のリポジトリルートと走査対象ディレクトリ集合を一時領域へ差し替える。"""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/scripts").mkdir(parents=True)
+    (tmp_path / "agent-toolkit/agent_toolkit").mkdir(parents=True)
     (tmp_path / f"{_TOOLKIT_PREFIX}/skills/example/scripts").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text("[project.scripts]\n", encoding="utf-8")
     monkeypatch.setattr(check_script_imports, "_REPO_ROOT", tmp_path)
@@ -45,7 +46,7 @@ def test_resolvable_imports_only_returns_zero(_isolate_repo_root: pathlib.Path) 
 
 
 def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """agent-toolkit直下とskill配下を含む全走査対象のエラーを報告する。"""
+    """独立スクリプトのimport不備とproject moduleのPEP 723残存を報告する。"""
     _write_pep723_script(_isolate_repo_root / "agent-toolkit/scripts/broken.py", body="import missing_toolkit_dependency")
     _write_pep723_script(
         _isolate_repo_root / f"{_TOOLKIT_PREFIX}/skills/example/scripts/broken.py",
@@ -56,6 +57,7 @@ def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, ca
     captured = capsys.readouterr()
     assert "agent-toolkit/scripts/broken.py" in captured.err
     assert f"{_TOOLKIT_PREFIX}/skills/example/scripts/broken.py" in captured.err
+    assert "uvプロジェクト配下にPEP 723宣言が残っている" in captured.err
 
 
 def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -71,17 +73,17 @@ def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path,
 @pytest.mark.parametrize(
     ("relative_path", "import_line", "expected"),
     [
-        ("_atk/wi/x.py", "import _hooks.b", 1),
-        ("_hooks/pretooluse/y.py", "import _testing.helpers", 1),
-        ("_hooks/pretooluse/z.py", "import _common.a", 0),
-        ("_atk/serve/plans/w_test.py", "import _testing.helpers", 0),
+        ("_atk/wi/x.py", "import agent_toolkit._hooks.b", 1),
+        ("_hooks/pretooluse/y.py", "import agent_toolkit._testing.helpers", 1),
+        ("_hooks/pretooluse/z.py", "import agent_toolkit._common.a", 0),
+        ("_atk/serve/plans/w_test.py", "import agent_toolkit._testing.helpers", 0),
     ],
 )
 def test_nested_layer_import_rules(
     _isolate_repo_root: pathlib.Path, relative_path: str, import_line: str, expected: int
 ) -> None:
     """入れ子のモジュールでも禁止辺を拒否し、許可辺を受理する。"""
-    scripts_root = _isolate_repo_root / "agent-toolkit/scripts"
+    scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
     for package in ("_common", "_hooks", "_testing"):
         package_dir = scripts_root / package
         package_dir.mkdir(exist_ok=True)

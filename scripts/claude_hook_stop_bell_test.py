@@ -11,9 +11,9 @@ import pathlib
 import subprocess
 import sys
 
-# 共通テストヘルパー読み込みのため agent-toolkit/scripts/ を sys.path へ追加する。
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
-from _testing import fork_runner as _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit"))
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._testing import fork_runner as _fork_runner  # noqa: E402
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 

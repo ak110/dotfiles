@@ -49,9 +49,9 @@ description: >
    終了コードが0でない場合と、標準出力から`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`が要求する項目を取得できない場合は、`## 分析失敗`へ進む。
 
    ```sh
-   uv run --no-project --script <準備スクリプトの絶対パス> --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
-   uv run --no-project --script <準備スクリプトの絶対パス> --claude-session-id <セッションID> --target-repo <対象リポジトリの絶対パス>
-   uv run --no-project --script <準備スクリプトの絶対パス> --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --claude-session-id <セッションID> --target-repo <対象リポジトリの絶対パス>
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <準備スクリプトの絶対パス> --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
    ```
 
 2. メインが`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.parent.md`を全文読み、同書に従って振り返り担当を起動する。
@@ -77,8 +77,8 @@ description: >
    再照合には抽出器の`--user-events`を次の形で用いる。
 
    ```sh
-   uv run --no-project --script <抽出器の絶対パス> <transcriptの絶対パス> --user-events --since <照合済み境界> --observation-boundary <再照合境界>
-   uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <thread ID> --user-events --since <照合済み境界> --observation-boundary <再照合境界>
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> <transcriptの絶対パス> --user-events --since <照合済み境界> --observation-boundary <再照合境界>
+   uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> --codex-thread-id <thread ID> --user-events --since <照合済み境界> --observation-boundary <再照合境界>
    ```
 
    手順1が返した観測境界を照合済み境界の初期値とし、追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受領していない状態になるまで次を繰り返す。
@@ -119,8 +119,8 @@ description: >
 続けて抽出器へ当該値を`--elapsed-until`で渡して実行し、返った`elapsed_seconds`を計測範囲の中間値とする。
 
 ```sh
-uv run --no-project --script <抽出器の絶対パス> <transcriptの絶対パス> --elapsed-until <取得した時刻>
-uv run --no-project --script <抽出器の絶対パス> --codex-thread-id <thread ID> --elapsed-until <取得した時刻>
+uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> <transcriptの絶対パス> --elapsed-until <取得した時刻>
+uv run --project <plugin rootの絶対パス> --locked --no-default-groups <抽出器の絶対パス> --codex-thread-id <thread ID> --elapsed-until <取得した時刻>
 ```
 
 振り返りの成果へ書く所要時間は前段の中間値とし、当該値がセッションの最初の記録から`--elapsed-until`へ渡した時刻までの区間であること、

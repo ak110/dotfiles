@@ -2426,7 +2426,8 @@ def _self_invocation_entries(command: str) -> list[dict]:
     "command",
     [
         "python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
-        "uv run --no-project --script /plugin/skills/session-review/scripts/session_review_evidence.py /tmp/foo.jsonl",
+        "uv run --project /plugin --locked --no-default-groups "
+        "/plugin/skills/session-review/scripts/session_review_evidence.py /tmp/foo.jsonl",
         "./agent-toolkit/skills/session-review/scripts/session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
         "cd /repo && python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
         "bash -lc 'python3 /plugin/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl'",
