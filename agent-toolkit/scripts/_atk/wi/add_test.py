@@ -1954,3 +1954,48 @@ def test_cli_add_outputs_body_match_without_saved_body(
     assert "    body_match: 一致\n" in output
     assert "saved_body" not in output
     assert "投入本文" not in output
+
+
+def test_cli_add_outputs_source_and_extra_frontmatter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """投入の出力はsourceと非予約frontmatterを表示する。"""
+    _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
+    message = "---\ncustom_key: 値\n---\n投入本文"
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "add", "--target-repo", "github.com/example/repo", "--source", "test-source", message],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "    source: test-source\n" in output
+    assert '    extra_frontmatter: {"custom_key": "値"}\n' in output
+
+
+def test_cli_add_outputs_missing_source_and_extra_frontmatter_as_none(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """sourceと非予約frontmatterが無い投入は「なし」と表示する。"""
+    _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "add", "--target-repo", "github.com/example/repo", "投入本文"],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "    source: なし\n" in output
+    assert "    extra_frontmatter: なし\n" in output

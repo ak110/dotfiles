@@ -6,6 +6,7 @@
 
 import argparse
 import datetime
+import json
 import pathlib
 import re
 import subprocess
@@ -68,6 +69,8 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
         "target_commit": data.get("target_commit"),
         "plan_file": data.get("plan_file"),
         "depends_on": depends_on,
+        "source": data.get("source"),
+        "extra_frontmatter": {key: value for key, value in data.items() if key not in _RESERVED_FRONTMATTER_KEYS},
     }
 
 
@@ -81,6 +84,15 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
         "、".join(str(value) for value in depends_on) if isinstance(depends_on, (list, tuple)) and depends_on else "なし"
     )
     print(f"    depends_on: {rendered_dependencies}")
+    source = details["source"]
+    print(f"    source: {source if source is not None else 'なし'}")
+    extra_frontmatter = details["extra_frontmatter"]
+    rendered_extra_frontmatter = (
+        json.dumps(extra_frontmatter, ensure_ascii=False, default=str)
+        if isinstance(extra_frontmatter, dict) and extra_frontmatter
+        else "なし"
+    )
+    print(f"    extra_frontmatter: {rendered_extra_frontmatter}")
     print(f"    body_match: {details['body_match']}")
 
 

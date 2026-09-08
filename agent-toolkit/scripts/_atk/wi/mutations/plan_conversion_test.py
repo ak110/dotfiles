@@ -380,6 +380,8 @@ def test_cmd_convert_to_plan_displays_commit_for_single_hold_input(
         "target_commit": "b" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": [],
+        "source": "test",
+        "extra_frontmatter": {},
         "body_match": "一致",
     }
     monkeypatch.setattr(
