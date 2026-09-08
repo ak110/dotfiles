@@ -23,7 +23,6 @@ $script:codexPluginUpdated = $false
 $script:utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $codexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $codexPluginCacheRoot = Join-Path $codexHomeDir 'plugins/cache/ak110-dotfiles/agent-toolkit'
-$codexCacheCompatVersions = Join-Path $codexHomeDir 'plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions'
 
 # 配布対象ファイル一覧。
 # `scripts/gen-install-files.py`が`agent-toolkit/rules/*.md`から自動生成する。
@@ -134,94 +133,6 @@ function Get-CodexExpectedPluginVersion {
     throw 'ak110-dotfilesマーケットプレイスの登録先を取得できません。'
 }
 
-function Test-CodexVersionName {
-    param([string]$version)
-    return $version -notin @('', '.', '..') -and $version -cmatch '^[A-Za-z0-9._+\-]+$'
-}
-
-function Get-CodexCacheVersionSet {
-    $versions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    if (Test-Path -LiteralPath $codexCacheCompatVersions -PathType Leaf) {
-        foreach ($version in [System.IO.File]::ReadAllLines($codexCacheCompatVersions, [System.Text.Encoding]::UTF8)) {
-            if (Test-CodexVersionName $version) {
-                $null = $versions.Add($version)
-            } else {
-                [Console]::Error.WriteLine("不正なCodex plugin互換version名を無視します: '$version'")
-            }
-        }
-    }
-    if (Test-Path -LiteralPath $codexPluginCacheRoot -PathType Container) {
-        foreach ($entry in Get-ChildItem -LiteralPath $codexPluginCacheRoot -Force) {
-            $linkType = $entry.PSObject.Properties['LinkType']
-            if (-not $entry.PSIsContainer -and ($null -eq $linkType -or -not $linkType.Value)) { continue }
-            if (Test-CodexVersionName $entry.Name) {
-                $null = $versions.Add($entry.Name)
-            } else {
-                [Console]::Error.WriteLine("不正なCodex plugin cache version名を無視します: '$($entry.Name)'")
-            }
-        }
-    }
-    return $versions
-}
-
-function Save-CodexCacheVersionLedger {
-    $versionsDir = Split-Path $codexCacheCompatVersions -Parent
-    New-Item -ItemType Directory -Path $versionsDir -Force | Out-Null
-    $temporary = Join-Path $versionsDir ("versions." + [System.IO.Path]::GetRandomFileName())
-    $backup = Join-Path $versionsDir ("versions.backup." + [System.IO.Path]::GetRandomFileName())
-    try {
-        $content = ((Get-CodexCacheVersionSet | Sort-Object -CaseSensitive) -join "`n")
-        if ($content) { $content += "`n" }
-        [System.IO.File]::WriteAllText($temporary, $content, $script:utf8NoBom)
-        if (Test-Path -LiteralPath $codexCacheCompatVersions -PathType Leaf) {
-            [System.IO.File]::Replace($temporary, $codexCacheCompatVersions, $backup)
-        } else {
-            [System.IO.File]::Move($temporary, $codexCacheCompatVersions)
-        }
-    } finally {
-        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
-        if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Force }
-    }
-}
-
-function Restore-CodexCacheLink {
-    param([string]$currentVersion)
-    if (-not (Test-Path -LiteralPath $codexCacheCompatVersions -PathType Leaf)) { return }
-    $target = Join-Path $codexPluginCacheRoot $currentVersion
-    foreach ($version in [System.IO.File]::ReadAllLines($codexCacheCompatVersions, [System.Text.Encoding]::UTF8)) {
-        if (-not (Test-CodexVersionName $version)) {
-            [Console]::Error.WriteLine("不正なCodex plugin互換version名を無視します: '$version'")
-            continue
-        }
-        if ($version -eq $currentVersion) { continue }
-        $targetItem = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
-        $targetLinkType = if ($null -eq $targetItem) { $null } else { $targetItem.PSObject.Properties['LinkType'] }
-        if ($null -eq $targetItem -or -not $targetItem.PSIsContainer -or ($null -ne $targetLinkType -and $targetLinkType.Value)) {
-            throw "現行Codex plugin cache実体が存在しません: $target"
-        }
-        $destination = Join-Path $codexPluginCacheRoot $version
-        $entry = Get-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
-        if ($null -ne $entry) {
-            $linkType = $entry.PSObject.Properties['LinkType']
-            if ($null -eq $linkType -or -not $linkType.Value) {
-                throw "通常エントリとCodex plugin互換バージョン名が競合しています: $destination"
-            }
-            if ($entry.Target -contains $target -or $entry.Target -contains $currentVersion) { continue }
-            Remove-Item -LiteralPath $destination -Force
-        }
-        Invoke-CodexCacheLinkCreation $destination $target $currentVersion ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)
-    }
-}
-
-function Invoke-CodexCacheLinkCreation {
-    param([string]$destination, [string]$target, [string]$currentVersion, [bool]$useJunction)
-    if ($useJunction) {
-        New-Item -ItemType Junction -Path $destination -Target $target | Out-Null
-    } else {
-        New-Item -ItemType SymbolicLink -Path $destination -Target $currentVersion | Out-Null
-    }
-}
-
 function Test-CodexPluginStateChanged {
     param([object]$beforeState, [object]$afterState)
     if ($null -eq $beforeState -or $null -eq $afterState) { return $false }
@@ -237,16 +148,12 @@ function Install-CodexPlugin {
     $expectedVersion = Get-CodexExpectedPluginVersion
     $beforeState = Get-CodexPluginState
     if ($null -eq $beforeState) { throw 'Codex plugin更新前の状態を確認できません。' }
-    if ($beforeState.Present) {
-        if ($beforeState.Version -ne $expectedVersion) { Save-CodexCacheVersionLedger }
-    }
     Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')
     $afterState = Get-CodexPluginState
     $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
     if ($null -eq $afterState -or -not $afterState.Present -or -not $afterState.Enabled -or $afterState.Version -ne $expectedVersion) {
         throw 'Codex plugin更新後の状態が期待値と一致しません。'
     }
-    Restore-CodexCacheLink $afterState.Version
     Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
 }
 

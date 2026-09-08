@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,15 +25,6 @@ _CODEX_EXECUTABLE: contextvars.ContextVar[Path] = contextvars.ContextVar("codex_
 
 # Codexでは使用しないため、導入済みなら除去するプラグイン。
 _UNUSED_PLUGINS: tuple[str, ...] = ("compact-plus@compact-plus",)
-
-
-@dataclass(frozen=True)
-class _LegacyLinkSnapshot:
-    """legacy skillリンクの変更前状態を表す。"""
-
-    path: Path
-    kind: str
-    target: Path
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
@@ -171,53 +161,6 @@ def _unlink(path: Path) -> None:
         path.rmdir()
 
 
-def _legacy_link_snapshots(root: Path) -> tuple[_LegacyLinkSnapshot, ...]:
-    skills = _codex_home() / "skills"
-    if not _path_exists(skills):
-        return ()
-    if _is_link(skills) or not skills.is_dir():
-        raise NotADirectoryError(f"Codex skills rootが通常ディレクトリではない: {skills}")
-    source_root = (root / "agent-toolkit/skills").resolve()
-    snapshots: list[_LegacyLinkSnapshot] = []
-    for path in sorted(skills.iterdir(), key=lambda entry: entry.name):
-        if not _is_link(path):
-            continue
-        try:
-            resolved = path.resolve(strict=False)
-            resolved.relative_to(source_root)
-        except (OSError, ValueError):
-            continue
-        if path.is_symlink():
-            target = path.readlink()
-            kind = "symlink"
-        else:
-            target = resolved
-            kind = "junction"
-        snapshots.append(_LegacyLinkSnapshot(path, kind, target))
-    return tuple(snapshots)
-
-
-def _restore_legacy_links(snapshots: tuple[_LegacyLinkSnapshot, ...]) -> None:
-    errors: list[str] = []
-    for snapshot in snapshots:
-        path = snapshot.path
-        try:
-            if _path_exists(path):
-                if path.is_symlink():
-                    path.unlink()
-                else:
-                    path.rmdir()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if snapshot.kind == "symlink":
-                path.symlink_to(snapshot.target, target_is_directory=True)
-            else:
-                setup_codex_links._create_link(path, snapshot.target)  # pylint: disable=protected-access
-        except BaseException as error:  # noqa: BLE001 - 他のlegacy linkの復元を継続する
-            errors.append(f"{path}: {error}")
-    if errors:
-        raise OSError(" / ".join(errors))
-
-
 def _append_exception_message(error: BaseException, message: str) -> None:
     current = str(error)
     error.args = (f"{current}\n{message}" if current else message,)
@@ -238,29 +181,15 @@ def _sync_local_plugin(
     current: dict[str, Any] | None,
     notices: list[post_apply_outcome.PostApplyNotice],
 ) -> bool:
-    legacy_snapshots = _legacy_link_snapshots(root)
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
-    if not needs_plugin_add and not legacy_snapshots:
-        return False
-    legacy_removal_started = False
-    try:
-        if needs_plugin_add:
-            if not _command(["plugin", "add", plugin_id]):
-                raise RuntimeError("Codex plugin addに失敗")
-            _append_restart_notice_if_daemon_running(notices)
-            _verify_expected_state(plugin_id, version)
-        if legacy_snapshots:
-            legacy_removal_started = True
-            _remove_legacy_links(root)
-    except BaseException as error:
-        if legacy_removal_started:
-            try:
-                _restore_legacy_links(legacy_snapshots)
-            except BaseException as restore_error:  # noqa: BLE001 - 元の失敗を保持する
-                _append_exception_message(error, f"legacy skillリンク復元失敗: {restore_error}")
-        raise
-    return True
+    if needs_plugin_add:
+        if not _command(["plugin", "add", plugin_id]):
+            raise RuntimeError("Codex plugin addに失敗")
+        _append_restart_notice_if_daemon_running(notices)
+        _verify_expected_state(plugin_id, version)
+    removed_legacy_links = _remove_legacy_links(root)
+    return needs_plugin_add or removed_legacy_links
 
 
 def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
