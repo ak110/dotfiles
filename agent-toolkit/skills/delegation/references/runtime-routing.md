@@ -66,7 +66,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 これに加えて`orchestrate`も受理する。当該種別は`atk wi process-loop`がオーケストレーターの新しいセッションを起動する設定であり、本節の委譲工程では渡さない。
 `start_explore`が使う`explore`と`explore_fast`は`fast`引数が選ぶため、`model_type`へ渡さない。
 各工程の起動を定める文書は、当該工程が渡す`model_type`の値を当該起動節へ明記する。起動する主体は、担当の名称又は工程名から値を組み立てず、明記が無い場合は`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」に従って本節を読んでから確定する。
-現に保存されているキーと実効値は`atk config show`で確認する。
+現に保存されているキーと実効値は`atk config show`で確認する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、当該設定キーと候補を標準エラーへ警告として書く。
 
 `execute_fast_model`と`execute_model`のどちらを初回実装へ用いるかは、計画ファイル（詳細）の`### 実装担当のモデル区分`の`判定`から確定する。
 `判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。

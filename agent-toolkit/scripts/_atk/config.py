@@ -166,10 +166,33 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     }
 
 
+def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
+    """参考一覧外の工程別モデル候補を警告文へ変換する。"""
+    warnings: list[str] = []
+    for candidate in value.split(","):
+        engine, model, effort = _parse_stage_model(candidate)
+        models = ", ".join(sorted(_KNOWN_MODELS[engine]))
+        if model not in _KNOWN_MODELS[engine]:
+            warnings.append(
+                f"警告: 設定キー`{key}`の候補`{candidate}`のモデル名`{model}`は主に使うモデルの一覧（{models}）にありません。"
+                "利用可否は実行時に各engineが判定します。"
+            )
+        if effort is not None and effort not in _KNOWN_EFFORTS:
+            efforts = ", ".join(sorted(_KNOWN_EFFORTS))
+            warnings.append(
+                f"警告: 設定キー`{key}`の候補`{candidate}`のeffort`{effort}`は主に使う値の一覧（{efforts}）にありません。"
+                "利用可否は実行時に各engineが判定します。"
+            )
+    return warnings
+
+
 def _cmd_config_show(home: pathlib.Path) -> None:
     """showサブコマンド: 解決済み設定を一覧表示する。"""
     for key, value in _resolved_settings(home).items():
         print(f"{key}: {value}")
+        if key in _MUTABLE_KEY_DEFAULTS:
+            for warning in _stage_model_candidate_warnings(key, value):
+                print(warning, file=sys.stderr)
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
@@ -203,22 +226,9 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(2)
-    for candidate in args.value.split(","):
-        engine, model, effort = _parse_stage_model(candidate)
-        if model not in _KNOWN_MODELS[engine]:
-            print(
-                f"警告: 候補`{candidate}`のモデル名`{model}`は主に使うモデルの一覧"
-                f"（{', '.join(sorted(_KNOWN_MODELS[engine]))}）にありません。"
-                "設定は保存します。利用可否は実行時に各engineが判定します。",
-                file=sys.stderr,
-            )
-        if effort is not None and effort not in _KNOWN_EFFORTS:
-            print(
-                f"警告: 候補`{candidate}`のeffort`{effort}`は主に使う値の一覧"
-                f"（{', '.join(sorted(_KNOWN_EFFORTS))}）にありません。"
-                "設定は保存します。利用可否は実行時に各engineが判定します。",
-                file=sys.stderr,
-            )
+    for warning in _stage_model_candidate_warnings(args.key, args.value):
+        print(warning, file=sys.stderr)
+    print("設定は保存します。", file=sys.stderr)
     config = _load_config()
     config[args.key] = args.value
     _save_config(config)

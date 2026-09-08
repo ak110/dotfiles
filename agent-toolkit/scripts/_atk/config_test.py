@@ -92,6 +92,40 @@ class TestConfigShow:
         assert exc_info.value.code == 0
         assert "config_dir:" in capsys.readouterr().out
 
+    def test_show_warns_candidate_outside_known_list(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """参考一覧外の候補は設定キーと候補を標準エラーへ示す。"""
+        candidate = "codex:unknown-model/ultra"
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PLAN_MODEL", candidate)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "show"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert f"plan_model: {candidate}" in captured.out
+        assert f"設定キー`plan_model`の候補`{candidate}`" in captured.err
+        assert "モデル名`unknown-model`は主に使うモデルの一覧" in captured.err
+        assert "effort`ultra`は主に使う値の一覧" in captured.err
+
+    def test_show_emits_no_warning_when_all_candidates_known(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """全候補が参考一覧内なら標準エラーへ何も書かない。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["config", "show"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "plan_model:" in captured.out
+        assert not captured.err
+
 
 class TestConfigGet:
     """`atk config get`の1件以上のキー取得を検証する。"""
@@ -348,7 +382,7 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert f"設定を更新しました: {key}={value}" in captured.out
-        assert not captured.err
+        assert captured.err == "設定は保存します。\n"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", key], home=tmp_path)
@@ -384,7 +418,7 @@ class TestConfigSet:
             atk.main(["config", "set", "execute_model", "claude:fable/medium"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not capsys.readouterr().err
+        assert capsys.readouterr().err == "設定は保存します。\n"
 
     def test_set_preserves_unconfigured_defaults(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """旧キーがない設定保存では、未設定の既定値を永続化しない。"""
@@ -396,7 +430,7 @@ class TestConfigSet:
             atk.main(["config", "set", "plan_model", "codex:gpt-5.6-terra/medium"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not capsys.readouterr().err
+        assert capsys.readouterr().err == "設定は保存します。\n"
         assert json.loads(config_file.read_text(encoding="utf-8")) == {
             "other_setting": "keep",
             "plan_model": "codex:gpt-5.6-terra/medium",
@@ -412,7 +446,7 @@ class TestConfigSet:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out == f"設定を更新しました: orchestrate_model={value}\n"
-        assert not captured.err
+        assert captured.err == "設定は保存します。\n"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "get", "orchestrate_model"], home=tmp_path)
@@ -612,7 +646,7 @@ class TestConfigSet:
             atk.main(["config", "set", "plan_review_model", "codex:gpt-5.6-terra"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not capsys.readouterr().err
+        assert capsys.readouterr().err == "設定は保存します。\n"
 
     @pytest.mark.parametrize("value", ["gpt-5.6-sol", "other:model", "codex:", "claude:model/"])
     def test_set_invalid_stage_model_exits_2(
