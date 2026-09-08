@@ -17,7 +17,14 @@ _SKILL_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*/?"
 )
 _SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
-_EXCLUDED_SOURCE = pathlib.Path("docs/development/incidents.md")
+_INCIDENTS = pathlib.Path("docs/development/incidents.md")
+_ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
+    (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS): 1,
+    (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS): 1,
+    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS): 5,
+    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS): 1,
+    (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS): 1,
+}
 
 
 def _tracked_source_paths(root: pathlib.Path) -> list[pathlib.Path]:
@@ -39,9 +46,6 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     """指定した追跡ファイルからスキルの起動名と相対パス参照を収集する。"""
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
-        if relative == _EXCLUDED_SOURCE:
-            # 事故記録は確定当時の参照位置を保持するため、過去の名称を検査対象にしない。
-            continue
         content = (root / relative).read_text(encoding="utf-8")
         references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
         references.extend((match.group().rstrip("/"), relative) for match in _SKILL_PATH_PATTERN.finditer(content))
@@ -59,11 +63,17 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
     """実体へ解決できない参照を返す。"""
-    return [
-        (reference, source)
-        for reference, source in _collect_references(root, sources)
-        if not _reference_exists(root, reference)
-    ]
+    allowed_counts = _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.copy()
+    unresolved: list[tuple[str, pathlib.Path]] = []
+    for reference, source in _collect_references(root, sources):
+        if _reference_exists(root, reference):
+            continue
+        key = (reference, source)
+        if allowed_counts.get(key, 0) > 0:
+            allowed_counts[key] -= 1
+            continue
+        unresolved.append(key)
+    return unresolved
 
 
 def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
@@ -91,17 +101,24 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
         encoding="utf-8",
     )
 
-    assert _unresolved_references(tmp_path, [source]) == []
+    assert not _unresolved_references(tmp_path, [source])
 
 
-def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
-    """欠損参照を参照文字列と参照元の対で報告する。"""
-    source = pathlib.Path("source.md")
-    missing = f"{_PLUGIN_PREFIX}:missing"
-    (tmp_path / source).write_text(f"{missing}\n", encoding="utf-8")
+def test_incident_history_allows_only_known_legacy_reference(tmp_path: pathlib.Path) -> None:
+    """事故記録の既知参照だけを許容し、同じファイルの別の欠損参照を報告する。"""
+    source = pathlib.Path("docs/development/incidents.md")
+    (tmp_path / source).parent.mkdir(parents=True)
+    legacy = f"{_PLUGIN_PREFIX}:agent-standards"
+    missing_invocation = f"{_PLUGIN_PREFIX}:missing"
+    missing_path = f"{_PLUGIN_PREFIX}/skills/missing/SKILL.md"
+    (tmp_path / source).write_text(
+        f"{legacy}\n{missing_invocation}\n{missing_path}\n",
+        encoding="utf-8",
+    )
 
     unresolved = _unresolved_references(tmp_path, [source])
-    assert unresolved == [(missing, source)]
+    assert unresolved == [(missing_invocation, source), (missing_path, source)]
     formatted = _format_unresolved(unresolved)
-    assert missing in formatted
+    assert missing_invocation in formatted
+    assert missing_path in formatted
     assert str(source) in formatted
