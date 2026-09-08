@@ -77,7 +77,10 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     stop_loop = text.index("foreach ($p in $restorableProcs)")
     stop_process = text.index("Stop-Process -Id $p.ProcessId", stop_loop)
     install_guard = text.index("if ($needsReinstall -and -not $reinstallDeferred)")
-    install = text.index('& uv tool install --editable "{{ .chezmoi.workingTree }}"')
+    install = text.index(
+        '& uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" '
+        '--editable "{{ .chezmoi.workingTree }}"'
+    )
     deferred = text.index("} elseif ($reinstallDeferred) {")
 
     assert classification < guard < stop_loop < stop_process < install_guard < install < deferred
@@ -362,7 +365,8 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
     install = text.index(
-        'if uv tool install --editable "{{ .chezmoi.workingTree }}" '
+        'if uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" '
+        '--editable "{{ .chezmoi.workingTree }}" '
         '--with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then'
     )
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')

@@ -127,7 +127,7 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # $ErrorActionPreference = 'Stop' はネイティブ exe の非ゼロ終了を例外化しないため、
         # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
         # ハッシュ書き込みは uv tool install ・uv tool update-shell ・期待シム実在再確認のすべてが成功した場合のみ実行する。
-        & uv tool install --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
+        & uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
         if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
         & uv tool update-shell
         if ($LASTEXITCODE -ne 0) { throw "uv tool update-shell が失敗しました (exit=$LASTEXITCODE)" }

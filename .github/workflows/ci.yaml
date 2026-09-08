@@ -111,9 +111,9 @@ jobs:
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --python 3.14 pytest -q
-          agent-toolkit/scripts/_atk/managed_temp
-          agent-toolkit/scripts/_hooks/permissionrequest_codex_test.py
-          agent-toolkit/scripts/_plan/structure
+          agent-toolkit/agent_toolkit/_atk/managed_temp
+          agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
+          agent-toolkit/agent_toolkit/_plan/structure
       - name: chezmoi インストール
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash
