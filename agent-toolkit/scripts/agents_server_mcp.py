@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
+import datetime
 import logging
 import math
 import os
@@ -121,6 +122,15 @@ def _engine_unavailable(session: SessionState) -> bool:
     if session.error.get("codexErrorInfo") in ENGINE_UNAVAILABLE_ERROR_INFO:
         return True
     return session.error.get("apiErrorStatus") in ENGINE_UNAVAILABLE_API_ERROR_STATUS
+
+
+def _elapsed_seconds(started_at_value: str) -> int | None:
+    """開始時刻から現在までの経過秒を返す。"""
+    try:
+        started_at = datetime.datetime.fromisoformat(started_at_value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, int(datetime.datetime.now(tz=started_at.tzinfo).timestamp() - started_at.timestamp()))
 
 
 def _shell_prompt(command: str, summary_policy: str) -> str:
@@ -852,8 +862,13 @@ class AgentsServerManager:
     def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
         """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。"""
         response = session.public_status(include_result=session.result_available)
+        if response.get("status") == "running":
+            elapsed_seconds = _elapsed_seconds(session.started_at)
+            if elapsed_seconds is not None:
+                response["elapsed_seconds"] = elapsed_seconds
         if not include_progress:
             response.pop("progress", None)
+            response.pop("elapsed_seconds", None)
         if "agent_message" in response:
             session.result_delivered = True
             session.touch()
@@ -870,7 +885,11 @@ class AgentsServerManager:
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
             return self._result_response(session)
-        return {"status": "running", "progress": ""}
+        response: dict[str, Any] = {"status": "running", "progress": ""}
+        elapsed_seconds = _elapsed_seconds(pending.state.started_at)
+        if elapsed_seconds is not None:
+            response["elapsed_seconds"] = elapsed_seconds
+        return response
 
     async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:
         """backendの再開を完了し、失敗時だけ再試行用状態を復元する。"""
@@ -1372,7 +1391,7 @@ async def wait(
     timeout: Annotated[
         float | None,
         Field(
-            description="待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。0は待機せず現状態を返す。"
+            description="待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。委譲先として起動されたセッションでは240秒を上限とする。0は待機せず現状態を返す。"
         ),
     ] = None,
     request_bucket: Annotated[
@@ -1386,7 +1405,8 @@ async def wait(
 ) -> dict[str, Any]:
     """委譲先の終端を待ち、終端時だけ結果本文を返す。
 
-    `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。
+    `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。委譲先として起動されたセッションでは240秒を上限とする。
+    当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
     呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
     本ツールの背景移行で待たず、`atk agents-wait <session_id>`を

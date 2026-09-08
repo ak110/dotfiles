@@ -311,6 +311,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_atk/config.py",
         "_atk/help_text.py",
         "_common/inherited_venv.py",
+        "_common/delegated_session.py",
         "_plan/locations.py",
         "_common/wait_schedule.py",
     )
@@ -576,7 +577,8 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     wait_timeout = wait_tool.parameters["properties"]["timeout"]
     assert wait_timeout["default"] is None
     assert wait_timeout["description"] == (
-        "待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。0は待機せず現状態を返す。"
+        "待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。"
+        "委譲先として起動されたセッションでは240秒を上限とする。0は待機せず現状態を返す。"
     )
     wait_bucket = wait_tool.parameters["properties"]["request_bucket"]
     assert wait_bucket["default"] == "main"
@@ -584,6 +586,8 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
         "既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"
     )
     assert "プロンプトキャッシュの保持期間から導出した上限" in wait_tool.description
+    assert "委譲先として起動されたセッションでは240秒を上限とする" in wait_tool.description
+    assert "`status`と`elapsed_seconds`を返す" in wait_tool.description
     assert "固有のtimeout要件がなければ`timeout`を省略する" in wait_tool.description
     assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
     send_timeout = send_tool.parameters["properties"]["timeout"]
@@ -778,7 +782,7 @@ async def test_success_response_key_sets_for_all_tools(
 
     session_id = str(started["session_id"])
     session = manager.sessions[session_id]
-    assert (await manager.wait(session_id, timeout=0)).keys() == {"status", "progress"}
+    assert (await manager.wait(session_id, timeout=0)).keys() == {"status", "progress", "elapsed_seconds"}
     assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery"}
     session.turn_id = "turn-1"
     assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
@@ -1501,10 +1505,10 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
     response = await manager.wait(session.session_id, timeout=0)
-    assert response == {
-        "status": "running",
-        "progress": "",
-    }
+    assert response["status"] == "running"
+    assert response["progress"] == ""
+    assert isinstance(response["elapsed_seconds"], int)
+    assert response["elapsed_seconds"] >= 0
 
 
 @pytest.mark.asyncio
@@ -2821,10 +2825,12 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
         with pytest.raises(TimeoutError, match="send_message timed out: thread-pending"):
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
-        assert await manager.wait(session_id, timeout=0) == {
-            "status": "running",
-            "progress": "",
-        }
+        response = await manager.wait(session_id, timeout=0)
+        assert set(response) == {"status", "progress", "elapsed_seconds"}
+        assert response["status"] == "running"
+        assert response["progress"] == ""
+        assert isinstance(response["elapsed_seconds"], int)
+        assert response["elapsed_seconds"] >= 0
         assert session_id not in manager.expired_sessions
 
         client.release_resume.set()
@@ -3292,10 +3298,12 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
         assert client.query_started.is_set()
         await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
         assert not client.queries
-        assert await manager.wait(session_id, timeout=0) == {
-            "status": "running",
-            "progress": "",
-        }
+        response = await manager.wait(session_id, timeout=0)
+        assert set(response) == {"status", "progress", "elapsed_seconds"}
+        assert response["status"] == "running"
+        assert response["progress"] == ""
+        assert isinstance(response["elapsed_seconds"], int)
+        assert response["elapsed_seconds"] >= 0
         assert session_id not in manager.expired_sessions
 
         response = await manager.send_message(session_id, "後続指示", timeout=1)

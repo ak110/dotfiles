@@ -150,6 +150,7 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     委譲先のセッションから検査を実行すると標識が継承され、当該前提が崩れる。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
 
 
 @pytest.fixture(autouse=True)

@@ -17,6 +17,9 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 本モジュールが読む設定はユーザー設定ファイル`~/.claude/settings.json`に限る。
 プロジェクト設定と`--settings`の指定は、判定を要求する主体の起動条件から確定できないため読まない。
 サブエージェント定義のfrontmatterも、判定時点では対象の定義が定まらないため読まない。
+
+委譲先として起動されたセッションでは、実測したMCPクライアントの300秒のツール呼び出し上限の内側へ
+収めるため、既定待機上限を240秒とする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
 """
 
 import json
@@ -25,6 +28,8 @@ import pathlib
 import subprocess
 
 import pytilpack.jsonc
+
+from _common.delegated_session import is_delegated
 
 # キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
@@ -38,6 +43,7 @@ _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # 判定を誤った場合の帰結は非対称であり、Claude Codeを誤って当該ホストと判定した場合は待機の再発行が増えるだけで、
 # 逆の誤りだけが当該失敗を残す。このため`CLAUDECODE`を確認できない場合を当該ホストとして扱う。
 _WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
+_WAIT_TIMEOUT_FOR_DELEGATED_SESSION = 240.0
 _BUCKET_TTL_ENV = {
     "main": "CLAUDE_CODE_PROMPT_CACHE_TTL",
     "subagent": "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
@@ -147,9 +153,9 @@ def get_schedule(request_bucket: str) -> str:
 
 def get_wait_timeout(request_bucket: str) -> float:
     """プロンプトキャッシュTTLを委譲先の終端を待つ上限秒数へ変換する。"""
-    ttl = get_prompt_cache_ttl(request_bucket)
+    timeout = _WAIT_TIMEOUT_FOR_1H_TTL if get_prompt_cache_ttl(request_bucket) == "1h" else _WAIT_TIMEOUT_FOR_5M_TTL
     if "CLAUDECODE" not in os.environ:
-        return _WAIT_TIMEOUT_FOR_UNKNOWN_HOST
-    if ttl == "1h":
-        return _WAIT_TIMEOUT_FOR_1H_TTL
-    return _WAIT_TIMEOUT_FOR_5M_TTL
+        timeout = min(timeout, _WAIT_TIMEOUT_FOR_UNKNOWN_HOST)
+    if is_delegated(os.environ):
+        timeout = min(timeout, _WAIT_TIMEOUT_FOR_DELEGATED_SESSION)
+    return timeout
