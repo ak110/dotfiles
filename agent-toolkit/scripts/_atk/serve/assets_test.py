@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
@@ -99,7 +99,12 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     assert "dataset.unansweredUwi" in assets.JS
     assert "種別不明" in assets.JS
 
-    grid = re.search(r"\.entry-columns, \.entry-row \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    grid = re.search(
+        r'body\[data-screen="wi"\] \.entry-columns,\s+'
+        r'body\[data-screen="wi"\] \.entry-row \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert grid is not None
     template = re.search(r"grid-template-columns:(.*?);", grid.group(1), re.DOTALL)
     assert template is not None
@@ -113,7 +118,8 @@ def test_assets_use_single_cli_ordered_list_and_current_terms() -> None:
     ]
     assert "grid-column: 1 / 5;" in assets.CSS
     assert "grid-template-columns: subgrid;" in assets.CSS
-    assert ".entry-copy { grid-column: 5;" in assets.CSS
+    assert 'body[data-screen="wi"] .entry-copy {' in assets.CSS
+    assert "grid-column: 5;" in assets.CSS
 
 
 def test_assets_render_single_list_warnings_and_filter_dependencies() -> None:

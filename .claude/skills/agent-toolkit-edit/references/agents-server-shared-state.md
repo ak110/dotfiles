@@ -1,0 +1,50 @@
+# agents_serverの共有状態と読み書き経路
+
+`agents_server`の状態は、MCPサーバーのメモリー、状態ディレクトリのファイル、フックが記録するセッション状態及びstatuslineが読む射影の4つの表現に分かれる。
+実行主体ごとに更新できる範囲が異なるため、1つの経路だけを読んで挙動を確定すると、別の経路が同じ状態を更新しない事実を見落とす。
+`agent-toolkit/scripts/agents_server_mcp.py`と`agent-toolkit/scripts/_agents_server/`配下を変更又は調査する主体は、着手前に本書を読む。
+`rust/claude-statusline/src/agents_server.rs`を扱う主体も同じとする。
+
+## 実行主体
+
+| 実行主体 | 実体 | 寿命 |
+| --- | --- | --- |
+| MCPサーバー | `agent-toolkit/scripts/agents_server_mcp.py` | 会話ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける |
+| `atk`のCLI | `atk agents-wait`、`atk agents-notify` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
+| フック | `agent-toolkit/scripts/_hooks/posttooluse.py` | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
+| statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
+
+`CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。
+Claude Codeが同一プロセスのままsession識別子を切り替えた場合、切替後に起動する短命プロセスは新しい値を得る一方、長命なMCPサーバーは起動時の値を保持し続ける。
+MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Codeプロセスを指す識別子を環境変数から解決できない。
+
+## 共有状態ごとの正本と読み書き経路
+
+| 共有状態 | 正本 | 読む主体 | 更新できる主体 |
+| --- | --- | --- | --- |
+| session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | MCPサーバーだけ |
+| statusline向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline | 当該ルートに属する各MCPサーバー |
+| 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents-wait`、statusline | MCPサーバー（作成と削除）、`atk agents-wait`（削除） |
+| 孫sessionの終端登録 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー | 孫を所有するMCPサーバー |
+| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents-wait` | `atk agents-notify` |
+| ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents-wait` | PostToolUseフック（`start`系応答の`root_session_id`を入力とする） |
+| MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
+
+状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
+
+索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
+MCPサーバーは状態ファイルの書込先として解決したルートsession識別子を`start`系応答の`root_session_id`へ含め、PostToolUseフックは当該値を索引の書込先として直接使う。状態ファイルは1秒単位で集約され、応答直後には起動したsessionが未反映であり得るため、状態ディレクトリの走査による逆引きは行わない。
+`atk agents-notify`は委譲先から`AGENT_TOOLKIT_OWNER_SESSION`で所有者sessionを直接解決するため、索引を読まない。
+子から親へ通知する経路では所有者sessionが宛先の正本であり、現行のsession識別子から解決すると宛先が自分自身になるためである。
+
+## 判定を確定する前に確認すること
+
+- 対象の状態について、上表の「更新できる主体」が2つ以上あるかを確認する。2つ以上ある場合は、片方だけを読んで網羅を判定しない。
+- MCPサーバーのメモリーにだけ存在する状態は、プロセス境界の外にある`atk`のCLIとフックからは更新できない。当該状態を判定へ用いる経路が、CLI経由の操作でも成立するかを個別に確認する。
+- 同じ事実を2つの表現で保持する状態を新設しない。既存の`SessionState.result_delivered`は、結果ファイルを削除する契機を表す内部状態であり、回収済みかどうかの判定には用いない。
+
+## 本書の更新が必要になる変更
+
+- 上表のいずれかの状態について、正本の所在、読む主体又は更新できる主体を変える変更。
+- 状態ディレクトリ配下へ新しい種類のファイルを置く変更。
+- MCPサーバー、`atk`のCLI、フック及びstatuslineのいずれかへ、既存の共有状態を読み書きする経路を追加する変更。

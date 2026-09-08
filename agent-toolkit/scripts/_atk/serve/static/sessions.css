@@ -1,46 +1,46 @@
 /* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
 
 /* 書体・文字サイズ・行の高さを`markdown.css`へそろえ、右ペインの本文を計画ファイル画面の本文と同じ表示にする。 */
-body {
+body[data-screen="sessions"] {
   margin: 0;
   padding: 0;
-  font-family: "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family:
+    "Noto Sans JP",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   color: #1a1a1a;
   font-size: 1.125rem;
   line-height: 1.7;
 }
 
 /* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
-#app {
+body[data-screen="sessions"] #app {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
   grid-template-columns: 340px 1fr;
 }
-
-aside {
+body[data-screen="sessions"] aside {
   border-right: 1px solid #e6e6e6;
   overflow: auto;
   background: #f9fafb;
 }
-
-aside .toolbar {
+body[data-screen="sessions"] aside .toolbar {
   position: sticky;
   top: 0;
   background: #f9fafb;
   padding: 10px;
   border-bottom: 1px solid #e6e6e6;
 }
-
-aside input {
+body[data-screen="sessions"] aside input {
   width: 100%;
   box-sizing: border-box;
   padding: 6px 8px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
 }
-
-#warnings {
+body[data-screen="sessions"] #warnings {
   margin: 8px 10px;
   padding: 8px;
   border: 1px solid #f0c36d;
@@ -48,8 +48,7 @@ aside input {
   background: #fdf6e3;
   font-size: 0.95rem;
 }
-
-.session-item {
+body[data-screen="sessions"] .session-item {
   display: block;
   width: 100%;
   text-align: left;
@@ -60,30 +59,31 @@ aside input {
   cursor: pointer;
   font: inherit;
 }
-
-.session-item:hover { background: #eef2ff; }
-.session-item[aria-current="true"] { background: #e0e7ff; }
-
-.session-item .session-cwd,
-.session-item .session-message {
+body[data-screen="sessions"] .session-item:hover {
+  background: #eef2ff;
+}
+body[data-screen="sessions"] .session-item[aria-current="true"] {
+  background: #e0e7ff;
+}
+body[data-screen="sessions"] .session-item .session-cwd,
+body[data-screen="sessions"] .session-item .session-message {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.session-item .session-message { color: #374151; }
-
-.session-item .session-meta {
+body[data-screen="sessions"] .session-item .session-message {
+  color: #374151;
+}
+body[data-screen="sessions"] .session-item .session-meta {
   color: #6b7280;
   font-size: 0.88rem;
 }
-
-.session-item .session-warning {
+body[data-screen="sessions"] .session-item .session-warning {
   color: #b45309;
   font-size: 0.88rem;
 }
-
-main {
+body[data-screen="sessions"] main {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -91,30 +91,29 @@ main {
 }
 
 /* 内側の余白は計画ファイル画面のツールバーとそろえる。 */
-main .toolbar {
+body[data-screen="sessions"] main .toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
   border-bottom: 1px solid #e6e6e6;
 }
-
-main .spacer { flex: 1; }
-
-.detail-title {
+body[data-screen="sessions"] main .spacer {
+  flex: 1;
+}
+body[data-screen="sessions"] .detail-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
 }
-
-.secondary-text {
+body[data-screen="sessions"] .secondary-text {
   color: #6b7280;
   font-size: 0.95rem;
 }
 
 /* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
-#detail {
+body[data-screen="sessions"] #detail {
   flex: none;
   width: 100%;
   max-width: 860px;
@@ -125,16 +124,16 @@ main .spacer { flex: 1; }
 
 /* サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元へ戻る操作を本文の先頭へ置く。
    配色・境界・角丸・寸法は`shell.css`の共通規則が定める。本規則は下の要素との間隔だけを指定する。 */
-.detail-back { margin-bottom: 10px; }
-
-.subagents {
+body[data-screen="sessions"] .detail-back {
+  margin-bottom: 10px;
+}
+body[data-screen="sessions"] .subagents {
   margin-bottom: 10px;
   border: 1px solid #e6e6e6;
   border-radius: 8px;
   overflow: hidden;
 }
-
-.subagents h2 {
+body[data-screen="sessions"] .subagents h2 {
   margin: 0;
   padding: 6px 10px;
   border-bottom: 1px solid #e6e6e6;
@@ -143,7 +142,7 @@ main .spacer { flex: 1; }
 }
 
 /* 左余白は`spawn_depth`に応じて描画側が設定する。 */
-.subagent-item {
+body[data-screen="sessions"] .subagent-item {
   display: flex;
   gap: 8px;
   align-items: baseline;
@@ -156,26 +155,29 @@ main .spacer { flex: 1; }
   text-align: left;
   font-size: 0.95rem;
 }
-
-.subagent-item:last-child { border-bottom: none; }
-.subagent-item:hover:not(:disabled) { background: #eef2ff; }
-.subagent-item .subagent-type { flex: none; font-weight: 600; }
-
-.subagent-item .subagent-description {
+body[data-screen="sessions"] .subagent-item:last-child {
+  border-bottom: none;
+}
+body[data-screen="sessions"] .subagent-item:hover:not(:disabled) {
+  background: #eef2ff;
+}
+body[data-screen="sessions"] .subagent-item .subagent-type {
+  flex: none;
+  font-weight: 600;
+}
+body[data-screen="sessions"] .subagent-item .subagent-description {
   overflow: hidden;
   color: #6b7280;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.event {
+body[data-screen="sessions"] .event {
   border: 1px solid #e6e6e6;
   border-radius: 8px;
   margin-bottom: 10px;
   overflow: hidden;
 }
-
-.event > summary {
+body[data-screen="sessions"] .event > summary {
   cursor: pointer;
   padding: 6px 10px;
   background: #f4f6fa;
@@ -184,32 +186,44 @@ main .spacer { flex: 1; }
   gap: 8px;
   align-items: baseline;
 }
-
-.event .event-kind {
+body[data-screen="sessions"] .event .event-kind {
   padding: 0 6px;
   border-radius: 999px;
   color: #fff;
   background: #6b7280;
   font-size: 0.8rem;
 }
-
-.event.kind-user .event-kind { background: #2563eb; }
-.event.kind-developer .event-kind { background: #be185d; }
-.event.kind-assistant .event-kind { background: #16a34a; }
-.event.kind-thinking .event-kind { background: #7c3aed; }
-.event.kind-tool_call .event-kind { background: #d97706; }
-.event.kind-tool_result .event-kind { background: #0891b2; }
-.event.kind-compact_boundary .event-kind { background: #b91c1c; }
-
-.event .event-time { color: #6b7280; }
-.event .event-input-summary {
+body[data-screen="sessions"] .event.kind-user .event-kind {
+  background: #2563eb;
+}
+body[data-screen="sessions"] .event.kind-developer .event-kind {
+  background: #be185d;
+}
+body[data-screen="sessions"] .event.kind-assistant .event-kind {
+  background: #16a34a;
+}
+body[data-screen="sessions"] .event.kind-thinking .event-kind {
+  background: #7c3aed;
+}
+body[data-screen="sessions"] .event.kind-tool_call .event-kind {
+  background: #d97706;
+}
+body[data-screen="sessions"] .event.kind-tool_result .event-kind {
+  background: #0891b2;
+}
+body[data-screen="sessions"] .event.kind-compact_boundary .event-kind {
+  background: #b91c1c;
+}
+body[data-screen="sessions"] .event .event-time {
+  color: #6b7280;
+}
+body[data-screen="sessions"] .event .event-input-summary {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.event pre {
+body[data-screen="sessions"] .event pre {
   margin: 0;
   padding: 10px;
   overflow: auto;
@@ -218,20 +232,23 @@ main .spacer { flex: 1; }
   background: #fff;
   font-size: 1.125rem;
 }
-
-.unavailable {
+body[data-screen="sessions"] .unavailable {
   color: #9ca3af;
   font-style: normal;
 }
-
-#menu-btn { display: none; }
-#drawer-backdrop { display: none; }
-
+body[data-screen="sessions"] #menu-btn {
+  display: none;
+}
+body[data-screen="sessions"] #drawer-backdrop {
+  display: none;
+}
 @media (max-width: 768px) {
-  #app { grid-template-columns: 1fr; }
+  body[data-screen="sessions"] #app {
+    grid-template-columns: 1fr;
+  }
 
   /* 一覧のドロワーは計画ファイル画面と同じく画面全体を覆う。 */
-  aside {
+  body[data-screen="sessions"] aside {
     position: fixed;
     z-index: 20;
     top: 0;
@@ -242,10 +259,10 @@ main .spacer { flex: 1; }
     transform: translateX(-100%);
     transition: transform 0.2s ease;
   }
-
-  body.drawer-open aside { transform: translateX(0); }
-
-  body.drawer-open #drawer-backdrop {
+  body[data-screen="sessions"].drawer-open aside {
+    transform: translateX(0);
+  }
+  body[data-screen="sessions"].drawer-open #drawer-backdrop {
     display: block;
     position: fixed;
     z-index: 15;
@@ -254,5 +271,7 @@ main .spacer { flex: 1; }
   }
 
   /* 配色・境界・角丸・寸法は`shell.css`の共通規則が定める。本規則は表示の切り替えだけを指定する。 */
-  #menu-btn { display: inline-block; }
+  body[data-screen="sessions"] #menu-btn {
+    display: inline-block;
+  }
 }

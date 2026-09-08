@@ -19,7 +19,7 @@ import contextlib
 import sys
 import typing
 
-# pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
+# 配布物独立性を保つため同等機能を独立実装する。
 
 
 @contextlib.contextmanager

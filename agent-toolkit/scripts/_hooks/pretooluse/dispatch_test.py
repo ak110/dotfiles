@@ -695,6 +695,15 @@ class TestNonEditToolWarnings:
         assert result.returncode == 0
         assert result.stdout == ""
 
+    @pytest.mark.parametrize(
+        "recipient",
+        ["uds:/tmp/cc-socks/1939480.sock", "unix:/run/agent/relay.sock"],
+    )
+    def test_sendmessage_runtime_socket_recipient_does_not_warn(self, recipient: str) -> None:
+        result = _run({"tool_name": "SendMessage", "tool_input": {"to": recipient, "message": "通知"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
 
 class TestColloquialCheck:
     """口語的な日本語表現の混入警告（warn のみ、exit code は 0）。"""

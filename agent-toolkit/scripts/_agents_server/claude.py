@@ -481,11 +481,7 @@ class ClaudeServerManager:
                                 self._finalize_turn(session, result)
                                 iterator = None
                             elif (session.live_task_ids or session.live_child_session_ids) and not session.auto_resume_consumed:
-                                session.pending_result = result
-                                session.awaiting_auto_resume = True
-                                session.auto_resume_deadline = (
-                                    asyncio.get_running_loop().time() + shared_state.RESULT_RETENTION_SECONDS
-                                )
+                                shared_state.begin_auto_resume_wait(session, result)
                                 session.touch()
                             else:
                                 self._finalize_turn(session, result)

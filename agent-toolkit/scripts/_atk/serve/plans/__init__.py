@@ -1,6 +1,6 @@
 # ruff: noqa: E402,E501,F401,F811,I001
 # pylint: disable=invalid-name,wrong-import-order,wrong-import-position
-# pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 """分割前の公開契約を維持する責務別実装パッケージ。"""
 
 import sys

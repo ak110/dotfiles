@@ -1,7 +1,6 @@
 """``agents_server_mcp.py``のuvスクリプト環境を事前構築する。"""
 
 # 配布先ごとの独立したPEP 723スクリプトを対象にするため、既存のhookウォームアップ処理と共通部分を重複させる。
-# pylint: disable=duplicate-code
 
 import json
 import logging

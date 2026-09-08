@@ -5,7 +5,7 @@
 `main()`実行中の例外では要約1行とtracebackを書いたうえでStop共通入口の空JSON応答を返す。
 """
 
-# pylint: disable=duplicate-code  # 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
+# 共通entrypointとのサブコマンド契約をテスト側にも固定するため意図的に重複する。
 
 import json
 import os

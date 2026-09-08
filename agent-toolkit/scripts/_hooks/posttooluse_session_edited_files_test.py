@@ -6,7 +6,7 @@ pretooluse.pyの一括ステージ警告（`_check_bash_bulk_stage_with_unedited
 `posttooluse_test.py`のpylint too-many-lines回避のため独立ファイルへ配置する。
 """
 
-# pylint: disable=duplicate-code  # 独立したフックシナリオ間で状態ディレクトリ初期化を同形に保つ。
+# 独立したフックシナリオ間で状態ディレクトリ初期化を同形に保つ。
 
 import json
 import os

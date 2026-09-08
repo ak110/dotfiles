@@ -72,7 +72,7 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 529（overloaded_error）へ限定する。500（api_error）はサービス内部の失敗であり、
 # 候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({429, 529})
-_TASK_DOCUMENT_PATTERN = re.compile(r"^(?P<path>/\S+\.subagent\.md)(?:\s|$)")
+_TASK_DOCUMENT_PATTERN = re.compile(r"^(?P<path>/\S+\.subagent\.md)")
 _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
@@ -235,16 +235,19 @@ class AgentsServerManager:
         return session
 
     def _expire_session(self, session_id: str) -> None:
-        """session本体を破棄し、再開状態と未回収の終端結果を保持する。"""
+        """期限に到達したsession本体と終端結果を破棄し、再開状態を保持する。"""
         session = self.sessions.pop(session_id, None)
         if session is not None:
-            self.expired_sessions[session_id] = SessionResumeState.from_session(session)
+            self.expired_sessions[session_id] = dataclasses.replace(
+                SessionResumeState.from_session(session),
+                result_delivered=True,
+            )
             if self._status_writer is not None:
-                self._status_writer.retain_result(session)
+                self._status_writer.delete_result(session_id)
                 self._status_writer.schedule()
 
-    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
-        """期限切れsessionに未回収の終端結果があれば1回だけ返す。"""
+    def _resolve_expired_session(self, session_id: str) -> SessionResumeState | None:
+        """保持期限を反映し、期限切れsessionの再開状態を返す。"""
         if not isinstance(session_id, str) or not session_id:
             return None
         session = self.sessions.get(session_id)
@@ -254,56 +257,57 @@ class AgentsServerManager:
             and asyncio.get_running_loop().time() >= session.retention_deadline
         ):
             self._expire_session(session_id)
-        resume_state = self.expired_sessions.get(session_id)
+        return self.expired_sessions.get(session_id)
+
+    def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
+        """期限切れsessionなら結果本文を伴わない応答を返す。"""
+        resume_state = self._resolve_expired_session(session_id)
+        if resume_state is None:
+            return None
+        return {"status": "expired"}
+
+    def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
+        """破棄済みsessionを返し、保持期限の到来を期限切れ状態へ反映する。"""
+        resume_state = self.stopped_sessions.get(session_id)
+        if resume_state is None:
+            return None
+        deadline = resume_state.retention_deadline
+        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+            self.stopped_sessions.pop(session_id, None)
+            self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+            if self._status_writer is not None:
+                self._status_writer.delete_result(session_id)
+                self._status_writer.schedule()
+            return None
         if (
-            resume_state is None
-            or resume_state.result_delivered
-            or resume_state.status not in TERMINAL_STATUSES
-            or resume_state.finalized_at is None
+            not resume_state.result_delivered
+            and resume_state.finalized_at is not None
+            and self._status_writer is not None
+            and not self._status_writer.result_exists(session_id)
         ):
+            resume_state = dataclasses.replace(resume_state, result_delivered=True)
+            self.stopped_sessions[session_id] = resume_state
+        return resume_state
+
+    @staticmethod
+    def _stopped_result_response(resume_state: SessionResumeState) -> dict[str, Any] | None:
+        """破棄済みsessionの期限内の未回収結果を返す。"""
+        if resume_state.result_delivered or resume_state.status not in TERMINAL_STATUSES or resume_state.finalized_at is None:
             return None
         response: dict[str, Any] = {
-            "session_id": session_id,
-            "engine": resume_state.engine,
             "status": resume_state.status,
-            "progress": "",
-            "turn_seq": resume_state.turn_seq,
             "agent_message": resume_state.agent_message,
         }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
-        self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
-        if self._status_writer is not None:
-            self._status_writer.delete_result(session_id)
         return response
 
     def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
-        if not isinstance(session_id, str) or not session_id:
-            return None
-        session = self.sessions.get(session_id)
-        if (
-            session is not None
-            and session.retention_deadline is not None
-            and asyncio.get_running_loop().time() >= session.retention_deadline
-        ):
-            self._expire_session(session_id)
-        resume_state = self.expired_sessions.get(session_id)
+        resume_state = self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
-        response: dict[str, Any] = {
-            "session_id": session_id,
-            "engine": resume_state.engine,
-            "status": "expired",
-            "progress": "",
-            "kill_requested": False,
-            "turn_seq": resume_state.turn_seq,
-        }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
-        return response
+        return {"status": "expired", "kill_requested": False}
 
     @staticmethod
     def _listed_session(
@@ -380,12 +384,14 @@ class AgentsServerManager:
         ]
         return {"sessions": visible, "omitted": len(sessions) - len(visible)}
 
-    async def stop(self, session_id: str) -> dict[str, Any]:
+    async def stop(self, session_id: str, *, retain_result: bool = False) -> dict[str, Any]:
         """終端済みsessionを破棄し、会話再開用の最小状態だけを保持する。"""
         if not isinstance(session_id, str) or not session_id:
             raise ValueError("session_id must be a non-empty string")
         if session_id in self._pending_resumes:
             raise ValueError(f"session is running: {session_id}; issue kill before stop if interruption is required")
+        already_stopped = session_id in self.stopped_sessions
+        stopped_state = self._resolve_stopped_session(session_id)
         session = self.sessions.get(session_id)
         if (
             session is not None
@@ -399,31 +405,41 @@ class AgentsServerManager:
                 raise ValueError(f"session is running: {session_id}; issue kill before stop if interruption is required")
             resume_state = SessionResumeState.from_session(session)
         else:
-            resume_state = self.expired_sessions.get(session_id)
+            resume_state = stopped_state or self.expired_sessions.get(session_id)
             if resume_state is None:
                 raise self._unresolved_session_error(session_id, label="session")
+        deadline = resume_state.retention_deadline
+        keep_result = (
+            retain_result
+            and resume_state.finalized_at is not None
+            and deadline is not None
+            and asyncio.get_running_loop().time() < deadline
+        )
+        resume_state = dataclasses.replace(resume_state, result_delivered=not keep_result)
+        if session is not None:
+            session.result_delivered = not keep_result
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
         if self._status_writer is not None:
-            self._status_writer.delete_result(session_id)
+            if keep_result and session is not None:
+                self._status_writer.retain_result(session)
+            elif not keep_result:
+                self._status_writer.delete_result(session_id)
             self._status_writer.schedule()
-        await self._backend(resume_state.engine).release_session(session_id)
-        response: dict[str, Any] = {
-            "session_id": session_id,
-            "engine": resume_state.engine,
-            "status": "stopped",
-            "progress": "",
-            "turn_seq": resume_state.turn_seq,
-        }
-        if resume_state.model_type is not None:
-            response["model_type"] = resume_state.model_type
-        return response
+        if not already_stopped:
+            await self._backend(resume_state.engine).release_session(session_id)
+        return {}
 
-    async def _stop_after_terminal_response(self, response: dict[str, Any], stop: bool) -> dict[str, Any]:
+    async def _stop_after_terminal_response(
+        self,
+        session_id: str,
+        response: dict[str, Any],
+        stop: bool,
+    ) -> dict[str, Any]:
         """要求された終端応答に限りsessionを破棄し、元の応答を維持する。"""
-        if stop and response.get("status") in {*TERMINAL_STATUSES, "expired"}:
-            await self.stop(response["session_id"])
+        if stop and response.get("status") in {*TERMINAL_STATUSES, "expired"} and session_id not in self.stopped_sessions:
+            await self.stop(session_id, retain_result=True)
         return response
 
     @staticmethod
@@ -527,12 +543,15 @@ class AgentsServerManager:
             session.engine = engine
             await self._await_start_outcome(session)
             response = {
-                **session.public_status(),
+                "session_id": session.session_id,
+                "status": session.status,
+                "engine": engine,
                 "model_type": model_type,
                 "model": model,
                 "effort": effort,
-                "turn_seq": session.turn_seq,
             }
+            if self._status_writer is not None:
+                response["root_session_id"] = self._status_writer.root_session_id
             if not _engine_unavailable(session):
                 self._carried_unavailable_candidates.pop((model_type, launch_kind), None)
                 session.label = display_label
@@ -618,9 +637,15 @@ class AgentsServerManager:
 
         `timeout`が`None`の場合は、プロンプトキャッシュの保持期間から導出した上限を使う。
         """
+        stopped_state = self._resolve_stopped_session(session_id)
+        if stopped_state is not None:
+            stopped_response = self._stopped_result_response(stopped_state)
+            if stopped_response is not None:
+                notices = self._take_notices(session_id)
+                return self._response_with_notices(stopped_response, notices)
         expired_response = self._expired_result_response(session_id)
         if expired_response is not None:
-            return await self._stop_after_terminal_response(expired_response, stop)
+            return await self._stop_after_terminal_response(session_id, expired_response, stop)
         if timeout is None:
             timeout = await self._resolve_wait_timeout(request_bucket)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
@@ -632,9 +657,13 @@ class AgentsServerManager:
             notices = self._take_notices(session_id)
             if notices:
                 response = self._response_with_notices(self._pending_resume_status(pending), notices)
-                return await self._stop_after_terminal_response(response, stop)
+                return await self._stop_after_terminal_response(session_id, response, stop)
             if timeout == 0:
-                return await self._stop_after_terminal_response(self._pending_resume_status(pending), stop)
+                return await self._stop_after_terminal_response(
+                    session_id,
+                    self._pending_resume_status(pending),
+                    stop,
+                )
             while self._pending_resumes.get(session_id) is pending and not pending.task.done():
                 remaining = deadline - loop.time()
                 if remaining <= 0:
@@ -645,13 +674,13 @@ class AgentsServerManager:
                     notices = self._take_notices(session_id)
                     if notices:
                         response = self._response_with_notices(self._pending_resume_status(pending), notices)
-                        return await self._stop_after_terminal_response(response, stop)
+                        return await self._stop_after_terminal_response(session_id, response, stop)
         session = self._get_session(session_id)
         await self._advance_child_session_wait(session)
         notices = self._take_notices(session_id)
         if session.result_available or notices:
             response = self._response_with_notices(self._result_response(session), notices)
-            return await self._stop_after_terminal_response(response, stop)
+            return await self._stop_after_terminal_response(session_id, response, stop)
         if not session.result_available:
             while not session.result_available:
                 await self._advance_child_session_wait(session)
@@ -673,8 +702,12 @@ class AgentsServerManager:
                 notices = self._take_notices(session_id)
                 if session.result_available or notices:
                     response = self._response_with_notices(self._result_response(session), notices)
-                    return await self._stop_after_terminal_response(response, stop)
-        return await self._stop_after_terminal_response(self._result_response(self._get_session(session_id)), stop)
+                    return await self._stop_after_terminal_response(session_id, response, stop)
+        return await self._stop_after_terminal_response(
+            session_id,
+            self._result_response(self._get_session(session_id)),
+            stop,
+        )
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
@@ -725,29 +758,28 @@ class AgentsServerManager:
         return response
 
     @staticmethod
-    def _result_response(session: SessionState) -> dict[str, Any]:
+    def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
         """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。"""
         response = session.public_status(include_result=session.result_available)
+        if not include_progress:
+            response.pop("progress", None)
         if "agent_message" in response:
             session.result_delivered = True
             session.touch()
         return response
+
+    def _kill_result_response(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
+        """killの応答を組み立て、回収した通知がある場合だけ付ける。"""
+        response = self._result_response(session, include_progress=False)
+        response["kill_requested"] = kill_requested
+        return self._response_with_notices(response, self._take_notices(session.session_id))
 
     def _pending_resume_status(self, pending: _PendingResume) -> dict[str, Any]:
         """進行中の再開操作を通常のrunning状態として射影する。"""
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
             return self._result_response(session)
-        result: dict[str, Any] = {
-            "session_id": pending.state.session_id,
-            "engine": pending.state.engine,
-            "status": "running",
-            "progress": "",
-            "turn_seq": pending.state.turn_seq + 1,
-        }
-        if pending.state.model_type is not None:
-            result["model_type"] = pending.state.model_type
-        return result
+        return {"status": "running", "progress": ""}
 
     async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:
         """backendの再開を完了し、失敗時だけ再試行用状態を復元する。"""
@@ -827,10 +859,7 @@ class AgentsServerManager:
             pending.prompt.cancel(ticket)
             raise
         delivery = "reply_failed" if session.result_available else "reply_started"
-        response: dict[str, Any] = {
-            "delivery": delivery,
-            **session.public_status(include_result=session.result_available),
-        }
+        response: dict[str, Any] = {"delivery": delivery}
         previous_result = pending.take_previous_result()
         if previous_result:
             response["previous_result"] = previous_result
@@ -935,11 +964,21 @@ class AgentsServerManager:
                             and asyncio.get_running_loop().time() >= retained.retention_deadline
                         ):
                             self._expire_session(session_id)
-                        resume_state = self.expired_sessions.get(session_id)
-                        if resume_state is None:
-                            resume_state = self.stopped_sessions.get(session_id)
+                        stopped_state = self._resolve_stopped_session(session_id)
+                        resume_state = stopped_state or self.expired_sessions.get(session_id)
                         if resume_state is not None:
-                            return await self._resume_and_reply(resume_state, prompt)
+                            previous_result = None
+                            previous_result_deadline = None
+                            if stopped_state is not None:
+                                previous_result = self._stopped_result_response(stopped_state)
+                                if previous_result is not None:
+                                    previous_result_deadline = stopped_state.retention_deadline
+                            return await self._resume_and_reply(
+                                resume_state,
+                                prompt,
+                                previous_result,
+                                previous_result_deadline,
+                            )
                         session = self._get_session(session_id)
                     backend = self._backend(session.engine)
                     async with session.turn_control_lock:
@@ -966,7 +1005,7 @@ class AgentsServerManager:
                     delivery = result["delivery"]
                     if delivery in {"reply_started", "reply_ambiguous"}:
                         session.reset_progress()
-                    response: dict[str, Any] = {"delivery": delivery, **session.public_status()}
+                    response: dict[str, Any] = {"delivery": delivery}
                     if delivery in REPLY_DELIVERIES:
                         previous_result = result["previous_result"]
                         if previous_result:
@@ -986,6 +1025,13 @@ class AgentsServerManager:
         """実行中turnへ中断を要求し、指定時間まで終端を待つ。"""
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ValueError("timeout must be non-negative")
+        stopped_state = self._resolve_stopped_session(session_id)
+        if stopped_state is not None:
+            stopped_response = self._stopped_result_response(stopped_state)
+            if stopped_response is not None:
+                stopped_response["kill_requested"] = False
+                notices = self._take_notices(session_id)
+                return self._response_with_notices(stopped_response, notices)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout) if timeout > 0 else None
         delivery_deadline = deadline if deadline is not None else loop.time() + DEFAULT_SEND_MESSAGE_TIMEOUT
@@ -999,20 +1045,18 @@ class AgentsServerManager:
             except TimeoutError as exc:
                 raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
             if interrupt_requested:
-                response = self._result_response(session)
-                response["kill_requested"] = True
-                return await self._stop_after_terminal_response(response, stop)
+                response = self._kill_result_response(session, kill_requested=True)
+                return await self._stop_after_terminal_response(session_id, response, stop)
         else:
             expired_response = self._expired_kill_response(session_id)
             if expired_response is not None:
-                return await self._stop_after_terminal_response(expired_response, stop)
+                return await self._stop_after_terminal_response(session_id, expired_response, stop)
             session = self._get_session(session_id)
         started_terminal = session.terminal
         requested_before_call = session.interrupt_requested
         if started_terminal:
-            response = self._result_response(session)
-            response["kill_requested"] = False
-            return await self._stop_after_terminal_response(response, stop)
+            response = self._kill_result_response(session, kill_requested=False)
+            return await self._stop_after_terminal_response(session_id, response, stop)
 
         requested = requested_before_call
         backend = self._backend(session.engine)
@@ -1042,9 +1086,8 @@ class AgentsServerManager:
                     except TimeoutError as exc:
                         raise TimeoutError(f"kill timed out: {session_id}; the interrupt request was not delivered") from exc
                     if session.terminal:
-                        response = self._result_response(session)
-                        response["kill_requested"] = False
-                        return await self._stop_after_terminal_response(response, stop)
+                        response = self._kill_result_response(session, kill_requested=False)
+                        return await self._stop_after_terminal_response(session_id, response, stop)
                 session.interrupt_requested = True
                 session.touch()
                 try:
@@ -1069,9 +1112,8 @@ class AgentsServerManager:
             session.turn_control_lock.release()
 
         if not requested:
-            response = self._result_response(session)
-            response["kill_requested"] = False
-            return await self._stop_after_terminal_response(response, stop)
+            response = self._kill_result_response(session, kill_requested=False)
+            return await self._stop_after_terminal_response(session_id, response, stop)
         if timeout > 0:
             assert deadline is not None
             try:
@@ -1084,9 +1126,8 @@ class AgentsServerManager:
                 raise TimeoutError(
                     f"kill timed out: {session_id}; the interrupt request was delivered but the turn did not terminate"
                 ) from exc
-        response = self._result_response(session)
-        response["kill_requested"] = True
-        return await self._stop_after_terminal_response(response, stop)
+        response = self._kill_result_response(session, kill_requested=True)
+        return await self._stop_after_terminal_response(session_id, response, stop)
 
     async def _notify_waiters(self) -> None:
         async with self._condition:
@@ -1162,9 +1203,10 @@ async def start(
 
     engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する。
     返した`session_id`は同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。
-    応答は`session_id`、`turn_seq`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
-    全候補が起動できない場合は`no model candidates remain for model_type: <model_type>`を返す。
-    これは候補が尽きた状態であり設定の不備ではないため、同じ起動条件で再発行しない。
+    応答は`session_id`、`status`と、採用した`model_type`、`engine`、`model`及び`effort`を含む。
+    状態ファイルの書込先を解決できる場合は、PostToolUseフックが索引へ使う`root_session_id`も含む。
+    全候補がengineの可用性を理由として終端した場合は、最後の候補の終端応答を返す。
+    全候補のbackend開始が例外で失敗した場合は、最後の例外を送出する。
     """
     input_validation_warning = _validate_required_prompt_inputs(prompt)
     response = await _MANAGER.start(model_type, prompt, cwd)
@@ -1252,7 +1294,7 @@ async def wait(
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
-    `session retention expired: <session_id>`は終端結果の保持期限が過ぎたことだけを示し、会話再開用の最小状態は保持されている。
+    終端結果の保持期限を過ぎたsessionでは、`status`が`expired`の応答だけを返す。
     委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
     再待機の要否は`notices`の有無ではなく`status`で判定する。
     `status: running`の応答は終端前の復帰であり、同じ`session_id`へ`wait`を再発行して待機を継続する。
@@ -1280,7 +1322,7 @@ async def send_message(
     上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
-    応答は`delivery`で配送結果を示し、`turn_seq`を含む。
+    応答は`delivery`と、未回収の終端結果がある場合の`previous_result`だけを含む。
     直前結果は、`wait`又は`kill`が当該結果本文を返していない場合だけ`previous_result`へ含める。返済みの場合は`previous_result`のキーを応答へ追加しない。
     sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
@@ -1311,7 +1353,7 @@ async def kill(
     通常の既定は270秒である。固有のtimeout要件がなければ引数を省略して通常既定を使う。
     `timeout=0`は中断要求配送後の現状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`wait`で状態を確認してから次の操作を選ぶ。
-    終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`progress`へ空文字列、`kill_requested`へ`false`を設定した応答を返す。応答の項目は他の成功応答と同じとする。
+    終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
     """
     return await _MANAGER.kill(session_id, timeout, stop)
 
@@ -1323,6 +1365,7 @@ async def stop_session(session_id: str) -> dict[str, Any]:
     statusLineの表示対象と`list`の応答から除き、backendがsession専用に保持する資源を解放する。
     実行中turnを持つsessionは破棄しない。中断が必要な場合は先に`kill`を発行する。
     破棄後も同じ`session_id`への`send_message`で会話を暗黙再開できる。
+    成功時は空のオブジェクトを返し、失敗は例外で示す。
     """
     return await _MANAGER.stop(session_id)
 

@@ -16,6 +16,8 @@ use crate::subagent::{
 };
 
 const STATE_VERSION: u64 = 1;
+// Claude Code 2.1.261はstatuslineの各行を2セル字下げして描画する。
+const STATUSLINE_INDENT_COLUMNS: usize = 2;
 
 #[derive(Debug)]
 pub(crate) struct StateFile {
@@ -59,12 +61,23 @@ pub(crate) fn state_directory(
             .filter(|path| path.is_absolute())
             .or_else(|| env("HOME").map(|home| PathBuf::from(home).join(".local").join("state")))?,
     };
-    Some(
-        state_base
-            .join("agent-toolkit")
-            .join("agents-server")
-            .join(root_session_id),
-    )
+    let agents_server_directory = state_base.join("agent-toolkit").join("agents-server");
+    let alias_path = agents_server_directory
+        .join("aliases")
+        .join(format!("{root_session_id}.json"));
+    let resolved_root = fs::read_to_string(alias_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .and_then(|value| {
+            if value.get("version")?.as_u64()? != STATE_VERSION {
+                return None;
+            }
+            value.get("root_session_id")?.as_str().map(str::to_string)
+        })
+        .filter(|value| valid_session_id(value))
+        .filter(|value| agents_server_directory.join(value).is_dir())
+        .unwrap_or_else(|| root_session_id.to_string());
+    Some(agents_server_directory.join(resolved_root))
 }
 
 fn valid_session_id(session_id: &str) -> bool {
@@ -91,9 +104,28 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
             let file_name = path.file_name()?.to_str()?.to_string();
             let raw = fs::read_to_string(path).ok()?;
             let value = serde_json::from_str::<Value>(&raw).ok()?;
-            parse_state_file(file_name, &value)
+            let mut state_file = parse_state_file(file_name, &value)?;
+            retain_sessions_with_results(&mut state_file, |session_id| {
+                directory
+                    .join("results")
+                    .join(format!("{session_id}.json"))
+                    .is_file()
+            });
+            Some(state_file)
         })
         .collect()
+}
+
+fn retain_sessions_with_results(
+    state_file: &mut StateFile,
+    mut result_exists: impl FnMut(&str) -> bool,
+) {
+    state_file.sessions.retain(|session| {
+        !matches!(
+            session.status.as_str(),
+            "completed" | "failed" | "interrupted"
+        ) || result_exists(&session.session_id)
+    });
 }
 
 fn is_state_file(path: &Path) -> bool {
@@ -278,6 +310,10 @@ fn terminal_columns() -> usize {
         .unwrap_or(DEFAULT_COLUMNS)
 }
 
+fn statusline_columns(columns: usize) -> usize {
+    columns.saturating_sub(STATUSLINE_INDENT_COLUMNS)
+}
+
 /// 現在の環境から状態ファイルを読み、statuslineに追加する行を返す。
 pub(crate) fn render_for_session(root_session_id: &str) -> Vec<String> {
     let Some(directory) = state_directory(
@@ -288,12 +324,13 @@ pub(crate) fn render_for_session(root_session_id: &str) -> Vec<String> {
         return Vec::new();
     };
     let files = read_state_files(&directory);
-    render_state_files(&files, terminal_columns(), Utc::now())
+    render_state_files(&files, statusline_columns(terminal_columns()), Utc::now())
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
@@ -381,6 +418,44 @@ mod tests {
             state_directory("linux", env(&[("HOME", "/home/test")]), "bad/id"),
             None
         );
+    }
+
+    #[test]
+    fn state_directory_resolves_only_alias_with_existing_target() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let state_root = std::env::temp_dir().join(format!(
+            "claude-statusline-alias-{}-{nonce}",
+            std::process::id()
+        ));
+        let agents_server = state_root.join("agent-toolkit").join("agents-server");
+        fs::create_dir_all(agents_server.join("aliases")).unwrap();
+        fs::write(
+            agents_server.join("aliases").join("current-session.json"),
+            r#"{"version":1,"root_session_id":"root-session"}"#,
+        )
+        .unwrap();
+        let environment = env(&[("XDG_STATE_HOME", state_root.to_str().unwrap())]);
+
+        assert_eq!(
+            state_directory("linux", &environment, "current-session"),
+            Some(agents_server.join("current-session"))
+        );
+        fs::create_dir(agents_server.join("root-session")).unwrap();
+        assert_eq!(
+            state_directory("linux", &environment, "current-session"),
+            Some(agents_server.join("root-session"))
+        );
+
+        fs::remove_dir_all(&state_root).unwrap();
+    }
+
+    #[test]
+    fn statusline_width_reserves_claude_indent() {
+        assert_eq!(statusline_columns(80), 78);
+        assert_eq!(statusline_columns(1), 0);
     }
 
     #[test]
@@ -490,6 +565,52 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         assert_eq!(render_state_files(&[file], 80, now).len(), 1);
+    }
+
+    #[test]
+    fn terminal_sessions_require_result_files() {
+        let mut file = state_file(
+            "root.json",
+            Value::Null,
+            serde_json::json!([
+                session(
+                    "running",
+                    "claude",
+                    Value::Null,
+                    ("unused", "shell"),
+                    ("", "running"),
+                    "2025-12-31T23:59:30+00:00"
+                ),
+                session(
+                    "collected",
+                    "claude",
+                    Value::Null,
+                    ("unused", "shell"),
+                    ("", "collected"),
+                    "2025-12-31T23:59:31+00:00"
+                ),
+                session(
+                    "retained",
+                    "claude",
+                    Value::Null,
+                    ("unused", "shell"),
+                    ("", "retained"),
+                    "2025-12-31T23:59:32+00:00"
+                )
+            ]),
+        );
+        file.sessions[1].status = "completed".to_string();
+        file.sessions[2].status = "failed".to_string();
+
+        retain_sessions_with_results(&mut file, |session_id| session_id == "retained");
+
+        assert_eq!(
+            file.sessions
+                .iter()
+                .map(|session| session.session_id.as_str())
+                .collect::<Vec<_>>(),
+            ["running", "retained"]
+        );
     }
 
     #[test]

@@ -76,6 +76,56 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     return root / "agents-server" / root_session_id
 
 
+def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """現行session識別子からルートsession識別子を引く索引ディレクトリを返す。"""
+    root = _atk_config.state_dir() if state_root is None else state_root
+    return root / "agents-server" / "aliases"
+
+
+def resolve_conversation_root_session_id(environment: Mapping[str, str], state_root: pathlib.Path | None = None) -> str | None:
+    """現行会話のsession識別子を索引経由でルートsession識別子へ解決する。"""
+    current_session_id = resolve_root_session_id(environment)
+    if current_session_id is None:
+        return None
+    alias_path = aliases_directory(state_root) / f"{current_session_id}.json"
+    try:
+        payload = json.loads(alias_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+        return current_session_id
+    root_session_id = payload.get("root_session_id") if isinstance(payload, dict) else None
+    if (
+        isinstance(payload, dict)
+        and payload.get("version") == 1
+        and isinstance(root_session_id, str)
+        and valid_session_id(root_session_id)
+        and status_directory(root_session_id, state_root).is_dir()
+    ):
+        return root_session_id
+    return current_session_id
+
+
+def write_root_alias(
+    current_session_id: str,
+    root_session_id: str,
+    state_root: pathlib.Path | None = None,
+) -> None:
+    """現行session識別子のルート索引を書き、参照先を失った索引を回収する。"""
+    if not valid_session_id(current_session_id) or not valid_session_id(root_session_id):
+        raise ValueError("invalid session_id")
+    directory = aliases_directory(state_root)
+    if directory.exists():
+        for path in directory.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            target = payload.get("root_session_id") if isinstance(payload, dict) else None
+            if isinstance(target, str) and valid_session_id(target) and not status_directory(target, state_root).is_dir():
+                path.unlink(missing_ok=True)
+    payload = {"version": 1, "root_session_id": root_session_id}
+    atomic_write(directory / f"{current_session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
+
+
 def valid_session_id(session_id: str) -> bool:
     """session識別子が状態ファイル名へ使用できる形式かを返す。"""
     return bool(session_id and _SESSION_ID_PATTERN.fullmatch(session_id))
@@ -165,6 +215,11 @@ class StatusFileWriter:
         return self._path
 
     @property
+    def root_session_id(self) -> str:
+        """自身が状態ファイルを書き込むルートsession識別子を返す。"""
+        return self._identity.root_session_id
+
+    @property
     def sessions(self) -> dict[str, SessionState]:
         """射影元の共有session辞書を返す。"""
         return self._sessions
@@ -193,12 +248,14 @@ class StatusFileWriter:
             return
         self._flush_handle = None
         now = asyncio.get_running_loop().time()
+        self._remove_expired_results(now)
+        self._write_terminal_results(now)
         visible = [
             session
             for session in self._sessions.values()
             if session.announced
-            and not session.result_delivered
             and (session.retention_deadline is None or session.retention_deadline > now)
+            and (not session.result_available or self.result_exists(session.session_id))
         ]
         visible.sort(key=lambda session: session.started_at)
         payload: dict[str, Any] = {
@@ -208,7 +265,6 @@ class StatusFileWriter:
             "sessions": [_serialize_session(session) for session in visible],
         }
         atomic_write(self._path, json.dumps(payload, ensure_ascii=False) + "\n")
-        self._write_terminal_results()
         self._schedule_retention(visible, now)
 
     def deactivate(self) -> None:
@@ -250,18 +306,37 @@ class StatusFileWriter:
         path.unlink(missing_ok=True)
         self._result_deadlines.pop(session_id, None)
 
+    def result_exists(self, session_id: str) -> bool:
+        """指定sessionの終端結果ファイルが存在するかを返す。"""
+        if not valid_session_id(session_id):
+            raise ValueError(f"invalid session_id: {session_id}")
+        return (results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json").is_file()
+
     def take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収する。"""
         return take_notices(self._identity.root_session_id, session_id, self._state_root)
 
-    def _write_terminal_results(self) -> None:
+    def _write_terminal_results(self, now: float) -> None:
         for session in self._sessions.values():
             if session.result_delivered:
                 self.delete_result(session.session_id)
                 continue
             if not session.result_available:
                 continue
+            if session.retention_deadline is not None and session.retention_deadline <= now:
+                session.result_delivered = True
+                self.delete_result(session.session_id)
+                continue
+            if session.session_id in self._result_deadlines and not self.result_exists(session.session_id):
+                session.result_delivered = True
+                self._result_deadlines.pop(session.session_id, None)
+                continue
             self._write_terminal_result(session)
+
+    def _remove_expired_results(self, now: float) -> None:
+        expired = [session_id for session_id, deadline in self._result_deadlines.items() if deadline <= now]
+        for session_id in expired:
+            self.delete_result(session_id)
 
     def _write_terminal_result(self, session: SessionState) -> None:
         assert session.finalized_at is not None
@@ -301,6 +376,7 @@ class StatusFileWriter:
             for session in sessions
             if session.retention_deadline is not None and session.retention_deadline > now
         ]
+        deadlines.extend(deadline for deadline in self._result_deadlines.values() if deadline > now)
         self._retention_handle = None
         if deadlines:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)

@@ -848,14 +848,15 @@ class AppServerManager:
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
             if session.live_child_session_ids and not session.auto_resume_consumed:
-                session.pending_result = {
-                    "status": session.status,
-                    "agent_message": session.agent_message,
-                    "error": session.error,
-                }
-                session.awaiting_auto_resume = True
-                session.auto_resume_deadline = asyncio.get_running_loop().time() + shared_state.RESULT_RETENTION_SECONDS
-                self._schedule(self._finalize_pending_result_after_deadline(session, session.auto_resume_deadline))
+                deadline = shared_state.begin_auto_resume_wait(
+                    session,
+                    {
+                        "status": session.status,
+                        "agent_message": session.agent_message,
+                        "error": session.error,
+                    },
+                )
+                self._schedule(self._finalize_pending_result_after_deadline(session, deadline))
                 session.status = "running"
                 session.turn_completed = False
         elif method == "turn/plan/updated":

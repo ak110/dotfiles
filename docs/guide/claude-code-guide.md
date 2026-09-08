@@ -16,8 +16,8 @@ Claude Codeは対話、フック、ルールの読み込み、作業全体の統
 3. 知識の補完: LLMの学習データに含まれない情報を補う。
    Claude Code関連の仕様は改訂が頻繁なため、`agent-toolkit:writing-standards`スキル配下の
    `references/agent-skills.md`・`references/claude-hooks.md`で現行仕様を参照できるようにする。
-   個人製作のツール（pyfltr・pytilpackなど）は学習データに含まれないため、
-   `agent-toolkit:pyfltr-usage`・`agent-toolkit:pytilpack-usage`等でリファレンスを提供する
+   個人製作のツール（pytilpackなど）は学習データに含まれないため、
+   `agent-toolkit:pytilpack-usage`等でリファレンスを提供する
 
 Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
@@ -460,7 +460,6 @@ Claude Codeで有効化する。
   実装不要又はholdの項目は計画やworktreeを作成せず終端する。要求の不採用と既存の変更による充足は計画工程で確定する。
   各レーンはffマージ直後に`adopt`と後始末を完了し、固有指示で延期した項目だけを全レーン後の終端工程で処理する
 - `agent-toolkit:plan-and-add-awi`: 計画作成からレビューまでを実施し、実装の代わりにAWI投入で終える運用
-- `agent-toolkit:pyfltr-usage`: pyfltrの使い方・出力解釈のリファレンス
 - `agent-toolkit:pytilpack-usage`: pytilpackのモジュール構成とAPI参照のリファレンス
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `agent-toolkit:exit-session`: ユーザー指示時又は自律実行スキル完遂時に、一意に識別できるClaude Code若しくはCodexの本体プロセスへ停止を要求する。

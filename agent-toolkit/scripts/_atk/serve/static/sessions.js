@@ -28,6 +28,7 @@ let parentTrail = [];
 let eventSource = null;
 let isCurrentMount = () => false;
 let initialized = false;
+let prefetchedList = null;
 
 // 画面DOMは切り離して保持されるため、参照は初回の`mount`で確定する。
 let listEl = null;
@@ -36,6 +37,11 @@ let detailEl = null;
 let detailTitleEl = null;
 let detailUsageEl = null;
 let filterEl = null;
+
+function readBasePath() {
+  const bootstrap = document.getElementById("sessions-bootstrap");
+  if (bootstrap) BASE_PATH = JSON.parse(bootstrap.textContent).base_path;
+}
 
 function formatTime(value) {
   if (!value) return "不明";
@@ -161,7 +167,7 @@ function toolInputSummary(event) {
 function renderEvent(event) {
   const block = document.createElement("details");
   block.className = `event kind-${event.kind}`;
-  block.open = event.kind === "user" || event.kind === "assistant";
+  block.open = event.kind === "user" || event.kind === "assistant" || event.kind === "developer";
   if (!block.open) {
     block.dataset.exclusiveEvent = "true";
     block.addEventListener("toggle", () => {
@@ -328,10 +334,21 @@ function subscribeEvents() {
   };
 }
 
+async function prefetch() {
+  try {
+    readBasePath();
+    const response = await fetch(BASE_PATH + "/api/sessions/list");
+    if (!response.ok) return;
+    prefetchedList = await response.json();
+  } catch (_) {
+    // 先読みに失敗した場合は、`mount`の通常取得で回復する。
+  }
+}
+
 function mount(currentMount) {
   isCurrentMount = currentMount;
   if (!initialized) {
-    BASE_PATH = JSON.parse(document.getElementById("sessions-bootstrap").textContent).base_path;
+    readBasePath();
     listEl = document.getElementById("sessions");
     warningsEl = document.getElementById("warnings");
     detailEl = document.getElementById("detail");
@@ -355,6 +372,13 @@ function mount(currentMount) {
     });
     initialized = true;
   }
+  if (prefetchedList !== null) {
+    const payload = prefetchedList;
+    prefetchedList = null;
+    sessions = payload.sessions || [];
+    renderWarnings(payload.warnings);
+    renderList();
+  }
   loadList();
   setDrawerOpen(window.matchMedia("(max-width: 768px)").matches);
   subscribeEvents();
@@ -370,5 +394,5 @@ function unmount() {
 }
 
 window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.sessions = {mount, unmount};
+window.__atkScreens.sessions = {mount, unmount, prefetch};
 })();

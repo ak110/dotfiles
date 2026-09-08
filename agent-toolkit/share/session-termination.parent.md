@@ -40,3 +40,6 @@
 - `version`が`bump不要`でない場合は、対象リポジトリの版数規範が定める正本ファイルの版数が当該値と一致する
 - `terminal_steps`が、起動文へ渡した固有の終端工程を過不足なく挙げる
 - `deferred_adopted`が挙げるファイル名の集合が、起動時に完全OIDを対応付けて渡した延期`adopt`対象AWIファイル名の集合と過不足なく一致する。一致を確認した後、各ファイル名が`atk wi list --target-repo=<対象リポジトリの絶対パス> --status=adopted --skip-pull --json`の出力へ`filename`として現れることを確認する
+
+全ての照合が成立した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
+同節が定めるベースbranchの公開状態の再観測、`agent-toolkit:completion-report`による報告及び`agent-toolkit:exit-session`の起動を実施する。

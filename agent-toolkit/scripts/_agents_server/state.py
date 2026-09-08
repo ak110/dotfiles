@@ -13,6 +13,9 @@ from typing import Any, Literal
 from _agents_server import session_registry
 
 RESULT_RETENTION_SECONDS = 1800.0
+# 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
+# 値を変える根拠となる実測が無いため、現行の結果保持期限と同じ値を選ぶ。
+AUTO_RESUME_DEADLINE_SECONDS = 1800.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
 SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules-subagent.md"
@@ -243,6 +246,7 @@ class SessionState:
     interrupt_requested: bool = False
     turn_completed: bool = False
     failure_pending_completion: bool = False
+    # Claude backendの背景タスクだけを表し、Codex backendでは値を持たない。
     live_task_ids: set[str] = dataclasses.field(default_factory=set)
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
@@ -314,16 +318,10 @@ class SessionState:
             listener()
 
     def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
-        """公開契約へ状態を射影する。内部のturn識別子は含めない。"""
-        result: dict[str, Any] = {
-            "session_id": self.session_id,
-            "engine": self.engine,
-            "status": self.status,
-            "progress": self.progress,
-            "turn_seq": self.turn_seq,
-        }
-        if self.model_type is not None:
-            result["model_type"] = self.model_type
+        """waitとkillが消費する状態を公開契約へ射影する。"""
+        result: dict[str, Any] = {"status": self.status}
+        if self.status == "running":
+            result["progress"] = self.progress
         if include_result and self.result_available:
             result["agent_message"] = self.agent_message
             if _nonempty_error(self.error):
@@ -335,11 +333,8 @@ class SessionState:
         if self.result_delivered:
             return {}
         result: dict[str, Any] = {
-            "session_id": self.session_id,
-            "engine": self.engine,
             "status": self.status,
             "agent_message": self.agent_message,
-            "turn_seq": self.turn_seq,
         }
         if _nonempty_error(self.error):
             result["error"] = self.error
@@ -367,6 +362,7 @@ class SessionResumeState:
     error: Any = None
     finalized_at: str | None = None
     result_delivered: bool = False
+    retention_deadline: float | None = None
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
@@ -389,6 +385,7 @@ class SessionResumeState:
             error=session.error,
             finalized_at=session.finalized_at,
             result_delivered=session.result_delivered,
+            retention_deadline=session.retention_deadline,
         )
 
 
@@ -488,6 +485,7 @@ def finalize_pending_result(session: SessionState, *, touch: bool = True) -> Non
     session.awaiting_auto_resume = False
     session.auto_resume_deadline = None
     session.pending_result = None
+    session.live_child_session_ids.clear()
     session.status = result["status"]
     session.agent_message = result["agent_message"]
     session.error = result["error"]
@@ -495,6 +493,15 @@ def finalize_pending_result(session: SessionState, *, touch: bool = True) -> Non
     session.turn_start_ambiguous = False
     if touch:
         session.touch()
+
+
+def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float:
+    """終端結果を保留し、自動再開の待機期限を返す。"""
+    session.pending_result = result
+    session.awaiting_auto_resume = True
+    deadline = asyncio.get_running_loop().time() + AUTO_RESUME_DEADLINE_SECONDS
+    session.auto_resume_deadline = deadline
+    return deadline
 
 
 def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:

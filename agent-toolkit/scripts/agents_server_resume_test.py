@@ -308,15 +308,7 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
 
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
-        assert set(result) == {
-            "agent_message",
-            "engine",
-            "model_type",
-            "progress",
-            "session_id",
-            "status",
-            "turn_seq",
-        }
+        assert set(result) == {"agent_message", "status"}
     finally:
         await backend.close()
 
@@ -326,8 +318,8 @@ async def test_unobserved_child_sessions_appear_in_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限まで終端しない孫sessionを既存のerror項目へ示す。"""
-    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
+    """自動再開の待機期限まで終端しない孫sessionをerrorへ示す。"""
+    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     client = ControlledClaudeClient("claude-child-deadline")
     manager, backend = _manager(client, monkeypatch)
     child_session_id = "child-deadline"
@@ -350,7 +342,7 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
     tmp_path: pathlib.Path,
 ) -> None:
     """既存の失敗内容を保ったまま未観測sessionをerrorへ併合する。"""
-    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
+    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     client = ControlledClaudeClient("claude-child-error")
     manager, backend = _manager(client, monkeypatch)
     child_session_id = "child-error"
@@ -481,8 +473,7 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
         assert session.auto_resume_consumed is True
         assert session.live_task_ids == set()
         await _await_state(lambda: session.session_id not in manager.sessions)
-        with pytest.raises(ValueError, match="session retention expired"):
-            await manager.wait(session.session_id, timeout=0)
+        assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
     finally:
         await backend.close()
 
@@ -514,6 +505,7 @@ async def test_pending_result_is_finalized_without_auto_resume(
     tmp_path: pathlib.Path,
 ) -> None:
     """自動再開が届かない場合は期限又はストリーム終端で初回結果を確定する。"""
+    monkeypatch.setattr(state, "AUTO_RESUME_DEADLINE_SECONDS", 0.03)
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.03)
     client = ControlledClaudeClient(f"claude-{completion}")
     manager, backend = _manager(client, monkeypatch)
@@ -531,8 +523,7 @@ async def test_pending_result_is_finalized_without_auto_resume(
         assert session.awaiting_auto_resume is False
         assert session.pending_result is None
         await _await_state(lambda: session.session_id not in manager.sessions)
-        with pytest.raises(ValueError, match="session retention expired"):
-            await manager.wait(session.session_id, timeout=0)
+        assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
     finally:
         await backend.close()
 

@@ -23,7 +23,7 @@
    Base
    ======================================== */
 
-body {
+body[data-screen="plans"] {
   font-family:
     "Noto Sans JP",
     -apple-system,
@@ -47,12 +47,12 @@ body {
    Headings
    ======================================== */
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
+body[data-screen="plans"] h1,
+body[data-screen="plans"] h2,
+body[data-screen="plans"] h3,
+body[data-screen="plans"] h4,
+body[data-screen="plans"] h5,
+body[data-screen="plans"] h6 {
   font-weight: 700;
   color: #1a1a1a;
   margin-top: 1em;
@@ -60,7 +60,7 @@ h6 {
 }
 
 /* std-36B-140 */
-h1 {
+body[data-screen="plans"] h1 {
   font-size: 2.375rem; /* 38px */
   line-height: 1.4;
   letter-spacing: 0.01em;
@@ -69,7 +69,7 @@ h1 {
 }
 
 /* std-28B-150 */
-h2 {
+body[data-screen="plans"] h2 {
   font-size: 1.875rem; /* 30px */
   line-height: 1.5;
   letter-spacing: 0.01em;
@@ -78,28 +78,28 @@ h2 {
 }
 
 /* std-24B-150 */
-h3 {
+body[data-screen="plans"] h3 {
   font-size: 1.625rem; /* 26px */
   line-height: 1.5;
   letter-spacing: 0.02em;
 }
 
 /* std-20B-160 */
-h4 {
+body[data-screen="plans"] h4 {
   font-size: 1.375rem; /* 22px */
   line-height: 1.6;
   letter-spacing: 0.02em;
 }
 
 /* std-18B-160 */
-h5 {
+body[data-screen="plans"] h5 {
   font-size: 1.25rem; /* 20px */
   line-height: 1.6;
   letter-spacing: 0.02em;
 }
 
 /* std-16B-170 */
-h6 {
+body[data-screen="plans"] h6 {
   font-size: 1.125rem; /* 18px */
   line-height: 1.7;
   letter-spacing: 0.02em;
@@ -110,21 +110,18 @@ h6 {
    Paragraph & Inline
    ======================================== */
 
-p {
+body[data-screen="plans"] p {
   margin-top: 0;
   margin-bottom: 0.5rem;
 }
-
-strong {
+body[data-screen="plans"] strong {
   font-weight: 700;
 }
-
-a {
+body[data-screen="plans"] a {
   color: #0031d8; /* blue-800 */
   text-decoration: underline;
 }
-
-a:hover {
+body[data-screen="plans"] a:hover {
   color: #002db6; /* blue-900 approx */
 }
 
@@ -132,19 +129,17 @@ a:hover {
    Lists
    ======================================== */
 
-ul,
-ol {
+body[data-screen="plans"] ul,
+body[data-screen="plans"] ol {
   margin-top: 0;
   margin-bottom: 0.5rem;
   padding-left: 1rem;
 }
-
-li {
+body[data-screen="plans"] li {
   margin-bottom: 0.125rem;
 }
-
-li > ul,
-li > ol {
+body[data-screen="plans"] li > ul,
+body[data-screen="plans"] li > ol {
   margin-top: 0.125rem;
   margin-bottom: 0;
 }
@@ -153,7 +148,7 @@ li > ol {
    Blockquote
    ======================================== */
 
-blockquote {
+body[data-screen="plans"] blockquote {
   margin: 0 0 0.5rem 0;
   padding: 0.25rem 0.75rem;
   border-left: 4px solid #cccccc; /* neutral-solid-gray-200 */
@@ -161,8 +156,7 @@ blockquote {
   background-color: #f2f2f2; /* neutral-solid-gray-50 */
   border-radius: 0.25rem; /* border-radius-4 */
 }
-
-blockquote > p:last-child {
+body[data-screen="plans"] blockquote > p:last-child {
   margin-bottom: 0;
 }
 
@@ -171,7 +165,7 @@ blockquote > p:last-child {
    ======================================== */
 
 /* インラインコード - mono-14N-150 */
-code {
+body[data-screen="plans"] code {
   font-family: "Noto Sans Mono", Consolas, monospace;
   padding: 0.125rem 0.375rem;
   background-color: #f2f2f2; /* neutral-solid-gray-50 */
@@ -180,7 +174,7 @@ code {
 }
 
 /* コードブロック - ターミナル風のダーク背景 */
-pre {
+body[data-screen="plans"] pre {
   margin-top: 0;
   margin-bottom: 0.5rem;
   padding: 0.5rem;
@@ -189,8 +183,7 @@ pre {
   border-radius: 0.5rem; /* border-radius-8 */
   text-wrap: wrap;
 }
-
-pre code {
+body[data-screen="plans"] pre code {
   font-size: 1rem; /* 16px */
   padding: 0;
   color: #d4d4d4;
@@ -203,7 +196,7 @@ pre code {
    Table
    ======================================== */
 
-table {
+body[data-screen="plans"] table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 0;
@@ -211,19 +204,16 @@ table {
   font-size: 1rem; /* 16px */
   line-height: 1.5;
 }
-
-thead {
+body[data-screen="plans"] thead {
   background-color: #f2f2f2; /* neutral-solid-gray-50 */
 }
-
-th {
+body[data-screen="plans"] th {
   font-weight: 700;
   text-align: left;
   padding: 0.5rem 0.75rem;
   border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
 }
-
-td {
+body[data-screen="plans"] td {
   padding: 0.5rem 0.75rem;
   border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
 }
@@ -232,7 +222,7 @@ td {
    Horizontal Rule
    ======================================== */
 
-hr {
+body[data-screen="plans"] hr {
   border: none;
   border-top: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
   margin: 1rem 0;
@@ -242,7 +232,7 @@ hr {
    Image
    ======================================== */
 
-img {
+body[data-screen="plans"] img {
   max-width: 100%;
   height: auto;
   border-radius: 0.5rem; /* border-radius-8 */
@@ -252,7 +242,7 @@ img {
    Checkbox (Task List)
    ======================================== */
 
-input[type="checkbox"] {
+body[data-screen="plans"] input[type="checkbox"] {
   margin-right: 0.5rem;
   accent-color: #0031d8; /* blue-800 */
 }
@@ -262,66 +252,55 @@ input[type="checkbox"] {
    Markdown プレビューを常にライトテーマで表示する
    ======================================== */
 
-body.vscode-dark {
+body[data-screen="plans"].vscode-dark {
   color: #1a1a1a !important;
   background-color: #ffffff !important;
 }
-
-body.vscode-dark h1,
-body.vscode-dark h2,
-body.vscode-dark h3,
-body.vscode-dark h4,
-body.vscode-dark h5,
-body.vscode-dark h6 {
+body[data-screen="plans"].vscode-dark h1,
+body[data-screen="plans"].vscode-dark h2,
+body[data-screen="plans"].vscode-dark h3,
+body[data-screen="plans"].vscode-dark h4,
+body[data-screen="plans"].vscode-dark h5,
+body[data-screen="plans"].vscode-dark h6 {
   color: #1a1a1a !important;
 }
-
-body.vscode-dark h6 {
+body[data-screen="plans"].vscode-dark h6 {
   color: #4d4d4d !important;
 }
-
-body.vscode-dark h1,
-body.vscode-dark h2 {
+body[data-screen="plans"].vscode-dark h1,
+body[data-screen="plans"].vscode-dark h2 {
   border-bottom-color: #e6e6e6 !important;
 }
-
-body.vscode-dark a {
+body[data-screen="plans"].vscode-dark a {
   color: #0031d8 !important;
 }
-
-body.vscode-dark blockquote {
+body[data-screen="plans"].vscode-dark blockquote {
   border-left-color: #cccccc !important;
   color: #4d4d4d !important;
   background-color: #f2f2f2 !important;
 }
-
-body.vscode-dark code {
+body[data-screen="plans"].vscode-dark code {
   color: #1a1a1a !important;
   background-color: #f2f2f2 !important;
   border-color: #e6e6e6 !important;
 }
-
-body.vscode-dark pre {
+body[data-screen="plans"].vscode-dark pre {
   background-color: #1e1e1e !important;
   border-color: #333333 !important;
 }
-
-body.vscode-dark pre code {
+body[data-screen="plans"].vscode-dark pre code {
   color: #d4d4d4 !important;
   background-color: transparent !important;
   border: none !important;
 }
-
-body.vscode-dark thead {
+body[data-screen="plans"].vscode-dark thead {
   background-color: #f2f2f2 !important;
 }
-
-body.vscode-dark th,
-body.vscode-dark td {
+body[data-screen="plans"].vscode-dark th,
+body[data-screen="plans"].vscode-dark td {
   border-color: #e6e6e6 !important;
   color: #1a1a1a !important;
 }
-
-body.vscode-dark hr {
+body[data-screen="plans"].vscode-dark hr {
   border-top-color: #e6e6e6 !important;
 }

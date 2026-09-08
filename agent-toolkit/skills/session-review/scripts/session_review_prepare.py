@@ -19,7 +19,6 @@ import pathlib
 import shutil
 import subprocess
 import sys
-from typing import Any
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -29,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--claude-session-id", metavar="ID", help="Claude CodeのセッションID。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
-    parser.add_argument("--target-repo", metavar="PATH", help="未処理項目を取得する対象リポジトリ。")
+    parser.add_argument("--target-repo", metavar="PATH", help="振り返り対象のリポジトリ。")
     return parser
 
 
@@ -65,32 +64,6 @@ def _managed_temp_path(result: subprocess.CompletedProcess[str] | None) -> pathl
     return path if path.is_absolute() and path.is_dir() else None
 
 
-def _pending_items(result: subprocess.CompletedProcess[str] | None) -> list[dict[str, str]] | None:
-    """一覧取得結果をファイル名と要約の配列として検証する。"""
-    if result is None or result.returncode != 0:
-        return None
-    items: list[dict[str, str]] = []
-    try:
-        for line in result.stdout.splitlines():
-            value: Any = json.loads(line)
-            if (
-                not isinstance(value, dict)
-                or set(value) != {"filename", "summary"}
-                or not isinstance(value["filename"], str)
-                or not isinstance(value["summary"], str)
-            ):
-                return None
-            items.append({"filename": value["filename"], "summary": value["summary"]})
-    except json.JSONDecodeError:
-        return None
-    return items
-
-
-def _cleanup(executable: str, path: pathlib.Path) -> None:
-    """準備失敗後の管理対象一時領域を回収する。"""
-    _run_atk(executable, ["managed-temp", "cleanup", "--path", str(path)])
-
-
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """準備項目を取得して1行のJSONを出力する。"""
     args = _build_parser().parse_args(argv)
@@ -118,23 +91,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observation_boundary = current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
-    pending_items = None
-    if target_repo is not None:
-        list_result = _run_atk(
-            executable,
-            [
-                "wi",
-                "list",
-                f"--target-repo={target_repo}",
-                "--status=active",
-                "--summary-only",
-                "--skip-pull",
-            ],
-        )
-        pending_items = _pending_items(list_result)
-        if pending_items is None:
-            _cleanup(executable, managed_temp)
-            return _missing("pending_items")
 
     record = {
         "evidence_script": str(evidence_script),
@@ -143,7 +99,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "managed_temp": str(managed_temp),
         "observation_boundary": observation_boundary,
         "target_repo": str(target_repo) if target_repo is not None else None,
-        "pending_items": pending_items,
     }
     print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
     return 0

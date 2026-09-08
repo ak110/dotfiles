@@ -1,6 +1,7 @@
 # Playwrightテスト記述スタイル
 
 対象バージョン: Playwright Test v1系（参考実利用バージョン: 1.60）。公式のベストプラクティスは<https://playwright.dev/docs/best-practices>を参照する。
+本書はPythonバインディング（`playwright.async_api`・`playwright.sync_api`）を用いるテストへも適用し、綴りが異なるAPIは同じ機能のPython側の名前へ読み替える。
 
 ## ロケーター戦略
 
@@ -12,7 +13,7 @@
 - `expect(locator).toBeVisible()`等のweb-first assertionsを使う（条件成立まで自動的にポーリングし、余分な待機コードなしでflakyさを抑えられるため）
 - `expect(await locator.isVisible()).toBe(true)`のような手動アサーションを書かない（判定が1時点のスナップショットに固定され、非同期なUI変化に追従できないため）
 - 複数の検証を1テスト内で継続したい場合は`expect.soft()`を使う
-- `page.waitForTimeout()`による固定時間待機は使わない。実行環境の速度差でタイムアウト超過や過剰待機を招きflakyの根本原因となるため。状態変化を待つ場合はロケーターの自動待機または`expect().toPass()`を使う
+- `page.waitForTimeout()`とPythonバインディングの`page.wait_for_timeout()`による固定時間待機は使わない。実行環境の速度差でタイムアウト超過や過剰待機を招きflakyの根本原因となるため。状態変化を待つ場合はロケーターの自動待機または`expect().toPass()`を使う
 
 ## テスト分離
 

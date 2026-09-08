@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-order
 """`atk serve`のテスト。"""
@@ -97,8 +97,12 @@ def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
     assert "width: 2.75rem;" in assets.CSS
     assert "height: 2.75rem;" in assets.CSS
     assert "overflow-y: auto;" in assets.CSS
-    assert "dialog.dialog-shell {" in assets.CSS
-    dialog_rule = re.search(r"dialog\.dialog-shell \{(.*?)\n\}", assets.CSS, re.DOTALL)
+    assert 'body[data-screen="wi"] dialog.dialog-shell {' in assets.CSS
+    dialog_rule = re.search(
+        r'body\[data-screen="wi"\] dialog\.dialog-shell \{(.*?)\n\}',
+        assets.CSS,
+        re.DOTALL,
+    )
     assert dialog_rule is not None
     assert "overflow: hidden;" in dialog_rule.group(1)
 

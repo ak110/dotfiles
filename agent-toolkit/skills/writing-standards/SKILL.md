@@ -64,7 +64,7 @@ description: >
 
 - Tailwind CSS（v4系、依存名`tailwindcss`）: `references/tailwindcss.md`
 - Alpine.js（v3系、依存名`alpinejs`または`<script>`読み込み）: `references/alpinejs.md`
-- Playwright Test（v1系、依存名`@playwright/test`）: `references/playwright.md`
+- Playwright（Test v1系は依存名`@playwright/test`、Pythonバインディングは依存名`playwright`）: `references/playwright.md`
 - Drizzle ORM/Drizzle Kit（0.x系、依存名`drizzle-orm`・`drizzle-kit`）: `references/drizzle.md`
 - Svelte 5/SvelteKit 2（依存名`svelte`・`@sveltejs/kit`）: `references/svelte.md`
 
@@ -92,3 +92,7 @@ description: >
 - 大量の文書読込、大規模ブロック置換、plugin資源のroot失効: `references/tool-operations.md`
 
 意味を変えない誤字・句読点・リンクの修正だけの編集では、`references/llm-characteristics.md`の読込を省いてよい。
+
+## 品質検査の実行時に読む資料
+
+- formatter、linter、tester又はプロジェクト固有の検査を起動する時点: `references/check-execution.md`

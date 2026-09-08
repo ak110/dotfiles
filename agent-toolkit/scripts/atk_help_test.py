@@ -65,7 +65,7 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
 
 @pytest.mark.parametrize(
     "argv",
-    [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"], ["session-review-queue"]],
+    [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"]],
 )
 def test_command_without_subcommand_prints_help(
     argv: list[str],

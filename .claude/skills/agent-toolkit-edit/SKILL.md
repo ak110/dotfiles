@@ -55,6 +55,14 @@ description: >
 モジュール名からは所属を表す接頭辞を除き、Pythonの組込み名と標準ライブラリのトップレベル名に一致する名前は使わない。
 テストは対象モジュールと同じディレクトリへ`<モジュール名>_test.py`として置く。
 
+### agents_serverの共有状態
+
+agents_serverの実装を変更する場合と調査する場合は、着手前に`references/agents-server-shared-state.md`を全文読む。
+対象は`agent-toolkit/scripts/agents_server_mcp.py`と`agent-toolkit/scripts/_agents_server/`配下とする。
+`rust/claude-statusline/src/agents_server.rs`も同じ対象とする。
+同書は共有状態ごとの正本と、読む主体・更新できる主体の対応を保持する。
+状態の正本、更新できる主体又は状態ディレクトリ配下のファイル種別を変える実装では、同書を同じ変更単位で更新する。
+
 ### MCPサーバー識別子とホスト別ツール名
 
 - MCPサーバー識別子にはハイフンを使わず、アンダースコアで構成する。MCPツール名はホストごとの修飾規則が異なるため、片方の綴りを別ホストへ流用しない

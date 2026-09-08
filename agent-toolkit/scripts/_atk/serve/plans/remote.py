@@ -1,4 +1,4 @@
-# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# pylint: disable=function-redefined,undefined-variable,wildcard-import,unused-wildcard-import,function-redefined,pointless-string-statement,undefined-variable,ungrouped-imports,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F821,I001
 # pylint: disable=unused-import,used-before-assignment,wrong-import-order
 """`atk serve`の計画ファイル画面の処理本体。

@@ -26,7 +26,6 @@ import typing
 
 import platformdirs
 
-# pylint: disable=duplicate-code
 # リモート側で単独実行するためローカル側の永続キャッシュ実装・ファイルロック実装を共有できない。
 # 作成日時インデックスのキーと値の形式は`_atk/serve/plans/`と一致させる必要がある
 # （同一ホスト上で両者が同じキャッシュディレクトリを共有するため）。

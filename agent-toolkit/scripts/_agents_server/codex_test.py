@@ -65,6 +65,7 @@ async def test_pending_result_becomes_terminal_when_last_child_is_observed(tmp_p
     assert session.result_available is True
     assert session.status == "completed"
     assert session.awaiting_auto_resume is False
+    assert session.live_child_session_ids == set()
     await manager.close()
 
 
@@ -74,7 +75,7 @@ async def test_pending_result_becomes_terminal_at_auto_resume_deadline(
     tmp_path: pathlib.Path,
 ) -> None:
     """子sessionが未観測でも期限到来時にCodexの保留結果を終端状態へ戻す。"""
-    monkeypatch.setattr(shared_state, "RESULT_RETENTION_SECONDS", 0.0)
+    monkeypatch.setattr(shared_state, "AUTO_RESUME_DEADLINE_SECONDS", 0.0)
     session = shared_state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     session.live_child_session_ids.add("child-1")
     manager = _InspectableAppServerManager({session.session_id: session})
@@ -85,4 +86,5 @@ async def test_pending_result_becomes_terminal_at_auto_resume_deadline(
     assert session.result_available is True
     assert session.status == "completed"
     assert session.error == {"unobservedSessions": ["child-1"]}
+    assert session.live_child_session_ids == set()
     await manager.close()

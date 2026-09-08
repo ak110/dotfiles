@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import dataclasses
 import json
 import os
 import pathlib
@@ -400,16 +401,17 @@ def test_server_instructions_carry_standalone_contract() -> None:
 
 
 def test_tool_descriptions_carry_standalone_contract() -> None:
-    """各ツールの公開説明だけで候補枯渇と継続不能のエラー本文を判別できる。"""
+    """各ツールの公開説明だけで候補枯渇と継続不能の応答を判別できる。"""
     tools = {}
     for tool_name in ("start", "start_explore", "start_shell", "wait", "send_message", "kill", "list"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         tools[tool_name] = tool
-    assert "no model candidates remain for model_type" in tools["start"].description
+    assert "最後の候補の終端応答を返す" in tools["start"].description
+    assert "最後の例外を送出する" in tools["start"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
     assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
-    assert "session retention expired" in tools["wait"].description
+    assert "`status`が`expired`" in tools["wait"].description
     assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
     assert "unknown session" in tools["send_message"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
@@ -615,12 +617,13 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert wait_tool is not None
     assert send_tool is not None
 
-    assert "`turn_seq`" in start_tool.description
+    assert "`session_id`、`status`" in start_tool.description
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`/goal`が設定され" in wait_tool.description
     assert "`atk agents-wait <session_id>`" in wait_tool.description
     assert "`timeout=0`の本ツールを1回発行" in wait_tool.description
-    assert "`turn_seq`" in send_tool.description
+    assert "`delivery`" in send_tool.description
+    assert "`previous_result`" in send_tool.description
     assert "`--" + "turn`へそのまま渡す" not in send_tool.description
 
 
@@ -646,7 +649,7 @@ async def test_start_rejects_prompt_missing_required_input(
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
     with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
-        await subject.start("execute", f"{task_document} の手順を実行せよ。\n対象: 値", str(tmp_path))
+        await subject.start("execute", f"{task_document}の手順を実行せよ。\n対象: 値", str(tmp_path))
 
     assert called is False
 
@@ -729,20 +732,69 @@ async def test_start_projects_shared_state_without_internal_fields(
     tmp_path: pathlib.Path,
 ) -> None:
     """両engineの開始応答が同じ公開射影を持つ。"""
-    manager, _ = _manager_with_fake(engine)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    _install_backend(manager, engine, FakeBackend(manager.sessions, engine))
     monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [(engine, "model", "high")])
     response = await manager.start("plan", "調査", str(tmp_path))
     assert response == {
         "session_id": f"{engine}-session",
         "engine": engine,
         "status": "running",
-        "progress": "",
         "model_type": "plan",
         "model": "model",
         "effort": "high",
-        "turn_seq": 1,
+        "root_session_id": "root-session",
     }
     _assert_no_forbidden_keys(response)
+
+
+@pytest.mark.asyncio
+async def test_success_response_key_sets_for_all_tools(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """8ツールの成功応答を消費側が使うキー集合へ固定する。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("codex", "model", "high")])
+
+    started = await manager.start("plan", "調査", str(tmp_path))
+    explored = await manager.start_explore(True, "探索", str(tmp_path))
+    shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
+    start_keys = {"session_id", "status", "engine", "model", "effort", "model_type", "root_session_id"}
+    assert started.keys() == start_keys
+    assert explored.keys() == start_keys
+    assert shelled.keys() == start_keys
+
+    session_id = str(started["session_id"])
+    session = manager.sessions[session_id]
+    assert (await manager.wait(session_id, timeout=0)).keys() == {"status", "progress"}
+    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery"}
+    session.turn_id = "turn-1"
+    assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
+
+    terminal_id = str(explored["session_id"])
+    terminal = manager.sessions[terminal_id]
+    _complete(terminal, message="完了")
+    assert (await manager.wait(terminal_id, timeout=0)).keys() == {"status", "agent_message"}
+    assert await manager.stop(terminal_id) == {}
+
+    listed = manager.list_sessions(include_terminated=True)
+    assert listed.keys() == {"sessions", "omitted"}
+    assert all(
+        item.keys() == {"session_id", "status", "progress", "model_type", "launch_kind", "label", "result_available"}
+        for item in listed["sessions"]
+    )
 
 
 @pytest.mark.asyncio
@@ -999,7 +1051,7 @@ async def test_stop_without_wait_carries_over_unavailable_candidate(
 
     failed = await manager.start("plan", "調査", str(tmp_path))
     await asyncio.gather(*delayed.pending)
-    assert (await manager.stop(failed["session_id"]))["status"] == "stopped"
+    assert await manager.stop(failed["session_id"]) == {}
     available = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", available)
 
@@ -1319,10 +1371,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
     response = await manager.send_message("saved-session", "続行")
 
-    assert response["session_id"] == "saved-session"
-    assert response["status"] == "running"
-    assert response["delivery"] == "reply_started"
-    assert response["turn_seq"] == 5
+    assert response == {"delivery": "reply_started"}
     assert "previous_result" not in response
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
@@ -1376,7 +1425,8 @@ async def test_owner_gone_resume_removes_previous_result_file(tmp_path: pathlib.
         manager.send_message(session.session_id, "後続指示", timeout=1),
     )
 
-    assert {response["turn_seq"] for response in responses} == {5}
+    assert {response["delivery"] for response in responses} == {"reply_started", "steered"}
+    assert manager.sessions[session.session_id].turn_seq == 5
     assert not result_path.exists()
     await manager.close()
 
@@ -1392,13 +1442,9 @@ async def test_wait_returns_same_terminal_result_without_consuming_state(tmp_pat
     second = await manager.wait(session.session_id, timeout=0)
     assert first == second
     assert first == {
-        "session_id": "thread-1",
-        "engine": "codex",
         "status": "failed",
-        "progress": "",
         "agent_message": "最終結果",
         "error": {"message": "補足"},
-        "turn_seq": 0,
     }
     _assert_no_forbidden_keys(first)
 
@@ -1411,11 +1457,8 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
     manager.sessions[session.session_id] = session
     response = await manager.wait(session.session_id, timeout=0)
     assert response == {
-        "session_id": "thread-1",
-        "engine": "codex",
         "status": "running",
         "progress": "",
-        "turn_seq": 0,
     }
 
 
@@ -1508,14 +1551,40 @@ async def test_kill_timeout_zero_returns_request_state(tmp_path: pathlib.Path) -
     response = await manager.kill(session.session_id, timeout=0)
 
     assert response == {
-        "session_id": "thread-1",
-        "engine": "codex",
         "status": "running",
-        "progress": "",
-        "turn_seq": 0,
         "kill_requested": True,
     }
     assert backend.interrupt_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_notice", [False, True])
+async def test_kill_includes_notices_only_when_available(
+    with_notice: bool,
+    tmp_path: pathlib.Path,
+) -> None:
+    """killは回収した通知がある場合だけnoticesを返す。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    manager._codex = backend
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
+    manager.sessions[session.session_id] = session
+    if with_notice:
+        notices = status_file.notices_directory("root-session", tmp_path)
+        _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "中断前の通知")
+
+    response = await manager.kill(session.session_id, timeout=0)
+
+    expected: dict[str, Any] = {"status": "running", "kill_requested": True}
+    if with_notice:
+        expected["notices"] = [{"sent_at": "2026-09-06T00:00:01+00:00", "body": "中断前の通知"}]
+    assert response == expected
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1532,12 +1601,8 @@ async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_p
     await manager._notify_waiters()
 
     assert await kill_task == {
-        "session_id": "thread-1",
-        "engine": "codex",
         "status": "completed",
-        "progress": "",
         "agent_message": "中断結果",
-        "turn_seq": 0,
         "kill_requested": True,
     }
 
@@ -1552,8 +1617,11 @@ async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_p
 
     response = await manager.kill(session.session_id, timeout=0)
 
-    assert response["kill_requested"] is False
-    assert response["agent_message"] == "既存結果"
+    assert response == {
+        "status": "completed",
+        "agent_message": "既存結果",
+        "kill_requested": False,
+    }
     assert backend.interrupt_calls == 0
 
 
@@ -1707,7 +1775,6 @@ async def test_kill_cancels_pending_resume_without_followup_message(
 
         response = await manager.kill(session.session_id, timeout=1)
 
-        assert response["session_id"] == session_id
         assert response["status"] == "interrupted"
         assert response["kill_requested"] is False
         assert not manager._pending_resumes
@@ -1794,15 +1861,9 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
     manager.sessions[session.session_id] = session
     response = await manager.send_message(session.session_id, "続行")
     assert response["delivery"] == delivery
-    assert response["session_id"] == "thread-1"
-    assert response["engine"] == engine
-    assert response["status"] == "running"
     assert response["previous_result"] == {
-        "session_id": "thread-1",
-        "engine": engine,
         "status": "completed",
         "agent_message": "直前の結果",
-        "turn_seq": 0,
     }
     _assert_no_forbidden_keys(response)
 
@@ -1844,10 +1905,12 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     session = manager.sessions[started["session_id"]]
     _complete(session, message="結果A")
     writer.flush()
-    assert (await manager.wait(session.session_id, timeout=0))["turn_seq"] == 1
+    assert (await manager.wait(session.session_id, timeout=0))["status"] == "completed"
+    assert session.turn_seq == 1
 
     continued = await manager.send_message(session.session_id, "続行")
-    assert continued["turn_seq"] == 2
+    assert continued["delivery"] == "reply_started"
+    assert session.turn_seq == 2
     writer.flush()
     wait_task = asyncio.create_task(
         asyncio.to_thread(
@@ -1935,8 +1998,7 @@ async def test_send_message_keeps_previous_result_after_reply_failed_response(tm
     )
 
     first = await manager.send_message(session_id, "1回目")
-    assert first["delivery"] == "reply_failed"
-    assert first["agent_message"] == "reply失敗結果"
+    assert first == {"delivery": "reply_failed"}
 
     second = await manager.send_message(session_id, "2回目")
     assert second["previous_result"]["agent_message"] == "reply失敗結果"
@@ -1964,7 +2026,7 @@ async def test_reply_resets_progress_only_after_delivery_is_accepted(
     response = await manager.send_message(session.session_id, "続行")
 
     assert response["delivery"] == delivery
-    assert response["progress"] == expected_progress
+    assert session.progress == expected_progress
 
 
 @pytest.mark.asyncio
@@ -1975,14 +2037,7 @@ async def test_send_message_steered_response_has_no_previous_result(tmp_path: pa
     session.turn_id = "turn-1"
     manager.sessions[session.session_id] = session
     response = await manager.send_message(session.session_id, "追加指示")
-    assert response == {
-        "delivery": "steered",
-        "session_id": "thread-1",
-        "engine": "codex",
-        "status": "running",
-        "progress": "",
-        "turn_seq": 0,
-    }
+    assert response == {"delivery": "steered"}
 
 
 class FakeCodexClient:
@@ -2636,16 +2691,14 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
         "session_id": "thread-codex",
         "engine": "codex",
         "status": "running",
-        "progress": "",
         "model_type": "plan",
         "model": "gpt-test",
         "effort": "high",
-        "turn_seq": 1,
     }
     backend.client = cast(Any, client)
     steered = await manager.send_message("thread-codex", "追加指示")
-    assert steered["delivery"] == "steered"
-    assert steered["turn_seq"] == 1
+    assert steered == {"delivery": "steered"}
+    assert manager.sessions["thread-codex"].turn_seq == 1
     assert client.requests[-1][0] == "turn/steer"
     killed = await manager.kill("thread-codex", timeout=0)
     assert killed["kill_requested"] is True
@@ -2679,14 +2732,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     )
     response = await manager.send_message("thread-saved", "続行")
 
-    assert response == {
-        "delivery": "reply_started",
-        "session_id": "thread-saved",
-        "engine": "codex",
-        "status": "running",
-        "progress": "",
-        "turn_seq": 1,
-    }
+    assert response == {"delivery": "reply_started"}
     assert client.requests[0] == (
         "thread/resume",
         {
@@ -2731,11 +2777,8 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
         assert await manager.wait(session_id, timeout=0) == {
-            "session_id": session_id,
-            "engine": "codex",
             "status": "running",
             "progress": "",
-            "turn_seq": 1,
         }
         assert session_id not in manager.expired_sessions
 
@@ -2790,7 +2833,6 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
 
         response = await manager.kill(session_id, timeout=1)
 
-        assert response["session_id"] == session_id
         assert response["status"] == "interrupted"
         assert response["kill_requested"] is True
         assert [method for method, _params in client.requests] == [
@@ -2847,7 +2889,6 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
         await client.complete_turn(session_id)
         response = await kill_task
 
-        assert response["session_id"] == session_id
         assert response["status"] == "completed"
         assert response["kill_requested"] is False
         assert [method for method, _params in client.requests] == [
@@ -3106,11 +3147,8 @@ async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: 
     assert response == {
         "delivery": "reply_started",
         "previous_result": {
-            "session_id": "claude-race",
-            "engine": "claude",
             "status": "completed",
             "agent_message": "直前結果",
-            "turn_seq": 0,
         },
     }
     assert iterator is not None
@@ -3210,11 +3248,8 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
         await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
         assert not client.queries
         assert await manager.wait(session_id, timeout=0) == {
-            "session_id": session_id,
-            "engine": "claude",
             "status": "running",
             "progress": "",
-            "turn_seq": 1,
         }
         assert session_id not in manager.expired_sessions
 
@@ -3723,7 +3758,7 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限経過時にSDKを切断し、未回収の結果を退避する。"""
+    """保持期限経過時にSDKを切断し、結果本文を破棄して再開状態を退避する。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
@@ -3757,11 +3792,13 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             status="completed",
             agent_message="完了",
             finalized_at=session.finalized_at,
+            result_delivered=True,
+            retention_deadline=session.retention_deadline,
         )
     }
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
-    with pytest.raises(ValueError, match="session retention expired: claude-expired"):
-        await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait(session.session_id, timeout=0)
+    assert response["status"] == "expired"
+    assert "agent_message" not in response
 
 
 @pytest.mark.asyncio
@@ -3813,14 +3850,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
     assert result["error"] == {"message": "stream failed"}
     response = await manager.send_message(session.session_id, "続行")
 
-    assert response == {
-        "delivery": "reply_started",
-        "session_id": "claude-failed",
-        "engine": "claude",
-        "status": "running",
-        "progress": "",
-        "turn_seq": 2,
-    }
+    assert response == {"delivery": "reply_started"}
     assert not manager.expired_sessions
     assert manager.sessions[session.session_id].status == "running"
     await backend.close()
@@ -3855,18 +3885,10 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 
     assert response == {
         "delivery": "reply_started",
-        "session_id": "claude-failed",
-        "engine": "claude",
-        "status": "running",
-        "progress": "",
-        "turn_seq": 2,
         "previous_result": {
-            "session_id": "claude-failed",
-            "engine": "claude",
             "status": "failed",
             "agent_message": "",
             "error": {"message": "stream failed"},
-            "turn_seq": 1,
         },
     }
     assert not manager.expired_sessions
@@ -3877,29 +3899,35 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
 async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, tmp_path: pathlib.Path) -> None:
-    """両engineで期限切れの未回収結果を1回返す。"""
+    """両engineで期限切れの結果本文を返さずexpiredを返す。"""
     manager, _ = _manager_with_fake(engine)
     session = subject.SessionState("expired", str(tmp_path), engine=engine)
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
-    with pytest.raises(ValueError, match="session retention expired: expired"):
-        await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait(session.session_id, timeout=0)
+    assert response == {"status": "expired"}
+    assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
 
 
 @pytest.mark.asyncio
 async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: pathlib.Path) -> None:
-    """退避済みの未回収結果もwaitが1回返す。"""
+    """退避済みの期限切れ状態から結果本文を返さない。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState("expired", str(tmp_path))
     _complete(session, message="退避結果")
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
-    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is True
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "退避結果"
+    manager.expired_sessions[session.session_id] = dataclasses.replace(
+        manager.expired_sessions[session.session_id],
+        result_delivered=True,
+    )
+
+    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
+    response = await manager.wait(session.session_id, timeout=0)
+    assert response == {"status": "expired"}
     assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
 
 
@@ -3918,21 +3946,14 @@ async def test_stop_discards_terminal_session(
 
     response = await manager.stop(session.session_id)
 
-    expected: dict[str, object] = {
-        "session_id": "terminal",
-        "engine": engine,
-        "status": "stopped",
-        "progress": "",
-        "turn_seq": 3,
-    }
-    if model_type is not None:
-        expected["model_type"] = model_type
-    assert response == expected
+    assert response == {}
     assert manager.list_sessions() == {"sessions": [], "omitted": 0}
     assert "terminal" not in manager.sessions
     assert "terminal" not in manager.expired_sessions
     assert manager.stopped_sessions["terminal"].session_id == "terminal"
     assert backend.release_calls == ["terminal"]
+    with pytest.raises(ValueError, match="identifier scheme mismatch: terminal"):
+        await manager.wait("terminal", timeout=0)
 
 
 @pytest.mark.asyncio
@@ -3974,7 +3995,7 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
 
     response = await manager.stop(session.session_id)
 
-    assert response["status"] == "stopped"
+    assert response == {}
     assert session.session_id not in manager.expired_sessions
     assert session.session_id in manager.stopped_sessions
     assert manager.list_sessions() == {"sessions": [], "omitted": 0}
@@ -4038,7 +4059,7 @@ async def test_send_message_resumes_stopped_session(tmp_path: pathlib.Path) -> N
     response = await manager.send_message(session.session_id, "再開")
 
     assert response["delivery"] == "reply_started"
-    assert response["session_id"] == session.session_id
+    assert "previous_result" not in response
     assert backend.resume_calls == [session.session_id]
     assert session.session_id not in manager.stopped_sessions
 
@@ -4059,6 +4080,7 @@ async def test_wait_stop_discards_only_after_terminal_result(tmp_path: pathlib.P
     assert response["status"] == "completed"
     assert response["agent_message"] == "完了"
     assert session.session_id in manager.stopped_sessions
+    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
     assert backend.release_calls == [session.session_id]
 
 
@@ -4080,7 +4102,106 @@ async def test_kill_stop_discards_only_after_terminal_result(tmp_path: pathlib.P
     assert response["status"] == "interrupted"
     assert response["kill_requested"] is False
     assert session.session_id in manager.stopped_sessions
+    retained = await manager.kill(session.session_id, timeout=0)
+    assert retained["status"] == "interrupted"
+    assert retained["agent_message"] == "完了"
+    assert retained["kill_requested"] is False
     assert backend.release_calls == [session.session_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["wait", "kill"])
+async def test_stopped_result_expires_before_later_observation(
+    operation: str,
+    tmp_path: pathlib.Path,
+) -> None:
+    """stop=trueで保持した結果は期限到来後に本文を伴わないexpiredへ移る。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState(f"stopped-{operation}", str(tmp_path), engine="codex")
+    _complete(session, message="保持結果")
+    manager.sessions[session.session_id] = session
+    await manager.wait(session.session_id, timeout=0, stop=True)
+    retained = manager.stopped_sessions[session.session_id]
+    assert retained.retention_deadline == session.retention_deadline
+    manager.stopped_sessions[session.session_id] = dataclasses.replace(
+        retained,
+        retention_deadline=asyncio.get_running_loop().time() - 1,
+    )
+
+    if operation == "wait":
+        response = await manager.wait(session.session_id, timeout=0)
+        assert response["status"] == "expired"
+        assert "agent_message" not in response
+    else:
+        response = await manager.kill(session.session_id, timeout=0)
+        assert response["status"] == "expired"
+        assert response["kill_requested"] is False
+        assert "agent_message" not in response
+    assert session.session_id not in manager.stopped_sessions
+    assert manager.expired_sessions[session.session_id].result_delivered is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expired", [False, True])
+async def test_send_message_includes_stopped_previous_result_only_before_deadline(
+    expired: bool,
+    tmp_path: pathlib.Path,
+) -> None:
+    """stop=true後の再開は期限内だけ直前結果を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState(f"stopped-send-{expired}", str(tmp_path), engine="codex")
+    _complete(session, message="直前結果")
+    manager.sessions[session.session_id] = session
+    await manager.wait(session.session_id, timeout=0, stop=True)
+    if expired:
+        manager.stopped_sessions[session.session_id] = dataclasses.replace(
+            manager.stopped_sessions[session.session_id],
+            retention_deadline=asyncio.get_running_loop().time() - 1,
+        )
+
+    response = await manager.send_message(session.session_id, "再開")
+
+    if expired:
+        assert "previous_result" not in response
+    else:
+        assert response["previous_result"]["agent_message"] == "直前結果"
+
+
+@pytest.mark.asyncio
+async def test_wait_stop_retains_result_for_agents_wait(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """stop=trueで破棄した結果をatk agents-waitからも回収できる。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    manager._codex = backend
+    writer.activate()
+    session = subject.SessionState("wait-stop-cli", str(tmp_path), engine="codex", announced=True)
+    _complete(session, message="CLI回収")
+    manager.sessions[session.session_id] = session
+
+    await manager.wait(session.session_id, timeout=0, stop=True)
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
+    assert result_path.exists()
+    assert (
+        agents_wait.wait_for_result(
+            session.session_id,
+            0,
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["agent_message"] == "CLI回収"
+    assert not result_path.exists()
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -4099,17 +4220,7 @@ async def test_expired_session_kill_returns_success_response(
 
     response = await manager.kill(session.session_id, timeout=0)
 
-    expected: dict[str, object] = {
-        "session_id": "expired",
-        "engine": engine,
-        "status": "expired",
-        "progress": "",
-        "kill_requested": False,
-        "turn_seq": 0,
-    }
-    if model_type is not None:
-        expected["model_type"] = model_type
-    assert response == expected
+    assert response == {"status": "expired", "kill_requested": False}
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].session_id == "expired"
     assert backend.interrupt_calls == 0
@@ -4172,7 +4283,7 @@ async def test_identifier_resolution_precedes_scheme_classification(tmp_path: pa
     manager.sessions[registered.session_id] = registered
 
     response = await manager.wait(registered.session_id, timeout=0)
-    assert response["session_id"] == registered.session_id
+    assert response["status"] == "running"
 
     missing_uuid = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
     with pytest.raises(ValueError) as missing_exc:

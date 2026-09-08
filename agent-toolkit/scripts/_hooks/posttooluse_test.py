@@ -5,6 +5,8 @@ plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`postto
 `session_edited_files`蓄積機構は`posttooluse_session_edited_files_test.py`へ分割している。
 """
 
+# pylint: disable=protected-access
+
 import asyncio
 import functools
 import importlib.util
@@ -47,6 +49,44 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
+def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """状態ファイルの反映前でもstart応答のルート識別子から索引を書く。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+    root = tmp_path / "agents-server" / "root-session"
+    assert not root.exists()
+
+    _POSTTOOLUSE_MODULE._record_agents_server_session_state(
+        "current-session",
+        {"session_id": "remote-session", "status": "running", "root_session_id": "root-session"},
+        operation="start",
+        owner_agent_id="main",
+    )
+
+    alias = tmp_path / "agents-server" / "aliases" / "current-session.json"
+    assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "root-session"}
+
+
+def test_start_state_record_without_root_session_id_does_not_write_alias(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """start応答にルート識別子が無い場合は索引を書かない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
+
+    _POSTTOOLUSE_MODULE._record_agents_server_session_state(
+        "current-session",
+        {"session_id": "remote-session", "status": "running"},
+        operation="start",
+        owner_agent_id="main",
+    )
+
+    assert not (tmp_path / "agents-server" / "aliases" / "current-session.json").exists()
+
+
 class TestAgentsServerBackgroundResponse:
     """agents_serverの背景移行応答を正常系として扱う。"""
 
@@ -67,7 +107,7 @@ class TestAgentsServerBackgroundResponse:
     def test_malformed_regular_response_still_warns(self) -> None:
         result = _run(self._payload("invalid response"))
         assert result.returncode == 0
-        assert "応答でresponse, session_id, statusが欠落しているか不正" in result.stdout
+        assert "応答でresponse, statusが欠落しているか不正" in result.stdout
 
 
 def _run(
@@ -155,6 +195,64 @@ class TestAtkHelpObservation:
 
         assert result.returncode == 0
         assert "observed_atk_help" not in _read_state(tmp_path, session_id)
+
+
+class TestCodexBashStateRecording:
+    """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
+
+    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents-wait remote-session"
+
+    def test_codex_bash_does_not_record_success_dependent_state(self, tmp_path: pathlib.Path) -> None:
+        session_id = "codex-success-dependent-state"
+        result = _run(
+            {
+                "session_id": session_id,
+                "turn_id": "turn-codex",
+                "tool_name": "Bash",
+                "tool_input": {"command": self._COMMAND},
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        state = _read_state(tmp_path, session_id)
+        assert "test_executed" not in state
+        assert "git_log_checked" not in state
+        assert "amend_pending_status_check" not in state
+
+    def test_codex_bash_still_records_agents_wait_observation(self, tmp_path: pathlib.Path) -> None:
+        session_id = "codex-wait-observation"
+        remote_session_id = "remote-session"
+        state = {
+            "agents_server_sessions": {
+                remote_session_id: {
+                    "session_id": remote_session_id,
+                    "status": "running",
+                    "pending_observation": True,
+                }
+            }
+        }
+        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)).write_text(
+            json.dumps(state, ensure_ascii=False), encoding="utf-8"
+        )
+        result = _run(
+            {
+                "session_id": session_id,
+                "turn_id": "turn-codex",
+                "tool_name": "Bash",
+                "tool_input": {"command": self._COMMAND},
+                "cwd": str(tmp_path),
+            },
+            state_dir=tmp_path,
+        )
+
+        assert result.returncode == 0
+        current = _read_state(tmp_path, session_id)
+        assert current["agents_server_sessions"][remote_session_id]["pending_observation"] is False
+        assert "test_executed" not in current
+        assert "git_log_checked" not in current
+        assert "amend_pending_status_check" not in current
 
 
 class TestTestExecution:
@@ -1316,22 +1414,91 @@ class TestAmendPendingStatusCheck:
 class TestAgentsServerSessionState:
     """agents_serverのツール応答とsessionごとのcwd状態記録を検証する。"""
 
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input", "response"),
+        (
+            ("start", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
+            ("start_explore", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
+            ("start_shell", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
+            ("wait", {"session_id": "remote"}, {"status": "completed", "agent_message": "完了"}),
+            ("send_message", {"session_id": "remote"}, {"delivery": "reply_started"}),
+            ("kill", {"session_id": "remote"}, {"status": "interrupted", "kill_requested": True}),
+            ("stop", {"session_id": "remote"}, {}),
+            ("list", {}, {"sessions": [], "omitted": 0}),
+        ),
+    )
+    def test_reduced_success_responses_have_no_missing_fields(
+        self,
+        tool_name: str,
+        tool_input: dict[str, object],
+        response: dict[str, object],
+    ) -> None:
+        """8ツールの削減後成功応答を欠落として報告しない。"""
+        qualified_name = f"mcp__plugin_agent-toolkit_agents_server__{tool_name}"
+        payload = {"tool_input": tool_input}
+        assert (
+            _POSTTOOLUSE_MODULE._agents_server_missing_response_fields("local-session", payload, response, qualified_name) == []
+        )
+
+    def test_reduced_terminal_start_status_is_recorded(self, tmp_path: pathlib.Path) -> None:
+        """全候補不可用のstartが返す終端statusをそのまま記録する。"""
+        sid = "terminal-start"
+        remote_session_id = "remote-terminal-start"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"cwd": str(tmp_path), "prompt": "委譲する"},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": remote_session_id,
+                        "status": "failed",
+                        "engine": "codex",
+                        "model": "gpt-test",
+                        "effort": "high",
+                        "model_type": "execute",
+                    }
+                },
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+        assert record["status"] == "failed"
+
     @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill", "stop"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
         remote_session_id = "thread-json"
         start_tools = ("start", "start_explore")
-        status = "running" if tool_name in (*start_tools, "send_message") else "interrupted"
+        status = "running" if tool_name in (*start_tools, "send_message", "stop") else "interrupted"
         tool_input = {"cwd": str(tmp_path)} if tool_name in start_tools else {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
-        response: dict[str, object] = {"session_id": remote_session_id, "turn_id": "turn-json", "status": status}
+        response: dict[str, object] = {}
+        if tool_name in start_tools:
+            response.update({"session_id": remote_session_id, "status": status})
+        elif tool_name in {"wait", "kill"}:
+            response["status"] = status
+        elif tool_name == "send_message":
+            response["delivery"] = "reply_started"
         if tool_name == "kill":
             response["kill_requested"] = True
         if tool_name not in start_tools:
             (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-                json.dumps({"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}),
+                json.dumps(
+                    {
+                        "agents_server_cwd_by_session": {remote_session_id: str(tmp_path)},
+                        "agents_server_sessions": {
+                            remote_session_id: {
+                                "session_id": remote_session_id,
+                                "status": "running",
+                                "pending_observation": True,
+                            }
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
         result = _run(
@@ -1381,16 +1548,31 @@ class TestAgentsServerSessionState:
         """継続・観測・中断・破棄ツールはcwd mapを参照し、session記録へcwdを保存しない。"""
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
-        state = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
+        state: dict[str, object] = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(state, ensure_ascii=False), encoding="utf-8"
         )
         tool_input = {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
-        response: dict[str, object] = {"session_id": remote_session_id, "turn_id": "turn-next", "status": "running"}
+        response: dict[str, object] = {}
+        if tool_name == "wait":
+            response["status"] = "running"
+        elif tool_name == "send_message":
+            response["delivery"] = "reply_started"
         if tool_name == "kill":
             response.update({"status": "interrupted", "kill_requested": True})
+        if tool_name in {"send_message", "stop"}:
+            state["agents_server_sessions"] = {
+                remote_session_id: {
+                    "session_id": remote_session_id,
+                    "status": "running",
+                    "pending_observation": True,
+                }
+            }
+            (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+                json.dumps(state, ensure_ascii=False), encoding="utf-8"
+            )
         result = _run(
             {
                 "session_id": sid,
@@ -1405,8 +1587,8 @@ class TestAgentsServerSessionState:
         assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
         assert "cwd" not in current["agents_server_sessions"][remote_session_id]
 
-    def test_stop_clears_pending_observation(self, tmp_path: pathlib.Path) -> None:
-        """stop成功応答で未観測作業を解消する。"""
+    def test_stop_clears_pending_observation_without_replacing_status(self, tmp_path: pathlib.Path) -> None:
+        """stop成功応答で既存statusを保ち、未観測作業を解消する。"""
         sid = "pending-stop"
         remote_session_id = "remote-stop"
         state = {
@@ -1428,22 +1610,14 @@ class TestAgentsServerSessionState:
                 "session_id": sid,
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__stop",
                 "tool_input": {"session_id": remote_session_id},
-                "tool_response": {
-                    "structuredContent": {
-                        "session_id": remote_session_id,
-                        "engine": "codex",
-                        "status": "stopped",
-                        "progress": "",
-                        "turn_seq": 1,
-                    }
-                },
+                "tool_response": {"structuredContent": {}},
             },
             state_dir=tmp_path,
         )
 
         assert result.returncode == 0
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
-        assert record["status"] == "stopped"
+        assert record["status"] == "completed"
         assert record["pending_observation"] is False
 
     def test_missing_cwd_map_does_not_fallback_to_session_record(self, tmp_path: pathlib.Path) -> None:
@@ -1498,9 +1672,15 @@ class TestAgentsServerSessionState:
                 tool_input = {"cwd": str(tmp_path), "prompt": "委譲する"}
             elif operation == "send_message":
                 tool_input["prompt"] = "続行する"
-            response: dict[str, object] = {"session_id": remote_session_id, "status": status}
-            if delivery is not None:
-                response["delivery"] = delivery
+            response: dict[str, object]
+            if operation in {"start", "start_explore"}:
+                response = {"session_id": remote_session_id, "status": status}
+            elif operation in {"wait", "kill"}:
+                response = {"status": status}
+            elif operation == "send_message":
+                response = {"delivery": delivery}
+            else:
+                response = {}
             if operation == "kill":
                 response["kill_requested"] = True
             result = _run(

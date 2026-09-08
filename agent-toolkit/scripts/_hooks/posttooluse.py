@@ -36,6 +36,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 """
 
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -43,7 +44,15 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills" / "plan-mode" / "scripts"))
-from _agents_server import state as _agents_server_state  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# pylint: disable-next=wrong-import-position,import-error
+from _agents_server import (
+    state as _agents_server_state,
+)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+# pylint: disable-next=wrong-import-position,import-error
+from _agents_server import (
+    status_file as _agents_server_status_file,
+)  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _atk.wi import process_loop_log as _process_loop_log  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from _git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -286,6 +295,13 @@ def _is_nonempty_absolute_cwd(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip()) and pathlib.PurePath(value).is_absolute()
 
 
+def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
+    """操作ごとの正本から委譲先session識別子を返す。"""
+    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS else tool_input
+    value = source.get("session_id") if isinstance(source, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
 def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict, tool_name: str) -> object:
     """startの入力cwdまたはsessionごとのcwd mapから応答のcwd候補を取得する。"""
     tool_input = payload.get("tool_input")
@@ -293,17 +309,29 @@ def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict
         input_cwd = tool_input.get("cwd") if isinstance(tool_input, dict) else None
         return input_cwd if _is_nonempty_absolute_cwd(input_cwd) else None
     state = read_state(session_id)
-    remote_session_id = structured.get("session_id")
+    remote_session_id = _agents_server_remote_session_id(tool_input, structured, tool_name)
     cwd_map = state.get(_AGENTS_SERVER_SESSION_CWD_KEY)
     return cwd_map.get(remote_session_id) if isinstance(cwd_map, dict) else None
 
 
 def _agents_server_missing_response_fields(session_id: str, payload: dict, structured: dict, tool_name: str) -> list[str]:
     """成功した応答から状態記録に必要な欠落項目を列挙する。"""
+    operation = tool_name.rsplit("__", 1)[-1]
+    if operation == "stop":
+        return []
     missing: list[str] = []
     if not structured:
         missing.append("response")
-    for field in ("session_id", "status"):
+    required_fields: tuple[str, ...]
+    if tool_name in _AGENTS_SERVER_START_TOOLS:
+        required_fields = ("session_id", "status")
+    elif operation in {"wait", "kill"}:
+        required_fields = ("status",)
+    elif operation == "send_message":
+        required_fields = ("delivery",)
+    else:
+        required_fields = ()
+    for field in required_fields:
         value = structured.get(field)
         if not isinstance(value, str) or not value.strip():
             missing.append(field)
@@ -322,17 +350,27 @@ def _record_agents_server_session_state(
     owner_agent_id: str,
     cwd: str | None = None,
     model_type: str | None = None,
+    remote_session_id: str | None = None,
 ) -> None:
     """agents_serverの公開応答をhook側の状態へ記録する。"""
-    remote_session_id = structured.get("session_id")
-    status = structured.get("status")
-    if not isinstance(remote_session_id, str) or not remote_session_id or not isinstance(status, str):
+    if remote_session_id is None:
+        value = structured.get("session_id")
+        remote_session_id = value if isinstance(value, str) and value else None
+    if remote_session_id is None:
         return
 
     def _mutator(state: dict) -> dict | None:
         sessions = state.setdefault(_AGENTS_SERVER_SESSION_STATE_KEY, {})
         previous = sessions.get(remote_session_id)
         previous = previous if isinstance(previous, dict) else {}
+        status = structured.get("status")
+        if operation == "send_message":
+            delivery = structured.get("delivery")
+            status = "running" if delivery in {"reply_started", "reply_ambiguous"} else previous.get("status")
+        elif operation == "stop":
+            status = previous.get("status")
+        if not isinstance(status, str):
+            return None
         record = dict(previous)
         record.pop("cwd", None)
         record.pop("_".join(("result", "retrieved")), None)
@@ -373,16 +411,22 @@ def _record_agents_server_session_state(
         return state if changed else None
 
     update_state(session_id, _mutator)
+    if operation in {"start", "start_explore", "start_shell"} and not os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
+        root_session_id = structured.get("root_session_id")
+        if isinstance(root_session_id, str) and root_session_id:
+            _agents_server_status_file.write_root_alias(session_id, root_session_id)
 
 
-def _log_tracked_session_end(session_id: str, structured: dict) -> None:
+def _log_tracked_session_end(session_id: str, structured: dict, remote_session_id: str | None = None) -> None:
     """終端した計画実行系sessionの終了時刻をprocess-loopの観測ログへ記録する。
 
     `model_type`は`start`応答にだけ現れるため、起動時に保持した記録から取得する。
     """
     if structured.get("status") not in _agents_server_state.TERMINAL_STATUSES:
         return
-    remote_session_id = structured.get("session_id")
+    if remote_session_id is None:
+        value = structured.get("session_id")
+        remote_session_id = value if isinstance(value, str) and value else None
     sessions = read_state(session_id).get(_AGENTS_SERVER_SESSION_STATE_KEY)
     record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
     model_type = record.get("model_type") if isinstance(record, dict) else None
@@ -694,12 +738,19 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     )
 
 
-def _handle_bash_tool(session_id: str, command: str, cwd: str, *, record_atk_help: bool) -> None:
+def _handle_bash_tool(
+    session_id: str,
+    command: str,
+    cwd: str,
+    *,
+    record_success_dependent_state: bool,
+) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
     _record_agents_wait_observation_attempt(session_id, command)
-    if record_atk_help:
-        _record_atk_help_observation(session_id, command)
+    if not record_success_dependent_state:
+        return
+    _record_atk_help_observation(session_id, command)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
@@ -787,8 +838,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             if missing:
                 display_name = tool_name.rsplit("__", 1)[-1]
                 notices.append(_llm_notice(f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。"))
-        remote_session_id = structured.get("session_id")
-        if moved_to_background and not (isinstance(remote_session_id, str) and remote_session_id):
+        remote_session_id = _agents_server_remote_session_id(tool_input, structured, tool_name)
+        if moved_to_background:
             _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
@@ -805,15 +856,17 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 owner_agent_id=owner_agent_id,
                 cwd=cwd_value if isinstance(cwd_value, str) else None,
                 model_type=model_type,
+                remote_session_id=remote_session_id,
             )
         else:
             if operation in {"wait", "kill"}:
-                _log_tracked_session_end(session_id, structured)
+                _log_tracked_session_end(session_id, structured, remote_session_id)
             _record_agents_server_session_state(
                 session_id,
                 structured,
                 operation=operation,
                 owner_agent_id=owner_agent_id,
+                remote_session_id=remote_session_id,
             )
         return 0
 
@@ -843,7 +896,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         session_id,
         command,
         cwd,
-        record_atk_help=not (isinstance(turn_id, str) and bool(turn_id)),
+        record_success_dependent_state=not (isinstance(turn_id, str) and bool(turn_id)),
     )
     return 0
 
