@@ -458,6 +458,15 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _pull(private_notes)
             paths = _resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
+        if path.parent.name == WI_STATE_PROCESSING and is_agent_environment():
+            print(
+                f"processingの項目はエージェント環境から編集できません: {path.name}。"
+                "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わります。"
+                "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
+                "atk wi edit --appendで追記してください。",
+                file=sys.stderr,
+            )
+            sys.exit(2)
         snapshot = path.read_bytes()
         normalized_target_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
         _verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
