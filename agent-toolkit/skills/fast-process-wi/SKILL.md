@@ -33,7 +33,7 @@ AWIとUWIの共通概念、由来、承認、状態及び投入は`../wi-standar
 1. `atk wi list --status=processable --target-repo=<repo> --skip-pull`で候補を取得し、`atk wi show`で各本文を読む。「本スキルを選ぶ場面」の区分を全件へ適用する
 2. 処理対象のファイル名を`atk wi start-processing <filename>... --target-repo=<repo>`で`processing`へ移し、当該集合を固定する。実行後に全件が`processing`へ配置されたことを確認する
 3. `git -C <対象リポジトリの絶対パス> rev-parse HEAD`で処理開始時点の完全OIDを取得し、当該処理回の起点OIDとして保持する。以降の手順で取得し直さない
-4. 主作業ツリーで全項目を直接実装する。専用worktree、計画ファイル、計画レビュー及び通常型AWIの計画型変換を作成しない
+4. 主作業ツリーで全項目を直接実装する。専用worktree、計画ファイル、計画レビュー及び通常型AWIの計画型変換を作成しない。公開応答、状態遷移、共有データ、識別子又は選択子を変更し、同じ値を読む消費側が2件以上又は終端を含む状態が2種類以上ある項目では、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の`## 実装`の手順8が計画を受領しない経路へ定める記録と独立再走査を適用する
 5. 対象リポジトリを検査し、commitする
 6. `atk review-table init ~/.claude/plans/fastwi-<起点OID>.exec-review.tsv`でレビュー指摘管理表を1件だけ作成する。表の命名、保存の要否及び削除は`../plan-mode/references/plan-file-standards.md`を正本とする
 7. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`を全文読み、`レビュー基準: AWI`で実行レビュー担当を1件起動する。同書が定める`review_contract`とともに、手順6の表の絶対パス、手順3の起点OID、及び対象AWIのファイル名、要求、完成条件、由来、採否の5項目のAWI記録を渡す。起動の前に、当該表が実在することと、表名が`fastwi-<起点OID>.exec-review.tsv`と完全一致することを確認する
