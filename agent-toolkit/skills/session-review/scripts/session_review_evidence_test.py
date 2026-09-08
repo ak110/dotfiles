@@ -4725,9 +4725,9 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
             "samples": [{"record": "main", "line": 5}],
         }
     ]
-    assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == stored["stats.jsonl"]
+    assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == []
     assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 8}
-    assert bundle_events[-1 - len(stored["hook-notices.jsonl"]) : -1] == stored["hook-notices.jsonl"]
+    assert [event for event in bundle_events if event["kind"] == "hook-notice"] == []
 
 
 def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
@@ -4776,6 +4776,24 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
             "samples": [{"record": "main", "line": 2}, {"record": "main", "line": 3}, {"record": "main", "line": 4}],
         }
     ]
+
+
+def test_bundle_stdout_excludes_saved_stats_and_hook_notices(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """保存済みの集計と通知の走査を標準出力へ重複して返さない。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    assert not [event for event in events if str(event["kind"]).startswith("stats-")]
+    assert not [event for event in events if event["kind"] == "hook-notice"]
+    assert (bundle_dir / "stats.jsonl").exists()
+    assert (bundle_dir / "hook-notices.jsonl").exists()
 
 
 @pytest.mark.parametrize("existing", [False, True])
