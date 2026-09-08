@@ -708,7 +708,7 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
         return
     warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
     if warnings:
-        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG))
+        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG, removable_cause=True))
 
 
 def _plan_main_path_for(display_path: str) -> str:

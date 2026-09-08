@@ -437,7 +437,11 @@ def _check_manifest(tool_name: str, file_path: str) -> str | None:
     normalized = file_path.replace("\\", "/")
     for label, pattern, hint in _MANIFEST_RULES:
         if pattern.search(normalized):
-            return _llm_notice(f"`{tool_name}`で`{label}`を編集しようとしている。{hint}", tag=_WARN_TAG)
+            return _llm_notice(
+                f"`{tool_name}`で`{label}`を編集しようとしている。{hint}",
+                tag=_WARN_TAG,
+                removable_cause=True,
+            )
     return None
 
 
@@ -522,6 +526,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
                 "版管理対象のファイルでは、環境依存のパスを避けるため`~`、`$HOME`、"
                 f"または`pathlib.Path.home()`を使う。文脈: {sample!r}",
                 tag=_WARN_TAG,
+                removable_cause=True,
             )
     return None
 
@@ -596,6 +601,7 @@ def _check_colloquial(
         "`agent-toolkit/rules/01-agent.md`「日本語」節に従って書き換える。"
         f"単語だけを同義語へ置き換えず、文全体を組み直す。 対象: {file_path}",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -643,6 +649,7 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
         f"対象: {file_path}。この形は「`X`でなければ`Y`してよい」と読み違えられる。"
         "全称否定形（「いかなる理由（例: `X`）があっても`Y`しない」）への書き換えを検討する。",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -745,6 +752,7 @@ def _check_body_section_reference_exists(tool_name: str, content: str, file_path
         f"（{tool_name}、対象: {file_path}）: {'; '.join(reasons)}。"
         "参照先のファイルと節名が一致することを確認する。",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -800,6 +808,7 @@ def _check_plan_mode_skill_first(
         "訂正内容と根拠を`## 変更履歴`へ記録したうえで、`plan-mode`をやり直さずに続行する。"
         "計画を確定する前に、`plan-mode`の直接委譲の手順でこの警告を解消して検証する。",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -1022,6 +1031,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
             f"`Write`・`Edit`・`MultiEdit`を{new_count}回連続で実行した。次の同種の編集は遮断する。"
             "先に`~/.claude/plans/`配下へ計画ファイルを作成する。",
             tag=_WARN_TAG,
+            removable_cause=True,
         )
     return False, None
 

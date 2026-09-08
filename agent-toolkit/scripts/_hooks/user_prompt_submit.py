@@ -163,7 +163,8 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not first_line.startswith(command_prefix)
     additional_context = None
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
-        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_WARN_TAG)
+        # 発火条件は受領側が変更できないため、原因の除去を求める反復注記を付けない。
+        additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_WARN_TAG, removable_cause=False)
 
     # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
     # Codexはスキル起動の状態記録だけを行い、計画名を出力しない。

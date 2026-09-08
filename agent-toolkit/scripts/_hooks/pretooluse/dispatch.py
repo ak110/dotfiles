@@ -267,7 +267,7 @@ def main(payload_text: str) -> int:
     # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
     pending_notices: list[str] = []
     if language_warning_body is not None:
-        pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG))
+        pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG, removable_cause=True))
 
     def emit_json(result: dict) -> None:
         for notice in pending_notices:

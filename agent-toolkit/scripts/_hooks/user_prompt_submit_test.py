@@ -222,6 +222,17 @@ class TestVerificationNoticeInjection:
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert _notice_body(context) == _EXPECTED_VERIFICATION_NOTICE_BODY
 
+    def test_repeated_notices_do_not_request_cause_removal(self, tmp_path: pathlib.Path) -> None:
+        sid = "verification-repeated"
+        contexts = []
+        for _ in range(3):
+            self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 200})
+            result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
+            assert result.returncode == 0
+            contexts.append(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
+
+        assert all("この通知は同一セッションで" not in context for context in contexts)
+
     @pytest.mark.parametrize(
         ("session_id", "payload"),
         [

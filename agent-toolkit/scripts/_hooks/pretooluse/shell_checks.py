@@ -744,6 +744,7 @@ def _check_bash_sleep_poll_pattern(
     return _llm_notice(
         f"warn: 前景の`sleep`の後に別のコマンドが続いており、反復ポーリングになる可能性がある。\n{guidance}",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -1230,6 +1231,7 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
                     "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
                     "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。",
                     tag=_WARN_TAG,
+                    removable_cause=True,
                 )
     return None
 
@@ -1558,6 +1560,7 @@ def _check_bash_output_status_after_truncation(command: str) -> str | None:
                 "warn: 出力を切り詰めるパイプラインの後にある`$?`は、対象コマンドではなく"
                 "`head`・`tail`の終了状態を示す。出力を切り詰める前に対象コマンドの終了状態を保持する。",
                 tag=_WARN_TAG,
+                removable_cause=True,
             )
     return None
 
@@ -1670,6 +1673,7 @@ def _check_bash_recursive_home_search(command: str) -> str | None:
         "対象ディレクトリを狭め、不要領域を除外し、検索対象と出力に上限を設けるか、"
         "`rg`・再帰`grep`を使う前に分離した実行コンテキストで検索する。",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -1903,6 +1907,7 @@ def _check_bash_unbounded_home_traversal(command: str) -> str | None:
         "`find`では`-prune`と`-maxdepth`で対象集合を先に限定し、"
         "ファイル一覧の取得には除外設定を反映する`rg --files`を使う。",
         tag="warn",
+        removable_cause=True,
     )
 
 
