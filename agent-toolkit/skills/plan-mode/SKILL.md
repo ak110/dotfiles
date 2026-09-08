@@ -43,7 +43,7 @@ description: >
 7. `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従って実装担当を起動する。手順4と手順5で保持した専用worktree、複製元及び対象外worktreeを同書の`## 入力`が定める形式で渡す。同書が計画ファイルから解決すると定める入力は、同書の対話由来の小規模是正の分岐に従って本節の保持値から渡す。実装担当の完了報告が返した`検証結果`を対話記録の`対象の検証結果`へ記録する。
 8. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い、`レビュー基準: 対話記録`で`review_contract`を生成して実行レビュー担当を起動し、収束まで反復する。
 9. 実行レビューの収束後に、`git -C <専用worktreeの絶対パス> rebase <統合先branch名>`を1回実行し、専用branchを統合先branchの最新tipへ載せ替える。`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`の「マージありの統合」が、fast-forward mergeの前に最新のマージ先tipへrebaseすると定めるためである。別の主体が同じリポジトリへcommitした後は、専用worktreeの作成時のHEADのままではfast-forward mergeが必ず失敗する。当該rebaseは専用worktreeで実行し、対象作業ツリーの現在のcheckoutに依存しない。
-   競合した場合は、競合箇所を解消して`git rebase --continue`を実行する。実行の直前に`git -C <専用worktreeの絶対パス> log --oneline --decorate`を単独で実行し、履歴と継続対象を確認する。
+   競合した場合は、競合箇所を解消して`git rebase --continue`を実行する。実行の直前に`git -C <専用worktreeの絶対パス> log --oneline --decorate <統合先branch名>..HEAD`を単独で実行し、履歴と継続対象を確認する。範囲を限定しない起動形は、3,000commitを超えるリポジトリで実行環境の出力上限に達するため用いない。
    解消が実装内容へ影響したかを判定し、影響した場合は手順5で作成した実行レビュー指摘管理表へ競合箇所、競合内容、解消方針、実際の変更及び直接影響範囲を記録する。手順8の実行レビューを当該変更に対して再実施し、収束させてから手順10へ進む。空白、改行、import順のような機械的な非意味変更だけで解消した場合は、当該記録と再実施のいずれも行わない。
    競合を解消できない場合は`git -C <専用worktreeの絶対パス> rebase --abort`を1回実行し、実装差分を破棄せず、専用worktreeと専用branchを保持したまま、観測した出力と競合したパスをユーザーへ報告して以降の工程を停止する。
 10. rebaseの成功後に、`git -C <対象作業ツリーの絶対パス> symbolic-ref --short HEAD`を1回実行し、出力が手順2で保持した統合先branch名と一致することを照合する。一致しない場合は、対象作業ツリーが別のbranchへ移っており、`git merge`が保持した統合先branchではなく現在のcheckoutを更新するため、統合せず、保持値と観測値をユーザーへ報告して以降の工程を停止する。一致した場合だけ`git -C <対象作業ツリーの絶対パス> merge --ff-only <専用branch名>`を1回実行し、成果を対象作業ツリーへ統合する。手順9を経た後もfast-forward mergeが失敗する場合は、その間に統合先branchが更に更新されている。この場合は手順9を1回だけ再実行し、それでも失敗する場合は観測した出力をユーザーへ報告して停止する。

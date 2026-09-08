@@ -92,17 +92,17 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("pretooluse.py:1691 本文", "blocked: {op}。作業ディレクトリを表す式{event.unresolved_expression!r}を静的に解決できない。"),
     (
         "pretooluse.py:1691 解消手段",
-        "先に`git -C <絶対パス> log --oneline --decorate`を実行し、履歴の書き換えを`git -C <絶対パス>`で再実行する。",
+        "先に`git -C <絶対パス> log --oneline --decorate -n 20`を実行し、履歴の書き換えを`git -C <絶対パス>`で再実行する。",
     ),
     ("pretooluse.py:1697 本文", "blocked: {op}。コマンドが未解決のシェル展開によって作業ディレクトリを変更している。"),
     (
         "pretooluse.py:1697 解消手段",
-        "先に対象リポジトリで`git log --oneline --decorate`を実行し、静的に解決できる作業ディレクトリで再実行する。",
+        "先に対象リポジトリで`git log --oneline --decorate -n 20`を実行し、静的に解決できる作業ディレクトリで再実行する。",
     ),
     ("pretooluse.py:1724 本文", "blocked: {op}。`amend`・`rebase`の前に`commit`の状態を確認する必要がある。"),
     (
         "pretooluse.py:1724 解消手段",
-        "`amend`・`rebase`の前に`git log --oneline --decorate`を実行して`commit`の状態を確認する"
+        "`amend`・`rebase`の前に`git log --oneline --decorate -n 20`を実行して`commit`の状態を確認する"
         "（特に`push`済みの`commit`を`amend`・`rebase`しない）。同じ`Bash`コマンド内の`git log`はこの検査を満たさない。"
         "同じ実効作業ディレクトリに対して、先行する別の`Bash`呼び出しで実行する。",
     ),

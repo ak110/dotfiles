@@ -39,7 +39,7 @@
   - 同じ終端担当への差し戻しでも`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節が定めるUWIの登録へ送る
 - `version`が`bump不要`でない場合は、対象リポジトリの版数規範が定める正本ファイルの版数が当該値と一致する
 - `terminal_steps`が、起動文へ渡した固有の終端工程を過不足なく挙げる
-- `deferred_adopted`が挙げるファイル名の集合が、起動時に完全OIDを対応付けて渡した延期`adopt`対象AWIファイル名の集合と過不足なく一致する。一致を確認した後、各ファイル名が`atk wi list --target-repo=<対象リポジトリの絶対パス> --status=adopted --skip-pull --json`の出力へ`filename`として現れることを確認する
+- `deferred_adopted`が挙げるファイル名の集合が、起動時に完全OIDを対応付けて渡した延期`adopt`対象AWIファイル名の集合と過不足なく一致する。一致を確認した後、全ファイル名を引数として`atk wi show <ファイル名>... --target-repo=<対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行の状態が全件`adopted`であることを確認する。状態フォルダーの全件を返す起動形は、当該フォルダーが終端した項目を累積し続けるため用いない。出力量を抑える場合は`--output-file`へ当該工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む
 
 全ての照合が成立した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
 同節が定めるベースbranchの公開状態の再観測、`agent-toolkit:completion-report`による報告及び`agent-toolkit:exit-session`の起動を実施する。

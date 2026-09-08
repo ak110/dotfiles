@@ -203,10 +203,16 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
         event, op = unresolved
         if event.unresolved_expression is not None:
             reason = f"blocked: {op}。作業ディレクトリを表す式{event.unresolved_expression!r}を静的に解決できない。"
-            fix = "先に`git -C <絶対パス> log --oneline --decorate`を実行し、履歴の書き換えを`git -C <絶対パス>`で再実行する。"
+            fix = (
+                "先に`git -C <絶対パス> log --oneline --decorate -n 20`を実行し、"
+                "履歴の書き換えを`git -C <絶対パス>`で再実行する。"
+            )
         else:
             reason = f"blocked: {op}。コマンドが未解決のシェル展開によって作業ディレクトリを変更している。"
-            fix = "先に対象リポジトリで`git log --oneline --decorate`を実行し、静的に解決できる作業ディレクトリで再実行する。"
+            fix = (
+                "先に対象リポジトリで`git log --oneline --decorate -n 20`を実行し、"
+                "静的に解決できる作業ディレクトリで再実行する。"
+            )
         print(
             _block_notice(
                 reason,
@@ -234,7 +240,7 @@ def _check_bash_amend_rebase_without_log(command: str, session_id: str, cwd: str
             _block_notice(
                 f"blocked: {op}。`amend`・`rebase`の前に`commit`の状態を確認する必要がある。",
                 fix=(
-                    "amend・rebaseの前に`git log --oneline --decorate`を実行してcommitの状態を確認する"
+                    "amend・rebaseの前に`git log --oneline --decorate -n 20`を実行してcommitの状態を確認する"
                     "（特にpush済みのcommitをamend・rebaseしない）。同じBashコマンド内の`git log`はこの検査を満たさない。"
                     "同じ実効作業ディレクトリに対して、先行する別のBash呼び出しで実行する。"
                 ),
