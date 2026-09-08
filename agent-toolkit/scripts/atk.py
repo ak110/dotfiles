@@ -1058,6 +1058,7 @@ def main(
     if args.command == "managed-temp":
         if (
             args.managed_temp_subcommand == "cleanup"
+            and args.path is not None
             and args.path.is_absolute()
             and pathlib.Path(os.path.abspath(args.path)) in automatically_cleaned
         ):
