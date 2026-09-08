@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --no-project --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
 """Claude CodeとCodexのtranscriptから振り返り用の時系列証拠を抽出し、照会する。
 
 既定モードはセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。

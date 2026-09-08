@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py rules_context"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py rules_context"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py rules_context"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py rules_context"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py pretooluse"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py pretooluse"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py posttooluse"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py posttooluse"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py posttooluse"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py posttooluse"
           }
         ]
       }
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py posttooluse"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py posttooluse"
           }
         ]
       }
@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py stop"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py stop"
           }
         ]
       }
@@ -79,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py subagent_stop_advisor"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py subagent_stop_advisor"
           }
         ]
       }
@@ -89,7 +89,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py session_end_cleanup"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py session_end_cleanup"
           }
         ]
       }
@@ -99,7 +99,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py stopfailure_notifier"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py stopfailure_notifier"
           }
         ]
       }
@@ -110,7 +110,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py permissionrequest"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py permissionrequest"
           }
         ]
       }
@@ -120,7 +120,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/scripts/hook.py user_prompt_submit"
+            "command": "uv run --no-project --script ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py user_prompt_submit"
           }
         ]
       }

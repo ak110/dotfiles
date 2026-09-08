@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0", "platformdirs>=4.0"]
-# ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
 計画メタ情報、見出し構造、`関連WI`と提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
@@ -20,9 +15,8 @@ import typing
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
-sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
-from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")

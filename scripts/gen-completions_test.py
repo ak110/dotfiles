@@ -34,7 +34,7 @@ class _Env:
     pyproject: pathlib.Path
     pytools_output: pathlib.Path
     atk_output: pathlib.Path
-    scripts_dir: pathlib.Path
+    package_dir: pathlib.Path
     bin_dir: pathlib.Path
 
 
@@ -45,9 +45,9 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     pyproject = tmp_path / "pyproject.toml"
     pytools_output = tmp_path / "completions" / "_pytools.bash"
     atk_output = tmp_path / "agent-toolkit" / "completions" / "atk.bash"
-    scripts_dir = tmp_path / "agent-toolkit" / "scripts"
+    package_dir = tmp_path / "agent-toolkit" / "agent_toolkit"
     bin_dir = tmp_path / "agent-toolkit" / "bin"
-    scripts_dir.mkdir(parents=True)
+    package_dir.mkdir(parents=True)
     bin_dir.mkdir(parents=True)
     pytools_output.parent.mkdir()
     atk_output.parent.mkdir()
@@ -56,7 +56,7 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     monkeypatch.setattr(module, "_PYPROJECT", pyproject)
     monkeypatch.setattr(module, "_PYTOOLS_OUTPUT", pytools_output)
     monkeypatch.setattr(module, "_ATK_OUTPUT", atk_output)
-    monkeypatch.setattr(module, "_AGENT_TOOLKIT_SCRIPTS", scripts_dir)
+    monkeypatch.setattr(module, "_AGENT_TOOLKIT_PACKAGE", package_dir)
     monkeypatch.setattr(module, "_AGENT_TOOLKIT_BIN", bin_dir)
     return _Env(
         module=module,
@@ -64,17 +64,17 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
         pyproject=pyproject,
         pytools_output=pytools_output,
         atk_output=atk_output,
-        scripts_dir=scripts_dir,
+        package_dir=package_dir,
         bin_dir=bin_dir,
     )
 
 
 class TestMainFileScanConditions:
-    """`main()`経由での`agent-toolkit/scripts/*.py`走査条件を検証する。"""
+    """`main()`経由での`agent-toolkit/agent_toolkit/*.py`走査条件を検証する。"""
 
     def test_marker_and_wrapper_present_is_included(self, _env: _Env) -> None:
         """argcompleteマーカーを持ちbashラッパーが存在するスクリプトは補完対象へ含まれる。"""
-        (_env.scripts_dir / "foo.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
+        (_env.package_dir / "foo.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         (_env.bin_dir / "foo").write_text("#!/bin/sh\n", encoding="utf-8")
         assert _env.module.main([]) == 0
         content = _env.atk_output.read_text(encoding="utf-8")
@@ -82,7 +82,7 @@ class TestMainFileScanConditions:
 
     def test_underscore_prefixed_script_is_excluded(self, _env: _Env) -> None:
         """アンダースコア始まりのスクリプトはマーカー・ラッパーを持っていても走査対象から除外される。"""
-        (_env.scripts_dir / "_internal.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
+        (_env.package_dir / "_internal.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         (_env.bin_dir / "_internal").write_text("#!/bin/sh\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
@@ -90,7 +90,7 @@ class TestMainFileScanConditions:
 
     def test_script_without_marker_is_excluded(self, _env: _Env) -> None:
         """argcompleteマーカーを持たないスクリプトは補完対象から除外される。"""
-        (_env.scripts_dir / "bar.py").write_text("print('no marker')\n", encoding="utf-8")
+        (_env.package_dir / "bar.py").write_text("print('no marker')\n", encoding="utf-8")
         (_env.bin_dir / "bar").write_text("#!/bin/sh\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
@@ -98,7 +98,7 @@ class TestMainFileScanConditions:
 
     def test_script_without_wrapper_is_excluded(self, _env: _Env) -> None:
         """対応するbashラッパーが`agent-toolkit/bin/`配下に存在しないスクリプトは補完対象から除外される。"""
-        (_env.scripts_dir / "baz.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
+        (_env.package_dir / "baz.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
         assert "baz" not in content
@@ -108,7 +108,7 @@ class TestMainOutputRouting:
     """`main()`経由での2出力先への分岐書き込みと再書き込み抑制を検証する。"""
 
     def test_pytools_and_agent_toolkit_commands_route_to_separate_outputs(self, _env: _Env) -> None:
-        """`[project.scripts]`由来のコマンドは`_pytools.bash`へ、`agent-toolkit/scripts/`由来は`atk.bash`へ書き込まれる。"""
+        """`[project.scripts]`由来と`agent_toolkit/`由来のコマンドを別の補完ファイルへ書く。"""
         _env.pyproject.write_text(
             '[project]\nname = "x"\n\n[project.scripts]\nmytool = "mypkg.mytool:main"\n',
             encoding="utf-8",
@@ -116,7 +116,7 @@ class TestMainOutputRouting:
         pkg = _env.repo_root / "mypkg"
         pkg.mkdir()
         (pkg / "mytool.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
-        (_env.scripts_dir / "atktool.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
+        (_env.package_dir / "atktool.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         (_env.bin_dir / "atktool").write_text("#!/bin/sh\n", encoding="utf-8")
 
         assert _env.module.main([]) == 0

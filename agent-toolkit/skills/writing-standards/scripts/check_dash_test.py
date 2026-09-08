@@ -7,12 +7,12 @@
 import pathlib
 import runpy
 import subprocess
-import sys
 
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-from _testing import fork_runner as _fork_runner  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._testing import (
+    fork_runner as _fork_runner,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "check_dash.py"
 

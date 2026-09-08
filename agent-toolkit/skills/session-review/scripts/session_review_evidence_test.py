@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 import pathlib
-import sys
 from typing import Literal
 
 import pytest
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def test_output_file_saves_events_and_prints_path_and_line_count(

@@ -22,11 +22,11 @@
       "lines": 16,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/remote.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/remote.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/sessions.py",
           "count": 1
         }
       ]
@@ -36,7 +36,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/plans_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/plans_test.py",
           "count": 2
         }
       ]
@@ -46,7 +46,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_hooks/pretooluse/agent_checks_test.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks_test.py",
           "count": 2
         }
       ]
@@ -56,11 +56,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/uwi_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/uwi_test.py",
           "count": 1
         }
       ]
@@ -70,7 +70,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 2
         }
       ]
@@ -80,11 +80,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/extras_test.py",
           "count": 1
         }
       ]
@@ -114,7 +114,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/extras_test.py",
           "count": 2
         }
       ]
@@ -124,7 +124,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_agents_server/status_file_test.py",
+          "path": "agent-toolkit/agent_toolkit/_agents_server/status_file_test.py",
           "count": 2
         }
       ]
@@ -134,7 +134,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/managed_temp/inventory_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/inventory_test.py",
           "count": 2
         }
       ]
@@ -144,7 +144,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/browser_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/browser_test.py",
           "count": 2
         }
       ]
@@ -154,27 +154,27 @@
       "lines": 15,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_plan/structure/constants_test.py",
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/constants_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_plan/structure/markdown_test.py",
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/markdown_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_plan/structure/parsing_test.py",
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/parsing_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_plan/structure/references_test.py",
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/references_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_plan/structure/sections_test.py",
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/sections_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_plan/structure/test_support_test.py",
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/test_support_test.py",
           "count": 1
         }
       ]
@@ -184,7 +184,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/targets_test.py",
           "count": 2
         }
       ]
@@ -194,7 +194,7 @@
       "lines": 20,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/ctime_index.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/ctime_index.py",
           "count": 1
         },
         {
@@ -242,11 +242,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/listing_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/listing_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/show_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/show_test.py",
           "count": 1
         }
       ]
@@ -256,7 +256,7 @@
       "lines": 16,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion.py",
           "count": 2
         }
       ]
@@ -266,11 +266,11 @@
       "lines": 15,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/content_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/content_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/transitions_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/transitions_test.py",
           "count": 1
         }
       ]
@@ -300,7 +300,7 @@
       "lines": 18,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/atk_test.py",
+          "path": "agent-toolkit/agent_toolkit/atk_test.py",
           "count": 3
         }
       ]
@@ -310,7 +310,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/plans.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/plans.py",
           "count": 2
         }
       ]
@@ -320,11 +320,11 @@
       "lines": 17,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/dependencies_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/dependencies_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion_test.py",
           "count": 1
         }
       ]
@@ -334,7 +334,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
         }
       ]
@@ -344,7 +344,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
         }
       ]
@@ -368,7 +368,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/process_loop_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
           "count": 2
         }
       ]
@@ -388,7 +388,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/process_loop_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
           "count": 2
         }
       ]
@@ -398,7 +398,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -428,11 +428,11 @@
       "lines": 19,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/remote.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/remote.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/sessions.py",
           "count": 1
         }
       ]
@@ -442,7 +442,7 @@
       "lines": 21,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/targets_test.py",
           "count": 2
         }
       ]
@@ -452,8 +452,34 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:7eb2a3902f01ebe8e2df42317883d413816211f3f5dbfe5bf27325ebb4bad6cc",
+      "lines": 16,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/constants_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/markdown_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/parsing_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/references_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/agent_toolkit/_plan/structure/test_support_test.py",
+          "count": 1
         }
       ]
     },
@@ -472,7 +498,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_agents_server/status_file_test.py",
+          "path": "agent-toolkit/agent_toolkit/_agents_server/status_file_test.py",
           "count": 2
         }
       ]
@@ -482,7 +508,7 @@
       "lines": 19,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/atk_test.py",
+          "path": "agent-toolkit/agent_toolkit/atk_test.py",
           "count": 2
         }
       ]
@@ -492,11 +518,11 @@
       "lines": 15,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/content_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/content_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/targets_test.py",
           "count": 1
         }
       ]
@@ -506,7 +532,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_hooks/pretooluse/shell_checks.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks.py",
           "count": 2
         }
       ]
@@ -526,15 +552,15 @@
       "lines": 16,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/managed_temp/__init__.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/__init__.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/__init__.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/__init__.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/__init__.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/__init__.py",
           "count": 1
         }
       ]
@@ -568,7 +594,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 2
         }
       ]
@@ -578,11 +604,11 @@
       "lines": 15,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/hook.py",
+          "path": "agent-toolkit/agent_toolkit/hook.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/hook_test.py",
+          "path": "agent-toolkit/agent_toolkit/hook_test.py",
           "count": 1
         }
       ]
@@ -602,7 +628,7 @@
       "lines": 19,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/hook.py",
+          "path": "agent-toolkit/agent_toolkit/hook.py",
           "count": 1
         },
         {
@@ -616,11 +642,11 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/managed_temp/inventory_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/inventory_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/managed_temp/windows_security_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/windows_security_test.py",
           "count": 1
         }
       ]
@@ -650,37 +676,11 @@
       ]
     },
     {
-      "fingerprint": "sha256:9bdc644dce9c01f82c1493510023e48bbb1f7c9e78c0aa7cbd794181768b16d8",
-      "lines": 17,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/scripts/_plan/structure/constants_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/scripts/_plan/structure/markdown_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/scripts/_plan/structure/parsing_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/scripts/_plan/structure/references_test.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/scripts/_plan/structure/test_support_test.py",
-          "count": 1
-        }
-      ]
-    },
-    {
       "fingerprint": "sha256:9cfa32a3072914de9ea53de1d9bcde63c4947fea46f989cbebf8165decf0d15f",
       "lines": 20,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -700,7 +700,7 @@
       "lines": 53,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/sessions.py",
           "count": 1
         },
         {
@@ -714,7 +714,7 @@
       "lines": 15,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -724,7 +724,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 3
         }
       ]
@@ -734,7 +734,7 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_common/file_lock_test.py",
+          "path": "agent-toolkit/agent_toolkit/_common/file_lock_test.py",
           "count": 2
         }
       ]
@@ -744,11 +744,11 @@
       "lines": 25,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/remote.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/remote.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/sessions.py",
           "count": 1
         }
       ]
@@ -796,11 +796,11 @@
       "lines": 14,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/app_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/state_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/state_test.py",
           "count": 1
         }
       ]
@@ -810,11 +810,11 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/managed_temp/creation_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/creation_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/managed_temp/registry_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/managed_temp/registry_test.py",
           "count": 1
         }
       ]
@@ -824,7 +824,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/extras_test.py",
           "count": 2
         }
       ]
@@ -834,7 +834,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/process_loop_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py",
           "count": 2
         }
       ]
@@ -844,7 +844,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/process_loop_restart_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/process_loop_restart_test.py",
           "count": 2
         }
       ]
@@ -864,7 +864,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 2
         }
       ]
@@ -874,18 +874,8 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 4
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b9588235d6aceb2c1fdd72df056a23e5c0aab77d933f4218b8ea0219bd9f1ce4",
-      "lines": 10,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/skills/plan-mode/scripts/create_plan_files_test.py",
-          "count": 2
         }
       ]
     },
@@ -894,7 +884,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -914,7 +904,7 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -924,7 +914,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/targets.py",
           "count": 2
         }
       ]
@@ -976,7 +966,7 @@
       "lines": 31,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/ctime_index.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/ctime_index.py",
           "count": 1
         },
         {
@@ -990,7 +980,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 12
         }
       ]
@@ -1010,11 +1000,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_hooks/posttooluse_conditional_prohibition_test.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/posttooluse_conditional_prohibition_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_hooks/posttooluse_session_edited_files_test.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/posttooluse_session_edited_files_test.py",
           "count": 1
         }
       ]
@@ -1024,7 +1014,7 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion_test.py",
           "count": 2
         }
       ]
@@ -1054,7 +1044,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_hooks/session_end_cleanup_test.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/session_end_cleanup_test.py",
           "count": 2
         }
       ]
@@ -1064,7 +1054,7 @@
       "lines": 17,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -1074,11 +1064,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/app_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/config_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/config_test.py",
           "count": 1
         }
       ]
@@ -1088,7 +1078,7 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/wait_ci_test.py",
+          "path": "agent-toolkit/agent_toolkit/wait_ci_test.py",
           "count": 2
         }
       ]
@@ -1108,7 +1098,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
         }
       ]
@@ -1118,7 +1108,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/agents_server_mcp_test.py",
+          "path": "agent-toolkit/agent_toolkit/agents_server_mcp_test.py",
           "count": 2
         }
       ]
@@ -1138,7 +1128,7 @@
       "lines": 15,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_hooks/pretooluse/shell_checks_test.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py",
           "count": 2
         }
       ]
@@ -1162,7 +1152,7 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 8
         }
       ]
@@ -1172,11 +1162,11 @@
       "lines": 11,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/app_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/assets_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/assets_test.py",
           "count": 1
         }
       ]
@@ -1186,11 +1176,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/config.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/config.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/config_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/config_test.py",
           "count": 1
         }
       ]
@@ -1200,11 +1190,11 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/plan_conversion_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/plan_conversion_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/wi/mutations/targets_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/mutations/targets_test.py",
           "count": 1
         }
       ]
@@ -1214,7 +1204,7 @@
       "lines": 27,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/plans/ctime_index.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/plans/ctime_index.py",
           "count": 1
         },
         {
@@ -1238,7 +1228,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_hooks/stop_gate_task_id_fallback_test.py",
+          "path": "agent-toolkit/agent_toolkit/_hooks/stop_gate_task_id_fallback_test.py",
           "count": 2
         }
       ]
@@ -1248,7 +1238,7 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/browser_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/browser_test.py",
           "count": 2
         }
       ]
@@ -1258,11 +1248,11 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/serve/app_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/app_test.py",
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_atk/serve/cli_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/serve/cli_test.py",
           "count": 1
         }
       ]
@@ -1272,7 +1262,7 @@
       "lines": 12,
       "occurrences": [
         {
-          "path": "agent-toolkit/scripts/_atk/wi/add_test.py",
+          "path": "agent-toolkit/agent_toolkit/_atk/wi/add_test.py",
           "count": 3
         }
       ]

@@ -10,7 +10,7 @@
         "run",
         "--no-project",
         "--script",
-        "${CLAUDE_PLUGIN_ROOT}/scripts/agents_server_mcp.py"
+        "${CLAUDE_PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py"
       ]
     }
   }

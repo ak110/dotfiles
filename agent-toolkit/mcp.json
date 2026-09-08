@@ -18,7 +18,7 @@
         "run",
         "--no-project",
         "--script",
-        "${PLUGIN_ROOT}/scripts/agents_server_mcp.py"
+        "${PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py"
       ]
     }
   }

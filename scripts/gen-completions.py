@@ -6,7 +6,7 @@
 """bash補完ファイル（`completions/_pytools.bash`・`agent-toolkit/completions/atk.bash`）を生成する。
 
 `pyproject.toml`の`[project.scripts]`に登録された`pytools`系コマンドと、
-`agent-toolkit/scripts/*.py`のうち`# PYTHON_ARGCOMPLETE_OK`マーカーを持ち
+`agent-toolkit/agent_toolkit/*.py`のうち`# PYTHON_ARGCOMPLETE_OK`マーカーを持ち
 対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンドを補完対象とする。
 出力先ファイルは手編集禁止（prekフックで再生成される）。
 
@@ -28,7 +28,7 @@ from pytools._internal import claude_common  # pylint: disable=wrong-import-posi
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _PYTOOLS_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
 _ATK_OUTPUT = _REPO_ROOT / "agent-toolkit" / "completions" / "atk.bash"
-_AGENT_TOOLKIT_SCRIPTS = _REPO_ROOT / "agent-toolkit" / "scripts"
+_AGENT_TOOLKIT_PACKAGE = _REPO_ROOT / "agent-toolkit" / "agent_toolkit"
 _AGENT_TOOLKIT_BIN = _REPO_ROOT / "agent-toolkit" / "bin"
 
 _MARKER = "# PYTHON_ARGCOMPLETE_OK"
@@ -113,11 +113,11 @@ def _collect_pytools_commands() -> list[str]:
 
 
 def _collect_agent_toolkit_commands() -> list[str]:
-    """`agent-toolkit/scripts/*.py`のうち、argcompleteマーカーを持ち対応するbashラッパーがあるコマンド名を返す。"""
+    """`agent_toolkit/*.py`のうち、argcompleteマーカーを持ち対応するbashラッパーがあるコマンド名を返す。"""
     result: list[str] = []
-    if not _AGENT_TOOLKIT_SCRIPTS.is_dir():
+    if not _AGENT_TOOLKIT_PACKAGE.is_dir():
         return result
-    for script_path in _AGENT_TOOLKIT_SCRIPTS.glob("*.py"):
+    for script_path in _AGENT_TOOLKIT_PACKAGE.glob("*.py"):
         if script_path.name.startswith("_"):
             continue
         if not _has_marker(script_path):

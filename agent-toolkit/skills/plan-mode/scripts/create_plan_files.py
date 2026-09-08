@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0", "platformdirs>=4.0"]
-# ///
 """plan-modeが使う新規計画ファイルの内部作成処理。
 
 このスクリプトは公開CLIではなく、plan-modeが管理対象一時領域へ準備した
@@ -22,12 +17,9 @@ import sys
 import tempfile
 from collections.abc import Iterator
 
-_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
-
-from _common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 PLAN_STEM_PLACEHOLDER = "__PLAN_STEM__"
 """本文中で最終計画stemが未確定であることを示す固定プレースホルダー。"""
@@ -205,8 +197,6 @@ def _check_structure(
     home: pathlib.Path | str | None,
 ) -> None:
     """確定した二ファイル計画を既存の構造検査へ渡す。"""
-    scripts_directory = pathlib.Path(__file__).resolve().parent
-    sys.path.insert(0, str(scripts_directory))
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     errors, _warnings = check_plan_file.check(
