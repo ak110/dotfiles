@@ -2,9 +2,9 @@
 // 画面ごとにスコープを閉じる。`window.__atkScreens`への登録だけを外部へ公開する。
 // 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
 (() => {
-// ページロード時の初期値はサーバーが`plans.html`のJSONブロックへ埋め込む。
+// ページロード時の初期値は単一HTMLのJSONブロックへ埋め込む。
 // 資産ファイルは要求ごとに変わらないため、要求ごとに変わる値だけをHTML側から受け取る。
-// 先読みした画面DOMとJSONブロックは保持されるため、初回の`mount`で読み取る。
+// JSONブロックは初回の`init`で読み取る。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSource/SW登録に前置する。
 let BASE_PATH = "";
 // ホスト名 -> 保存元ID -> {portable_root, home, os_type, os_name}。旧単一root形式の
@@ -30,8 +30,7 @@ let rootStatus = {};
 let visibleFiles = [];
 let mermaidLoadPromise = null;
 let previewGeneration = 0;
-// 画面内の描画順序の逆転は`previewGeneration`、画面間の入れ替えはマウント世代で判定する。
-let isCurrentMount = () => false;
+// 画面内の描画順序の逆転は`previewGeneration`で判定する。
 let previewObjectUrls = new Set();
 let searchGeneration = 0;
 let searchTimer = null;
@@ -50,7 +49,6 @@ const VISIBLE_FILES_INITIAL = 100;
 const VISIBLE_FILES_STEP = 100;
 let visibleLimit = VISIBLE_FILES_INITIAL;
 let sentinelObserver = null;
-let initialized = false;
 
 const HOST_BADGE_LABELS = {
   connecting: "再接続中",
@@ -100,7 +98,7 @@ function isMobileViewport() {
 }
 
 function setDrawerOpen(open) {
-  document.body.classList.toggle("drawer-open", open);
+  document.getElementById("screen-plans").classList.toggle("drawer-open", open);
 }
 
 function updateMetaMobile() {
@@ -217,7 +215,7 @@ function renderFiles() {
   // ファイル数が多い環境でのフィルタ入力遅延・スクロール位置のジャンプを抑える。
   // DOM化対象はフィルタ後の先頭`visibleLimit`件のみ。未描画分は末尾の番兵を`IntersectionObserver`で
   // 検出して段階拡張する（数百件規模の差分更新コストを抑えるため）。
-  const q = document.getElementById("filter").value.toLowerCase();
+  const q = document.getElementById("plans-filter").value.toLowerCase();
   const root = document.getElementById("files");
   const sentinel = document.getElementById("files-sentinel");
   visibleFiles = [];
@@ -295,7 +293,7 @@ function setupSentinelObserver() {
   // `rootMargin`で末尾到達前に先読みし、スクロール停止前に拡張が完了するようにする。
   const sentinel = document.getElementById("files-sentinel");
   if (!sentinel || sentinelObserver) return;
-  const aside = document.querySelector("aside");
+  const aside = document.querySelector("#screen-plans aside");
   sentinelObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
@@ -308,35 +306,31 @@ function setupSentinelObserver() {
 }
 
 async function refreshFiles() {
-  const currentMount = isCurrentMount;
-  const res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/files"));
-  if (!currentMount()) return;
-  files = await currentMount.wait(res.json());
-  if (!currentMount()) return;
+  const res = await (fetch(BASE_PATH + "/api/plans/files"));
+  files = await (res.json());
   renderFiles();
 }
 
 async function searchFullText(query, generation) {
-  const currentMount = isCurrentMount;
   const status = document.getElementById("search-status");
   status.textContent = "検索中";
   try {
     let res = null;
     for (let attempt = 0; ; attempt++) {
-      res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
-      if (!currentMount() || generation !== searchGeneration) return;
+      res = await (fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
+      if (generation !== searchGeneration) return;
       if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
-      await currentMount.wait(new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS)));
-      if (!currentMount() || generation !== searchGeneration) return;
+      await (new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS)));
+      if (generation !== searchGeneration) return;
     }
     if (!res.ok) throw new Error("status " + res.status);
-    const matched = await currentMount.wait(res.json());
-    if (!currentMount() || generation !== searchGeneration) return;
+    const matched = await (res.json());
+    if (generation !== searchGeneration) return;
     serverSearchKeys = new Set(matched.map(fileKey));
     status.textContent = "";
     renderFiles();
   } catch (_) {
-    if (!currentMount() || generation !== searchGeneration) return;
+    if (generation !== searchGeneration) return;
     serverSearchKeys = new Set();
     status.textContent = "検索に失敗しました";
     renderFiles();
@@ -344,8 +338,7 @@ async function searchFullText(query, generation) {
 }
 
 function scheduleFullTextSearch() {
-  const currentMount = isCurrentMount;
-  const query = document.getElementById("filter").value.trim();
+  const query = document.getElementById("plans-filter").value.trim();
   const generation = ++searchGeneration;
   if (searchTimer !== null) clearTimeout(searchTimer);
   serverSearchKeys = query ? new Set() : null;
@@ -355,18 +348,15 @@ function scheduleFullTextSearch() {
   if (!query) return;
   searchTimer = setTimeout(() => {
     searchTimer = null;
-    if (currentMount()) searchFullText(query, generation);
+    searchFullText(query, generation);
   }, SEARCH_DEBOUNCE_MS);
 }
 
 async function refreshHostStatus() {
-  const currentMount = isCurrentMount;
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/host-status"));
-  if (!currentMount()) return;
+  const res = await (fetch(BASE_PATH + "/api/plans/host-status"));
   if (res.ok) {
-    hostStatus = await currentMount.wait(res.json());
-    if (!currentMount()) return;
+    hostStatus = await (res.json());
   }
 }
 
@@ -376,20 +366,16 @@ async function refreshHostStatus() {
 const HOST_INFO_REFRESH_MAX_ATTEMPTS = 3;
 
 async function refreshHostInfo() {
-  const currentMount = isCurrentMount;
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
   // fetch開始前後でhostInfoEventCounterを比較し、変化していれば当該フェッチのスナップショットは
   // 新しいSSE更新より古い可能性があるため、カウンタが安定するまで取得し直す。上限到達時は
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    let res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/root-info"));
-    if (!currentMount()) return;
-    if (!res.ok) res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/host-info"));
-    if (!currentMount()) return;
+    let res = await (fetch(BASE_PATH + "/api/plans/root-info"));
+    if (!res.ok) res = await (fetch(BASE_PATH + "/api/plans/host-info"));
     if (!res.ok) return;
-    const info = await currentMount.wait(res.json());
-    if (!currentMount()) return;
+    const info = await (res.json());
     if (hostInfoEventCounter !== counterBefore) continue;
     for (const host of Object.keys(ROOT_DIRS)) {
       if (!(host in info)) delete ROOT_DIRS[host];
@@ -401,32 +387,27 @@ async function refreshHostInfo() {
 }
 
 async function refreshRootStatus() {
-  const currentMount = isCurrentMount;
-  const res = await currentMount.wait(fetch(BASE_PATH + "/api/plans/root-status"));
-  if (!currentMount()) return;
+  const res = await (fetch(BASE_PATH + "/api/plans/root-status"));
   if (res.ok) {
-    rootStatus = await currentMount.wait(res.json());
-    if (!currentMount()) return;
+    rootStatus = await (res.json());
     renderRootWarnings();
   }
 }
 
 async function applyPreviewHtml(html, scrollTop, generation) {
-  const currentMount = isCurrentMount;
-  if (!currentMount() || generation !== previewGeneration) return;
+  if (generation !== previewGeneration) return;
   revokePreviewObjectUrls();
   const preview = document.getElementById("preview");
   preview.innerHTML = html;
-  await currentMount.wait(renderDiagrams(preview, generation));
-  if (!currentMount() || generation !== previewGeneration) return;
-  const main = document.querySelector("main");
+  await (renderDiagrams(preview, generation));
+  if (generation !== previewGeneration) return;
+  const main = document.querySelector("#screen-plans main");
   if (main) main.scrollTop = scrollTop;
 }
 
 async function renderDiagrams(preview, generation) {
-  const currentMount = isCurrentMount;
   renderSvgDiagrams(preview.querySelectorAll(".diagram-svg"), generation);
-  await currentMount.wait(renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation));
+  await (renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation));
 }
 
 function loadMermaid() {
@@ -449,24 +430,23 @@ function loadMermaid() {
 
 async function renderMermaidDiagrams(nodes, generation) {
   if (nodes.length === 0) return;
-  const currentMount = isCurrentMount;
   let api;
   try {
-    api = await currentMount.wait(loadMermaid());
+    api = await (loadMermaid());
   } catch (error) {
-    if (!currentMount() || generation !== previewGeneration) return;
+    if (generation !== previewGeneration) return;
     for (const node of nodes) showDiagramError(node.closest("figure"), error.message);
     return;
   }
-  if (!currentMount() || generation !== previewGeneration) return;
+  if (generation !== previewGeneration) return;
   for (const node of nodes) {
     const source = node.textContent;
     try {
-      await currentMount.wait(api.run({nodes: [node]}));
+      await (api.run({nodes: [node]}));
       disableMermaidNavigation(node);
-      if (!currentMount() || generation !== previewGeneration) return;
+      if (generation !== previewGeneration) return;
     } catch (_) {
-      if (!currentMount() || generation !== previewGeneration) return;
+      if (generation !== previewGeneration) return;
       node.textContent = source;
       showDiagramError(node.closest("figure"), "Mermaid図を描画できませんでした");
     }
@@ -517,26 +497,22 @@ function showDiagramError(figure, message) {
 
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
-  const currentMount = isCurrentMount;
-  const main = document.querySelector("main");
+  const main = document.querySelector("#screen-plans main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
-  const res = await currentMount.wait(
-    fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource)),
-  );
-  if (!currentMount() || generation !== previewGeneration) return;
+  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
+  if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     return;
   }
-  const html = await currentMount.wait(res.text());
-  if (!currentMount() || generation !== previewGeneration) return;
-  await currentMount.wait(applyPreviewHtml(html, scrollTop, generation));
-  if (!currentMount() || generation !== previewGeneration) return;
+  const html = await (res.text());
+  if (generation !== previewGeneration) return;
+  await (applyPreviewHtml(html, scrollTop, generation));
+  if (generation !== previewGeneration) return;
 }
 
 async function openFile(host, path, source) {
-  const currentMount = isCurrentMount;
   // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
@@ -554,37 +530,32 @@ async function openFile(host, path, source) {
   renderFiles();
   // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
   if (isMobileViewport()) setDrawerOpen(false);
-  const main = document.querySelector("main");
+  const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
-  const res = await currentMount.wait(
-    fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource)),
-  );
-  if (!currentMount() || generation !== previewGeneration) return;
+  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
+  if (generation !== previewGeneration) return;
   if (!res.ok) {
     document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
     if (main) main.scrollTop = 0;
     return;
   }
-  const html = await currentMount.wait(res.text());
-  if (!currentMount() || generation !== previewGeneration) return;
-  await currentMount.wait(applyPreviewHtml(html, 0, generation));
+  const html = await (res.text());
+  if (generation !== previewGeneration) return;
+  await (applyPreviewHtml(html, 0, generation));
 }
 
 async function resyncFromServer() {
-  const currentMount = isCurrentMount;
-  await currentMount.wait(refreshFiles());
-  if (!currentMount()) return;
+  await (refreshFiles());
   if (!selectedPath || !selectedHost) return;
   const current = files.find(f => isSelected(f));
   if (current && current.mtime_epoch !== selectedMtime) {
     selectedMtime = current.mtime_epoch;
-    await currentMount.wait(updatePreview());
+    await (updatePreview());
   }
 }
 
 async function copySelectedRaw() {
   if (!selectedPath || !selectedHost) return;
-  const currentMount = isCurrentMount;
   const btn = document.getElementById("copy-btn");
   const wideLabel = btn.querySelector(".wide-label");
   const shortLabel = btn.querySelector(".short-label");
@@ -593,12 +564,10 @@ async function copySelectedRaw() {
   btn.dataset.wideLabel = originalWide;
   btn.dataset.shortLabel = originalShort;
   try {
-    const res = await currentMount.wait(
-      fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource)),
-    );
+    const res = await fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (!res.ok) throw new Error("status " + res.status);
-    const text = await currentMount.wait(res.text());
-    await currentMount.wait(navigator.clipboard.writeText(text));
+    const text = await (res.text());
+    await (navigator.clipboard.writeText(text));
     wideLabel.textContent = "コピーしました";
     shortLabel.textContent = "完了";
   } catch (e) {
@@ -613,7 +582,6 @@ async function copySelectedRaw() {
 
 async function copySelectedPath() {
   if (!selectedPath || !selectedHost) return;
-  const currentMount = isCurrentMount;
   const info = rootInfo(selectedHost, selectedSource);
   if (!info) return;
   const btn = document.getElementById("copy-path-btn");
@@ -638,7 +606,7 @@ async function copySelectedPath() {
     absolutePath = (info.root + "/" + selectedPath).replace(info.home, "~");
   }
   try {
-    await currentMount.wait(navigator.clipboard.writeText(absolutePath));
+    await (navigator.clipboard.writeText(absolutePath));
     wideLabel.textContent = "コピーしました";
     shortLabel.textContent = "完了";
   } catch (e) {
@@ -658,8 +626,7 @@ async function copySelectedPath() {
 // バックフォワード遷移後も自動反映を維持する（beforeunloadはbfcacheを無効化するため避ける）。
 let eventSource = null;
 
-async function handleSseMessage(event, currentMount) {
-  if (!currentMount()) return;
+async function handleSseMessage(event) {
   // 旧形式（dataが"refresh"文字列固定）と新形式（JSON）を両対応する。
   // JSON解析失敗時もrefresh扱いで再同期する（パース不能なフレームを握り潰さない）。
   let payload = null;
@@ -700,25 +667,20 @@ async function handleSseMessage(event, currentMount) {
     renderRootWarnings();
     return;
   }
-  await currentMount.wait(resyncFromServer());
+  await (resyncFromServer());
 }
 
 function connectEvents() {
-  const currentMount = isCurrentMount;
   const es = new EventSource(BASE_PATH + "/api/plans/events");
   // EventSourceは接続断後にブラウザが自動再接続するが、再接続中に発生したSSEイベントは
   // 取り逃される。初回／再接続のいずれでもonopen時にホスト状態とファイル一覧を強制再同期する。
   es.onopen = async () => {
-    if (!currentMount()) return;
-    await currentMount.wait(refreshHostStatus());
-    if (!currentMount()) return;
-    await currentMount.wait(refreshHostInfo());
-    if (!currentMount()) return;
-    await currentMount.wait(refreshRootStatus());
-    if (!currentMount()) return;
-    await currentMount.wait(resyncFromServer());
+    await (refreshHostStatus());
+    await (refreshHostInfo());
+    await (refreshRootStatus());
+    await (resyncFromServer());
   };
-  es.onmessage = (event) => { void handleSseMessage(event, currentMount); };
+  es.onmessage = (event) => { void handleSseMessage(event); };
   return es;
 }
 
@@ -738,14 +700,10 @@ function handlePageShow(event) {
 
 // 強制再同期の本体。ホスト別接続状態とファイル一覧を順に取り直し、即時に追従させる。
 async function forceResync() {
-  const currentMount = isCurrentMount;
-  await currentMount.wait(refreshHostStatus());
-  if (!currentMount()) return;
-  await currentMount.wait(refreshHostInfo());
-  if (!currentMount()) return;
-  await currentMount.wait(refreshRootStatus());
-  if (!currentMount()) return;
-  await currentMount.wait(resyncFromServer());
+  await (refreshHostStatus());
+  await (refreshHostInfo());
+  await (refreshRootStatus());
+  await (resyncFromServer());
 }
 
 // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
@@ -763,7 +721,7 @@ function handleWindowFocus() {
 }
 
 function bindScreenEvents() {
-  document.getElementById("filter").addEventListener("input", () => {
+  document.getElementById("plans-filter").addEventListener("input", () => {
     // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
     // 段階展開によって伸びた上限を引きずると、フィルタ後の少数結果に対しても無駄な走査が残るため。
     scheduleFullTextSearch();
@@ -772,10 +730,10 @@ function bindScreenEvents() {
   document.getElementById("copy-path-btn").addEventListener("click", copySelectedPath);
   document.getElementById("prev-btn").addEventListener("click", () => navigateRelative(-1));
   document.getElementById("next-btn").addEventListener("click", () => navigateRelative(1));
-  document.getElementById("menu-btn").addEventListener("click", () => {
-    setDrawerOpen(!document.body.classList.contains("drawer-open"));
+  document.getElementById("plans-menu-btn").addEventListener("click", () => {
+    setDrawerOpen(!document.getElementById("screen-plans").classList.contains("drawer-open"));
   });
-  document.getElementById("drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("plans-drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
   document.getElementById("preview").addEventListener("click", (event) => {
     // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
     // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
@@ -786,62 +744,29 @@ function bindScreenEvents() {
   });
 }
 
-async function mount(currentMount) {
-  isCurrentMount = currentMount;
-  if (!initialized) {
-    const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
-    BASE_PATH = bootstrap.base_path;
-    ROOT_DIRS = bootstrap.root_dirs;
-    bindScreenEvents();
-    initialized = true;
-  }
+async function init() {
+  const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
+  BASE_PATH = bootstrap.base_path;
+  ROOT_DIRS = bootstrap.root_dirs;
+  bindScreenEvents();
   window.addEventListener("pagehide", handlePageHide);
   window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("focus", handleWindowFocus);
   document.addEventListener("visibilitychange", handleVisibilityChange);
 
-  await currentMount.wait(refreshHostStatus());
-  if (!currentMount()) return;
-  await currentMount.wait(refreshHostInfo());
-  if (!currentMount()) return;
-  await currentMount.wait(refreshRootStatus());
-  if (!currentMount()) return;
-  await currentMount.wait(refreshFiles());
-  if (!currentMount()) return;
+  await (refreshHostStatus());
+  await (refreshHostInfo());
+  await (refreshRootStatus());
+  await (refreshFiles());
   if (!selectedPath && files.length > 0 && !isMobileViewport()) {
-    await currentMount.wait(openFile(files[0].host, files[0].path, fileSource(files[0])));
+    await (openFile(files[0].host, files[0].path, fileSource(files[0])));
   }
-  if (!currentMount()) return;
   setDrawerOpen(isMobileViewport());
   setupSentinelObserver();
 
   eventSource = connectEvents();
 }
 
-function unmount() {
-  isCurrentMount = () => false;
-  setDrawerOpen(false);
-  previewGeneration += 1;
-  searchGeneration += 1;
-  window.removeEventListener("pagehide", handlePageHide);
-  window.removeEventListener("pageshow", handlePageShow);
-  window.removeEventListener("focus", handleWindowFocus);
-  document.removeEventListener("visibilitychange", handleVisibilityChange);
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
-  if (sentinelObserver) {
-    sentinelObserver.disconnect();
-    sentinelObserver = null;
-  }
-  if (searchTimer !== null) {
-    clearTimeout(searchTimer);
-    searchTimer = null;
-  }
-  revokePreviewObjectUrls();
-}
-
 window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.plans = {mount, unmount};
+window.__atkScreens.plans = {init};
 })();

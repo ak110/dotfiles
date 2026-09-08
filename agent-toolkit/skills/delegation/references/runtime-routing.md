@@ -58,7 +58,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `plan_review_model` | 計画レビュー | 計画レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の③の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び③の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の公開工程の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び公開工程の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出と、別セッション経路の振り返り全体 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 
@@ -66,7 +66,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 これに加えて`orchestrate`も受理する。当該種別は`atk wi process-loop`がオーケストレーターの新しいセッションを起動する設定であり、本節の委譲工程では渡さない。
 `start_explore`が使う`explore`と`explore_fast`は`fast`引数が選ぶため、`model_type`へ渡さない。
 各工程の起動を定める文書は、当該工程が渡す`model_type`の値を当該起動節へ明記する。起動する主体は、担当の名称又は工程名から値を組み立てず、明記が無い場合は`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」に従って本節を読んでから確定する。
-現に保存されているキーと実効値は`atk config show`で確認する。
+現に保存されているキーと実効値は`atk config show`で確認する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、当該設定キーと候補を標準エラーへ警告として書く。
 
 `execute_fast_model`と`execute_model`のどちらを初回実装へ用いるかは、計画ファイル（詳細）の`### 実装担当のモデル区分`の`判定`から確定する。
 `判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。

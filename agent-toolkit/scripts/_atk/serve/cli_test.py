@@ -67,15 +67,9 @@ def test_text_assets_are_bundled_as_plugin_files() -> None:
         "index.html": assets.HTML,
         "app.css": assets.CSS,
         "app.js": assets.JS,
-        "shell.css": assets.SHELL_CSS,
         "shell.js": assets.SHELL_JS,
-        "plans.html": assets.PLANS_HTML,
-        "plans.css": assets.PLANS_CSS,
         "plans.js": assets.PLANS_JS,
-        "sessions.html": assets.SESSIONS_HTML,
-        "sessions.css": assets.SESSIONS_CSS,
         "sessions.js": assets.SESSIONS_JS,
-        "markdown.css": assets.MARKDOWN_CSS,
     }
     # Mermaidは容量が大きく要求時に読むため、内容の一致検査ではなく実在だけを確認する。
     assert {path.name for path in static_dir.iterdir()} == {*expected, "vendor"}
@@ -461,13 +455,8 @@ def test_plan_and_session_api_routes_are_registered(tmp_path: pathlib.Path) -> N
         "/api/sessions/detail",
         "/api/sessions/host-status",
         "/api/sessions/events",
-        "/static/shell.css",
-        "/static/plans.css",
         "/static/plans.js",
-        "/static/sessions.css",
         "/static/sessions.js",
-        "/static/markdown.css",
-        "/static/pygments.css",
         "/static/vendor/mermaid.min.js",
     }
     assert expected <= rules

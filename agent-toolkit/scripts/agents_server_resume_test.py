@@ -8,6 +8,7 @@ import json
 import pathlib
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import agents_server_mcp as subject
 import pytest
@@ -363,11 +364,11 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
 
 
 @pytest.mark.asyncio
-async def test_codex_child_session_triggers_auto_resume(
+async def test_codex_child_session_is_published_as_unobserved(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """CodexのMCP完了項目から孫sessionを追跡して同じthreadを再開する。"""
+    """Codexは孫sessionを未観測として記録し、turn終端結果を直ちに公開する。"""
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root", "root.json", None),
@@ -387,9 +388,6 @@ async def test_codex_child_session_triggers_auto_resume(
     )
     manager.sessions[session.session_id] = session
     writer.activate()
-    result_path = status_file.results_directory("root", tmp_path) / f"{session.session_id}.json"
-    result_path.parent.mkdir(parents=True)
-    result_path.write_text("{}\n", encoding="utf-8")
     child_session_id = "codex-child"
     session_registry.publish(child_session_id, terminal=False)
     await backend._handle_notification(
@@ -423,22 +421,13 @@ async def test_codex_child_session_triggers_auto_resume(
         }
     )
 
-    async def complete_reply(actual: state.SessionState, prompt: str) -> dict[str, Any]:
-        assert child_session_id in prompt
-        state._begin_reply(actual)
-        actual.status = "completed"
-        actual.agent_message = "Codex再開結果"
-        actual.turn_completed = True
-        actual.touch()
-        return {"delivery": "reply_started", **actual.public_status()}
-
-    monkeypatch.setattr(backend, "send_message", complete_reply)
-    session_registry.publish(child_session_id, terminal=True)
+    send_message = AsyncMock()
+    monkeypatch.setattr(backend, "send_message", send_message)
     try:
         result = await manager.wait(session.session_id, timeout=1)
-        assert result["agent_message"] == "Codex再開結果"
+        assert result["error"] == {"unobservedSessions": [child_session_id]}
         assert session.live_child_session_ids == set()
-        assert not result_path.exists()
+        send_message.assert_not_awaited()
     finally:
         await manager.close()
 

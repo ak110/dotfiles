@@ -600,9 +600,11 @@ def parse_plan_implementation_units(
     errors = [f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の固定表は1件必要: 実際={len(matching)}件"] if len(matching) != 1 else []
     if not table.rows:
         errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に1行以上の内容が必要")
-    for row in table.rows:
+    for index, row in enumerate(table.rows):
         if len(row) != len(table.header) or any(not cell for cell in row):
-            errors.append(f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {list(row)}")
+            errors.append(
+                f"`### {PLAN_IMPLEMENTATION_UNITS_H3}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}"
+            )
 
     is_human = table.header == PLAN_HUMAN_IMPLEMENTATION_UNITS_TABLE_HEADER
     units: list[PlanImplementationUnit] = []

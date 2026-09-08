@@ -9,6 +9,8 @@ import pytest
 
 from pytools._internal import claude_common, install_codex_plugins
 
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
+
 
 @pytest.fixture(autouse=True)
 def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -249,7 +251,7 @@ def test_legacy_removal_failure_restores_links(plugin_env: Path, monkeypatch: py
         install_codex_plugins.run()
 
     assert destination.is_symlink()
-    assert destination.resolve() == (plugin_env / "agent-toolkit/skills/coding").resolve()
+    assert destination.resolve() == (plugin_env / f"{_TOOLKIT_PREFIX}/skills/coding").resolve()
 
 
 def test_removes_broken_legacy_link_and_keeps_unrelated_entries(
@@ -279,7 +281,7 @@ def test_codex_home_environment_controls_legacy_cleanup(plugin_env: Path, monkey
     """CODEX_HOME指定時は指定先のlegacy linkを除去する。"""
     codex_home = plugin_env.parent / "custom-codex"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    source = plugin_env / "agent-toolkit/skills/coding"
+    source = plugin_env / f"{_TOOLKIT_PREFIX}/skills/coding"
     source.mkdir(parents=True)
     destination = codex_home / "skills/coding"
     destination.parent.mkdir(parents=True)

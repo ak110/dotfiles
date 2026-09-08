@@ -19,7 +19,7 @@ description: >
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`: 順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけに適用する規範。
-  振り分けの判定は`agent-toolkit:agent-standards`「規範追記時の判定」に従う
+  振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
@@ -134,7 +134,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uvx pyfltr run`で自動的に失敗する。
+整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。
@@ -227,7 +227,7 @@ push前にbumpが必須（同じバージョンでは`claude plugin update`が�
 5. MCP経由の`run_for_agent`へ`work_dir`として対象リポジトリルートの絶対パス、`paths`として
    `["."]`を渡し、SSOTテストを含む全テストが成功することを確認する。
    必要に応じて`commands`配列でSSOTテストなど特定ツールを指定する。
-   MCPを利用できない場合は`uvx pyfltr run-for-agent`を使う
+   MCPを利用できない場合は`uv run --frozen pyfltr run-for-agent`を使う
 6. 変更をコミットする
 
 次のいずれかを変更した場合は、変更後の互換起動条件を確認する。

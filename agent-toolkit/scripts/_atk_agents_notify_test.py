@@ -30,7 +30,9 @@ def test_agents_notify_preserves_body_exactly(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents-notify", "--body", body])
 
-    raw_payload = (notify_environment / "child-session.1.json").read_text(encoding="utf-8")
+    paths = list(notify_environment.glob("child-session.*.json"))
+    assert len(paths) == 1
+    raw_payload = paths[0].read_text(encoding="utf-8")
     payload = json.loads(raw_payload)
     assert payload["version"] == 1
     assert payload["session_id"] == "child-session"
@@ -54,7 +56,7 @@ def test_agents_notify_reads_body_file(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents-notify", "--body-file", str(body_path)])
 
-    payload = json.loads((notify_environment / "child-session.1.json").read_text(encoding="utf-8"))
+    payload = json.loads(next(notify_environment.glob("child-session.*.json")).read_text(encoding="utf-8"))
     assert payload["body"] == "本文\r\n"
 
 
@@ -113,16 +115,13 @@ def test_agents_notify_rejects_blank_body(
     assert not notify_environment.exists()
 
 
-def test_agents_notify_uses_next_sequence_after_collision(notify_environment: pathlib.Path) -> None:
-    """同じsessionの既存通知を上書きせず次の連番へ保存する。"""
+def test_agents_notify_uses_unique_name(notify_environment: pathlib.Path) -> None:
+    """同じsessionの複数通知を上書きせず保存する。"""
     for body in ("1件目", "2件目"):
         with pytest.raises(SystemExit, match="0"):
             atk.main(["agents-notify", "--body", body])
 
-    assert sorted(path.name for path in notify_environment.iterdir()) == [
-        "child-session.1.json",
-        "child-session.2.json",
-    ]
+    assert len(list(notify_environment.iterdir())) == 2
 
 
 def test_agents_notify_rejects_relative_body_file(capsys: pytest.CaptureFixture[str]) -> None:

@@ -150,6 +150,36 @@
       ]
     },
     {
+      "fingerprint": "sha256:20678bd357d049cea719e2813f88a90845943e416aaa37b78aee2f20206a3c6e",
+      "lines": 15,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/constants_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/markdown_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/parsing_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/references_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/sections_test.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/_plan/structure/test_support_test.py",
+          "count": 1
+        }
+      ]
+    },
+    {
       "fingerprint": "sha256:213796a901b0dfac1b9f278bbc2e880dccd8c22414f5f42b5f90c71a910949f2",
       "lines": 13,
       "occurrences": [
@@ -640,10 +670,6 @@
           "count": 1
         },
         {
-          "path": "agent-toolkit/scripts/_plan/structure/sections_test.py",
-          "count": 1
-        },
-        {
           "path": "agent-toolkit/scripts/_plan/structure/test_support_test.py",
           "count": 1
         }
@@ -666,6 +692,20 @@
         {
           "path": "pytools/claude_session_export_test.py",
           "count": 4
+        }
+      ]
+    },
+    {
+      "fingerprint": "sha256:9df472ee678eb08731156a2d3fa10a22875a4b6981a0eeb8fffb9f399996bec7",
+      "lines": 53,
+      "occurrences": [
+        {
+          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
+          "count": 1
+        },
+        {
+          "path": "agent-toolkit/scripts/atk_serve_sessions_remote_helper.py",
+          "count": 1
         }
       ]
     },
@@ -786,20 +826,6 @@
         {
           "path": "agent-toolkit/scripts/_atk/wi/extras_test.py",
           "count": 2
-        }
-      ]
-    },
-    {
-      "fingerprint": "sha256:b6249bc8beff400d5db8216821ef7959cdb5e8cb32e530599a888db24e114dbb",
-      "lines": 42,
-      "occurrences": [
-        {
-          "path": "agent-toolkit/scripts/_atk/serve/sessions.py",
-          "count": 1
-        },
-        {
-          "path": "agent-toolkit/scripts/atk_serve_sessions_remote_helper.py",
-          "count": 1
         }
       ]
     },

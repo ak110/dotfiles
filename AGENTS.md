@@ -8,22 +8,22 @@
 - `make update`: 依存更新 + prek autoupdate + pinactアクション更新 + 全テスト実行
   - `make update-actions`: GitHub Actionsのハッシュピン更新のみ（mise経由でpinact実行）
 - コミット前の検証方法: `make test`
-  - `make test`（`uvx pyfltr run --no-fix`）はlintで自動修正しない。
+  - `make test`（`uv run --frozen pyfltr run --no-fix`）はlintで自動修正しない。
     ただしpyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は
     `--no-fix`を付けても対象ファイルを書き換え、書き換えた場合も終了コード0で成功扱いになる。
     書き換えの対象は、整形結果が現在の内容と異なるファイル、`prek`が`.pre-commit-config.yaml`の
     テキスト整形hookで扱うファイル、及び生成物の同期先である。
     コミット範囲を確定する前に`git status`で自分の変更以外の差分の有無を確認する。
-    自動修正が必要な場合は`make format`（`uvx pyfltr fast`）を使う
+    自動修正が必要な場合は`make format`（`uv run --frozen pyfltr fast`）を使う
   - 特定ファイルに限定する場合はMCP経由の`run_for_agent`へ当該ファイルのパスを渡す。
-    MCPを利用できない場合は`uvx pyfltr run <対象ファイルの絶対パス>`を使う。
+    MCPを利用できない場合は`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。
     デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。
-    `-o`と`-p`は`pytest`のオプションであり、`uvx pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
+    `-o`と`-p`は`pytest`のオプションであり、`uv run --frozen pyfltr run`へ渡すと対象パスごと未認識の引数として終了コード2で終わる。
     `pytest`へ`-o addopts=''`を渡して既定オプションを解除する場合は、`-p no:cacheprovider`を併記する
   - 修正後の再実行時は、MCPでは`commands`へ`["mypy", "ruff-check"]`等を渡して限定する。
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
-  - pyfltrの実行時間を比較する場合は、実行後に`uvx pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
-    `uvx pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
+  - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
+    `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
   - 検証は変更ファイルに対応する近接検査を先に実行し、公開前に`make test`相当で全体を検査する。近接検査の成功だけを全体検査の代替にしない
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、当該作業場所を作成した主体が検査の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない
@@ -32,7 +32,8 @@
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
   - `agent-toolkit:process-wi`の終端では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)の判定に従ってリリースPRを作成し、マージまで実施する
-  - それ以外の経路では、リリースPRの作成を手動で行う。statusline（`rust/claude-statusline/`配下）を変更した場合はその版数更新も同じPRへ含める。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
+  - それ以外の経路では、リリースPRの作成を手動で行う。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
+  - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はリリース経路によらず必要であり、更新漏れは`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
 - 新規Linux環境では、実ブラウザーテストに必要なChromiumとシステム依存を`make setup-browser`で一度導入する。
   OSパッケージの導入には権限が必要となる場合がある
@@ -98,7 +99,7 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
 除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
-`agent-toolkit:process-wi`のセッションでは、①のpickerが処理対象のAWIごとに`project_notes`を書く。
+`agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
 `project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
 本節の適用対象となる規範を変更するAWIには、当該変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
 メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、当該項目のファイル名と対象ファイルのパスを渡す。

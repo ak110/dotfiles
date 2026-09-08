@@ -944,6 +944,8 @@ class TestEditBodyFile:
             "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n",
             encoding="utf-8",
         )
+        for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+            monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -951,6 +953,76 @@ class TestEditBodyFile:
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
+
+    def test_agent_environment_can_edit_hold_item(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エージェント環境でもholdの本文置換を受理する。"""
+        notes = _setup_notes(tmp_path)
+        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        hold = notes / "hold"
+        path = inbox_path.rename(hold / inbox_path.name)
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
+
+    def test_agent_environment_rejects_processing_body_replacement(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """エージェント環境からprocessingの本文を置換せず終了コード2で拒否する。"""
+        notes = _setup_notes(tmp_path)
+        processing = notes / "processing"
+        processing.mkdir()
+        path = processing / "fb-001.md"
+        original = "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n"
+        path.write_text(original, encoding="utf-8")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+        assert capsys.readouterr().err == (
+            "processingの項目はエージェント環境から編集できません: fb-001.md。"
+            "処理中の要求を書き換えると、当該要求が当該セッションで処理されるかが変わります。"
+            "書き換えたい内容はatk wi addで新しい項目として投入し、この項目へは"
+            "atk wi edit --appendで追記してください。\n"
+        )
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_agent_environment_can_append_to_processing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エージェント環境でもprocessingへの追記を受理する。"""
+        notes = _setup_notes(tmp_path)
+        processing = notes / "processing"
+        processing.mkdir()
+        path = processing / "fb-001.md"
+        path.write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n追記前\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "--append", "fb-001.md", "追記後"], home=tmp_path)
+
+        assert exc_info.value.code == 0
+        assert path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
 
     def test_uwi_question_and_scope_update_preserves_answer(
         self,

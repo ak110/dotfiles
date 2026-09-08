@@ -7,6 +7,7 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal
 
@@ -38,6 +39,7 @@ EXPLORE_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
 あなたは調査専用の担当である。依頼された対象を読み取り、結論と根拠だけを日本語で返す。
 ファイルを作成、変更又は削除しない。コマンドは対象を変更しない読み取り操作に限る。
 所在、該当箇所及び観測した事実を、後続の判断に足りる粒度で列挙する。
+出力量が大きいと見込まれる読取と検索は1回の呼び出しへまとめず、対象を分割して取得するか、出力先ファイルへ保存してから必要な範囲だけを読む。
 検索と読取について件数上限、容量超過、期限超過のいずれかに達した場合は、その事実と到達した上限を報告へ必ず含める。
 上限に達した結果から、網羅性、件数、不在のいずれも結論しない。"""
 SHELL_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
@@ -48,6 +50,7 @@ SHELL_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
 コマンドが失敗した場合は出力をそのまま報告し、独自の回避策を試みない。
 実行したコマンドが実行環境の判断で背景実行へ移行した場合は、移行の通知を結果として報告しない。
 起動結果が返す出力ファイルを読み、終了状態を確定してから報告する。
+出力量が大きいと見込まれるコマンドは1回の実行へまとめず、対象を分割して実行するか、出力先ファイルへリダイレクトしてから必要な範囲だけを読む。
 実行ツールが出力の切り詰め、容量超過、期限超過のいずれかを通知した場合は、その事実と切り詰められた範囲を要約へ必ず含める。
 切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない。"""
 ModelCandidate = tuple[str, str, str]
@@ -263,6 +266,8 @@ class SessionState:
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
+    _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
 
     @property
@@ -305,9 +310,30 @@ class SessionState:
         else:
             self.retention_deadline = None
         registry_terminal = self.result_available
-        if self.publish_registry and not self.result_delivered and registry_terminal != self._published_registry_terminal:
-            session_registry.publish(self.session_id, terminal=registry_terminal)
+        if (
+            self.publish_registry
+            and not self.result_delivered
+            and (
+                registry_terminal != self._published_registry_terminal
+                or self.turn_seq != self._published_registry_turn_seq
+                or self.status != self._published_registry_status
+            )
+        ):
+            session_registry.publish(
+                self.session_id,
+                terminal=registry_terminal,
+                engine=self.engine,
+                cwd=self.cwd,
+                model=self.model,
+                effort=self.effort,
+                model_type=self.model_type,
+                launch_kind=self.launch_kind,
+                turn_seq=self.turn_seq,
+                status=typing.cast(typing.Literal["running", "completed", "failed", "interrupted"], self.status),
+            )
             self._published_registry_terminal = registry_terminal
+            self._published_registry_turn_seq = self.turn_seq
+            self._published_registry_status = self.status
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:
@@ -394,6 +420,40 @@ def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandi
     if session.model is None or session.effort is None:
         return None
     return session.engine, session.model, session.effort
+
+
+def has_pending_auto_resume_targets(session: SessionState) -> bool:
+    """自動再開が追跡する子session又はClaude taskが残るかを返す。
+
+    Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
+    """
+    return bool(session.live_task_ids or session.live_child_session_ids)
+
+
+def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:
+    """終端結果が未回収かを返す。
+
+    結果ファイルを扱える消費側は回収状態を渡し、扱えない経路だけは`None`を渡す。
+    """
+    if session.finalized_at is None or session.result_delivered:
+        return False
+    return result_consumed is None or not result_consumed
+
+
+def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[str, Any]:
+    """終端結果ファイルへ保存する公開結果を返す。
+
+    保持中と退避済みのsessionが同じ結果本文を公開できるよう、必要な項目だけへ射影する。
+    """
+    result: dict[str, Any] = {
+        "status": session.status,
+        "agent_message": session.agent_message,
+        "turn_seq": session.turn_seq,
+        "finalized_at": session.finalized_at,
+    }
+    if _nonempty_error(session.error):
+        result["error"] = session.error
+    return result
 
 
 def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:

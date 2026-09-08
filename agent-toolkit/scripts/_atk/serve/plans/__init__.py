@@ -154,7 +154,6 @@ from _atk.serve.plans.local_scan import (
     list_files,
     search_files,
     resolve_under_root,
-    read_markdown_css,
     read_mermaid_bundle,
     read_pygments_css,
 )
@@ -351,7 +350,6 @@ __all__ = [
     "pygments",
     "random",
     "re",
-    "read_markdown_css",
     "read_mermaid_bundle",
     "read_pygments_css",
     "render_file_html",

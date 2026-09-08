@@ -97,9 +97,9 @@ def test_assets_use_shared_dialog_shell_without_cancel_ui() -> None:
     assert "width: 2.75rem;" in assets.CSS
     assert "height: 2.75rem;" in assets.CSS
     assert "overflow-y: auto;" in assets.CSS
-    assert 'body[data-screen="wi"] dialog.dialog-shell {' in assets.CSS
+    assert "#screen-wi dialog.dialog-shell {" in assets.CSS
     dialog_rule = re.search(
-        r'body\[data-screen="wi"\] dialog\.dialog-shell \{(.*?)\n\}',
+        r"#screen-wi dialog\.dialog-shell \{(.*?)\n\}",
         assets.CSS,
         re.DOTALL,
     )

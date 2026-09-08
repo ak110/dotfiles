@@ -1,7 +1,10 @@
 """CI workflowの静的契約を検証する。"""
 
+import os
 import re
 import shlex
+import subprocess
+import sys
 import typing
 from pathlib import Path
 
@@ -22,7 +25,10 @@ _OWNER_CONDITION = (
     "github.head_ref != 'develop' || "
     "github.base_ref != 'master'"
 )
-_STATUSLINE_CONDITION = "github.event_name == 'pull_request' && github.base_ref == 'master'"
+_STATUSLINE_CONDITION = (
+    "(github.event_name == 'pull_request' && github.base_ref == 'master') || "
+    "(github.event_name == 'push' && github.ref == 'refs/heads/develop')"
+)
 
 
 def _mapping(value: object) -> dict[str, object]:
@@ -55,6 +61,49 @@ def _load_workflow() -> dict[str, object]:
         # BaseLoaderはYAML 1.1の`on`キーを真偽値へ変換せず、安全なスカラー値だけを構築する。
         value = yaml.load(stream, Loader=yaml.BaseLoader)
     return _mapping(value)
+
+
+def _statusline_job(workflow: dict[str, object]) -> dict[str, object]:
+    jobs = [job for value in _jobs(workflow).values() if (job := _mapping(value)).get("name") == "statusline-version"]
+    assert len(jobs) == 1
+    return jobs[0]
+
+
+def _run_git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _create_statusline_repository(tmp_path: Path, *, statusline_changed: bool) -> tuple[Path, str]:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _run_git(origin, "init", "--initial-branch=master")
+    _run_git(origin, "config", "user.email", "ci@example.com")
+    _run_git(origin, "config", "user.name", "CI")
+
+    manifest = origin / "rust" / "claude-statusline" / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('[package]\nname = "claude-statusline"\nversion = "1.0.0"\n', encoding="utf-8")
+    (origin / "unrelated.txt").write_text("master\n", encoding="utf-8")
+    _run_git(origin, "add", ".")
+    _run_git(origin, "commit", "-m", "initial")
+    _run_git(origin, "switch", "-c", "develop")
+
+    target = manifest if statusline_changed else origin / "unrelated.txt"
+    addition = "# develop\n" if statusline_changed else "develop\n"
+    target.write_text(target.read_text(encoding="utf-8") + addition, encoding="utf-8")
+    _run_git(origin, "add", ".")
+    _run_git(origin, "commit", "-m", "develop change")
+
+    checkout = tmp_path / "checkout"
+    _run_git(tmp_path, "clone", "--branch", "develop", origin.as_uri(), str(checkout))
+    return checkout, _run_git(checkout, "rev-parse", "HEAD")
 
 
 def _direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
@@ -125,18 +174,55 @@ def test_common_job_display_names_keep_owner_and_non_owner_names(workflow_data: 
 def test_statusline_version_is_an_independent_master_pull_request_check(
     workflow_data: dict[str, object],
 ) -> None:
-    "次の設計契約を検証する。\n\n`statusline-version`は`pull_request`かつbaseが`master`の全pull requestで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。\n同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。\nruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。"  # noqa: E501
-    statusline_jobs = [
-        job for value in _jobs(workflow_data).values() if (job := _mapping(value)).get("name") == "statusline-version"
-    ]
-    assert len(statusline_jobs) == 1
-    statusline_job = statusline_jobs[0]
+    "次の設計契約を検証する。\n\n`statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branch及びrelease条件を追加の限定に使わない。\n同一repositoryのrelease及びnon-release pull requestとfork pull requestが同じ検査対象となり、`rust-lint`というrequired名の重複を生成しない。\nruleset `21524717`のrequired checkは共通6名と`statusline-version`の7件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。"  # noqa: E501
+    statusline_job = _statusline_job(workflow_data)
     assert statusline_job["if"] == _STATUSLINE_CONDITION
     statusline_condition = typing.cast(str, statusline_job["if"])  # type: ignore[redundant-cast]
     assert "head.repo" not in statusline_condition
     assert "head_ref" not in statusline_condition
     assert _RELEASE_CONDITION not in statusline_condition
     assert statusline_job["name"] != _job_by_display_name(workflow_data, "rust-lint")["name"]
+    checkout = _steps(statusline_job)[0]
+    assert _mapping(checkout["with"])["fetch-depth"] == "0"
+
+
+@pytest.mark.parametrize(
+    ("statusline_changed", "expected_returncode", "expected_output"),
+    [
+        (False, 0, "statuslineの変更がないため、版数検査を省略する。"),
+        (True, 1, "statuslineの変更にはCargo.tomlの版数更新が必要である。"),
+    ],
+)
+def test_statusline_version_develop_push_reaches_version_check(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    *,
+    statusline_changed: bool,
+    expected_returncode: int,
+    expected_output: str,
+) -> None:
+    """developへのpushではmasterとの共通祖先を解決し、statuslineの変更有無を検査する。"""
+    checkout, current_sha = _create_statusline_repository(tmp_path, statusline_changed=statusline_changed)
+    step = next(step for step in _steps(_statusline_job(workflow_data)) if step.get("name") == "statuslineの版数とタグを検査")
+    script = step["run"]
+    assert isinstance(script, str)
+
+    result = subprocess.run(
+        ["bash"],
+        cwd=checkout,
+        env={
+            "PATH": os.pathsep.join((str(Path(sys.executable).parent), "/usr/bin", "/bin")),
+            "BASE_SHA": "",
+            "CURRENT_SHA": current_sha,
+        },
+        input=script,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == expected_returncode
+    assert expected_output in result.stdout + result.stderr
 
 
 def test_job_and_step_cardinality(workflow_data: dict[str, object]) -> None:

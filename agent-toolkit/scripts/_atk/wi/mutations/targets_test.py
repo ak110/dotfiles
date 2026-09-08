@@ -409,6 +409,8 @@ def test_cmd_convert_to_plan_displays_saved_metadata(
         "target_commit": "a" * 40,
         "plan_file": "/tmp/plan.md",
         "depends_on": ["dependency.md"],
+        "source": "test",
+        "extra_frontmatter": {},
         "body_match": "一致",
     }
     monkeypatch.setattr(

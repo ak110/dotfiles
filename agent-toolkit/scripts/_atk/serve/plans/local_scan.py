@@ -424,11 +424,6 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
     return target
 
 
-def read_markdown_css() -> str:
-    """Markdown表示用のスタイルシートを配布物から読み込む。"""
-    return (_STATIC_DIR / "markdown.css").read_text(encoding="utf-8")
-
-
 def read_mermaid_bundle() -> str:
     """同梱したMermaidの単一ファイルbundleを読み込む。"""
     return (_STATIC_DIR / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")
@@ -439,7 +434,7 @@ def read_pygments_css() -> str:
 
     pygmentsの基本ルール（`.codehilite { background: ...; color: ... }`）は除外し、
     トークン別カラールール（`.codehilite .k`等）のみを返す。
-    背景と既定文字色はmarkdown.css側の`pre code`ルールへ委ね、
+    背景と既定文字色はapp.css側の`pre code`ルールへ委ね、
     `<pre>`の背景上に異色矩形が出現する事象を防ぐ。
     """
     raw = _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")

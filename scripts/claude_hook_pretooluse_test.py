@@ -23,6 +23,7 @@ _HOME = pathlib.Path.home()
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "claude_hook.py"
 _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
 _AT_RULES_DIR = _AT_DIR / "rules"
 
 # 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
@@ -720,7 +721,7 @@ class TestAgentToolkitDotfilesNamesCheck:
             {
                 "tool_name": "Write",
                 "tool_input": {
-                    "file_path": "agent-toolkit/skills/example/SKILL.md",
+                    "file_path": f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md",
                     "content": "Refer to glatasks.",
                 },
             }

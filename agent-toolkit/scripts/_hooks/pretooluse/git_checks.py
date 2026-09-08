@@ -458,6 +458,7 @@ def _check_bash_bulk_stage_with_unedited_files(
             f"`stage`の前に所有を確認する。候補: {sample}。"
             "ファイル単位の`stage`（`git add <file>`）への切り替えを検討する。",
             tag=_WARN_TAG,
+            removable_cause=True,
         )
     return None
 
@@ -541,6 +542,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
         return _llm_notice(
             "テストを実行せずにcommitしようとしている。`01-agent.md`の検証後commit手順に従い、先にテストを実行する。",
             tag=_WARN_TAG,
+            removable_cause=True,
         )
     commit_event = commit_events[0]
     if _is_docs_only_commit(commit_event, commit_event.cwd):
@@ -548,6 +550,7 @@ def _check_bash_git_commit(command: str, session_id: str, cwd: str) -> str | Non
     return _llm_notice(
         "テストを実行せずにcommitしようとしている。`01-agent.md`の検証後commit手順に従い、先にテストを実行する。",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 
@@ -621,6 +624,7 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
         "フックスクリプト、スキル、エージェント定義、ルールファイルなどの利用者向け挙動を変更する場合は、"
         "commit前に`plugin.json`の`version`を更新し、`.claude-plugin/marketplace.json`も同期する。",
         tag=_WARN_TAG,
+        removable_cause=True,
     )
 
 

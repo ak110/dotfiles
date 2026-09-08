@@ -436,7 +436,7 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
         )
         assert inline_background not in {"rgba(0, 0, 0, 0)", "transparent"}
         if width == 390:
-            header_box = await page.locator(".app-header").bounding_box()
+            header_box = await page.locator("#screen-wi .app-header").bounding_box()
             assert header_box is not None
             assert header_box["height"] < 150
         await page.keyboard.press("Escape")
@@ -2183,7 +2183,7 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/")
 
-    navigation = harness.page.locator("nav.app-nav")
+    navigation = harness.page.locator(".screen:not([hidden]) nav.app-nav")
     await navigation.wait_for(state="visible")
     assert await navigation.locator("a").all_inner_texts() == ["ワークアイテム", "計画ファイル", "セッション"]
     assert await navigation.locator('a[aria-current="page"]').inner_text() == "ワークアイテム"
@@ -2191,12 +2191,12 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
     await navigation.get_by_role("link", name="計画ファイル").click()
     await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
     assert harness.page.url == harness.base_url + "/plans"
-    assert await harness.page.locator('nav.app-nav a[aria-current="page"]').inner_text() == "計画ファイル"
+    assert await harness.page.locator('.screen:not([hidden]) nav.app-nav a[aria-current="page"]').inner_text() == "計画ファイル"
 
     await harness.page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
     assert harness.page.url == harness.base_url + "/sessions"
-    assert await harness.page.locator('nav.app-nav a[aria-current="page"]').inner_text() == "セッション"
+    assert await harness.page.locator('.screen:not([hidden]) nav.app-nav a[aria-current="page"]').inner_text() == "セッション"
 
     await harness.page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     await harness.page.locator("#entry-list").wait_for(state="visible")
@@ -2225,52 +2225,19 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
 
 
 @pytest.mark.asyncio
-async def test_navigation_preloads_all_screens_without_refetching_html(screen_harness: _ScreenHarness) -> None:
-    """起動時に3画面を先読みし、画面切替では保持したHTMLを使う。"""
+async def test_navigation_uses_one_html_document_across_all_screens(screen_harness: _ScreenHarness) -> None:
+    """起動時のHTMLだけを使い、3画面の切り替えで文書を追加取得しない。"""
     harness = screen_harness
     page = harness.page
     screen_urls = [harness.base_url + path for path in ("/", "/plans", "/sessions")]
     await page.goto(screen_urls[0])
     await page.locator("#entry-list").wait_for(state="visible")
-    await page.wait_for_timeout(100)
-
-    assert all(harness.requests.count(url) == 1 for url in screen_urls)
-    before = {url: harness.requests.count(url) for url in screen_urls}
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
 
-    assert {url: harness.requests.count(url) for url in screen_urls} == before
-
-
-@pytest.mark.asyncio
-async def test_navigation_waits_for_inflight_preload_without_duplicate_request(
-    screen_harness: _ScreenHarness,
-) -> None:
-    """先読み中の画面へ移動しても同じHTMLを二重に要求しない。"""
-    harness = screen_harness
-    page = harness.page
-    both_requested = asyncio.Event()
-    release = asyncio.Event()
-    requested_paths: set[str] = set()
-
-    async def delay_preload(route: playwright.async_api.Route) -> None:
-        requested_paths.add(urllib.parse.urlparse(route.request.url).path)
-        if requested_paths == {"/plans", "/sessions"}:
-            both_requested.set()
-        await release.wait()
-        await route.continue_()
-
-    await page.route("**/plans", delay_preload)
-    await page.route("**/sessions", delay_preload)
-    await page.goto(harness.base_url + "/")
-    await asyncio.wait_for(both_requested.wait(), timeout=5)
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    assert harness.requests.count(harness.base_url + "/plans") == 1
-    release.set()
-    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    assert harness.requests.count(harness.base_url + "/plans") == 1
+    assert [harness.requests.count(url) for url in screen_urls] == [1, 0, 0]
 
 
 @pytest.mark.asyncio
@@ -2286,120 +2253,127 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await page.locator("#filter").fill("計画条件")
+    await page.locator("#plans-filter").fill("計画条件")
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
-    await page.locator("#filter").fill("セッション条件")
+    await page.locator("#sessions-filter").fill("セッション条件")
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    assert await page.locator("#filter").input_value() == "計画条件"
+    assert await page.locator("#plans-filter").input_value() == "計画条件"
     await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     assert await page.locator("#search-input").input_value() == "ワークアイテム条件"
     assert await page.locator("body").evaluate("element => getComputedStyle(element).fontSize") == initial_font_size
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    assert await page.locator("#filter").input_value() == "セッション条件"
+    assert await page.locator("#sessions-filter").input_value() == "セッション条件"
 
 
 @pytest.mark.asyncio
-async def test_navigation_keeps_all_stylesheets_enabled(screen_harness: _ScreenHarness) -> None:
-    """3画面の資産を読み込んだ後も、全スタイルシートを有効に保つ。"""
+async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) -> None:
+    """3画面を1つの有効なスタイルシートで描画する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/")
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
     await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
 
-    assert await page.evaluate("() => Array.from(document.styleSheets).every(sheet => !sheet.disabled)")
+    assert await page.evaluate("() => document.styleSheets.length === 1 && !document.styleSheets[0].disabled")
 
 
 @pytest.mark.asyncio
-async def test_navigation_preserves_runtime_body_classes(screen_harness: _ScreenHarness) -> None:
-    """画面固有クラスだけを入れ替え、実行時に追加したクラスを保持する。"""
-    page = screen_harness.page
+async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harness: _ScreenHarness) -> None:
+    """初期化済みの画面へ再訪しても、同期と一覧の初期要求を繰り返さない。"""
+    harness = screen_harness
+    page = harness.page
+    plans_resynced = asyncio.Event()
+    plans_request_count = 0
 
-    async def add_screen_classes(route: playwright.async_api.Route) -> None:
-        response = await route.fetch()
-        body = (await response.text()).replace(
-            '<body data-screen="plans">',
-            '<body class="plans-screen" data-screen="plans">',
-        )
-        await route.fulfill(response=response, body=body)
+    def record_initial_plan_requests(request: playwright.async_api.Request) -> None:
+        nonlocal plans_request_count
+        if request.url.endswith("/api/plans/files"):
+            plans_request_count += 1
+            if plans_request_count >= 2:
+                plans_resynced.set()
 
-    await page.route("**/plans", add_screen_classes)
-    await page.goto(screen_harness.base_url + "/")
-    await page.evaluate("() => document.body.classList.add('runtime-marker')")
+    page.on("request", record_initial_plan_requests)
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    assert await page.locator("body").evaluate("element => element.classList.contains('plans-screen')")
+    await page.locator("#files .file").first.wait_for(state="visible")
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await page.locator("#sessions .session-item").first.wait_for(state="visible")
+    await asyncio.wait_for(plans_resynced.wait(), timeout=5)
+    tracked_suffixes = ("/api/sync", "/api/plans/files", "/api/sessions/list")
+    before = {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes}
+
+    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
 
-    assert await page.locator("body").evaluate("element => element.classList.contains('runtime-marker')")
-    assert not await page.locator("body").evaluate("element => element.classList.contains('plans-screen')")
+    assert {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes} == before
 
 
 @pytest.mark.asyncio
-async def test_navigation_marks_pending_screen_load(screen_harness: _ScreenHarness) -> None:
-    """画面資産の取得中だけ遷移中の属性を付ける。"""
+async def test_plan_and_session_details_use_matching_typography(screen_harness: _ScreenHarness) -> None:
+    """計画とセッションの詳細本文でフォント、文字サイズ及び行高をそろえる。"""
     page = screen_harness.page
-    requested = asyncio.Event()
-    release = asyncio.Event()
-
-    async def delay_plans(route: playwright.async_api.Route) -> None:
-        requested.set()
-        await release.wait()
-        await route.continue_()
-
-    await page.route("**/plans", delay_plans)
-    await page.goto(screen_harness.base_url + "/")
-    await asyncio.wait_for(requested.wait(), timeout=5)
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click(no_wait_after=True)
-    await playwright.async_api.expect(page.locator("body")).to_have_attribute("data-navigating", "true")
-    release.set()
+    await page.goto(screen_harness.base_url + "/plans")
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await playwright.async_api.expect(page.locator("body")).not_to_have_attribute("data-navigating", "true")
-
-
-@pytest.mark.asyncio
-async def test_session_list_is_prefetched_before_navigation(screen_harness: _ScreenHarness) -> None:
-    """初期画面の表示後に一覧を先読みし、遷移直後は保持済み応答で描画する。"""
-    page = screen_harness.page
-    first_fulfilled = asyncio.Event()
-    refresh_requested = asyncio.Event()
-    release_refresh = asyncio.Event()
-    request_count = 0
-
-    async def control_list_requests(route: playwright.async_api.Route) -> None:
-        nonlocal request_count
-        request_count += 1
-        if request_count == 1:
-            response = await route.fetch()
-            await route.fulfill(response=response)
-            first_fulfilled.set()
-            return
-        refresh_requested.set()
-        await release_refresh.wait()
-        await route.continue_()
-
-    await page.route("**/api/sessions/list", control_list_requests)
-    await page.goto(screen_harness.base_url + "/")
-    await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
-    await page.wait_for_timeout(50)
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click(no_wait_after=True)
-    await asyncio.wait_for(refresh_requested.wait(), timeout=5)
-    await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
-    release_refresh.set()
-    await page.unroute_all(behavior="wait")
-
-
-@pytest.mark.asyncio
-async def test_navigation_connects_only_the_visible_screen_dom(screen_harness: _ScreenHarness) -> None:
-    """画面往復後も`#screen-root`は表示中の1件だけをDOMへ接続する。"""
-    page = screen_harness.page
-    await page.goto(screen_harness.base_url + "/")
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
+    plan_style = await page.locator("#preview").evaluate(
+        "element => { const style = getComputedStyle(element); return [style.fontFamily, style.fontSize, style.lineHeight]; }"
+    )
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
+    await page.locator("#sessions .session-item").first.click()
+    await page.locator("#detail details").first.wait_for(state="visible")
+    session_style = await page.locator("#detail").evaluate(
+        "element => { const style = getComputedStyle(element); return [style.fontFamily, style.fontSize, style.lineHeight]; }"
+    )
 
-    assert await page.locator("#screen-root").count() == 1
+    assert session_style == plan_style
+
+
+@pytest.mark.asyncio
+async def test_plan_and_session_toolbars_have_matching_heights(screen_harness: _ScreenHarness) -> None:
+    """計画とセッションの詳細ツールバーを同じ高さで描画する。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/plans")
+    plans_toolbar = page.locator("#screen-plans main > .toolbar")
+    await plans_toolbar.wait_for(state="visible")
+    plans_height = await plans_toolbar.evaluate("element => element.getBoundingClientRect().height")
+    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    sessions_toolbar = page.locator("#screen-sessions main > .toolbar")
+    await sessions_toolbar.wait_for(state="visible")
+    sessions_height = await sessions_toolbar.evaluate("element => element.getBoundingClientRect().height")
+
+    assert sessions_height == plans_height
+
+
+@pytest.mark.asyncio
+async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness) -> None:
+    """セッション一覧には発話内容のプレビューを表示しない。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    first_item = page.locator("#sessions .session-item").first
+    await first_item.wait_for(state="visible")
+
+    child_classes = await first_item.locator(":scope > *").evaluate_all(
+        "elements => elements.map(element => element.className)"
+    )
+    assert child_classes == ["session-cwd", "session-meta"]
+
+
+@pytest.mark.asyncio
+async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _ScreenHarness) -> None:
+    """セッション詳細の前後ボタンで一覧の隣接項目へ移動する。"""
+    page = screen_harness.page
+    await page.goto(screen_harness.base_url + "/sessions")
+    items = page.locator("#sessions .session-item")
+    await playwright.async_api.expect(items).to_have_count(2)
+    names = await items.all_inner_texts()
+    await items.first.click()
+    await page.locator("#sessions-next-btn").click()
+    assert await page.locator('#sessions .session-item[aria-current="true"]').inner_text() == names[1]
+    await page.locator("#sessions-prev-btn").click()
+    assert await page.locator('#sessions .session-item[aria-current="true"]').inner_text() == names[0]
 
 
 @pytest.mark.asyncio
@@ -2462,7 +2436,11 @@ async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _Scre
             )
     page = screen_harness.page
     await page.set_viewport_size({"width": 900, "height": 240})
-    for path, selector in (("/", ".wi-screen-scroll"), ("/plans", "main"), ("/sessions", "main")):
+    for path, selector in (
+        ("/", "#screen-wi .wi-screen-scroll"),
+        ("/plans", "#screen-plans main"),
+        ("/sessions", "#screen-sessions main"),
+    ):
         await page.goto(screen_harness.base_url + path)
         scrollable = page.locator(selector)
         await scrollable.wait_for(state="visible")
@@ -2474,7 +2452,7 @@ async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _Scre
         metrics = await scrollable.evaluate(
             """element => {
               element.scrollTop = element.scrollHeight;
-              const header = document.querySelector('.app-header').getBoundingClientRect();
+              const header = element.closest('.screen').querySelector('.app-header').getBoundingClientRect();
               const rect = element.getBoundingClientRect();
               return {
                 documentClientHeight: document.scrollingElement.clientHeight,
@@ -2491,189 +2469,6 @@ async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _Scre
         assert metrics["scrollHeight"] > metrics["clientHeight"], path
         assert abs(metrics["headerTop"]) <= 1, path
         assert metrics["contentTop"] >= metrics["headerBottom"] - 1, path
-
-
-@pytest.mark.parametrize("sync_succeeds", [True, False], ids=["success", "failure"])
-@pytest.mark.asyncio
-async def test_sync_state_restores_when_response_settles_while_away(
-    screen_harness: _ScreenHarness,
-    sync_succeeds: bool,
-) -> None:
-    """離脱中に同期が確定しても保持DOMのボタンを復元し、失効した結果を表示へ反映しない。"""
-    page = screen_harness.page
-    requested = asyncio.Event()
-    release = asyncio.Event()
-    fulfilled = asyncio.Event()
-    request_count = 0
-
-    async def delay_sync(route: playwright.async_api.Route) -> None:
-        nonlocal request_count
-        request_count += 1
-        if request_count == 1:
-            await route.continue_()
-            return
-        response = await route.fetch() if sync_succeeds else None
-        requested.set()
-        await release.wait()
-        if response is None:
-            await route.fulfill(status=500, json={"error": "離脱中の同期失敗"})
-        else:
-            await route.fulfill(response=response)
-        fulfilled.set()
-
-    await page.route("**/api/sync", delay_sync)
-    await page.goto(screen_harness.base_url + "/")
-    refresh = page.locator("#refresh-button")
-    await refresh.click()
-    await asyncio.wait_for(requested.wait(), timeout=5)
-    await playwright.async_api.expect(refresh).to_be_disabled()
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
-    preview_before = await page.locator("#preview").inner_text()
-    release.set()
-    await asyncio.wait_for(fulfilled.wait(), timeout=5)
-    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
-    await playwright.async_api.expect(refresh).to_have_text("今すぐ同期")
-    await playwright.async_api.expect(refresh).to_be_enabled()
-    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
-    await playwright.async_api.expect(page.locator("#global-error")).to_be_hidden()
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
-    assert await page.locator("#preview").inner_text() == preview_before
-    await page.unroute("**/api/sync", delay_sync)
-    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
-    async with page.expect_response("**/api/sync"):
-        await refresh.click()
-
-
-@pytest.mark.asyncio
-async def test_list_loading_counts_requests_that_finish_while_away(screen_harness: _ScreenHarness) -> None:
-    """旧取得の完了では後続取得の表示を解除せず、各取得の完了後に保持DOMを復元する。"""
-    page = screen_harness.page
-    first_requested = asyncio.Event()
-    second_requested = asyncio.Event()
-    release_first = asyncio.Event()
-    release_second = asyncio.Event()
-    first_fulfilled = asyncio.Event()
-    second_fulfilled = asyncio.Event()
-    request_count = 0
-
-    async def delay_entries(route: playwright.async_api.Route) -> None:
-        nonlocal request_count
-        request_count += 1
-        request_number = request_count
-        response = await route.fetch()
-        if request_number == 1:
-            first_requested.set()
-            await release_first.wait()
-            await route.fulfill(response=response)
-            first_fulfilled.set()
-        elif request_number == 2:
-            second_requested.set()
-            await release_second.wait()
-            await route.fulfill(response=response)
-            second_fulfilled.set()
-        else:
-            await route.fulfill(response=response)
-
-    await page.route("**/api/entries?*", delay_entries)
-    await page.goto(screen_harness.base_url + "/")
-    await asyncio.wait_for(first_requested.wait(), timeout=5)
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
-    await asyncio.wait_for(second_requested.wait(), timeout=5)
-    release_first.set()
-    await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
-    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
-    release_second.set()
-    await asyncio.wait_for(second_fulfilled.wait(), timeout=5)
-    await page.unroute_all(behavior="wait")
-    await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(4)
-    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
-    await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
-
-
-@pytest.mark.asyncio
-async def test_remount_does_not_duplicate_plan_navigation_listeners(screen_harness: _ScreenHarness) -> None:
-    """計画画面を再mountした後も、1回の次項目操作で一覧を1件だけ進める。"""
-    harness = screen_harness
-    (harness.root / "second.md").write_text("# 2件目\n", encoding="utf-8")
-    (harness.root / "third.md").write_text("# 3件目\n", encoding="utf-8")
-    page = harness.page
-    await page.goto(harness.base_url + "/plans")
-    files = page.locator("#files .file")
-    await playwright.async_api.expect(files).to_have_count(3)
-    names = await files.all_inner_texts()
-    await files.first.click()
-
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    await page.locator("#sessions .session-item").first.wait_for(state="visible")
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#next-btn").click()
-
-    assert await page.locator("#files .file.active").inner_text() == names[1]
-
-
-@pytest.mark.asyncio
-async def test_navigation_unmounts_previous_screen(screen_harness: _ScreenHarness) -> None:
-    """画面を移動すると、直前の画面の後始末が呼ばれる。"""
-    harness = screen_harness
-    page = harness.page
-    await page.goto(harness.base_url + "/")
-    await page.locator("#entry-list").wait_for(state="visible")
-    await page.evaluate(
-        """() => {
-          window.__atkUnmounted = [];
-          for (const [name, screen] of Object.entries(window.__atkScreens)) {
-            const original = screen.unmount;
-            screen.unmount = () => {
-              window.__atkUnmounted.push(name);
-              original();
-            };
-          }
-        }"""
-    )
-
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-
-    assert await page.evaluate("() => window.__atkUnmounted") == ["wi"]
-
-
-@pytest.mark.asyncio
-async def test_navigation_ignores_responses_for_unmounted_screens(screen_harness: _ScreenHarness) -> None:
-    """遷移前の画面で開始した応答が遅れても、旧DOMへ書き込まずコンソールエラーの出力を防ぐ。"""
-    harness = screen_harness
-    page = harness.page
-    errors: list[str] = []
-    sync_requested = asyncio.Event()
-    plans_requested = asyncio.Event()
-
-    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
-    page.on("pageerror", lambda error: errors.append(str(error)))
-
-    async def delay_sync(route: playwright.async_api.Route) -> None:
-        sync_requested.set()
-        await asyncio.sleep(0.2)
-        await route.continue_()
-
-    async def delay_plans(route: playwright.async_api.Route) -> None:
-        plans_requested.set()
-        await asyncio.sleep(0.2)
-        await route.continue_()
-
-    await page.route("**/api/sync", delay_sync)
-    await page.route("**/api/plans/host-status", delay_plans)
-    await page.goto(harness.base_url + "/")
-    await sync_requested.wait()
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await plans_requested.wait()
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    await page.locator("#sessions .session-item").first.wait_for(state="visible")
-    await page.wait_for_timeout(300)
-
-    assert not errors
 
 
 @pytest.mark.asyncio
@@ -2731,7 +2526,7 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
         await page.route("**/api/plans/search?*", delay_search)
         await page.goto(harness.base_url + "/plans")
         await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-        await page.locator("#filter").fill("初回")
+        await page.locator("#plans-filter").fill("初回")
         await asyncio.wait_for(requested.wait(), timeout=5)
         await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
@@ -2743,166 +2538,6 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
     for succeeds in (True, False):
         await exercise_detail(succeeds)
         await exercise_search(succeeds)
-
-    assert not errors
-
-
-@pytest.mark.parametrize("reload_succeeds", [True, False], ids=["success", "failure"])
-@pytest.mark.asyncio
-async def test_navigation_stops_user_comment_conflict_reload_after_unmount(
-    screen_harness: _ScreenHarness,
-    reload_succeeds: bool,
-) -> None:
-    """コメント競合後の詳細再取得が遷移後に完了しても、現行画面へ触れない。"""
-    harness = screen_harness
-    page = harness.page
-    errors: list[str] = []
-    reload_requested = asyncio.Event()
-    release_reload = asyncio.Event()
-    reload_fulfilled = asyncio.Event()
-    entry_path = harness.plan_path.parent.parent / "inbox" / "awi.md"
-    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
-    page.on("pageerror", lambda error: errors.append(str(error)))
-
-    await page.goto(harness.base_url + "/")
-    await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
-    detail = page.get_by_role("dialog", name="詳細")
-    await detail.get_by_role("button", name="ユーザーコメント", exact=True).click()
-    await detail.locator("#user-comment-input").fill("競合後も保持する入力")
-    entry_path.write_text(
-        entry_path.read_text(encoding="utf-8").replace("編集対象の本文", "外部更新された本文"),
-        encoding="utf-8",
-    )
-
-    async def return_edit_conflict(route: playwright.async_api.Route) -> None:
-        await route.fulfill(
-            status=200,
-            headers={"X-Atk-Test-Edit-Conflict": "1"},
-            json={"error": "外部更新と競合しました", "code": "edit_conflict"},
-        )
-
-    async def delay_conflict_reload(route: playwright.async_api.Route) -> None:
-        response = await route.fetch() if reload_succeeds else None
-        reload_requested.set()
-        await release_reload.wait()
-        if response is None:
-            await route.fulfill(status=200, content_type="application/json", body="{")
-        else:
-            await route.fulfill(response=response)
-        reload_fulfilled.set()
-
-    await page.evaluate(
-        """() => {
-          const originalFetch = window.fetch.bind(window);
-          window.fetch = async (...args) => {
-            const response = await originalFetch(...args);
-            if (response.headers.get("X-Atk-Test-Edit-Conflict") !== "1") return response;
-            return new Response(await response.text(), {
-              status: 409,
-              headers: response.headers
-            });
-          };
-        }"""
-    )
-    comment_route_pattern = "**/api/entries/user-comment"
-    route_pattern = "**/api/entries/inbox/awi.md"
-    await page.route(comment_route_pattern, return_edit_conflict)
-    await page.route(route_pattern, delay_conflict_reload)
-    await detail.get_by_role("button", name="コメントを保存").click()
-    await asyncio.wait_for(reload_requested.wait(), timeout=5)
-    await page.keyboard.press("Escape")
-    await playwright.async_api.expect(detail).to_be_hidden()
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    release_reload.set()
-    await asyncio.wait_for(reload_fulfilled.wait(), timeout=5)
-    await page.wait_for_timeout(50)
-
-    assert await page.evaluate("() => location.pathname") == "/plans"
-    assert not errors
-    await page.unroute(comment_route_pattern, return_edit_conflict)
-    await page.unroute(route_pattern, delay_conflict_reload)
-
-
-@pytest.mark.asyncio
-async def test_remount_discards_initial_response_from_previous_mount(
-    screen_harness: _ScreenHarness,
-) -> None:
-    """同じ画面を再マウントした後も、前のマウントの初期応答を現行表示へ適用しない。"""
-    harness = screen_harness
-    page = harness.page
-    errors: list[str] = []
-    page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
-    page.on("pageerror", lambda error: errors.append(str(error)))
-
-    async def exercise(
-        path: str,
-        route_pattern: str,
-        stale_payload: dict[str, object] | list[object],
-        away_label: str,
-        return_label: str,
-        stable_selector: str,
-    ) -> None:
-        first_requested = asyncio.Event()
-        release_first = asyncio.Event()
-        first_fulfilled = asyncio.Event()
-        request_count = 0
-
-        async def delay_first_response(route: playwright.async_api.Route) -> None:
-            nonlocal request_count
-            request_count += 1
-            if request_count > 1:
-                await route.continue_()
-                return
-            first_requested.set()
-            await release_first.wait()
-            await route.fulfill(status=200, json=stale_payload)
-            first_fulfilled.set()
-
-        await page.route(route_pattern, delay_first_response)
-        await page.goto(harness.base_url + path)
-        await asyncio.wait_for(first_requested.wait(), timeout=5)
-        await page.locator("nav.app-nav").get_by_role("link", name=away_label).click()
-        away_selector = {
-            "ワークアイテム": "#entry-list .entry-select",
-            "計画ファイル": "#files .file",
-            "セッション": "#sessions .session-item",
-        }[away_label]
-        await page.locator(away_selector).first.wait_for(state="visible")
-        await page.locator("nav.app-nav").get_by_role("link", name=return_label).click()
-        stable = page.locator(stable_selector)
-        await stable.first.wait_for(state="visible")
-        expected = await stable.all_inner_texts()
-        release_first.set()
-        await asyncio.wait_for(first_fulfilled.wait(), timeout=5)
-        await page.wait_for_timeout(100)
-        assert await stable.all_inner_texts() == expected
-        await page.unroute(route_pattern, delay_first_response)
-
-    await exercise(
-        "/",
-        "**/api/entries?type=all&status=active&answered=all&page=1",
-        {"entries": [], "warnings": []},
-        "計画ファイル",
-        "ワークアイテム",
-        "#entry-list .entry-select",
-    )
-    await exercise(
-        "/plans",
-        "**/api/plans/files",
-        [{"host": "stale-host", "path": "stale.md", "ctime": "stale", "mtime_epoch": 0}],
-        "セッション",
-        "計画ファイル",
-        "#files .file",
-    )
-    await exercise(
-        "/sessions",
-        "**/api/sessions/list",
-        {"sessions": [], "warnings": []},
-        "ワークアイテム",
-        "セッション",
-        "#sessions .session-item",
-    )
 
     assert not errors
 
@@ -2960,9 +2595,9 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
     harness = screen_harness
     await harness.page.set_viewport_size({"width": 1280, "height": 800})
 
-    for path in ("/", "/plans", "/sessions"):
+    for path, screen in (("/", "#screen-wi"), ("/plans", "#screen-plans"), ("/sessions", "#screen-sessions")):
         await harness.page.goto(harness.base_url + path)
-        navigation = harness.page.locator("nav.app-nav")
+        navigation = harness.page.locator(f"{screen} nav.app-nav")
         await navigation.wait_for(state="visible")
         box = await navigation.bounding_box()
         assert box is not None
@@ -2978,9 +2613,9 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
     await harness.page.set_viewport_size({"width": 1400, "height": 800})
     headers: dict[str, dict[str, float | str]] = {}
 
-    for path in ("/", "/plans", "/sessions"):
+    for path, screen in (("/", "#screen-wi"), ("/plans", "#screen-plans"), ("/sessions", "#screen-sessions")):
         await harness.page.goto(harness.base_url + path)
-        header = harness.page.locator(".app-header")
+        header = harness.page.locator(f"{screen} .app-header")
         await header.wait_for(state="visible")
         header_box = await header.bounding_box()
         assert header_box is not None, path
@@ -2996,12 +2631,12 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
     await harness.page.set_viewport_size({"width": 600, "height": 800})
     layouts: dict[str, dict[str, float | str]] = {}
 
-    for path in ("/", "/plans", "/sessions"):
+    for path, screen in (("/", "#screen-wi"), ("/plans", "#screen-plans"), ("/sessions", "#screen-sessions")):
         await harness.page.goto(harness.base_url + path)
-        header = harness.page.locator(".app-header")
+        header = harness.page.locator(f"{screen} .app-header")
         await header.wait_for(state="visible")
-        title = harness.page.locator(".app-header .header-title")
-        navigation = harness.page.locator("nav.app-nav")
+        title = harness.page.locator(f"{screen} .app-header .header-title")
+        navigation = harness.page.locator(f"{screen} nav.app-nav")
         await navigation.wait_for(state="visible")
         header_box = await header.bounding_box()
         title_box = await title.bounding_box()
@@ -3013,7 +2648,7 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
             "title_height": round(title_box["height"], 1),
             "nav_height": round(navigation_box["height"], 1),
             "nav_offset_x": round(navigation_box["x"] - header_box["x"], 1),
-            "title_font_size": await harness.page.locator(".app-header h1").evaluate(
+            "title_font_size": await harness.page.locator(f"{screen} .app-header h1").evaluate(
                 "(element) => getComputedStyle(element).fontSize"
             ),
         }
@@ -3028,9 +2663,13 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
     harness = screen_harness
     await harness.page.set_viewport_size({"width": 600, "height": 800})
 
-    for path, selector in (("/", ".wi-screen-scroll"), ("/plans", "#app"), ("/sessions", "#app")):
+    for path, screen, selector in (
+        ("/", "#screen-wi", "#screen-wi .wi-screen-scroll"),
+        ("/plans", "#screen-plans", "#plans-app"),
+        ("/sessions", "#screen-sessions", "#sessions-app"),
+    ):
         await harness.page.goto(harness.base_url + path)
-        header = harness.page.locator(".app-header")
+        header = harness.page.locator(f"{screen} .app-header")
         await header.wait_for(state="visible")
         pane = harness.page.locator(selector)
         await pane.wait_for(state="visible")
@@ -3055,12 +2694,14 @@ async def test_session_detail_matches_plan_typography_and_gutters(screen_harness
     await harness.page.goto(harness.base_url + "/plans")
     await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
     plan_styles = await harness.page.locator("#preview").evaluate(read_styles, body_properties)
-    plan_toolbar_styles = await harness.page.locator("main > .toolbar").evaluate(read_styles, toolbar_properties)
+    plan_toolbar_styles = await harness.page.locator("#screen-plans main > .toolbar").evaluate(read_styles, toolbar_properties)
 
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
     session_styles = await harness.page.locator("#detail").evaluate(read_styles, body_properties)
-    session_toolbar_styles = await harness.page.locator("main > .toolbar").evaluate(read_styles, toolbar_properties)
+    session_toolbar_styles = await harness.page.locator("#screen-sessions main > .toolbar").evaluate(
+        read_styles, toolbar_properties
+    )
 
     assert session_styles == plan_styles
     assert session_toolbar_styles == plan_toolbar_styles
@@ -3086,7 +2727,11 @@ async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _
     await harness.page.set_viewport_size({"width": 600, "height": 800})
     styles: dict[str, dict[str, str]] = {}
 
-    for path, selector in (("/", "#refresh-button"), ("/plans", "#menu-btn"), ("/sessions", "#menu-btn")):
+    for path, selector in (
+        ("/", "#refresh-button"),
+        ("/plans", "#plans-menu-btn"),
+        ("/sessions", "#sessions-menu-btn"),
+    ):
         await harness.page.goto(harness.base_url + path)
         button = harness.page.locator(selector)
         await button.wait_for(state="visible")
@@ -3103,7 +2748,7 @@ async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _
     previous_button = harness.page.locator("#prev-btn")
     await previous_button.wait_for(state="visible")
     assert await previous_button.is_disabled()
-    enabled = await harness.page.locator("#menu-btn").evaluate("(element) => getComputedStyle(element).opacity")
+    enabled = await harness.page.locator("#plans-menu-btn").evaluate("(element) => getComputedStyle(element).opacity")
     disabled = await previous_button.evaluate("(element) => getComputedStyle(element).opacity")
     assert float(enabled) == 1
     assert float(disabled) < 1
@@ -3121,14 +2766,14 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     listing = await harness.page.locator("#sessions").inner_text()
     assert "browser-test" in listing
     assert "/home/aki/proj" in listing
-    assert "Claudeの発話" in listing
+    assert "Claudeの発話" not in listing
     assert "11111111-2222-3333-4444-555555555555" not in listing
     # 実行系による限定の操作、実行系のバッジ、ホストの接続状態及び件数の表示は画面へ現れない。
     for selector in ("#sessions .engine-badge", ".engine-filter", "#host-status", "#list-status"):
         assert await harness.page.locator(selector).count() == 0, selector
 
     # 文字列による限定。
-    await harness.page.locator("#filter").fill("aaaaaaaa")
+    await harness.page.locator("#sessions-filter").fill("aaaaaaaa")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
     assert await harness.page.locator('#sessions .session-item[data-engine="codex"]').count() == 1
 
@@ -3172,18 +2817,18 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     broken_summary = harness.page.locator("#detail .kind-tool_call", has_text="broken").locator("summary")
     assert "invalid-json" not in await broken_summary.inner_text()
 
-    await harness.page.locator("#filter").fill("Claudeの発話")
+    await harness.page.locator("#sessions-filter").fill("Claudeの発話")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
     assert await harness.page.locator('#sessions .session-item[data-engine="claude"]').count() == 1
 
-    await harness.page.locator("#filter").fill("/home/aki/proj")
+    await harness.page.locator("#sessions-filter").fill("/home/aki/proj")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
     assert await harness.page.locator('#sessions .session-item[data-engine="claude"]').count() == 1
 
-    await harness.page.locator("#filter").fill("browser-test")
+    await harness.page.locator("#sessions-filter").fill("browser-test")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
 
-    await harness.page.locator("#filter").fill("")
+    await harness.page.locator("#sessions-filter").fill("")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 2")
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
     await harness.page.locator("#detail .kind-thinking").wait_for(state="visible")
@@ -3244,11 +2889,13 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     await page.locator("#detail").evaluate(
         "element => { const spacer = document.createElement('div'); spacer.style.height = '600px'; element.append(spacer); }"
     )
-    toolbar = page.locator("main .toolbar")
+    toolbar = page.locator("#screen-sessions main .toolbar")
     before = await toolbar.bounding_box()
     assert before is not None
 
-    scroll_top = await page.locator("main").evaluate("element => { element.scrollTop = 120; return element.scrollTop; }")
+    scroll_top = await page.locator("#screen-sessions main").evaluate(
+        "element => { element.scrollTop = 120; return element.scrollTop; }"
+    )
     after = await toolbar.bounding_box()
 
     assert scroll_top > 0
@@ -3290,23 +2937,26 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
         await page.goto(screen_harness.base_url + "/plans")
         await page.locator("#files .file").first.wait_for(state="visible")
-        assert await page.locator("body").evaluate("element => element.classList.contains('drawer-open')") is mobile
+        assert await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')") is mobile
         if mobile:
             assert await page.locator("#copy-btn .short-label").is_visible()
             assert not await page.locator("#copy-btn .wide-label").is_visible()
-            assert await page.locator("main .toolbar").evaluate("element => getComputedStyle(element).flexWrap") == "nowrap"
+            assert (
+                await page.locator("#screen-plans main .toolbar").evaluate("element => getComputedStyle(element).flexWrap")
+                == "nowrap"
+            )
             await page.locator("#files .file").first.click()
             await page.locator("#preview h1").wait_for(state="visible")
-            assert not await page.locator("body").evaluate("element => element.classList.contains('drawer-open')")
+            assert not await page.locator("#screen-plans").evaluate("element => element.classList.contains('drawer-open')")
         else:
             await page.locator("#preview h1").wait_for(state="visible")
 
         await page.goto(screen_harness.base_url + "/sessions")
         await page.locator("#sessions .session-item").first.wait_for(state="visible")
-        assert await page.locator("body").evaluate("element => element.classList.contains('drawer-open')") is mobile
+        assert await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')") is mobile
         await page.locator("#sessions .session-item").first.click()
         await page.locator("#detail .event").first.wait_for(state="visible")
-        assert not await page.locator("body").evaluate("element => element.classList.contains('drawer-open')")
+        assert not await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')")
 
 
 @pytest.mark.asyncio
@@ -3399,7 +3049,7 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
         assert await harness.page.evaluate("navigator.clipboard.readText()") == expected_paths[current_heading]
     assert headings == {"新root", "旧root"}
 
-    await harness.page.locator("#filter").fill("needle")
+    await harness.page.locator("#plans-filter").fill("needle")
     await harness.page.locator("#files .file").nth(1).wait_for(state="visible")
     assert await harness.page.locator("#files .file").count() == 2
 

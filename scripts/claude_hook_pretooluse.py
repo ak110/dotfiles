@@ -132,7 +132,11 @@ def main(payload_text: str) -> int:
                     "hookSpecificOutput": {
                         "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
-                        "additionalContext": _llm_notice(" | ".join(warnings), tag="warn"),
+                        "additionalContext": _llm_notice(
+                            " | ".join(warnings),
+                            tag="warn",
+                            removable_cause=True,
+                        ),
                     }
                 },
                 ensure_ascii=False,

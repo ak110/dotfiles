@@ -1,14 +1,208 @@
-/* カスタムプロパティー・ボタン・ナビゲーションの共通定義は`shell.css`が持つ。
+/* 3画面が共有する表示と、画面ごとの装飾。 */
+
+:root {
+  --color-background: #f3f6fa;
+  --color-surface: #ffffff;
+  --color-text: #172033;
+  --color-secondary-text: #5d6678;
+  --color-border: #d9dfe8;
+  --color-primary: #3157d5;
+  --color-primary-hover: #2444ae;
+  --color-normal: #eef2f8;
+  --color-normal-hover: #e0e6ef;
+  --color-danger: #b42318;
+  --color-danger-hover: #8f1c13;
+  --color-success: #18794e;
+  --color-warning: #9a6700;
+  --color-focus: #2563eb;
+  --space-1: 0.375rem;
+  --space-2: 0.625rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2rem;
+  --radius-small: 0.5rem;
+  --radius-medium: 0.875rem;
+  --shadow-card: 0 0.5rem 1.5rem rgb(30 45 75 / 0.09);
+  --font-size-secondary: 0.875rem;
+}
+
+html, body { height: 100%; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: hidden;
+}
+
+.screen[hidden] { display: none; }
+.screen:not([hidden]) { display: contents; }
+
+button {
+  max-width: 100%;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text);
+  background: var(--color-normal);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover { background: var(--color-normal-hover); }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+
+.button-primary {
+  border-color: var(--color-primary);
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.button-primary:hover { background: var(--color-primary-hover); }
+.button-secondary { background: var(--color-normal); }
+.button-text { border-color: transparent; background: transparent; }
+
+.button-danger {
+  border-color: var(--color-danger);
+  color: #fff;
+  background: var(--color-danger);
+}
+
+.button-danger:hover { background: var(--color-danger-hover); }
+
+/* ヘッダーの子要素の数は画面ごとに異なるため、列を固定してナビゲーションを画面中央へ置く。
+   高さ・文字サイズ・内側の余白・影・折り返しは本ファイルを正本とし、画面固有のCSSは水平方向の余白だけを上書きする。 */
+.app-header {
+  --header-line-height: 1.55;
+  position: sticky;
+  flex: 0 0 auto;
+  z-index: 10;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid #e6e6e6;
+  background: rgb(255 255 255 / 0.96);
+  box-shadow: 0 0.25rem 1rem rgb(30 45 75 / 0.06);
+  font-family: system-ui, sans-serif;
+  /* 各画面の本文用の文字サイズと行の高さがヘッダーへ及ぶと、同じ部品の大きさが画面ごとに変わるため明示する。 */
+  font-size: 1rem;
+  line-height: var(--header-line-height);
+}
+
+/* WI画面だけが操作群のボタンを持つため、ボタンの有無でヘッダーの高さが変わらないよう
+   3つの列へボタンと同じ高さを最小値として与える。ボタンの高さは、継承する文字サイズと行の高さの積へ
+   ボタン自身の上下の内側の余白と上下の境界線を加えた値である。 */
+.app-header .header-title,
+.app-header .app-nav,
+.app-header .header-actions {
+  min-height: calc(1em * var(--header-line-height) + var(--space-1) * 2 + 2px);
+}
+
+.app-header .header-title {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-header .app-nav { grid-column: 2; }
+
+.app-header .header-actions {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* 計画ファイル画面の本文規則が見出しへ及ぶため、共通ヘッダーの寸法を明示して打ち消す。 */
+#screen-wi .app-header h1,
+#screen-plans .app-header h1,
+#screen-sessions .app-header h1 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 1.375rem;
+  line-height: 1.55;
+  letter-spacing: normal;
+}
+
+/* シェル部品（ヘッダーの操作群と各ペインのツールバー）のボタン寸法と文字サイズを3画面でそろえる。 */
+.app-header .header-actions button,
+main > .toolbar button {
+  padding: var(--space-1) var(--space-2);
+}
+
+main > .toolbar { font-size: 1rem; }
+
+.app-nav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-nav a {
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+}
+
+.app-nav a:hover {
+  background: rgb(0 0 0 / 0.06);
+}
+
+.app-nav a[aria-current="page"] {
+  background: rgb(0 0 0 / 0.08);
+  border-color: rgb(0 0 0 / 0.18);
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  /* 横方向の余地が無いため、タイトル・ナビゲーション・操作群を1列で縦に並べる。 */
+  .app-header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .app-header .header-title,
+  .app-header .app-nav,
+  .app-header .header-actions {
+    grid-column: 1;
+  }
+
+  .app-header .header-title { justify-content: space-between; }
+
+  .app-header h1 {
+    font-size: 1.05rem;
+  }
+
+  .app-nav a {
+    padding: 4px 8px;
+    font-size: 0.86rem;
+  }
+}
+
+/* カスタムプロパティー・ボタン・ナビゲーションの共通定義は本ファイルの先頭が持つ。
    本ファイルはWI画面固有のレイアウトと部品だけを定義する。 */
 
-body[data-screen="wi"],
-body[data-screen="wi"] * {
+#screen-wi,
+#screen-wi * {
   box-sizing: border-box;
 }
-body[data-screen="wi"] {
+#screen-wi {
   scroll-behavior: smooth;
 }
-body[data-screen="wi"] {
+#screen-wi {
   margin: 0;
   color: var(--color-text);
   background: var(--color-background);
@@ -21,9 +215,9 @@ body[data-screen="wi"] {
   font-size: 1rem;
   line-height: 1.55;
 }
-body[data-screen="wi"] input,
-body[data-screen="wi"] select,
-body[data-screen="wi"] textarea {
+#screen-wi input,
+#screen-wi select,
+#screen-wi textarea {
   width: 100%;
   max-width: 100%;
   padding: 0.7rem 0.8rem;
@@ -33,13 +227,13 @@ body[data-screen="wi"] textarea {
   background: var(--color-surface);
   font: inherit;
 }
-body[data-screen="wi"] textarea {
+#screen-wi textarea {
   resize: vertical;
 }
-body[data-screen="wi"] [hidden] {
+#screen-wi [hidden] {
   display: none !important;
 }
-body[data-screen="wi"] .visually-hidden {
+#screen-wi .visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -48,39 +242,39 @@ body[data-screen="wi"] .visually-hidden {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-body[data-screen="wi"] .app-header {
+#screen-wi .app-header {
   padding-inline: max(var(--space-3), calc((100% - 1800px) / 2));
 }
-body[data-screen="wi"] .wi-screen-scroll {
+#screen-wi .wi-screen-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }
-body[data-screen="wi"] .header-title,
-body[data-screen="wi"] .header-actions,
-body[data-screen="wi"] .pane-heading,
-body[data-screen="wi"] .detail-title-row,
-body[data-screen="wi"] .dialog-footer {
+#screen-wi .header-title,
+#screen-wi .header-actions,
+#screen-wi .pane-heading,
+#screen-wi .detail-title-row,
+#screen-wi .dialog-footer {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-body[data-screen="wi"] .app-header h1,
-body[data-screen="wi"] .pane-heading h2,
-body[data-screen="wi"] .dialog-header h2 {
+#screen-wi .app-header h1,
+#screen-wi .pane-heading h2,
+#screen-wi .dialog-header h2 {
   margin: 0;
 }
-body[data-screen="wi"] .pane-heading {
+#screen-wi .pane-heading {
   justify-content: space-between;
 }
-body[data-screen="wi"] .connection-status,
-body[data-screen="wi"] .secondary-text,
-body[data-screen="wi"] .readonly-notice,
-body[data-screen="wi"] .field-hint {
+#screen-wi .connection-status,
+#screen-wi .secondary-text,
+#screen-wi .readonly-notice,
+#screen-wi .field-hint {
   color: var(--color-secondary-text);
   font-size: var(--font-size-secondary);
 }
-body[data-screen="wi"] .is-pending::before {
+#screen-wi .is-pending::before {
   display: inline-block;
   width: 0.85rem;
   height: 0.85rem;
@@ -91,9 +285,9 @@ body[data-screen="wi"] .is-pending::before {
   animation: spin 0.8s linear infinite;
   content: "";
 }
-body[data-screen="wi"] .global-error,
-body[data-screen="wi"] .list-warning,
-body[data-screen="wi"] .dialog-message {
+#screen-wi .global-error,
+#screen-wi .list-warning,
+#screen-wi .dialog-message {
   padding: var(--space-3);
   border: 1px solid #f2b8b5;
   border-radius: var(--radius-small);
@@ -102,24 +296,24 @@ body[data-screen="wi"] .dialog-message {
   white-space: pre-wrap;
 }
 /* ダイアログ本文はスクロールするため、結果表示領域を上端へ留め、スクロール位置によらず可視にする。 */
-body[data-screen="wi"] .dialog-message {
+#screen-wi .dialog-message {
   position: sticky;
   top: 0;
   z-index: 1;
 }
-body[data-screen="wi"] .global-error {
+#screen-wi .global-error {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   max-width: 1800px;
   margin: var(--space-3) auto 0;
 }
-body[data-screen="wi"] .global-error-message {
+#screen-wi .global-error-message {
   min-width: 0;
   flex: 1;
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] .global-error-close {
+#screen-wi .global-error-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
   width: 2.75rem;
@@ -134,13 +328,13 @@ body[data-screen="wi"] .global-error-close {
   font-size: 1.5rem;
   line-height: 1;
 }
-body[data-screen="wi"] .list-warning {
+#screen-wi .list-warning {
   margin-top: var(--space-3);
   color: #7a4e00;
   background: #fffaeb;
   border-color: #fedf89;
 }
-body[data-screen="wi"] .list-fallback-notice {
+#screen-wi .list-fallback-notice {
   margin-top: var(--space-3);
   padding: var(--space-3);
   border: 1px solid #b2ddff;
@@ -148,12 +342,12 @@ body[data-screen="wi"] .list-fallback-notice {
   color: #175cd3;
   background: #eff8ff;
 }
-body[data-screen="wi"] .success-message {
+#screen-wi .success-message {
   color: var(--color-success);
   background: #ecfdf3;
   border-color: #abefc6;
 }
-body[data-screen="wi"] .app-layout {
+#screen-wi .app-layout {
   display: grid;
   grid-template-columns: minmax(15rem, 0.24fr) minmax(0, 1fr);
   gap: var(--space-3);
@@ -162,7 +356,7 @@ body[data-screen="wi"] .app-layout {
   padding: var(--space-3);
   align-items: start;
 }
-body[data-screen="wi"] .card {
+#screen-wi .card {
   min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--color-border);
@@ -170,45 +364,45 @@ body[data-screen="wi"] .card {
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
-body[data-screen="wi"] .filters-body,
-body[data-screen="wi"] .dialog-form-fields,
-body[data-screen="wi"] .edit-panel,
-body[data-screen="wi"] .answer-panel,
-body[data-screen="wi"] .user-comment-panel {
+#screen-wi .filters-body,
+#screen-wi .dialog-form-fields,
+#screen-wi .edit-panel,
+#screen-wi .answer-panel,
+#screen-wi .user-comment-panel {
   display: grid;
   gap: var(--space-2);
 }
-body[data-screen="wi"] .filters {
+#screen-wi .filters {
   order: -1;
 }
-body[data-screen="wi"] .filters summary {
+#screen-wi .filters summary {
   cursor: pointer;
   font-weight: 700;
 }
-body[data-screen="wi"] .filters-body {
+#screen-wi .filters-body {
   margin-top: var(--space-3);
 }
-body[data-screen="wi"] .filters-body > .pane-heading {
+#screen-wi .filters-body > .pane-heading {
   justify-content: flex-end;
 }
-body[data-screen="wi"] .filter-grid {
+#screen-wi .filter-grid {
   display: grid;
   grid-template-columns: minmax(7rem, auto) 1fr;
   gap: var(--space-2);
   align-items: center;
 }
-body[data-screen="wi"] .additional-filters {
+#screen-wi .additional-filters {
   margin-top: var(--space-2);
 }
-body[data-screen="wi"] .additional-filters h3 {
+#screen-wi .additional-filters h3 {
   margin: 0 0 var(--space-2);
   font-size: inherit;
 }
-body[data-screen="wi"] .entry-pane {
+#screen-wi .entry-pane {
   min-height: 34rem;
 }
-body[data-screen="wi"] .entry-columns,
-body[data-screen="wi"] .entry-row {
+#screen-wi .entry-columns,
+#screen-wi .entry-row {
   display: grid;
   /* 識別子と状態の列幅を固定し、要約だけへ残りの幅を配分する。 */
   grid-template-columns:
@@ -220,21 +414,21 @@ body[data-screen="wi"] .entry-row {
   gap: var(--space-2);
   align-items: center;
 }
-body[data-screen="wi"] .entry-columns {
+#screen-wi .entry-columns {
   margin-top: var(--space-3);
   padding: 0 var(--space-2);
   color: var(--color-secondary-text);
   font-size: var(--font-size-secondary);
   font-weight: 700;
 }
-body[data-screen="wi"] .entry-list {
+#screen-wi .entry-list {
   display: grid;
   gap: var(--space-2);
   margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
-body[data-screen="wi"] .entry-select {
+#screen-wi .entry-select {
   display: grid;
   grid-column: 1 / 5;
   grid-template-columns: subgrid;
@@ -243,56 +437,56 @@ body[data-screen="wi"] .entry-select {
   text-align: left;
   background: var(--color-surface);
 }
-body[data-screen="wi"] .entry-copy {
+#screen-wi .entry-copy {
   grid-column: 5;
   white-space: nowrap;
 }
-body[data-screen="wi"] .entry-select:hover {
+#screen-wi .entry-select:hover {
   border-color: #aeb9cd;
   background: #f7f9fd;
 }
-body[data-screen="wi"] .entry-select[aria-current="true"] {
+#screen-wi .entry-select[aria-current="true"] {
   border-color: var(--color-primary);
   background: #eef2ff;
   box-shadow: 0 0 0 1px var(--color-primary);
 }
-body[data-screen="wi"] .entry-select[data-unanswered-uwi="true"] {
+#screen-wi .entry-select[data-unanswered-uwi="true"] {
   border-left: 0.4rem solid var(--color-warning);
   background: #fffdf5;
 }
-body[data-screen="wi"] .entry-select[data-kind="unknown"] {
+#screen-wi .entry-select[data-kind="unknown"] {
   border-style: dashed;
 }
-body[data-screen="wi"] .entry-cell {
+#screen-wi .entry-cell {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] .entry-cell::before {
+#screen-wi .entry-cell::before {
   display: none;
 }
-body[data-screen="wi"] .filename-cell,
-body[data-screen="wi"] .target-repo-cell,
-body[data-screen="wi"] .summary-cell {
+#screen-wi .filename-cell,
+#screen-wi .target-repo-cell,
+#screen-wi .summary-cell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-body[data-screen="wi"] .status-cell {
+#screen-wi .status-cell {
   display: flex;
   flex-wrap: nowrap;
   gap: var(--space-1);
   align-items: center;
   white-space: nowrap;
 }
-body[data-screen="wi"] .time-cell {
+#screen-wi .time-cell {
   font-size: var(--font-size-secondary);
 }
-body[data-screen="wi"] .entry-kind {
+#screen-wi .entry-kind {
   font-weight: 700;
 }
-body[data-screen="wi"] .state-badge,
-body[data-screen="wi"] .plan-badge,
-body[data-screen="wi"] .attention-badge {
+#screen-wi .state-badge,
+#screen-wi .plan-badge,
+#screen-wi .attention-badge {
   display: inline-flex;
   width: fit-content;
   padding: 0.2rem 0.55rem;
@@ -302,32 +496,32 @@ body[data-screen="wi"] .attention-badge {
   font-size: var(--font-size-secondary);
   font-weight: 700;
 }
-body[data-screen="wi"] .plan-badge {
+#screen-wi .plan-badge {
   color: #6941c6;
   background: #f4f3ff;
 }
-body[data-screen="wi"] .attention-badge {
+#screen-wi .attention-badge {
   color: #7a4e00;
   background: #fef0c7;
 }
-body[data-screen="wi"] .state-badge[data-state="inbox"] {
+#screen-wi .state-badge[data-state="inbox"] {
   color: #175cd3;
   background: #eff8ff;
 }
-body[data-screen="wi"] .state-badge[data-state="processing"] {
+#screen-wi .state-badge[data-state="processing"] {
   color: var(--color-warning);
   background: #fffaeb;
 }
-body[data-screen="wi"] .state-badge[data-state="adopted"] {
+#screen-wi .state-badge[data-state="adopted"] {
   color: var(--color-success);
   background: #ecfdf3;
 }
-body[data-screen="wi"] .state-badge[data-state="rejected"] {
+#screen-wi .state-badge[data-state="rejected"] {
   color: var(--color-danger);
   background: #fff1f0;
 }
-body[data-screen="wi"] .loading-state,
-body[data-screen="wi"] .empty-state {
+#screen-wi .loading-state,
+#screen-wi .empty-state {
   margin-top: var(--space-4);
   padding: var(--space-5) var(--space-3);
   border: 1px dashed var(--color-border);
@@ -335,7 +529,7 @@ body[data-screen="wi"] .empty-state {
   color: var(--color-secondary-text);
   text-align: center;
 }
-body[data-screen="wi"] .pagination {
+#screen-wi .pagination {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -343,12 +537,12 @@ body[data-screen="wi"] .pagination {
   margin-top: var(--space-3);
   flex-wrap: wrap;
 }
-body[data-screen="wi"] .pagination-status {
+#screen-wi .pagination-status {
   min-width: 8rem;
   color: var(--color-secondary-text);
   text-align: center;
 }
-body[data-screen="wi"] .loading-state::before {
+#screen-wi .loading-state::before {
   display: inline-block;
   width: 0.9rem;
   height: 0.9rem;
@@ -359,7 +553,7 @@ body[data-screen="wi"] .loading-state::before {
   animation: spin 0.8s linear infinite;
   content: "";
 }
-body[data-screen="wi"] dialog.dialog-shell {
+#screen-wi dialog.dialog-shell {
   width: min(42rem, calc(100% - 2rem));
   max-height: calc(100svh - 2rem);
   overflow: hidden;
@@ -368,19 +562,19 @@ body[data-screen="wi"] dialog.dialog-shell {
   border-radius: var(--radius-medium);
   box-shadow: 0 1.5rem 4rem rgb(20 30 50 / 0.25);
 }
-body[data-screen="wi"] dialog.detail-dialog {
+#screen-wi dialog.detail-dialog {
   width: min(72rem, calc(100% - 2rem));
 }
-body[data-screen="wi"] dialog::backdrop {
+#screen-wi dialog::backdrop {
   background: rgb(15 23 42 / 0.55);
 }
-body[data-screen="wi"] .dialog-frame {
+#screen-wi .dialog-frame {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   max-height: calc(100svh - 2rem);
   margin: 0;
 }
-body[data-screen="wi"] .dialog-header {
+#screen-wi .dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -389,7 +583,7 @@ body[data-screen="wi"] .dialog-header {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
-body[data-screen="wi"] .dialog-close {
+#screen-wi .dialog-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
   width: 2.75rem;
@@ -401,159 +595,159 @@ body[data-screen="wi"] .dialog-close {
   font-size: 1.5rem;
   line-height: 1;
 }
-body[data-screen="wi"] .dialog-body {
+#screen-wi .dialog-body {
   min-height: 0;
   overflow-y: auto;
   padding: var(--space-4);
   background: var(--color-surface);
 }
-body[data-screen="wi"] .dialog-footer {
+#screen-wi .dialog-footer {
   justify-content: flex-end;
   flex-wrap: wrap;
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
 }
-body[data-screen="wi"] .detail-footer {
+#screen-wi .detail-footer {
   justify-content: space-between;
 }
-body[data-screen="wi"] .detail-footer-left,
-body[data-screen="wi"] .detail-footer-right {
+#screen-wi .detail-footer-left,
+#screen-wi .detail-footer-right {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-body[data-screen="wi"] .detail-title-row {
+#screen-wi .detail-title-row {
   justify-content: space-between;
 }
-body[data-screen="wi"] .detail-title-row h3 {
+#screen-wi .detail-title-row h3 {
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] .metadata {
+#screen-wi .metadata {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: var(--space-1) var(--space-3);
 }
-body[data-screen="wi"] .metadata dt {
+#screen-wi .metadata dt {
   font-weight: 700;
 }
-body[data-screen="wi"] .metadata dd {
+#screen-wi .metadata dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] #detail-metadata {
+#screen-wi #detail-metadata {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: var(--space-3);
 }
-body[data-screen="wi"] #detail-metadata .metadata-item {
+#screen-wi #detail-metadata .metadata-item {
   min-width: 0;
   display: grid;
   gap: var(--space-1);
 }
-body[data-screen="wi"] #detail-metadata dt {
+#screen-wi #detail-metadata dt {
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] #detail-metadata dd {
+#screen-wi #detail-metadata dd {
   white-space: pre-wrap;
 }
-body[data-screen="wi"] .detail-body {
+#screen-wi .detail-body {
   margin-top: var(--space-4);
 }
-body[data-screen="wi"] .entry-content {
+#screen-wi .entry-content {
   padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-surface);
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] .markdown-body > :first-child {
+#screen-wi .markdown-body > :first-child {
   margin-top: 0;
 }
-body[data-screen="wi"] .markdown-body > :last-child {
+#screen-wi .markdown-body > :last-child {
   margin-bottom: 0;
 }
-body[data-screen="wi"] .markdown-body h1,
-body[data-screen="wi"] .markdown-body h2,
-body[data-screen="wi"] .markdown-body h3,
-body[data-screen="wi"] .markdown-body h4,
-body[data-screen="wi"] .markdown-body ul,
-body[data-screen="wi"] .markdown-body ol,
-body[data-screen="wi"] .markdown-body pre,
-body[data-screen="wi"] .markdown-body blockquote,
-body[data-screen="wi"] .markdown-body table {
+#screen-wi .markdown-body h1,
+#screen-wi .markdown-body h2,
+#screen-wi .markdown-body h3,
+#screen-wi .markdown-body h4,
+#screen-wi .markdown-body ul,
+#screen-wi .markdown-body ol,
+#screen-wi .markdown-body pre,
+#screen-wi .markdown-body blockquote,
+#screen-wi .markdown-body table {
   margin-block: var(--space-3);
 }
-body[data-screen="wi"] .markdown-body pre,
-body[data-screen="wi"] .markdown-body code {
+#screen-wi .markdown-body pre,
+#screen-wi .markdown-body code {
   font-family:
     ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
-body[data-screen="wi"] .markdown-body :not(pre) > code {
+#screen-wi .markdown-body :not(pre) > code {
   padding: 0.12rem 0.35rem;
   border-radius: 0.3rem;
   background: #e9eef5;
 }
-body[data-screen="wi"] .markdown-body pre {
+#screen-wi .markdown-body pre {
   padding: var(--space-2);
   border-radius: var(--radius-small);
   background: #e9eef5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] .markdown-body pre code {
+#screen-wi .markdown-body pre code {
   padding: 0;
   background: transparent;
 }
-body[data-screen="wi"] .markdown-body blockquote {
+#screen-wi .markdown-body blockquote {
   margin-inline: 0;
   padding-left: var(--space-3);
   border-left: 0.25rem solid var(--color-border);
   color: var(--color-secondary-text);
 }
-body[data-screen="wi"] .markdown-body table {
+#screen-wi .markdown-body table {
   border-collapse: collapse;
 }
-body[data-screen="wi"] .markdown-body th,
-body[data-screen="wi"] .markdown-body td {
+#screen-wi .markdown-body th,
+#screen-wi .markdown-body td {
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
 }
-body[data-screen="wi"] .edit-panel,
-body[data-screen="wi"] .answer-panel,
-body[data-screen="wi"] .user-comment-panel {
+#screen-wi .edit-panel,
+#screen-wi .answer-panel,
+#screen-wi .user-comment-panel {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
 }
-body[data-screen="wi"] .field-hint {
+#screen-wi .field-hint {
   margin: 0;
 }
-body[data-screen="wi"] #edit-content {
+#screen-wi #edit-content {
   min-height: clamp(14rem, 38svh, 30rem);
 }
-body[data-screen="wi"] #answer-input {
+#screen-wi #answer-input {
   min-height: clamp(7rem, 20svh, 14rem);
 }
-body[data-screen="wi"] #create-content {
+#screen-wi #create-content {
   min-height: clamp(9rem, 28svh, 20rem);
 }
-body[data-screen="wi"] #create-choices {
+#screen-wi #create-choices {
   min-height: clamp(6rem, 16svh, 11rem);
 }
-body[data-screen="wi"] .answer-choices {
+#screen-wi .answer-choices {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-body[data-screen="wi"] .inline-error {
+#screen-wi .inline-error {
   margin: 0;
   color: var(--color-danger);
   font-size: var(--font-size-secondary);
 }
-body[data-screen="wi"] [aria-invalid="true"] {
+#screen-wi [aria-invalid="true"] {
   border-color: var(--color-danger);
 }
-body[data-screen="wi"] .force-confirmation {
+#screen-wi .force-confirmation {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -562,10 +756,10 @@ body[data-screen="wi"] .force-confirmation {
   border-radius: var(--radius-small);
   background: #fff7ed;
 }
-body[data-screen="wi"] .force-confirmation input {
+#screen-wi .force-confirmation input {
   width: auto;
 }
-body[data-screen="wi"] .operation-notice {
+#screen-wi .operation-notice {
   position: fixed;
   z-index: 30;
   display: flex;
@@ -580,15 +774,15 @@ body[data-screen="wi"] .operation-notice {
   background: #1f2937;
   box-shadow: var(--shadow-card);
 }
-body[data-screen="wi"] .operation-notice[data-error="true"] {
+#screen-wi .operation-notice[data-error="true"] {
   background: var(--color-danger);
 }
-body[data-screen="wi"] .operation-notice-message {
+#screen-wi .operation-notice-message {
   min-width: 0;
   flex: 1;
   overflow-wrap: anywhere;
 }
-body[data-screen="wi"] .operation-notice-close {
+#screen-wi .operation-notice-close {
   display: inline-grid;
   flex: 0 0 2.75rem;
   width: 2.75rem;
@@ -610,85 +804,903 @@ body[data-screen="wi"] .operation-notice-close {
   }
 }
 @media (max-width: 1279px) {
-  body[data-screen="wi"] .entry-columns {
+  #screen-wi .entry-columns {
     display: none;
   }
-  body[data-screen="wi"] .entry-row {
+  #screen-wi .entry-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  body[data-screen="wi"] .entry-select {
+  #screen-wi .entry-select {
     grid-column: 1;
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
     gap: var(--space-1);
     padding: var(--space-3);
   }
-  body[data-screen="wi"] .entry-copy {
+  #screen-wi .entry-copy {
     grid-column: 2;
   }
-  body[data-screen="wi"] .filename-cell,
-  body[data-screen="wi"] .target-repo-cell {
+  #screen-wi .filename-cell,
+  #screen-wi .target-repo-cell {
     display: none;
   }
-  body[data-screen="wi"] .summary-cell {
+  #screen-wi .summary-cell {
     grid-row: 1;
   }
-  body[data-screen="wi"] .status-cell {
+  #screen-wi .status-cell {
     grid-row: 2;
   }
 }
 @media (max-width: 700px) {
-  /* 狭い画面では中央寄せの余地が無いため、水平方向の余白も`shell.css`の共通値へそろえる。 */
-  body[data-screen="wi"] .app-header {
+  /* 狭い画面では中央寄せの余地が無いため、水平方向の余白も共通値へそろえる。 */
+  #screen-wi .app-header {
     padding-inline: var(--space-2);
   }
-  body[data-screen="wi"] .header-actions {
+  #screen-wi .header-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
     width: 100%;
   }
-  body[data-screen="wi"] #sync-result {
+  #screen-wi #sync-result {
     font-size: 0.75rem;
     line-height: 1.25;
   }
-  body[data-screen="wi"] .app-layout {
+  #screen-wi .app-layout {
     grid-template-columns: 1fr;
     padding: var(--space-2);
   }
-  body[data-screen="wi"] .filters {
+  #screen-wi .filters {
     order: initial;
   }
-  body[data-screen="wi"] .entry-pane {
+  #screen-wi .entry-pane {
     min-height: 0;
   }
-  body[data-screen="wi"] .filter-grid {
+  #screen-wi .filter-grid {
     grid-template-columns: 1fr;
   }
-  body[data-screen="wi"] dialog.dialog-shell {
+  #screen-wi dialog.dialog-shell {
     width: calc(100% - 1rem);
     max-height: calc(100svh - 1rem);
   }
-  body[data-screen="wi"] .dialog-frame {
+  #screen-wi .dialog-frame {
     max-height: calc(100svh - 1rem);
   }
-  body[data-screen="wi"] .dialog-header,
-  body[data-screen="wi"] .dialog-body,
-  body[data-screen="wi"] .dialog-footer {
+  #screen-wi .dialog-header,
+  #screen-wi .dialog-body,
+  #screen-wi .dialog-footer {
     padding-inline: var(--space-3);
   }
-  body[data-screen="wi"] .dialog-footer button {
+  #screen-wi .dialog-footer button {
     width: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  body[data-screen="wi"] {
+  #screen-wi {
     scroll-behavior: auto;
   }
-  body[data-screen="wi"],
-  body[data-screen="wi"] *,
-  body[data-screen="wi"] *::before,
-  body[data-screen="wi"] *::after {
+  #screen-wi,
+  #screen-wi *,
+  #screen-wi *::before,
+  #screen-wi *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* 計画ファイルのMarkdown本文表示。 */
+
+/* ========================================
+   Base
+   ======================================== */
+
+#screen-plans {
+  font-family:
+    "Noto Sans JP",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-size: 1.125rem; /* 18px */
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  color: #1a1a1a; /* neutral-solid-gray-900 */
+  background-color: #ffffff;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  text-autospace: normal; /* 和欧混植時の字間自動調整（未対応ブラウザでは無視） */
+}
+
+/* ========================================
+   Headings
+   ======================================== */
+
+#screen-plans h1,
+#screen-plans h2,
+#screen-plans h3,
+#screen-plans h4,
+#screen-plans h5,
+#screen-plans h6 {
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+}
+
+/* std-36B-140 */
+#screen-plans h1 {
+  font-size: 2.375rem; /* 38px */
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+}
+
+/* std-28B-150 */
+#screen-plans h2 {
+  font-size: 1.875rem; /* 30px */
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid #e6e6e6;
+}
+
+/* std-24B-150 */
+#screen-plans h3 {
+  font-size: 1.625rem; /* 26px */
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+/* std-20B-160 */
+#screen-plans h4 {
+  font-size: 1.375rem; /* 22px */
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+}
+
+/* std-18B-160 */
+#screen-plans h5 {
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+}
+
+/* std-16B-170 */
+#screen-plans h6 {
+  font-size: 1.125rem; /* 18px */
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  color: #4d4d4d; /* neutral-solid-gray-700 */
+}
+
+/* ========================================
+   Paragraph & Inline
+   ======================================== */
+
+#screen-plans p {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+#screen-plans strong {
+  font-weight: 700;
+}
+#screen-plans a {
+  color: #0031d8; /* blue-800 */
+  text-decoration: underline;
+}
+#screen-plans a:hover {
+  color: #002db6; /* blue-900 approx */
+}
+
+/* ========================================
+   Lists
+   ======================================== */
+
+#screen-plans ul,
+#screen-plans ol {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  padding-left: 1rem;
+}
+#screen-plans li {
+  margin-bottom: 0.125rem;
+}
+#screen-plans li > ul,
+#screen-plans li > ol {
+  margin-top: 0.125rem;
+  margin-bottom: 0;
+}
+
+/* ========================================
+   Blockquote
+   ======================================== */
+
+#screen-plans blockquote {
+  margin: 0 0 0.5rem 0;
+  padding: 0.25rem 0.75rem;
+  border-left: 4px solid #cccccc; /* neutral-solid-gray-200 */
+  color: #4d4d4d; /* neutral-solid-gray-700 */
+  background-color: #f2f2f2; /* neutral-solid-gray-50 */
+  border-radius: 0.25rem; /* border-radius-4 */
+}
+#screen-plans blockquote > p:last-child {
+  margin-bottom: 0;
+}
+
+/* ========================================
+   Code
+   ======================================== */
+
+/* インラインコード - mono-14N-150 */
+#screen-plans code {
+  font-family: "Noto Sans Mono", Consolas, monospace;
+  padding: 0.125rem 0.375rem;
+  background-color: #f2f2f2; /* neutral-solid-gray-50 */
+  border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+  border-radius: 0.25rem; /* border-radius-4 */
+}
+
+/* コードブロック - ターミナル風のダーク背景 */
+#screen-plans pre {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  background-color: #1e1e1e;
+  border: 1px solid #333333;
+  border-radius: 0.5rem; /* border-radius-8 */
+  text-wrap: wrap;
+}
+#screen-plans pre code {
+  font-size: 1rem; /* 16px */
+  padding: 0;
+  color: #d4d4d4;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+/* ========================================
+   Table
+   ======================================== */
+
+#screen-plans table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1rem; /* 16px */
+  line-height: 1.5;
+}
+#screen-plans thead {
+  background-color: #f2f2f2; /* neutral-solid-gray-50 */
+}
+#screen-plans th {
+  font-weight: 700;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+}
+#screen-plans td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+}
+
+/* ========================================
+   Horizontal Rule
+   ======================================== */
+
+#screen-plans hr {
+  border: none;
+  border-top: 1px solid #e6e6e6; /* neutral-solid-gray-100 */
+  margin: 1rem 0;
+}
+
+/* ========================================
+   Image
+   ======================================== */
+
+#screen-plans img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem; /* border-radius-8 */
+}
+
+/* ========================================
+   Checkbox (Task List)
+   ======================================== */
+
+#screen-plans input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: #0031d8; /* blue-800 */
+}
+
+/* ========================================
+   VSCode ダークテーマ上書き
+   Markdown プレビューを常にライトテーマで表示する
+   ======================================== */
+
+#screen-plans.vscode-dark {
+  color: #1a1a1a !important;
+  background-color: #ffffff !important;
+}
+#screen-plans.vscode-dark h1,
+#screen-plans.vscode-dark h2,
+#screen-plans.vscode-dark h3,
+#screen-plans.vscode-dark h4,
+#screen-plans.vscode-dark h5,
+#screen-plans.vscode-dark h6 {
+  color: #1a1a1a !important;
+}
+#screen-plans.vscode-dark h6 {
+  color: #4d4d4d !important;
+}
+#screen-plans.vscode-dark h1,
+#screen-plans.vscode-dark h2 {
+  border-bottom-color: #e6e6e6 !important;
+}
+#screen-plans.vscode-dark a {
+  color: #0031d8 !important;
+}
+#screen-plans.vscode-dark blockquote {
+  border-left-color: #cccccc !important;
+  color: #4d4d4d !important;
+  background-color: #f2f2f2 !important;
+}
+#screen-plans.vscode-dark code {
+  color: #1a1a1a !important;
+  background-color: #f2f2f2 !important;
+  border-color: #e6e6e6 !important;
+}
+#screen-plans.vscode-dark pre {
+  background-color: #1e1e1e !important;
+  border-color: #333333 !important;
+}
+#screen-plans.vscode-dark pre code {
+  color: #d4d4d4 !important;
+  background-color: transparent !important;
+  border: none !important;
+}
+#screen-plans.vscode-dark thead {
+  background-color: #f2f2f2 !important;
+}
+#screen-plans.vscode-dark th,
+#screen-plans.vscode-dark td {
+  border-color: #e6e6e6 !important;
+  color: #1a1a1a !important;
+}
+#screen-plans.vscode-dark hr {
+  border-top-color: #e6e6e6 !important;
+}
+
+#screen-plans {
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+/* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
+#screen-plans #plans-app {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+}
+#screen-plans aside {
+  border-right: 1px solid #e6e6e6;
+  overflow: auto;
+  background: #f9fafb;
+  padding: 0;
+}
+#screen-plans aside .toolbar {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  padding: 10px;
+  border-bottom: 1px solid #e6e6e6;
+}
+#screen-plans aside input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+#screen-plans .file {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e6e6e6;
+  cursor: pointer;
+}
+#screen-plans .file:hover,
+#screen-plans .file.active {
+  background: #eef2ff;
+}
+/* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
+      IntersectionObserverの可視化検出に使う。一覧の行高に影響を与えない。 */
+#screen-plans #files-sentinel {
+  height: 1px;
+  margin: 0;
+  padding: 0;
+}
+#screen-plans .name {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+#screen-plans .meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+#screen-plans .meta .host {
+  word-break: break-all;
+}
+#screen-plans .meta .ctime {
+  white-space: nowrap;
+}
+#screen-plans #root-warnings {
+  padding: 8px 12px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  font-size: 11px;
+}
+/* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
+#screen-plans .host-badge {
+  display: none;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: #4b5563;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+#screen-plans .host-badge.connecting,
+#screen-plans .host-badge.disconnected {
+  display: inline-block;
+}
+#screen-plans main {
+  overflow: auto;
+  box-sizing: border-box;
+}
+#screen-plans main .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e6e6e6;
+}
+/* 配色・境界・角丸・無効時表示・寸法は共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
+#screen-plans main .toolbar {
+  flex-wrap: nowrap;
+}
+#screen-plans main .toolbar .spacer {
+  flex: 1;
+}
+#screen-plans main .toolbar button {
+  white-space: nowrap;
+}
+#screen-plans main .toolbar .nav-btn {
+  min-width: 36px;
+}
+#screen-plans .short-label {
+  display: none;
+}
+/* デスクトップ既定ではハンバーガーとモバイル専用メタを隠す。 */
+#screen-plans #plans-menu-btn {
+  display: none;
+}
+#screen-plans #meta-mobile {
+  display: none;
+}
+#screen-plans #plans-drawer-backdrop {
+  display: none;
+}
+#screen-plans main article {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+/* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
+     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
+#screen-plans main article:has(> .review-table) {
+  max-width: none;
+}
+#screen-plans .review-table {
+  width: 100%;
+}
+#screen-plans .diagram {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+}
+#screen-plans .diagram-output {
+  max-width: 100%;
+}
+#screen-plans .mermaid-output {
+  overflow-x: auto;
+  text-align: center;
+}
+#screen-plans .svg-output {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+}
+#screen-plans .diagram-source {
+  margin-top: 0.75rem;
+}
+#screen-plans .diagram-source summary {
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 13px;
+}
+#screen-plans .diagram-source pre {
+  margin-bottom: 0;
+  text-align: left;
+}
+#screen-plans .diagram-error {
+  margin: 0.75rem 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+/* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
+@media (max-width: 768px) {
+  #screen-plans #plans-app {
+    grid-template-columns: 1fr;
+  }
+  #screen-plans aside {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    max-width: 85vw;
+    height: 100svh;
+    z-index: 20;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease-out;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+  }
+  #screen-plans.drawer-open aside {
+    transform: translateX(0);
+  }
+  #screen-plans #plans-drawer-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100svh;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10;
+  }
+  #screen-plans.drawer-open #plans-drawer-backdrop {
+    display: block;
+  }
+  #screen-plans #plans-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #screen-plans .wide-label {
+    display: none;
+  }
+  #screen-plans .short-label {
+    display: inline;
+  }
+  #screen-plans #meta-mobile {
+    display: block;
+    padding: 8px 16px;
+    font-size: 11px;
+    color: #6b7280;
+    background: #f9fafb;
+    border-bottom: 1px solid #e6e6e6;
+    word-break: break-all;
+  }
+  #screen-plans #meta-mobile .meta-host {
+    font-weight: 600;
+    color: #374151;
+  }
+  #screen-plans #meta-mobile .meta-path {
+    display: block;
+    margin-top: 2px;
+  }
+  #screen-plans #meta-mobile .meta-ctime {
+    display: inline-block;
+    margin-left: 8px;
+  }
+  #screen-plans #meta-mobile.empty {
+    display: none;
+  }
+}
+
+/* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
+
+/* 書体・文字サイズ・行の高さを計画ファイル画面へそろえる。 */
+#screen-sessions {
+  margin: 0;
+  padding: 0;
+  font-family:
+    "Noto Sans JP",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  color: #1a1a1a;
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+
+/* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
+#screen-sessions #sessions-app {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+}
+#screen-sessions aside {
+  border-right: 1px solid #e6e6e6;
+  overflow: auto;
+  background: #f9fafb;
+}
+#screen-sessions aside .toolbar {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  padding: 10px;
+  border-bottom: 1px solid #e6e6e6;
+}
+#screen-sessions aside input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+#screen-sessions #warnings {
+  margin: 8px 10px;
+  padding: 8px;
+  border: 1px solid #f0c36d;
+  border-radius: 6px;
+  background: #fdf6e3;
+  font-size: 0.95rem;
+}
+#screen-sessions .session-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid #eceff3;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+#screen-sessions .session-item:hover {
+  background: #eef2ff;
+}
+#screen-sessions .session-item[aria-current="true"] {
+  background: #e0e7ff;
+}
+#screen-sessions .session-item .session-cwd {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-sessions .session-item .session-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 11px;
+}
+#screen-sessions .session-item .session-cwd {
+  font-size: 13px;
+  font-weight: 600;
+}
+#screen-sessions .session-item .session-warning {
+  color: #b45309;
+  font-size: 0.88rem;
+}
+#screen-sessions main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* 内側の余白は計画ファイル画面のツールバーとそろえる。 */
+#screen-sessions main .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #e6e6e6;
+}
+#screen-sessions main .spacer {
+  flex: 1;
+}
+#screen-sessions .detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+#screen-sessions .secondary-text {
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+/* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
+#screen-sessions #detail {
+  flex: none;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+/* サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元へ戻る操作を本文の先頭へ置く。
+   配色・境界・角丸・寸法は共通規則が定める。本規則は下の要素との間隔だけを指定する。 */
+#screen-sessions .detail-back {
+  margin-bottom: 10px;
+}
+#screen-sessions .subagents {
+  margin-bottom: 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+#screen-sessions .subagents h2 {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid #e6e6e6;
+  background: #f4f6fa;
+  font-size: 0.95rem;
+}
+
+/* 左余白は`spawn_depth`に応じて描画側が設定する。 */
+#screen-sessions .subagent-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid #eceff3;
+  background: transparent;
+  text-align: left;
+  font-size: 0.95rem;
+}
+#screen-sessions .subagent-item:last-child {
+  border-bottom: none;
+}
+#screen-sessions .subagent-item:hover:not(:disabled) {
+  background: #eef2ff;
+}
+#screen-sessions .subagent-item .subagent-type {
+  flex: none;
+  font-weight: 600;
+}
+#screen-sessions .subagent-item .subagent-description {
+  overflow: hidden;
+  color: #6b7280;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-sessions .event {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+#screen-sessions .event > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  background: #f4f6fa;
+  font-size: 0.95rem;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+#screen-sessions .event .event-kind {
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #6b7280;
+  font-size: 0.8rem;
+}
+#screen-sessions .event.kind-user .event-kind {
+  background: #2563eb;
+}
+#screen-sessions .event.kind-developer .event-kind {
+  background: #be185d;
+}
+#screen-sessions .event.kind-assistant .event-kind {
+  background: #16a34a;
+}
+#screen-sessions .event.kind-thinking .event-kind {
+  background: #7c3aed;
+}
+#screen-sessions .event.kind-tool_call .event-kind {
+  background: #d97706;
+}
+#screen-sessions .event.kind-tool_result .event-kind {
+  background: #0891b2;
+}
+#screen-sessions .event.kind-compact_boundary .event-kind {
+  background: #b91c1c;
+}
+#screen-sessions .event .event-time {
+  color: #6b7280;
+}
+#screen-sessions .event .event-input-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-sessions .event pre {
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  font-size: 1.125rem;
+}
+#screen-sessions .unavailable {
+  color: #9ca3af;
+  font-style: normal;
+}
+#screen-sessions #sessions-menu-btn {
+  display: none;
+}
+#screen-sessions #sessions-drawer-backdrop {
+  display: none;
+}
+@media (max-width: 768px) {
+  #screen-sessions #sessions-app {
+    grid-template-columns: 1fr;
+  }
+
+  /* 一覧のドロワーは計画ファイル画面と同じく画面全体を覆う。 */
+  #screen-sessions aside {
+    position: fixed;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 84vw;
+    max-width: 340px;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+  #screen-sessions.drawer-open aside {
+    transform: translateX(0);
+  }
+  #screen-sessions.drawer-open #sessions-drawer-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 15;
+    inset: 0;
+    background: rgb(0 0 0 / 0.35);
+  }
+
+  /* 配色・境界・角丸・寸法は共通規則が定める。本規則は表示の切り替えだけを指定する。 */
+  #screen-sessions #sessions-menu-btn {
+    display: inline-block;
   }
 }

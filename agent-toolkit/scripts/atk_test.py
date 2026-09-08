@@ -453,6 +453,29 @@ class TestWaitScheduleParser:
         assert exc_info.value.code == 2
         assert not target.exists()
 
+    @pytest.mark.parametrize("count", [0, 1, 2])
+    def test_cleanup_without_path_reports_managed_temps(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        count: int,
+    ) -> None:
+        """省略時は管理対象の一覧を示して終了コード2を返す。"""
+        monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+        targets = [_managed_temp.create_managed_temp(f"cleanup-without-path-{index}") for index in range(count)]
+        now = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["managed-temp", "cleanup"], home=tmp_path, now=now)
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert "--pathを指定してください。" in captured.err
+        if count == 2:
+            first, second = (str(target) for target in targets)
+            assert captured.err.index(first) < captured.err.index(second)
+
     def test_does_not_expose_environment_values(
         self,
         monkeypatch: pytest.MonkeyPatch,

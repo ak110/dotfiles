@@ -24,7 +24,7 @@ import quart
 import werkzeug.exceptions
 from _git import remote as _git_remote
 
-from _atk.serve import assets
+from _atk.serve import assets, entry_index
 from _atk.serve import config as serve_config
 from _atk.serve import plans as serve_plans
 from _atk.serve import sessions as serve_sessions
@@ -189,6 +189,7 @@ def _entry(
     state: str,
     text: str,
     metadata: dict[str, typing.Any],
+    updated_at: str | None = None,
 ) -> dict[str, object]:
     answered = common.is_uwi_answered(text) if kind == common.WI_TYPE_UWI else None
     return {
@@ -200,10 +201,9 @@ def _entry(
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),
         "summary": _summary(text, kind),
-        "updated_at": datetime.datetime.fromtimestamp(
-            path.stat().st_mtime,
-            tz=datetime.UTC,
-        ).isoformat(),
+        "updated_at": updated_at
+        if updated_at is not None
+        else datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.UTC).isoformat(),
     }
 
 
@@ -377,34 +377,7 @@ class Operations:
 
     def __init__(self, private_notes: pathlib.Path) -> None:
         self.private_notes = private_notes
-
-    def _iter_entry_files(
-        self,
-        states: typing.Iterable[str],
-        warnings: list[dict[str, str]] | None = None,
-    ) -> typing.Iterator[tuple[str, pathlib.Path, str]]:
-        """指定状態のエントリを`(状態名, パス, 本文)`として順に返す。
-
-        一覧表示と対象リポジトリの候補収集で同じ走査条件を用いるための共通経路とする。
-        読み取れないファイルは除外し、一覧APIの走査では警告へ記録する。
-        """
-        for state in states:
-            try:
-                paths = sorted((self.private_notes / state).iterdir())
-            except FileNotFoundError:
-                continue
-            for path in paths:
-                if path.suffix != ".md":
-                    continue
-                try:
-                    yield state, path, path.read_text(encoding="utf-8")
-                except UnicodeDecodeError:
-                    if warnings is not None:
-                        warnings.append({"filename": path.name, "reason": "UTF-8として読み取れません"})
-                except OSError:
-                    if warnings is not None:
-                        warnings.append({"filename": path.name, "reason": "ファイルを読み取れません"})
-                    continue
+        self._entry_index = entry_index.EntryIndex(private_notes)
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
@@ -412,7 +385,6 @@ class Operations:
         未回答UWIを先頭に置き、残りは種別を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
-        warnings: list[dict[str, str]] = []
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
@@ -424,19 +396,18 @@ class Operations:
         canonical_target_repo = (
             _git_remote.canonical_repo(target_repo_filter, resolver_cache) if target_repo_filter is not None else None
         )
-        for state, path, text in self._iter_entry_files(states, warnings):
-            try:
-                parsed = frontmatter.parse_frontmatter(text)
-                metadata = parsed[0] if parsed is not None else {}
-                kind = common.entry_type_from_metadata(path, metadata) if parsed is not None else None
-                if kind_filter not in ("all", kind):
-                    continue
-                item = _entry(path, kind or "unknown", state, text, metadata)
-            except FileNotFoundError:
+        indexed_entries, warnings = self._entry_index.scan(states)
+        for indexed in indexed_entries:
+            if kind_filter not in ("all", indexed.kind):
                 continue
-            except OSError:
-                warnings.append({"filename": path.name, "reason": "ファイル情報を読み取れません"})
-                continue
+            item = _entry(
+                indexed.path,
+                indexed.kind or "unknown",
+                indexed.state,
+                indexed.text,
+                indexed.metadata,
+                indexed.updated_at,
+            )
             if plan_filter != "all" and item["plan"] != (plan_filter == "plan"):
                 continue
             if answered_filter == "yes" and item["answered"] is not True:
@@ -461,7 +432,7 @@ class Operations:
                 continue
             if filters.get("source_kind") and _source_kind(item["source"]) != filters["source_kind"]:
                 continue
-            searchable = (text, path.name, item["target_repo"], item["source"])
+            searchable = (indexed.text, indexed.path.name, item["target_repo"], item["source"])
             if query and not any(query in str(value or "").casefold() for value in searchable):
                 continue
             result.append(item)
@@ -553,11 +524,9 @@ class Operations:
         """
         found: set[str] = set()
         resolver_cache: dict[str, str | None] = {}
-        for _state, _path, text in self._iter_entry_files(_resolve_states(status)):
-            parsed = frontmatter.parse_frontmatter(text)
-            if parsed is None:
-                continue
-            target_repo = parsed[0].get("target_repo")
+        indexed_entries, _warnings = self._entry_index.scan(_resolve_states(status))
+        for indexed in indexed_entries:
+            target_repo = indexed.metadata.get("target_repo")
             if isinstance(target_repo, str) and target_repo:
                 canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)
                 # 正規化は同一リポジトリの候補統合にだけ用い、解決不能な保存値は原値を保持する。
@@ -795,18 +764,54 @@ def _register_error_handlers(app: quart.Quart) -> None:
         return quart.jsonify(error="Git同期に失敗しました"), status
 
 
-def _register_awi_asset_routes(app: quart.Quart) -> None:
+def _render_index(
+    plans_context: serve_plans.PlansContext,
+    base_path: str,
+    initial_screen: str,
+) -> str:
+    """3画面を含むHTMLへ初期表示とbootstrap値を埋め込む。"""
+    local_root_info = plans_context.state.root_info[plans_context.hostname]
+    if len(local_root_info) == 1 and "" in local_root_info:
+        root_dirs: dict[str, typing.Any] = {plans_context.hostname: plans_context.state.host_info[plans_context.hostname]}
+    else:
+        root_dirs = {plans_context.hostname: local_root_info}
+    plans_bootstrap = {
+        "base_path": base_path,
+        "local_host_name": plans_context.hostname,
+        "root_dirs": root_dirs,
+    }
+    hidden = {
+        "wi": "" if initial_screen == "wi" else "hidden",
+        "plans": "" if initial_screen == "plans" else "hidden",
+        "sessions": "" if initial_screen == "sessions" else "hidden",
+    }
+    return (
+        assets.HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
+        .replace("__INITIAL_SCREEN__", initial_screen)
+        .replace("__WI_HIDDEN__", hidden["wi"])
+        .replace("__PLANS_HIDDEN__", hidden["plans"])
+        .replace("__SESSIONS_HIDDEN__", hidden["sessions"])
+        .replace("__PLANS_BOOTSTRAP_JSON__", json.dumps(plans_bootstrap, ensure_ascii=False).replace("</", "<\\/"))
+        .replace(
+            "__SESSIONS_BOOTSTRAP_JSON__",
+            json.dumps({"base_path": base_path}, ensure_ascii=False).replace("</", "<\\/"),
+        )
+    )
+
+
+def _register_awi_asset_routes(app: quart.Quart, plans_context: serve_plans.PlansContext) -> None:
     """WI画面のHTMLと静的資産のルートを登録する。"""
 
     @app.get("/")
     async def index() -> quart.Response:
         base_path = _safe_base_path(quart.request.root_path)
-        body = assets.HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True))
+        body = _render_index(plans_context, base_path, "wi")
         return quart.Response(body, content_type="text/html; charset=utf-8")
 
     @app.get("/static/app.css")
     async def css() -> quart.Response:
-        return quart.Response(assets.CSS, content_type="text/css; charset=utf-8")
+        body = f"{assets.CSS}\n{serve_plans.read_pygments_css()}"
+        return quart.Response(body, content_type="text/css; charset=utf-8")
 
     @app.get("/static/app.js")
     async def javascript() -> quart.Response:
@@ -819,10 +824,6 @@ def _register_awi_asset_routes(app: quart.Quart) -> None:
 
 def _register_shell_routes(app: quart.Quart) -> None:
     """3画面が共有するナビゲーション資産とPWAメタデータのルートを登録する。"""
-
-    @app.get("/static/shell.css")
-    async def shell_css() -> quart.Response:
-        return quart.Response(assets.SHELL_CSS, content_type="text/css; charset=utf-8")
 
     @app.get("/static/shell.js")
     async def shell_js() -> quart.Response:
@@ -891,42 +892,12 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
     @app.get("/plans")
     async def plans_index() -> quart.Response:
         base_path = _safe_base_path(quart.request.root_path)
-        # ページロード時はローカルroot情報を注入する。リモート分はSSE経由の更新か
-        # `/api/plans/root-info`への再取得で反映する。
-        local_root_info = context.state.root_info[context.hostname]
-        if len(local_root_info) == 1 and "" in local_root_info:
-            # 単一rootを明示した構成では、旧来の`host_info`形式をそのまま渡す。
-            root_dirs: dict[str, typing.Any] = {context.hostname: context.state.host_info[context.hostname]}
-        else:
-            root_dirs = {context.hostname: local_root_info}
-        bootstrap = {
-            "base_path": base_path,
-            "local_host_name": context.hostname,
-            "root_dirs": root_dirs,
-        }
-        # HTML属性向けには`html.escape(quote=True)`、`<script type="application/json">`向けには
-        # `</`の分割でHTMLの解析を終わらせない形へ変換し、コンテキスト別のエスケープ経路で埋め込む。
-        body = assets.PLANS_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True)).replace(
-            "__PLANS_BOOTSTRAP_JSON__",
-            json.dumps(bootstrap, ensure_ascii=False).replace("</", "<\\/"),
-        )
+        body = _render_index(context, base_path, "plans")
         return _no_store(body, "text/html; charset=utf-8")
-
-    @app.get("/static/plans.css")
-    async def plans_css() -> quart.Response:
-        return _no_store(assets.PLANS_CSS, "text/css; charset=utf-8")
 
     @app.get("/static/plans.js")
     async def plans_js() -> quart.Response:
         return _no_store(assets.PLANS_JS, "text/javascript; charset=utf-8")
-
-    @app.get("/static/markdown.css")
-    async def markdown_css() -> quart.Response:
-        return _no_store(assets.MARKDOWN_CSS, "text/css; charset=utf-8")
-
-    @app.get("/static/pygments.css")
-    async def pygments_css() -> quart.Response:
-        return _no_store(serve_plans.read_pygments_css(), "text/css; charset=utf-8")
 
     @app.get("/static/vendor/mermaid.min.js")
     async def mermaid_script() -> quart.Response:
@@ -1032,22 +1003,18 @@ def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, s
     return host, source_id, rel
 
 
-def _register_session_routes(app: quart.Quart, context: serve_sessions.SessionsContext) -> None:
+def _register_session_routes(
+    app: quart.Quart,
+    context: serve_sessions.SessionsContext,
+    plans_context: serve_plans.PlansContext,
+) -> None:
     """セッション画面のページ・資産・APIのルートを登録する。"""
 
     @app.get("/sessions")
     async def sessions_index() -> quart.Response:
         base_path = _safe_base_path(quart.request.root_path)
-        bootstrap = {"base_path": base_path}
-        body = assets.SESSIONS_HTML.replace("__BASE_PATH_HTML__", html.escape(base_path, quote=True)).replace(
-            "__SESSIONS_BOOTSTRAP_JSON__",
-            json.dumps(bootstrap, ensure_ascii=False).replace("</", "<\\/"),
-        )
+        body = _render_index(plans_context, base_path, "sessions")
         return _no_store(body, "text/html; charset=utf-8")
-
-    @app.get("/static/sessions.css")
-    async def sessions_css() -> quart.Response:
-        return _no_store(assets.SESSIONS_CSS, "text/css; charset=utf-8")
 
     @app.get("/static/sessions.js")
     async def sessions_js() -> quart.Response:
@@ -1408,9 +1375,13 @@ def _register_mutation_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
         return quart.jsonify(changed=await workers.run(ops.commit))
 
 
-def _register_awi_routes(app: quart.Quart, runtime: _ServeRuntime) -> None:
+def _register_awi_routes(
+    app: quart.Quart,
+    runtime: _ServeRuntime,
+    plans_context: serve_plans.PlansContext,
+) -> None:
     """WI画面の資産・一覧・更新のルートをまとめて登録する。"""
-    _register_awi_asset_routes(app)
+    _register_awi_asset_routes(app, plans_context)
     _register_query_routes(app, runtime)
     _register_mutation_routes(app, runtime)
 
@@ -1456,9 +1427,9 @@ def create_app(
     app.config["SESSIONS_CONTEXT"] = sessions
     _register_error_handlers(app)
     _register_shell_routes(app)
-    _register_awi_routes(app, runtime)
+    _register_awi_routes(app, runtime, plans)
     _register_plan_routes(app, plans)
-    _register_session_routes(app, sessions)
+    _register_session_routes(app, sessions, plans)
     _register_lifecycle(app, runtime, plans, sessions)
     app.asgi_app = pytilpack.quart.ProxyFix(app)  # type: ignore[method-assign,assignment]  # ty: ignore[invalid-assignment]
     return app

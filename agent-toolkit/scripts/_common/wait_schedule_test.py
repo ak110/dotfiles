@@ -391,11 +391,42 @@ def test_wait_timeout_follows_prompt_cache_ttl(
     expected_timeout: float,
 ) -> None:
     """保持期間の判定結果に対応する委譲待機の上限秒数を返す。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", value)
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
     assert _wait_schedule.get_prompt_cache_ttl("main") == value
     assert _wait_schedule.get_wait_timeout("main") == expected_timeout
+
+
+def test_wait_timeout_falls_back_outside_claude_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude Codeを確認できないホストでは待機上限を270秒へ制限する。"""
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    assert _wait_schedule.get_wait_timeout("main") == 270.0
+
+
+@pytest.mark.parametrize(
+    "environment_name",
+    ["AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"],
+)
+@pytest.mark.parametrize("value", ["5m", "1h"])
+def test_wait_timeout_is_capped_for_delegated_session(
+    monkeypatch: pytest.MonkeyPatch,
+    environment_name: str,
+    value: str,
+) -> None:
+    """委譲先の印がある場合は保持期間によらず待機上限を240秒へ収める。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", value)
+    monkeypatch.setenv(environment_name, "1")
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    assert _wait_schedule.get_wait_timeout("main") == 240.0
 
 
 def test_rejects_unknown_request_bucket() -> None:

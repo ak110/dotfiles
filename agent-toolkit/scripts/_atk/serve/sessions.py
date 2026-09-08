@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
-# 一覧が返す最大件数。更新日時の新しい順に並べたうえで打ち切る。
+# 一覧が返す最大件数。開始日時の新しい順に並べたうえで打ち切る。
 MAX_LIST_ENTRIES = 2000
 # 1件の記録から取得する最大バイト数。過大な記録の全文読み込みにより応答が滞る事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
@@ -493,11 +493,13 @@ def _first_line(value: typing.Any) -> str | None:
     return lines[0] if lines else None
 
 
-def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None]:
-    """一覧の識別に使う作業ディレクトリと最初のユーザー発話を先頭から取得する。"""
+def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | None, str | None]:
+    """一覧の識別に使う作業ディレクトリ、最初の発話及び開始日時を先頭から取得する。"""
     cwd: str | None = None
     first_user_message: str | None = None
     first_user_seen = False
+    started_at: str | None = None
+    first_timestamp: str | None = None
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -507,7 +509,11 @@ def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | 
                     continue
                 if not isinstance(record, dict):
                     continue
+                if first_timestamp is None and isinstance(record.get("timestamp"), str):
+                    first_timestamp = record["timestamp"]
                 if engine == "claude":
+                    if started_at is None:
+                        started_at = first_timestamp
                     if cwd is None and isinstance(record.get("cwd"), str):
                         cwd = record["cwd"]
                     if not first_user_seen and record.get("type") == "user":
@@ -519,21 +525,27 @@ def _summary_fields(path: pathlib.Path, engine: str) -> tuple[str | None, str | 
                     payload = record.get("payload")
                     if not isinstance(payload, dict):
                         continue
+                    if (
+                        started_at is None
+                        and record.get("type") == "session_meta"
+                        and isinstance(payload.get("timestamp"), str)
+                    ):
+                        started_at = payload["timestamp"]
                     if cwd is None and record.get("type") == "session_meta" and isinstance(payload.get("cwd"), str):
                         cwd = payload["cwd"]
                     if not first_user_seen and payload.get("role") == "user":
                         first_user_seen = True
                         first_user_message = _first_line(payload.get("content"))
-                if cwd is not None and first_user_seen:
+                if cwd is not None and first_user_seen and started_at is not None:
                     break
     except OSError:
         pass
-    return cwd, first_user_message
+    return cwd, first_user_message, started_at or first_timestamp
 
 
 def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) -> SessionSummary:
     """ローカルの記録1件を一覧の項目へ変換する。"""
-    cwd, first_user_message = _summary_fields(path, engine)
+    cwd, first_user_message, started_at = _summary_fields(path, engine)
     try:
         st = path.stat()
     except OSError as error:
@@ -544,7 +556,7 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) ->
             first_user_message=first_user_message,
             session_id=session_id,
             path=str(path),
-            started_at=None,
+            started_at=started_at,
             updated_at=None,
             size=None,
             warning=f"記録の情報を取得できません: {error}",
@@ -556,14 +568,14 @@ def _local_entry(path: pathlib.Path, engine: str, session_id: str, host: str) ->
         first_user_message=first_user_message,
         session_id=session_id,
         path=str(path),
-        started_at=None,
+        started_at=started_at,
         updated_at=_isoformat(st.st_mtime),
         size=st.st_size,
     )
 
 
 def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
-    """ローカルの保存済みセッションを更新日時の新しい順に返す。
+    """ローカルの保存済みセッションを開始日時の新しい順に返す。
 
     Claude Codeは深さ2（`<project>/<session-uuid>.jsonl`）をセッション本体とし、
     深さ4のサブエージェント記録は一覧へ含めない。
@@ -583,7 +595,7 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
         for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
             if path.is_file():
                 entries.append(_local_entry(path, "codex", codex_session_id(path), context.hostname))
-    entries.sort(key=lambda entry: entry.updated_at or "", reverse=True)
+    entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     return entries[:MAX_LIST_ENTRIES]
 
 
@@ -959,7 +971,7 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
                 ),
                 session_id=str(item.get("session_id", "")),
                 path=str(item["path"]),
-                started_at=None,
+                started_at=item.get("started_at") if isinstance(item.get("started_at"), str) else None,
                 updated_at=_isoformat(item["updated_at"]) if isinstance(item.get("updated_at"), (int, float)) else None,
                 size=item.get("size") if isinstance(item.get("size"), int) else None,
                 warning=item.get("warning") if isinstance(item.get("warning"), str) else None,
@@ -983,7 +995,7 @@ async def list_sessions(context: SessionsContext) -> tuple[list[SessionSummary],
         entries.extend(remote_entries)
         if warning is not None:
             warnings.append(warning)
-    entries.sort(key=lambda entry: entry.updated_at or "", reverse=True)
+    entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     return entries[:MAX_LIST_ENTRIES], warnings
 
 

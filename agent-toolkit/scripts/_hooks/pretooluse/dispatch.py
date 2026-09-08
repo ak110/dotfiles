@@ -267,7 +267,7 @@ def main(payload_text: str) -> int:
     # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
     pending_notices: list[str] = []
     if language_warning_body is not None:
-        pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG))
+        pending_notices.append(_llm_notice(language_warning_body, tag=_WARN_TAG, removable_cause=True))
 
     def emit_json(result: dict) -> None:
         for notice in pending_notices:
@@ -422,7 +422,11 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
+    if (
+        _check_bash_state_change_command_chaining(command) == "block"
+        or _check_bash_help_with_execution(command) == "block"
+        or _check_bash_unverified_atk_help(command, session_id) == "block"
+    ):
         return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
@@ -431,7 +435,6 @@ def _handle_bash_tool(
         _check_bash_recursive_home_search(command),
         _check_bash_unbounded_home_traversal(command),
         _check_bash_recursive_grep_without_exclusion(command, cwd),
-        _check_bash_unverified_atk_help(command, session_id),
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -490,7 +493,10 @@ def _handle_user_facing_text_tool(
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2
-    warning = _check_colloquial(tool_name, fields, "")
+    warning = next(
+        (warning for _, value in fields if (warning := _check_colloquial(tool_name, None, value, "")) is not None),
+        None,
+    )
     if warning is None:
         flush_warning()
     else:

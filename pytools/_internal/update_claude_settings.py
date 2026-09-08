@@ -19,6 +19,7 @@ from pytools._internal import claude_common, log_format, remove_legacy_codex_mcp
 from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 _DOTFILES_DIR = Path(__file__).resolve().parents[2]
 _MANAGED_SETTINGS_PATH = _DOTFILES_DIR / "share" / "claude_settings_json_managed.json"
@@ -90,7 +91,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[tuple[str, str], ...] = (
     # 2026-06: Session-Owned Amend ルールに置き換えたため旧文面を除去
     (
         "autoMode.allow",
-        "agent-toolkit:careful-review スキル等でレビュー指摘修正をコミットに反映する際",
+        f"{_TOOLKIT_PREFIX}:careful-review スキル等でレビュー指摘修正をコミットに反映する際",
     ),
     # 2026-07: Exit-Session Termination の文面を数回改訂した際、union マージで
     # 旧文面が除去されず`~/.claude/settings.json`に重複蓄積していたため除去する

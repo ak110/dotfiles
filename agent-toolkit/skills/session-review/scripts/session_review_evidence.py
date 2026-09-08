@@ -2380,8 +2380,10 @@ def _bundle_events(
     標準出力へ返す要約の項目は、抽出担当が走査ごとの全量をファイルへ保存し、自作の集計コマンドで
     再加工していた工程を代替する目的で設けた。項目を減らすと当該工程が抽出担当側へ戻るため、
     取捨は代替対象の集計を確認してから判断する。
-    未解決記録のイベントは標準出力へ1回だけ書く。各ファイルの内容は、当該走査を単独で実行した
-    出力から未解決記録のイベントを除いたものと一致する。
+    保存先のファイルと同じ内容になる集計と通知の走査は標準出力へ返さない。呼び出し元が同じ内容を
+    ファイルと標準出力の双方から受け取ると、標準出力の分量が実行環境の切り詰めに達するためである。
+    未解決記録のイベントはどのファイルにも保存しないため、標準出力へ1回だけ書く。各ファイルの内容は、
+    当該走査を単独で実行した出力から未解決記録のイベントを除いたものと一致する。
     """
     if not directory.is_dir():
         return [{"kind": "error", "text": f"出力先が実在するディレクトリでない: {directory}"}], 2
@@ -2401,8 +2403,6 @@ def _bundle_events(
         events.append({"kind": "bundle-file", "path": str(path), "count": len(scan_events)})
     events.extend(_bundle_timeline_events(timeline))
     events.extend(_bundle_warning_events(warnings))
-    events.extend(stats)
-    events.extend(hook_notices)
     events.extend(_unresolved_events(unresolved))
     return events, 0
 
@@ -2550,7 +2550,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="通常表示、`--warn`、`--stats`及び`--hook-notices`の走査を1回の記録読み込みで行い、"
         "走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
         "標準出力へは、走査ごとのファイルの絶対パスとイベント件数、通常表示のイベント種別ごとの件数、"
-        "問題候補の特定に用いるイベントの位置と本文の冒頭、警告の種別ごとの件数、集計済みの走査の全量を返す。"
+        "問題候補の特定に用いるイベントの位置と本文の冒頭、及び警告の種別ごとの件数を返す。"
+        "集計と通知の走査の全量は保存先のファイルから読む。"
         "指定するディレクトリは実在していることを要する。他の照会オプションとは併用しない。",
     )
     parser.add_argument(

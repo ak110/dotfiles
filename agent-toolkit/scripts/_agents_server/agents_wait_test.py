@@ -62,13 +62,13 @@ def test_agents_wait_resolves_changed_conversation_session(
     assert not (results / "session-1.json").exists()
 
 
-@pytest.mark.parametrize("result_body", [None, "[]"])
+@pytest.mark.parametrize("result_body", [None])
 def test_agents_wait_times_out_without_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     result_body: str | None,
 ) -> None:
-    """結果が無い場合と辞書でない結果の場合は終了コード3を返す。"""
+    """結果が無い場合は終了コード3を返す。"""
     if result_body is not None:
         wait_environment.mkdir(parents=True)
         (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
@@ -79,6 +79,81 @@ def test_agents_wait_times_out_without_result(
     captured = capsys.readouterr()
     assert not captured.out
     assert "待機が上限へ到達" in captured.err
+
+
+def test_agents_wait_returns_expired_when_session_is_absent_from_root(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """終端結果と通知が無いsessionの消失を待機上限より前に返す。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(json.dumps({"version": 1, "sessions": []}), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="7"):
+        atk.main(["agents-wait", "session-1", "--timeout=3600"])
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "expired"}
+    assert captured.out.count("\n") == 1
+    assert not captured.err
+
+
+def test_agents_wait_keeps_waiting_for_retained_session(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """状態ファイルが保持するsessionを消失として返さない。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機が上限へ到達" in captured.err
+
+
+@pytest.mark.parametrize("root_body", ["{", "[]"])
+def test_agents_wait_ignores_unreadable_root_status(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    root_body: str,
+) -> None:
+    """状態ファイルを解釈できない場合は従来の待機を継続する。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(root_body, encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機が上限へ到達" in captured.err
+
+
+@pytest.mark.parametrize("result_body", ["[]", "{"])
+def test_agents_wait_rejects_corrupted_result(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    result_body: str,
+) -> None:
+    """破損した終端結果は待機上限と別の終了コードで停止する。"""
+    wait_environment.mkdir(parents=True)
+    (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="6"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert str(wait_environment / "session-1.json") in captured.err
 
 
 @pytest.mark.parametrize("session_id", ["../outside", ""])
@@ -106,7 +181,7 @@ def test_agents_wait_rejects_turn(capsys: pytest.CaptureFixture[str]) -> None:
     assert not capsys.readouterr().out
 
 
-def test_agents_wait_reports_unresolved_state_directory(
+def test_missing_state_dir_reports_alternative(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -120,6 +195,7 @@ def test_agents_wait_reports_unresolved_state_directory(
     captured = capsys.readouterr()
     assert not captured.out
     assert "状態ディレクトリを解決できません" in captured.err
+    assert "`agents_server`の`list`と`wait`" in captured.err
 
 
 def test_agents_wait_returns_notices_while_running(

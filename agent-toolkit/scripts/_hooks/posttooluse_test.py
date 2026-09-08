@@ -278,6 +278,9 @@ class TestTestExecution:
             "prek run --all-files",
             "uvx prek run -a",
             "cargo test",
+            "uv run --frozen pyfltr run",
+            "uv run --frozen pytest",
+            "uv run --frozen prek run",
             # タスクランナー経由（test / check / validateアクションを各ランナーで網羅）
             "make test",
             "make check",
@@ -318,6 +321,13 @@ class TestTestExecution:
         _run({"session_id": sid, "tool_input": {"command": "echo hello"}}, state_dir=tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
+
+    @pytest.mark.parametrize("command", ["uv run --with pyfltr-plugin pyfltr run .", "uv run --python 3.12 pytest"])
+    def test_uv_run_with_value_option_is_not_detected(self, tmp_path: pathlib.Path, command: str) -> None:
+        """値を伴うuv runのオプションをテスト実行として誤認しない。"""
+        sid = "test-uv-run-value-option"
+        _run({"session_id": sid, "tool_input": {"command": command}}, state_dir=tmp_path)
+        assert _read_state(tmp_path, sid).get("test_executed") is not True
 
     @pytest.mark.parametrize(
         "tool_response",

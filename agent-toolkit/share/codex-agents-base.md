@@ -112,6 +112,7 @@ Codexが`functions.exec`のように遅延実行されるツールを介して`a
 - タスク固有の待機要件がない限り、内側の`agents_server.wait`へ`timeout`を指定せず既定値を使う。この扱いは`agent-toolkit:delegation`が定めるtimeout省略の原則をCodexの二層構造へ写像したものである
 - 外側の実行が`cell_id`を返した場合は、その`cell_id`を`functions.wait`へ渡して同じ実行セルを再開する。内側の待機は継続しているため、同じ`session_id`へ`wait`を新たに発行し直さない
 - 外側の進捗通知の周期と実行セルのyieldは、内側の`agents_server.wait`のタスク固有timeoutとして扱わない。応答性の制御は外側のyieldと再開で成立する
+- 内側の`agents_server.wait`がCodexの1回のツール呼び出しの上限で失敗した場合も、待機対象のsessionは終端せず実行を続ける。`agents_server`の`list`で当該sessionの`status`を確認し、同じ`session_id`へ`wait`を再発行する。上限を避けるために`timeout`へ値を渡さない
 
 順序の例を次に示す。
 

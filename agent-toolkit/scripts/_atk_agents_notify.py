@@ -7,9 +7,11 @@ import json
 import os
 import pathlib
 import sys
+import uuid
 from collections.abc import Mapping
 
 from _agents_server import status_file
+from _common.atomic_file import atomic_write
 
 
 def send_notification(
@@ -42,18 +44,7 @@ def send_notification(
         )
         + "\n"
     )
-    sequence = 1
-    while True:
-        path = directory / f"{identity.host_session_id}.{sequence}.json"
-        try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            sequence += 1
-            continue
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as stream:
-                stream.write(payload)
-        except BaseException:
-            path.unlink(missing_ok=True)
-            raise
-        return 0
+    sent_at = datetime.datetime.now(datetime.UTC)
+    path = directory / f"{identity.host_session_id}.{sent_at.strftime('%Y%m%dT%H%M%S%f')}.{uuid.uuid4().hex[:16]}.json"
+    atomic_write(path, payload)
+    return 0

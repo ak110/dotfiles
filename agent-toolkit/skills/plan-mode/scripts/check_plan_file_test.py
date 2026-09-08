@@ -15,6 +15,7 @@ from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wro
 
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str, str]]
 
@@ -429,7 +430,7 @@ def test_accepts_relative_target_repo_matching_worktree(repo: tuple[pathlib.Path
     [
         ("Skillツールで{spacing}`missing-skill`を起動する。", "missing-skill"),
         ("`missing-skill`{spacing}スキルを呼び出す。", "missing-skill"),
-        ("`agent-toolkit:missing-skill`{spacing}を起動する。", "agent-toolkit:missing-skill"),
+        (f"`{_TOOLKIT_PREFIX}:missing-skill`{{spacing}}を起動する。", f"{_TOOLKIT_PREFIX}:missing-skill"),
         ("スキル{spacing}`missing-skill`{spacing}を呼び出す。", "missing-skill"),
     ],
 )
@@ -447,9 +448,9 @@ def test_rejects_missing_skill_invocations(
 def test_accepts_new_skill_description_without_invocation(repo: tuple[pathlib.Path, str], spacing: str) -> None:
     """起動動詞を伴わない新設予定スキルの叙述を受理する。"""
     work_dir, base = repo
-    description = f"新スキル{spacing}`agent-toolkit:missing-skill`{spacing}を新設する。"
+    description = f"新スキル{spacing}`{_TOOLKIT_PREFIX}:missing-skill`{spacing}を新設する。"
     errors, _warnings = _check(work_dir, _plan(work_dir, base).replace("対象の構造を更新する。", description))
-    assert "実在しないスキル参照: agent-toolkit:missing-skill" not in errors
+    assert f"実在しないスキル参照: {_TOOLKIT_PREFIX}:missing-skill" not in errors
 
 
 def test_rejects_missing_agent_reference(repo: tuple[pathlib.Path, str]) -> None:

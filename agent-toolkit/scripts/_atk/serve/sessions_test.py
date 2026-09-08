@@ -131,9 +131,32 @@ def test_listing_identifies_engine_host_cwd_first_message_and_time(tmp_path: pat
     assert by_engine["codex"].path == str(codex_path)
     assert by_engine["codex"].cwd == "/home/aki/other"
     assert by_engine["codex"].first_user_message == "やあ"
+    assert by_engine["claude"].started_at == "2026-09-01T00:00:00Z"
+    assert by_engine["codex"].started_at == "2026-09-01T00:00:00Z"
     for entry in entries:
         assert entry.updated_at is not None
         assert entry.size is not None
+
+
+def test_listing_sorts_by_started_at_with_missing_values_last(tmp_path: pathlib.Path) -> None:
+    """一覧は更新日時にかかわらず開始日時の降順とし、開始日時が無い記録を末尾へ置く。"""
+    project = tmp_path / "claude" / "projects" / "proj"
+    older = _write(
+        project / "older.jsonl",
+        [{"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "古い記録"}}],
+    )
+    newer = _write(
+        project / "newer.jsonl",
+        [{"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"content": "新しい記録"}}],
+    )
+    missing = _write(project / "missing.jsonl", [{"type": "user", "message": {"content": "日時なし"}}])
+    os.utime(older, (1_900_000_000, 1_900_000_000))
+    os.utime(newer, (1_700_000_000, 1_700_000_000))
+    os.utime(missing, (2_000_000_000, 2_000_000_000))
+
+    entries = sessions.list_local_sessions(_context(tmp_path))
+
+    assert [entry.session_id for entry in entries] == ["newer", "older", "missing"]
 
 
 def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
@@ -374,6 +397,7 @@ async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path
                     "first_user_message": "リモートの最初の発話",
                     "session_id": "remote-session",
                     "path": "/home/aki/.codex/sessions/2026/09/01/rollout-x.jsonl",
+                    "started_at": "2026-09-02T00:00:00Z",
                     "updated_at": 1_800_000_000,
                     "size": 12,
                 }
@@ -385,6 +409,10 @@ async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path
     entries, warnings = await sessions.list_sessions(context)
 
     assert warnings == []
+    assert [entry.session_id for entry in entries] == [
+        "remote-session",
+        "11111111-2222-3333-4444-555555555555",
+    ]
     assert {(entry.host, entry.session_id) for entry in entries} == {
         ("local-host", "11111111-2222-3333-4444-555555555555"),
         ("circe", "remote-session"),
@@ -392,6 +420,7 @@ async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path
     remote = next(entry for entry in entries if entry.host == "circe")
     assert remote.cwd == "/srv/work"
     assert remote.first_user_message == "リモートの最初の発話"
+    assert remote.started_at == "2026-09-02T00:00:00Z"
     assert calls == [("circe", "list", [])]
 
 
@@ -434,16 +463,28 @@ def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: path
     """リモート補助の一覧もローカル側と同じ識別項目を返す。"""
     claude = _write(
         tmp_path / ".claude" / "projects" / "encoded-path" / "remote-claude.jsonl",
-        [{"type": "user", "cwd": "/remote/claude", "message": {"content": "Claude先頭\n続き"}}],
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-09-05T00:00:00Z",
+                "cwd": "/remote/claude",
+                "message": {"content": "Claude先頭\n続き"},
+            }
+        ],
     )
     codex_home = tmp_path / "codex-home"
     codex = _write(
         codex_home / "sessions" / "2026" / "09" / "05" / "rollout-remote-codex.jsonl",
         [
-            {"type": "session_meta", "payload": {"cwd": "/remote/codex"}},
+            {
+                "type": "session_meta",
+                "payload": {"cwd": "/remote/codex", "timestamp": "2026-09-06T00:00:00Z"},
+            },
             {"type": "response_item", "payload": {"role": "user", "content": [{"text": "Codex先頭\n続き"}]}},
         ],
     )
+    os.utime(claude, (1_900_000_000, 1_900_000_000))
+    os.utime(codex, (1_700_000_000, 1_700_000_000))
     environment = os.environ.copy()
     environment.update({"HOME": str(tmp_path), "CODEX_HOME": str(codex_home)})
 
@@ -462,8 +503,11 @@ def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: path
 
     assert entries[str(claude)]["cwd"] == "/remote/claude"
     assert entries[str(claude)]["first_user_message"] == "Claude先頭"
+    assert entries[str(claude)]["started_at"] == "2026-09-05T00:00:00Z"
     assert entries[str(codex)]["cwd"] == "/remote/codex"
     assert entries[str(codex)]["first_user_message"] == "Codex先頭"
+    assert entries[str(codex)]["started_at"] == "2026-09-06T00:00:00Z"
+    assert [entry["path"] for entry in json.loads(result.stdout)["entries"]] == [str(codex), str(claude)]
     assert all("project" not in entry for entry in entries.values())
 
 

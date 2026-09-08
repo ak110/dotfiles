@@ -14,7 +14,7 @@ description: >
 計画ファイルの成果物契約は`references/plan-file-standards.md`、各工程の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書を正本とし、本書へ再掲しない。
 
 ユーザーが`agent-toolkit:plan-mode`又は`agent-toolkit:plan-and-add-awi`を直接起動した場合は、`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返す。
-起動プロンプトが起動経路として`agent-toolkit:process-wi`を明示している場合は`references/grilling.md`を使わず、必要な確認事項だけをUWIへ登録する。
+起動プロンプトが起動経路として`agent-toolkit:process-wi`と`agent-toolkit:fast-process-wi`のいずれかを明示している場合は`references/grilling.md`を使わず、必要な確認事項だけをUWIへ登録する。
 `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を受領した計画担当として起動された場合は、UWIを自ら登録せず、同書の完了報告が定めるエスカレーションで確認事項を呼び出し元へ返し、回答を受領してから工程を続ける。
 既存の旧単一ファイル形式・旧二ファイル形式の計画を改訂するときだけ、`references/legacy-plan-file-standards.md`を全文読む。
 計画書式の読み取り互換の実装・検査を変更するときも、同書を全文読む。
@@ -48,7 +48,7 @@ description: >
    競合を解消できない場合は`git -C <専用worktreeの絶対パス> rebase --abort`を1回実行し、実装差分を破棄せず、専用worktreeと専用branchを保持したまま、観測した出力と競合したパスをユーザーへ報告して以降の工程を停止する。
 10. rebaseの成功後に、`git -C <対象作業ツリーの絶対パス> symbolic-ref --short HEAD`を1回実行し、出力が手順2で保持した統合先branch名と一致することを照合する。一致しない場合は、対象作業ツリーが別のbranchへ移っており、`git merge`が保持した統合先branchではなく現在のcheckoutを更新するため、統合せず、保持値と観測値をユーザーへ報告して以降の工程を停止する。一致した場合だけ`git -C <対象作業ツリーの絶対パス> merge --ff-only <専用branch名>`を1回実行し、成果を対象作業ツリーへ統合する。手順9を経た後もfast-forward mergeが失敗する場合は、その間に統合先branchが更に更新されている。この場合は手順9を1回だけ再実行し、それでも失敗する場合は観測した出力をユーザーへ報告して停止する。
    rebaseにより専用branchのcommit OIDは変わる。手順5で保持した実装着手前の完全OIDは統合先branchに既存のcommitを指す値であり、rebaseで変化しない。当該OIDは同じ手順のレビュー表のファイル名の識別子としてだけ用いるため、rebaseの後も作成時の値のまま保持し、表を改名しない。統合と回収で用いる値は、統合では専用branch名と統合先branch名、回収では専用branch名、統合先branch名、対象作業ツリーの絶対パス及び複製元のリポジトリルートの絶対パスであり、いずれもcommit OIDを保持しないため更新を要しない。本経路はAWI行の終端を行わないため、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`が`マージあり`で求めるffマージ後のベースHEAD完全OIDの決定規則は適用しない。
-11. 統合の成功後に、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`の「所有資源の回収」が`マージあり`へ定める照合と順序で、専用worktreeと専用branchを回収する。同書が`マージを実行した作業ツリーの絶対パス`と呼ぶ値は手順1で保持した対象作業ツリーの絶対パス、`マージ先branch名`は手順2で保持した統合先branch名とする。`記録した対象リポジトリの絶対パス`は手順1で保持した複製元のリポジトリルートの絶対パス、`所有worktreeの絶対パス`と`所有branch名`は手順3で確定した専用worktreeの絶対パスと専用branch名とする。同書が求める`symbolic-ref --short HEAD`の照合は、当該時点の出力を保持した統合先branch名と比べるものであり、現在のcheckoutを統合先branch名として採り直さない。AWI行の終端、計画最終化と計画型変換は本経路に該当しないため実施しない。
+11. 統合の成功後に、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.parent.md`の「所有資源の回収」が`マージあり`へ定める照合と順序で、専用worktreeと専用branchを回収する。同書が`マージ先worktreeの絶対パス`と呼ぶ値は手順1で保持した対象作業ツリーの絶対パス、`マージ先branch名`は手順2で保持した統合先branch名とする。`記録した対象リポジトリの絶対パス`は手順1で保持した複製元のリポジトリルートの絶対パス、`記録した所有worktreeの絶対パス`と`所有branch名`は手順3で確定した専用worktreeの絶対パスと専用branch名とする。同書が求める`symbolic-ref --short HEAD`の照合は、当該時点の出力を保持した統合先branch名と比べるものであり、現在のcheckoutを統合先branch名として採り直さない。AWI行の終端、計画最終化と計画型変換は本経路に該当しないため実施しない。
 12. `atk managed-temp cleanup --path <手順3で作成した領域の絶対パス>`を1回実行し、終了コード0を確認する。当該表は保存せず、`atk plans commit`と`atk plans checkout`のいずれの対象にもしない。
 
 バグを是正する場合は、確定した現象、期待する契約、直接的原因を、当該修正が追加又は変更する回帰テストの名前と説明へ残す。対策を実装した箇所のコメント、docstringのいずれかにも同じ内容を残す。バグ調査ファイルは作成しない。
@@ -57,7 +57,7 @@ description: >
 
 1. 適用規範、変更対象、定義・参照・呼び出し元、既存テスト、生成・配布経路、類似実装のうち、計画ファイルへ書く内容を確定するために必要な範囲を調査する
 2. 計画の変更対象又は採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit/rules/01-agent.md`「協調と自律」の確認要否判定を適用する。直接起動では`references/grilling.md`に従って確認を完了し、`agent-toolkit:process-wi`経路では確認事項をUWIへ登録する。計画担当として起動された場合は、いずれも行わず`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の完了報告が定めるエスカレーションで呼び出し元へ返す
-3. `references/plan-file-standards.md`を全文読み、計画ファイル初版を起草する
+3. 計画ファイル初版の起草は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`に従って計画担当へ委譲することを既定とする。実行環境が当該委譲の起動手段を提供しない場合と、自身が計画担当として起動された場合に限り、`references/plan-file-standards.md`を全文読んで自ら起草する
 4. 初版を起草した主体が`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`に従って計画構造検査と自己監査を完了する
 5. 起動経路に対応する次の1行だけを実施して終端する
 
@@ -66,5 +66,7 @@ description: >
 | `agent-toolkit:plan-mode`の直接起動 | `${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を読み、`plan_review_model`で計画レビュー担当を起動して各ラウンドを受領し、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「ラウンドの遷移」に従って計画レビューの収束を確定する。起動から完了報告の受領までは計画ファイルを読み取り専用として扱う | 計画レビュー後も`~/.claude/plans`の実体を維持する。計画ファイル、成立させる結果、ユーザー指示との差分及びレビュー反映状況を提示し、ユーザー承認後に`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`を読み、同書が定めるモデル区分の対応表に従って実装担当を起動する。実行レビュー収束後の移動と保存は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の「実行レビュー後の計画最終化」を正本とする |
 | `agent-toolkit:plan-and-add-awi`からの起動 | なし | 計画ファイル（メイン）・計画ファイル（詳細）の絶対パスを呼出元へ返す。計画レビューは呼出元が行い、実装引き継ぎは行わない |
 | `${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を受領した計画担当としての起動 | なし | 同書の完了報告契約に従って呼出元へ返す。計画レビュー担当の起動判断と実装引き継ぎを行わない |
+
+計画レビュー指摘の採否と計画本文への反映は、初版を起草した主体が行う。計画担当へ委譲した場合は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`の「指摘の配送」に従って同じ計画担当へ配送する。メインが自ら起草した場合は、メインが`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の「指摘の検収と修正」に従って自ら反映する。
 
 本スキルの起動後は、計画ファイルを作成するまで対象規範配下（`agent-toolkit/`等のコーディングエージェント向け規範文書）を直接編集しない（計画とレビューを経ない直接編集で、ユーザーが合意していない規範が確定した事例に由来する。連続する直接編集はPreToolUseフックが遮断する）。

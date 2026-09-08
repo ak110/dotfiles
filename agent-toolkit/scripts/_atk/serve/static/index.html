@@ -7,10 +7,10 @@
   <title>ワークアイテム</title>
   <link rel="icon" type="image/svg+xml" href="__BASE_PATH_HTML__/favicon.svg">
   <link rel="manifest" href="__BASE_PATH_HTML__/manifest.webmanifest" crossorigin="use-credentials">
-  <link rel="stylesheet" href="__BASE_PATH_HTML__/static/shell.css">
   <link rel="stylesheet" href="__BASE_PATH_HTML__/static/app.css">
 </head>
-<body data-screen="wi">
+<body data-screen="__INITIAL_SCREEN__">
+  <section id="screen-wi" class="screen" __WI_HIDDEN__>
   <header class="app-header">
     <div class="header-title">
       <h1>ワークアイテム</h1>
@@ -29,7 +29,6 @@
     </div>
   </header>
 
-  <div id="screen-root">
   <div class="wi-screen-scroll">
   <div id="global-error" class="global-error" hidden>
     <div id="global-error-message" role="alert"></div>
@@ -268,8 +267,80 @@
     <button id="operation-notice-close-button" class="operation-notice-close" type="button" aria-label="操作通知を閉じる">×</button>
   </div>
   </div>
-  </div>
+  </section>
+
+  <section id="screen-plans" class="screen" __PLANS_HIDDEN__>
+    <header class="app-header">
+      <div class="header-title"><h1>計画ファイル</h1></div>
+      <nav class="app-nav" aria-label="画面">
+        <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
+        <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+      </nav>
+    </header>
+    <div id="plans-app">
+      <aside>
+        <div class="toolbar">
+          <input id="plans-filter" placeholder="検索...">
+          <span id="search-status" role="status"></span>
+        </div>
+        <div id="root-warnings" role="status" hidden></div>
+        <div id="files"></div>
+        <div id="files-sentinel" hidden></div>
+      </aside>
+      <main>
+        <div class="toolbar">
+          <button id="plans-menu-btn" class="button-secondary" type="button" aria-label="ファイル一覧を開く">&#9776;</button>
+          <span class="spacer"></span>
+          <button id="copy-btn" class="button-secondary" type="button" disabled><span class="wide-label">Markdownをコピー</span><span class="short-label">本文</span></button>
+          <button id="copy-path-btn" class="button-secondary" type="button" disabled><span class="wide-label">計画ファイルのパスをコピー</span><span class="short-label">パス</span></button>
+          <button id="prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のファイル" disabled>&uarr;</button>
+          <button id="next-btn" class="nav-btn button-secondary" type="button" aria-label="次のファイル" disabled>&darr;</button>
+        </div>
+        <div id="meta-mobile" class="empty"></div>
+        <article id="preview">左の一覧からMarkdownを選択してください。</article>
+      </main>
+      <div id="plans-drawer-backdrop"></div>
+    </div>
+  </section>
+
+  <section id="screen-sessions" class="screen" __SESSIONS_HIDDEN__>
+    <header class="app-header">
+      <div class="header-title"><h1>セッション</h1></div>
+      <nav class="app-nav" aria-label="画面">
+        <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
+        <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+      </nav>
+    </header>
+    <div id="sessions-app">
+      <aside>
+        <div class="toolbar">
+          <input id="sessions-filter" placeholder="ホスト・作業ディレクトリ・識別子・パスを検索">
+        </div>
+        <div id="warnings" role="status" hidden></div>
+        <div id="sessions"></div>
+      </aside>
+      <main>
+        <div class="toolbar">
+          <button id="sessions-menu-btn" class="button-secondary" type="button" aria-label="セッション一覧を開く">&#9776;</button>
+          <span id="detail-title" class="detail-title"></span>
+          <span class="spacer"></span>
+          <span id="detail-usage" class="secondary-text"></span>
+          <button id="sessions-prev-btn" class="nav-btn button-secondary" type="button" aria-label="前のセッション" disabled>&uarr;</button>
+          <button id="sessions-next-btn" class="nav-btn button-secondary" type="button" aria-label="次のセッション" disabled>&darr;</button>
+        </div>
+        <article id="detail">左の一覧からセッションを選択してください。</article>
+      </main>
+      <div id="sessions-drawer-backdrop"></div>
+    </div>
+  </section>
+
+  <script id="plans-bootstrap" type="application/json">__PLANS_BOOTSTRAP_JSON__</script>
+  <script id="sessions-bootstrap" type="application/json">__SESSIONS_BOOTSTRAP_JSON__</script>
   <script src="__BASE_PATH_HTML__/static/shell.js"></script>
   <script src="__BASE_PATH_HTML__/static/app.js"></script>
+  <script src="__BASE_PATH_HTML__/static/plans.js"></script>
+  <script src="__BASE_PATH_HTML__/static/sessions.js"></script>
 </body>
 </html>

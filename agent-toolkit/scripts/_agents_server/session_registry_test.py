@@ -19,14 +19,14 @@ def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     path = subject.registry_directory(tmp_path) / "child-session.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
 
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     assert payload["session_id"] == "child-session"
     assert payload["terminal"] is False
     datetime.datetime.fromisoformat(payload["updated_at"])
-    assert subject.is_terminal("child-session", state_root=tmp_path) is False
+    assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.RUNNING
 
     subject.publish("child-session", terminal=True, state_root=tmp_path)
-    assert subject.is_terminal("child-session", state_root=tmp_path) is True
+    assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.TERMINAL
 
 
 def test_remove_discards_observed_session(tmp_path: pathlib.Path) -> None:
@@ -34,12 +34,12 @@ def test_remove_discards_observed_session(tmp_path: pathlib.Path) -> None:
     subject.publish("child-session", terminal=True, state_root=tmp_path)
     subject.remove("child-session", state_root=tmp_path)
 
-    assert subject.is_terminal("child-session", state_root=tmp_path) is False
+    assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.MISSING
     assert subject.registry_directory(tmp_path).exists() is False
 
 
 @pytest.mark.asyncio
-async def test_session_state_publishes_only_terminal_transitions(
+async def test_session_state_publishes_state_transitions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
@@ -56,7 +56,7 @@ async def test_session_state_publishes_only_terminal_transitions(
     session.status = "completed"
     session.turn_completed = True
     session.touch()
-    assert subject.is_terminal("published-session") is True
+    assert subject.resolve("published-session").state is subject.Resolution.TERMINAL
 
 
 @pytest.mark.parametrize("session_id", ["", "../child", "child/session"])

@@ -2,7 +2,7 @@
 
 import pytest
 
-from _hooks.notice import block_formatter, warning_formatter
+from _hooks.notice import block_formatter, formatter, warning_formatter
 from _hooks.session_state import read_state
 
 
@@ -30,10 +30,10 @@ def test_warning_formatter_adds_repeat_note_from_third_notice(monkeypatch: pytes
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
-    first = format_warning("warning", cause="same-cause", session_id="session-1")
-    second = format_warning("warning", cause="same-cause", session_id="session-1")
-    third = format_warning("warning", cause="same-cause", session_id="session-1")
-    fourth = format_warning("warning", cause="same-cause", session_id="session-1")
+    first = format_warning("warning", cause="same-cause", session_id="session-1", removable_cause=True)
+    second = format_warning("warning", cause="same-cause", session_id="session-1", removable_cause=True)
+    third = format_warning("warning", cause="same-cause", session_id="session-1", removable_cause=True)
+    fourth = format_warning("warning", cause="same-cause", session_id="session-1", removable_cause=True)
 
     assert "この通知は同一セッションで" not in first
     assert "この通知は同一セッションで" not in second
@@ -47,9 +47,9 @@ def test_warning_formatter_separates_causes_and_sessions(monkeypatch: pytest.Mon
     format_warning = warning_formatter("test/hook")
 
     for _ in range(3):
-        format_warning("warning", cause="first-cause", session_id="session-1")
-    other_cause = format_warning("warning", cause="second-cause", session_id="session-1")
-    other_session = format_warning("warning", cause="first-cause", session_id="session-2")
+        format_warning("warning", cause="first-cause", session_id="session-1", removable_cause=True)
+    other_cause = format_warning("warning", cause="second-cause", session_id="session-1", removable_cause=True)
+    other_session = format_warning("warning", cause="first-cause", session_id="session-2", removable_cause=True)
 
     assert "この通知は同一セッションで" not in other_cause
     assert "この通知は同一セッションで" not in other_session
@@ -57,3 +57,26 @@ def test_warning_formatter_separates_causes_and_sessions(monkeypatch: pytest.Mon
         "test/hook|first-cause": 3,
         "test/hook|second-cause": 1,
     }
+
+
+def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """除去できない原因では件数を集計しても反復注記を付けない。"""
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    format_warning = warning_formatter("test/hook")
+
+    messages = [format_warning("warning", cause="fixed-cause", session_id="session-1", removable_cause=False) for _ in range(3)]
+    removable_messages = [
+        format_warning("warning", cause="other-cause", session_id="session-1", removable_cause=True) for _ in range(3)
+    ]
+
+    assert all("この通知は同一セッションで" not in message for message in messages)
+    assert "この通知は同一セッションで3件目である" in removable_messages[-1]
+    assert read_state("session-1")["warn_notice_counts"]["test/hook|fixed-cause"] == 3
+
+
+def test_formatter_rejects_warn_without_removability() -> None:
+    """warn通知の除去可能性を暗黙に決めない。"""
+    format_notice = formatter("test/hook")
+
+    with pytest.raises(ValueError):
+        format_notice("warning", tag="warn")

@@ -185,6 +185,15 @@ def test_wait_schedule_help_explains_request_bucket_resolution() -> None:
     assert "呼び出し主体のbucketを自動解決できない" in description
 
 
+def test_wi_edit_help_explains_agent_environment_processing_restriction() -> None:
+    """wi editはエージェント環境でprocessingの本文置換だけを拒否すると示す。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    help_text = commands["atk wi edit"].format_help()
+
+    assert "processingの項目の本文置換を拒否する" in help_text
+    assert "--appendによる追記は拒否しない" in help_text
+
+
 def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
     commands = {command: parser for command, parser, _summary in _walk_commands()}
     help_text = commands["atk managed-temp create"].format_help()

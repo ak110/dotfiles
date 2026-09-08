@@ -255,7 +255,7 @@ class TestBashSleepPollPattern:
             ("sleep 10; git status --short", "sleep-poll-first-1"),
             ("sleep 5 && gh run view 123", "sleep-poll-first-2"),
             ("sleep 1; systemctl status example.service", "sleep-poll-first-3"),
-            ("echo start; sleep 2; atk wi list", "sleep-poll-first-4"),
+            ("echo start; sleep 2; git status --short", "sleep-poll-first-4"),
             ("sleep 3; curl https://example.com/status", "sleep-poll-first-5"),
             ("sleep 3 && curl -D - https://example.com/status", "sleep-poll-first-6"),
             ("sleep 3; curl -XGET https://example.com/status", "sleep-poll-first-7"),
@@ -281,7 +281,7 @@ class TestBashSleepPollPattern:
                 "sleep-poll-first-16",
             ),
             # 閾値以上の固定待機は、後続コマンドが状態確認コマンド一覧に無くても検出する。
-            ("sleep 570; atk watch --worktree /tmp/lane-example/wt", "sleep-poll-first-17"),
+            ("sleep 570; echo done", "sleep-poll-first-17"),
             ("sleep 420; cd /tmp/lane-example/wt && ./scripts/check_state.sh", "sleep-poll-first-18"),
             ("sleep 30; echo done", "sleep-poll-first-19"),
             # ループの外にある待機は、同一のBash呼び出しにループが含まれる場合も検出する。

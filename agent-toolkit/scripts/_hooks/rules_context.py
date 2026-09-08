@@ -1,8 +1,6 @@
 """実行主体ごとの規範を起動時の文脈へ追加するhandler。
 
-Codex backendの子はstatusline表示の判定のため
-``AGENT_TOOLKIT_DELEGATED_SESSION``を持たないので、委譲先の判定には
-``AGENT_TOOLKIT_OWNER_SESSION``も用いる。
+委譲先の判定は`_common.delegated_session`を正本とする。
 
 Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠落を防ぐため、
 最大構成を同じ上限へ収める契約テストを置く。
@@ -13,8 +11,9 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-from collections.abc import Mapping
 from typing import Any
+
+from _common.delegated_session import is_delegated
 
 from _hooks.notice import formatter as _notice_formatter
 
@@ -33,11 +32,6 @@ MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
-
-
-def is_delegated(environ: Mapping[str, str]) -> bool:
-    """環境変数からagents_serverの委譲先かを判定する。"""
-    return environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1" or bool(environ.get("AGENT_TOOLKIT_OWNER_SESSION"))
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:

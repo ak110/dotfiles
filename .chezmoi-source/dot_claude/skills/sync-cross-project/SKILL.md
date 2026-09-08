@@ -216,7 +216,7 @@ README.md・CLAUDE.md・docs/development/development.mdの標準章構成・共�
 
 `~/gv`・`~/lc`の`mise.toml`はWindows前提で`{{ env.LOCALAPPDATA }}`を参照しているため、
 Linux環境ではmiseの評価時に未定義変数エラーで展開に失敗する。
-pre-commit hookや`uvx pyfltr`配下のmarkdownlint・textlintなどmise経由で動く処理も同じ理由で中断する。
+pre-commit hookや`pyfltr`配下のmarkdownlint・textlintなどmise経由で動く処理も同じ理由で中断する。
 ドキュメント修正等でLinuxから作業する場合は、以下のいずれかで対処する。
 
 - 全実行コマンドの先頭に`LOCALAPPDATA=/tmp/dummy`を付与する（`git commit`時にも必須）
@@ -234,7 +234,7 @@ Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで�
 
 - 全プロジェクトでprekフレームワークにより`pyfltr fast`が実行される
   - `markdownlint-fast`／`textlint-fast`によりmd変更時のlintが軽量に実行される
-  - 全プロジェクト共通で`uvx pyfltr fast`を呼び出す
+  - `~/dotfiles`はdev依存へ固定した`uv run --frozen pyfltr fast`を呼び出し、その他のプロジェクトは`uvx pyfltr fast`を呼び出す
 
 ### CI / リリース関連
 

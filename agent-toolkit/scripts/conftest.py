@@ -150,6 +150,18 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     委譲先のセッションから検査を実行すると標識が継承され、当該前提が崩れる。
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """エージェント環境の判定変数を各テストの実行環境から除去する。
+
+    コーディングエージェントから検査を起動すると変数が子プロセスへ継承され、
+    エージェント環境向けの分岐を検査するテストと、それ以外のテストの結果が実行環境で変わる。
+    """
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

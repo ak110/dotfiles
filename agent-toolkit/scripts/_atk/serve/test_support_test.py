@@ -45,16 +45,11 @@ def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     """UI関数を最小DOM上で実行し、シナリオのJSON結果を返す。"""
     source = assets.JS.replace("__BASE_PATH_JS__", '"/atk"')
     # 画面スクリプトは自身の宣言を即時実行関数で囲むため、シナリオも同じ関数の内側へ置いて
-    # 検証対象の関数を直接呼べるようにする。実画面のmountが渡す継続契約も再現し、
-    # 待機を含む関数を本番と同じ入口から検証する。
+    # 検証対象の関数を直接呼べるようにする。
     closing = "})();\n"
     assert source.endswith(closing)
     executable = (
         source[: -len(closing)]
-        + "\nconst testMount = () => true;\n"
-        + "testMount.restoreOnSettle = (pending, restore) => { pending.then(restore, restore); return pending; };\n"
-        + "testMount.wait = async pending => pending;\n"
-        + "isCurrentMount = testMount;\n"
         + "\n(async () => {\n"
         + scenario
         + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"

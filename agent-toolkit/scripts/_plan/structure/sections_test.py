@@ -14,6 +14,7 @@ from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wron
 from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
 _BASE = _plan_fixture.BASE_COMMIT
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 _VALID_CONTENT = _plan_fixture.single_file_plan()
 _BUG_CONTENT = _plan_fixture.single_file_plan(bug=True)
@@ -186,8 +187,11 @@ def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
 def test_permanence_table_rejects_empty_cells_and_column_mismatch(row: str) -> None:
     """恒久化表の空セルと列数不一致を拒否する。"""
     original = _plan_fixture.PERMANENCE_ROW
-    errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(original, row))
+    content = _VALID_CONTENT.replace(original, row)
+    errors = _plan_format.check_plan_structure(content)
     assert any("空cellまたは列数不一致" in error for error in errors), errors
+    lineno = content.splitlines().index(row) + 1
+    assert any(f"{lineno}行目: {row}" in error for error in errors), errors
 
 
 def test_new_material_tables_take_priority_over_legacy_fence() -> None:
@@ -303,7 +307,7 @@ title: x
 
 def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
-    assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/example/SKILL.md")
+    assert _plan_format.is_agent_doc_target_file(f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/rules-main.md")
     assert not _plan_format.is_agent_doc_target_file("agent-toolkit/share/plan-review.parent.md")

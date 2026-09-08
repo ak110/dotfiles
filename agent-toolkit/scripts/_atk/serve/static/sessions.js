@@ -3,8 +3,7 @@
 // 内側の字下げは、囲む前後の差分を比較できるよう元のままとする。
 (() => {
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
-// ページロード時の初期値はサーバーが`sessions.html`のJSONブロックへ埋め込む。
-// 先読みした画面DOMとJSONブロックは保持されるため、初回の`mount`で読み取る。
+// ページロード時の初期値は単一HTMLのJSONブロックへ埋め込み、初回の`init`で読み取る。
 // X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSourceに前置する。
 let BASE_PATH = "";
 
@@ -24,13 +23,10 @@ let selected = null;
 let queryText = "";
 // サブエージェントの記録は左ペインの一覧に現れないため、呼び出し元の記録を古い順に保持して戻れるようにする。
 let parentTrail = [];
-// SSE購読。`unmount`で閉じるため保持する。
+// 初期化後は文書とともに維持するSSE購読。
 let eventSource = null;
-let isCurrentMount = () => false;
-let initialized = false;
-let prefetchedList = null;
 
-// 画面DOMは切り離して保持されるため、参照は初回の`mount`で確定する。
+// 画面DOMの参照は初回の`init`で確定する。
 let listEl = null;
 let warningsEl = null;
 let detailEl = null;
@@ -52,7 +48,7 @@ function formatTime(value) {
 }
 
 function setDrawerOpen(open) {
-  document.body.classList.toggle("drawer-open", open);
+  document.getElementById("screen-sessions").classList.toggle("drawer-open", open);
 }
 
 function matchesFilter(entry) {
@@ -74,7 +70,7 @@ function renderList() {
     item.dataset.host = entry.host;
     item.dataset.engine = entry.engine;
     item.dataset.path = entry.path;
-    if (selected && selected.host === entry.host && selected.path === entry.path) {
+    if (selected && selected.host === entry.host && selected.engine === entry.engine && selected.path === entry.path) {
       item.setAttribute("aria-current", "true");
     }
 
@@ -82,14 +78,14 @@ function renderList() {
     cwd.className = "session-cwd";
     cwd.textContent = entry.cwd || "(作業ディレクトリ不明)";
 
-    const message = document.createElement("div");
-    message.className = "session-message";
-    message.textContent = entry.first_user_message || "(最初の発話なし)";
-
     const meta = document.createElement("div");
     meta.className = "session-meta";
-    meta.textContent = `${entry.host} / ${formatTime(entry.updated_at)}`;
-    item.append(cwd, message, meta);
+    const host = document.createElement("span");
+    host.textContent = entry.host;
+    const startedAt = document.createElement("span");
+    startedAt.textContent = formatTime(entry.started_at);
+    meta.append(host, startedAt);
+    item.append(cwd, meta);
 
     if (entry.warning) {
       const warning = document.createElement("div");
@@ -99,6 +95,25 @@ function renderList() {
     }
     listEl.append(item);
   }
+  updateNavButtons();
+}
+
+function updateNavButtons() {
+  const visible = sessions.filter(matchesFilter);
+  const index = selected
+    ? visible.findIndex((entry) => entry.host === selected.host && entry.engine === selected.engine && entry.path === selected.path)
+    : -1;
+  document.getElementById("sessions-prev-btn").disabled = index <= 0;
+  document.getElementById("sessions-next-btn").disabled = index < 0 || index >= visible.length - 1;
+}
+
+function navigateRelative(delta) {
+  const visible = sessions.filter(matchesFilter);
+  const index = selected
+    ? visible.findIndex((entry) => entry.host === selected.host && entry.engine === selected.engine && entry.path === selected.path)
+    : -1;
+  const target = visible[index + delta];
+  if (target) openSession(target.host, target.engine, target.path);
 }
 
 function showWarnings(lines) {
@@ -116,18 +131,14 @@ function renderWarnings(warnings) {
 }
 
 async function loadList() {
-  const currentMount = isCurrentMount;
   try {
-    const response = await currentMount.wait(fetch(BASE_PATH + "/api/sessions/list"));
-    if (!currentMount()) return;
+    const response = await (fetch(BASE_PATH + "/api/sessions/list"));
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
-    const payload = await currentMount.wait(response.json());
-    if (!currentMount()) return;
+    const payload = await (response.json());
     sessions = payload.sessions || [];
     renderWarnings(payload.warnings);
     renderList();
   } catch (error) {
-    if (!currentMount()) return;
     showWarnings([String(error)]);
   }
 }
@@ -301,7 +312,6 @@ function renderDetail(detail) {
 
 // `trail`は開こうとする記録の呼び出し元を古い順に並べる。左ペインから選んだ記録には呼び出し元が無いため既定は空とする。
 async function openSession(host, engine, path, trail = []) {
-  const currentMount = isCurrentMount;
   selected = { host, engine, path };
   parentTrail = trail;
   renderList();
@@ -309,14 +319,11 @@ async function openSession(host, engine, path, trail = []) {
   detailTitleEl.textContent = "読み込み中...";
   const query = new URLSearchParams({ host, engine, path });
   try {
-    const response = await currentMount.wait(fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`));
-    if (!currentMount()) return;
+    const response = await (fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`));
     if (!response.ok) throw new Error(`記録を取得できません (${response.status})`);
-    const detail = await currentMount.wait(response.json());
-    if (!currentMount()) return;
+    const detail = await (response.json());
     renderDetail(detail);
   } catch (error) {
-    if (!currentMount()) return;
     detailTitleEl.textContent = "";
     detailEl.textContent = String(error);
   }
@@ -324,75 +331,43 @@ async function openSession(host, engine, path, trail = []) {
 }
 
 function subscribeEvents() {
-  const currentMount = isCurrentMount;
   eventSource = new EventSource(BASE_PATH + "/api/sessions/events");
   eventSource.onmessage = () => {
-    if (currentMount()) loadList();
+    loadList();
   };
   eventSource.onerror = () => {
     // EventSourceはブラウザが自動再接続する。切断中の一覧は次の再接続で更新される。
   };
 }
 
-async function prefetch() {
-  try {
-    readBasePath();
-    const response = await fetch(BASE_PATH + "/api/sessions/list");
-    if (!response.ok) return;
-    prefetchedList = await response.json();
-  } catch (_) {
-    // 先読みに失敗した場合は、`mount`の通常取得で回復する。
-  }
-}
-
-function mount(currentMount) {
-  isCurrentMount = currentMount;
-  if (!initialized) {
-    readBasePath();
-    listEl = document.getElementById("sessions");
-    warningsEl = document.getElementById("warnings");
-    detailEl = document.getElementById("detail");
-    detailTitleEl = document.getElementById("detail-title");
-    detailUsageEl = document.getElementById("detail-usage");
-    filterEl = document.getElementById("filter");
-    filterEl.addEventListener("input", () => {
-      queryText = filterEl.value.trim().toLowerCase();
-      renderList();
-    });
-    listEl.addEventListener("click", (event) => {
-      const item = event.target.closest(".session-item");
-      if (!item) return;
-      openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
-    });
-    document.getElementById("menu-btn").addEventListener("click", () => {
-      setDrawerOpen(!document.body.classList.contains("drawer-open"));
-    });
-    document.getElementById("drawer-backdrop").addEventListener("click", () => {
-      setDrawerOpen(false);
-    });
-    initialized = true;
-  }
-  if (prefetchedList !== null) {
-    const payload = prefetchedList;
-    prefetchedList = null;
-    sessions = payload.sessions || [];
-    renderWarnings(payload.warnings);
+async function init() {
+  readBasePath();
+  listEl = document.getElementById("sessions");
+  warningsEl = document.getElementById("warnings");
+  detailEl = document.getElementById("detail");
+  detailTitleEl = document.getElementById("detail-title");
+  detailUsageEl = document.getElementById("detail-usage");
+  filterEl = document.getElementById("sessions-filter");
+  filterEl.addEventListener("input", () => {
+    queryText = filterEl.value.trim().toLowerCase();
     renderList();
-  }
-  loadList();
+  });
+  listEl.addEventListener("click", (event) => {
+    const item = event.target.closest(".session-item");
+    if (!item) return;
+    openSession(item.dataset.host, item.dataset.engine, item.dataset.path);
+  });
+  document.getElementById("sessions-menu-btn").addEventListener("click", () => {
+    setDrawerOpen(!document.getElementById("screen-sessions").classList.contains("drawer-open"));
+  });
+  document.getElementById("sessions-drawer-backdrop").addEventListener("click", () => setDrawerOpen(false));
+  document.getElementById("sessions-prev-btn").addEventListener("click", () => navigateRelative(-1));
+  document.getElementById("sessions-next-btn").addEventListener("click", () => navigateRelative(1));
+  await loadList();
   setDrawerOpen(window.matchMedia("(max-width: 768px)").matches);
   subscribeEvents();
 }
 
-function unmount() {
-  isCurrentMount = () => false;
-  setDrawerOpen(false);
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
-}
-
 window.__atkScreens = window.__atkScreens || {};
-window.__atkScreens.sessions = {mount, unmount, prefetch};
+window.__atkScreens.sessions = {init};
 })();

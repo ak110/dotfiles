@@ -119,9 +119,9 @@ def _strip_command_prefixes(command: str) -> str:
 
 _TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
     # 直接実行系
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+)?(?:python\s+-m\s+)?pytest\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*)?(?:python\s+-m\s+)?pytest\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
+    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
     re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
     # タスクランナー経由（make / mise run / npm | pnpm | yarn（run省略可）/ just / task）で
     # test / check / validateアクション
@@ -708,7 +708,7 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
         return
     warnings = _check_conditional_prohibition(pathlib.Path(display_path), content)
     if warnings:
-        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG))
+        notices.append(_llm_notice("\n".join(warnings), tag=_WARN_TAG, removable_cause=True))
 
 
 def _plan_main_path_for(display_path: str) -> str:

@@ -191,7 +191,15 @@ def test_permanence_section_accepts_prose_instead_of_table() -> None:
 def test_extract_tables_accepts_gfm_notations(table: str) -> None:
     """区切り行のダッシュ数、整列コロン、行頭パイプ省略の各記法を表として抽出する。"""
     lines: list[tuple[int, str]] = list(enumerate(table.splitlines(), start=1))
-    assert _plan_format.extract_tables(lines) == [_plan_format.MarkdownTable(1, ("項目", "内容"), (("母集団", "全体。"),))]
+    assert _plan_format.extract_tables(lines) == [
+        _plan_format.MarkdownTable(
+            1,
+            ("項目", "内容"),
+            (("母集団", "全体。"),),
+            (3,),
+            (table.splitlines()[2],),
+        )
+    ]
 
 
 def test_structured_material_ids_preserve_full_namespace() -> None:
