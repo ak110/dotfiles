@@ -22,12 +22,16 @@ def _git_identity_env(monkeypatch: pytest.MonkeyPatch) -> None:
     既存のリポジトリ生成箇所にある`git config user.*`の呼び出しは残置する。
     環境変数は当該設定より優先されるため挙動は変わらず、一括削除は本fixtureの目的に不要である。
     """
-    monkeypatch.setenv("GIT_AUTHOR_NAME", _GIT_IDENTITY_NAME)
-    monkeypatch.setenv("GIT_AUTHOR_EMAIL", _GIT_IDENTITY_EMAIL)
-    monkeypatch.setenv("GIT_COMMITTER_NAME", _GIT_IDENTITY_NAME)
-    monkeypatch.setenv("GIT_COMMITTER_EMAIL", _GIT_IDENTITY_EMAIL)
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
-    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
-    monkeypatch.setenv("GIT_CONFIG_KEY_0", "safe.directory")
-    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "*")
+    environment = {
+        "GIT_AUTHOR_NAME": _GIT_IDENTITY_NAME,
+        "GIT_AUTHOR_EMAIL": _GIT_IDENTITY_EMAIL,
+        "GIT_COMMITTER_NAME": _GIT_IDENTITY_NAME,
+        "GIT_COMMITTER_EMAIL": _GIT_IDENTITY_EMAIL,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "safe.directory",
+        "GIT_CONFIG_VALUE_0": "*",
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
