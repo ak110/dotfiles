@@ -766,6 +766,92 @@ class TestColloquialCheck:
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
+    def test_edit_inside_fenced_code_is_silent(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        target = tmp_path / "note.md"
+        target.write_text("本文。\n```text\n既存行\n```\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "既存行\n",
+                    "new_string": f"既存行\n{deny_substring}を含む行\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
+    def test_edit_outside_fenced_code_warns(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        target = tmp_path / "note.md"
+        target.write_text("本文。\n```text\n既存行\n```\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "old_string": "本文。\n",
+                    "new_string": f"本文。\n{deny_substring}を含む行\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "口語的な日本語表現" in _additional_context(result)
+
+    def test_multiedit_inside_fenced_code_is_silent(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        target = tmp_path / "note.md"
+        target.write_text("本文。\n```text\n既存行\n```\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {
+                            "old_string": "既存行\n",
+                            "new_string": f"既存行\n{deny_substring}を含む行\n",
+                        }
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
+    def test_apply_patch_inside_fenced_code_is_silent(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        target = tmp_path / "note.md"
+        target.write_text("本文。\n```text\n既存行\n```\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n 既存行\n+{deny_substring}を含む行\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
+    def test_unchanged_colloquial_line_is_silent(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        target = tmp_path / "note.md"
+        target.write_text(f"{deny_substring}を含む既存行\n変更前\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(target), "old_string": "変更前", "new_string": "変更後"},
+            }
+        )
+        assert result.returncode == 0
+        assert "colloquial" not in _agent_messages(result)
+
+    def test_missing_file_falls_back_to_fragment_check(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(tmp_path / "missing.md"),
+                    "old_string": "変更前",
+                    "new_string": f"{deny_substring}を含む変更後",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert "口語的な日本語表現" in _additional_context(result)
+
     @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit"])
     def test_plan_file_skips_colloquial_warning_for_claude_edit_tools(
         self, tmp_path: pathlib.Path, deny_substring: str, tool_name: str

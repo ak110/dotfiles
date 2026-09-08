@@ -493,7 +493,10 @@ def _handle_user_facing_text_tool(
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2
-    warning = _check_colloquial(tool_name, fields, "")
+    warning = next(
+        (warning for _, value in fields if (warning := _check_colloquial(tool_name, None, value, "")) is not None),
+        None,
+    )
     if warning is None:
         flush_warning()
     else:

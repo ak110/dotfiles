@@ -87,6 +87,7 @@ block系checkの検査対象は「新規に書き込まれる側」（変更後�
 from __future__ import annotations
 
 import datetime
+import difflib
 import importlib
 import json
 import os
@@ -183,12 +184,31 @@ def _collect_edit_operation_warnings(
     """1操作分の警告本文を順に集める。"""
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
     display_path = operation.display_path
+    image = _materialize_cached(operation, index, images)
+    if image is None:
+        colloquial_warning = next(
+            (
+                warning
+                for _, value in fields
+                if (warning := _check_colloquial(tool_name, None, value, operation.path)) is not None
+            ),
+            None,
+        )
+    else:
+        colloquial_warning = _check_colloquial(
+            tool_name,
+            image.before_image,
+            image.after_image,
+            operation.path,
+        )
+
+    # 断片入力を使う検査。
     warnings = [
         warning
         for warning in (
             _check_manifest(tool_name, display_path),
             _check_home_path(tool_name, fields, display_path),
-            _check_colloquial(tool_name, fields, operation.path),
+            colloquial_warning,
             _check_style_negation(tool_name, operation, display_path),
         )
         if warning is not None
@@ -197,7 +217,7 @@ def _collect_edit_operation_warnings(
         # 同一patch内で追加・移動する参照先を実ファイルだけで解決できないため、
         # 外部ファイル解決を伴う2検査はClaude入力へ限定する。
         return warnings
-    image = _materialize_cached(operation, index, images)
+    # 全文像を使う検査。
     content = image.after_image if image is not None else None
     if content is None:
         return warnings
@@ -534,7 +554,12 @@ def _is_in_managed_temp(file_path: str) -> bool:
         return False
 
 
-def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+def _check_colloquial(
+    tool_name: str,
+    before_image: str | None,
+    after_image: str,
+    file_path: str,
+) -> str | None:
     """口語的な日本語表現の混入を検出して警告本文を返す（warn）。
 
     検出語・行抜粋・置換候補は出力せず、総件数と先頭`_COLLOQUIAL_MAX_LISTED_MATCHES`件までの
@@ -547,22 +572,31 @@ def _check_colloquial(tool_name: str, fields: list[tuple[str, str]], file_path: 
     # writing-standardsの除外規定が適用されるため、この警告だけを対象外とする。
     if file_path and (_is_plan_file_or_adjunct(file_path) or _is_in_managed_temp(file_path)):
         return None
-    for field, value in fields:
-        if not value:
-            continue
-        hits = _colloquial_check.scan_text(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
-        if hits:
-            target = f" 対象: {file_path}" if file_path else ""
-            listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
-            return _llm_notice(
-                f"`{tool_name}.{field}`に口語的な日本語表現を検出した。"
-                f"一致: {len(hits)}件（{listed}）。"
-                "検出箇所を含む文全体を、正式な書き言葉（標準的な技術用語、辞書形、比喩的な動詞を使わない表現）へ"
-                "`agent-toolkit/rules/01-agent.md`「日本語」節に従って書き換える。"
-                f"単語だけを同義語へ置き換えず、文全体を組み直す。{target}",
-                tag=_WARN_TAG,
-            )
-    return None
+    if not after_image:
+        return None
+    hits = _colloquial_check.scan_text(after_image, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
+    if before_image is not None:
+        changed_lines = {
+            line_no
+            for opcode, _, _, after_start, after_end in difflib.SequenceMatcher(
+                a=before_image.splitlines(),
+                b=after_image.splitlines(),
+            ).get_opcodes()
+            if opcode in {"replace", "insert"}
+            for line_no in range(after_start + 1, after_end + 1)
+        }
+        hits = [hit for hit in hits if hit[0] in changed_lines]
+    if not hits:
+        return None
+    listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
+    return _llm_notice(
+        f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
+        f"一致: {len(hits)}件（{listed}）。"
+        "検出箇所を含む文全体を、正式な書き言葉（標準的な技術用語、辞書形、比喩的な動詞を使わない表現）へ"
+        "`agent-toolkit/rules/01-agent.md`「日本語」節に従って書き換える。"
+        f"単語だけを同義語へ置き換えず、文全体を組み直す。 対象: {file_path}",
+        tag=_WARN_TAG,
+    )
 
 
 # --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---
