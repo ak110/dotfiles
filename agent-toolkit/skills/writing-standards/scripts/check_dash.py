@@ -11,7 +11,7 @@ writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシ�
 コードブロック内（フェンス形式・インデント形式）・インラインコード内・URL内は除外する。
 """
 
-# pylint: disable=duplicate-code  # 各スキルの単独実行性を保ち、同一のCommonMark解析を同期する。
+# 各スキルの単独実行性を保ち、同一のCommonMark解析を同期する。
 
 from __future__ import annotations
 

@@ -18,7 +18,7 @@
 本ファイルは配布物境界（`agent-toolkit/`配下）を跨がず、dotfiles個人環境側のみで完結する。
 """
 
-# pylint: disable=duplicate-code  # 配布物境界を跨がず例外処理を独立実装するため意図的に重複する。
+# 配布物境界を跨がず例外処理を独立実装するため意図的に重複する。
 
 import importlib
 import io

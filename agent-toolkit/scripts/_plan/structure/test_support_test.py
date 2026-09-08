@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,duplicate-code,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
+# pylint: disable=function-redefined,pointless-string-statement,undefined-variable,function-redefined,pointless-string-statement,undefined-variable,unused-import,unused-wildcard-import,wildcard-import,wrong-import-order,wrong-import-position
 # ruff: noqa: E402,F401,F403,F405,I001
 """計画形式の共通解析を検証する。"""
 
@@ -9,7 +9,7 @@ import pytest
 from pyfltr.colloquial import check as _colloquial_check
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=duplicate-code,function-redefined,pointless-string-statement,undefined-variable,wrong-import-position
+from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=function-redefined,pointless-string-statement,undefined-variable,wrong-import-position
 from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
 
 _BASE = _plan_fixture.BASE_COMMIT

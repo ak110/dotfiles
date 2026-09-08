@@ -56,7 +56,7 @@ _EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しまし
 # エンドユーザーが記述する注記記法を注記として描画する。
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(mdit_py_plugins.footnote.footnote_plugin)
 
-# pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
+# 配布物独立性を保つため同等機能を独立実装する。
 
 # 安全なbase_pathの照合パターン。先頭スラッシュ必須、英数字と`._~/-`のみ許可し、
 # 連続スラッシュ（スキーム相対URL扱いになり外部オリジン誘導の口になる）は別途禁止する。

@@ -249,9 +249,8 @@ disable = [
     "too-many-statements",
 ]
 
-[tool.pylint.similarities]
-min-similarity-lines = 10
-
+# 既存の重複はarid-baseline.jsonで抑制し、新しい重複だけを検出する。
+# 個別の`# arid: disable`と`# arid: enable`による領域抑制は使わない。
 [tool.arid]
 min-lines = 10
 baseline = "arid-baseline.json"

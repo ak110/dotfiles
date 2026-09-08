@@ -26,7 +26,7 @@ from _atk.serve import remote as _atk_serve_remote
 
 logger = logging.getLogger(__name__)
 
-# pylint: disable=duplicate-code  # 配布物独立性を保つため同等機能を独立実装する。
+# 配布物独立性を保つため同等機能を独立実装する。
 
 RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
