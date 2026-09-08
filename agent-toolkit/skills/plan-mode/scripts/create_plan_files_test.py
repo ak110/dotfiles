@@ -323,13 +323,15 @@ def test_rejects_portable_reference_outside_private_notes(repo: pathlib.Path, tm
     """入力本文のprivate-notes外portable参照を確定しない。"""
     private_notes = tmp_path / "private-notes"
     main_source, detail_source = _sources(repo, tmp_path)
+    invalid_source = f"{create_plan_files.PORTABLE_PLAN_PREFIX}../outside.md"
     detail_source.write_text(
-        detail_source.read_text(encoding="utf-8") + f"\n{create_plan_files.PORTABLE_PLAN_PREFIX}../outside.md\n",
+        detail_source.read_text(encoding="utf-8") + f"\n{invalid_source}\n",
         encoding="utf-8",
     )
+    lineno = detail_source.read_text(encoding="utf-8").splitlines().index(invalid_source) + 1
     monkeypatch.setattr(create_plan_files.secrets, "token_hex", lambda _bytes: "a1b2")
 
-    with pytest.raises(create_plan_files.PlanCreationError, match="可搬参照"):
+    with pytest.raises(create_plan_files.PlanCreationError, match="可搬参照") as raised:
         create_plan_files.create_plan_files(
             main_source,
             detail_source,
@@ -339,6 +341,7 @@ def test_rejects_portable_reference_outside_private_notes(repo: pathlib.Path, tm
             work_dir=repo,
         )
 
+    assert f"30-計画保存先移行-a1b2.detail.md:{lineno}行目: {invalid_source}" in str(raised.value)
     assert not list((tmp_path / "home/.claude/plans").glob("30-計画保存先移行-a1b2.*"))
 
 

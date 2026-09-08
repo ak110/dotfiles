@@ -38,6 +38,25 @@ _VALID_DETAIL_CONTENT = _plan_fixture.two_file_detail()
 from _plan.structure.test_support_test import *  # noqa: F403
 
 
+def test_markdown_table_keeps_first_and_last_row_locations() -> None:
+    """表の先頭行と末尾行について入力の行番号と原文を保持する。"""
+    source = "| 項目 | 内容 |\n| --- | --- |\n| 先頭 | 一。 |\n| 末尾 | 二。 |"
+    lines: list[tuple[int, str]] = list(enumerate(source.splitlines(), start=7))
+
+    table = _plan_format.extract_tables(lines)[0]
+
+    assert table.row_location(0) == "9行目: | 先頭 | 一。 |"
+    assert table.row_location(1) == "10行目: | 末尾 | 二。 |"
+
+
+@pytest.mark.parametrize("index", [-1, 2])
+def test_markdown_table_returns_empty_location_for_out_of_range_index(index: int) -> None:
+    """表の本文行の範囲外にある索引へ位置を返さない。"""
+    table = _plan_format.MarkdownTable(1, ("項目",), (("値",),), (3,), ("| 値 |",))
+
+    assert table.row_location(index) == ""
+
+
 def test_human_readable_main_and_detail_pass_structure_check() -> None:
     """新規の人間向け計画ファイル（メイン）と計画ファイル（詳細）がIDなしの判断・実装契約を満たす。"""
     work_type, main_errors = _plan_format.check_plan_main_structure(_HUMAN_MAIN_CONTENT)

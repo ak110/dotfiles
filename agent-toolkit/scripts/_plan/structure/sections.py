@@ -613,9 +613,9 @@ def _check_fixed_table(
     errors = [f"{label}の固定表は1件必要: 実際={len(matching)}件"] if len(matching) != 1 else []
     if len(table.rows) < minimum_rows:
         errors.append(f"{label}の表に1行以上の内容が必要")
-    for row in table.rows:
+    for index, row in enumerate(table.rows):
         if len(row) != len(header) or any(not cell for cell in row):
-            errors.append(f"{label}の表に空cellまたは列数不一致の行がある: {list(row)}")
+            errors.append(f"{label}の表に空cellまたは列数不一致の行がある: {table.row_location(index)}")
     return table, errors
 
 
@@ -660,9 +660,9 @@ def _check_bug_unit_sections(
                 )
                 continue
             standalone_table = standalone_tables[0]
-            for row in standalone_table.rows:
+            for index, row in enumerate(standalone_table.rows):
                 if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
-                    errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
+                    errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {standalone_table.row_location(index)}")
             continue
 
         investigation_tables = [
@@ -687,12 +687,12 @@ def _check_bug_unit_sections(
             )
             continue
         cause_table = cause_tables[0]
-        for row in cause_table.rows:
+        for index, row in enumerate(cause_table.rows):
             if len(row) != len(PLAN_BUG_CAUSE_TABLE_HEADER) or any(not cell for cell in row[1:]):
-                errors.append(f"`### {heading.text}`の原因分析表に空のセルがある: {row[0] if row else ''}")
-        for row in table.rows:
+                errors.append(f"`### {heading.text}`の原因分析表に空のセルがある: {cause_table.row_location(index)}")
+        for index, row in enumerate(table.rows):
             if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
-                errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {row[0] if row else ''}")
+                errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {table.row_location(index)}")
     return errors
 
 
@@ -871,9 +871,9 @@ def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | No
     errors = [f"`## {PLAN_H2_ACTION}`の固定表は1件必要: 実際={len(candidates)}件"] if len(candidates) != 1 else []
     if len(table.rows) < 1:
         errors.append(f"`## {PLAN_H2_ACTION}`の表に1行以上の内容が必要")
-    for row in table.rows:
+    for index, row in enumerate(table.rows):
         if len(row) != len(table.header) or any(not cell for cell in row):
-            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {list(row)}")
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}")
     return table, errors
 
 
@@ -1079,9 +1079,9 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
     origin_index = table.header.index("由来")
     decision_index = table.header.index("採否")
     root_index = table.header.index("根拠")
-    for row in table.rows:
+    for index, row in enumerate(table.rows):
         if len(row) != len(PLAN_HUMAN_ACTION_TABLE_HEADER) or any(not cell for cell in row):
-            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {list(row)}")
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}")
             continue
         origin = row[origin_index]
         canonical_origin = canonical_wi_origin(origin)
@@ -1425,8 +1425,8 @@ def _check_verification_section(
             f"固定2行（{list(PLAN_VERIFICATION_TABLE_ROWS)}）の表にする"
         ]
     return [
-        f"`## {PLAN_H2_VERIFICATION}`の表に空の検証コマンドがある: {row[0] if row else ''}"
-        for row in table.rows
+        f"`## {PLAN_H2_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}"
+        for index, row in enumerate(table.rows)
         if len(row) != 2 or not row[1]
     ]
 

@@ -186,8 +186,11 @@ def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
 def test_permanence_table_rejects_empty_cells_and_column_mismatch(row: str) -> None:
     """恒久化表の空セルと列数不一致を拒否する。"""
     original = _plan_fixture.PERMANENCE_ROW
-    errors = _plan_format.check_plan_structure(_VALID_CONTENT.replace(original, row))
+    content = _VALID_CONTENT.replace(original, row)
+    errors = _plan_format.check_plan_structure(content)
     assert any("空cellまたは列数不一致" in error for error in errors), errors
+    lineno = content.splitlines().index(row) + 1
+    assert any(f"{lineno}行目: {row}" in error for error in errors), errors
 
 
 def test_new_material_tables_take_priority_over_legacy_fence() -> None:

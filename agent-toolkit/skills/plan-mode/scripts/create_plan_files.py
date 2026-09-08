@@ -147,22 +147,24 @@ def _remove_owned(path: pathlib.Path, identity: tuple[int, int], content: bytes)
     return True
 
 
-def _portable_reference_values(text: str) -> Iterator[str]:
+def _portable_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tuple[int, str, str]]:
     """Markdown本文の有効行から固定portable接頭辞を持つ参照値を抽出する。"""
-    for match in _PORTABLE_REFERENCE_RE.finditer(text):
-        value = match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
-        if value:
-            yield value
+    for lineno, source in lines:
+        for match in _PORTABLE_REFERENCE_RE.finditer(source):
+            value = match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
+            if value:
+                yield lineno, source, value
 
 
-def _adjunct_reference_values(text: str) -> Iterator[str]:
+def _adjunct_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tuple[int, str, str]]:
     """Markdown本文の有効行から付属ファイル参照の固定接頭辞を持つ参照値を抽出する。"""
-    for match in _ADJUNCT_REFERENCE_RE.finditer(text):
-        yield match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
+    for lineno, source in lines:
+        for match in _ADJUNCT_REFERENCE_RE.finditer(source):
+            yield lineno, source, match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
 
 
 def _check_plan_references(
-    contents: tuple[bytes, ...],
+    plans: tuple[tuple[pathlib.Path, bytes], ...],
     main_path: pathlib.Path,
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
@@ -174,21 +176,26 @@ def _check_plan_references(
     参照の抽出対象はコードフェンスなどを除いたMarkdown本文の有効行に限る。
     コードフェンス内はユーザー発言の逐語引用を含み、そこに現れる接頭辞は参照ではないためである。
     """
-    for content in contents:
+    for path, content in plans:
         text = content.decode("utf-8")
-        if PLAN_STEM_PLACEHOLDER in text:
-            raise PlanCreationError("計画本文に未解決のstemプレースホルダーがあります")
-        body = _plan_format.markdown_body_text(text)
-        for reference in _portable_reference_values(body):
+        for lineno, source in enumerate(text.splitlines(), start=1):
+            if PLAN_STEM_PLACEHOLDER in source:
+                raise PlanCreationError(f"計画本文に未解決のstemプレースホルダーがあります: {path.name}:{lineno}行目: {source}")
+        body_lines = tuple(_plan_format.iter_markdown_body_lines(text))
+        for lineno, source, reference in _portable_reference_values(iter(body_lines)):
             try:
                 _plan_file.resolve_plan_file(reference, private_notes=private_notes, home=home)
             except (OSError, ValueError) as error:
-                raise PlanCreationError(f"計画本文の可搬参照が不正です: {reference}: {error}") from error
-        for reference in _adjunct_reference_values(body):
+                raise PlanCreationError(
+                    f"計画本文の可搬参照が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}"
+                ) from error
+        for lineno, source, reference in _adjunct_reference_values(iter(body_lines)):
             try:
                 _plan_file.resolve_plan_adjunct_reference(reference, plan_path=main_path)
             except (OSError, ValueError) as error:
-                raise PlanCreationError(f"計画本文の参照値が不正です: {reference}: {error}") from error
+                raise PlanCreationError(
+                    f"計画本文の参照値が不正です: {path.name}:{lineno}行目: {source}: {reference}: {error}"
+                ) from error
 
 
 def _check_structure(
@@ -255,7 +262,7 @@ def _finalize_candidate(
             _require_plans_root_path(path, plans_root)
             if path.read_bytes() != content:
                 raise PlanCreationError(f"確定後の計画本文を読み戻せません: {path}")
-        _check_plan_references(tuple(content for _path, content, _suffix in targets), main_path, private_notes, home)
+        _check_plan_references(tuple((path, content) for path, content, _suffix in targets), main_path, private_notes, home)
         _check_structure(main_path, work_dir, private_notes, home)
         _plan_file.record_plan_owner(main_path)
         return tuple(path for path, _content, _suffix in targets)

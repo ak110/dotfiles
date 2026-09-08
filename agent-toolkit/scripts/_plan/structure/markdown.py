@@ -490,10 +490,18 @@ class MarkdownTable:
     lineno: int
     header: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
+    row_linenos: tuple[int, ...]
+    row_sources: tuple[str, ...]
 
     def row_labels(self) -> tuple[str, ...]:
         """各行の第1列を返す。"""
         return tuple(row[0] if row else "" for row in self.rows)
+
+    def row_location(self, index: int) -> str:
+        """指定した本文行の行番号と原文を返す。"""
+        if index < 0 or index >= len(self.rows):
+            return ""
+        return f"{self.row_linenos[index]}行目: {self.row_sources[index]}"
 
 
 @functools.cache
@@ -535,12 +543,14 @@ def extract_tables(lines: list[tuple[int, str]]) -> list[MarkdownTable]:
     lineno = 0
     header: tuple[str, ...] = ()
     rows: list[tuple[str, ...]] = []
+    row_linenos: list[int] = []
+    row_sources: list[str] = []
     in_body = False
     for token in _table_parser().parse("\n".join(source_lines)):
         if token.type == "table_open":
             assert token.map is not None
             lineno = lines[token.map[0]][0]
-            header, rows, in_body = (), [], False
+            header, rows, row_linenos, row_sources, in_body = (), [], [], [], False
         elif token.type == "thead_open":
             assert token.map is not None
             header = _table_row_cells(source_lines[token.map[0]])
@@ -548,7 +558,10 @@ def extract_tables(lines: list[tuple[int, str]]) -> list[MarkdownTable]:
             in_body = True
         elif token.type == "tr_open" and in_body:
             assert token.map is not None
-            rows.append(_table_row_cells(source_lines[token.map[0]]))
+            source_index = token.map[0]
+            rows.append(_table_row_cells(source_lines[source_index]))
+            row_linenos.append(lines[source_index][0])
+            row_sources.append(source_lines[source_index])
         elif token.type == "table_close":
-            tables.append(MarkdownTable(lineno, header, tuple(rows)))
+            tables.append(MarkdownTable(lineno, header, tuple(rows), tuple(row_linenos), tuple(row_sources)))
     return tables
