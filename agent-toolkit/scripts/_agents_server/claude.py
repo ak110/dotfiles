@@ -407,7 +407,11 @@ class ClaudeServerManager:
                     try:
                         message = completed_message_task.result()
                     except StopAsyncIteration:
-                        if session is not None and session.awaiting_auto_resume and not session.live_child_session_ids:
+                        if (
+                            session is not None
+                            and session.awaiting_auto_resume
+                            and not shared_state.has_pending_auto_resume_targets(session)
+                        ):
                             self._finalize_pending_result(session)
                             iterator = None
                             await self._notify_waiters()
@@ -480,7 +484,7 @@ class ClaudeServerManager:
                                 session.auto_resume_consumed = True
                                 self._finalize_turn(session, result)
                                 iterator = None
-                            elif (session.live_task_ids or session.live_child_session_ids) and not session.auto_resume_consumed:
+                            elif shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                                 shared_state.begin_auto_resume_wait(session, result)
                                 session.touch()
                             else:

@@ -6,6 +6,7 @@
 import asyncio
 import datetime
 import json
+import os
 import pathlib
 
 import agents_server_mcp
@@ -302,19 +303,28 @@ async def test_writer_excludes_already_expired_session(tmp_path: pathlib.Path) -
 
 @pytest.mark.asyncio
 async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Path) -> None:
-    """ルートwriterは前回のJSONと一時ファイルを除いて新しいroot.jsonだけを書く。"""
+    """ルートwriterは自身と保持期限切れの共有ファイルだけを除く。"""
     directory = subject.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
-    (directory / "stale.json").write_text("{}", encoding="utf-8")
-    (directory / ".stale.json.token.tmp").write_text("temporary", encoding="utf-8")
+    other_writer = directory / "other.json"
+    other_writer.write_text("{}", encoding="utf-8")
+    other_temporary = directory / ".other.json.token.tmp"
+    other_temporary.write_text("temporary", encoding="utf-8")
     results = directory / "results"
     results.mkdir()
-    (results / "stale-session.json").write_text("{}", encoding="utf-8")
-    (results / ".stale-session.json.token.tmp").write_text("temporary", encoding="utf-8")
+    stale_result = results / "stale-session.json"
+    stale_result.write_text("{}", encoding="utf-8")
+    retained_result = results / "retained-session.json"
+    retained_result.write_text("{}", encoding="utf-8")
     notices = directory / "notices"
     notices.mkdir()
-    (notices / "stale-session.1.json").write_text("{}", encoding="utf-8")
-    (notices / ".stale-session.1.json.token.tmp").write_text("temporary", encoding="utf-8")
+    stale_notice = notices / "stale-session.1.json"
+    stale_notice.write_text("{}", encoding="utf-8")
+    retained_notice = notices / "retained-session.1.json"
+    retained_notice.write_text("{}", encoding="utf-8")
+    stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
+    for path in (stale_result, stale_notice):
+        os.utime(path, (stale_at, stale_at))
     writer = subject.StatusFileWriter(
         {},
         subject.StatusFileIdentity("root", "root.json", None),
@@ -323,9 +333,17 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
     )
 
     writer.activate()
-    assert [path.name for path in directory.iterdir()] == ["root.json"]
+    assert other_writer.exists()
+    assert other_temporary.exists()
+    assert retained_result.exists()
+    assert retained_notice.exists()
+    assert not stale_result.exists()
+    assert not stale_notice.exists()
     writer.deactivate()
-    assert not directory.exists()
+    assert other_writer.exists()
+    assert other_temporary.exists()
+    assert retained_result.exists()
+    assert retained_notice.exists()
 
 
 @pytest.mark.asyncio

@@ -847,7 +847,7 @@ class AppServerManager:
             session.failure_pending_completion = False
             if session.status not in TERMINAL_STATUSES:
                 session.status = "failed"
-            if session.live_child_session_ids and not session.auto_resume_consumed:
+            if shared_state.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                 deadline = shared_state.begin_auto_resume_wait(
                     session,
                     {
@@ -890,7 +890,7 @@ class AppServerManager:
                 session.set_progress(session.commentary)
         elif method in {"item/fileChange/outputDelta", "item/fileChange/patchUpdated"}:
             session.diff_changed = True
-        if session.awaiting_auto_resume and not session.live_child_session_ids:
+        if session.awaiting_auto_resume and not shared_state.has_pending_auto_resume_targets(session):
             self._finalize_pending_result(session)
         session.touch()
         await self._notify_waiters()

@@ -2676,7 +2676,7 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
     tmp_path: pathlib.Path,
 ) -> None:
     """共有MCP層から実Codexバックエンドの開始と継続入力を通す。"""
-    manager = subject.AgentsServerManager()
+    manager = subject.AgentsServerManager(status_writer=None)
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
     client = FakeCodexClient()
 

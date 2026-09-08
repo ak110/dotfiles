@@ -398,6 +398,40 @@ def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandi
     return session.engine, session.model, session.effort
 
 
+def has_pending_auto_resume_targets(session: SessionState) -> bool:
+    """自動再開が追跡する子session又はClaude taskが残るかを返す。
+
+    Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
+    """
+    return bool(session.live_task_ids or session.live_child_session_ids)
+
+
+def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:
+    """終端結果が未回収かを返す。
+
+    結果ファイルを扱える消費側は回収状態を渡し、扱えない経路だけは`None`を渡す。
+    """
+    if session.finalized_at is None or session.result_delivered:
+        return False
+    return result_consumed is None or not result_consumed
+
+
+def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[str, Any]:
+    """終端結果ファイルへ保存する公開結果を返す。
+
+    保持中と退避済みのsessionが同じ結果本文を公開できるよう、必要な項目だけへ射影する。
+    """
+    result: dict[str, Any] = {
+        "status": session.status,
+        "agent_message": session.agent_message,
+        "turn_seq": session.turn_seq,
+        "finalized_at": session.finalized_at,
+    }
+    if _nonempty_error(session.error):
+        result["error"] = session.error
+    return result
+
+
 def _initialize_turn(session: SessionState, *, reset_progress: bool = True) -> None:
     """新しいturnの開始前に共有状態を初期化する。"""
     session.turn_id = ""

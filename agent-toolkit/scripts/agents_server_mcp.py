@@ -38,6 +38,8 @@ from _agents_server.state import (
     add_terminal_listener,
     add_touch_listener,
     finalize_pending_result,
+    has_pending_auto_resume_targets,
+    has_uncollected_result,
     record_unobserved_sessions,
     remove_terminal_listener,
     remove_touch_listener,
@@ -349,7 +351,12 @@ class AgentsServerManager:
                     session,
                     status=session.status,
                     progress=session.progress,
-                    result_available=session.result_available,
+                    result_available=has_uncollected_result(
+                        session,
+                        None
+                        if self._status_writer is None
+                        else self._status_writer.result_state(session.session_id) == "consumed",
+                    ),
                 ),
             )
         for pending in self._pending_resumes.values():
@@ -370,7 +377,12 @@ class AgentsServerManager:
                         session,
                         status="expired",
                         progress="",
-                        result_available=not session.result_delivered and session.finalized_at is not None,
+                        result_available=has_uncollected_result(
+                            session,
+                            None
+                            if self._status_writer is None
+                            else self._status_writer.result_state(session.session_id) == "consumed",
+                        ),
                     ),
                 ),
             )
@@ -719,7 +731,7 @@ class AgentsServerManager:
             session.terminal_child_session_ids.add(session_id)
             session_registry.remove(session_id)
 
-        if not session.live_child_session_ids and session.terminal_child_session_ids and not session.live_task_ids:
+        if not has_pending_auto_resume_targets(session) and session.terminal_child_session_ids:
             identifiers = sorted(session.terminal_child_session_ids)
             prompt = (
                 "あなたが`agents_server`で起動した次のsessionは終端した。\n"

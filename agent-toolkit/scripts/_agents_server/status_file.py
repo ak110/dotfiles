@@ -30,7 +30,7 @@ from typing import Any
 from _atk import config as _atk_config
 from _common.atomic_file import atomic_write
 
-from _agents_server.state import SessionState
+from _agents_server.state import RESULT_RETENTION_SECONDS, SessionState, has_uncollected_result, terminal_result_payload
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 
@@ -227,12 +227,7 @@ class StatusFileWriter:
     def activate(self) -> None:
         """書込を有効化し、前回プロセスの残存状態を初期化する。"""
         self._active = True
-        if self._identity.host_session_id is None and self._directory.exists():
-            for path in self._directory.iterdir():
-                if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
-                    path.unlink()
-            self._remove_result_files()
-            self._remove_notice_files()
+        self._remove_owned_and_expired_files()
         self.flush()
 
     def schedule(self) -> None:
@@ -255,7 +250,10 @@ class StatusFileWriter:
             for session in self._sessions.values()
             if session.announced
             and (session.retention_deadline is None or session.retention_deadline > now)
-            and (not session.result_available or self.result_exists(session.session_id))
+            and (
+                not session.result_available
+                or has_uncollected_result(session, self.result_state(session.session_id) == "consumed")
+            )
         ]
         visible.sort(key=lambda session: session.started_at)
         payload: dict[str, Any] = {
@@ -275,20 +273,7 @@ class StatusFileWriter:
                 handle.cancel()
         self._flush_handle = None
         self._retention_handle = None
-        if self._path.exists():
-            self._path.unlink()
-        if self._identity.host_session_id is None and self._directory.exists():
-            for path in self._directory.iterdir():
-                if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
-                    path.unlink()
-            self._remove_result_files()
-            self._remove_notice_files()
-        else:
-            for session_id in tuple(self._result_deadlines):
-                self.delete_result(session_id)
-            result_directory = results_directory(self._identity.root_session_id, self._state_root)
-            if result_directory.exists() and not any(result_directory.iterdir()):
-                result_directory.rmdir()
+        self._remove_owned_and_expired_files()
         self._result_deadlines.clear()
         if self._directory.exists() and not any(self._directory.iterdir()):
             self._directory.rmdir()
@@ -312,6 +297,12 @@ class StatusFileWriter:
             raise ValueError(f"invalid session_id: {session_id}")
         return (results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json").is_file()
 
+    def result_state(self, session_id: str) -> str:
+        """自プロセスが公開した終端結果の公開状態を返す。"""
+        if session_id not in self._result_deadlines:
+            return "unpublished"
+        return "published" if self.result_exists(session_id) else "consumed"
+
     def take_notices(self, session_id: str) -> list[dict[str, str]]:
         """待機対象sessionの正常な通知を回収する。"""
         return take_notices(self._identity.root_session_id, session_id, self._state_root)
@@ -327,7 +318,7 @@ class StatusFileWriter:
                 session.result_delivered = True
                 self.delete_result(session.session_id)
                 continue
-            if session.session_id in self._result_deadlines and not self.result_exists(session.session_id):
+            if self.result_state(session.session_id) == "consumed":
                 session.result_delivered = True
                 self._result_deadlines.pop(session.session_id, None)
                 continue
@@ -341,32 +332,29 @@ class StatusFileWriter:
     def _write_terminal_result(self, session: SessionState) -> None:
         assert session.finalized_at is not None
         assert session.retention_deadline is not None
-        payload = {
-            **session.public_status(include_result=True),
-            "turn_seq": session.turn_seq,
-            "finalized_at": session.finalized_at,
-        }
+        payload = terminal_result_payload(session)
         directory = results_directory(self._identity.root_session_id, self._state_root)
         atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
         self._result_deadlines[session.session_id] = session.retention_deadline
 
-    def _remove_result_files(self) -> None:
-        directory = self._directory / "results"
-        self._remove_directory_files(directory)
-
-    def _remove_notice_files(self) -> None:
-        directory = self._directory / "notices"
-        self._remove_directory_files(directory)
-
-    @staticmethod
-    def _remove_directory_files(directory: pathlib.Path) -> None:
-        if not directory.exists():
-            return
-        for path in directory.iterdir():
-            if path.is_file() and (path.suffix == ".json" or path.name.endswith(".tmp")):
-                path.unlink()
-        if not any(directory.iterdir()):
-            directory.rmdir()
+    def _remove_owned_and_expired_files(self) -> None:
+        """自身の状態ファイルと保持期限を超えた共有ファイルだけを削除する。"""
+        self._path.unlink(missing_ok=True)
+        for path in self._directory.glob(f".{self._path.name}.*.tmp"):
+            path.unlink()
+        cutoff = datetime.datetime.now(datetime.UTC).timestamp() - RESULT_RETENTION_SECONDS
+        directories = (
+            results_directory(self.root_session_id, self._state_root),
+            notices_directory(self.root_session_id, self._state_root),
+        )
+        for directory in directories:
+            if not directory.exists():
+                continue
+            for path in directory.iterdir():
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink()
+            if not any(directory.iterdir()):
+                directory.rmdir()
 
     def _schedule_retention(self, sessions: list[SessionState], now: float) -> None:
         if self._retention_handle is not None:
