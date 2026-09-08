@@ -637,12 +637,14 @@ async def test_start_rejects_prompt_missing_required_input(
     tmp_path: pathlib.Path,
 ) -> None:
     """startはタスク文書の必須入力が欠けた起動文をbackendへ渡さない。"""
-    task_document = tmp_path / "task.subagent.md"
+    task_document = tmp_path / "share" / "task.subagent.md"
+    (tmp_path / ".claude-plugin").mkdir(parents=True)
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document.parent.mkdir()
     task_document.write_text(
         "# タスク\n\n## 入力\n\n```text\n必須入力名: 対象,目的\n```\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(subject, "_SHARE_DIRECTORY", tmp_path)
     called = False
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
@@ -705,9 +707,11 @@ async def test_start_warns_and_continues_without_required_input_marker(
     tmp_path: pathlib.Path,
 ) -> None:
     """必須入力名を取得できないタスク文書では警告を応答へ添えて起動する。"""
-    task_document = tmp_path / "task.subagent.md"
+    task_document = tmp_path / "share" / "task.subagent.md"
+    (tmp_path / ".claude-plugin").mkdir(parents=True)
+    (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document.parent.mkdir()
     task_document.write_text("# タスク\n\n## 入力\n\n- 対象\n", encoding="utf-8")
-    monkeypatch.setattr(subject, "_SHARE_DIRECTORY", tmp_path)
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         return {"status": "running"}
@@ -782,7 +786,13 @@ async def test_success_response_key_sets_for_all_tools(
 
     session_id = str(started["session_id"])
     session = manager.sessions[session_id]
-    assert (await manager.wait(session_id, timeout=0)).keys() == {"status", "progress", "elapsed_seconds"}
+    assert (await manager.wait(session_id, timeout=0)).keys() == {
+        "status",
+        "progress",
+        "elapsed_seconds",
+        "updated_at",
+        "seconds_since_update",
+    }
     assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery"}
     session.turn_id = "turn-1"
     assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
@@ -1509,6 +1519,20 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
     assert response["progress"] == ""
     assert isinstance(response["elapsed_seconds"], int)
     assert response["elapsed_seconds"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_wait_running_response_reports_seconds_since_update(tmp_path: pathlib.Path) -> None:
+    """実行中のwait応答は最終活動時刻と経過秒数を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+
+    response = await manager.wait(session.session_id, timeout=0)
+
+    assert response["updated_at"] == session.updated_at
+    assert isinstance(response["seconds_since_update"], int)
+    assert "stalled" not in response
 
 
 @pytest.mark.asyncio
@@ -2826,7 +2850,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
         response = await manager.wait(session_id, timeout=0)
-        assert set(response) == {"status", "progress", "elapsed_seconds"}
+        assert set(response) == {"status", "progress", "elapsed_seconds", "updated_at", "seconds_since_update"}
         assert response["status"] == "running"
         assert response["progress"] == ""
         assert isinstance(response["elapsed_seconds"], int)
@@ -3299,7 +3323,7 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
         await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
         assert not client.queries
         response = await manager.wait(session_id, timeout=0)
-        assert set(response) == {"status", "progress", "elapsed_seconds"}
+        assert set(response) == {"status", "progress", "elapsed_seconds", "updated_at", "seconds_since_update"}
         assert response["status"] == "running"
         assert response["progress"] == ""
         assert isinstance(response["elapsed_seconds"], int)
@@ -4532,11 +4556,11 @@ async def test_unknown_session_is_distinct_from_expired_session(
     """未登録のUUIDを期限切れ識別子と区別し、喪失時の復旧手順を返す。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
+    if operation == "wait":
+        assert await manager.wait(session_id, timeout=0) == {"status": "expired", "recovery": "missing"}
+        return
     with pytest.raises(ValueError) as exc_info:
-        if operation == "wait":
-            await manager.wait(session_id, timeout=0)
-        else:
-            await manager.send_message(session_id, "続行")
+        await manager.send_message(session_id, "続行")
     message = str(exc_info.value)
     assert message.startswith(f"unknown session: {session_id}")
     assert "agents_server may have restarted" in message
@@ -4584,15 +4608,59 @@ async def test_identifier_resolution_precedes_scheme_classification(tmp_path: pa
     assert response["status"] == "running"
 
     missing_uuid = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
-    with pytest.raises(ValueError) as missing_exc:
-        await manager.wait(missing_uuid, timeout=0)
-    assert str(missing_exc.value).startswith(f"unknown session: {missing_uuid}")
-    assert "agents_server may have restarted" in str(missing_exc.value)
+    assert await manager.wait(missing_uuid, timeout=0) == {"status": "expired", "recovery": "missing"}
 
     with pytest.raises(ValueError) as mismatch_exc:
         await manager.wait("agent-session", timeout=0)
     assert "identifier scheme mismatch" in str(mismatch_exc.value)
     assert "unknown session" not in str(mismatch_exc.value)
+
+
+@pytest.mark.asyncio
+async def test_start_validates_required_input_for_task_document_from_other_plugin_root(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """別配置の正規plugin root配下でも必須入力を検査する。"""
+    task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
+    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document.parent.mkdir()
+    task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+
+    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        return {"status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+
+    with pytest.raises(ValueError, match="必須入力が欠けています"):
+        await subject.start("execute", f"{task_document} の手順を実行せよ。", str(tmp_path))
+
+
+def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_path: pathlib.Path) -> None:
+    """manifestを持たないshare配下の文書は検査対象外とする。"""
+    task_document = tmp_path / "share" / "task.subagent.md"
+    task_document.parent.mkdir()
+    task_document.write_text("## 入力\n", encoding="utf-8")
+
+    warning = subject._validate_required_prompt_inputs(f"{task_document} の手順を実行せよ。")
+    assert warning is not None
+    assert "タスク文書がshare配下ではありません" in warning
+
+
+def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
+    """別名pluginのshare配下の文書は検査対象外とする。"""
+    task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
+    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"other-plugin"}', encoding="utf-8")
+    task_document.parent.mkdir()
+    task_document.write_text("## 入力\n", encoding="utf-8")
+
+    warning = subject._validate_required_prompt_inputs(f"{task_document} の手順を実行せよ。")
+    assert warning is not None
+    assert "タスク文書がshare配下ではありません" in warning
 
 
 @pytest.mark.parametrize("cwd", ["", "relative/path"])

@@ -77,8 +77,8 @@ def test_agents_wait_times_out_without_result(
         atk.main(["agents-wait", "session-1", "--timeout=0"])
 
     captured = capsys.readouterr()
-    assert not captured.out
-    assert "待機が上限へ到達" in captured.err
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
+    assert not captured.err
 
 
 def test_agents_wait_returns_expired_when_session_is_absent_from_root(
@@ -115,8 +115,8 @@ def test_agents_wait_keeps_waiting_for_retained_session(
         atk.main(["agents-wait", "session-1", "--timeout=0"])
 
     captured = capsys.readouterr()
-    assert not captured.out
-    assert "待機が上限へ到達" in captured.err
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
+    assert not captured.err
 
 
 @pytest.mark.parametrize("root_body", ["{", "[]"])
@@ -134,8 +134,8 @@ def test_agents_wait_ignores_unreadable_root_status(
         atk.main(["agents-wait", "session-1", "--timeout=0"])
 
     captured = capsys.readouterr()
-    assert not captured.out
-    assert "待機が上限へ到達" in captured.err
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
+    assert not captured.err
 
 
 @pytest.mark.parametrize("result_body", ["[]", "{"])
@@ -225,6 +225,96 @@ def test_agents_wait_returns_notices_while_running(
         ],
     }
     assert not any(notices.iterdir())
+
+
+def test_agents_wait_reports_seconds_since_update_on_timeout(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機上限の応答はsessionの最終活動時刻を返す。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    updated_at = "2026-09-09T00:00:00+00:00"
+    root_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1", "updated_at": updated_at}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    response = json.loads(capsys.readouterr().out)
+    assert response["updated_at"] == updated_at
+    assert isinstance(response["seconds_since_update"], float)
+
+
+@pytest.mark.parametrize(
+    "sessions",
+    [
+        [None],
+        [{"session_id": "session-1", "updated_at": "2026-09-09T00:00:00"}],
+    ],
+    ids=["non-dict-session", "naive-updated-at"],
+)
+def test_agents_wait_omits_unreadable_session_updated_at_on_timeout(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    sessions: list[object],
+) -> None:
+    """解釈不能な共有状態では更新時刻を省略してrunning応答を返す。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "running"}
+
+
+def test_agents_wait_returns_stall_notice_after_threshold(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """長時間更新されないsessionは待機上限応答へ停滞候補を付ける。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    root_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1", "updated_at": "2000-01-01T00:00:00+00:00"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    assert json.loads(capsys.readouterr().out)["stalled"] is True
+
+
+def test_agents_wait_notices_response_reports_seconds_since_update(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """通知だけを回収する非終端応答にも最終活動時刻を付ける。"""
+    root_status = wait_environment.parent / "root.json"
+    root_status.parent.mkdir(parents=True)
+    updated_at = "2026-09-09T00:00:00+00:00"
+    root_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1", "updated_at": updated_at}]}),
+        encoding="utf-8",
+    )
+    notices = wait_environment.parent / "notices"
+    notices.mkdir()
+    (notices / "session-1.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-1", "sent_at": updated_at, "body": "通知"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    response = json.loads(capsys.readouterr().out)
+    assert response["updated_at"] == updated_at
+    assert isinstance(response["seconds_since_update"], float)
 
 
 def test_agents_wait_adds_notices_to_terminal_result(

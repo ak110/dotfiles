@@ -826,6 +826,11 @@ class AppServerManager:
             if session.live_child_session_ids:
                 unobserved_session_ids = set(session.live_child_session_ids)
                 session.live_child_session_ids.clear()
+                # Codex backendには、Claude backendが持つタスク完了通知による同一sessionの
+                # 再開の経路が存在しない。このためturnの終端時に未観測の孫sessionが残る場合も
+                # 終端結果を保留せず、未観測の識別子を`error`の`unobservedSessions`へ記録して
+                # 直ちに公開する。保留すると解除の契機が期限の到来だけになり、呼び出し元が
+                # 最大`AUTO_RESUME_DEADLINE_SECONDS`だけ完了報告を受け取れない。
                 shared_state.record_unobserved_sessions(session, unobserved_session_ids)
         elif method == "turn/plan/updated":
             plan = params.get("plan")

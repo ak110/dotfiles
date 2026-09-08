@@ -485,6 +485,33 @@ class TestAdoptStampWithoutOptional:
         assert "- メモ: " not in adopted_text
 
 
+@pytest.mark.parametrize(
+    ("action", "destination", "summary"),
+    (
+        ("adopt", "adopted", "1件採用処理:"),
+        ("reject", "rejected", "1件不採用処理:"),
+    ),
+)
+def test_terminal_transition_prints_destination_path(
+    action: str,
+    destination: str,
+    summary: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """完了報告用に終端状態の件数と絶対パスを出力する。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "entry.md")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", action, "entry.md"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 0
+    assert capsys.readouterr().out.splitlines() == [summary, str(notes / destination / "entry.md")]
+
+
 class TestRejectIfInbox:
     """rejectのinbox状態前提を公開CLI経路で検証する。"""
 

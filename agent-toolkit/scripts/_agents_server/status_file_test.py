@@ -16,6 +16,13 @@ from _agents_server import state
 from _agents_server import status_file as subject
 
 
+def test_serialize_session_includes_updated_at(tmp_path: pathlib.Path) -> None:
+    """状態ファイルのsession射影は最終活動時刻を含む。"""
+    session = state.SessionState("session-1", str(tmp_path))
+
+    assert subject._serialize_session(session)["updated_at"] == session.updated_at
+
+
 @pytest.mark.parametrize(
     ("environment", "expected"),
     [

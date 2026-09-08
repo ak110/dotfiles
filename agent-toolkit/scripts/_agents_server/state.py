@@ -17,6 +17,10 @@ RESULT_RETENTION_SECONDS = 1800.0
 # 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
 # 値を変える根拠となる実測が無いため、現行の結果保持期限と同じ値を選ぶ。
 AUTO_RESUME_DEADLINE_SECONDS = 1800.0
+# 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
+# 値は利用者の提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
+# 超過は停滞の確定ではなく呼び出し元が状況を調べる契機として扱う。
+STALL_NOTICE_SECONDS = 300.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
 SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules-subagent.md"
@@ -255,6 +259,9 @@ class SessionState:
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
     awaiting_auto_resume: bool = False
+    # `auto_resume_consumed`は、Claude backendのタスク完了通知による再開と、
+    # MCP層が孫sessionの終端を検出して発行する再開の2経路だけが真にする。
+    # Codex backendは終端結果を保留しないため、当該経路へ到達しない。
     auto_resume_consumed: bool = False
     auto_resume_deadline: float | None = None
     pending_result: dict[str, Any] | None = None

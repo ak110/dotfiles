@@ -920,6 +920,25 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
     assert saved.read_text(encoding="utf-8") == "saved\n"
 
 
+def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path) -> None:
+    """保存済み計画と同stemの直下残骸を黙って無視しない。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-残骸-d4f9.md")
+    saved, _detail = _create_saved_plan(notes, relative)
+    residue = _plan_file.working_plans_root(home) / relative.name
+    residue.parent.mkdir(parents=True)
+    residue.write_text("# unsaved residue\n", encoding="utf-8")
+
+    with pytest.raises(_common.WebInputError, match="同じstemのファイルが残っています") as error_info:
+        _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
+
+    assert "atk plans checkout" in str(error_info.value)
+    assert residue.read_text(encoding="utf-8") == "# unsaved residue\n"
+    assert saved.read_text(encoding="utf-8") == "# saved main\n"
+
+
 def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_path: pathlib.Path) -> None:
     """親ディレクトリが消えた削除済み計画もGitの追跡情報からcommitする。"""
     notes = tmp_path / "private-notes"

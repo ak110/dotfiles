@@ -411,7 +411,9 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         local_worktree=local_worktree,
         skip_push=args.skip_push,
     )
-    print(f"{len(filenames)}件採用処理: {', '.join(filenames)}")
+    print(f"{len(filenames)}件採用処理:")
+    for filename in filenames:
+        print(private_notes / WI_STATE_ADOPTED / filename)
 
 
 def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -435,7 +437,9 @@ def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: date
         local_worktree=local_worktree,
         skip_push=args.skip_push,
     )
-    print(f"{len(filenames)}件不採用処理: {', '.join(filenames)}")
+    print(f"{len(filenames)}件不採用処理:")
+    for filename in filenames:
+        print(private_notes / WI_STATE_REJECTED / filename)
 
 
 def _cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:

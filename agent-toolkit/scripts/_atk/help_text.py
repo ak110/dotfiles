@@ -67,12 +67,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
-        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitを記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。\n前提: 対象がinboxかprocessingにあること。`--commit`で指定するrevisionは対象リポジトリで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitを記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--commit`で指定するrevisionは対象リポジトリで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
         "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
     "atk wi reject": {
         "summary": "不採用として終端し理由を記録する",
-        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。\n前提: 対象がinboxかprocessingにあること。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。",
+        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。",
         "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
     "atk wi rm": {
@@ -132,7 +132,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドル又は独立CI実行レビュー表を保存してcommit・pushする",
-        "description": "目的: 指定した計画バンドル又は独立CI実行レビュー表を作業rootからprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 実行レビューが収束した計画又は原因commitに対応する計画契約がない処理のレビュー表を保存するとき。\n対象と出力: 計画バンドルは年月階層へ、独立CI実行レビュー表は`plans/ci/`へ移し、既定でpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。\n前提: PLAN_FILEは計画作業root直下のメイン計画ファイル名、保存root相対のメイン計画パス、又は`ci-<起点OID>.exec-review.tsv`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commit又はpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
+        "description": "目的: 指定した計画バンドル又は独立CI実行レビュー表を作業rootからprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 実行レビューが収束した計画又は原因commitに対応する計画契約がない処理のレビュー表を保存するとき。\n対象と出力: 計画バンドルは年月階層へ、独立CI実行レビュー表は`plans/ci/`へ移し、既定でpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、作業root直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは計画作業root直下のメイン計画ファイル名、保存root相対のメイン計画パス、又は`ci-<起点OID>.exec-review.tsv`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commit又はpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {

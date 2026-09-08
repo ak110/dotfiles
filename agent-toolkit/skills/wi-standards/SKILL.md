@@ -183,4 +183,4 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 7. 登録するAWIの対象ファイルが現在のセッションの変更対象と重なる場合は、当該セッションが対象ファイルの変更を完了してから登録する（努力目標）。常駐処理が動作する環境では登録が遅れると次の反復まで着手が遅れる一方、変更対象が重なる項目を即時に登録すると別の作業ツリーで同じファイルへ並行着手し得るため、両者を比較して時機を選ぶ。
 8. 呼出元が指定した本文、対象リポジトリ、種別、`source`、plan file及び依存を変更せず登録する。エージェント自身の投入では前節で確定した`source`を省略しない。`source`が未指定の人間由来入力へ値を推測して追加しない。
 9. 保存本文の照合は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の登録・送信後の規定に従い、`atk wi add`と`atk wi edit`が出力する一致判定で照合の成立を確認する。構造の検収では、ファイル名、`target_repo`、`target_commit`、`plan_file`、`depends_on`、指定・確定済みの`source`及び非予約frontmatterを確認する。いずれかに欠落がある場合は完了扱いにせず同じ経路で修復する。警告又はエラーが出た場合は終了コード0でも`atk wi show <filename> --target-repo=<repo> --skip-pull`で保存本文を再取得する。
-10. 保存の完了は、`atk config get private_notes`が返す作業ツリーから前項の確認ができ、対象branchとremoteへ反映済みであることを確認して判定する。未pushのcommitが残る旨の通知を受領した場合は、`atk wi commit`でpushしてから完了とする。別の作業ツリーを作成して保存する経路は使わない。
+10. 保存の完了は、`atk wi add`又は`atk wi edit`が出力する成功の報告と警告の不在で判定する。当該コマンドはprivate-notesへのcommitとremoteへの反映まで行うため、`atk config get private_notes`が返す作業ツリーの状態、対象branch及びremoteの反映状況を別のコマンドで取得し直さない。未pushのcommitが残る旨の通知を受領した場合は、`atk wi commit`でpushしてから完了とする。別の作業ツリーを作成して保存する経路は使わない。

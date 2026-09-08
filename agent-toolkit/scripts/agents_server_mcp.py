@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import dataclasses
 import datetime
+import json
 import logging
 import math
 import os
@@ -24,7 +25,7 @@ from uuid import UUID
 
 from _agents_server import claude as claude_backend
 from _agents_server import codex as codex_backend
-from _agents_server import session_registry, status_file
+from _agents_server import session_registry, state, status_file
 from _agents_server.state import (
     TERMINAL_STATUSES,
     LaunchKind,
@@ -80,6 +81,25 @@ _TASK_DOCUMENT_PATTERN = re.compile(r"^(?P<path>/\S+\.subagent\.md)")
 _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
+
+
+def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
+    """agent-toolkit pluginのshare直下にあるタスク文書だけを受理する。"""
+    if path.parent.name != "share":
+        return False
+    try:
+        manifest = json.loads((path.parent.parent / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
+
+
+def _is_uuid_session_id(session_id: str) -> bool:
+    """session登録簿の不在を終端として扱えるUUID形式かを返す。"""
+    try:
+        return str(UUID(session_id)) == session_id.lower()
+    except ValueError:
+        return False
 
 
 @dataclasses.dataclass
@@ -145,7 +165,7 @@ def _validate_required_prompt_inputs(prompt: str) -> str | None:
     if match is None:
         return "必須入力検査を実施できません: 起動文の1行目からタスク文書の絶対パスを取得できません。"
     task_document = pathlib.Path(match.group("path")).resolve()
-    if not task_document.is_relative_to(_SHARE_DIRECTORY):
+    if not _is_agent_toolkit_task_document(task_document):
         return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
     try:
         document_lines = task_document.read_text(encoding="utf-8").splitlines()
@@ -753,6 +773,13 @@ class AgentsServerManager:
                     if notices:
                         response = self._response_with_notices(self._pending_resume_status(pending), notices)
                         return await self._stop_after_terminal_response(session_id, response, stop)
+        if (
+            recovered_state is None
+            and stopped_state is None
+            and _is_uuid_session_id(session_id)
+            and session_registry.resolve(session_id).state is session_registry.Resolution.MISSING
+        ):
+            return {"status": "expired", "recovery": "missing"}
         session = self._get_session(session_id)
         await self._advance_child_session_wait(session)
         notices = self._take_notices(session_id)
@@ -860,15 +887,27 @@ class AgentsServerManager:
 
     @staticmethod
     def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
-        """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。"""
+        """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。
+
+        `elapsed_seconds`はturnの`started_at`起点、`seconds_since_update`は`updated_at`起点である。
+        """
         response = session.public_status(include_result=session.result_available)
         if response.get("status") == "running":
             elapsed_seconds = _elapsed_seconds(session.started_at)
             if elapsed_seconds is not None:
                 response["elapsed_seconds"] = elapsed_seconds
+            seconds_since_update = _elapsed_seconds(session.updated_at)
+            if seconds_since_update is not None:
+                response["updated_at"] = session.updated_at
+                response["seconds_since_update"] = seconds_since_update
+                if seconds_since_update >= state.STALL_NOTICE_SECONDS:
+                    response["stalled"] = True
         if not include_progress:
             response.pop("progress", None)
             response.pop("elapsed_seconds", None)
+            response.pop("updated_at", None)
+            response.pop("seconds_since_update", None)
+            response.pop("stalled", None)
         if "agent_message" in response:
             session.result_delivered = True
             session.touch()
@@ -889,6 +928,12 @@ class AgentsServerManager:
         elapsed_seconds = _elapsed_seconds(pending.state.started_at)
         if elapsed_seconds is not None:
             response["elapsed_seconds"] = elapsed_seconds
+        seconds_since_update = _elapsed_seconds(pending.state.updated_at)
+        if seconds_since_update is not None:
+            response["updated_at"] = pending.state.updated_at
+            response["seconds_since_update"] = seconds_since_update
+            if seconds_since_update >= state.STALL_NOTICE_SECONDS:
+                response["stalled"] = True
         return response
 
     async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:

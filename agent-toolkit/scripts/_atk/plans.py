@@ -707,6 +707,32 @@ def commit_plan(
         working_lookup_relative = requested_relative
     working_bundle = _working_plan_bundle(home, working_lookup_relative)
     working_main = _plan_file.working_plans_root(home) / working_lookup_relative
+    if checkout_record is None and working_relative is None and not working_bundle:
+        working_root = _plan_file.working_plans_root(home)
+        residue = (
+            tuple(
+                sorted(
+                    path
+                    for path in working_root.iterdir()
+                    if (path.name == relative_main.name or path.name.startswith(f"{relative_main.stem}."))
+                    and path.is_file()
+                    and not path.is_symlink()
+                    and not _excluded_path(path)
+                )
+            )
+            if working_root.is_dir()
+            else ()
+        )
+        if residue:
+            names = "、".join(path.name for path in residue)
+            raise _common.WebInputError(
+                f"作業root直下に保存済み計画バンドルと同じstemのファイルが残っています: {names}。"
+                "保存先へ反映していないため、この状態では保存を完了できません。次の順に実行してください。"
+                f"作業root直下の{names}を作業root外へ退避します。"
+                f"`atk plans checkout {relative_main}`で保存元を取得し直します。"
+                "退避した内容を取得した内容へ反映します。"
+                f"`atk plans commit {relative_main.name}`で保存します。"
+            )
     if checkout_record is not None:
         if not working_bundle:
             _remove_checkout_record(requested_relative)

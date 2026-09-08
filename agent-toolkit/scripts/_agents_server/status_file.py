@@ -403,6 +403,7 @@ def _serialize_session(session: SessionState) -> dict[str, Any]:
         "progress": session.progress,
         "label": session.label,
         "started_at": session.started_at,
+        "updated_at": session.updated_at,
     }
 
 
