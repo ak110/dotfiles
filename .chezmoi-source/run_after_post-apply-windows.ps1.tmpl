@@ -97,6 +97,7 @@ if ($needsReinstall) {
             $unrestorableProcs += $p
         }
     }
+    Write-Host "  [pytools] 更新対象の使用中プロセス: 候補$($lockingProcs.Count)件 再起動可$($restorableProcs.Count)件 再起動不可$($unrestorableProcs.Count)件"
     if ($unrestorableProcs.Count -gt 0) {
         $reinstallDeferred = $true
         $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
@@ -187,6 +188,7 @@ if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno') {
 # dotfiles-media-remote.exe のハング原因は未特定のため対症療法とする。
 if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {
     $mediaRemoteProcs = @(Get-PytoolsEnvLockingProcess | Where-Object { $_.IsMediaRemote })
+    Write-Host "  [pytools] 対症療法の停止対象プロセス: 停止対象$($mediaRemoteProcs.Count)件"
     foreach ($p in $mediaRemoteProcs) {
         Write-Host "  [pytools] dotfiles-media-remote (PID=$($p.ProcessId)) を停止"
         Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
