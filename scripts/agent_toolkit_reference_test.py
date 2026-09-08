@@ -62,8 +62,8 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 
 
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """実体へ解決できない参照を返す。"""
-    allowed_counts = _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.copy()
+    """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
+    allowed_counts = {key: count for key, count in _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.items() if key[1] in sources}
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
@@ -73,6 +73,8 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
             allowed_counts[key] -= 1
             continue
         unresolved.append(key)
+    for key, remaining_count in allowed_counts.items():
+        unresolved.extend([key] * remaining_count)
     return unresolved
 
 
@@ -104,21 +106,54 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
     assert not _unresolved_references(tmp_path, [source])
 
 
-def test_incident_history_allows_only_known_legacy_reference(tmp_path: pathlib.Path) -> None:
-    """事故記録の既知参照だけを許容し、同じファイルの別の欠損参照を報告する。"""
+def _known_legacy_references() -> list[str]:
+    """事故記録へ保持する既知の失効参照を返す。"""
+    return [
+        f"{_PLUGIN_PREFIX}:agent-standards",
+        f"{_PLUGIN_PREFIX}:feedback-standards",
+        *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 5,
+        f"{_PLUGIN_PREFIX}:reviewee-standards",
+        f"{_PLUGIN_PREFIX}:shell-exec",
+    ]
+
+
+def test_incident_history_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
+    """既知の失効参照を過不足なく保持し、各参照の不足と超過を報告する。"""
     source = pathlib.Path("docs/development/incidents.md")
     (tmp_path / source).parent.mkdir(parents=True)
-    legacy = f"{_PLUGIN_PREFIX}:agent-standards"
+    references = _known_legacy_references()
+    target = tmp_path / source
+    target.write_text("\n".join(references), encoding="utf-8")
+    assert not _unresolved_references(tmp_path, [source])
+
+    for legacy in dict.fromkeys(references):
+        missing = references.copy()
+        missing.remove(legacy)
+        target.write_text("\n".join(missing), encoding="utf-8")
+        assert _unresolved_references(tmp_path, [source]) == [(legacy, source)]
+
+        excessive = [*references, legacy]
+        target.write_text("\n".join(excessive), encoding="utf-8")
+        assert _unresolved_references(tmp_path, [source]) == [(legacy, source)]
+
+
+def test_incident_history_rejects_different_unresolved_references(tmp_path: pathlib.Path) -> None:
+    """既知参照を別の失効起動名へ置換し、失効パスも加えた違反を報告する。"""
+    source = pathlib.Path("docs/development/incidents.md")
+    (tmp_path / source).parent.mkdir(parents=True)
+    references = _known_legacy_references()
+    replaced = references.pop(0)
     missing_invocation = f"{_PLUGIN_PREFIX}:missing"
     missing_path = f"{_PLUGIN_PREFIX}/skills/missing/SKILL.md"
     (tmp_path / source).write_text(
-        f"{legacy}\n{missing_invocation}\n{missing_path}\n",
+        "\n".join([missing_invocation, missing_path, *references]),
         encoding="utf-8",
     )
 
     unresolved = _unresolved_references(tmp_path, [source])
-    assert unresolved == [(missing_invocation, source), (missing_path, source)]
+    assert unresolved == [(missing_invocation, source), (missing_path, source), (replaced, source)]
     formatted = _format_unresolved(unresolved)
     assert missing_invocation in formatted
     assert missing_path in formatted
+    assert replaced in formatted
     assert str(source) in formatted
