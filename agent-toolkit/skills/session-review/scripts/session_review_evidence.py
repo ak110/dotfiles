@@ -183,10 +183,11 @@ class _CollectedRecord(NamedTuple):
 
 
 class _UnresolvedRecord(NamedTuple):
-    """委譲識別子は得られたが正本を読み込めなかった記録。"""
+    """解決できない委譲又は委譲先記録を機械可読イベントへ渡す。"""
 
     record_id: str
     line: int
+    kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
 
 
 def _clip(text: str, limit: int = _MAX_TEXT_LENGTH) -> str:
@@ -926,6 +927,12 @@ def _thread_id_from_mapping(value: Any) -> str | None:
         thread = value.get(key)
         if isinstance(thread, str) and thread:
             return thread
+    structured = value.get("structuredContent")
+    if isinstance(structured, dict):
+        for key in _THREAD_ID_KEYS:
+            thread = structured.get(key)
+            if isinstance(thread, str) and thread:
+                return thread
     return None
 
 
@@ -940,7 +947,8 @@ def _agents_server_call_ids(records: list[_Record]) -> set[str]:
         if not isinstance(call_id, str):
             continue
         values = (payload.get("input"), payload.get("arguments"))
-        if any(
+        name = payload.get("name")
+        if name in _AGENTS_SERVER_TOOL_NAMES or any(
             isinstance(value, str) and any(tool_name in value for tool_name in _AGENTS_SERVER_TOOL_NAMES) for value in values
         ):
             call_ids.add(call_id)
@@ -988,7 +996,7 @@ def _thread_ids_from_record(
     add_mapping(tool_result)
 
     payload = entry.get("payload")
-    if isinstance(payload, dict) and payload.get("type") in {"custom_tool_call", "custom_tool_call_output"}:
+    if isinstance(payload, dict):
         name = payload.get("name")
         if payload.get("type") == "custom_tool_call" and name in _AGENTS_SERVER_TOOL_NAMES:
             add_mapping(payload.get("arguments") or payload.get("input"))
@@ -997,6 +1005,16 @@ def _thread_ids_from_record(
             add_mapping(output)
             for text in _codex_text_blocks(output):
                 add_mapping(text)
+        if payload.get("type") == "function_call_output" and payload.get("call_id") in agents_server_call_ids:
+            output = payload.get("output")
+            add_mapping(output)
+            for text in _codex_text_blocks(output):
+                add_mapping(text)
+        if entry.get("type") == "event_msg" and payload.get("type") == "item_completed":
+            item = payload.get("item")
+            if isinstance(item, dict) and item.get("server") == "agents_server":
+                add_mapping(item.get("arguments"))
+                add_mapping(item.get("result"))
 
     notification_texts: list[str] = []
     if entry.get("type") == "queue-operation":
@@ -1006,6 +1024,15 @@ def _thread_ids_from_record(
         for match in _TASK_RESULT_PATTERN.finditer(text):
             add_mapping(match.group(1))
     return list(dict.fromkeys(found))
+
+
+def _delegation_output_call_id(record: _Record, agents_server_call_ids: set[str]) -> str | None:
+    """agents_server起動に対応するCodexの出力レコードから呼び出しIDを返す。"""
+    payload = record.entry.get("payload")
+    if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call_output", "function_call_output"}:
+        return None
+    call_id = payload.get("call_id")
+    return call_id if isinstance(call_id, str) and call_id in agents_server_call_ids else None
 
 
 def _native_agent_thread_ids(value: Any) -> list[str]:
@@ -1155,6 +1182,7 @@ def _collect_records(
         source = collected[index]
         index += 1
         agents_server_call_ids = _agents_server_call_ids(source.records)
+        unresolved_delegation_calls: set[str] = set()
         for subagent in _subagent_records(source):
             resolved = subagent.path.resolve()
             if resolved in seen_paths:
@@ -1162,7 +1190,23 @@ def _collect_records(
             seen_paths.add(resolved)
             collected.append(subagent)
         for record in source.records:
-            for engine, session_id in _thread_ids_from_record(record, agents_server_call_ids):
+            thread_ids = _thread_ids_from_record(record, agents_server_call_ids)
+            call_id = _delegation_output_call_id(record, agents_server_call_ids)
+            if call_id and not thread_ids and call_id not in unresolved_delegation_calls:
+                unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
+                unresolved_delegation_calls.add(call_id)
+            payload = record.entry.get("payload")
+            item = payload.get("item") if isinstance(payload, dict) else None
+            if (
+                record.entry.get("type") == "event_msg"
+                and isinstance(payload, dict)
+                and payload.get("type") == "item_completed"
+                and isinstance(item, dict)
+                and item.get("server") == "agents_server"
+                and not thread_ids
+            ):
+                unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
+            for engine, session_id in thread_ids:
                 if session_id in seen_sessions:
                     continue
                 seen_sessions.add(session_id)
@@ -1197,7 +1241,7 @@ def _collect_records(
 
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
     """解決できなかった委譲先を機械可読イベントへ変換する。"""
-    return [{"kind": "unresolved-record", "record": item.record_id, "line": item.line} for item in unresolved]
+    return [{"kind": item.kind, "record": item.record_id, "line": item.line} for item in unresolved]
 
 
 def _claude_call_hint(block_input: Any) -> str | None:
@@ -1401,7 +1445,10 @@ def _stats_compaction_events(collected: list[_CollectedRecord]) -> list[dict[str
         "kind": "stats-compaction-total",
         "count": len(events),
         "by_record": dict(sorted(counts.items(), key=lambda item: (-item[1], item[0]))),
-        "total_duration_seconds": round(sum(event.get("duration_seconds", 0.0) for event in events), 1),
+        "total_duration_seconds": round(
+            sum((event["duration_seconds"] for event in events if "duration_seconds" in event), 0.0), 1
+        ),
+        "duration_unknown_count": sum("duration_seconds" not in event for event in events),
     }
     return [*events, total]
 
@@ -1560,6 +1607,47 @@ def _stats_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
         elif thread.source_line is not None:
             thread_event["line"] = thread.source_line
         events.append(thread_event)
+    measured_threads = [event for event in events if event.get("kind") == "stats-agent-thread"]
+    unmeasured_threads = [event["session_id"] for event in measured_threads if "start" not in event or "end" not in event]
+    intervals: list[tuple[datetime.datetime, datetime.datetime, str]] = []
+    for event in measured_threads:
+        if event["session_id"] in unmeasured_threads:
+            continue
+        start = _parse_timestamp(event["start"])
+        end = _parse_timestamp(event["end"])
+        if start is not None and end is not None and start < end:
+            intervals.append((start, end, event["session_id"]))
+    main_start = _parse_timestamp(summary["start"]) if isinstance(summary.get("start"), str) else None
+    main_end = _parse_timestamp(summary["end"]) if isinstance(summary.get("end"), str) else None
+    if main_start is not None and main_end is not None and main_start < main_end:
+        intervals = [(max(start, main_start), min(end, main_end), thread) for start, end, thread in intervals]
+        intervals = [(start, end, thread) for start, end, thread in intervals if start < end]
+        boundaries = sorted({main_start, main_end, *(point for start, end, _ in intervals for point in (start, end))})
+        main_only = 0.0
+        overlap = 0.0
+        exclusive: collections.defaultdict[str, float] = collections.defaultdict(float)
+        for start, end in zip(boundaries, boundaries[1:], strict=False):
+            active = [thread for left, right, thread in intervals if left <= start and end <= right]
+            seconds = (end - start).total_seconds()
+            if not active:
+                main_only += seconds
+            elif len(active) == 1:
+                exclusive[active[0]] += seconds
+            else:
+                overlap += seconds
+        events.append(
+            {
+                "kind": "stats-critical-path",
+                "elapsed_seconds": round((main_end - main_start).total_seconds(), 1),
+                "main_only_seconds": round(main_only, 1),
+                "overlap_seconds": round(overlap, 1),
+                "segments": [
+                    {"owner": owner, "exclusive_seconds": round(seconds, 1)}
+                    for owner, seconds in sorted(exclusive.items(), key=lambda item: (-item[1], item[0]))
+                ],
+                "unmeasured_threads": sorted(unmeasured_threads),
+            }
+        )
     return events
 
 
