@@ -58,7 +58,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | `plan_model` | 計画起草とレビュー指摘反映 | 計画担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `plan_review_model` | 計画レビュー | 計画レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_fast_model` | 計画の全実装単位に対するfast担当の初回実装、近接検証及び各検証コマンドで最初に観測した失敗の1回修正 | 初回実装を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の③の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び③の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_model` | モデル区分が`不可`である計画の初回実装、fast担当のエスカレーション引継ぎ、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の公開工程の終端工程 | 当該初回実装、引継ぎ修正、レビュー修正、CI失敗修正、即時対応、マージなしの統合、上流AWI投入及び公開工程の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出と、別セッション経路の振り返り全体 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 

@@ -1,6 +1,6 @@
 # 上流投入担当の起動と受領
 
-`agent-toolkit:process-wi`の②で、レーンを起動する前にメインが本書を全文読み、上流投入担当の起動、入力の受け渡し及び返却値の検収へ適用する。
+`agent-toolkit:process-wi`のレーン工程で、レーンを起動する前にメインが本書を全文読み、上流投入担当の起動、入力の受け渡し及び返却値の検収へ適用する。
 呼び先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/upstream-submission.subagent.md`が定める。本書へ呼び先固有の作業手順を書かない。
 
 ## 起動経路

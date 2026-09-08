@@ -99,7 +99,7 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
 除いた対象のうち、委譲先が現行plugin rootから自ら解決して実行する資源の欠陥を当該セッションで是正した場合は、`agent-toolkit/rules/02-agent-operations.md`「基本委譲契約」が定める`是正済み資源:`の行で当該資源の作業ツリー側の絶対パスを起動文へ渡す。
 変更後の規範に従うと当該作業を完遂できないと判明した場合は、規範どおり進めることより当該変更の設計の見直しを優先する。
 
-`agent-toolkit:process-wi`のセッションでは、①のpickerが処理対象のAWIごとに`project_notes`を書く。
+`agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
 `project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
 本節の適用対象となる規範を変更するAWIには、当該変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
 メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、当該項目のファイル名と対象ファイルのパスを渡す。

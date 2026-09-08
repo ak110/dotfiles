@@ -142,7 +142,7 @@ UWIの`## 回答`節とAWIの`## ユーザーコメント`節はユーザーだ�
 事後承認型UWIは元の作業を待たせないため、`depends_on`へ加えず、元項目を当該UWIの回答前に終端する。
 回答が是正を求めた場合は、当該UWI自体を作業要求として処理し、新しいAWIを起票しない。
 
-事前承認型のUWI待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してUWIを`depends_on`へ加え、`inbox`かつ`blocked`にする。`inbox`へ戻した後に着手可否が`blocked`であることを確認する。回答を保存したUWIを先に終端し、依存解除を確認した後に元項目を次の処理対象へ戻す。回答を保存した別セッションが終端まで到達しなかった場合は、次に当該キューを処理する`agent-toolkit:process-wi`のpickerが、AWIを`processing`へ移す前に当該UWIを終端する。メインは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「出力の受領」に従って`adopted`への存在を検収し、「①の完了」へ進む。
+事前承認型のUWI待ちは物理的な`hold`へ移さず、元項目の既存依存を保持してUWIを`depends_on`へ加え、`inbox`かつ`blocked`にする。`inbox`へ戻した後に着手可否が`blocked`であることを確認する。回答を保存したUWIを先に終端し、依存解除を確認した後に元項目を次の処理対象へ戻す。回答を保存した別セッションが終端まで到達しなかった場合は、次に当該キューを処理する`agent-toolkit:process-wi`のpickerが、AWIを`processing`へ移す前に当該UWIを終端する。メインは`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`の「出力の受領」に従って`adopted`への存在を検収し、「選定工程の完了」へ進む。
 
 `rejected`はエージェントが全要求を不採用と判断した時点で使用できる終端とし、後から`return-to-inbox`で`inbox`へ復元できる。技術的失敗、入力不足、外部条件待ち又は計画不備は不採用へ変換せず、必要なUWI依存を付けてactiveのまま保持する。
 
