@@ -87,6 +87,8 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     assert "Stop-Process" not in text[guard:stop_loop]
     assert "再インストールを次回へ延期" in text[guard:stop_loop]
     assert "既存版で後続処理を継続" in text[deferred:]
+    assert text.count("Get-CimInstance Win32_Process") == 1
+    assert text.count("Get-PytoolsEnvLockingProcess") == 3
 
 
 def test_windows_install_failure_records_state_and_detail() -> None:
@@ -127,6 +129,7 @@ $mediaRemoteBin = 'C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe'
 $env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
 $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
 $stopped = @()
+$getCimCalls = 0
 $fixtures = @(
 """
             + fixtures
@@ -134,6 +137,7 @@ $fixtures = @(
 function Get-CimInstance {
     [CmdletBinding()]
     param([string] $ClassName)
+    $script:getCimCalls += 1
     return $fixtures
 }
 function Stop-Process {
@@ -157,6 +161,7 @@ function Start-Sleep {
     Stopped = @($stopped)
     MediaRemoteWasRunning = $mediaRemoteWasRunning
     ReinstallDeferred = $reinstallDeferred
+    GetCimCalls = $getCimCalls
 } | ConvertTo-Json -Compress
 """,
             encoding="utf-8-sig",
@@ -188,6 +193,7 @@ function Start-Sleep {
         "Stopped": [1],
         "MediaRemoteWasRunning": True,
         "ReinstallDeferred": False,
+        "GetCimCalls": 1,
     }
 
     mixed = run_scenario(
@@ -219,6 +225,27 @@ function Start-Sleep {
         "Stopped": [],
         "MediaRemoteWasRunning": False,
         "ReinstallDeferred": True,
+        "GetCimCalls": 1,
+    }
+
+    command_line_only = run_scenario(
+        "command-line-only-media-remote",
+        """    [pscustomobject]@{
+        ProcessId = 5
+        Name = 'pythonw.exe'
+        ExecutablePath = $null
+        CommandLine = 'pythonw.exe -m pytools.media_remote serve'
+    }
+""",
+    )
+    assert command_line_only == {
+        "Locking": [5],
+        "Restorable": [5],
+        "Unrestorable": [],
+        "Stopped": [5],
+        "MediaRemoteWasRunning": True,
+        "ReinstallDeferred": False,
+        "GetCimCalls": 1,
     }
 
 
