@@ -106,7 +106,7 @@ def test_agents_wait_rejects_turn(capsys: pytest.CaptureFixture[str]) -> None:
     assert not capsys.readouterr().out
 
 
-def test_agents_wait_reports_unresolved_state_directory(
+def test_missing_state_dir_reports_alternative(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -120,6 +120,7 @@ def test_agents_wait_reports_unresolved_state_directory(
     captured = capsys.readouterr()
     assert not captured.out
     assert "状態ディレクトリを解決できません" in captured.err
+    assert "`agents_server`の`list`と`wait`" in captured.err
 
 
 def test_agents_wait_returns_notices_while_running(

@@ -85,7 +85,7 @@ CodexからClaudeへ委譲する場合も、`model_type`に対応する設定値
 MCPは共有daemonや永続registryを使用せず、終了時に自身が起動した子プロセスだけを終了する。
 
 公開ツールは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つである。`start`、`start_explore`及び`start_shell`の`cwd`は既存ディレクトリの絶対パスとし、
-完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。固有のtimeout要件がなければ`timeout`を省略し、呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。`timeout=0`は待機せず現状態を返す。
+完了を待たず`session_id`を返す。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout`を省略した場合の既定は、実行ホストの1回のツール呼び出しの上限からサーバーが確定する。固有のtimeout要件がなければ`timeout`を省略し、呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。`list`で当該sessionの`status`を確認し、同じ`session_id`へ`wait`を再発行する。
 `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。
 `kill(session_id, timeout=270)`は実行中turnだけへ中断を要求する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返し、正のtimeoutは終端結果を待つ。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。

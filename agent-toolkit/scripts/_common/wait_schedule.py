@@ -33,6 +33,11 @@ _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 # 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、当該上限より60秒短い値とする。
 _WAIT_TIMEOUT_FOR_5M_TTL = 270.0
 _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
+# Claude Codeを確認できないホスト向けの上限。Codexは1回のツール呼び出しへ300秒の上限を課し、
+# これを超える待機は`timed out awaiting tools/call after 300s`で失敗するため、当該上限より短い値とする。
+# 判定を誤った場合の帰結は非対称であり、Claude Codeを誤って当該ホストと判定した場合は待機の再発行が増えるだけで、
+# 逆の誤りだけが当該失敗を残す。このため`CLAUDECODE`を確認できない場合を当該ホストとして扱う。
+_WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
 _BUCKET_TTL_ENV = {
     "main": "CLAUDE_CODE_PROMPT_CACHE_TTL",
     "subagent": "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL",
@@ -142,6 +147,9 @@ def get_schedule(request_bucket: str) -> str:
 
 def get_wait_timeout(request_bucket: str) -> float:
     """プロンプトキャッシュTTLを委譲先の終端を待つ上限秒数へ変換する。"""
-    if get_prompt_cache_ttl(request_bucket) == "1h":
+    ttl = get_prompt_cache_ttl(request_bucket)
+    if "CLAUDECODE" not in os.environ:
+        return _WAIT_TIMEOUT_FOR_UNKNOWN_HOST
+    if ttl == "1h":
         return _WAIT_TIMEOUT_FOR_1H_TTL
     return _WAIT_TIMEOUT_FOR_5M_TTL

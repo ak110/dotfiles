@@ -28,7 +28,10 @@ def wait_for_result(
         os.environ if environment is None else environment, state_root
     )
     if root_session_id is None:
-        print("agents_serverの状態ディレクトリを解決できません。", file=sys.stderr)
+        print(
+            "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait`で観測してください。",
+            file=sys.stderr,
+        )
         return 4
     result_path = status_file.results_directory(root_session_id, state_root) / f"{session_id}.json"
     deadline = time.monotonic() + timeout

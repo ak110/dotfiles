@@ -635,7 +635,7 @@ class AgentsServerManager:
     ) -> dict[str, Any]:
         """sessionの終端を待ち、登録簿の現在値から結果本文を返す。
 
-        `timeout`が`None`の場合は、プロンプトキャッシュの保持期間から導出した上限を使う。
+        `timeout`が`None`の場合は、実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間から導出した上限を使う。
         """
         stopped_state = self._resolve_stopped_session(session_id)
         if stopped_state is not None:
