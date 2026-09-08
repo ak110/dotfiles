@@ -5,7 +5,8 @@ r"""計画作業rootに残る計画バンドルの保存確認Stopフック。
 新規作成時に生成され、委譲先が取得又は作成した計画には委譲元のセッションが記録される。
 他のセッションを示す計画と所有記録を持たない計画は、当該セッションでは処置できないため通知しない。
 これらの滞留は`atk plans list`の一覧で判別する。
-実行レビューの収束有無は会話の意味に属するためフックでは判定せず、通知を受領した実行主体へ判断を委ねる。
+実行レビューの収束有無は会話の意味に属し、フックが受け取るStop payloadと計画ファイルからは判定できない。
+そのため、フックは実行できる処置の有無を根拠に終了を遮断せず、通知を受領した実行主体へ判断を委ねる。
 
 委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、環境変数による除外が必要である。
 """
@@ -16,7 +17,8 @@ import pathlib
 
 from _plan.locations import is_plan_main_file, read_owner_session_id, working_plans_root
 
-from _hooks.notice import block_formatter as _block_notice_formatter
+from _hooks.notice import _WARN_TAG, set_warning_session_id
+from _hooks.notice import formatter as _notice_formatter
 from _hooks.session_state import read_state, update_state
 from _hooks.stop_gate import append_stop_log, is_pending_async_work
 from _hooks.stop_gate import parse_stop_session as _parse_stop_session
@@ -27,7 +29,7 @@ _ENV_PROCESS_LOOP_SESSION = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"
 
-_block_notice = _block_notice_formatter(_HOOK_ID)
+_notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 
 def _approve() -> None:
@@ -58,12 +60,13 @@ def _mark_notified(state: dict) -> dict | None:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """計画バンドルの保存判定結果と、遮断する場合の理由を返す。"""
+    """計画バンドルの保存判定結果と、通知する場合の本文を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         append_stop_log("", "approve_invalid_payload", {})
         return "approve", ""
     session_id, payload = resolved
+    set_warning_session_id(session_id)
 
     if os.environ.get(_ENV_DELEGATED_SESSION) == "1":
         append_stop_log(session_id, "approve_delegated_session", {})
@@ -95,24 +98,29 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     update_state(session_id, _mark_notified)
     path_list = ", ".join(str(path) for path in paths)
-    reason = _block_notice(
+    body = _notice(
         f"当該セッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n"
-        "実行レビューが収束したバンドルだけをprivate-notesへ移す。"
+        "実行レビューが収束したバンドルだけを"
+        "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`でprivate-notesへ保存する。"
         "残りのバンドルはその場に残してターンを終了する。",
-        fix=(
-            "収束した各計画に対して`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`を実行する。"
-            "収束した計画が無ければターンを終了する。"
-        ),
     )
-    append_stop_log(session_id, "block_working_plan_save", {"paths": len(paths)})
-    return "block", reason
+    append_stop_log(session_id, "notify_working_plan_save", {"paths": len(paths)})
+    return "notify", body
 
 
 def main(payload_text: str) -> int:
     """所有記録が当該セッションを示す計画バンドルの保存確認を1回だけ促す。"""
     decision, body = evaluate(payload_text)
-    if decision == "block":
-        print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))
-    else:
-        _approve()
+    if decision == "notify":
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "Stop",
+                        "additionalContext": body,
+                    }
+                },
+                ensure_ascii=False,
+            )
+        )
     return 0

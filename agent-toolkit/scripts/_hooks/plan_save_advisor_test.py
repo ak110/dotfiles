@@ -54,10 +54,10 @@ def _payload(session_id: str, transcript: pathlib.Path, **extra: object) -> dict
 
 def _decision(result: subprocess.CompletedProcess[str]) -> dict:
     assert result.returncode == 0
-    return json.loads(result.stdout)
+    return json.loads(result.stdout) if result.stdout else {}
 
 
-def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) -> None:
+def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path) -> None:
     """当該セッションの編集の有無によらず、作業rootに残る計画を1回だけ通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
@@ -74,11 +74,12 @@ def test_existing_working_plans_block_once_then_approve(tmp_path: pathlib.Path) 
     first_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
     second_result = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
 
-    assert first_result["decision"] == "block"
-    assert str(first) in first_result["reason"]
-    assert str(second) in first_result["reason"]
-    assert "残りのバンドルはその場に残して" in first_result["reason"]
-    assert "atk plans commit <計画作業ルート内の計画ファイル（メイン）名>" in first_result["reason"]
+    assert first_result["hookSpecificOutput"]["hookEventName"] == "Stop"
+    notification = first_result["hookSpecificOutput"]["additionalContext"]
+    assert str(first) in notification
+    assert str(second) in notification
+    assert "残りのバンドルはその場に残して" in notification
+    assert "atk plans commit <計画作業ルート内の計画ファイル（メイン）名>" in notification
     assert not second_result
 
 
@@ -94,8 +95,8 @@ def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
 
     result = _decision(_run(_payload("nested", transcript), state_dir=tmp_path, home=home))
 
-    assert result["decision"] == "block"
-    assert str(plan) in result["reason"]
+    assert result["hookSpecificOutput"]["hookEventName"] == "Stop"
+    assert str(plan) in result["hookSpecificOutput"]["additionalContext"]
 
 
 def test_absent_working_root_approves(tmp_path: pathlib.Path) -> None:
@@ -143,8 +144,8 @@ def test_suppression_conditions_approve(
     assert not _decision(result)
 
 
-def test_stop_hook_active_still_blocks_before_notification(tmp_path: pathlib.Path) -> None:
-    """`stop_hook_active`が真でも未通知の所有計画があれば遮断する。"""
+def test_stop_hook_active_still_notifies(tmp_path: pathlib.Path) -> None:
+    """`stop_hook_active`が真でも未通知の所有計画があれば通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -162,7 +163,7 @@ def test_stop_hook_active_still_blocks_before_notification(tmp_path: pathlib.Pat
         )
     )
 
-    assert result["decision"] == "block"
+    assert result["hookSpecificOutput"]["hookEventName"] == "Stop"
 
 
 def test_paths_outside_the_working_root_approve(tmp_path: pathlib.Path) -> None:
@@ -189,7 +190,7 @@ def test_invalid_payload_approves(tmp_path: pathlib.Path, payload: object) -> No
 
 
 @pytest.mark.parametrize(
-    ("owner_records", "expected_blocked"),
+    ("owner_records", "expected_notified"),
     [
         pytest.param({}, (), id="所有記録なし"),
         pytest.param({"own.md": "current"}, ("own.md",), id="自セッションの所有記録"),
@@ -200,7 +201,7 @@ def test_invalid_payload_approves(tmp_path: pathlib.Path, payload: object) -> No
 def test_notified_plans_are_limited_to_the_current_session(
     tmp_path: pathlib.Path,
     owner_records: dict[str, str],
-    expected_blocked: tuple[str, ...],
+    expected_notified: tuple[str, ...],
 ) -> None:
     """所有記録が当該セッションを示す計画だけを通知し、他は承認する。"""
     home = tmp_path / "home"
@@ -214,15 +215,16 @@ def test_notified_plans_are_limited_to_the_current_session(
 
     result = _decision(_run(_payload("current", transcript), state_dir=tmp_path, home=home))
 
-    if not expected_blocked:
+    if not expected_notified:
         assert not result
         return
-    assert result["decision"] == "block"
-    for name in expected_blocked:
-        assert str(plans / name) in result["reason"]
+    assert result["hookSpecificOutput"]["hookEventName"] == "Stop"
+    notification = result["hookSpecificOutput"]["additionalContext"]
+    for name in expected_notified:
+        assert str(plans / name) in notification
     for name in ("own.md", "other.md"):
-        if name not in expected_blocked:
-            assert str(plans / name) not in result["reason"]
+        if name not in expected_notified:
+            assert str(plans / name) not in notification
 
 
 @pytest.mark.parametrize("record", ["{不正なJSON", '{"recorded_at": "2026-09-03T00:00:00+09:00"}'])
