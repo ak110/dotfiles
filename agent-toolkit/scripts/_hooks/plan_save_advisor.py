@@ -103,6 +103,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         "実行レビューが収束したバンドルだけを"
         "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`でprivate-notesへ保存する。"
         "残りのバンドルはその場に残してターンを終了する。",
+        removable_cause=True,
     )
     append_stop_log(session_id, "notify_working_plan_save", {"paths": len(paths)})
     return "notify", body
