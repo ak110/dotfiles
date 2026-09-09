@@ -100,6 +100,23 @@ def test_hooks_json_registers_rules_context_without_matcher() -> None:
         assert hooks[event][0]["hooks"][0]["command"].endswith("hook.py rules_context")
 
 
+def _session_start_length_report(output: str) -> str:
+    """SessionStartの追加本文が上限を超えた場合の失敗本文を組み立てる。
+
+    超過分と文書別の長さを示し、追随すべき対象を失敗本文から確定できるようにする。
+    """
+    total = len(output)
+    overage = total - rules_context.CLAUDE_CODE_OUTPUT_LIMIT
+    breakdown = "、".join(
+        f"{path.name}={len(path.read_text(encoding='utf-8'))}文字"
+        for path in (rules_context.MAIN_RULES_PATH, rules_context.MAIN_RULES_CLAUDE_CODE_PATH)
+    )
+    return (
+        f"SessionStartの追加本文が{total}文字であり、上限{rules_context.CLAUDE_CODE_OUTPUT_LIMIT}文字を"
+        f"{overage}文字超過した。文書別の長さ: {breakdown}"
+    )
+
+
 def test_session_start_context_fits_claude_code_cap(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -108,7 +125,38 @@ def test_session_start_context_fits_claude_code_cap(
     monkeypatch.setattr(managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
-    assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
+    output = _output(capsys)
+    assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
+
+
+def test_session_start_length_report_shows_overage_and_breakdown() -> None:
+    fake_output = "x" * (rules_context.CLAUDE_CODE_OUTPUT_LIMIT + 5)
+    report = _session_start_length_report(fake_output)
+    assert "5文字超過した" in report
+    assert "文書別の長さ" in report
+    assert f"{rules_context.MAIN_RULES_PATH.name}=" in report
+    assert f"{rules_context.MAIN_RULES_CLAUDE_CODE_PATH.name}=" in report
+
+
+def test_share_task_documents_have_no_bare_return_line_examples() -> None:
+    """`share/*.md`の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを検査する。
+
+    条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
+    母集団は`rules_context.SHARE_DIR`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
+    """
+    bare_label_line = re.compile(r"^[^\s#\-*>|`][^\n:`]*: \S.*$")
+    offending: list[str] = []
+    for path in sorted(rules_context.SHARE_DIR.glob("*.md")):
+        in_fence = False
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if bare_label_line.match(line):
+                offending.append(f"{path.name}:{lineno}: {line}")
+    assert not offending
 
 
 def test_subagent_start_does_not_create_session_scoped_managed_temp(
