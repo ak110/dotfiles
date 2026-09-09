@@ -323,20 +323,27 @@ def _ensure_tools_installed(mise_bin: Path) -> bool:
 
 
 def _ensure_orphan_shims_removed(mise_bin: Path) -> bool:
-    """`mise reshim`で、実体を失って別コマンドの探索と衝突する孤児shimを除去する。
+    """`mise prune`と`mise reshim`で管理外の孤児shimを除去する。
 
-    miseはツールの版を削除しても既存shimを自動では削除しない。残った`gettext.sh`が
-    Gitの国際化スクリプトとして誤実行されるとtmuxプラグイン更新が失敗するため、
-    `mise install`の後にshimを再構築する。
+    shimの再生成元は`installs/`配下の実体であり、`prune`を伴わない`reshim`では
+    管理外shimが再生成される。`prune`はtracked configが参照するツールの現行版を
+    削除しないため、`mise install`の後に未参照実体を除去してshimを強制再構築する。
     """
-    result = _run_mise(mise_bin, ["reshim"])
+    prune = _run_mise(mise_bin, ["prune", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
+    if prune is None:
+        logger.info(log_format.format_status("mise", "`prune -y` がタイムアウトまたは例外で中断"))
+        return False
+    if prune.returncode != 0:
+        logger.info(log_format.format_status("mise", f"`prune -y` に失敗: {prune.stderr.strip()}"))
+        return False
+    result = _run_mise(mise_bin, ["reshim", "--force"])
     if result is None:
-        logger.info(log_format.format_status("mise", "`reshim` がタイムアウトまたは例外で中断"))
+        logger.info(log_format.format_status("mise", "`reshim --force` がタイムアウトまたは例外で中断"))
         return False
     if result.returncode != 0:
-        logger.info(log_format.format_status("mise", f"`reshim` に失敗: {result.stderr.strip()}"))
+        logger.info(log_format.format_status("mise", f"`reshim --force` に失敗: {result.stderr.strip()}"))
         return False
-    logger.info(log_format.format_status("mise", "`reshim` を実行しました"))
+    logger.info(log_format.format_status("mise", "`reshim --force` を実行しました"))
     return True
 
 
