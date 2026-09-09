@@ -552,8 +552,8 @@ uvx pyfltr run --commands=textlint,colloquial-check --enable=colloquial-check --
 実装後にだけ成立する完了条件は、起草時の実行で成立しないことを確認し、実装後に成立する根拠を`## 実装資料`へ記載する。
 根拠には、当該コマンドが検査する文字列を含む確定文面の所在を、ファイルと見出しで書く。
 検索コマンドで固定文字列を検査する場合は、当該文字列が正規表現のメタ文字を含むかを判定し、含む場合は固定文字列検索（`git grep -F`、`rg -F`、`grep -F`）を用いる。
-2026年9月7日、git 2.43.0で`assert expanded_common_job_count + len(statusline_jobs) == 7`を検査する`git grep -n`が一致0件を返し、同じ文字列を検査する`git grep -nF`が1件返すことを実測した。
-再検証は、正規表現のメタ文字を含む行を対象リポジトリの追跡ファイルから1件選び、`git grep -n`と`git grep -nF`の一致件数を比べる。
+`assert expanded_common_job_count + len(statusline_jobs) == 7`を検査する`git grep -n`が一致0件を返し、同じ文字列を検査する`git grep -nF`が1件返すことを実測した。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/plan-mode/references/plan-file-standards.md：実装資料と完了条件：2026年9月7日」にある。
 本項は探索コマンドを書く節を問わず適用し、計画ファイル（メイン）`## 検証区分`と`### 実装単位`の`近接検証`へ書く探索コマンドも同じ扱いとする。
 計画レビュー担当は読み取り専用のため当該実行を再現せず、実行結果と根拠が計画へ記録されていることを点検する。
 

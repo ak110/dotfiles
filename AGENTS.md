@@ -55,6 +55,8 @@
   [docs/development/operations.md](docs/development/operations.md)
 - 過去のAWIから確定した方針・意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる事故・欠陥: [docs/development/incidents.md](docs/development/incidents.md)
+- 規範の条文が根拠とする実測の日付・版数・再検証手段:
+  [docs/development/audit-records.md](docs/development/audit-records.md)
 
 ## 振り返りの参照文書
 

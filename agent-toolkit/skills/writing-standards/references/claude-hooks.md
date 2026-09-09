@@ -20,26 +20,17 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
   スキル本文から実行するコマンドには、読み込んだSKILL.mdの絶対パスから確定したplugin rootを用いる
 - Codexの信頼確認: plugin同梱フックも定義の変更後は`/hooks`で内容を確認して信頼する。
   信頼するまではCodexが当該フックをスキップする
-- 呼出主体の判別: サブエージェントの呼び出しとメイン会話を区別する場合は共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指すため判別に利用できない。サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである（2026年9月2日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節と`SubagentStop`節で確認した。再検証は同2節を読む）
+- 呼出主体の判別: サブエージェントの呼び出しとメイン会話を区別する場合は共通入力の`agent_id`を使う。`transcript_path`はサブエージェント内で発火したフックでもメインセッションの記録を指すため判別に利用できない。サブエージェント自身の記録を指すのは`SubagentStop`の`agent_transcript_path`だけである。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある
 - 当該ターンの地の文の可視性: `PreToolUse`の発火時点では、当該ツール呼び出しと同じアシスタントターンのテキストブロックが`transcript_path`のJSONLへ未書き込みである。
   思考ブロックとツール呼び出しだけのターンも記録されるため、直前の1ターンだけを判定対象にすると地の文を取得できない。
   当該ターンの地の文を入力とする判定を`PreToolUse`へ置かない。
   直近の地の文を対象とする判定では、テキストブロックを持たないターンを走査の対象から除いて遡る。
-  2026年9月6日、Claude Code 2.1.263で次を実測した。
-  地の文を1文書いた直後に同じ応答で`Bash`を1回呼ぶ指示を与え、当該呼び出しの`PreToolUse`が受領した`transcript_path`の内容を捕捉した。
-  発火時点の当該JSONLはアシスタントのエントリを1件も持たなかった。
-  実行後の同じJSONLには、同一の`message.id`を持つ思考ブロック、テキストブロック及びツール呼び出しの3エントリが並んでいた。
-  再検証は、同じ指示を与えて発火時点のJSONLの内容と実行後の内容を比較する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある
 - 出力フィールドの併用: deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもコーディングエージェントに届く。一方で十分なため、重複表示を避け片方に統一する
 - フック追加を計画に含める場合、対象イベントの発火条件を計画の実装者向け領域へ事前明示する。
   例えばPostToolUseはツール成功時のみ発火し、失敗時はPostToolUseFailureが処理する。
   auto modeでのブロック等はPermissionDeniedフックが処理する。
-  2026年9月8日、Claude Code 2.1.263で次を実測した。
-  存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、
-  当該セッションの状態ファイルの`git_log_checked`は未設定のままだった。
-  続けて実在するworktreeを指す同じ形の`git log`を実行すると、当該cwdのキーが真になった。
-  再検証は、この2つのコマンドを単独で順に実行し、
-  `{tempdir}/claude-agent-toolkit-<session_id>.json`の`git_log_checked`を前後で比較する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある
 - CodexのPostToolUseは`tool_response`を任意のJSON値として渡す。シェル実行では終了コードを含まず
   出力文字列だけが届くため、コマンドの成否を前提とする状態記録へ使わない。
   `apply_patch`は適用に成功した場合だけ発火するため、編集成功後の状態記録へ利用できる。
@@ -111,7 +102,7 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 これらのイベントの`matcher`は3通りに解釈する。`"*"`、空文字列及びキーの省略は全ツールへ一致する。英数字、`_`、`-`、空白、`,`、`|`だけからなる値は、`|`又は`,`で区切ったツール名の完全一致とする。それ以外の文字を含む値は、先頭と末尾を固定しないJavaScriptの正規表現として評価する。
 全ツールへ一致させる登録には`"*"`を書き、空文字列とキーの省略を新規記述へ用いない。ツール名で`matcher`を評価しないイベントには`matcher`キーを置かない。
 一次資料は公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節とする。
-2026年9月4日、Claude Code 2.1.260の実行ファイルへ埋め込まれた照合関数が、値が空文字列と`"*"`のいずれかのときに正規表現へ変換せず一致を返すことと、同ドキュメントが同じ3分類を記載することを確認した。再検証は、当該ドキュメントの`Matcher patterns`節を取得し、`strings`で抽出した当該関数が空値と`"*"`を短絡することを確認する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
 
 - 個別の早期returnガード: `matcher`を広げた場合、hookスクリプト側で`tool_name`を
   確認し対象外を早期returnすることで処理コストと誤検出を抑える
@@ -159,9 +150,8 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器が
 モデルの応答をJSONとして解析できなかった場合に出る。コマンド型hookのJSON出力の検証経路では出ない。
 `/goal`はセッションの範囲で有効なプロンプト型Stop hookを登録する。
-`/goal`を設定したセッションでは、当該表示がコマンド型hookの出力形式とは無関係に現れる
-（2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。
-再検証は同じ2つの資料で当該文字列の出所を確認する）。
+`/goal`を設定したセッションでは、当該表示がコマンド型hookの出力形式とは無関係に現れる。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：出力フィールドの使い分け：2026年9月4日」にある。
 
 PreToolUse・PostToolUse・UserPromptSubmitでコーディングエージェントに行動を促す場合は`hookSpecificOutput.additionalContext`を第一経路として使う（`_llm_notice`ヘルパー経由の本文構築を推奨）。これらのイベントでは、`additionalContext`はターン継続を強制しない。
 `systemMessage`は使わず、stderr出力は`exit 2`のblockと組み合わせる場合のみに限定する。
@@ -283,11 +273,7 @@ Stop・SubagentStopの`additionalContext`と`decision: "block"`の違いは、`a
 値は当該タスクを生成した機能を示す。
 この配列は、セッションが完了した状態と、背景の作業による再開を待って停止している状態とをフックが区別する用途で使う。
 `PostToolUse`は背景実行への移行の時点で発火する。当該ジョブの完了時に再発火する旨の記載は公式ドキュメントに無い。
-
-2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節及び`SubagentStop`節で前段の入力仕様を確認した。
-同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。
-`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。
-再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks.md：Stop/SubagentStopフックの再帰呼び出し対策：2026年9月4日」にある。
 現行版の入力に`background_tasks`が現れない場合は本項を失効させ、当該版の観測として書き直す。
 
 CodexのStopは`decision: "block"`と`reason`で同一ターンを継続し、許可時は空のJSONオブジェクトを返す。

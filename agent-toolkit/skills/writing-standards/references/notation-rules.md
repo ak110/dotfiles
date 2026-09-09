@@ -50,16 +50,7 @@ uv run --project <plugin rootの絶対パス> --locked --no-default-groups path/
 | textlint | 対象 | 対象外 |
 | ダッシュチェック | 対象 | 対象外 |
 
-本表は2026年9月5日に実測した。
-次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つの検体を作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`で検査した。
-
-```text
-警告を出すと思う。
-```
-
-地の文では口語表現チェックとtextlintの弱い表現がいずれも検出され、引用ブロックではtextlintの弱い表現だけが検出され、フェンス付きコードブロックではいずれも検出されなかった。
-em-dash（U+2014）を含む同じ形の検体を`scripts/check_dash.py`で検査したところ、引用ブロックでは検出され、フェンス付きコードブロックでは検出されなかった。
-再検証は同じ3つの検体を再度作成し、同じ検査で検出の有無を対にして確認する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日」にある。
 
 ## Markdown記述スタイル
 

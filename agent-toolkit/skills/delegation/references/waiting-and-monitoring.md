@@ -14,8 +14,8 @@
   実行環境が当該観測を背景処理へ移し、完了時に通知すると戻り値が示す場合は、同じ観測を再発行しない。
   待機表明でターンを終え、当該通知の受領で再開する。
   待機表明でターンを終えるセッションに`/goal`が設定され、かつ当該セッションの未完了の背景タスクが当該観測の背景移行だけである場合は、本項に代えて後述の目標評価の条項を適用する。
-  2026年9月、Claude Codeで`agents_server`の`wait`が発行から120秒で背景タスクへ移り、完了時に当該タスクの通知として結果本文が届くことを実測した。120秒は背景タスクへ移行する閾値であり、待機の上限ではない。
-  再検証は`wait`を発行し、背景移行の通知を受領した後に完了通知の到達を確認する
+  120秒は背景タスクへ移行する閾値であり、待機の上限ではない。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月」にある
 - 完了通知の経路が確立しない戻り方では、同じターン内で当該観測を再発行してよい。
   観測が自身の待機上限に達して終端statusを返さずに戻り、実行環境が背景処理への移行を示さない場合が該当する。
   再発行の回数に上限は設けない
@@ -50,17 +50,15 @@
   `wait`は全ての追跡対象が終端するまで最初の結果を保留し、終端した識別子を示す継続指示で同じsessionを当該ターンにつき一度だけ自動的に再開する。
   Claude backendでは、背景実行したシェルのコマンド、背景で起動したAgent委譲、及び背景へ移行したMCPツールの呼び出しも、Claude Codeの完了通知による自動再開の対象になる。
   背景タスクを起動せずに待機を表明した場合は再開しない。この場合の待機対象の完了確認と再開指示は呼び出し元が行う。
-  2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明して`status: completed`で終端し、当該コマンドの終了後も再開しない事象を実測した。
-  2026年9月4日には、同じ経路で起動した委譲先が自ら起動した委譲先の終端を待たずに待機表明で終端し、呼び出し元が保持した`session_id`へ`send_message`を送って再開させた事象を実測した。
-  再検証は`agents_server`で委譲先を起動し、待機表明で終端させたうえで、完了通知の到達を確認する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日」にある。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月4日」にある
 - 呼び出し元は、前項の自動再開について再開の要否を判断せず、`send_message`による再開指示も送らない。
   `wait`は再開したturnの終端まで待ち、その結果を返す。
   委譲先の最終メッセージの文面から待機表明を読み取って判別しない。
   同じ文面が作業の完了報告としても現れるため、文面による判別は誤った再開と再開漏れの双方を生む
 - `agents_server`の`wait`が`timeout`の省略時に用いる上限は、実行ホストが1回のツール呼び出しへ課す上限を超えない値としてサーバーが確定する。
   待機する主体は当該上限の大小を判定せず、`timeout`へ値を渡さない。
-  2026年9月7日から9月8日にかけて、Codexで動く主体が発行した`wait`が`timed out awaiting tools/call after 300s`で失敗する事象を実測した。
-  再検証は、当該上限より長く稼働する委譲先へ`timeout`を省略した`wait`を発行し、当該失敗の有無を確認する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月7日」にある
 - `agents_server`の`wait`は、委譲先として起動されたセッションでは`timeout`の省略時に240秒を上限とする。
   当該上限へ達した応答は`status`と`elapsed_seconds`を返すため、同じ`session_id`へ`wait`を再発行して待機を継続する。
   240秒より短い上限を1回のMCPツール呼び出しへ課す実行主体では、`atk agents-wait <session_id>`を既定の待機手段とする。
@@ -113,12 +111,8 @@ CIの完了、デプロイの反映など、外部サービスの状態が変わ
   実行識別子を入力とする観測手段だけに依存しない。
   待機が別のセッション又は別の実行主体へ渡る場合は、当該絶対パスを引き継ぐ対象へ含める
   （厳守規定。実行識別子は実行環境の再起動で失効し、失効後は当該識別子から終了状態と出力を取得できない）。
-  2026年9月4日、Claude Code 2.1.260で次の2点を実測した。
-  終了コード7で終わる`run_in_background=true`のBashについて、起動結果が返した出力ファイルは出力の全量と`[exited with code 7]`を保持した。
-  2026年9月2日に別のセッションが起動した背景ジョブの実行識別子は`TaskOutput`が`No task found with ID`で拒否し、
-  当該ジョブの出力ファイルは絶対パスのまま全出力と`[exited with code 0]`を保持していた。
-  再検証は同じ形で背景実行して当該ファイルを読み、終了済みセッションが残した出力ファイルの絶対パスの読み取りと、
-  同じ実行識別子が解決しないことを対にして確認する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日」にある。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月2日」にある
 
 ## 待機の起動条件
 

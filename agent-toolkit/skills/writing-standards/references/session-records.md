@@ -10,7 +10,7 @@ Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウト�
 
 コンパクションの記録はruntimeで形が異なる。
 Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして残り、`compactMetadata`が`trigger`・`preTokens`・`postTokens`・`durationMs`を持つ。
-Codexでは`type`が`compacted`のレコードとして残り、所要時間の欄を持たない（2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で実測した。再検証は同じ2箇所を当該キーで検索する）。
+Codexでは`type`が`compacted`のレコードとして残り、所要時間の欄を持たない。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：H1直下：2026年9月2日」にある。
 
 ## Claude Codeの記録
 
@@ -43,8 +43,7 @@ Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれ�
 工程別の`stats-tool`が示す秒はツール呼び出しごとの区間であり、親セッションと委譲先が並行して動く区間は重複して計上される。
 このため工程別の合計は総量を超えることがある。
 比率を提示する場合は、この基準差を同じ本文へ併記する。
-本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。
-再検証は同じ2つの関数を読む。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：集計値の典拠：2026年9月3日」にある。
 
 ## 本文の検索
 

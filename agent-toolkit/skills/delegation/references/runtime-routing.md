@@ -176,8 +176,7 @@ fast担当がエスカレーションを返した場合だけfix担当の作業�
 2. その他は標準モデルを選ぶ
 
 既定より高いreasoning effortを選べるのは、読むファイル数が少なく、推論の深さが結果を左右すると事前に判明している工程に限る。
-本項は、軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザー報告）。
-再検証は、同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」にある。
 
 モデルを明示する経路ではreasoning effortも併せて指定する。
 指定モデルを利用できない場合は、作業を成立させる利用可能なモデルへ切り替える。
