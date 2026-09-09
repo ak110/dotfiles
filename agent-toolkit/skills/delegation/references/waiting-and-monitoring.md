@@ -158,6 +158,13 @@ Git差分、HEAD、成果物の更新時刻・行数、無応答、経過時間�
 
 ## 完了通知を待ってターンを終える場合
 
+- blocking waitとその背景ジョブのいずれかが対象sessionを所有している間は、定期再確認の各回で当該sessionへ状態照会を発行しない。
+  所有の判定は、当該sessionに対する`agents_server`の`wait`、`atk agents-wait`又はこれらを起動した背景ジョブが終端の`status`を返していないことで行う。
+  定期再確認は、所有されていない待機対象の正本状態と完了通知、及び経過時間起動の義務だけを再確認する。
+  blocking waitが自身の上限へ達して`running`を返した場合の再発行と、完了通知を受領した後の`timeout=0`による結果配送の確定は、本項の対象にせず現行どおり発行する。
+  完了通知の不着を検出した場合と、待機手段が終端の`status`を返さないまま失敗した場合は、当該sessionを所有されていない対象として扱う
+  （厳守規定。同じsessionの終端観測をblocking waitと定期再確認の2経路が同時に所有すると、終端の検出を早めないまま照会だけが重複する）
+
 - 待機対象の完了通知から独立した定期再確認は、Claude Codeでは
   `agent-toolkit/skills/delegation/references/claude-code-runtime.md`「Cronによる定期再確認」節の作成・再利用・resume又はcompaction後の照合・削除の順序に従う。
   `CronCreate`、`CronList`及び`CronDelete`が現在の実行主体へ公開される場合だけ併用し、一般の委譲待機で`ScheduleWakeup`を使用しない
