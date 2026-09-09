@@ -25,16 +25,21 @@ def run(
     )
 
 
-def run_quiet(args: list[str], cwd: str | pathlib.Path) -> None:
-    """gitの出力を成功時は抑止し、失敗時だけ標準エラーへ転送する。"""
+def run_quiet(
+    args: list[str],
+    cwd: str | pathlib.Path,
+    *,
+    forward_error_output: bool = True,
+) -> None:
+    """gitの出力を成功時は抑止し、失敗時は指定に従って標準エラーへ転送する。"""
     result = run(args, cwd, check=False, capture_output=True, text=True)
     if result.returncode == 0:
         return
     assert isinstance(result.stdout, str)
     assert isinstance(result.stderr, str)
-    if result.stdout:
+    if forward_error_output and result.stdout:
         print(result.stdout, file=sys.stderr, end="")
-    if result.stderr:
+    if forward_error_output and result.stderr:
         print(result.stderr, file=sys.stderr, end="")
     raise subprocess.CalledProcessError(
         result.returncode,
