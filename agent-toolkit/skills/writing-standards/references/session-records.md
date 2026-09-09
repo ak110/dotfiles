@@ -45,3 +45,13 @@ Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれ�
 比率を提示する場合は、この基準差を同じ本文へ併記する。
 本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。
 再検証は同じ2つの関数を読む。
+
+## 本文の検索
+
+セッション記録から本文を取得する場合は、`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`を用いる。
+対象は、Claude CodeとCodexの記録に含まれる利用者発話、ツール結果、警告と委譲記録とする。
+Claude Codeの記録はtranscriptの絶対パスを位置引数へ、Codexの記録は`--codex-thread-id <thread ID>`へ渡す。
+検索語から該当箇所を探す場合は`--grep <Pythonの正規表現>`、位置が確定している記録の本文を読む場合は`--detail <記録>:<行番号>`、出力を保存する場合は`--output-file <絶対パス>`を付ける。
+検索対象を限定しないJSONLファイル群への汎用CLIによる検索と、セッション記録及び候補一覧の標準出力への全量表示は、本節の経路にしない。
+記録は行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を適用すると照合の上限に達するためである。
+抽出器が受理しない調査には、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
