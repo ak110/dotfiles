@@ -23,7 +23,7 @@ def wait_for_result(
 ) -> int:
     """終端結果又は通知を標準出力へ書き、終了コードを返す。
 
-    終端結果と通知が無いまま`root.json`からsessionが消失した場合は、
+    終端結果と通知が無いまま状態ファイル全体からsessionが消失した場合は、
     MCPのwaitと同じ`status: expired`を終了コード7で返す。既存の成功と
     エラーの終了コードから区別し、待機上限まで消失を見逃さないためである。
     """
@@ -40,7 +40,6 @@ def wait_for_result(
         )
         return 4
     result_path = status_file.results_directory(root_session_id, state_root) / f"{session_id}.json"
-    root_status_path = status_file.status_directory(root_session_id, state_root) / "root.json"
     started_at = time.monotonic()
     deadline = time.monotonic() + timeout
     while True:
@@ -48,6 +47,7 @@ def wait_for_result(
         if read_error is not None:
             print(f"終端結果ファイルを読めません: {result_path}: {read_error}", file=sys.stderr)
             return 6
+        status_paths = status_file.list_status_files(root_session_id, state_root)
         notices = status_file.take_notices(root_session_id, session_id, state_root)
         if result is not None:
             if notices:
@@ -56,12 +56,12 @@ def wait_for_result(
             result_path.unlink(missing_ok=True)
             return 0
         if notices:
-            response: dict[str, Any] = _running_response(session_id, _session_updated_at(root_status_path, session_id))
+            response: dict[str, Any] = _running_response(session_id, _session_updated_at(status_paths, session_id))
             response["notices"] = notices
             print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
             return 0
         retained = _session_is_retained(
-            root_status_path,
+            status_paths,
             session_id,
         )
         if retained is False:
@@ -72,13 +72,13 @@ def wait_for_result(
         if remaining <= 0:
             print(
                 json.dumps(
-                    _running_response(session_id, _session_updated_at(root_status_path, session_id)),
+                    _running_response(session_id, _session_updated_at(status_paths, session_id)),
                     ensure_ascii=False,
                     separators=(",", ":"),
                 )
             )
             return 3
-        updated_at = _session_updated_at(root_status_path, session_id)
+        updated_at = _session_updated_at(status_paths, session_id)
         response = _running_response(session_id, updated_at)
         if response.get("stalled") and time.monotonic() - started_at >= state.STALL_NOTICE_SECONDS:
             print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
@@ -99,8 +99,43 @@ def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]
     return value, None
 
 
-def _session_is_retained(path: pathlib.Path, session_id: str) -> bool | None:
-    """状態ファイルからsessionの保持有無を読み、解釈できない場合は`None`を返す。"""
+def _session_is_retained(paths: list[pathlib.Path], session_id: str) -> bool | None:
+    """状態ファイル群からsessionの保持有無を読み、全て解釈不能なら`None`を返す。"""
+    parsed = False
+    for path in paths:
+        sessions = _read_sessions(path)
+        if sessions is None:
+            continue
+        parsed = True
+        if any(session["session_id"] == session_id for session in sessions):
+            return True
+    return False if parsed else None
+
+
+def _session_updated_at(paths: list[pathlib.Path], session_id: str) -> str | None:
+    """状態ファイルから保持中sessionの最終活動時刻を返す。"""
+    for path in paths:
+        sessions = _read_sessions(path)
+        if sessions is None:
+            continue
+        for session in sessions:
+            if session["session_id"] != session_id:
+                continue
+            updated_at = session.get("updated_at")
+            if not isinstance(updated_at, str):
+                return None
+            try:
+                parsed_updated_at = datetime.datetime.fromisoformat(updated_at)
+            except ValueError:
+                return None
+            if parsed_updated_at.utcoffset() is None:
+                return None
+            return updated_at
+    return None
+
+
+def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
+    """状態ファイルを解釈し、session一覧又は`None`を返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
@@ -110,34 +145,7 @@ def _session_is_retained(path: pathlib.Path, session_id: str) -> bool | None:
         return None
     if any(not isinstance(session, dict) or not isinstance(session.get("session_id"), str) for session in sessions):
         return None
-    return any(session["session_id"] == session_id for session in sessions)
-
-
-def _session_updated_at(path: pathlib.Path, session_id: str) -> str | None:
-    """状態ファイルから保持中sessionの最終活動時刻を返す。"""
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
-        return None
-    sessions = value.get("sessions") if isinstance(value, dict) and value.get("version") == 1 else None
-    if not isinstance(sessions, list):
-        return None
-    for session in sessions:
-        if not isinstance(session, dict):
-            return None
-        if session.get("session_id") != session_id:
-            continue
-        updated_at = session.get("updated_at")
-        if not isinstance(updated_at, str):
-            return None
-        try:
-            parsed_updated_at = datetime.datetime.fromisoformat(updated_at)
-        except ValueError:
-            return None
-        if parsed_updated_at.utcoffset() is None:
-            return None
-        return updated_at
-    return None
+    return sessions
 
 
 def _running_response(session_id: str, updated_at: str | None) -> dict[str, Any]:

@@ -126,6 +126,30 @@ def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.Mo
     )
 
 
+@pytest.mark.parametrize(
+    ("file_names", "expected"),
+    [
+        (["root.json"], ["root.json"]),
+        (["child.json"], ["child.json"]),
+        (["root.json", "child.json"], ["child.json", "root.json"]),
+        (["root.json", "results/result.json"], ["root.json"]),
+    ],
+)
+def test_list_status_files_returns_direct_json_files_in_stable_order(
+    tmp_path: pathlib.Path,
+    file_names: list[str],
+    expected: list[str],
+) -> None:
+    """状態ディレクトリ直下のJSON通常ファイルだけを絶対パスの安定順で返す。"""
+    directory = subject.status_directory("root", tmp_path)
+    for file_name in file_names:
+        path = directory / file_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    assert subject.list_status_files("root", tmp_path) == [directory / file_name for file_name in expected]
+
+
 def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp_path: pathlib.Path) -> None:
     """不正通知を保持し、正常通知だけを送信時刻とファイル名の順で回収する。"""
     directory = subject.notices_directory("root", tmp_path)

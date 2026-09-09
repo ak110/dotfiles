@@ -119,6 +119,26 @@ def test_agents_wait_keeps_waiting_for_retained_session(
     assert not captured.err
 
 
+def test_agents_wait_keeps_waiting_for_session_retained_by_nested_server(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """委譲先のMCPサーバーが保持するsessionを消失として返さない。"""
+    nested_status = wait_environment.parent / "child-session.json"
+    nested_status.parent.mkdir(parents=True)
+    nested_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
+    assert not captured.err
+
+
 @pytest.mark.parametrize("root_body", ["{", "[]"])
 def test_agents_wait_ignores_unreadable_root_status(
     wait_environment: pathlib.Path,

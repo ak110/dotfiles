@@ -81,6 +81,21 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     return root / "agents-server" / root_session_id
 
 
+def list_status_files(root_session_id: str, state_root: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """書込主体ごとの状態ファイルを絶対パスの安定順で返す。
+
+    書込主体ごとに`root.json`と`<host_session_id>.json`へ分かれるため、
+    読取主体は単一のファイル名を組み立てない。ファイル名の規則の正本は
+    `resolve_status_file_identity`である。
+    """
+    directory = status_directory(root_session_id, state_root)
+    try:
+        paths = [path.absolute() for path in directory.iterdir() if path.suffix == ".json" and path.is_file()]
+    except OSError:
+        return []
+    return sorted(paths)
+
+
 def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """現行session識別子からルートsession識別子を引く索引ディレクトリを返す。"""
     root = _atk_config.state_dir() if state_root is None else state_root
