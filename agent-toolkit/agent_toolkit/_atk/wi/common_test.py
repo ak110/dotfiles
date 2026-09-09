@@ -750,7 +750,9 @@ class TestNotifyUnansweredUwisIfAny:
 
         _common.notify_unanswered_uwis_if_any(tmp_path, None)
 
-        assert capsys.readouterr().err == "# uwi\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
+        assert capsys.readouterr().err == (
+            f"{_common.UNANSWERED_UWI_NOTICE_HEADER}\none.md: github.com/example/repo [inbox/unanswered] 最初の質問\n"
+        )
 
     def test_notifies_matching_unanswered_entries_in_filename_order(
         self,
@@ -765,9 +767,14 @@ class TestNotifyUnansweredUwisIfAny:
         _common.notify_unanswered_uwis_if_any(tmp_path, "github.com/example/repo")
 
         assert capsys.readouterr().err == (
-            "# uwi\n001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
+            f"{_common.UNANSWERED_UWI_NOTICE_HEADER}\n"
+            "001.md: github.com/example/repo [inbox/unanswered] 質問1\n"
             "002.md: github.com/example/repo [inbox/unanswered] 質問2\n"
         )
+
+    def test_header_differs_from_list_headers(self) -> None:
+        """通知の種別ヘッダーは`atk wi list`の種別ヘッダーのいずれとも一致しない。"""
+        assert _common.UNANSWERED_UWI_NOTICE_HEADER not in (f"# {_common.WI_TYPE_AWI}", f"# {_common.WI_TYPE_UWI}")
 
     def test_local_path_filter_notifies_legacy_and_current_repo_forms(
         self,
