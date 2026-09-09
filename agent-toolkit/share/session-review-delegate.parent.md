@@ -15,7 +15,7 @@
 
 本節は別セッション経路だけで実行する。自セッション経路では本節を実行せず、メイン自身の記録の識別子を対象セッションの識別子とする。
 
-メインが`atk session-review-target`を1回実行し、終了コード0を確認する。Claude Codeでは現在のtranscriptの絶対パスを`--transcript`へ、Codexでは`CODEX_THREAD_ID`の値を`--codex-thread-id`へ渡す。行が0件の場合は振り返り担当を起動せず、対象が無い旨を`agent-toolkit:completion-report`の振り返り欄へ渡す。行が1件の場合は`engine`と`session_id`をそのまま起動文へ渡す。
+メインが`atk session-review-target`を1回実行し、終了コード0を確認する。Claude Codeでは`atk session-review-target --transcript=<現在のtranscriptの絶対パス>`、Codexでは`atk session-review-target --codex-thread-id=<CODEX_THREAD_IDの値>`とする。行が0件の場合は振り返り担当を起動せず、対象が無い旨を`agent-toolkit:completion-report`の振り返り欄へ渡す。行が1件の場合は`engine`と`session_id`をそのまま起動文へ渡す。
 
 ## 起動
 

@@ -193,7 +193,6 @@ if TYPE_CHECKING:
         _check_bash_sleep_poll_pattern,
         _check_bash_state_change_command_chaining,
         _check_bash_unbounded_home_traversal,
-        _check_bash_unverified_atk_help,
         _check_bash_uv_run_python,
     )
 
@@ -427,11 +426,7 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if (
-        _check_bash_state_change_command_chaining(command) == "block"
-        or _check_bash_help_with_execution(command) == "block"
-        or _check_bash_unverified_atk_help(command, session_id) == "block"
-    ):
+    if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
         return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),

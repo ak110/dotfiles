@@ -30,7 +30,7 @@
 
 ## 既存キュー項目との照合
 
-対象リポジトリを受領した場合は、`atk wi list`、`atk wi grep`及び`atk wi show`へ`--target-repo`と`--skip-pull`を付けて未処理項目と候補を照合する。`atk wi grep`の終了コード1は一致0件として扱う。重複は同一事象、部分重複又は別事象として候補へ記録する。
+対象リポジトリを受領した場合は、未処理項目と候補を照合する。一覧の取得には`atk wi list --target-repo=<対象リポジトリ> --skip-pull`を使う。本文の検索には`atk wi grep <Pythonの正規表現> --target-repo=<対象リポジトリ> --skip-pull`を使う。個別の本文の取得には`atk wi show <ファイル名>... --target-repo=<対象リポジトリ> --skip-pull`を使う。`atk wi grep`の終了コード1は一致0件として扱う。重複は同一事象、部分重複又は別事象として候補へ記録する。
 
 ## 対策の登録
 

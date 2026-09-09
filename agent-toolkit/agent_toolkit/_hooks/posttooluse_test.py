@@ -151,53 +151,6 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
-class TestAtkHelpObservation:
-    """成功したヘルプ専用の`atk`呼び出しだけを状態へ記録する。"""
-
-    def test_claude_help_only_call_records_resolved_subcommand(self, tmp_path: pathlib.Path) -> None:
-        session_id = "record-atk-help"
-        result = _run(
-            {
-                "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi add --help"},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert _read_state(tmp_path, session_id)["observed_atk_help"] == ["atk wi add"]
-
-    def test_codex_help_only_call_is_not_recorded_without_exit_code(self, tmp_path: pathlib.Path) -> None:
-        session_id = "ignore-codex-atk-help"
-        result = _run(
-            {
-                "session_id": session_id,
-                "turn_id": "turn-codex",
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi add --help"},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert "observed_atk_help" not in _read_state(tmp_path, session_id)
-
-    def test_non_help_call_is_not_recorded(self, tmp_path: pathlib.Path) -> None:
-        session_id = "ignore-atk-non-help"
-        result = _run(
-            {
-                "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi add example"},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert "observed_atk_help" not in _read_state(tmp_path, session_id)
-
-
 class TestCodexBashStateRecording:
     """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
 
