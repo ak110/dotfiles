@@ -28,7 +28,8 @@ rebase・merge時に`version`が競合した場合は、`(major, minor, patch)`�
 反映後に`scripts/sync_codex_plugin_manifests.py`でAgent Plugins・Codex向け派生manifestを同期し、
 `scripts/sync_codex_plugin_manifests.py --check`で派生物を変更せず整合性を検査する。
 検査は最新なら終了コード0、不整合なら終了コード1、引数誤用なら終了コード2とする。
-4ファイルの`version`と`description`が一致することを確認する。
+同スクリプトが正本間の`version`と`description`の一致と派生manifestの内容一致をまとめて判定するため、
+派生先のパスを列挙して`jq`などの別コマンドで各ファイルの値を突き合わせない。
 
 rebaseまたはmerge後はGit競合の有無にかかわらず、公開済みの統合先と現在の正本の`version`値を比較する。
 自分の未公開コミットにエンドユーザーの振る舞いを変えるplugin変更が残り、両者の値が同じ場合は、
