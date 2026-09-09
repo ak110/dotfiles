@@ -151,6 +151,7 @@ class TestRemoveAllConfirmation:
         assert "# uwi" in captured.out
         assert "[inbox/unanswered]" in captured.out
         assert "上記2件を削除します" in captured.out
+        assert "[Y/n]" in captured.out
         assert stdin.tell() == 2
         assert not (notes / "inbox/awi.md").exists()
         assert not (notes / "inbox/question.md").exists()
@@ -196,7 +197,24 @@ class TestRemoveAllConfirmation:
 
         assert all((notes / state).is_dir() for state in commits[0][1])
 
-    @pytest.mark.parametrize("answer", ["n\n", "\n", "later\n"])
+    def test_empty_answer_removes_candidates(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """空入力は表示どおり既定の承認として候補を削除する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "awi.md")
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+        monkeypatch.setattr(sys, "stdin", _TtyInput("\n"))
+
+        assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
+
+        assert not path.exists()
+        assert len(commits) == 1
+
+    @pytest.mark.parametrize("answer", ["n\n", "later\n"])
     def test_non_approval_keeps_all_candidates(
         self,
         answer: str,
