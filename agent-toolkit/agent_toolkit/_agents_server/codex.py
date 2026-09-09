@@ -522,7 +522,13 @@ class AppServerManager:
         self.sessions[session_id] = session
         _initialize_turn(session)
         try:
-            await self._resume_thread(session, client)
+            writer_session_id = await self._resume_thread(
+                session,
+                client,
+                self._writer_session_ids.get(session.session_id),
+            )
+            if writer_session_id is not None:
+                self._writer_session_ids[session.session_id] = writer_session_id
             await prompt.deliver(lambda value: self._start_turn(session, value, client))
         except asyncio.CancelledError:
             await self._cancel_resume(session)
@@ -649,7 +655,13 @@ class AppServerManager:
         self._begin_reply(session)
         try:
             client = await self._ensure_client()
-            await self._resume_thread(session, client)
+            writer_session_id = await self._resume_thread(
+                session,
+                client,
+                self._writer_session_ids.get(session.session_id),
+            )
+            if writer_session_id is not None:
+                self._writer_session_ids[session.session_id] = writer_session_id
         except Exception as exc:
             await self._mark_failed(session, exc, retryable=True)
             return "reply_failed", session.public_status(), exc
@@ -663,7 +675,12 @@ class AppServerManager:
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
 
-    async def _resume_thread(self, session: SessionState, client: Any) -> None:
+    @staticmethod
+    async def _resume_thread(
+        session: SessionState,
+        client: Any,
+        writer_session_id: str | None = None,
+    ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
@@ -673,10 +690,11 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
-        config, owner_session_id, writer_session_id = self._thread_config(
-            session.session_id,
-            lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS,
-        )
+        config: dict[str, Any] = {"project_doc_max_bytes": 0} if session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else {}
+        owner_session_id = _plan_file.resolve_owner_session_id()
+        if owner_session_id is not None:
+            writer_session_id = writer_session_id or uuid.uuid4().hex
+            config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
         if config:
             resume_params["config"] = config
         resume_params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[session.launch_kind]}\n{AUTO_RESUME_NOTICE}"
@@ -686,6 +704,7 @@ class AppServerManager:
             raise AppServerError("thread/resume returned an unexpected thread.id")
         if owner_session_id is not None and writer_session_id is not None:
             status_file.write_host_alias(owner_session_id, writer_session_id, session.session_id)
+        return writer_session_id
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:

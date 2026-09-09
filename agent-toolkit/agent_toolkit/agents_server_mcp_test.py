@@ -2456,6 +2456,7 @@ async def test_codex_explore_changes_thread_start_only(
     tmp_path: pathlib.Path,
 ) -> None:
     """Codex探索起動はthreadの指示源だけを軽量化し、turn入力を変えない。"""
+    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     normal_manager = codex_backend.AppServerManager()
     normal_client = FakeCodexClient()
 
@@ -2489,6 +2490,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
     tmp_path: pathlib.Path,
 ) -> None:
     """Codexのシェル実行起動は探索と同じthread条件で開始し、指示だけを実行専用へ替える。"""
+    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     manager = codex_backend.AppServerManager()
     client = FakeCodexClient()
 
@@ -2504,8 +2506,9 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
 
 
 @pytest.mark.asyncio
-async def test_codex_resume_passes_delegate_instructions(tmp_path: pathlib.Path) -> None:
+async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """Codexの再開は起動種別に応じた委譲先宣言をthread/resumeへ渡す。"""
+    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     client = FakeCodexClient()
     normal_session = subject.SessionState("thread-normal", str(tmp_path), engine="codex")
     explore_session = subject.SessionState("thread-explore", str(tmp_path), engine="codex", launch_kind="explore")
@@ -2789,6 +2792,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     tmp_path: pathlib.Path,
 ) -> None:
     """共有MCP層のstartが保存済みCodex threadを再開する。"""
+    monkeypatch.setattr(codex_backend._plan_file, "resolve_owner_session_id", lambda: None)
     manager = subject.AgentsServerManager()
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
     client = FakeCodexClient()
