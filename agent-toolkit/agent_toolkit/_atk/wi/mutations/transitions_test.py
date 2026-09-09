@@ -46,6 +46,13 @@ _USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
 
 
+def _write_body_file(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
+    """CLIへ渡す本文ファイルを作成する。"""
+    body_file = tmp_path / "body.md"
+    body_file.write_text(body, encoding="utf-8")
+    return body_file
+
+
 def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """平引数遷移が戻り値とファイル移動を一貫して反映する。"""
     notes = _setup_notes(tmp_path)
@@ -617,21 +624,8 @@ def test_agent_environment_plan_edit_preserves_saved_user_comment(
     )
     monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
     monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda *_args: "a" * 40)
-
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(
-            [
-                "wi",
-                "edit",
-                filename,
-                "編集後",
-                "--plan-file",
-                str(plan),
-                "--target-repo",
-                "github.com/example/foo",
-            ],
-            home=tmp_path,
-        )
+        atk.main(_edit_plan_args(tmp_path, filename, "編集後", plan), home=tmp_path)
 
     assert exc_info.value.code == 0
     saved = notes / "inbox" / filename
@@ -685,9 +679,10 @@ class TestAppendEdit:
         path = _write_awi_file(notes, "fb-001.md", body="本文")
         original = path.read_bytes()
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        body_file = _write_body_file(tmp_path, "追記本文")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+            atk.main(["wi", "edit", "--append", "fb-001.md", "--body-file", str(body_file)], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert path.read_bytes() == original + b"\n\n" + "追記本文".encode()
@@ -703,9 +698,10 @@ class TestAppendEdit:
         path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\n" + "本文\r\n".encode())
         original = path.read_bytes()
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        body_file = _write_body_file(tmp_path, "追記本文")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+            atk.main(["wi", "edit", "--append", "fb-001.md", "--body-file", str(body_file)], home=tmp_path)
 
         assert exc_info.value.code == 0
         assert path.read_bytes() == original + b"\n\n" + "追記本文".encode()
@@ -723,9 +719,10 @@ class TestAppendEdit:
         path = _write_uwi_entry(notes, "uwi-001.md", answer=answer)
         original = path.read_bytes()
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        body_file = _write_body_file(tmp_path, "追記本文")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "--append", "uwi-001.md", "追記本文"], home=tmp_path)
+            atk.main(["wi", "edit", "--append", "uwi-001.md", "--body-file", str(body_file)], home=tmp_path)
 
         assert exc_info.value.code == 1
         assert "UWIには追記できません" in capsys.readouterr().err
@@ -767,9 +764,10 @@ class TestAppendEdit:
 
         monkeypatch.setattr(mutations, "append_entry_content", conflict)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        body_file = _write_body_file(tmp_path, "追記本文")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "--append", "fb-001.md", "追記本文"], home=tmp_path)
+            atk.main(["wi", "edit", "--append", "fb-001.md", "--body-file", str(body_file)], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -1077,9 +1075,10 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
         "_read_saved_entry_details",
         read_after_alteration,
     )
+    body_file = _write_body_file(tmp_path, "編集後")
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "edit", filename, "編集後"], home=tmp_path)
+        atk.main(["wi", "edit", filename, "--body-file", str(body_file)], home=tmp_path)
 
     assert exc_info.value.code == 1
     position = captured["expected"].index("編集後") + 1

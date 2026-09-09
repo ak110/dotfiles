@@ -56,3 +56,25 @@ def test_run_quiet_redirects_failure_stdout_to_stderr(
     assert error.returncode == 1
     assert error.output
     assert error.stderr == ""
+
+
+def test_run_quiet_can_hold_failure_output(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """出力転送を無効にした失敗は診断を例外だけへ保持する。"""
+    subject.run_quiet(["init", "--initial-branch=main"], tmp_path)
+    capsys.readouterr()
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        subject.run_quiet(
+            ["rev-parse", "--verify", "missing"],
+            tmp_path,
+            forward_error_output=False,
+        )
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert exc_info.value.output == ""
+    assert exc_info.value.stderr

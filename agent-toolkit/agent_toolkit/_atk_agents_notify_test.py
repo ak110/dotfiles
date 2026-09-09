@@ -61,6 +61,22 @@ def test_agents_notify_reads_body_file(
     assert payload["body"] == "本文\r\n"
 
 
+def test_agents_notify_reads_shell_metacharacters_from_body_file(
+    notify_environment: pathlib.Path,
+    tmp_path: pathlib.Path,
+) -> None:
+    """シェルメタ文字を含む本文をファイル経由で原文保持する。"""
+    body = "error: can't expand '$VALUE' or `command`\nnext line\n"
+    body_path = tmp_path / "body.txt"
+    body_path.write_bytes(body.encode())
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents-notify", "--body-file", str(body_path)])
+
+    payload = json.loads(next(notify_environment.glob("child-session.*.json")).read_text(encoding="utf-8"))
+    assert payload["body"] == body
+
+
 def test_agents_notify_rejects_missing_delegated_identity(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

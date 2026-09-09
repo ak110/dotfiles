@@ -145,7 +145,7 @@ def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
 
 
 def _reject_agent_user_comment_message(message: str) -> bool:
-    """エージェント環境のMESSAGEが予約見出しを含む場合に真を返す。"""
+    """エージェント環境の本文が予約見出しを含む場合に真を返す。"""
     if not is_agent_environment() or not _user_comment.has_reserved_heading(message):
         return False
     print(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, file=sys.stderr)
@@ -164,6 +164,18 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     if not saved_user_comment:
         return updated
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
+
+
+def _require_agent_edit_source(content: str) -> None:
+    """エージェント環境の編集結果でsourceが確定していることを検証する。"""
+    if not is_agent_environment():
+        return
+    parsed = _frontmatter.parse_frontmatter(content)
+    raw_source = parsed[0].get("source") if parsed is not None else None
+    if not isinstance(raw_source, str) or not raw_source:
+        raise WebInputError(
+            "エージェント環境ではsourceの明示が必須です。本文先頭のfrontmatterで`source: <出所>`を指定してください。"
+        )
 
 
 def edit_entry_content(
@@ -240,7 +252,7 @@ def append_entry_content(
 
 
 def _build_noninteractive_edit_content(path: pathlib.Path, original: str, message: str) -> str:
-    """MESSAGEを既存メタデータへ重ね、種別別の保存内容を返す。"""
+    """本文ファイルの内容を既存メタデータへ重ね、種別別の保存内容を返す。"""
     parsed = _frontmatter.parse_frontmatter(original)
     if parsed is None:
         raise WebInputError(f"frontmatterが破損しているため編集できません: {path.name}")
@@ -315,11 +327,9 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
 
 
 def _resolve_edit_message(args: argparse.Namespace) -> str | None:
-    """MESSAGE又は本文ファイルを単一の編集本文へ解決する。"""
+    """本文ファイルを単一の編集本文へ解決する。"""
     if args.body_file is None:
-        return args.message
-    if args.message is not None:
-        args.subparser.error("--body-fileとMESSAGEは併用できません。")
+        return None
     try:
         return _add.read_body_files([args.body_file])[0]
     except WebInputError as error:
@@ -327,28 +337,8 @@ def _resolve_edit_message(args: argparse.Namespace) -> str | None:
         sys.exit(1)
 
 
-def _reject_positional_edit_file_path(args: argparse.Namespace, message: str) -> None:
-    """位置引数MESSAGEだけを、編集種別に対応する案内付きで検査する。"""
-    if args.body_file is not None:
-        return
-    if args.plan_file is not None:
-        operation = "計画型編集"
-        hint = "ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。"
-    elif args.append:
-        operation = "追記"
-        hint = "MESSAGEには追記する本文を指定してください。"
-    else:
-        operation = "編集"
-        hint = "ファイル内容を本文にする場合はMESSAGEを省略し、エディターで貼り付けてください。"
-    try:
-        _add.reject_message_file_path(message, file_input_hint=hint)
-    except WebInputError as error:
-        print(f"{operation}を拒否しました: {error}", file=sys.stderr)
-        sys.exit(1)
-
-
 def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """editサブコマンド: MESSAGE又は$EDITORで対象を編集しcommit・pushする。
+    """editサブコマンド: `--body-file`又は$EDITORで対象を編集しcommit・pushする。
 
     無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
     """
@@ -357,19 +347,17 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         args.subparser.error("--depends-onは--plan-fileとともに指定してください。")
     if args.plan_file is not None:
         if args.filename is None or message is None:
-            args.subparser.error("--plan-fileではFILENAMEとMESSAGEを指定してください。")
+            args.subparser.error("--plan-fileではFILENAMEと--body-fileを指定してください。")
         if args.append:
             args.subparser.error("--plan-fileと--appendは併用できません。")
         assert args.filename is not None
         assert message is not None
     elif args.append:
         if args.filename is None or message is None:
-            args.subparser.error("--appendではFILENAMEとMESSAGEを指定してください。")
+            args.subparser.error("--appendではFILENAMEと--body-fileを指定してください。")
         assert message is not None
     elif message is not None and args.filename is None:
-        args.subparser.error("MESSAGEを指定する場合はFILENAMEも指定してください。")
-    if message is not None:
-        _reject_positional_edit_file_path(args, message)
+        args.subparser.error("--body-fileを指定する場合はFILENAMEも指定してください。")
     if args.plan_file is not None:
         assert args.filename is not None
         assert message is not None
@@ -415,7 +403,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except RuntimeError:
             print(
                 f"編集中に他プロセスが対象を変更しました: {snapshot_path.name}。"
-                "指定したMESSAGEは反映されていません。同じFILENAMEとMESSAGEで再実行してください。",
+                "指定した本文は反映されていません。同じFILENAMEと--body-fileで再実行してください。",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -490,6 +478,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         sys.exit(1)
+    try:
+        _require_agent_edit_source(edited)
+    except WebInputError as error:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        print(f"編集を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
     finalized_content: dict[str, str] = {}
     try:
         edit_entry_content(
@@ -505,7 +500,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if tmp_path is None:
             print(
                 f"編集中に他プロセスが対象を変更しました: {path.name}。"
-                "指定したMESSAGEは反映されていません。同じFILENAMEとMESSAGEで再実行してください。",
+                "指定した本文は反映されていません。同じFILENAMEと--body-fileで再実行してください。",
                 file=sys.stderr,
             )
         else:
@@ -527,7 +522,7 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
-    """Edit --appendサブコマンド: 既存raw bytesを保ってMESSAGEを末尾へ追記する。"""
+    """Edit --appendサブコマンド: 既存raw bytesを保って`--body-file`の本文を末尾へ追記する。"""
     assert args.filename is not None
     if _reject_agent_user_comment_message(message):
         sys.exit(1)
@@ -571,7 +566,7 @@ def _cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: 
     except RuntimeError:
         print(
             f"追記中に他プロセスが対象を変更しました: {path.name}。"
-            "指定したMESSAGEは反映されていません。同じFILENAMEとMESSAGEで再実行してください。",
+            "指定した本文は反映されていません。同じFILENAMEと--body-fileで再実行してください。",
             file=sys.stderr,
         )
         sys.exit(1)

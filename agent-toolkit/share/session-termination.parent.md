@@ -30,7 +30,7 @@
 `終端完了`に続く8行を受領し、次のとおり照合する。いずれかが一致しない場合は同じ終端担当へ差し戻し、成果物と実装差分の再読解をしない。
 
 - `git -C <対象リポジトリの絶対パス> rev-parse <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
-- `post_integration_verification`が、`統合後検証`へ`なし`を渡した場合は`なし`、それ以外は`成功`である
+- `post_integration_verification`が、`統合後検証`へ`なし`を渡した場合は`なし`、それ以外は`成功`又は`CI委譲`である。`CI委譲`を受領した場合は、当該検証の結論を`ci_result`の照合で確定し、当該行の値だけを理由に差し戻さない
 - `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
 - `ci_verified_head`と`final_branch_head`が異なる場合は、両OIDの差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head>`で取得する。当該完全OIDの集合が、`terminal_steps`が挙げる生成commitの完全OIDの集合と過不足なく一致することを確認する。この場合に`final_branch_head`のCIを照会せず、`final_branch_head`のCIが成功したものとして扱わない
 - `base_branch_state`が`公開済み`である

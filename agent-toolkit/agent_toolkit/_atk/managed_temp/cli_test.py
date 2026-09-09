@@ -23,6 +23,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
+from agent_toolkit._atk.managed_temp import cli as cli_subject
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
@@ -60,6 +61,61 @@ def test_cleanup_without_path_reports_managed_targets(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == expected
+
+
+def test_cleanup_passes_force_remove_to_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """公開CLIの`--force-remove`を後始末処理へ渡す。"""
+    calls: list[tuple[pathlib.Path, bool, bool]] = []
+
+    def cleanup(path: pathlib.Path, *, recover_registry: bool, force_remove: bool) -> None:
+        calls.append((path, recover_registry, force_remove))
+
+    monkeypatch.setattr(cli_subject, "cleanup_managed_temp", cleanup)
+
+    assert subject.main(["cleanup", "--path", str(tmp_path / "target"), "--force-remove"]) == 0
+    assert calls == [(tmp_path / "target", False, True)]
+
+
+def test_session_id_create_is_idempotent_and_cleanup_resolves_target(tmp_path: pathlib.Path) -> None:
+    """同じsession_idの作成は既存pathを返し、session_id指定で回収できる。"""
+    env, _ = _isolated_cli_environment(tmp_path)
+    command = [sys.executable, str(_SCRIPT), "create", "--prefix", "session", "--session-id", "session-1"]
+
+    first = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+    second = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+    target = pathlib.Path(first.stdout.strip())
+    cleaned = subprocess.run(
+        [sys.executable, str(_SCRIPT), "cleanup", "--session-id", "session-1"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert second.stdout == first.stdout
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not target.exists()
+
+
+def test_cleanup_rejects_path_with_session_id(tmp_path: pathlib.Path) -> None:
+    """cleanupの対象指定はpathとsession_idのいずれか一方に限る。"""
+    with pytest.raises(SystemExit) as captured:
+        subject.main(
+            [
+                "cleanup",
+                "--path",
+                str(tmp_path / "target"),
+                "--session-id",
+                "session-1",
+            ]
+        )
+
+    assert captured.value.code == 2
 
 
 @pytest.mark.parametrize(

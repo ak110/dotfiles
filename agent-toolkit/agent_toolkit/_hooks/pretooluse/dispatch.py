@@ -160,6 +160,7 @@ if TYPE_CHECKING:
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
+        check_required_read_before_ask_user_question,
         _handle_language_check,
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
@@ -193,7 +194,6 @@ if TYPE_CHECKING:
         _check_bash_sleep_poll_pattern,
         _check_bash_state_change_command_chaining,
         _check_bash_unbounded_home_traversal,
-        _check_bash_unverified_atk_help,
         _check_bash_uv_run_python,
     )
 
@@ -316,7 +316,7 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
+        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, session_id, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
@@ -427,11 +427,7 @@ def _handle_bash_tool(
     truncation_result = _check_bash_output_truncation(command, session_id)
     if truncation_result == "block":
         return 2
-    if (
-        _check_bash_state_change_command_chaining(command) == "block"
-        or _check_bash_help_with_execution(command) == "block"
-        or _check_bash_unverified_atk_help(command, session_id) == "block"
-    ):
+    if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
         return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
@@ -491,10 +487,14 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
 def _handle_user_facing_text_tool(
     tool_name: str,
     tool_input: dict,
+    session_id: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
     """質問・計画本文へ編集入力と同じ言語品質検査を適用する。"""
+    if tool_name == "AskUserQuestion" and check_required_read_before_ask_user_question(session_id) == "block":
+        flush_warning()
+        return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2

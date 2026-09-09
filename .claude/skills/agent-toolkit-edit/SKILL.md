@@ -36,9 +36,10 @@ description: >
 
 ### scripts配下の配置
 
-`agent-toolkit/scripts/`直下には、配布物の外部から絶対パスで解決される入口だけを置く。
+`agent-toolkit/agent_toolkit/`直下には、配布物の外部から絶対パスで解決される入口だけを置く。
 入口は`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`とする。
-リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`も入口とする。
+リモートホスト上で読み込んで実行する`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`は、
+`agent-toolkit/scripts/`直下に置く。これらも入口とする。
 実装モジュールは責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ置く。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
@@ -47,7 +48,7 @@ description: >
 `_testing`は層の順序に含めない例外とし、`*_test.py`だけがimportできる。
 新しいモジュールの追加先は、当該モジュールを読み込む主体が属するサブパッケージで判定する。
 直下の入口は接頭辞`_`を付けずに命名する。
-`_managed_temp.py`だけは外部の許可判定が当該パスを解決するため名前を維持し、`agent-toolkit/scripts/script_prefix_test.py`が当該1件を除外する。
+`_managed_temp.py`だけは外部の許可判定が当該パスを解決するため名前を維持し、`agent-toolkit/agent_toolkit/script_prefix_test.py`が当該1件を除外する。
 
 サブパッケージ内のimportには絶対importを使う。
 `scripts/check_script_imports.py`が相対importを解析の対象にせず、相対importへ変えるとimport到達性の検査の被覆が失われるためである。
@@ -62,6 +63,20 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 `rust/claude-statusline/src/agents_server.rs`も同じ対象とする。
 同書は共有状態ごとの正本と、読む主体・更新できる主体の対応を保持する。
 状態の正本、更新できる主体又は状態ディレクトリ配下のファイル種別を変える実装では、同書を同じ変更単位で更新する。
+
+### atk serveの静的資産
+
+`agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する場合は次の3点を守る。
+
+- 書体、文字サイズ、行の高さ、字間及び文字色は`:root`のカスタムプロパティーと`body`で一元定義し、
+  `#screen-wi`・`#screen-plans`・`#screen-sessions`のIDセレクター配下でこれらを再定義しない
+- `#screen-*`のIDセレクター直下へ、本文の装飾を担う裸のタグセレクター
+  （`a`・`h1`から`h6`・`p`・`ul`・`ol`・`li`・`hr`・`blockquote`・`code`・`pre`・`table`・`thead`・`th`・`td`・`img`・`strong`）を書かない。
+  Markdown本文とセッション本文向けの装飾は、本文コンテナー用クラス`.markdown-body`を経由してだけ適用する。
+  画面の骨組みを選ぶ`main`・`aside`と入力部品を選ぶ`input`・`select`・`textarea`・`dialog`は、
+  前項が挙げる5つの宣言を持たない限り本項の対象にしない
+- 共有シェル部品（`.app-header`・`.app-nav`・共通ダイアログ・`main > .toolbar`）は3画面で同一の規則を共有し、
+  画面別の上書きを水平方向の余白だけに限る
 
 ### MCPサーバー識別子とホスト別ツール名
 
@@ -85,6 +100,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - 配布物のdocstring・コメント・本文には配布物自身の挙動・仕様のみを記述し、
   エンドユーザー環境側の連携設計（個人フックとの優先順序など）は書かない
 - 配布物内の記述が参照するSSOTは配布物内に配置し、dotfiles固有ファイル・非配布対象ファイルを参照先にしない
+  - 例外: 実測を根拠とする条文が指す監査記録（`docs/development/audit-records.md`）は本規定の対象外とする。当該記録は条文の失効判定でだけ読むため、判断のたびに読む条文から分離して配布物の外へ置く。当該索引が配布物から解決しないことは`agent-toolkit/rules/01-agent.md`「調査と検証」が明示する
 - 配布物文面は実ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名検査を適用し、
   検出した個人環境固有の識別子を一般化表現へ置き換える
 - 配布物スキル本文でhook内部の実装挙動
@@ -110,7 +126,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 
 エンドユーザー環境で実行される実行時パス（`hooks.json`の`command`・エージェント/スキル本文の実行コマンド例）は`${CLAUDE_PLUGIN_ROOT}/<相対パス>`形式に統一する。
 プラグイン配布物のルートはインストール先で動的に解決されるため、dotfilesリポジトリ相対パスはエンドユーザー環境で実行不能となる。
-規範文書内で役割を説明する言及（「〜は`agent-toolkit/scripts/<name>.py`が担う」等）はリポジトリ相対表記のままでよい。
+規範文書内で役割を説明する言及（「〜は`agent-toolkit/agent_toolkit/<name>.py`が担う」等）はリポジトリ相対表記のままでよい。
 判定基準は当該パスをエンドユーザー環境で実行するか否かとする。
 Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`env`の各値に含まれる`${CLAUDE_PLUGIN_ROOT}`を`${PLUGIN_ROOT}`へ変換する。Claude Code側の実行時パスは前項の形式を維持する。
 
@@ -134,7 +150,7 @@ rebase・merge時の版数競合は`references/version-bump.md`「競合解決�
 
 - `agent-toolkit/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリ
-整合性は`agent-toolkit/scripts/_hooks/pretooluse_test.py`の`TestManifestSsot`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
+整合性は`agent-toolkit/agent_toolkit/_hooks/pretooluse/git_checks_test.py`の`TestManifestSsot`が検査し、`uv run --frozen pyfltr run`で自動的に失敗する。
 Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと
 `agent-toolkit/.mcp.json`を正本として`scripts/sync_codex_plugin_manifests.py`が生成する。
 Agent Plugins・Codex向け生成物を手動編集してはならない。
@@ -159,7 +175,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`の編集は、生成差分もClaude配布一覧の変更も生じさせないが、バージョン更新の規定は適用する
-- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/scripts/_plan/structure.py`が構造定数として名称を持つものは、同ファイルを正本とする。
+- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が構造定数として名称を持つものは、同ファイルを正本とする。
   改訂するときは同ファイルの構造定数を変更し、`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、
   `agent-toolkit/share/`配下の担当タスク文書、`docs/development/design.md`、`docs/development/concepts.md`及び
   `docs/guide/claude-code-guide.md`のうち当該名称を持つ記述を同じ変更単位でそろえる。
@@ -201,7 +217,7 @@ hookに新規にブロックされた場合は、まず作業ツリーと稼働�
 当該hookが参照する配布先のファイルを`diff`等で比較してから対応する。
 
 常駐するMCPサーバープロセス（`agent-toolkit/agent_toolkit/agents_server_mcp.py`等）は、起動時に読み込んだ
-Pythonモジュールを保持し続けるため、`agent-toolkit/scripts/`配下の修正は当該プロセスの再起動まで反映されない。
+Pythonモジュールを保持し続ける。このため、`agent-toolkit/agent_toolkit/`配下の修正は当該プロセスの再起動まで反映されない。
 修正の確定後も同じ事象を観測した場合は、修正が無効であると結論する前に当該プロセスが読み込んだ版を確定する。
 起動時刻だけでは判別できない。別の作業ツリーや別のplugin rootから起動したプロセスは、
 修正commitより後に起動していても当該修正を含まないファイルを読み込み得るためである。

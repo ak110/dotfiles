@@ -264,13 +264,16 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
     return event
 
 
-def _question_answers_event(pairs: list[tuple[str, list[str]]]) -> dict[str, Any] | None:
+def _question_answers_event(pairs: list[tuple[str, list[str], str]]) -> dict[str, Any] | None:
     """質問と回答を共通書式の単一userイベントへ変換する。"""
     sections: list[str] = []
-    for question, answers in pairs:
+    for question, answers, notes in pairs:
         clipped_answers = [_clip(answer) for answer in answers]
         answer_text = "\n".join(clipped_answers)
-        sections.append(f"質問: {_clip(question)}\n回答: {answer_text}")
+        section = f"質問: {_clip(question)}\n回答: {answer_text}"
+        if notes:
+            section += f"\n自由記述: {_clip(notes)}"
+        sections.append(section)
     return _event("user", "\n".join(sections))
 
 
@@ -296,6 +299,7 @@ def _claude_answers_event(
     """対応するAskUserQuestionの結果だけを回答イベントへ変換する。
 
     質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
+    `annotations`の`notes`はユーザーが選択肢の外へ書いた自由記述であり、`preview`は取り込まない。
     """
     if not isinstance(content, list):
         return None
@@ -315,7 +319,13 @@ def _claude_answers_event(
         isinstance(question, str) and isinstance(answer, str) for question, answer in answers.items()
     ):
         return None
-    event = _question_answers_event([(question, [answer]) for question, answer in answers.items()])
+    annotations = result.get("annotations")
+    pairs: list[tuple[str, list[str], str]] = []
+    for question, answer in answers.items():
+        annotation = annotations.get(question) if isinstance(annotations, dict) else None
+        notes = annotation.get("notes") if isinstance(annotation, dict) else ""
+        pairs.append((question, [answer], notes if isinstance(notes, str) else ""))
+    event = _question_answers_event(pairs)
     if event is not None:
         event["line"] = question_line
     return event
@@ -508,7 +518,7 @@ def _codex_question_output_event(
     raw_answers = output.get("answers")
     if not isinstance(raw_answers, dict):
         return None
-    pairs: list[tuple[str, list[str]]] = []
+    pairs: list[tuple[str, list[str], str]] = []
     for question_id, question in questions.items():
         answer_data = raw_answers.get(question_id)
         if not isinstance(answer_data, dict):
@@ -516,7 +526,7 @@ def _codex_question_output_event(
         answers = answer_data.get("answers")
         if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
             continue
-        pairs.append((question, answers))
+        pairs.append((question, answers, ""))
     if not pairs:
         return None
     event = _question_answers_event(pairs)

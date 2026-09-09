@@ -12,7 +12,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
 - mq convert-to-plan/set-dependencies: 既存AWIの計画実装型への変換・明示依存の更新
-- mq edit: MESSAGEによる非対話編集又は$EDITORによる保存ファイル全体の編集
+- mq edit: `--body-file`による非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: UWIへの回答
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
   初回の`--resume`は再開後のプロンプト入力をユーザーへ委ねる。
@@ -127,9 +127,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     """`wi add`のサブコマンド名直後のトークンが実在ディレクトリの場合、argparseへ渡す前に取り除く。
 
     REPO_PATH位置引数廃止後の後方互換のため、argparse解析前の生argvへ適用する。
-    `messages`側のnargs="*"単一positionalでは、オプションで分断され前後2箇所に分かれた
-    位置引数を一括で解決できない（argparseの既知の制約）ため、サブコマンド名直後という
-    先頭位置に限定して抽出することで後続のオプション・MESSAGE位置を通常解析に委ねる。
+    サブコマンド名直後という先頭位置に限定して抽出し、後続のオプションは通常解析に委ねる。
     """
     if len(argv) < 2 or (argv[0], argv[1]) != ("wi", "add"):
         return argv, None
@@ -258,24 +256,12 @@ def _add_wi_add_parser(sub: Any) -> None:
     """投入サブコマンドを登録する。"""
     add = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk wi add"])
     add.add_argument(
-        "messages",
-        metavar="MESSAGE",
-        nargs="*",
-        help=(
-            "投入する本文（省略時は$EDITORで編集する）。--type=awi（既定）・uwiで種別を切り替える。"
-            "対象リポジトリは省略時にカレントworktree、ローカルパス指定時に指定worktree、"
-            "正規化リモートURL指定時にローカルHEADを持たないリポジトリ識別子として解決する。"
-            "メッセージ先頭がYAML frontmatter形式の場合はtarget_repo・sourceをCLIオプションより優先する。"
-        ),
-    )
-    add.add_argument(
         "--body-file",
         metavar="PATH",
         action="append",
         default=None,
         help=(
             "本文を記載したファイルのパス。複数回指定すると複数件を投入する。"
-            "MESSAGE位置引数とは併用できない。"
             "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
         ),
     )
@@ -295,6 +281,14 @@ def _add_wi_add_parser(sub: Any) -> None:
             "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
             "復元できない点は限界として許容する。"
             "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
+        ),
+    )
+    add.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "本文と引数の検証だけを行い、private-notes、remote及び対象リポジトリのいずれも変更せずに終了する。"
+            "検証が成立しない場合は終了コード1で終わる。--batchとは併用できない。"
         ),
     )
     add.add_argument(
@@ -329,7 +323,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "計画ファイルの絶対パス。指定するとAWIを計画実装型として確定記録する。"
             "--type=awi（既定）でのみ指定でき、frontmatterへ記録する値へ正規化したうえで保存先の実体の実在を検証する。"
             "計画作業rootにだけ実体がある計画は、先に`atk plans commit`で保存する。"
-            "メッセージfrontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
+            "本文frontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
             "計画ファイルのベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない。"
         ),
     )
@@ -347,12 +341,16 @@ def _add_wi_add_parser(sub: Any) -> None:
         help=(
             "投入元の識別子（任意。frontmatterに source: <NAME> として記録する。既知値: "
             "session-review・alert-monitor・agent・human・plan）。"
-            "メッセージ先頭のfrontmatterに source がある場合は本オプションより優先する。"
+            "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )
     _add_target_repo_arg(
         add,
-        help_extra="frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。",
+        help_extra=(
+            "ローカルパス指定時は指定worktree、正規化リモートURL指定時は"
+            "ローカルHEADを持たないリポジトリ識別子として解決する。"
+            "frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。"
+        ),
     )
     add.set_defaults(subparser=add)
 
@@ -593,30 +591,23 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         default=None,
         help=(
             "編集対象のファイル名（inbox・processing・holdいずれも対象）。"
-            "MESSAGEとともに指定すると非対話で編集する。"
+            "--body-fileとともに指定すると非対話で編集する。"
             "省略時はinbox配下で最終追加のファイル（ファイル名順で最大）を$EDITORで編集する。"
         ),
     ).completer = _editable_filename_completer  # type: ignore[attr-defined]
     edit.add_argument(
-        "message",
-        metavar="MESSAGE",
-        nargs="?",
+        "--body-file",
+        metavar="PATH",
         default=None,
         help=(
-            "置換する論理本文。省略時は$EDITORで保存ファイル全体を編集する。"
+            "UTF-8ファイルの内容を本文として読み込む。"
             "先頭frontmatterで明示したメタデータだけを更新し、未指定メタデータを保持する。"
         ),
     )
     edit.add_argument(
-        "--body-file",
-        metavar="PATH",
-        default=None,
-        help="UTF-8ファイルの内容を本文として読み込む。MESSAGEとは併用できない。",
-    )
-    edit.add_argument(
         "--append",
         action="store_true",
-        help="FILENAMEの元のraw bytesを保ち、MESSAGEをUTF-8で末尾へ追記する。UWIは対象外。",
+        help="FILENAMEの元のraw bytesを保ち、--body-fileの本文をUTF-8で末尾へ追記する。UWIは対象外。",
     )
     edit.add_argument(
         "--plan-file",
@@ -639,13 +630,13 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         "filename",
         metavar="FILENAME",
         nargs="+",
-        help="変換する同一状態のAWIファイル名（1個以上）。holdでは--messageを指定する。",
+        help="変換する同一状態のAWIファイル名（1個以上）。holdでは--body-fileを指定する。",
     ).completer = _editable_filename_completer  # type: ignore[attr-defined]
     convert_to_plan.add_argument(
-        "--message",
-        metavar="MESSAGE",
+        "--body-file",
+        metavar="PATH",
         default=None,
-        help="hold項目を統合する計画型AWI本文。inbox・processingでは指定しない。",
+        help="hold項目を統合する計画型AWI本文を記載したUTF-8ファイル。inbox・processingでは指定しない。",
     )
     convert_to_plan.add_argument(
         "--plan-file",
@@ -915,6 +906,8 @@ def _validate_add_args(args: argparse.Namespace) -> None:
     `--type`の既定値を`None`とすることで、`--batch`との併用判定で明示指定
     （`--type=awi`を含む）を区別する。検証後に通常add経路の既定値`awi`へ正規化する。
     """
+    if args.batch and args.dry_run:
+        args.subparser.error("--dry-runは--batchと併用できません。")
     if args.batch:
         conflicting = [
             name

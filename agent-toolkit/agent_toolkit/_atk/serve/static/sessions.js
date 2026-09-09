@@ -270,6 +270,7 @@ function renderBack() {
 function renderDetail(detail) {
   detailTitleEl.textContent = `${ENGINE_LABELS[detail.engine] || detail.engine} / ${detail.host} / ${detail.project || "(プロジェクト不明)"}`;
   detailUsageEl.textContent = usageText(detail.usage);
+  // 子要素だけを差し替えるため、本文装飾を担う`#detail`自身のmarkdown-bodyクラスは保持される。
   detailEl.replaceChildren();
 
   if (parentTrail.length > 0) {

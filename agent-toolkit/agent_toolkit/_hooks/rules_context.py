@@ -13,6 +13,7 @@ import os
 import pathlib
 from typing import Any
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
@@ -20,10 +21,8 @@ _HOOK_ID = "agent-toolkit/rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 QUALITY_CHECKPOINT_NOTICE = (
-    "ユーザーが観測する本来の目的を明示する。必要な利用場面を満たす最小の設計を選ぶ。"
-    "エージェント向けの会話上の案内と永続的な成果物の文脈を分離し、会話だけに適用する指示を成果物へ混入させない。"
-    "要件を満たさない場合は明示的に失敗させる。根拠のないフォールバック、旧経路及び互換経路は温存せず撤去する。"
-    "`AGENTS.md`とagent-toolkitの規範を正本として扱う。"
+    "目的・利用場面を明示し、最小設計を選ぶ。会話限定指示を成果物へ混入させない。"
+    "要件未達と無根拠な代替・旧・互換経路を拒み、規範を正本とする。"
 )
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
@@ -31,6 +30,7 @@ MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
+SESSION_TEMP_PREFIX = "session"
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
@@ -69,6 +69,18 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
         content = compose_session_start(source, delegated=is_delegated(os.environ), host=host)
+        session_id = payload.get("session_id")
+        if isinstance(session_id, str) and session_id:
+            try:
+                session_temp = managed_temp.create_managed_temp(
+                    SESSION_TEMP_PREFIX,
+                    session_id=session_id,
+                )
+            except (managed_temp.ManagedTempError, OSError):
+                pass
+            else:
+                temp_context = f"このセッションの管理対象一時領域: {session_temp}"
+                content = f"{content}\n\n{temp_context}" if content else temp_context
     elif event_name == "SubagentStart":
         content = compose_subagent_start()
     else:

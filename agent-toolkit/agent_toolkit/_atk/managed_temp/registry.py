@@ -103,7 +103,7 @@ if TYPE_CHECKING:
     )
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _PREFIX_RULES = (
     ("空にできない", lambda value: value != ""),
@@ -155,6 +155,7 @@ class _ManagedTempEntry(typing.TypedDict):
     prefix: str | None
     created_at: str | None
     awis: list[str]
+    session_id: str | None
 
 
 class _WindowsApiError(ManagedTempError):
@@ -393,6 +394,7 @@ def _record(
     prefix: str,
     created_at: str,
     awis: tuple[str, ...],
+    session_id: str | None = None,
     identity: tuple[int, int] | None = None,
 ) -> dict[str, typing.Any]:
     record = _record_base(path, nonce, identity=identity)
@@ -402,6 +404,7 @@ def _record(
             "prefix": prefix,
             "created_at": created_at,
             "awis": list(awis),
+            "session_id": session_id,
         }
     )
     return record
@@ -483,9 +486,32 @@ def _records_match(
             awis=tuple(typing.cast(list[str], awis)),
             identity=identity,
         )
+        expected.pop("session_id")
         expected["schema_version"] = schema_version
         if schema_version == 3:
             expected["feedbacks"] = expected.pop("awis")
+    elif schema_version == 5:
+        prefix = registry.get("prefix")
+        created_at = registry.get("created_at")
+        awis = registry.get("awis")
+        session_id = registry.get("session_id")
+        if (
+            not isinstance(prefix, str)
+            or not is_valid_prefix(prefix)
+            or not _is_utc_iso8601(created_at)
+            or not _awis_are_valid(awis)
+            or not (session_id is None or isinstance(session_id, str))
+        ):
+            return False
+        expected = _record(
+            path,
+            typing.cast(str, nonce),
+            prefix=prefix,
+            created_at=typing.cast(str, created_at),
+            awis=tuple(typing.cast(list[str], awis)),
+            session_id=session_id,
+            identity=identity,
+        )
     else:
         return False
     return (

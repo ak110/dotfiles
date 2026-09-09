@@ -46,6 +46,16 @@ _USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
 
 
+def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, append: bool = False) -> list[str]:
+    """本文をファイルへ保存し、`atk wi edit`の引数列を返す。"""
+    body_path = tmp_path / f"{filename}.body.md"
+    body_path.write_text(message, encoding="utf-8")
+    args = ["wi", "edit", filename]
+    if append:
+        args.append("--append")
+    return [*args, "--body-file", str(body_path)]
+
+
 def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """holdとunholdは専用復旧状態を作成せず既存の状態遷移で往復する。"""
     notes = _setup_notes(tmp_path)
@@ -535,15 +545,15 @@ def test_agent_environment_allows_comment_neutral_edit_and_append(
 ) -> None:
     """ユーザーコメントを持たない通常本文の編集と追記はエージェント環境でも成功する。"""
     notes = _setup_notes(tmp_path)
-    edit_path = _write_awi_file(notes, "edit.md", body="編集前")
+    edit_path = _write_awi_file(notes, "edit.md", body="編集前", source="test")
     append_path = _write_awi_file(notes, "append.md", body="追記前")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
     with pytest.raises(SystemExit) as edit_exit:
-        atk.main(["wi", "edit", "edit.md", "編集後"], home=tmp_path)
+        atk.main(_edit_body_args(tmp_path, "edit.md", "編集後"), home=tmp_path)
     with pytest.raises(SystemExit) as append_exit:
-        atk.main(["wi", "edit", "--append", "append.md", "追記後"], home=tmp_path)
+        atk.main(_edit_body_args(tmp_path, "append.md", "追記後", append=True), home=tmp_path)
 
     assert edit_exit.value.code == 0
     assert append_exit.value.code == 0
@@ -557,12 +567,17 @@ def test_agent_environment_edit_preserves_saved_user_comment(
 ) -> None:
     """予約節を含まないMESSAGEで保存済みユーザーコメント節を保持する。"""
     notes = _setup_notes(tmp_path)
-    path = _write_awi_file(notes, "fb.md", body="編集前\n\n## ユーザーコメント\n\n保持する")
+    path = _write_awi_file(
+        notes,
+        "fb.md",
+        body="編集前\n\n## ユーザーコメント\n\n保持する",
+        source="test",
+    )
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "edit", "fb.md", "編集後"], home=tmp_path)
+        atk.main(_edit_body_args(tmp_path, "fb.md", "編集後"), home=tmp_path)
 
     assert exc_info.value.code == 0
     assert path.read_text(encoding="utf-8").endswith("編集後\n\n## ユーザーコメント\n\n保持する\n")
@@ -572,14 +587,14 @@ def test_agent_environment_append_inserts_before_user_comment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """追記MESSAGEを保存済みユーザーコメント節の直前へ追加する。"""
+    """追記本文を保存済みユーザーコメント節の直前へ追加する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb.md", body="追記前\n\n## ユーザーコメント\n\n保持する")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "edit", "--append", "fb.md", "追記後"], home=tmp_path)
+        atk.main(_edit_body_args(tmp_path, "fb.md", "追記後", append=True), home=tmp_path)
 
     assert exc_info.value.code == 0
     text = path.read_text(encoding="utf-8")
@@ -624,7 +639,7 @@ class TestEditNoEditor:
 
 
 class TestNoninteractiveEdit:
-    """editサブコマンドのMESSAGE指定による非対話編集を検証する。"""
+    """editサブコマンドの本文ファイル指定による非対話編集を検証する。"""
 
     def test_awi_body_updates_without_editor_and_preserves_metadata(
         self,
@@ -638,12 +653,55 @@ class TestNoninteractiveEdit:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8") == (
             "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
         )
+
+    def test_agent_environment_rejects_edit_without_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """sourceを持たない項目のsource未指定編集を拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert path.read_text(encoding="utf-8") == original
+        error = capsys.readouterr().err
+        assert "frontmatter" in error
+        assert "--source" not in error
+
+    def test_agent_environment_accepts_source_added_or_changed_by_edit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エージェント編集でsourceの新規指定と変更を受理する。"""
+        notes = _setup_notes(tmp_path)
+        missing = _write_awi_file(notes, "missing.md", body="編集前")
+        existing = _write_awi_file(notes, "existing.md", body="編集前", source="old")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        for filename, source in (("missing.md", "new"), ("existing.md", "changed")):
+            message = f"---\nsource: {source}\n---\n\n編集後"
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(_edit_body_args(tmp_path, filename, message), home=tmp_path)
+            assert exc_info.value.code == 0
+
+        assert "source: new" in missing.read_text(encoding="utf-8")
+        assert "source: changed" in existing.read_text(encoding="utf-8")
 
 
 class TestEditBodyFile:
@@ -672,12 +730,12 @@ class TestEditBodyFile:
         assert parsed is not None
         assert parsed[1] == '\n---\n# 見出し\n\n"引用" \\ path\n```sh\necho ok\n```\n'
 
-    def test_body_file_appends_and_rejects_message_combination(
+    def test_body_file_appends_and_rejects_positional_message(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """本文ファイルを追記でき、MESSAGEとの併用は書込前に拒否する。"""
+        """本文ファイルを追記でき、位置引数の本文は書込前に拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="編集前")
         body_path = tmp_path / "body.md"
@@ -787,12 +845,12 @@ class TestEditBodyFile:
         assert exc_info.value.code == 1
         assert path.read_bytes() == original
 
-    def test_message_does_not_start_editor(
+    def test_body_file_does_not_start_editor(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """MESSAGE指定時はEDITORが設定済みでもエディターを起動しない。"""
+        """本文ファイル指定時はEDITORが設定済みでもエディターを起動しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "must-not-run")
@@ -800,13 +858,13 @@ class TestEditBodyFile:
 
         def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
             if cmd[0] == "must-not-run":
-                pytest.fail("MESSAGE指定時にEDITORが起動された")
+                pytest.fail("本文ファイル指定時にEDITORが起動された")
             return _make_subprocess_fake(git_calls)(cmd, *args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 0
 
@@ -827,7 +885,7 @@ class TestEditBodyFile:
         message = "---\ntarget_repo: https://github.com/Example/Repo.git\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 0
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -863,19 +921,19 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == exit_code
         assert error_fragment in capsys.readouterr().err
         assert path.read_text(encoding="utf-8") == original
 
-    def test_existing_file_path_is_rejected_without_traceback(
+    def test_positional_message_is_rejected_without_modifying_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """実在ファイルパスだけのMESSAGEをtracebackなしで拒否する。"""
+        """位置引数で渡した本文を拒否し、保存済み項目を変更しない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前")
         message_file = tmp_path / "message.txt"
@@ -885,9 +943,9 @@ class TestEditBodyFile:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "edit", "fb-001.md", str(message_file)], home=tmp_path)
 
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "ファイルパス" in captured.err
+        assert "解釈できない引数" in captured.err
         assert "Traceback" not in captured.err
         assert path.read_text(encoding="utf-8").endswith("\n編集前\n")
 
@@ -900,6 +958,8 @@ class TestEditBodyFile:
         """空のUWI質問はaddで許容し、既存質問を削除するeditでは拒否する。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+        add_body = tmp_path / "add-body.md"
+        add_body.write_text("", encoding="utf-8")
 
         with pytest.raises(SystemExit) as add_exit:
             atk.main(
@@ -910,7 +970,8 @@ class TestEditBodyFile:
                     "github.com/example/foo",
                     "--type=uwi",
                     "--question-type=free-form",
-                    "",
+                    "--body-file",
+                    str(add_body),
                 ],
                 home=tmp_path,
                 now=_FIXED_DT,
@@ -920,7 +981,7 @@ class TestEditBodyFile:
         assert (notes / "inbox" / filename).is_file()
 
         with pytest.raises(SystemExit) as edit_exit:
-            atk.main(["wi", "edit", filename, ""], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, filename, ""), home=tmp_path)
 
         assert edit_exit.value.code == 1
         captured = capsys.readouterr()
@@ -946,7 +1007,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
@@ -958,14 +1019,14 @@ class TestEditBodyFile:
     ) -> None:
         """エージェント環境でもholdの本文置換を受理する。"""
         notes = _setup_notes(tmp_path)
-        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         hold = notes / "hold"
         path = inbox_path.rename(hold / inbox_path.name)
         monkeypatch.setenv("AI_AGENT", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("\n編集後\n")
@@ -987,7 +1048,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 2
         assert capsys.readouterr().err == (
@@ -1016,7 +1077,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "--append", "fb-001.md", "追記後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "追記後", append=True), home=tmp_path)
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8").endswith("追記前\n\n\n追記後")
@@ -1038,7 +1099,7 @@ class TestEditBodyFile:
         message = "---\nscope: new\n---\n\n変更後の質問"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "uwi-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "uwi-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 0
         content = path.read_text(encoding="utf-8")
@@ -1069,7 +1130,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "uwi-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "uwi-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -1092,7 +1153,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "uwi-001.md", "変更後の質問"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "uwi-001.md", "変更後の質問"), home=tmp_path)
 
         assert exc_info.value.code == 0
         content = path.read_text(encoding="utf-8")
@@ -1137,7 +1198,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -1158,7 +1219,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "本文"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "本文"), home=tmp_path)
 
         assert exc_info.value.code == 0
         assert "差分なし。" in capsys.readouterr().out
@@ -1178,7 +1239,7 @@ class TestEditBodyFile:
         message = f"---\ntarget_commit: {'b' * 40}\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 1
         assert "予約キー" in capsys.readouterr().err
@@ -1278,7 +1339,7 @@ class TestEditBodyFile:
         message = "---\nplan_file: /tmp/plan.md\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 1
         assert "予約キー" in capsys.readouterr().err
@@ -1298,7 +1359,7 @@ class TestEditBodyFile:
         message = "---\ncooldown_until: 2026-08-15T00:00:00+00:00\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 1
         assert "予約キー" in capsys.readouterr().err
@@ -1320,7 +1381,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 0
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -1347,7 +1408,7 @@ class TestEditBodyFile:
         message = f"---\n{reserved_key}: {reserved_value}\n---\n\n編集後"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", message], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
 
         assert exc_info.value.code == 1
         assert "予約キー" in capsys.readouterr().err
@@ -1366,7 +1427,7 @@ class TestEditBodyFile:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 1
         assert "frontmatterが破損" in capsys.readouterr().err

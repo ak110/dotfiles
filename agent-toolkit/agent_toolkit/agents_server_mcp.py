@@ -106,26 +106,13 @@ class _PendingResume:
     task: asyncio.Task[SessionState]
     prompt: ResumePrompt
     previous_result: dict[str, Any] | None = None
-    previous_result_deadline: float | None = None
-    previous_result_expiration: asyncio.TimerHandle | None = dataclasses.field(default=None, repr=False)
 
     def discard_previous_result(self) -> None:
-        """元sessionの保持期限に従って退避済み結果本文を破棄する。"""
+        """配送又は明示的な破棄の後に退避済み結果本文を除く。"""
         self.previous_result = None
-        self.previous_result_deadline = None
-        if self.previous_result_expiration is not None:
-            self.previous_result_expiration.cancel()
-            self.previous_result_expiration = None
 
     def take_previous_result(self) -> dict[str, Any] | None:
-        """期限内の退避済み結果を返し、進行中再開から本文を取り除く。"""
-        if (
-            self.previous_result is not None
-            and self.previous_result_deadline is not None
-            and asyncio.get_running_loop().time() >= self.previous_result_deadline
-        ):
-            self.discard_previous_result()
-            return None
+        """退避済み結果を返し、進行中再開から本文を取り除く。"""
         result = self.previous_result
         self.discard_previous_result()
         return result
@@ -214,6 +201,7 @@ class AgentsServerManager:
         self._wait_timeouts: dict[str, float] = {}
         self._carried_unavailable_candidates: dict[tuple[str, LaunchKind], ModelCandidate] = {}
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
+        self._heartbeat_task: asyncio.Task[None] | None = None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = status_file.resolve_status_file_identity(os.environ)
             self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
@@ -229,6 +217,14 @@ class AgentsServerManager:
         """状態ファイル出力を有効化する。"""
         if self._status_writer is not None:
             self._status_writer.activate()
+            self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
+
+    async def _refresh_heartbeat(self) -> None:
+        """MCPサーバーの生存中に状態ファイルの生存の印を更新する。"""
+        assert self._status_writer is not None
+        while True:
+            await asyncio.sleep(status_file.HEARTBEAT_INTERVAL_SECONDS)
+            self._status_writer.flush()
 
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
@@ -266,16 +262,14 @@ class AgentsServerManager:
         return session
 
     def _expire_session(self, session_id: str) -> None:
-        """期限に到達したsession本体と終端結果を破棄し、再開状態を保持する。"""
+        """期限に到達したsession本体を解放し、再開状態と未回収結果を保持する。"""
         self._pending_unobserved_child_sessions.pop(session_id, None)
         session = self.sessions.pop(session_id, None)
         if session is not None:
-            self.expired_sessions[session_id] = dataclasses.replace(
-                SessionResumeState.from_session(session),
-                result_delivered=True,
-            )
+            resume_state = SessionResumeState.from_session(session)
+            self.expired_sessions[session_id] = resume_state
             if self._status_writer is not None:
-                self._status_writer.delete_result(session_id)
+                self._status_writer.retain_result(resume_state)
                 self._status_writer.schedule()
 
     def _resolve_expired_session(self, session_id: str) -> SessionResumeState | None:
@@ -292,24 +286,26 @@ class AgentsServerManager:
         return self.expired_sessions.get(session_id)
 
     def _expired_result_response(self, session_id: str) -> dict[str, Any] | None:
-        """期限切れsessionなら結果本文を伴わない応答を返す。"""
+        """期限切れsessionの未回収結果を1回だけ返す。"""
         resume_state = self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
-        return {"status": "expired"}
+        if self._status_writer is not None and self._status_writer.result_state(session_id) == "consumed":
+            resume_state = dataclasses.replace(resume_state, result_delivered=True)
+            self.expired_sessions[session_id] = resume_state
+        response = self._stopped_result_response(resume_state)
+        if response is None:
+            return {"status": "expired"}
+        self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session_id)
+            self._status_writer.schedule()
+        return response
 
     def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
-        """破棄済みsessionを返し、保持期限の到来を期限切れ状態へ反映する。"""
+        """破棄済みsessionを返し、外部経路による結果回収を反映する。"""
         resume_state = self.stopped_sessions.get(session_id)
         if resume_state is None:
-            return None
-        deadline = resume_state.retention_deadline
-        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
-            self.stopped_sessions.pop(session_id, None)
-            self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
-            if self._status_writer is not None:
-                self._status_writer.delete_result(session_id)
-                self._status_writer.schedule()
             return None
         if (
             not resume_state.result_delivered
@@ -335,6 +331,7 @@ class AgentsServerManager:
         info = resolution.resume_info
         if info is None:
             raise ValueError(f"error.recovery=no_resume_info: {session_id}")
+        persisted_result = self._status_writer.read_result(session_id) if self._status_writer is not None else None
         resume_state = SessionResumeState(
             session_id=session_id,
             cwd=info.cwd,
@@ -343,16 +340,19 @@ class AgentsServerManager:
             engine=info.engine,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
-            turn_seq=info.turn_seq,
-            status=info.status,
-            result_delivered=True,
+            turn_seq=persisted_result["turn_seq"] if persisted_result is not None else info.turn_seq,
+            status=persisted_result["status"] if persisted_result is not None else info.status,
+            agent_message=persisted_result["agent_message"] if persisted_result is not None else "",
+            error=persisted_result.get("error") if persisted_result is not None else None,
+            finalized_at=persisted_result["finalized_at"] if persisted_result is not None else None,
+            result_delivered=persisted_result is None,
         )
         self.stopped_sessions[session_id] = resume_state
         return resume_state
 
     @staticmethod
     def _stopped_result_response(resume_state: SessionResumeState) -> dict[str, Any] | None:
-        """破棄済みsessionの期限内の未回収結果を返す。"""
+        """破棄済みsessionの未回収結果を返す。"""
         if resume_state.result_delivered or resume_state.status not in TERMINAL_STATUSES or resume_state.finalized_at is None:
             return None
         response: dict[str, Any] = {
@@ -361,6 +361,17 @@ class AgentsServerManager:
         }
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
+        return response
+
+    def _take_stopped_result(self, session_id: str, resume_state: SessionResumeState) -> dict[str, Any] | None:
+        """破棄済みsessionの未回収結果を返し、配送済みとして記録する。"""
+        response = self._stopped_result_response(resume_state)
+        if response is None:
+            return None
+        self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
+        if self._status_writer is not None:
+            self._status_writer.delete_result(session_id)
+            self._status_writer.schedule()
         return response
 
     @staticmethod
@@ -490,15 +501,8 @@ class AgentsServerManager:
             resume_state = stopped_state or self.expired_sessions.get(session_id)
             if resume_state is None:
                 raise self._unresolved_session_error(session_id, label="session")
-        deadline = resume_state.retention_deadline
         result_state = None if self._status_writer is None else self._status_writer.result_state(session_id)
-        keep_result = (
-            retain_result
-            and resume_state.finalized_at is not None
-            and deadline is not None
-            and asyncio.get_running_loop().time() < deadline
-            and result_state != "consumed"
-        )
+        keep_result = retain_result and resume_state.finalized_at is not None and result_state != "consumed"
         resume_state = dataclasses.replace(resume_state, result_delivered=not keep_result)
         if session is not None:
             session.result_delivered = not keep_result
@@ -510,9 +514,9 @@ class AgentsServerManager:
         self.stopped_sessions[session_id] = resume_state
         if self._status_writer is not None:
             try:
-                if keep_result and result_state == "unpublished":
+                if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
                     self._status_writer.retain_result(resume_state)
-                elif not keep_result and result_state == "published":
+                elif not keep_result and (result_state == "published" or self._status_writer.result_exists(session_id)):
                     self._status_writer.delete_result(session_id)
                 self._status_writer.schedule()
             except Exception as exc:
@@ -746,14 +750,19 @@ class AgentsServerManager:
             recovered_state = self._restore_registry_session(session_id)
             stopped_state = recovered_state
         if recovered_state is not None:
+            recovered_response = self._take_stopped_result(session_id, recovered_state)
+            if recovered_response is not None:
+                self.stopped_sessions.pop(session_id, None)
+                return recovered_response
             return self._recovered_result_response(recovered_state)
         if stopped_state is not None:
-            stopped_response = self._stopped_result_response(stopped_state)
+            stopped_response = self._take_stopped_result(session_id, stopped_state)
             if stopped_response is not None:
                 notices = self._take_notices(session_id)
                 return self._response_with_notices(stopped_response, notices)
         expired_response = self._expired_result_response(session_id)
         if expired_response is not None:
+            expired_response = self._response_with_notices(expired_response, self._take_notices(session_id))
             return await self._stop_after_terminal_response(session_id, expired_response, stop)
         if timeout is None:
             timeout = await self._resolve_wait_timeout(request_bucket)
@@ -1007,7 +1016,6 @@ class AgentsServerManager:
         resume_state: SessionResumeState,
         prompt: str,
         previous_result: dict[str, Any] | None,
-        previous_result_deadline: float | None,
     ) -> tuple[_PendingResume, int]:
         """期限切れ状態を一意な進行中再開操作へ原子的に移す。"""
         session_id = resume_state.session_id
@@ -1020,17 +1028,7 @@ class AgentsServerManager:
             task=task,
             prompt=resume_prompt,
             previous_result=previous_result,
-            previous_result_deadline=previous_result_deadline,
         )
-        if previous_result is not None and previous_result_deadline is not None:
-            loop = asyncio.get_running_loop()
-            if loop.time() >= previous_result_deadline:
-                pending.discard_previous_result()
-            else:
-                pending.previous_result_expiration = loop.call_at(
-                    previous_result_deadline,
-                    pending.discard_previous_result,
-                )
         self._pending_resumes[session_id] = pending
         task.add_done_callback(self._consume_resume_exception)
         return pending, resume_prompt.initial_ticket
@@ -1102,7 +1100,6 @@ class AgentsServerManager:
         resume_state: SessionResumeState,
         prompt: str,
         previous_result: dict[str, Any] | None = None,
-        previous_result_deadline: float | None = None,
     ) -> dict[str, Any]:
         """保存済みの最小状態から同じ会話を再開し、公開契約の応答を返す。
 
@@ -1113,7 +1110,6 @@ class AgentsServerManager:
             resume_state,
             prompt,
             previous_result,
-            previous_result_deadline,
         )
         return await self._resume_response(pending, ticket)
 
@@ -1154,16 +1150,12 @@ class AgentsServerManager:
                         resume_state = stopped_state or self.expired_sessions.get(session_id)
                         if resume_state is not None:
                             previous_result = None
-                            previous_result_deadline = None
                             if stopped_state is not None:
-                                previous_result = self._stopped_result_response(stopped_state)
-                                if previous_result is not None:
-                                    previous_result_deadline = stopped_state.retention_deadline
+                                previous_result = self._take_stopped_result(session_id, stopped_state)
                             return await self._resume_and_reply(
                                 resume_state,
                                 prompt,
                                 previous_result,
-                                previous_result_deadline,
                             )
                         session = self._get_session(session_id)
                     backend = self._backend(session.engine)
@@ -1177,14 +1169,12 @@ class AgentsServerManager:
                             if self.sessions.get(session_id) is not session:
                                 continue
                             previous_result = session.previous_result() if session.result_available else None
-                            previous_result_deadline = session.retention_deadline
                             self._expire_session(session_id)
                             resume_state = self.expired_sessions[session_id]
                             return await self._resume_and_reply(
                                 resume_state,
                                 prompt,
                                 previous_result,
-                                previous_result_deadline,
                             )
                     if self._status_writer is not None:
                         self._status_writer.delete_result(session_id)
@@ -1221,7 +1211,7 @@ class AgentsServerManager:
             response["kill_requested"] = False
             return response
         if stopped_state is not None:
-            stopped_response = self._stopped_result_response(stopped_state)
+            stopped_response = self._take_stopped_result(session_id, stopped_state)
             if stopped_response is not None:
                 stopped_response["kill_requested"] = False
                 notices = self._take_notices(session_id)
@@ -1329,6 +1319,10 @@ class AgentsServerManager:
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+            self._heartbeat_task = None
         pending_resumes = tuple(self._pending_resumes.values())
         for pending in pending_resumes:
             pending.discard_previous_result()
@@ -1483,6 +1477,11 @@ async def wait(
     `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。委譲先として起動されたセッションでは240秒を上限とする。
     当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
+    以下の`/goal`の条件に該当しない場合は、待機を発行する直前に稼働中の委譲先の件数を確認する。
+    1件なら本ツールを前景で発行する。2件以上なら本ツールを1件ずつ前景で発行せず、
+    全対象への本ツール呼び出しを同じ応答内で並列に発行する。
+    実行ホストが独立したツール呼び出しを並列化できない場合は、
+    各`session_id`に対する`atk agents-wait <session_id>`を背景ジョブとして起動する。
     呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
     本ツールの背景移行で待たず、`atk agents-wait <session_id>`を
     実行ホストの背景ジョブとして起動して待機表明でターンを終える。
@@ -1490,7 +1489,8 @@ async def wait(
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
     終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
-    終端結果の保持期限を過ぎたsessionでは、`status`が`expired`の応答だけを返す。
+    終端結果は呼び出し元が最初の`wait`で受領するまで保持し、経過時間では解放しない。
+    終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
     委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
     再待機の要否は`notices`の有無ではなく`status`で判定する。
     `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して`wait`を再発行しない。

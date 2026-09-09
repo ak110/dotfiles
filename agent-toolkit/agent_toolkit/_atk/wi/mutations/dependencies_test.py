@@ -516,11 +516,13 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="本文\n\n## ユーザーコメント\n\n保持する")
     original = path.read_bytes()
+    body_file = tmp_path / "body.md"
+    body_file.write_text("変更後\n\n## ユーザーコメント\n\n変更する", encoding="utf-8")
     for name in _AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(environment_name, "1")
 
-    argv = ["wi", "edit", filename, "変更後\n\n## ユーザーコメント\n\n変更する"]
+    argv = ["wi", "edit", filename, "--body-file", str(body_file)]
     if route == "editor":
         monkeypatch.setenv("EDITOR", "fake-editor")
 
@@ -539,7 +541,7 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     else:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     if route == "append":
-        argv = ["wi", "edit", "--append", filename, "変更後\n\n## ユーザーコメント\n\n変更する"]
+        argv = ["wi", "edit", "--append", filename, "--body-file", str(body_file)]
     elif route == "plan":
         held_path = notes / "hold" / filename
         path.replace(held_path)
@@ -573,6 +575,8 @@ def test_agent_environment_rejects_add_with_user_comment(
     notes = _setup_notes(tmp_path)
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_file = tmp_path / "body.md"
+    body_file.write_text("本文\n\n## ユーザーコメント\n\n移管するコメント", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
@@ -581,7 +585,8 @@ def test_agent_environment_rejects_add_with_user_comment(
                 "add",
                 "--target-repo",
                 "github.com/example/foo",
-                "本文\n\n## ユーザーコメント\n\n移管するコメント",
+                "--body-file",
+                str(body_file),
             ],
             home=tmp_path,
             now=_FIXED_DT,
@@ -603,7 +608,9 @@ def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="編集前")
     message = '編集後。"引用"を含む。\n\n## 見出し\n\n複数行。'
-    argv = ["wi", "edit", filename, message]
+    body_file = tmp_path / "body.md"
+    body_file.write_text(message, encoding="utf-8")
+    argv = ["wi", "edit", filename, "--body-file", str(body_file)]
 
     def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
         if cmd[0] == "fake-editor":
@@ -618,7 +625,7 @@ def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
         monkeypatch.setenv("EDITOR", "fake-editor")
         argv = ["wi", "edit", filename]
     elif route == "append":
-        argv = ["wi", "edit", "--append", filename, message]
+        argv = ["wi", "edit", "--append", filename, "--body-file", str(body_file)]
     elif route == "plan":
         held_path = notes / "hold" / filename
         path.replace(held_path)
@@ -1016,6 +1023,15 @@ class TestRejectFromProcessing:
         assert (notes / "rejected" / "fb-p.md").exists()
 
 
+def _replace_edit_message_with_body_file(command: list[str], tmp_path: pathlib.Path) -> list[str]:
+    """editの位置引数本文を現行の本文ファイル入力へ置き換える。"""
+    if command[1] != "edit":
+        return command
+    body_file = tmp_path / "body.md"
+    body_file.write_text(command[3], encoding="utf-8")
+    return [*command[:3], "--body-file", str(body_file)]
+
+
 class TestTargetRepoVerification:
     """mutation系サブコマンド: `--target-repo`指定時のfrontmatter一致検証を検証する。
 
@@ -1059,6 +1075,8 @@ class TestTargetRepoVerification:
             return fallback(cmd, *args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
+
+        command = _replace_edit_message_with_body_file(command, tmp_path)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main([*command, "--target-repo", target_repo], home=tmp_path, now=_FIXED_DT)
@@ -1133,6 +1151,7 @@ class TestTargetRepoVerification:
             return fallback(cmd, *args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
+        command = _replace_edit_message_with_body_file(command, tmp_path)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main([*command, "--target-repo", "github.com/example/other"], home=tmp_path, now=_FIXED_DT)

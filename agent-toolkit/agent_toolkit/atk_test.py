@@ -44,6 +44,16 @@ _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 _FIXED_ISO = _FIXED_DT.isoformat()
 
 
+def _body_file_args(tmp_path: pathlib.Path, *messages: str) -> list[str]:
+    """本文群をファイルへ保存し、繰り返し可能な`--body-file`引数列を返す。"""
+    args: list[str] = []
+    for index, message in enumerate(messages):
+        path = tmp_path / f"body-{index}.md"
+        path.write_text(message, encoding="utf-8")
+        args.extend(("--body-file", str(path)))
+    return args
+
+
 @pytest.fixture(autouse=True)
 def _isolate_agent_and_managed_temp_environment(
     monkeypatch: pytest.MonkeyPatch,
@@ -670,27 +680,26 @@ class TestMutationTargetRepoParserOption:
         args = parser.parse_args([top_command, subcommand, "--target-repo", "github.com/foo/bar", *argv_tail])
         assert args.target_repo == "github.com/foo/bar"
 
-    def test_edit_accepts_message(self) -> None:
-        """`edit FILENAME MESSAGE`を解析して両方の位置引数を保持する。"""
+    def test_edit_rejects_message(self) -> None:
+        """`edit FILENAME MESSAGE`の旧受理形式を拒否する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["wi", "edit", "20260714-000001-001.md", "更新本文"])
-        assert args.filename == "20260714-000001-001.md"
-        assert args.message == "更新本文"
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["wi", "edit", "20260714-000001-001.md", "更新本文"])
+        assert exc_info.value.code == 2
 
     def test_edit_accepts_append_option(self) -> None:
-        """`edit --append FILENAME MESSAGE`を追記モードとして解析する。"""
+        """`edit --append FILENAME --body-file PATH`を追記モードとして解析する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["wi", "edit", "--append", "20260714-000001-001.md", "追記本文"])
+        args = parser.parse_args(["wi", "edit", "--append", "20260714-000001-001.md", "--body-file", "body.md"])
         assert args.append is True
         assert args.filename == "20260714-000001-001.md"
-        assert args.message == "追記本文"
+        assert args.body_file == "body.md"
 
     def test_edit_accepts_body_file(self) -> None:
         """`edit --body-file`を単一の本文ファイルとして解析する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "edit", "entry.md", "--body-file", "body.md"])
         assert args.body_file == "body.md"
-        assert args.message is None
 
     @pytest.mark.parametrize("value", ["2", "3.5", "three"])
     def test_return_to_inbox_rejects_invalid_cooldown_days(self, value: str) -> None:
@@ -733,11 +742,11 @@ class TestMutationTargetRepoParserOption:
         assert "cooldown_until: '2026-08-15T03:04:05+00:00'" in content
 
     def test_edit_without_message_remains_interactive(self) -> None:
-        """従来の`edit FILENAME`ではMESSAGEを未指定として扱う。"""
+        """`edit FILENAME`では本文ファイルを未指定として扱う。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "edit", "20260714-000001-001.md"])
         assert args.filename == "20260714-000001-001.md"
-        assert args.message is None
+        assert args.body_file is None
 
     def test_commit_has_no_target_repo_option(self) -> None:
         """`commit`は引数を取らないシグネチャのため`--target-repo`を受理しない。"""
@@ -757,8 +766,8 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
             "awi.md",
             "--plan-file",
             "/tmp/plan.md",
-            "--message",
-            "統合本文",
+            "--body-file",
+            "/tmp/body.md",
             "--depends-on",
             "first.md",
             "--depends-on",
@@ -767,7 +776,7 @@ def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
     )
     assert args.filename == ["awi.md"]
     assert args.plan_file == "/tmp/plan.md"
-    assert args.message == "統合本文"
+    assert args.body_file == "/tmp/body.md"
     assert args.depends_on == ["first.md", "second.md"]
 
 
@@ -849,6 +858,23 @@ def test_convert_to_plan_help_describes_portable_and_legacy_paths(capsys: pytest
     assert "atk plans commit" in normalized_output
 
 
+@pytest.mark.parametrize("command", ["add", "edit", "convert-to-plan"])
+def test_body_text_arguments_are_absent_from_wi_help(
+    command: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """WI本文をコマンドライン文字列で渡す旧受理形式をhelpへ表示しない。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["wi", command, "--help"])
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "MESSAGE" not in output
+    assert "--message" not in output
+
+
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
@@ -898,7 +924,7 @@ class TestUwiAddSourceOptionParser:
     def test_accepts_source(self) -> None:
         """`mq add --type=uwi`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["wi", "add", "--type=uwi", "--source", "session-hold", "hello"])
+        args = parser.parse_args(["wi", "add", "--type=uwi", "--source", "session-hold"])
         assert args.source == "session-hold"
 
 
@@ -958,7 +984,7 @@ class TestAddTargetRepoOptionParser:
     def test_add_accepts_target_repo(self, type_option: list[str]) -> None:
         """`mq add`が種別にかかわらず`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["wi", "add", *type_option, "--target-repo", "github.com/foo/bar", "本文"])
+        args = parser.parse_args(["wi", "add", *type_option, "--target-repo", "github.com/foo/bar"])
         assert args.target_repo == "github.com/foo/bar"
 
     def test_add_help_describes_explicit_worktree_resolution(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -970,8 +996,9 @@ class TestAddTargetRepoOptionParser:
 
         assert exc_info.value.code == 0
         output = capsys.readouterr().out
-        assert "ローカルパス指定時に指定worktree" in output
-        assert "正規化リモートURL指定時にローカルHEADを持たない" in output
+        normalized_output = "".join(output.split())
+        assert "ローカルパス指定時は指定worktree" in normalized_output
+        assert "正規化リモートURL指定時はローカルHEADを持たない" in normalized_output
         assert "ベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない" in output
 
 
@@ -1042,10 +1069,12 @@ def test_add_output_reloads_saved_metadata(
     _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
+    body_path = tmp_path / "body.md"
+    body_path.write_text("本文", encoding="utf-8")
     monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+        atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
@@ -1062,7 +1091,7 @@ class TestSubcommandSubparserDefault:
     def test_add(self, type_option: list[str]) -> None:
         """`mq add`解析後は種別にかかわらず同じサブパーサを保持する。"""
         args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-            ["wi", "add", *type_option, "本文"]
+            ["wi", "add", *type_option]
         )
         assert args.subparser.prog == "atk wi add"
 
@@ -1073,15 +1102,23 @@ def test_review_table_subcommands_are_public() -> None:
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
         if subcommand == "add":
-            argv.extend(["--round=1", "--track=exec-review", "--level=詳細", "位置", "指摘"])
+            argv.extend(
+                [
+                    "--round=1",
+                    "--track=exec-review",
+                    "--level=詳細",
+                    "--location-file=location.txt",
+                    "--issue-file=issue.txt",
+                ]
+            )
         elif subcommand == "respond":
             argv.extend(
                 [
                     "--track=exec-review",
-                    "位置",
-                    "指摘",
+                    "--location-file=location.txt",
+                    "--issue-file=issue.txt",
                     "--response-needed=yes",
-                    "--response=修正",
+                    "--response-file=response.txt",
                 ]
             )
         args = parser.parse_args(argv)
@@ -1201,33 +1238,11 @@ def test_public_review_table_invalid_column_count_error_explains_recovery(
     assert "implementation-reviewはexec-reviewとして読み取る" in error
 
 
-@pytest.mark.parametrize(
-    "argv",
-    [
-        [
-            "review-table",
-            "respond",
-            "--track=plan-conformance",
-            "位置",
-            "指摘",
-            "--response-needed=yes",
-            "--response=修正",
-        ],
-        [
-            "review-table",
-            "add",
-            "--round=2",
-            "--track=independent",
-            "--level=詳細",
-            "別位置",
-            "別指摘",
-        ],
-    ],
-)
+@pytest.mark.parametrize("subcommand", ["respond", "add"])
 def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    argv: list[str],
+    subcommand: str,
 ) -> None:
     """公開CLIの応答と追加も旧列数を拒否し、移行に必要な情報を示す。"""
     path = tmp_path / "review.tsv"
@@ -1239,9 +1254,36 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
         + "\n",
         encoding="utf-8",
     )
+    location_file = tmp_path / "location.txt"
+    issue_file = tmp_path / "issue.md"
+    response_file = tmp_path / "response.md"
+    location_file.write_text("位置", encoding="utf-8")
+    issue_file.write_text("指摘", encoding="utf-8")
+    response_file.write_text("修正", encoding="utf-8")
+    argv = ["review-table", subcommand, str(path)]
+    if subcommand == "respond":
+        argv.extend(
+            [
+                "--track=plan-conformance",
+                f"--location-file={location_file}",
+                f"--issue-file={issue_file}",
+                "--response-needed=yes",
+                f"--response-file={response_file}",
+            ]
+        )
+    else:
+        argv.extend(
+            [
+                "--round=2",
+                "--track=independent",
+                "--level=詳細",
+                f"--location-file={location_file}",
+                f"--issue-file={issue_file}",
+            ]
+        )
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main([argv[0], argv[1], str(path), *argv[2:]])
+        atk.main(argv)
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
@@ -1390,10 +1432,12 @@ class TestInboxAlwaysEnabled:
         (notes / "inbox").mkdir(parents=True)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
+        body_path = tmp_path / "body.md"
+        body_path.write_text("dummy message", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "dummy message"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert "1件投入:" in capsys.readouterr().out
@@ -1408,8 +1452,10 @@ class TestPrivateNotesMissing:
 
     def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """管理repo rootが存在しない場合はexit 1でディレクトリ不在案内を出力する。"""
+        body_path = tmp_path / "body.md"
+        body_path.write_text("dummy message", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(tmp_path / "myrepo"), "dummy message"], home=tmp_path)
+            atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -1466,7 +1512,7 @@ class TestAddSingleMessage:
         message = "テストメッセージ"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", repo_path, message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", repo_path, *_body_file_args(tmp_path, message)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -1537,7 +1583,7 @@ class TestMqLifecycleScenario:
         message = "ライフサイクル確認"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, message)], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
         capsys.readouterr()
 
@@ -1586,7 +1632,7 @@ class TestAddCompletionShowsProcessingCount:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1605,7 +1651,7 @@ class TestAddCompletionShowsProcessingCount:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1633,7 +1679,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1658,7 +1704,7 @@ class TestAddCompletionShowsTargetRepoBreakdown:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -1703,7 +1749,11 @@ class TestAddMultipleMessages:
         repo_path = str(myrepo)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", repo_path, "メッセージ1", "メッセージ2"], home=tmp_path, now=_FIXED_DT)
+            atk.main(
+                ["wi", "add", repo_path, *_body_file_args(tmp_path, "メッセージ1", "メッセージ2")],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
 
         assert exc_info.value.code == 0
 
@@ -1744,7 +1794,7 @@ class TestAddRepoPathExpansion:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "~/myrepo", "テストメッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "~/myrepo", *_body_file_args(tmp_path, "テストメッセージ")], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
 
@@ -1811,25 +1861,21 @@ class TestAddFrontmatterOverride:
 
         message = (
             "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\n"
-            "テスト本文\n\n- 実現性: テスト用の投入経路を確認済み"
+            "テスト本文\n\n## 実現性\nテスト用の投入経路を確認済み"
         )
+        argv = ["wi", "add", str(myrepo), "--source", "cli-source", *_body_file_args(tmp_path, message)]
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", str(myrepo), message, "--source", "cli-source"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
+            atk.main(argv, home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
-        inbox = notes / "inbox"
-        files = list(inbox.iterdir())
+        files = list((notes / "inbox").iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/other/repo" in content
         assert "source: session-review" in content
         body = content.split("---\n\n", 1)[1]
-        assert body == "テスト本文\n\n- 実現性: テスト用の投入経路を確認済み"
+        assert body == "テスト本文\n\n## 実現性\nテスト用の投入経路を確認済み"
 
     def test_multiple_messages_mixed_frontmatter(
         self,
@@ -1847,7 +1893,9 @@ class TestAddFrontmatterOverride:
         msg_plain = "frontmatter無し本文"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), msg_with_fm, msg_plain], home=tmp_path, now=_FIXED_DT)
+            atk.main(
+                ["wi", "add", str(myrepo), *_body_file_args(tmp_path, msg_with_fm, msg_plain)], home=tmp_path, now=_FIXED_DT
+            )
         assert exc_info.value.code == 0
 
         inbox = notes / "inbox"
@@ -1872,10 +1920,14 @@ class TestAddFrontmatterOverride:
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
-        message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文\n\n- 実現性: テスト用の投入経路を確認済み"
+        message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文\n\n## 実現性\nテスト用の投入経路を確認済み"
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)
+            atk.main(
+                ["wi", "add", str(myrepo), "--source", "cli-source", *_body_file_args(tmp_path, message)],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
         assert exc_info.value.code == 0
 
         inbox = notes / "inbox"
@@ -1925,8 +1977,8 @@ class TestAddBatchOption:
     def test_type_option_defaults_to_none_before_normalization(self) -> None:
         """`--type`省略時のargparse既定値はNoneとし、明示指定と区別する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        assert parser.parse_args(["wi", "add", "本文"]).type is None
-        assert parser.parse_args(["wi", "add", "--type=awi", "本文"]).type == "awi"
+        assert parser.parse_args(["wi", "add"]).type is None
+        assert parser.parse_args(["wi", "add", "--type=awi"]).type == "awi"
 
     def test_normal_add_normalizes_omitted_type_to_awi(
         self,
@@ -1937,10 +1989,12 @@ class TestAddBatchOption:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
+        body_path = tmp_path / "body.md"
+        body_path.write_text("本文", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         contents = [path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir()]
@@ -1968,9 +2022,11 @@ class TestAddBatchOption:
     ) -> None:
         """`--batch`と併用できないオプション指定をusage表示付きでexit 2にする。"""
         _setup_notes(tmp_path)
+        body_path = tmp_path / "batch.md"
+        body_path.write_text(self._ENTRY, encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--batch", *options, self._ENTRY], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", *options, "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
         assert "--batchと併用できません" in capsys.readouterr().err
@@ -1981,7 +2037,7 @@ class TestAddBatchOption:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """MESSAGE位置引数と`--body-file`の併用を明示拒否する。"""
+        """MESSAGE位置引数を受理しない。"""
         _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         body_path = tmp_path / "batch.md"
@@ -1991,24 +2047,22 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch", "--body-file", str(body_path), self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
-        assert "併用できません" in capsys.readouterr().err
+        assert "解釈できない引数" in capsys.readouterr().err
 
-    def test_imports_from_positional_message(
+    def test_rejects_positional_message_without_writing(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """MESSAGE位置引数のshow形式テキストを元名のまま取り込む。"""
+        """MESSAGE位置引数のshow形式テキストを拒否して書き込まない。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add", "--batch", self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
-        assert exc_info.value.code == 0
-        assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8").endswith("取り込む本文\n")
-        assert "1件取り込み:" in capsys.readouterr().out
+        assert exc_info.value.code == 2
+        assert not list((notes / "inbox").iterdir())
 
     def test_imports_from_body_file(
         self,
@@ -2047,7 +2101,7 @@ class TestAddBatchOption:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """MESSAGE・`--body-file`いずれも省略時はエディター経路の生テキストを原文保持で取り込む。"""
+        """`--body-file`省略時はエディター経路の生テキストを原文保持で取り込む。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         entry = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
@@ -2071,9 +2125,11 @@ class TestAddBatchOption:
         """show形式として解析できない入力はexit 1で全件拒否する。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
+        body_path = tmp_path / "batch.md"
+        body_path.write_text("ただの本文\n", encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--batch", "ただの本文\n"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--batch", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         assert "投入を拒否しました" in capsys.readouterr().err

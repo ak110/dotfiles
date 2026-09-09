@@ -964,9 +964,9 @@ class TestCommitAndPushRetry:
         calls: list[list[str]] = []
         push_attempts = 0
 
-        def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
+        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
             nonlocal push_attempts
-            del cwd
+            del cwd, forward_error_output
             calls.append(args)
             if args[0] == "push":
                 push_attempts += 1
@@ -999,8 +999,8 @@ class TestCommitAndPushRetry:
     ) -> None:
         """再試行後もpushが失敗した場合は例外をそのまま送出する。"""
 
-        def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
-            del cwd
+        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+            del cwd, forward_error_output
             if args[0] == "push":
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
@@ -1020,8 +1020,8 @@ class TestCommitAndPushRetry:
     ) -> None:
         """rebaseが失敗した場合はabortせず、状態と手動手順をstderrへ出力する。"""
 
-        def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
-            del cwd
+        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+            del cwd, forward_error_output
             if args[0] == "push" or args == ["rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
             if args[:2] == ["merge-base", "--is-ancestor"]:
@@ -1047,8 +1047,8 @@ class TestCommitAndPushRetry:
     ) -> None:
         """rebase失敗時に競合解消手順をstderrへ出力してから例外を送出する。"""
 
-        def fake_run_git(args: list[str], cwd: pathlib.Path) -> None:
-            del cwd
+        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+            del cwd, forward_error_output
             if args[0] == "push" or args == ["rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
             if args[:2] == ["merge-base", "--is-ancestor"]:
@@ -1135,8 +1135,8 @@ class TestExplicitUpstreamIntegration:
 
         original_run_git = _common._run_git  # pylint: disable=protected-access  # noqa: SLF001
 
-        def run_with_competing_fetch(args: list[str], cwd: pathlib.Path) -> None:
-            original_run_git(args, cwd)
+        def run_with_competing_fetch(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+            original_run_git(args, cwd, forward_error_output=forward_error_output)
             if args == ["fetch"]:
                 self._git(cwd, "fetch", "origin", "main", "side")
 
@@ -1506,7 +1506,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         """マーカー付きディレクトリでは`_pull`がremote同期を実行しない。"""
         (tmp_path / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
         assert not any(call[0] in ("fetch", "merge") for call in calls)
@@ -1515,7 +1515,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
         """マーカー付きディレクトリでは`_commit_and_push`がadd・commitのみ実行しpushしない。"""
         (tmp_path / _common._LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
         assert calls == [["add", "--all", "--", "inbox"], ["commit", "-m", "chore: test", "--", "inbox"]]
@@ -1533,7 +1533,7 @@ class TestPullIfStale:
         os.utime(fetch_head, (1000.0, 1000.0))
         monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             assert _common.pull_if_stale(tmp_path) is False
         assert not any(call[0] in ("fetch", "merge") for call in calls)
@@ -1547,7 +1547,7 @@ class TestPullIfStale:
         os.utime(fetch_head, (1000.0, 1000.0))
         monkeypatch.setattr(_common.time, "time", lambda: 1100.0)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             assert _common.pull_if_stale(tmp_path) is True
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
@@ -1555,7 +1555,7 @@ class TestPullIfStale:
     def test_pulls_when_fetch_head_missing(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`FETCH_HEAD`が無い場合は経過時間を判定できないためpullする。"""
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             assert _common.pull_if_stale(tmp_path) is True
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
@@ -1569,7 +1569,7 @@ class TestPullIfStale:
         os.utime(fetch_head, (1000.0, 1000.0))
         monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common.pull(tmp_path)
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
@@ -1592,7 +1592,7 @@ class TestPullWithRecentNotice:
         os.utime(fetch_head, (1000.0, 1000.0))
         monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
@@ -1617,7 +1617,7 @@ class TestPullWithRecentNotice:
         monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
         calls: list[list[str]] = []
         migrations: list[pathlib.Path] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
 
         def migrate(private_notes: pathlib.Path) -> int:
             migrations.append(private_notes)
@@ -1644,7 +1644,7 @@ class TestPullWithRecentNotice:
         os.utime(fetch_head, (1000.0, 1000.0))
         monkeypatch.setattr(_common.time, "time", lambda: 1010.0)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
@@ -1661,7 +1661,8 @@ class TestPullWithRecentNotice:
         calls: list[list[str]] = []
         migrations: list[pathlib.Path] = []
 
-        def run_git(args: list[str], cwd: pathlib.Path) -> None:
+        def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+            del forward_error_output
             del cwd
             calls.append(args)
             if args == ["fetch"]:
@@ -1692,7 +1693,8 @@ class TestPullWithRecentNotice:
         calls: list[list[str]] = []
         migrations: list[pathlib.Path] = []
 
-        def run_git(args: list[str], cwd: pathlib.Path) -> None:
+        def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+            del forward_error_output
             del cwd
             calls.append(args)
             if args == ["merge", "--ff-only", "@{u}"]:
@@ -1743,9 +1745,9 @@ class TestPullWithRecentNotice:
         migrations: list[pathlib.Path] = []
         original_run_git = _common._run_git  # pylint: disable=protected-access  # noqa: SLF001
 
-        def run_git(args: list[str], cwd: pathlib.Path) -> None:
+        def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
             calls.append(args)
-            original_run_git(args, cwd)
+            original_run_git(args, cwd, forward_error_output=forward_error_output)
 
         monkeypatch.setattr(_common, "_run_git", run_git)
 
@@ -1781,7 +1783,7 @@ class TestPullWithRecentNotice:
         os.utime(fetch_head, (1000.0, 1000.0))
         monkeypatch.setattr(_common.time, "time", lambda: 1030.0)
         calls: list[list[str]] = []
-        monkeypatch.setattr(_common, "_run_git", lambda args, cwd: calls.append(args))  # noqa: ARG005
+        monkeypatch.setattr(_common, "_run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
 
         with _common._repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
             _common._pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001

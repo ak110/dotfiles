@@ -278,7 +278,7 @@ def _reshim_mise() -> list[str]:
     mise = _find_mise()
     if mise is None:
         return []
-    reshim = claude_common.run_subprocess([str(mise), "reshim"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise")
+    reshim = claude_common.run_subprocess([str(mise), "reshim", "--force"], timeout=claude_common.CLAUDE_TIMEOUT, tag="mise")
     if reshim is None or reshim.returncode != 0:
         return [f"mise reshimに失敗: {claude_common.format_cli_error(reshim)}"]
     return []

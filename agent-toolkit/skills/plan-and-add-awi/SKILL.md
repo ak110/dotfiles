@@ -14,7 +14,7 @@ description: >
 対象リポジトリの実装を求める指示へ読み替えず、実装の可否をユーザーへ問う分岐も設けない。
 再発防止、完遂その他の要求も、同じ2つの成果物への反映として果たす。
 計画の作成に必要な一時入力の作成と、管理CLIによる後始末は本項の対象にしない。
-共通の許容性の判断は`agent-toolkit/rules/01-agent.md`の「判断指針」と「完遂と先送り」を正本とし、同じ禁止の全文を本書へ複製しない。
+共通の許容性の判断は`agent-toolkit/rules/01-agent.md`の「判断指針」と「完遂と先送り」を正本とする。
 委譲先を起動する場合は、起動したスキル、許容する成果物の種別、当該セッションの終端を起動文へ含める。
 AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`を正本とする。本スキルが投入する項目の`source`値`plan-and-add-awi`は投入したスキルの名前であり、由来の判定において人間由来を意味しない。
 
@@ -42,7 +42,7 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
 4. 計画レビューまで完了した後、`## 計画バンドルの保存`を実施し、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
    ```sh
-   atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-awi-body> --depends-on=<filename>... --target-repo=<repo>
+   atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --body-file=<plan-awi-body-file> --depends-on=<filename>... --target-repo=<repo>
    ```
 
    新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。
@@ -59,11 +59,11 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
 1. 作業途中で本スキルが起動された場合は、現時点までの調査結果を計画へ引き継ぎ、実装せずAWI投入でセッションを完了する意図として扱う。既存の未コミット差分を変更せず、確認済みの事実だけを計画へ再利用する。
 2. 複数リポジトリの場合だけ、`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/cross-repository-submission.md`も全文読む。
 3. 計画に使うworktreeの絶対パスとbase commitを保持する。
-4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草を完了する。
+4. 実行主体が`agent-toolkit:plan-mode`をSkill機能で起動し、対象worktreeと調査済み事実を渡す。実装委譲を除く調査、確認及び計画ファイル初版の起草は、実行主体自身が完了する。
    起動の前に、次行が挙げる2書を全文読み、両書が定める起動入力、渡す`model_type`と収束判定を確定する。
    起草完了後、`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って計画レビュー担当を起動する。
    渡す入力は、計画ファイルの絶対パス、対象リポジトリ、プロジェクト規範、元のユーザー指示と、計画メタ情報の関連WIの出所・引用範囲とする。
-   起動後は計画ファイルの書込所有権が、計画レビュー担当の指摘を反映する計画担当へ移る。実行主体は完了報告を受領するまで計画ファイルを読み取り専用として扱い、起動文で書込主体を指定しない。
+   計画ファイルの書込所有権は実行主体が保持する。計画レビュー担当の起動から完了報告の受領までは計画ファイルを読み取り専用として扱い、受領後は`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の「指摘の検収と修正」に従って実行主体が自ら反映する。
    `status: needs_escalation`を受領した場合は、事象、根拠、必要な判断をユーザーへ確認する。`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「ラウンドの遷移」に従って計画レビューの収束を確定したら次へ進む。
 5. 完成後、`## 計画バンドルの保存`を実施する。続けて実行主体が`agent-toolkit:wi-standards`をSkill機能で起動し、本文、対象worktreeの絶対パス、base commit、plan file、source `plan-and-add-awi`、要求単位の由来、依存及び吸収元のファイル名を渡す。新しい`inbox(plan)`のAWIを追加する。
 

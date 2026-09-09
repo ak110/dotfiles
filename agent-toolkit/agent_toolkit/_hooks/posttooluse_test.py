@@ -22,6 +22,7 @@ import pytest
 
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._hooks import required_reads
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
@@ -149,53 +150,6 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
         input=json.dumps(payload, ensure_ascii=False),
         env=env,
     )
-
-
-class TestAtkHelpObservation:
-    """成功したヘルプ専用の`atk`呼び出しだけを状態へ記録する。"""
-
-    def test_claude_help_only_call_records_resolved_subcommand(self, tmp_path: pathlib.Path) -> None:
-        session_id = "record-atk-help"
-        result = _run(
-            {
-                "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi add --help"},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert _read_state(tmp_path, session_id)["observed_atk_help"] == ["atk wi add"]
-
-    def test_codex_help_only_call_is_not_recorded_without_exit_code(self, tmp_path: pathlib.Path) -> None:
-        session_id = "ignore-codex-atk-help"
-        result = _run(
-            {
-                "session_id": session_id,
-                "turn_id": "turn-codex",
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi add --help"},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert "observed_atk_help" not in _read_state(tmp_path, session_id)
-
-    def test_non_help_call_is_not_recorded(self, tmp_path: pathlib.Path) -> None:
-        session_id = "ignore-atk-non-help"
-        result = _run(
-            {
-                "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi add example"},
-            },
-            state_dir=tmp_path,
-        )
-
-        assert result.returncode == 0
-        assert "observed_atk_help" not in _read_state(tmp_path, session_id)
 
 
 class TestCodexBashStateRecording:
@@ -929,7 +883,16 @@ class TestGitLogChecked:
 
 
 class TestReadHandlerNoop:
-    """Readは対象パスによらずセッション状態を更新しない。"""
+    """Readは対象文書の全文読取だけを状態へ記録する。"""
+
+    def test_required_full_read_is_recorded(self, tmp_path: pathlib.Path) -> None:
+        sid = "read-required"
+        _run(
+            {"session_id": sid, "tool_name": "Read", "tool_input": {"file_path": required_reads.document_path()}},
+            state_dir=tmp_path,
+        )
+
+        assert _read_state(tmp_path, sid)["observed_required_reads"] == [required_reads.DOCUMENT_NAME]
 
     @pytest.mark.parametrize(
         "file_path",

@@ -7,9 +7,7 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 - Claude Codeは地の文の無い応答を可視出力の欠落として扱い、応答の再生成を要求する。
   `agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が定める待機表明の回など、
   地の文で伝える内容が無い回は、記号1文字（`…`）だけを出力して当該要求を満たす
-  （2026年9月1日、ツール呼び出しだけで地の文を持たない応答に対して
-  `Your previous response had no visible output`が返ることを実測した。
-  再検証は地の文を持たない応答を1回発行し、当該要求の有無を確認する）
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/rules/99-claude-code.md：ツールAPIと権限：2026年9月1日」にある
 - auto modeまたは権限設定でツール呼び出しが拒否された場合、推測でフラグ追加・迂回を試みず
   `agent-toolkit:writing-standards`の`references/auto-mode.md`を参照して対応を判断する
 - エージェント定義（`.claude/agents/`配下・`~/.claude/agents/`配下・プラグイン配布分）はセッション起動時に読み込まれる。実行中のセッションで新規作成・改訂した定義は、当該セッションの`subagent_type`から解決できない。frontmatterの`tools`・`model`・`effort`を省略した場合は、順にサブエージェントが利用できる全ツール・`inherit`・セッション値を継承するため、起動プロンプトの文言ではこれらの条件を固定できない
@@ -44,11 +42,7 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
   `agent-toolkit:session-review`の起動と`SendMessage`の`to: "main"`による通知の宛先が該当する。
   判定には当該環境変数と自身の起動経路を用いる
 
-2026年9月4日、agent-toolkit 2.94.0で次を実測した。
-`agents_server`の`start`で起動した委譲先のプロセス環境に`AGENT_TOOLKIT_DELEGATED_SESSION=1`が入る。
-`agent-toolkit/scripts/_agents_server/claude.py`の`_build_options`は、通常起動で`setting_sources`へ`user`と`project`を渡し、軽量起動で空リストを渡す。
-`agent-toolkit/hooks/hooks.json`は`Stop`側と`SubagentStop`側へ別のフックを登録し、委譲先セッションでは`Stop`側のフックが判定を記録する。
-再検証は`agents_server`の通常起動で委譲先を1件起動し、当該委譲先のセッション記録に`Stop`側フックの結果が現れることと、`SubagentStop`側フックの記録が現れないことを対にして確認する。
+`agents_server`の通常起動と軽量起動、及びStop側とSubagentStop側のフックは異なる動作をする。監査記録は`docs/development/audit-records.md`の「agent-toolkit/rules/99-claude-code.md：役割上の区分と実行環境上の区分：2026年9月4日」にある。
 
 配布後の条文配送は次の手順で再検証する。Claude Codeを再起動した後の最上位セッションで、当該セッションのシステム指示を確認する。`agent-toolkit/rules/`直下の3ファイルと`agent-toolkit/share/rules-main.md`及び`agent-toolkit/share/rules-main.claude-code.md`が現れることを、この確認の合格条件とする。続いて同じセッションから`agents_server`の`start_explore`で委譲先を1件起動する。当該委譲先へ配送された規範ファイルの一覧を返させ、前記の5ファイルと`agent-toolkit/share/rules-subagent.md`のいずれもが現れないことを確認する。軽量起動は`setting_sources`を空とし、システム指示へプリセットを用いず固定の起動文だけを渡す。このためフックが追加する条文も`agents_server`が連結する条文も届かない。観測が本項と異なる場合は、当該差分を事象として本節の記述を是正する。
 

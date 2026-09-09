@@ -24,11 +24,7 @@ _ADD_NAMESPACE_DEFAULTS = {
     "round": "1",
     "track": _TRACK,
     "level": "実装",
-    "location_arg": None,
-    "location": None,
     "location_file": None,
-    "issue_arg": None,
-    "issue": None,
     "issue_file": None,
 }
 
@@ -39,24 +35,14 @@ _RESPOND_NAMESPACE_DEFAULTS = {
     "path": "review.tsv",
     "round": "1",
     "track": _TRACK,
-    "location_arg": None,
-    "location": None,
     "location_file": None,
-    "issue_arg": None,
-    "issue": None,
     "issue_file": None,
     "response_needed": "yes",
-    "response": None,
     "response_file": None,
-    "no_response_reason": None,
     "no_response_reason_file": None,
 }
 
 _CLI_ACCEPTED_CASES = (
-    (
-        ["review-table", "add", "review.tsv", "--round", "1", f"--track={_TRACK}", "--level", "実装", "位置", "指摘"],
-        {**_ADD_NAMESPACE_DEFAULTS, "location_arg": "位置", "issue_arg": "指摘"},
-    ),
     (
         [
             "review-table",
@@ -74,40 +60,6 @@ _CLI_ACCEPTED_CASES = (
             "location_file": "location.txt",
             "issue_file": "issue.txt",
         },
-    ),
-    (
-        ["review-table", "respond", "review.tsv", "--round=1", f"--track={_TRACK}", "--response-needed=yes", "--response=対応"],
-        {**_RESPOND_NAMESPACE_DEFAULTS, "response": "対応"},
-    ),
-    (
-        [
-            "review-table",
-            "respond",
-            "review.tsv",
-            "--round=1",
-            f"--track={_TRACK}",
-            "--response-needed=no",
-            "--no-response-reason=対象外",
-        ],
-        {
-            **_RESPOND_NAMESPACE_DEFAULTS,
-            "response_needed": "no",
-            "no_response_reason": "対象外",
-        },
-    ),
-    (
-        [
-            "review-table",
-            "respond",
-            "review.tsv",
-            "--round=1",
-            f"--track={_TRACK}",
-            "--location=位置",
-            "--issue=指摘",
-            "--response-needed=yes",
-            "--response=対応",
-        ],
-        {**_RESPOND_NAMESPACE_DEFAULTS, "location": "位置", "issue": "指摘", "response": "対応"},
     ),
     (
         [
@@ -297,6 +249,8 @@ def test_respond_reports_body_mismatch_when_saved_response_is_altered(
     """応答の保存経路で本文が改変された場合、CLIは差異の診断を出力して失敗する。"""
     path = tmp_path / "review.tsv"
     response = "送信元の対応本文"
+    response_file = tmp_path / "response.md"
+    response_file.write_text(response, encoding="utf-8")
     altered_response = "保存後に改変された対応本文"
     table.add(path, "1", _TRACK, "位置", "指摘")
     capsys.readouterr()
@@ -318,7 +272,7 @@ def test_respond_reports_body_mismatch_when_saved_response_is_altered(
                 "--round=1",
                 f"--track={_TRACK}",
                 "--response-needed=yes",
-                f"--response={response}",
+                f"--response-file={response_file}",
             ],
             home=tmp_path,
         )
@@ -338,6 +292,8 @@ def test_respond_reports_body_mismatch_when_saved_no_response_reason_is_altered(
     """対応不要理由が保存時に改変された場合、CLIは差異の診断を出力して失敗する。"""
     path = tmp_path / "review.tsv"
     reason = "送信元の対応不要理由"
+    reason_file = tmp_path / "reason.md"
+    reason_file.write_text(reason, encoding="utf-8")
     altered_reason = "保存後に改変された対応不要理由"
     table.add(path, "1", _TRACK, "位置", "指摘")
     capsys.readouterr()
@@ -359,7 +315,7 @@ def test_respond_reports_body_mismatch_when_saved_no_response_reason_is_altered(
                 "--round=1",
                 f"--track={_TRACK}",
                 "--response-needed=no",
-                f"--no-response-reason={reason}",
+                f"--no-response-reason-file={reason_file}",
             ],
             home=tmp_path,
         )
@@ -992,19 +948,15 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "--file", "本文.txt"],
-            ("--issue", "--issue-file", "--level", "--location", "--location-file", "--round", "--track"),
+            ("--issue-file", "--level", "--location-file", "--round", "--track"),
         ),
         (
             "respond",
             ["review.tsv", "--file", "response.txt", "--response-needed=yes", "位置", "指摘"],
             (
-                "--issue",
                 "--issue-file",
-                "--location",
                 "--location-file",
-                "--no-response-reason",
                 "--no-response-reason-file",
-                "--response",
                 "--response-file",
                 "--response-needed",
                 "--round",
@@ -1015,7 +967,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
-            ("--issue", "--issue-file", "--level", "--location", "--location-file", "--round", "--track"),
+            ("--issue-file", "--level", "--location-file", "--round", "--track"),
         ),
     ),
 )
@@ -1036,15 +988,20 @@ def test_parser_rejects_unsupported_options_with_guidance(
 
 
 @pytest.mark.parametrize(
-    ("subcommand", "options"),
+    ("subcommand", "options", "removed_options"),
     (
-        ("add", ("--location-file", "--issue-file")),
-        ("respond", ("--location-file", "--issue-file", "--response-file", "--no-response-reason-file")),
+        ("add", ("--location-file", "--issue-file"), ("--location LOCATION", "--issue ISSUE")),
+        (
+            "respond",
+            ("--location-file", "--issue-file", "--response-file", "--no-response-reason-file"),
+            ("--location LOCATION", "--issue ISSUE", "--response RESPONSE", "--no-response-reason NO_RESPONSE_REASON"),
+        ),
     ),
 )
 def test_cell_file_options_are_shown_in_help(
     subcommand: str,
     options: tuple[str, ...],
+    removed_options: tuple[str, ...],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
@@ -1054,6 +1011,8 @@ def test_cell_file_options_are_shown_in_help(
     help_text = capsys.readouterr().out
     for option in options:
         assert option in help_text
+    for option in removed_options:
+        assert option not in help_text
 
 
 @pytest.mark.parametrize(
@@ -1180,80 +1139,27 @@ def test_cell_files_preserve_issue_and_supply_responses(
     assert rows[1] == ["2", _TRACK, "README.md", "対象外", "詳細", "no", "", reason.strip()]
 
 
-def test_add_rejects_empty_issue_file_instead_of_using_positional_issue(tmp_path: pathlib.Path) -> None:
-    path = tmp_path / "review.tsv"
-    issue_file = tmp_path / "issue.txt"
-    issue_file.write_text("", encoding="utf-8")
-    table.init(path)
-    before = path.read_text(encoding="utf-8")
-    args = _parser().parse_args(
-        [
-            "review-table",
-            "add",
-            str(path),
-            "位置",
-            "位置引数の指摘",
-            "--round=1",
-            f"--track={_TRACK}",
-            "--level=詳細",
-            "--issue-file",
-            str(issue_file),
-        ]
-    )
-
-    with pytest.raises(ValueError, match="--issueを指定する"):
-        table.dispatch(args)
-    assert path.read_text(encoding="utf-8") == before
-
-
-def test_respond_uses_empty_issue_file_instead_of_positional_issue(tmp_path: pathlib.Path) -> None:
-    path = tmp_path / "review.tsv"
-    issue_file = tmp_path / "issue.txt"
-    issue_file.write_text("", encoding="utf-8")
-    table.init(path)
-    table.add(path, "1", _TRACK, "同じ位置", "指摘A")
-    table.add(path, "1", _TRACK, "同じ位置", "指摘B")
-    before = path.read_text(encoding="utf-8")
-    args = _parser().parse_args(
-        [
-            "review-table",
-            "respond",
-            str(path),
-            "同じ位置",
-            "指摘A",
-            "--issue-file",
-            str(issue_file),
-            "--response-needed=yes",
-            "--response=対応した",
-        ]
-    )
-
-    with pytest.raises(ValueError, match="一意に解決できない: 2件"):
-        table.dispatch(args)
-    assert path.read_text(encoding="utf-8") == before
-
-
-def test_cell_text_and_file_options_are_mutually_exclusive(tmp_path: pathlib.Path) -> None:
-    issue_file = tmp_path / "issue.txt"
-    issue_file.write_text("指摘", encoding="utf-8")
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["review-table", "add", "review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘"],
+        ["review-table", "add", "review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "--location=位置"],
+        ["review-table", "add", "review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "--issue=指摘"],
+        ["review-table", "respond", "review.tsv", "--round=1", "--response-needed=yes", "--response=対応"],
+        ["review-table", "respond", "review.tsv", "--round=1", "--response-needed=no", "--no-response-reason=対象外"],
+    ],
+)
+def test_cell_text_arguments_are_rejected(arguments: list[str]) -> None:
+    """セル本文をコマンドライン文字列で渡す旧受理形式を拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(
-            [
-                "review-table",
-                "add",
-                "review.tsv",
-                "--round=1",
-                f"--track={_TRACK}",
-                "位置",
-                "--issue=指摘",
-                f"--issue-file={issue_file}",
-            ]
-        )
+        _parser().parse_args(arguments)
     assert exc_info.value.code == 2
 
 
 def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "review.tsv"
+    location_file = tmp_path / "location.txt"
+    location_file.write_text("位置", encoding="utf-8")
     table.init(path)
     before = path.read_text(encoding="utf-8")
     args = _parser().parse_args(
@@ -1264,7 +1170,8 @@ def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> N
             "--round=1",
             f"--track={_TRACK}",
             "--level=詳細",
-            "位置",
+            "--location-file",
+            str(location_file),
             "--issue-file",
             str(tmp_path / "missing.txt"),
         ]

@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"& { dotfiles-claude-hook posttooluse; exit 0 }\""
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"__HOME__\\dotfiles\\scripts\\claude-hook-posttooluse.ps1\""
           }
         ]
       }

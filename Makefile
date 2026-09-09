@@ -67,13 +67,13 @@ test:
 test-browser:
 	uv run playwright install chromium
 	AGENT_TOOLKIT_SERVE_BROWSER_TESTS=1 \
-		uv run pytest agent-toolkit/scripts/_atk/serve/browser_test.py \
+		uv run pytest agent-toolkit/agent_toolkit/_atk/serve/browser_test.py \
 		-o addopts='' -p no:cacheprovider
 
 # agents_serverの実backendを使うライブ一体テスト
 test-agents-live:
 	AGENT_TOOLKIT_LIVE_AGENTS_TEST=1 \
-		uv run pytest agent-toolkit/scripts/agents_server_live_test.py \
+		uv run pytest agent-toolkit/agent_toolkit/agents_server_live_test.py \
 		-o addopts='' -p no:cacheprovider
 
 .PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh format test test-browser test-agents-live

@@ -29,6 +29,8 @@ def test_agents_wait_outputs_matching_result(
     wait_environment.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+    other_result = wait_environment / "session-2.json"
+    other_result.write_text(json.dumps({"session_id": "session-2", "status": "failed"}), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents-wait", "session-1", "--timeout=0"])
@@ -38,6 +40,7 @@ def test_agents_wait_outputs_matching_result(
     assert captured.out.count("\n") == 1
     assert not captured.err
     assert not (wait_environment / "session-1.json").exists()
+    assert other_result.exists()
 
 
 def test_agents_wait_resolves_changed_conversation_session(
@@ -107,6 +110,26 @@ def test_agents_wait_keeps_waiting_for_retained_session(
     root_status = wait_environment.parent / "root.json"
     root_status.parent.mkdir(parents=True)
     root_status.write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "session-1"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents-wait", "session-1", "--timeout=0"])
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
+    assert not captured.err
+
+
+def test_agents_wait_keeps_waiting_for_session_retained_by_nested_server(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """委譲先のMCPサーバーが保持するsessionを消失として返さない。"""
+    nested_status = wait_environment.parent / "child-session.json"
+    nested_status.parent.mkdir(parents=True)
+    nested_status.write_text(
         json.dumps({"version": 1, "sessions": [{"session_id": "session-1"}]}),
         encoding="utf-8",
     )

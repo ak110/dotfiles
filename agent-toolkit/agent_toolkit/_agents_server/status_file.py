@@ -6,12 +6,11 @@ Codex backendの委譲先自身のシェルは、所有sessionと自身のCodex 
 2026年9月7日にCodex CLI 0.153.4の`start_shell`で起動したシェルに
 `CODEX_THREAD_ID`が存在することを確認した。
 
-Codex CLIが直接起動するMCPサーバープロセスには、所有session識別子、
-Claude Code session識別子及びCodex thread識別子のいずれも現れない。
-2026年9月7日にCodex CLI 0.153.4が起動したMCPサーバーの`/proc/<pid>/environ`から
-環境変数名だけを取得して確認した。この経路は書込主体を解決できないため、
-状態ファイルを書かない。各ホスト、CLI又はSDKの更改時は同じ2経路の環境変数を
-再取得し、識別子の有無を個別に検証する。
+Codex CLIが直接起動するMCPサーバープロセスへは、Codex App Server自身の環境が
+継承されない。Codex CLI 0.153.4で2026年9月9日に確認した。`thread/start`の
+`config.mcp_servers.agents_server`へ完全な定義を渡す場合だけ、`env`の識別子が
+当該プロセスへ届く。ホスト、CLI又はSDKを更新した時点では、同じ起動形で
+MCPサーバーの環境変数と起動通知を確認する。
 
 上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して実測した。この前提が崩れた場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
 """
@@ -29,6 +28,7 @@ from typing import Any
 
 from agent_toolkit._agents_server.state import (
     RESULT_RETENTION_SECONDS,
+    TERMINAL_STATUSES,
     SessionResumeState,
     SessionState,
     has_uncollected_result,
@@ -38,6 +38,8 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
+HEARTBEAT_INTERVAL_SECONDS = 30
+HEARTBEAT_EXPIRY_SECONDS = 120
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,6 +68,8 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
         host_session_id = environment.get("CLAUDE_CODE_SESSION_ID")
     elif environment.get("CODEX_THREAD_ID"):
         host_session_id = environment.get("CODEX_THREAD_ID")
+    elif environment.get("AGENT_TOOLKIT_STATUS_HOST_SESSION"):
+        host_session_id = environment.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
     if host_session_id is not None and not valid_session_id(host_session_id):
         return None
     if host_session_id is None and environment.get("AGENT_TOOLKIT_OWNER_SESSION"):
@@ -79,6 +83,21 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
     """ルートsessionの状態ファイルディレクトリを返す。"""
     root = _atk_config.state_dir() if state_root is None else state_root
     return root / "agents-server" / root_session_id
+
+
+def list_status_files(root_session_id: str, state_root: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """書込主体ごとの状態ファイルを絶対パスの安定順で返す。
+
+    書込主体ごとに`root.json`と`<host_session_id>.json`へ分かれるため、
+    読取主体は単一のファイル名を組み立てない。ファイル名の規則の正本は
+    `resolve_status_file_identity`である。
+    """
+    directory = status_directory(root_session_id, state_root)
+    try:
+        paths = [path.absolute() for path in directory.iterdir() if path.suffix == ".json" and path.is_file()]
+    except OSError:
+        return []
+    return sorted(paths)
 
 
 def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -144,6 +163,27 @@ def results_directory(root_session_id: str, state_root: pathlib.Path | None = No
 def notices_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
     """ルートsession宛ての未回収通知ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "notices"
+
+
+def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """書込主体から起動元threadへの索引ディレクトリを返す。"""
+    return status_directory(root_session_id, state_root) / "hosts"
+
+
+def write_host_alias(
+    root_session_id: str,
+    writer_session_id: str,
+    host_session_id: str,
+    state_root: pathlib.Path | None = None,
+) -> None:
+    """書込主体を起動元threadへ対応付ける索引を書く。"""
+    if not all(valid_session_id(value) for value in (root_session_id, writer_session_id, host_session_id)):
+        raise ValueError("invalid session_id")
+    payload = {"version": 1, "host_session_id": host_session_id}
+    atomic_write(
+        hosts_directory(root_session_id, state_root) / f"{writer_session_id}.json",
+        json.dumps(payload, ensure_ascii=False) + "\n",
+    )
 
 
 def take_notices(
@@ -222,7 +262,8 @@ class StatusFileWriter:
         self._aggregate_seconds = aggregate_seconds
         self._flush_handle: asyncio.TimerHandle | None = None
         self._retention_handle: asyncio.TimerHandle | None = None
-        self._result_deadlines: dict[str, float] = {}
+        self._published_results: set[str] = set()
+        self._projected_host_session_id: str | None = None
         self._active = False
 
     @property
@@ -244,6 +285,7 @@ class StatusFileWriter:
         """書込を有効化し、前回プロセスの残存状態を初期化する。"""
         self._active = True
         self._remove_owned_and_expired_files()
+        self._remove_stale_status_files()
         self.flush()
 
     def schedule(self) -> None:
@@ -258,9 +300,9 @@ class StatusFileWriter:
         if not self._active:
             return
         self._flush_handle = None
+        self._remove_stale_status_files()
         now = asyncio.get_running_loop().time()
-        self._remove_expired_results(now)
-        self._write_terminal_results(now)
+        self._write_terminal_results()
         visible = [
             session
             for session in self._sessions.values()
@@ -274,7 +316,8 @@ class StatusFileWriter:
         visible.sort(key=lambda session: session.started_at)
         payload: dict[str, Any] = {
             "version": 1,
-            "host_session_id": self._identity.host_session_id,
+            "host_session_id": self._resolve_host_session_id(),
+            "heartbeat_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "updated_at": _updated_at(visible),
             "sessions": [_serialize_session(session) for session in visible],
         }
@@ -290,7 +333,7 @@ class StatusFileWriter:
         self._flush_handle = None
         self._retention_handle = None
         self._remove_owned_and_expired_files()
-        self._result_deadlines.clear()
+        self._published_results.clear()
         if self._directory.exists() and not any(self._directory.iterdir()):
             self._directory.rmdir()
 
@@ -309,7 +352,7 @@ class StatusFileWriter:
             raise ValueError(f"invalid session_id: {session_id}")
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
         path.unlink(missing_ok=True)
-        self._result_deadlines.pop(session_id, None)
+        self._published_results.discard(session_id)
 
     def result_exists(self, session_id: str) -> bool:
         """指定sessionの終端結果ファイルが存在するかを返す。"""
@@ -317,9 +360,29 @@ class StatusFileWriter:
             raise ValueError(f"invalid session_id: {session_id}")
         return (results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json").is_file()
 
+    def read_result(self, session_id: str) -> dict[str, Any] | None:
+        """指定sessionの保存済み終端結果を検証して返す。"""
+        if not valid_session_id(session_id):
+            raise ValueError(f"invalid session_id: {session_id}")
+        path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
+        try:
+            payload: Any = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+            return None
+        if (
+            not isinstance(payload, dict)
+            or payload.get("status") not in TERMINAL_STATUSES
+            or not isinstance(payload.get("agent_message"), str)
+            or not isinstance(payload.get("turn_seq"), int)
+            or isinstance(payload.get("turn_seq"), bool)
+            or not isinstance(payload.get("finalized_at"), str)
+        ):
+            return None
+        return payload
+
     def result_state(self, session_id: str) -> str:
         """自プロセスが公開した終端結果の公開状態を返す。"""
-        if session_id not in self._result_deadlines:
+        if session_id not in self._published_results:
             return "unpublished"
         return "published" if self.result_exists(session_id) else "consumed"
 
@@ -327,27 +390,18 @@ class StatusFileWriter:
         """待機対象sessionの正常な通知を回収する。"""
         return take_notices(self._identity.root_session_id, session_id, self._state_root)
 
-    def _write_terminal_results(self, now: float) -> None:
+    def _write_terminal_results(self) -> None:
         for session in self._sessions.values():
             if session.result_delivered:
                 self.delete_result(session.session_id)
                 continue
             if not session.result_available:
                 continue
-            if session.retention_deadline is not None and session.retention_deadline <= now:
-                session.result_delivered = True
-                self.delete_result(session.session_id)
-                continue
             if self.result_state(session.session_id) == "consumed":
                 session.result_delivered = True
-                self._result_deadlines.pop(session.session_id, None)
+                self._published_results.discard(session.session_id)
                 continue
             self._write_terminal_result(session)
-
-    def _remove_expired_results(self, now: float) -> None:
-        expired = [session_id for session_id, deadline in self._result_deadlines.items() if deadline <= now]
-        for session_id in expired:
-            self.delete_result(session_id)
 
     def _write_terminal_result(self, session: SessionState | SessionResumeState) -> None:
         assert session.finalized_at is not None
@@ -355,17 +409,20 @@ class StatusFileWriter:
         payload = terminal_result_payload(session)
         directory = results_directory(self._identity.root_session_id, self._state_root)
         atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
-        self._result_deadlines[session.session_id] = session.retention_deadline
+        self._published_results.add(session.session_id)
 
     def _remove_owned_and_expired_files(self) -> None:
-        """自身の状態ファイルと保持期限を超えた共有ファイルだけを削除する。"""
+        """自身の状態ファイルと保持期限を超えた通知だけを削除する。"""
         self._path.unlink(missing_ok=True)
         for path in self._directory.glob(f".{self._path.name}.*.tmp"):
             path.unlink()
+        results = results_directory(self.root_session_id, self._state_root)
+        if results.exists() and not any(results.iterdir()):
+            results.rmdir()
         cutoff = datetime.datetime.now(datetime.UTC).timestamp() - RESULT_RETENTION_SECONDS
         directories = (
-            results_directory(self.root_session_id, self._state_root),
             notices_directory(self.root_session_id, self._state_root),
+            hosts_directory(self.root_session_id, self._state_root),
         )
         for directory in directories:
             if not directory.exists():
@@ -376,6 +433,44 @@ class StatusFileWriter:
             if not any(directory.iterdir()):
                 directory.rmdir()
 
+    def _resolve_host_session_id(self) -> str | None:
+        """書込主体に対応する起動元threadを一度だけ状態ファイルへ射影する。"""
+        if self._projected_host_session_id is not None:
+            return self._projected_host_session_id
+        writer_session_id = self._identity.host_session_id
+        if writer_session_id is None:
+            return None
+        path = hosts_directory(self.root_session_id, self._state_root) / f"{writer_session_id}.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+            return writer_session_id
+        host_session_id = payload.get("host_session_id") if isinstance(payload, dict) else None
+        if (
+            isinstance(payload, dict)
+            and payload.get("version") == 1
+            and isinstance(host_session_id, str)
+            and valid_session_id(host_session_id)
+        ):
+            self._projected_host_session_id = host_session_id
+            return host_session_id
+        return writer_session_id
+
+    def _remove_stale_status_files(self) -> None:
+        """生存の印が失効した他の書込主体の状態ファイルを削除する。"""
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
+        for path in self._directory.glob("*.json"):
+            if path == self._path:
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                heartbeat_at = payload.get("heartbeat_at") if isinstance(payload, dict) else None
+                heartbeat = datetime.datetime.fromisoformat(heartbeat_at) if isinstance(heartbeat_at, str) else None
+            except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+                continue
+            if heartbeat is not None and heartbeat.tzinfo is not None and heartbeat < cutoff:
+                path.unlink(missing_ok=True)
+
     def _schedule_retention(self, sessions: list[SessionState], now: float) -> None:
         if self._retention_handle is not None:
             self._retention_handle.cancel()
@@ -384,7 +479,6 @@ class StatusFileWriter:
             for session in sessions
             if session.retention_deadline is not None and session.retention_deadline > now
         ]
-        deadlines.extend(deadline for deadline in self._result_deadlines.values() if deadline > now)
         self._retention_handle = None
         if deadlines:
             self._retention_handle = asyncio.get_running_loop().call_at(min(deadlines), self.flush)

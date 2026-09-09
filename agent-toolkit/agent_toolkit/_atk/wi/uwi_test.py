@@ -43,6 +43,24 @@ def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+def _body_file_args(tmp_path: pathlib.Path, body: str) -> list[str]:
+    """本文ファイルを作成してCLI引数を返す。"""
+    body_file = tmp_path / "body.md"
+    body_file.write_text(body, encoding="utf-8")
+    return ["--body-file", str(body_file)]
+
+
+def _invoke_uwi_add(tmp_path: pathlib.Path, *args: str, body: str) -> SystemExit:
+    """本文ファイル経由でUWI投入を呼び出し、終了結果を返す。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "add", "--type=uwi", *args, *_body_file_args(tmp_path, body)],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    return exc_info.value
+
+
 def _make_uwi_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
     """UWI投入検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
 
@@ -155,13 +173,7 @@ class TestCmdUwiAddSelfContainmentWarning:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "採否は?"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 0
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body="採否は?").code == 0
         stderr = capsys.readouterr().err
         assert "agent-toolkit:wi-standardsが定める自己完結要件" in stderr
         assert "agent-toolkit:process-wi" not in stderr
@@ -181,13 +193,7 @@ class TestUwiAdd:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "--scope", "theme1", "未確認の挙動"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 0
+        assert _invoke_uwi_add(tmp_path, str(myrepo), "--scope", "theme1", body="未確認の挙動").code == 0
 
         files = sorted((notes / "inbox").iterdir())
         assert len(files) == 1
@@ -220,13 +226,7 @@ class TestUwiAdd:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "--question-type", "choice", "q"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 2
+        assert _invoke_uwi_add(tmp_path, str(myrepo), "--question-type", "choice", body="q").code == 2
         captured = capsys.readouterr()
         assert "使い方: atk wi add" in captured.err
         assert "--choices を指定してください" in captured.err
@@ -243,13 +243,7 @@ class TestUwiAdd:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "実施報告のみで疑問文を含まない本文"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 0
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body="実施報告のみで疑問文を含まない本文").code == 0
         stderr = capsys.readouterr().err
         assert "警告" in stderr
         assert f"{_FIXED_TIMESTAMP}-001.md" in stderr
@@ -266,20 +260,14 @@ class TestUwiAdd:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                [
-                    "wi",
-                    "add",
-                    str(myrepo),
-                    "この対応でよいか？判定根拠は既存実装の挙動確認結果であり、"
-                    "選択肢は採用と却下の二択とし、トレードオフとして実装コストと品質維持の"
-                    "バランスを考慮した経緯を踏まえて判断してほしい。背景として前提となる範囲・方針も併記する。",
-                ],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 0
+        result = _invoke_uwi_add(
+            tmp_path,
+            str(myrepo),
+            body="この対応でよいか？判定根拠は既存実装の挙動確認結果であり、"
+            "選択肢は採用と却下の二択とし、トレードオフとして実装コストと品質維持の"
+            "バランスを考慮した経緯を踏まえて判断してほしい。背景として前提となる範囲・方針も併記する。",
+        )
+        assert result.code == 0
         assert "警告" not in capsys.readouterr().err
 
     def test_choice_without_question_mark_no_warning(
@@ -294,25 +282,18 @@ class TestUwiAdd:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                [
-                    "wi",
-                    "add",
-                    "--type=uwi",
-                    str(myrepo),
-                    "--question-type",
-                    "choice",
-                    "--choices",
-                    "A,B",
-                    "実施報告のみで疑問文を含まない選択式本文。判定根拠は既存実装の挙動確認結果であり、"
-                    "選択肢は採用と却下の二択とし、トレードオフとして実装コストと品質維持の"
-                    "バランスを考慮した経緯を踏まえて判断してほしい。",
-                ],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 0
+        result = _invoke_uwi_add(
+            tmp_path,
+            str(myrepo),
+            "--question-type",
+            "choice",
+            "--choices",
+            "A,B",
+            body="実施報告のみで疑問文を含まない選択式本文。判定根拠は既存実装の挙動確認結果であり、"
+            "選択肢は採用と却下の二択とし、トレードオフとして実装コストと品質維持の"
+            "バランスを考慮した経緯を踏まえて判断してほしい。",
+        )
+        assert result.code == 0
         assert "警告" not in capsys.readouterr().err
 
 
@@ -395,14 +376,7 @@ class TestUwiAddEditorBeforePull:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "--question-type", "choice", "q"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-
-        assert exc_info.value.code == 2
+        assert _invoke_uwi_add(tmp_path, str(myrepo), "--question-type", "choice", body="q").code == 2
         assert not any(c[:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_cmds)
 
 
@@ -440,10 +414,7 @@ class TestUwiAddRepoPathOverrideCli:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi", "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
+        assert _invoke_uwi_add(tmp_path, body="この対応でよいか").code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/cwdrepo" in content
 
@@ -479,10 +450,7 @@ class TestUwiAddRepoPathOverrideCli:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi", str(myrepo), "この対応でよいか"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body="この対応でよいか").code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
         assert "この対応でよいか" in content
@@ -502,13 +470,16 @@ class TestUwiAddSourceOption:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "--scope", "hold", "--source", "session-hold", "保留理由"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-        assert exc_info.value.code == 0
+        result = _invoke_uwi_add(
+            tmp_path,
+            str(myrepo),
+            "--scope",
+            "hold",
+            "--source",
+            "session-hold",
+            body="保留理由",
+        )
+        assert result.code == 0
 
         files = sorted((notes / "inbox").iterdir())
         content = files[0].read_text(encoding="utf-8")
@@ -525,9 +496,7 @@ class TestUwiAddSourceOption:
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "--type=uwi", str(myrepo), "疑問文を含む質問本文か"], home=tmp_path, now=_FIXED_DT)
-        assert exc_info.value.code == 0
+        assert _invoke_uwi_add(tmp_path, str(myrepo), body="疑問文を含む質問本文か").code == 0
 
         files = sorted((notes / "inbox").iterdir())
         content = files[0].read_text(encoding="utf-8")

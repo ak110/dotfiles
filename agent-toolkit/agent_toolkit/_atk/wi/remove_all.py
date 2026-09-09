@@ -82,8 +82,8 @@ def _confirm_removal(count: int) -> bool:
     if not sys.stdin.isatty():
         print("非対話環境で一括削除するには--yesを指定してください。", file=sys.stderr)
         sys.exit(2)
-    answer = input(f"上記{count}件を削除します。続行しますか？ [y/N]: ")
-    return answer.strip().casefold() in {"y", "yes"}
+    answer = input(f"上記{count}件を削除します。続行しますか？ [Y/n]: ")
+    return answer.strip().casefold() in {"", "y", "yes"}
 
 
 def _remove_candidates(

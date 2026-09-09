@@ -46,7 +46,7 @@ _DivergenceRecovery = Callable[[pathlib.Path], bool]
 class _GitRunner(Protocol):
     """終了時に例外を送出するGit実行関数の型。"""
 
-    def __call__(self, args: list[str], cwd: pathlib.Path) -> None: ...
+    def __call__(self, args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None: ...
 
 
 class _GitResultRunner(Protocol):
@@ -63,9 +63,16 @@ class GitSyncError(RuntimeError):
     """Git同期の前提を満たせない。"""
 
 
-def _run_git(args: list[str], cwd: pathlib.Path) -> None:
+def _run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
     """Gitコマンドを実行し、失敗時に例外を送出する。"""
-    _git_command.run_quiet(args, cwd)
+    _git_command.run_quiet(args, cwd, forward_error_output=forward_error_output)
+
+
+def _forward_error_output(error: subprocess.CalledProcessError) -> None:
+    """保持したGitの標準出力と標準エラーを呼び出し側の標準エラーへ転送する。"""
+    for output in (error.output, error.stderr):
+        if isinstance(output, str) and output:
+            print(output, file=sys.stderr, end="")
 
 
 def _run_git_result(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -246,7 +253,7 @@ def _pull_impl(
         return
     run_git(["fetch"], private_notes)
     try:
-        run_git(["merge", "--ff-only", "@{u}"], private_notes)
+        run_git(["merge", "--ff-only", "@{u}"], private_notes, forward_error_output=False)
         return
     except subprocess.CalledProcessError as error:
         merge_error = error
@@ -254,8 +261,10 @@ def _pull_impl(
     try:
         diverged = _history_has_diverged(private_notes, run_git=run_git)
     except subprocess.CalledProcessError:
+        _forward_error_output(merge_error)
         raise merge_error from None
     if not diverged:
+        _forward_error_output(merge_error)
         raise merge_error
     if _recover_matching_tree_divergence(
         private_notes,
@@ -271,11 +280,13 @@ def _pull_impl(
     ):
         return
     if is_worktree_dirty(private_notes, result_runner=result_runner):
+        _forward_error_output(merge_error)
         _report_divergence(private_notes, result_runner=result_runner)
         raise merge_error
     try:
         run_git(["rebase", "@{u}"], private_notes)
     except subprocess.CalledProcessError:
+        _forward_error_output(merge_error)
         _report_rebase_failure(private_notes, result_runner=result_runner)
         raise merge_error from None
 
@@ -485,7 +496,7 @@ def _push_pending_commits_impl(
         return
     original_error: subprocess.CalledProcessError
     try:
-        run_git(["push"], private_notes)
+        run_git(["push"], private_notes, forward_error_output=False)
         return
     except subprocess.CalledProcessError as error:
         original_error = error
@@ -497,6 +508,7 @@ def _push_pending_commits_impl(
     except subprocess.CalledProcessError:
         # upstream未設定・通信失敗・認証失敗など、履歴分岐を確定できない場合は
         # 最初のpush失敗を保持し、別の失敗を原因として見せない。
+        _forward_error_output(original_error)
         raise original_error from None
 
     if local_is_ancestor and not remote_is_ancestor:
@@ -504,6 +516,7 @@ def _push_pending_commits_impl(
         run_git(["push"], private_notes)
         return
     if remote_is_ancestor or (local_is_ancestor and remote_is_ancestor):
+        _forward_error_output(original_error)
         raise original_error
 
     if _recover_matching_tree_divergence(
@@ -514,6 +527,7 @@ def _push_pending_commits_impl(
         return
 
     if is_worktree_dirty(private_notes, result_runner=result_runner):
+        _forward_error_output(original_error)
         _report_divergence(private_notes, result_runner=result_runner)
         print(PUSH_DEFERRED_MESSAGE, file=sys.stderr)
         return

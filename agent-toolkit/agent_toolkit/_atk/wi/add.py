@@ -29,7 +29,6 @@ from agent_toolkit._atk.wi.common import (
     _pull,
     _reject_bare_repo_path_override,
     _repo_lock,
-    _resolve_repo_path_override,
     _subdir,
     _validate_filename,
     is_agent_environment,
@@ -123,7 +122,7 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_AWI_ERROR = "AWI本文が実質空です"
-_FEASIBILITY_FIELD_PATTERN = re.compile(r"^\s*-\s*実現性\s*[:：]\s*(?P<value>.*)$")
+_FEASIBILITY_HEADING_PATTERN = re.compile(r"^ {0,3}##\s+実現性\s*$")
 _CODE_FENCE_OPEN_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
 _CODE_FENCE_CLOSE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})[ \t]*$")
 
@@ -146,12 +145,13 @@ def _require_agent_awi_feasibility(
     source: str | None,
     plan_file: str | None,
 ) -> None:
-    """エージェント由来の通常AWIに非空の`実現性`欄があることを検証する。"""
+    """エージェント由来の通常AWIに非空の`## 実現性`節があることを検証する。"""
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
     if entry_type != WI_TYPE_AWI or plan_file is not None or not item_source:
         return
-    match = None
+    feasibility_found = False
+    feasibility_has_content = False
     open_fence: str | None = None
     for line in body.splitlines():
         if open_fence is not None:
@@ -164,11 +164,29 @@ def _require_agent_awi_feasibility(
         if (opening_match := _CODE_FENCE_OPEN_PATTERN.match(line)) is not None:
             open_fence = opening_match.group("fence")
             continue
-        if (matched := _FEASIBILITY_FIELD_PATTERN.match(line)) is not None:
-            match = matched
+        if feasibility_found and re.match(r"^ {0,3}##\s+", line):
             break
-    if match is None or not match.group("value").strip():
-        raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須欄です。")
+        if _FEASIBILITY_HEADING_PATTERN.match(line) is not None:
+            feasibility_found = True
+            continue
+        if feasibility_found and line.strip():
+            feasibility_has_content = True
+    if not feasibility_found or not feasibility_has_content:
+        raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須節です。")
+
+
+def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
+    """CLIのエージェント投入でsourceが確定していることを検証する。
+
+    環境変数では呼出元を区別できないため、ユーザーの手動投入を受領する
+    Web UI等の共有保存関数には本検査を適用しない。
+    """
+    raw_source = frontmatter.get("source", source)
+    item_source = raw_source if isinstance(raw_source, str) else source
+    if is_agent_environment() and not item_source:
+        raise WebInputError(
+            "エージェント環境ではsourceの明示が必須です。--sourceオプション、又は本文先頭のfrontmatterで指定してください。"
+        )
 
 
 def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
@@ -209,25 +227,6 @@ def _verify_plan_target_repos(
                 "plan_file指定時はメッセージfrontmatterで対象リポジトリを別の値へ上書きできません。"
                 f"投入先={target_repo}、frontmatter={item_target_repo}"
             )
-
-
-def reject_message_file_path(message: str, *, file_input_hint: str = "") -> None:
-    """本文文字列が実在通常ファイルのパスだけの場合に`WebInputError`を送出する。
-
-    `file_input_hint`にはファイル内容を渡す正しい手段を呼び出し側が渡す。
-    手段はサブコマンドごとに異なるため、本関数へ固定文言を持たせない。
-    """
-    value = message.strip()
-    if not value:
-        return
-    try:
-        if pathlib.Path(value).is_file():
-            raise WebInputError(
-                f"MESSAGEがファイルパス '{value}' として解釈できます。MESSAGEは本文文字列を受け取ります。" + file_input_hint
-            )
-    except OSError:
-        # パス長制限などで検査できない文字列は本文として扱う。
-        return
 
 
 _RESERVED_FRONTMATTER_KEYS = (
@@ -373,6 +372,62 @@ def add_entries(
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     """
+    parsed_messages, normalized_target_repo, stored_plan_file = _validate_add_entries(
+        private_notes,
+        messages=messages,
+        target_repo=target_repo,
+        entry_type=entry_type,
+        question_type=question_type,
+        choices=choices,
+        target_commit=target_commit,
+        plan_file=plan_file,
+    )
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        written = _add_entries_locked(
+            private_notes,
+            parsed_messages=parsed_messages,
+            target_repo=normalized_target_repo,
+            source=source,
+            now=now,
+            entry_type=entry_type,
+            scope=scope,
+            question_type=question_type,
+            choices=choices,
+            target_commit=target_commit,
+            plan_file=stored_plan_file,
+            depends_on=depends_on,
+        )
+        generated = [filename for filename, _content in written]
+        count = len(generated)
+        _commit_and_push(
+            private_notes,
+            f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
+            [WI_STATE_INBOX],
+        )
+        if saved_details is not None:
+            saved_details.update(
+                (
+                    filename,
+                    _read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
+                )
+                for filename, content in written
+            )
+    return generated
+
+
+def _validate_add_entries(
+    private_notes: pathlib.Path,
+    *,
+    messages: list[str],
+    target_repo: str | None,
+    entry_type: str,
+    question_type: str | None,
+    choices: str | None,
+    target_commit: str | None,
+    plan_file: str | None,
+) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
+    """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
@@ -407,38 +462,7 @@ def add_entries(
         _verify_plan_target_repos(parsed_messages, normalized_target_repo)
     if entry_type != WI_TYPE_AWI and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _pull(private_notes)
-        written = _add_entries_locked(
-            private_notes,
-            parsed_messages=parsed_messages,
-            target_repo=normalized_target_repo,
-            source=source,
-            now=now,
-            entry_type=entry_type,
-            scope=scope,
-            question_type=question_type,
-            choices=choices,
-            target_commit=target_commit,
-            plan_file=stored_plan_file,
-            depends_on=depends_on,
-        )
-        generated = [filename for filename, _content in written]
-        count = len(generated)
-        _commit_and_push(
-            private_notes,
-            f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
-            [WI_STATE_INBOX],
-        )
-        if saved_details is not None:
-            saved_details.update(
-                (
-                    filename,
-                    _read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
-                )
-                for filename, content in written
-            )
-    return generated
+    return parsed_messages, normalized_target_repo, stored_plan_file
 
 
 def read_body_files(paths: list[str]) -> list[str]:
@@ -478,25 +502,19 @@ def _cmd_add(
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     計画実装型の分類は`--plan-file`の指定だけで確定する。
-    `--body-file`を指定した場合は当該ファイルの内容を本文として扱い、MESSAGE位置引数とは併用を拒否する。
+    `--body-file`を指定した場合は当該ファイルの内容を本文として扱う。
     シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
-    本文文字列（位置引数またはエディター確定内容）が実在する通常ファイルのパスと解釈できる場合は、
-    本文文字列でなくファイル内容の渡し忘れによる誤操作とみなし`_repo_lock`取得前に拒否する
-    （拡張子は問わない。`mktemp`が生成する拡張子なしの一時ファイルパスの誤投入も検出対象に含めるためである）。
     """
     body_files = getattr(args, "body_file", None)
     if body_files:
-        if args.messages:
-            args.subparser.error("--body-fileとMESSAGE位置引数は併用できません")
         try:
             messages = read_body_files(body_files)
         except WebInputError as error:
             print(f"投入を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
-        # 本文がファイル由来と確定しているため、旧REPO_PATH位置引数形式の互換抽出は適用しない。
-        repo_path_override = args.repo_path_override
     else:
-        messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
+        messages = []
+    repo_path_override = args.repo_path_override
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
     target_value = repo_path_override if repo_path_override is not None else args.target_repo
     target_repo, local_worktree = resolve_add_target(target_value)
@@ -514,12 +532,8 @@ def _cmd_add(
                     "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
                     "ユーザーの発言は本文中へ出所を示して引用してください。"
                 )
-            if not body_files:
-                reject_message_file_path(
-                    message,
-                    file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
-                )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
+            _require_agent_source(frontmatter, args.source)
             _require_agent_awi_feasibility(
                 body,
                 frontmatter,
@@ -551,10 +565,23 @@ def _cmd_add(
                 print("---", file=sys.stderr)
                 print(message, file=sys.stderr)
         raise
-    dependency_dir = _subdir(private_notes, WI_STATE_INBOX)
+    dependency_dir = private_notes / WI_STATE_INBOX
     canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
     saved_details: dict[str, dict[str, object | None]] = {}
     try:
+        if args.dry_run:
+            _validate_add_entries(
+                private_notes,
+                messages=messages,
+                target_repo=target_repo,
+                entry_type=args.type,
+                question_type=args.question_type,
+                choices=args.choices,
+                target_commit=target_commit,
+                plan_file=args.plan_file,
+            )
+            print("検証が成立しました。")
+            return
         generated = add_entries(
             private_notes,
             messages=messages,

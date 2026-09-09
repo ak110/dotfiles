@@ -50,11 +50,11 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import (
     status_file as _agents_server_status_file,
 )  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._atk.help_text import HELP as _ATK_HELP  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks import required_reads as _required_reads  # noqa: E402
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -517,41 +517,6 @@ def _record_agents_wait_observation_attempt(session_id: str, command: str) -> No
     update_state(session_id, _mutator)
 
 
-def _record_atk_help_observation(session_id: str, command: str) -> None:
-    """成功した`atk`のヘルプ専用呼び出しを観測済みとして記録する。"""
-    help_keys = [(key, tuple(key.split())) for key in _ATK_HELP]
-    observed_now: set[str] = set()
-    for segment in extract_execution_segments(command):
-        if not segment.resolved or not segment.tokens:
-            continue
-        if pathlib.PurePosixPath(segment.tokens[0]).name not in {"atk", "atk.py"}:
-            continue
-        arguments = segment.tokens[1:]
-        if (
-            "--" in arguments
-            or "--help" not in arguments
-            or any(token != "--help" for token in arguments if token.startswith("-"))
-        ):
-            continue
-        tokens = ("atk", *arguments)
-        matches = [key for key, prefix in help_keys if tokens[: len(prefix)] == prefix]
-        if matches:
-            observed_now.add(max(matches, key=lambda key: len(key.split())))
-    if not observed_now:
-        return
-
-    def _mutator(state: dict) -> dict | None:
-        observed_raw = state.get("observed_atk_help", [])
-        observed = [item for item in observed_raw if isinstance(item, str)] if isinstance(observed_raw, list) else []
-        additions = sorted(observed_now - set(observed))
-        if not additions:
-            return None
-        state["observed_atk_help"] = [*observed, *additions]
-        return state
-
-    update_state(session_id, _mutator)
-
-
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
     """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
@@ -759,7 +724,6 @@ def _handle_bash_tool(
     _record_agents_wait_observation_attempt(session_id, command)
     if not record_success_dependent_state:
         return
-    _record_atk_help_observation(session_id, command)
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
@@ -804,6 +768,25 @@ def _handle_bash_tool(
         return state if changed else None
 
     update_state(session_id, _apply_bash_updates)
+
+
+def _record_required_read_observation(session_id: str, tool_input: dict) -> None:
+    """部分読取ではない対象文書のReadだけを全文読解として記録する。"""
+    if "offset" in tool_input or "limit" in tool_input:
+        return
+    file_path = tool_input.get("file_path")
+    if not isinstance(file_path, str) or not _required_reads.matches_document(file_path):
+        return
+
+    def _record(state: dict) -> dict | None:
+        recorded = state.get("observed_required_reads")
+        names = [value for value in recorded if isinstance(value, str)] if isinstance(recorded, list) else []
+        if _required_reads.DOCUMENT_NAME in names:
+            return None
+        state["observed_required_reads"] = [*names, _required_reads.DOCUMENT_NAME]
+        return state
+
+    update_state(session_id, _record)
 
 
 def _dispatch(payload_text: str, notices: list[str]) -> int:
@@ -879,8 +862,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             )
         return 0
 
-    # Readは本フックで状態更新を行わない。
+    # Readは対象文書の全文読取だけを状態へ記録する。
     if tool_name == "Read":
+        _record_required_read_observation(session_id, tool_input)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため

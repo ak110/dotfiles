@@ -1,5 +1,5 @@
 interface:
-  display_name: "AWIを直接処理"
+  display_name: "fast-process-wi"
   short_description: "既存方針から一意に定まる作業項目を計画なしで実装する"
 
 policy:

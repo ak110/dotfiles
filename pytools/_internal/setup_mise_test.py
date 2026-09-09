@@ -393,9 +393,23 @@ class TestRunInstallStep:
 
         _setup_mise.run()
 
+        assert len(mise_stub.calls_for("prune", "-y")) == 1
         assert len(mise_stub.calls_for("reshim")) == 1
-        commands = [record["args"][0] for record in mise_stub.records]
-        assert commands.index("reshim") > commands.index("install")
+        commands = [record["args"] for record in mise_stub.records]
+        assert commands.index(["prune", "-y"]) > next(i for i, command in enumerate(commands) if command[0] == "install")
+        assert commands.index(["reshim", "--force"]) > commands.index(["prune", "-y"])
+
+    def test_run_does_not_reshim_when_prune_fails(self, mise_stub: _MiseSubprocessStub) -> None:
+        """prune失敗時は未参照実体を残したままshimを再構築しない。"""
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        mise_stub.handlers[("prune", "-y")] = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="prune failed"
+        )
+
+        _setup_mise.run()
+
+        assert len(mise_stub.calls_for("prune", "-y")) == 1
+        assert not mise_stub.calls_for("reshim")
 
 
 class _WinregFake:

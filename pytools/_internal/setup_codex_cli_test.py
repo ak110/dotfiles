@@ -136,7 +136,7 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
     assert calls[1][0] == [str(launcher), "--version"]
     assert calls[2][0][1:] == ["ls", "--json", "npm:@openai/codex"]
     assert calls[3][0][1:] == ["uninstall", "--all", "--yes", "npm:@openai/codex"]
-    assert calls[4][0][1:] == ["reshim"]
+    assert calls[4][0][1:] == ["reshim", "--force"]
     assert events == [f"path:{tmp_path / '.local' / 'bin'}", "migrate"]
 
 
@@ -705,7 +705,7 @@ def test_run_reshims_orphaned_mise_launcher(monkeypatch, tmp_path: Path) -> None
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         result = base_fake_run(command, **kwargs)
-        if command[1:] == ["reshim"]:
+        if command[1:] == ["reshim", "--force"]:
             shim.unlink()
         return result
 
@@ -720,7 +720,7 @@ def test_run_reshims_orphaned_mise_launcher(monkeypatch, tmp_path: Path) -> None
         client.close()
 
     assert any(command[1:] == ["ls", "--json"] for command, _ in calls)
-    assert calls[-1][0][1:] == ["reshim"]
+    assert calls[-1][0][1:] == ["reshim", "--force"]
     assert not shim.exists()
 
 
@@ -772,7 +772,7 @@ def test_run_reshims_after_npm_migration_without_mise_versions(monkeypatch, tmp_
         client.close()
 
     assert not any(command[1] == "uninstall" for command, _ in calls[2:])
-    assert calls[-1][0][1:] == ["reshim"]
+    assert calls[-1][0][1:] == ["reshim", "--force"]
 
 
 @pytest.mark.parametrize("failing", ["mise_list", "mise_json", "mise_uninstall", "reshim"])

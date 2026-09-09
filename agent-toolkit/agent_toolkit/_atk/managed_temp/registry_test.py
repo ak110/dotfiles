@@ -43,8 +43,24 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
             "prefix": "publish-group",
             "created_at": created_at,
             "awis": [],
+            "session_id": None,
         }
     ]
+
+
+def test_schema_4_record_remains_valid(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """schema 5の追加後も既存のschema 4レコードを検証できる。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("schema-four")
+
+    def downgrade(record: dict[str, object]) -> None:
+        record["schema_version"] = 4
+        record.pop("session_id")
+
+    _replace_records(target, downgrade)
+
+    assert subject.validate_managed_temp(target) == target
+    assert subject.list_managed_temp("schema-four")[0]["session_id"] is None
 
 
 def test_secure_path_does_not_fallback_for_other_open_error(

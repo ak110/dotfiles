@@ -160,7 +160,7 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
 | `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`・`mcp__agents_server__list`・`mcp__agents_server__stop`（agents_serverの委譲・探索委譲・シェル実行委譲・観測・継続・中断・一覧・破棄） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
-| `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeではユーザーへ直接質問する |
+| `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは「ユーザー確認の提示形式」節の固定テンプレートでユーザーへ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
@@ -184,6 +184,23 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 `engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start`へ対応する`model_type`を渡し、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 指定engineの経路を利用できない場合は同文書の手順4に従って`needs_escalation`又は未完了として返す。
 `engine=codex`の場合は、当該工程の`model_type`を`agents_server`の`start`へ渡し、engine、model及びeffortの解決をサーバーへ委ねる。
+
+### ユーザー確認の提示形式
+
+構造化質問を利用できない場合は、次の固定テンプレートで質問を提示する。
+書式が固定されないと、ユーザーは質問の位置、推奨案及び回答単位を毎回読み直すことになり、読解負担と見落としが増えるため、自由形式へ置き換えない。
+
+```text
+❓ **Q1** - **<質問タイトル>**: <質問本文。複数段落や複数の選択肢を含んでもよい>
+
+➡️ <あなたの推奨回答>
+
+---
+
+❓ **Q2** - **<質問タイトル>**: <質問本文。複数段落や複数の選択肢を含んでもよい>
+
+➡️ <あなたの推奨回答>
+```
 
 公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
 作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成する。

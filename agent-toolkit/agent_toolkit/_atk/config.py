@@ -21,8 +21,8 @@ from agent_toolkit._atk import help_text as _atk_help
 _CONFIG_FILENAME = "config.json"
 
 _MODEL_SETTING_CATEGORIES = {
-    "explore_model": "上位",
-    "explore_fast_model": "軽量",
+    "explore_model": "探索上位",
+    "explore_fast_model": "探索軽量",
     "pick_wi_model": "軽量",
     "plan_model": "計画",
     "plan_review_model": "軽量",
@@ -32,6 +32,8 @@ _MODEL_SETTING_CATEGORIES = {
     "session_review_model": "上位",
     "orchestrate_model": "上位",
 }
+# 用途区分はcodexとclaudeの候補を1組で持つ。片方のengineだけ段位を変える要求は、
+# 既存区分の値を書き換えず、新しい用途区分を追加して表現する。
 _CATEGORY_ENGINE_MODELS = {
     "上位": {
         "codex": "codex:gpt-5.6-sol/medium",
@@ -44,6 +46,14 @@ _CATEGORY_ENGINE_MODELS = {
     "計画": {
         "codex": "codex:gpt-6-astra/medium",
         "claude": "claude:opus[1m]/medium",
+    },
+    "探索上位": {
+        "codex": "codex:gpt-5.6-terra/medium",
+        "claude": "claude:opus[1m]/medium",
+    },
+    "探索軽量": {
+        "codex": "codex:gpt-5.6-luna/medium",
+        "claude": "claude:sonnet[1m]/medium",
     },
 }
 _PRESET_ENGINE_ORDERS = {

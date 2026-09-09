@@ -107,6 +107,23 @@ def _write_integration_plan(
     return plan
 
 
+def _edit_plan_args(tmp_path: pathlib.Path, filename: str, body: str, plan: pathlib.Path) -> list[str]:
+    """計画型編集を本文ファイル経由で呼ぶCLI引数を返す。"""
+    body_file = tmp_path / "body.md"
+    body_file.write_text(body, encoding="utf-8")
+    return [
+        "wi",
+        "edit",
+        filename,
+        "--body-file",
+        str(body_file),
+        "--plan-file",
+        str(plan),
+        "--target-repo",
+        "github.com/example/foo",
+    ]
+
+
 def _write_legacy_integration_plan(
     tmp_path: pathlib.Path,
     _target_commit: str,
@@ -207,6 +224,7 @@ __all__ = [
     "_disable_convert_git",
     "_disable_real_convert_network",
     "_disable_transition_git",
+    "_edit_plan_args",
     "_initialize_private_notes_git",
     "_isolate_environment",
     "_patch_integration_target_resolution",

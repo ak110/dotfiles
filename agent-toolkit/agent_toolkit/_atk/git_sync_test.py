@@ -156,7 +156,8 @@ def test_sync_failure_reports_recovery_steps_and_preserves_exception(
     repo.mkdir()
     expected = subprocess.CalledProcessError(1, ["git", operation])
 
-    def run_git(args: list[str], cwd: pathlib.Path) -> None:
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del forward_error_output
         del cwd
         if operation == "pull" or args == ["push"]:
             raise expected
@@ -183,7 +184,8 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     (repo / _atk_git_sync.LOCAL_ONLY_MARKER).unlink(missing_ok=True)
     calls: list[list[str]] = []
 
-    def run_git(args: list[str], cwd: pathlib.Path) -> None:
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del forward_error_output
         del cwd
         calls.append(args)
         if args == ["push"]:
@@ -208,6 +210,99 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐しています" in stderr
     assert stderr.endswith(_atk_git_sync.PUSH_DEFERRED_MESSAGE + "\n")
+
+
+def test_push_suppresses_output_of_recovered_first_push(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最初のpush失敗をfast-forwardと再pushで解消した場合は当該出力を表示しない。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    calls: list[tuple[list[str], bool]] = []
+
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del cwd
+        calls.append((args, forward_error_output))
+        if args == ["push"] and len([call for call, _forward in calls if call == ["push"]]) == 1:
+            raise subprocess.CalledProcessError(
+                1,
+                ["git", *args],
+                output="rejected stdout\n",
+                stderr="rejected stderr\n",
+            )
+        if args == ["merge-base", "--is-ancestor", "@{u}", "HEAD"]:
+            raise subprocess.CalledProcessError(1, ["git", *args])
+
+    with _atk_git_sync.repo_lock(repo):
+        _atk_git_sync.push_pending_commits(repo, run_git=run_git)
+
+    assert calls[0] == (["push"], False)
+    assert calls[-2:] == [(["merge", "--ff-only", "@{u}"], True), (["push"], True)]
+    assert capsys.readouterr().err == ""
+
+
+def test_push_reports_output_of_unresolved_first_push(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最初のpush失敗を解消できない場合は保持した出力を表示する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    original_error = subprocess.CalledProcessError(
+        1,
+        ["git", "push"],
+        output="rejected stdout\n",
+        stderr="rejected stderr\n",
+    )
+
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del cwd, forward_error_output
+        if args == ["push"]:
+            raise original_error
+        raise subprocess.CalledProcessError(1, ["git", *args])
+
+    with _atk_git_sync.repo_lock(repo), pytest.raises(subprocess.CalledProcessError) as exc_info:
+        _atk_git_sync.push_pending_commits(repo, run_git=run_git)
+
+    assert exc_info.value is original_error
+    stderr = capsys.readouterr().err
+    assert "rejected stdout\nrejected stderr\n" in stderr
+    assert "private-notesのpushに失敗しました" in stderr
+
+
+def test_pull_suppresses_output_of_recovered_first_merge(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最初のff-only失敗をrebaseで解消した場合は当該出力を表示しない。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    calls: list[tuple[list[str], bool]] = []
+
+    def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del cwd
+        calls.append((args, forward_error_output))
+        if args == ["merge", "--ff-only", "@{u}"]:
+            raise subprocess.CalledProcessError(
+                1,
+                ["git", *args],
+                output="merge stdout\n",
+                stderr="merge stderr\n",
+            )
+        if args[:2] == ["merge-base", "--is-ancestor"]:
+            raise subprocess.CalledProcessError(1, ["git", *args])
+
+    def result_runner(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        del cwd
+        return subprocess.CompletedProcess(["git", *args], 1 if args[:2] == ["diff", "--quiet"] else 0, "", "")
+
+    with _atk_git_sync.repo_lock(repo):
+        _atk_git_sync.pull(repo, run_git=run_git, result_runner=result_runner)
+
+    assert (["merge", "--ff-only", "@{u}"], False) in calls
+    assert calls[-1] == (["rebase", "@{u}"], True)
+    assert capsys.readouterr().err == ""
 
 
 @pytest.mark.parametrize("operation", ["pull", "push"])

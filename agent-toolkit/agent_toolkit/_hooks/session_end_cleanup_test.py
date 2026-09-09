@@ -6,20 +6,31 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import time
 
 import pytest
 
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._hooks import session_end_cleanup
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
+_MANAGED_TEMP_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60
 
 
 def _run(payload_text: str, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
-    env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
+    env.update(
+        {
+            "TMPDIR": str(state_dir),
+            "TEMP": str(state_dir),
+            "TMP": str(state_dir),
+            "XDG_STATE_HOME": str(state_dir / "state"),
+        }
+    )
     return _fork_runner.run_script(
         _SCRIPT,
         argv=("session_end_cleanup",),
@@ -246,3 +257,60 @@ def test_delete_failure_is_reported_and_fails_open(tmp_path: pathlib.Path) -> No
     assert result.returncode == 0
     assert not result.stdout
     assert "削除できませんでした" in result.stderr
+
+
+@pytest.mark.parametrize("reason", [None, "clear", "prompt_input_exit", "logout", "other"])
+def test_session_scoped_managed_temp_is_removed_for_every_reason(
+    tmp_path: pathlib.Path,
+    reason: str | None,
+) -> None:
+    """SessionEndは終了理由によらずセッション単位の領域を回収する。"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "TMPDIR": str(tmp_path),
+            "TEMP": str(tmp_path),
+            "TMP": str(tmp_path),
+            "XDG_STATE_HOME": str(tmp_path / "state"),
+        }
+    )
+    created = subprocess.run(
+        [
+            sys.executable,
+            str(_MANAGED_TEMP_SCRIPT),
+            "create",
+            "--prefix",
+            "session",
+            "--session-id",
+            "target",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    target = pathlib.Path(created.stdout.strip())
+
+    result = _run(_session_end("target", reason=reason), tmp_path)
+
+    assert created.returncode == 0, created.stderr
+    assert result.returncode == 0
+    assert not target.exists()
+
+
+def test_managed_temp_cleanup_failure_is_reported_and_fails_open(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """領域の回収失敗を標準エラーへ報告してSessionEndを通過させる。"""
+
+    def fail_cleanup(*_args: object, **_kwargs: object) -> None:
+        raise managed_temp.ManagedTempError("cleanup failed")
+
+    monkeypatch.setattr(session_end_cleanup.managed_temp, "cleanup_managed_temp", fail_cleanup)
+    monkeypatch.setattr(session_end_cleanup, "sweep_stale_states", lambda **_kwargs: None)
+
+    assert session_end_cleanup.main(_session_end("target", reason="logout")) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "セッション単位の管理対象一時領域を回収できませんでした" in captured.err

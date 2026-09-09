@@ -63,7 +63,7 @@ pickerはAWI本文、対象実装、計画の先行成果依存を調査し、�
 計画レビューが収束した後は、全入力をファイル名昇順で次のコマンドへ1回だけ渡す。
 
 ```sh
-atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-awi-body> --depends-on=<filename>... --target-repo=<repo>
+atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --body-file=<plan-awi-body-file> --depends-on=<filename>... --target-repo=<repo>
 ```
 
 新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値を指定する。
@@ -82,7 +82,7 @@ activeなUWI素材は状態を変更せず、統合依存へ保持できる。
 
 キューの全状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`である。公開一覧の`active`は`inbox`、`processing`、`hold`を表示し、`processable`は通常の自動処理へ渡せる`inbox`と`processing`だけを表示する。一覧集合は型によらず同じ定義とする。`hold`は明示操作まで処理ループ、readiness、UWIスキャン及びalertsの対象にしない。
 
-計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は、自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`agent-toolkit/scripts/_atk/wi/common.py`へ集約する。
+計画作成中の項目と外部編集中の項目を分けていた`planning`と`editing`は、自動処理から除外する点で`hold`と同じ振る舞いであり、状態集合の定義を型と操作ごとに分岐させていたため廃止した。役割は`hold`へ統合し、状態集合の定義を`agent-toolkit/agent_toolkit/_atk/wi/common.py`へ集約する。
 
 `hold`は`inbox`または`processing`から移動し、`unhold`で`inbox`へ戻す。保留元の状態を推測して`processing`へ戻す経路は設けない。終端状態からの`hold`と、`hold`以外の`unhold`は拒否する。`hold`は自動処理からの除外だけを意味するため、保留中の編集、UWI回答、ユーザーコメント、採否及び削除は`inbox`と同じ条件で許可する。
 削除は終端状態（`adopted`・`rejected`）も明示`state`として受理し、`processing`の削除保護だけを維持する。
@@ -95,7 +95,7 @@ activeなUWI素材は状態を変更せず、統合依存へ保持できる。
 
 テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
-`atk wi convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`hold`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
+`atk wi convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`hold`入力では`--body-file`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
 
 ### ユーザーコメントの由来と編集境界
 
@@ -156,7 +156,7 @@ plugin更新で当該ディレクトリが消えると、子App Serverは生存�
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用経路へSDK依存を持ち込まない。
 `--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの検査であり、外部sessionの起動及びMCP公開statusを生成しない。
 
-公開APIは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。終端の観測と結果本文の配送を`wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む。両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終端を確認し、engineの可用性で終端した候補を除外集合へ加えて次候補で起動する。全候補が起動不能な場合だけ失敗を返す。上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終端した実測（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。切替の対象を終端済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。候補を変えても結果が変わらない失敗では候補を進めない。Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。サーバーは可用性を理由として終端したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。このため呼び出し側へ除外対象のsession識別子を要求しない。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout`を省略した場合の既定は、`agent-toolkit/scripts/_common/wait_schedule.py`がプロンプトキャッシュの保持期間から導出する上限とする。保持期間が`5m`の場合は270秒、`1h`の場合は1740秒とする。呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡し、当該bucketの保持期間から導出する。
+公開APIは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。終端の観測と結果本文の配送を`wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む。両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終端を確認し、engineの可用性で終端した候補を除外集合へ加えて次候補で起動する。全候補が起動不能な場合だけ失敗を返す。上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終端した実測（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。切替の対象を終端済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。候補を変えても結果が変わらない失敗では候補を進めない。Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。サーバーは可用性を理由として終端したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。このため呼び出し側へ除外対象のsession識別子を要求しない。`wait`はtimeoutまで状態を観測し、終端時は結果本文を返す。`timeout`を省略した場合の既定は、`agent-toolkit/agent_toolkit/_common/wait_schedule.py`がプロンプトキャッシュの保持期間から導出する上限とする。保持期間が`5m`の場合は270秒、`1h`の場合は1740秒とする。呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡し、当該bucketの保持期間から導出する。
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。上限到達時は配送の成否が確定せず、`wait`で状態を確認する。
 Claude backendは、委譲先がClaude Codeの背景作業を残してturnを終えた場合、その完了通知による同じsessionの再開を一度だけ待ち、再開したturnの結果を`wait`へ返す。待機中は最初の結果を内部へ保留し、`status`と`turn_completed`を終端へ進めない。背景作業の完了通知が届かない場合は、結果保持期間と同じ上限で保留した最初の結果を確定する。
 両backendは、委譲先が`agents_server`の`start`、`start_explore`又は`start_shell`で起動した孫sessionを追跡する。`_agents_server/claude.py`はツール利用識別子でClaude SDKの利用ブロックと結果ブロックを対応付け、`_agents_server/codex.py`は`item/completed`の`mcpToolCall`を消費する。終端状態は`_agents_server/session_registry.py`が状態ディレクトリ配下の`agents-server/sessions/<session_id>.json`へ公開する。自動再開の開始、解除、再開の判断は`_agents_server/state.py`の共通述語へ集約し、Claudeの背景taskと孫sessionのどちらも追跡対象として扱う。`wait`は追跡集合が空になるまで最初の結果を保留し、全ての終端後に識別子を示す継続指示で同じsessionを当該ターンにつき一度だけ再開する。保持期限まで終端を観測できない識別子は、応答項目を増やさず既存の`error.unobservedSessions`へ示す。
@@ -180,7 +180,7 @@ reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_am
 
 却下した代替案は、委譲の起動文へ役割の明示を義務付ける規範だけを置く案と、委譲先セッションの環境変数の印を実行主体へ読ませる案である。前者は起動側の記述漏れで成立せず、役割を明示しない単発の委譲で自己申告の誤りを観測した。後者は実行主体が環境変数を観測する工程を新たに要し、指示本文で同じ結果を得られるため採用しない。
 
-`wait`の既定timeoutは固定値を持たず、`agent-toolkit/scripts/_common/wait_schedule.py`の保持期間判定を共有して導出する。委譲待機のcron間隔と同じ正本を用いるため、待機間隔と待機上限が別々の値へ分岐しない。導出値は保持期間`5m`で270秒、`1h`で1740秒とする。いずれも保持期間より短く、キャッシュが満了する前に呼び出し元のターンが再開する。1740秒は、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分より60秒短い値とする。保持期間`1h`の3600秒をそのまま使うとアイドル上限で中断するためである。`wait`はMCPサーバープロセス内で実行され、呼び出し元がメイン会話とサブエージェントのいずれであるかを判定できないため、`request_bucket`を入力として受け取り既定を`main`とする。導出には`claude auth status`の実行を伴うため、bucketごとの結果をプロセス内へ保持し、別スレッドで解決してイベントループを止めない。
+`wait`の既定timeoutは固定値を持たず、`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の保持期間判定を共有して導出する。委譲待機のcron間隔と同じ正本を用いるため、待機間隔と待機上限が別々の値へ分岐しない。導出値は保持期間`5m`で270秒、`1h`で1740秒とする。いずれも保持期間より短く、キャッシュが満了する前に呼び出し元のターンが再開する。1740秒は、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分より60秒短い値とする。保持期間`1h`の3600秒をそのまま使うとアイドル上限で中断するためである。`wait`はMCPサーバープロセス内で実行され、呼び出し元がメイン会話とサブエージェントのいずれであるかを判定できないため、`request_bucket`を入力として受け取り既定を`main`とする。導出には`claude auth status`の実行を伴うため、bucketごとの結果をプロセス内へ保持し、別スレッドで解決してイベントループを止めない。
 
 却下した代替案は、固定値を実効上限に近い値へ引き上げる案と、両bucketのうち短い保持期間を常に採る案である。前者は保持期間が`5m`の環境でキャッシュが満了した後も待ち続ける。後者はサブエージェントの既定の保持期間が`5m`であるため、`request_bucket`の指定が無い環境では常に270秒となり、要求した改善が成立しない。`send_message`と`kill`の既定は配送結果と中断要求の確定を待つ上限であり、委譲先の終端を待つ上限ではないため、270秒の固定値を維持する。
 
@@ -221,7 +221,7 @@ Claude Codeからの委譲も`agents_server`へ一本化する案は、Claude Co
 `VIRTUAL_ENV`だけでは委譲先の`python`・コンソールスクリプトが起動元ツールの環境へ解決されるためである。
 判断理由は、Claude Agent SDKの`ClaudeAgentOptions.env`が継承環境へ重なる仕様でキーの削除を表現できず、
 backend側で個別に取り除く案が成立しないことにある。同じ契約を`atk`のprocess-loopも必要とするため、
-契約本文は共有モジュール`agent-toolkit/scripts/_common/inherited_venv.py`を単一の正本とする。
+契約本文は共有モジュール`agent-toolkit/agent_toolkit/_common/inherited_venv.py`を単一の正本とする。
 却下した代替案は、backendごとに除去処理を複製する案と、委譲先の各コマンド呼び出しで回避する案である。
 前者は同じ契約が複数箇所へ分かれ、後者は回避策を規範や起動文へ書き足す恒常費が残る。
 
@@ -242,7 +242,7 @@ Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継�
 共通の`root.json`へ代替すると、活性化処理が同じ状態ディレクトリにある別の書込主体の記録を削除するためである。
 書込側はsession状態の更新を1秒で集約し、自身の生存中のsession全体を原子的に全置換する。
 ルートの書込主体はMCPの開始時にディレクトリ配下を空にして前回プロセスの残存を除き、終了時にディレクトリを削除する。入れ子の書込主体は自身のファイルだけを書き、終了時に削除する。
-プロセスの生存確認とheartbeatは設けない。異常終了で残るファイルの影響は同じルートセッションの表示に閉じ、次回の`agents_server`起動で除かれるためである。
+書込主体は、状態ファイルのトップレベルへ生存の印`heartbeat_at`を置き、稼働中は一定間隔で更新する。読取側は、当該印が失効した状態ファイルを表示から外す。書込主体は、自身のflushのたびに、当該印が失効した他の状態ファイルを削除する。書込主体の異常終了では状態ファイルの回収も終端状態への更新も動かないため、生存の印を持たない設計では`status`が`running`のままのsessionが表示に残り続ける。状態ファイル名は書込主体のhost session識別子であり、同じ識別子が再び使われないため、後続の`agents_server`起動では当該ファイルが除かれない。生存の印を持たない状態ファイルは、読取側の表示対象からも書込主体の削除対象からも外す。statuslineの実装とプラグインの実装は別の経路で更新され、更新の順序を制御できない。印を持たないファイルを削除すると、旧版の書込主体が稼働中のsessionを次の状態変化まで書き直さないため、実在するsessionの表示が失われる。却下した代替案は、収容主体が子sessionの終端を観測した時点で子の状態ファイルを削除する案と、トップレベルの`updated_at`だけで失効を判定する案と、OSのプロセス生存確認を用いる案である。第1の案は、収容主体が保持するagents_serverのsession識別子と、状態ファイル名が用いるhost session識別子が別体系であり、対応表を新設しないと対象を特定できない。第2の案は、進捗の更新が届かない長時間のturnと書込主体の消失を区別できない。第3の案は、読取側のstatuslineへOS別のプロセス照会を持ち込み、識別子の再利用を排除するために追加の情報を要する。
 読取側はLinuxで`XDG_STATE_HOME`又は`HOME/.local/state`、Windowsで`LOCALAPPDATA`から同じディレクトリを解決する。platformdirsの`user_state_dir`と同じ規則である。
 
 同じディレクトリ配下の`results/<session_id>.json`へ、終端したsessionの結果本文を原子的に書く。内容へsessionごとに1から始まり新しいturnの開始ごとに1増える`turn_seq`と、終端時刻の`finalized_at`を含める。終端結果を回収済みかどうかの正本は`results/<session_id>.json`の存在とする。`wait`と`kill`は結果本文を返した時点で当該ファイルを削除し、`atk agents-wait`は結果本文を標準出力へ書いた時点で同じファイルを削除する。MCPサーバーは、一度書いた結果ファイルが消えている場合に当該sessionを回収済みとして扱い、当該ファイルを再作成しない。終端結果を返す上限は保持期限（30分）とし、期限の経過後は`wait`が`status`を`expired`とする応答だけを返す。同じsessionの新しいturnを開始する時点でも、前のturnの結果ファイルを同期的に削除する。削除は`send_message`と再開の応答を返す前に完了させるため、応答を受け取った呼び出し側は`atk agents-wait <session_id>`だけで当該turnの終端を待てる。待機対象のturnの番号を引数で受け取る案は、呼び出し側が`turn_seq`を転記する必要を残し、転記の誤りが別のturnの結果を当該turnの終端として受領させるため採用しない。`atk agents-wait`は結果ファイルの検査と同じ周回で未回収の通知を回収し、MCPの`wait`と同じ条件で当該ファイルを削除する。回収の条件と削除を共通の実装へ置き、両経路が同じ通知を二重に配送しない。終端結果が未到達で通知だけを回収した場合は`status`を`running`として1行で返し、呼び出し側は再待機の要否を`status`で判定する。Claude Codeの`/goal`は、ターンを終えた時点で当該セッションが起動した未完了のBash背景ジョブが1件も無い場合に目標評価を発動するため、MCPツールの背景移行だけで待つと待機のたびに評価が動いてトークンを消費する。`atk agents-wait`を背景ジョブとして起動すると当該評価が延期され、委譲先の終端でセッションが再開する。呼び出し元は完了通知の後に`timeout=0`の`wait`を1回発行し、結果本文の配送を確定させる。MCPサーバーへ待機専用のツールを足す案は、当該ツールの呼び出しも背景移行の対象となり目標評価の延期条件を満たさないため採用しない。
@@ -252,9 +252,9 @@ Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継�
 入れ子の書込主体の行は、収容sessionの行の直後へ深さに応じて字下げして置く。収容sessionの行が無い場合は末尾へ置く。
 Claude Codeのstatuslineはメッセージ到着などのイベントでだけ再実行されるため、`wait`の待機中は表示が更新されない。
 配布設定の`statusLine`へ`refreshInterval`を置き、待機中も経過時間と終端を反映する。
-行の整形幅は、取得した端末幅からClaude Codeがstatuslineの各行へ付ける字下げ分の2セルを差し引いた値とする。差し引かない場合、端末幅と同じ幅で整形した行が字下げ分だけ溢れ、Claude Codeが末尾を切り詰める。
+行の整形幅は、取得した端末幅からClaude Codeがstatuslineの描画へ確保する4セルを差し引いた値とする。4セルは、各行の先頭へ付く2セルの字下げと、行末へ残す2セルである。差し引く値が実際の確保幅より小さいと、整形した行が溢れ、Claude Codeが行末を切り詰めて右寄せした経過時間と状態を欠く。確保幅は、描画された行の表示幅（曖昧幅を1セルとして数えた値）と、statuslineの実行時に観測できる`COLUMNS`の値との差で求める。整形処理は右寄せ要素を整形幅の右端へ置くため、整形幅が実際の確保幅を超えた分は必ず右寄せ要素から失われる。このため、確保幅の値を単体テストの期待値としてだけ固定せず、描画された行の表示幅と`COLUMNS`の差を求め直す手順を確保幅の導出根拠とする。
 
-知識境界として、session状態の意味（`status`、`progress`、結果の回収）は`agent-toolkit/scripts/_agents_server/state.py`が持ち、状態ファイルはその射影である。
+知識境界として、session状態の意味（`status`、`progress`、結果の回収）は`agent-toolkit/agent_toolkit/_agents_server/state.py`が持ち、状態ファイルはその射影である。
 statuslineは状態ファイルを表示するだけで、sessionの制御と結果の回収をしない。
 
 却下した代替案は、PostToolUseフックが記録する`agents_server_sessions`の状態を表示に流用する案と、状態ファイルを一時ディレクトリへ置く案である。
@@ -289,7 +289,7 @@ UWIへの回答後も一般継続契約を適用し、同一セッションで�
 却下した代替案は、完了済み識別子を一律に新規起動へ置き換える案、Claude・Codexごとに継続条件を分ける案、及び継続の直前に候補列を再取得して採用済みの3値の残存を継続の条件とする案である。1つ目は受領経路で回復できる継続まで失わせ、2つ目は同じ実効条件を持つ経路間で契約を分断し、3つ目は可用性の失敗で後続候補へ切り替わった担当への継続を失わせるため採用しない。
 
 Claude Codeが起動する委譲先のプロンプトキャッシュ保持期間は既定値へ依存させず、`share/claude_settings_json_managed.json`の`promptCacheTtl`と`subagentPromptCacheTtl`でメイン会話側とサブエージェント側の双方へ明示する。
-Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならないため、`agent-toolkit/scripts/_agents_server/claude.py`の`_build_options`が環境変数で経路別に明示する。
+Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならないため、`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が環境変数で経路別に明示する。
 探索起動は設定読込元を空にするうえ、SDKのターンがmain conversationのrequest bucketとして扱われるため、当該bucketの既定が適用される。連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
 通常起動は設定読込元を指定していても配下のサブエージェントへ`subagentPromptCacheTtl`が届かず5分で書き込むため、1時間を指定する。届かない原因は公開資料から特定できておらず未確定とする。
 このため、サブエージェント側の既定が短いことを理由に委譲を減らす設計判断は採らない。
@@ -361,7 +361,7 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 条件を満たしたworktreeは、現在のブランチの追跡先を優先し、解決できない場合だけ`origin/HEAD`へ後退して得た上流ブランチへfetchとrebaseで追随させる。
 解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
 
-並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/scripts/_common/file_lock.py`で排他し、ロック中にstash生成、`refs/worktree/<退避ラベル>`記録及び生成分だけのdropを行う。既存の`refs/stash`先頭OIDは維持し、途中失敗時はstash又はworktree固有refを削除せず復旧識別子を報告する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
+並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstash生成、`refs/worktree/<退避ラベル>`記録及び生成分だけのdropを行う。既存の`refs/stash`先頭OIDは維持し、途中失敗時はstash又はworktree固有refを削除せず復旧識別子を報告する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
@@ -381,7 +381,7 @@ OSシグナルや稼働中プロセスへの直接通知は、常駐処理が動
 
 別環境からの移行と復元では、キューの保存内容を字面のまま新しい環境へ複製する。
 一括取り込みは`atk wi show --all`の表示形式をそのまま入力として受理し、
-CLI（`atk wi add --batch`）とWeb UIの双方が同じ解析・書込み経路（`agent-toolkit/scripts/_atk/wi/batch.py`）を用いる。
+CLI（`atk wi add --batch`）とWeb UIの双方が同じ解析・書込み経路（`agent-toolkit/agent_toolkit/_atk/wi/batch.py`）を用いる。
 通常の投入経路は`target_commit`を再取得し、UWIの見出しと回答欄を再生成し、予約frontmatterキーを破棄するため、
 原文保持と両立しない。このため一括取り込みを通常経路から分離し、採番・書込み・commitだけを共有する。
 取り込みが保存内容へ加える変更は、改行の正規化（CRLF・単独CRをLFへ揃え、末尾改行を1つへ揃える）と、
@@ -522,7 +522,7 @@ Claude Codeの委譲・背景処理の待機は、機械的な完了通知を待
 定期再確認は`atk wait-schedule`が出力したcron式を変更せずに1件だけ作成し、保持した待機対象IDとtask IDを正本状態へ照合しながら再利用し、全対象の終端後に削除する。
 `ScheduleWakeup`は`/loop`専用であり、一般の委譲待機へ広げない。定期起動を完了・停滞の証拠にせず、シェルの`sleep`や背景タイマーを追加しない。
 `claude-code-runtime.md`はClaude Codeの能力とCron所有を、`waiting-and-monitoring.md`は完了通知を優先する再待機を正本として保持する。
-`agent-toolkit/scripts/_hooks/stop_gate.py`はCron作成後も継続中とするStop判定を正本として保持する。
+`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`はCron作成後も継続中とするStop判定を正本として保持する。
 この分離により即時通知を定期再確認へ置換せず、独自設定resolver・フックの永続状態を追加せずに、同じ待機対象のライフサイクルを各境界で検査できる。
 調査・採否と通常型の計画化は、Claude CodeとCodexのいずれでもメインが下流担当を直接起動する共通経路を使う。
 委譲先の起動失敗を別経路へ迂回せず、失敗として返す。
@@ -575,13 +575,13 @@ Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホス�
 `agent-toolkit/rules/`配下には、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く。
 メインエージェントだけに適用する条文は`agent-toolkit/share/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules-main.claude-code.md`へ置く。
 サブエージェントと委譲先だけに適用する条文は`agent-toolkit/share/rules-subagent.md`へ置く。
-メイン向け条文は`SessionStart`フック（`agent-toolkit/scripts/rules_context.py`）が全ての`source`で文脈へ追加し、会話圧縮の後も再度追加する。
-サブエージェント向け条文は`SubagentStart`フックが全てのagent種別へ追加する。`agents_server`の通常起動の委譲先には、`agent-toolkit/scripts/_agents_server/state.py`の`DELEGATE_SYSTEM_PROMPT`が同じ条文を連結し、両backendのシステム指示として渡す。
+メイン向け条文は`SessionStart`フック（`agent-toolkit/agent_toolkit/_hooks/rules_context.py`）が全ての`source`で文脈へ追加し、会話圧縮の後も再度追加する。
+サブエージェント向け条文は`SubagentStart`フックが全てのagent種別へ追加する。`agents_server`の通常起動の委譲先には、`agent-toolkit/agent_toolkit/_agents_server/state.py`の`DELEGATE_SYSTEM_PROMPT`が同じ条文を連結し、両backendのシステム指示として渡す。
 `SessionStart`フックは、`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の場合と`AGENT_TOOLKIT_OWNER_SESSION`が設定されている場合を`agents_server`の子と判定し、メイン向け条文を追加しない。
 後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
 知識境界として、条文の本文は`share/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。
 Codex向けAGENTS.mdの生成器は`rules/`配下の共通条文だけを埋め込み、`share/`配下の条文を埋め込まない。
-Claude Codeのフック出力は1件あたり10,000文字で切り詰められるため、メイン向け条文の合計を同上限内に保つ検査を`agent-toolkit/scripts/rules_context_test.py`へ置く。
+Claude Codeのフック出力は1件あたり10,000文字で切り詰められるため、メイン向け条文の合計を同上限内に保つ検査を`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`へ置く。
 却下した代替案は3つある。
 Codexメイン向け条文をAGENTS.mdへ生成器で埋め込む案は、Codexのサブエージェントにもメイン向け条文が届き、両ホストで配布経路が非対称になるため採らない。
 委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印に依存し、未設定の環境で条文が欠落するため採らない。
@@ -851,7 +851,7 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 別操作の要件とレビュー中に追加した機構は、元の利用者要求へ帰属させない。
 
 メインは担当の起動、同一threadの継続及び工程遷移を担い、レビュー担当と作業担当の完了報告を再検収しない。
-レビュー担当はレビュー指摘管理表へ指摘レベル付きの指摘を記録し、指摘件数と要件仕様件数だけを返す。作業担当は詳細を成果物、計画、表へ記録して工程完了だけを返す。
+レビュー担当はレビュー指摘管理表へ指摘レベル付きの指摘を記録し、指摘件数と要件仕様件数を返す。基準文書の読取で切り詰めの通知を受領した場合だけ、当該事実を示す1行を同じ返却へ加える。作業担当は詳細を成果物、計画、表へ記録して工程完了だけを返す。
 各ラウンドの完了報告は、ラウンド番号、指摘件数並びに要件仕様件数を持つ。
 要件仕様件数が1件以上のラウンドと第2ラウンド以降のラウンドでは、メインが表を読んで介入する。
 それ以外のラウンドでは、メインはレビュー指摘管理表を読まず、受領した指摘件数と要件仕様件数だけで次の指示を確定する。
@@ -878,7 +878,7 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 計画情報を渡さない別コンテキストの検査は廃止するため、計画情報を持つ評価と計画から独立した観点を同一担当が順番に扱う副作用として、別コンテキストによる独立性は保証しない。
 実行レビュー担当は二段階の候補をレビュー指摘管理表へ統合し、成果物を変更しない。
 修正担当は同表の指摘を採否判断し、採用した指摘へ対応して、詳細な採否と対応結果を表へ記録する。
-レビュー指摘の永続表の構造と操作は`agent-toolkit/scripts/_atk/review_table.py`を正本とする。
+レビュー指摘の永続表の構造と操作は`agent-toolkit/agent_toolkit/_atk/review_table.py`を正本とする。
 共通のラウンド受領、モデル解決と収束判定は`agent-toolkit/share/review-loop-coordination.md`へ集約する。
 計画レビューは計画ディレクトリの`<計画stem>.plan-review.tsv`へ`plan-review`を付け、
 実行レビューは同じディレクトリの`<計画stem>.exec-review.tsv`へ`exec-review`を付ける。
@@ -979,7 +979,7 @@ AWIの調査と項目別採否は計画担当が所有し、メインは計画�
   制御の所在が分かれた結果、実行レビュー収束後の最終化の主体が一意に定まらずレーン間で挙動が分かれる事象と、
   継続不能と判定した後に工程を進める手順が欠落して工程が停止する事象が発生した。
   当初はメインが調整を兼ねる案を却下し、ラウンドごとに計画全文とレビュー表がメインのコンテキストへ蓄積する構造を理由とした。
-  この理由は現行の返却契約では成立しない。レビュー担当は指摘件数と要件仕様件数の2行だけを返し、
+  この理由は現行の返却契約では成立しない。レビュー担当は件数の2行と、切り詰めを受領した場合の1行だけを返し、
   メインが表を読むのは要件仕様件数が1件以上のラウンドと第2ラウンド以降だけであり、計画全文とレビュー表のいずれもメインのコンテキストへ蓄積しないためである。
   Codexでは中間の調整担当が最初から存在せずメインが調整を担っており、ホスト間で構造を分けない利益も併せて得られる
 - 新しい工程別モデル設定キーの新設: レビュー修正ループが解決する工程は既存の`plan_model`
@@ -1027,7 +1027,7 @@ AWIの調査と項目別採否は計画担当が所有し、メインは計画�
 
 レビュー実施側と指摘受領側は、実行主体の文脈混同を防ぐため、`agent-toolkit:review-standards`の役割別参照資料へ分離する。
 同スキルの`references/reviewer.md`はレビュー担当による欠陥の導出、証拠、通常運用で生じる実害及び解消方向を定める。
-レビュー表の公開操作は`atk review-table --help`、8列TSVの構造は`agent-toolkit/scripts/_atk/review_table.py`と`agent-toolkit/scripts/_atk/review_table_test.py`を正本とする。
+レビュー表の公開操作は`atk review-table --help`を正本とする。8列TSVの構造は`agent-toolkit/agent_toolkit/_atk/review_table.py`と`agent-toolkit/agent_toolkit/_atk/review_table_test.py`を正本とする。
 同スキルの`references/reviewee.md`はレビュー指摘、改善提案、ユーザーの割り込み・是正要求と想定外の発見を受領した主体による修正要否の立証、安全な修正、自己点検と公開可能性の検証を定める。
 スキル本体は、両役割へ共通する作成規範の読込、役割別資料の読込条件、他方の役割の資料を適用しない規定、レビュー指摘管理表の共通操作だけを持つ。
 照合は`add`と`respond`が出力する一致判定で完結させ、記録した主体は保存本文を再取得しない。
@@ -1087,7 +1087,7 @@ AWIの調査と項目別採否は計画担当が所有し、メインは計画�
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
 Stopの登録は共通入口1件とする。
-共通入口から、`agent-toolkit/scripts/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ち判定と、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れを順に実行する。
+共通入口から、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。次に、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れを判定する。
 続いて、`plan_save_advisor.py`で計画作業rootに残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 最後に、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断する。
 共通入口は判定の順序、例外の隔離、応答の集約及び連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
@@ -1130,9 +1130,9 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 実行主体はフックの通知を自動生成情報として規範と会話へ照合し、採否と後続処理を決定する。
 
 品質想起通知は、`SessionStart(source=compact)`だけを発火境界とし、Claude CodeとCodexの双方で`rules_context`がメイン向け条文と同じ非遮断の`additionalContext`へ結合して返す。
-通知の本文は`agent-toolkit/scripts/rules_context.py`が持ち、意味判定やセッション状態を持たない。
+通知の本文は`agent-toolkit/agent_toolkit/_hooks/rules_context.py`が持ち、意味判定やセッション状態を持たない。
 
-block通知の解消手段は、`agent-toolkit/scripts/_hooks/notice.py`のblock専用整形関数へ集約する。
+block通知の解消手段は、`agent-toolkit/agent_toolkit/_hooks/notice.py`のblock専用整形関数へ集約する。
 フックが誤発火した場合でも、通知を受領した主体が抜けられる状態を保つことが目的である。
 強制境界を単一にしないと解消手段の欠落を機械的に検出できないため、既存の`formatter`へ引数を追加せず、
 warn経路の既存契約へ影響しない独立関数とする。フック実装は`fix`の文面だけを持ち、解消手段の必須化判定は整形関数が担う。
@@ -1194,26 +1194,51 @@ Stopの共通入口は、判定の集約に加えて連続blockの上限を管�
 上限を持たない案は、打ち切りが実行環境の側で起こるため記録を残せず、遮断が続いた事実を後から確認できないため採らない。
 未観測作業の警告は当該上限の対象にせず、`agents_server_session_advisor.py`が自身の再入条件で抑止する。
 
-PreToolUseは、同一セッションでヘルプを観測していない`atk`のサブコマンドの実行を警告する。
-判定の対象は`agent-toolkit/scripts/_atk/help_text.py`の`HELP`が列挙するサブコマンドに限る。
-受理形式の静的な正本を当該辞書が持ち、実行時に外部プロセスへ問い合わせずに最下層のサブコマンドを解決できるためである。
-観測の記録はPostToolUseが担い、成功したヘルプ専用の呼び出しから解決したサブコマンドをセッション状態へ蓄積する。
-PreToolUseで記録する案は、ヘルプの実行が失敗した場合も観測済みとするため採らない。
-一般のCLIと`agent-toolkit/scripts/`配下のスクリプトを対象へ広げる案は、受理形式の静的な正本を持たず、警告が恒常的な雑音になるため採らない。
-遮断ではなく警告とするのは、確認の要求が`agent-toolkit/rules/02-agent-operations.md`の規範として既に存在し、フックは当該規範の未適用を通知する役目に留めるためである。
-
 却下した代替案は2つある。
 1つは、発話の内容から是正要求を判別して注入する案である。
 フックが会話の意味を判断する責務境界を越え、判別の誤りが注入の欠落として観測されないため採らない。
 もう1つは、経過時間を条件にせず全ての通常発話へ注入する案である。
 同じ本文が毎回のコンテキストへ載り、規範を想起させる便益に対して常時の消費が見合わないため採らない。
 
+### 全文読解の成立検査
+
+規範が全文読解を要求する文書について、当該読解が成立しないまま後続の工程が確定する経路を2点で塞ぐ。
+第1に、PreToolUseは`AskUserQuestion`の発行時に、`judgment-details.md`の読取を同一セッションで観測しているかを判定する。
+観測していない場合は当該呼び出しを遮断し、当該文書の絶対パスを通知本文へ示す。
+当該文書の発行前の全文読解は`agent-toolkit/share/rules-main.md`「確認を要する事項」が要求する。
+観測の記録はPostToolUseが担う。
+判定は次の順で行う。
+稼働中のplugin rootを解決する。
+当該rootへ文書の相対要素を結合して絶対パスを組み立てる。
+`Read`の対象パスを実行ホストのパス規則で正規化する。
+組み立てた絶対パスと正規化した対象パスの同一性を比べる。
+`offset`と`limit`のいずれかを指定した呼び出しは観測としない。
+同名の文書は作業ツリーの複製にも実在するため、末尾要素の一致と部分文字列の包含を判定に用いず、絶対パスの同一性だけを解除条件とする。
+正規化は実行ホストのパス規則に従い、Windowsのバックスラッシュ区切りの絶対パスと大文字小文字の差も同じ経路で扱う。
+読取手段を当該1経路へ限るのは、解除条件を、全文読解の成立を機械的に判定できる観測だけで構成するためである。
+シェル経由の読取と部分読取は、パスの言及と全文への到達を区別できないため観測としない。
+この限定により、シェル経由で読解した主体は当該文書を`Read`で読み直すまで遮断される。
+第2に、計画レビュー担当と実行レビュー担当は、基準文書の読取で切り詰めの通知を受領した場合に、当該事実と全文読解の成否を完了報告の1行として返す。
+呼び出し元は当該行が未到達を示す場合に当該ラウンドを収束させない。
+
+知識境界は次のとおりとする。
+遮断の対象とする工程境界と読解を要求する文書の対応はフックが持ち、全文読解を要求する条文そのものは各規範文書が持つ。
+切り詰めの受領はレビュー担当だけが観測できるため、当該事実の申告はレビュー担当が担い、ラウンドの遷移は`agent-toolkit/share/review-loop-coordination.md`が担う。
+
+却下した代替案は3つある。
+1つは、`agent-toolkit/rules/01-agent.md`「判断の妥当性を評価する観点」が要求する全文読解も同じ遮断の対象へ含める案である。
+評価の確定には機械的に観測できる工程境界が無く、遮断の発火点を定められないため採らない。
+2つ目は、遮断を設けず規範の条文だけで全文読解を求める案である。
+当該案は現行の状態であり、実行主体の申告以外の手段で読解の成立を検査できないため採らない。
+3つ目は、`Read`の対象パスとBashのコマンド文字列が当該文書のリポジトリ相対パスを含むことを観測とする案である。
+パスを出力するだけの呼び出しと部分読取も観測となり、全文読解の成立を判定できないため採らない。
+
 ### hook出力契約の機械検査
 
 Claude Codeのhookが返すJSONで受理されるフィールドはイベントごとに異なり、契約外のフィールドは実行時に破棄される。
 破棄はhookの終了コードへ現れないため、出力形式の誤りは当該hookが機能しない事象としてだけ観測される。
-これを実装の時点で検出するため、イベントごとの出力契約を`agent-toolkit/scripts/_hooks/output_contract.py`へJSON Schemaで定義する。
-`agent-toolkit/scripts/_hooks/output_contract_test.py`が`agent-toolkit/hooks/hooks.json`の全登録エントリの出力を当該契約へ照合する。
+これを実装の時点で検出するため、イベントごとの出力契約を`agent-toolkit/agent_toolkit/_hooks/output_contract.py`へJSON Schemaで定義する。
+`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が`agent-toolkit/hooks/hooks.json`の全登録エントリの出力を当該契約へ照合する。
 
 知識境界は次のとおりとする。
 契約の値は公式のHooksリファレンスが定め、agent-toolkitは当該値を写して保持する。
@@ -1393,7 +1418,7 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 `master`が`develop`の祖先であり、release merge commitのtreeが`develop` headのtreeと同一になるrelease invariantを、共通CIの実処理を`develop`の`push` runへ帰属させる根拠とする。
 
 実ブラウザーE2Eは、共通`python-lint`から分離した`browser-e2e` jobが所有する。
-同jobはPython 3.14でPlaywright Chromiumを導入し、`agent-toolkit/scripts/_atk/serve/browser_test.py`だけを実行する。
+同jobはPython 3.14でPlaywright Chromiumを導入し、`agent-toolkit/agent_toolkit/_atk/serve/browser_test.py`だけを実行する。
 分離により、律速となる`python-lint (3.14)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 
@@ -1442,10 +1467,15 @@ PRマージ、branch同期及びRelease検収の詳細は、プロジェクト�
 commit以降のリリース、PR/MR又は公開操作は、実装のレーンと分離する。
 前のセッションを対象とする振り返り、即時対応と自動コードレビュー監査の処置は、選定工程の開始時からレーン工程と並行して進め、公開工程の開始より前に完了する。全レーンのffマージとレーンごとの`adopt`・資源回収後に、メインは1件の終端担当へ委譲し、版数・生成物同期、統合後検証、push、CI及び終端工程を1回だけ実行させる。
 
-計画ファイル（メイン）`## 検証区分`の`統合後検証`が挙げる検証は、レーンの専用worktreeで成立しない検証を含むため、終端担当が主作業ツリーでpushの前に1回実行する。
+計画ファイル（メイン）`## 検証区分`の`統合後検証`が挙げる検証は、レーンの専用worktreeで成立しない検証を含むため、終端担当が主作業ツリーで実行する。
+終端担当は当該検証を、pushの後のCIが同値の検査として担うものと担わないものへ分け、担わないものだけをpushの前に1回実行する。
+同値の判定は、CI定義の起動形、有効な検査の集合、当該検査が読む設定及び実行環境を照合し、当該検証の検査の集合がCIの集合へ含まれることを実測できた場合にだけ成立させる。
+同値と判定したものはpushの前に実行せず、結論をCIの結論で確定する。同じ検査の二重実行は、当該実行の所要時間の分だけCIの開始を遅くするためである。
 メインはレーン工程のマージ許可より前に各レーンの当該行を記録し、計画最終化で計画ファイルが移った後も値を保持する。
-失敗した場合は統合後検証失敗記録でCI修正と同じ経路へ進み、pushとCIの往復を経ずに修正する。
+pushの前に実行した検証が失敗した場合は統合後検証失敗記録でCI修正と同じ経路へ進み、pushとCIの往復を経ずに修正する。
 各レーンで実行させる案は、レーンで成立しない検証を含み、統合後の変更集合を対象にできないため採用しない。
+起動形の名目上の一致だけで同値と判定する案は、CIが個別の検査を無効化している場合に当該検査の失敗を検出できないため採用しない。
+CIが担う検証もpushの前に実行する案は、同じ検査の二重実行とCIの開始遅延を残すため採用しない。
 
 `agent-toolkit:process-wi`は選定工程の開始時に前のセッションを対象とする`agent-toolkit:session-review`を起動し、振り返りの全即時対応を1件の委譲先で完了する。自動コードレビューも選定工程の開始時に1回確認し、確認時点の未対応指摘を是正するか、AWIへ記録する。review本文は状態を問わず全てのPR・MRを対象に取得する。inline commentとthreadは未解決threadを持つ対象だけを取得する。監査自体が是正済みと対応不要のthreadを解決するため、未解決threadの有無で限定しても未処置の指摘を取りこぼさない。取得はいずれもpaginationの終端まで行う。review本文の取得は横断クエリーの数回で終わるのに対し、inline commentの取得はPR数に比例した照会を要するため、限定の対象を後者に置く。新しいレビューの到着を能動的に待機しない。前のセッションが公開したPull Requestのレビューは次のセッションの選定工程で対象へ入るため、session-reviewとの実行順による限定を設けない。
 
@@ -1516,8 +1546,8 @@ private-notes内で計画作成ロックとレビュー表ロックを取得す�
 これにより、排他制御用ファイルをGitの統合対象から除外しながら、各ロック生成箇所へ除外規則を複製せず、既存の`.gitignore`内容を保持する。
 
 この保存契約の目的は、可変な作業ファイルをprivate-notesから分離し、複数環境で同じ永続参照を利用しながら、必要なレビューが収束した計画だけをGit履歴へ残すことである。
-知識境界は、保存rootと可搬表記の解決を`agent-toolkit/scripts/_plan/locations.py`が担う。
-ロック除外の内容生成と更新は`agent-toolkit/scripts/_common/file_lock.py`、二ファイル作成と構造検査の接続はplan-modeが担う。
+知識境界は、保存rootと可搬表記の解決を`agent-toolkit/agent_toolkit/_plan/locations.py`が担う。
+ロック除外の内容生成と更新は`agent-toolkit/agent_toolkit/_common/file_lock.py`、二ファイル作成と構造検査の接続はplan-modeが担う。
 操作許可と早期警告は各フック、利用者向けの操作説明は本リポジトリのガイドへ分ける。
 作成時からprivate-notesへ置く案は、並行レーンの未コミット差分を共有Git状態へ混在させるため採用しない。
 任意の保存先をshell展開する公開作成CLIを設ける案は、コマンド置換と作成責務の境界を増やすため採用しない。
@@ -1535,8 +1565,8 @@ private-notes内で計画作成ロックとレビュー表ロックを取得す�
 到達段を構造から解釈できることを前提とする。
 
 知識境界は次のとおり分ける。原因分析の段階、品質確認、再発防止の優先順位、再発防止策の必須性と
-UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と機械検査は`agent-toolkit/scripts/_plan/structure.py`、
-計画側の配置契約は`agent-toolkit:plan-mode`の計画ファイル作成基準、レビュー観点は
+UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と機械検査は`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が担う。
+計画側の配置契約は`agent-toolkit:plan-mode`の計画ファイル作成基準が持ち、レビュー観点は
 `agent-toolkit/share/plan-review.subagent.md`が持つ。`agent-toolkit:session-review`は問題候補の列挙と
 `agent-toolkit:bugfix`の起動だけを持ち、再発防止策の必須性を独自に定めない。
 振り返りを経由しないバグ対応にも同じ必須性を適用するためである。
@@ -1575,7 +1605,7 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 目的は、`agent-toolkit:process-wi`の自動コードレビュー監査が毎セッションで全Pull Requestのreview本文を再判定する状態を解消し、判定の作業量がPull Requestの累積件数へ比例しない形にすることである。
 構造の理由は、判定の入力集合を外部サービス側の状態だけで決めず、自セッション側の処理済み記録との差分で決める点にある。review threadは解決状態を持つが、inline commentもreview threadも伴わないreview本文は対応する状態を持たない。このため取得は全Pull Requestのまま維持し、判定だけを差分へ限定する。
 記録先は`atk config get state_dir`が返す状態ディレクトリとし、`atk review-audit`が読み書きする。対象リポジトリ配下へ置く案は、監査が成果物を変更するため採用しない。キュー管理リポジトリへ置く案は、監査のたびにキュー操作とリモート同期が増えるため採用しない。
-知識境界として、記録の有無を判定へ反映する手順は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。記録の保存形式とパス解決は`agent-toolkit/scripts/_atk/review_audit.py`が持つ。
+知識境界として、記録の有無を判定へ反映する手順は`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持つ。記録の保存形式とパス解決は`agent-toolkit/agent_toolkit/_atk/review_audit.py`が持つ。
 記録を無効化する機構は設けない。記録した分類は現行成果物から再導出できる補助情報であり、成果物の変更で再判定が必要になった指摘は別のdatabaseIdを持つ新しいreviewとして到着するためである。記録時のHEADを併記して差分がある場合に無効化する案は採用しない。ベースbranchがほぼ毎セッション進むため、記録がほぼ常に無効となり目的を達成しないためである。
 
 判定結果は、`atk review-audit`のローカル記録に加えて対象GitHubリポジトリへも残す。目的は、判定の妥当性をユーザーと後続のセッションがGitHubのPull Request画面だけで確認できるようにすることである。構造の理由は、分類と根拠を保持する主体を、判定を再導出できる索引であるローカル記録と、人間が読む正本であるGitHubの本文へ分けた点にある。未解決のreview threadへは`addPullRequestReviewThreadReply`で分類と根拠を返信してから`resolveReviewThread`で解決し、threadを伴わないreview本文へは`gh pr comment`で投稿する。知識境界として、書き込みの手順と承認の扱いは`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`が持ち、監査担当の実行範囲は`agent-toolkit/share/pick-wi.parent.md`が持つ。`dismissPullRequestReview`で分類を残す案は、Copilotのreviewが`COMMENTED`状態で到着し、当該mutationが当該状態を受理しないため採用しない。`resolveReviewThread`の`resolutionReason`を分類の正本にする案は、読み取り型`PullRequestReviewThread`が当該フィールドを返さず、後続のセッションが機械的に取得できないため採用しない。
@@ -1583,7 +1613,7 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 ## atkサブコマンドの引数拒否形式
 
 目的は、`atk`の利用主体であるコーディングエージェントが、受理しないオプション名を与えた場合に、1回の出力から正しい呼び出し形式へ到達できるようにすることである。
-構造の理由は、拒否の判定を`agent-toolkit/scripts/_atk/help_text.py`の`add_subcommands`が生成する全サブパーサーの既定クラスへ置き、サブコマンドごとに適用の有無が分かれる状態を表現できなくする点にある。argparseはサブパーサーが解釈できない引数をトップレベルの`parse_args`で報告するため、既定の動作ではトップレベルのusageだけが出て、当該サブコマンドが受理するオプションが出力へ入らない。
+構造の理由は、拒否の判定を`agent-toolkit/agent_toolkit/_atk/help_text.py`の`add_subcommands`が生成する全サブパーサーの既定クラスへ置き、サブコマンドごとに適用の有無が分かれる状態を表現できなくする点にある。argparseはサブパーサーが解釈できない引数をトップレベルの`parse_args`で報告するため、既定の動作ではトップレベルのusageだけが出て、当該サブコマンドが受理するオプションが出力へ入らない。
 知識境界として、各サブコマンドが受理するオプションの定義は各`build_parser`が持ち、本節は拒否時の出力形式だけを扱う。
 却下した代替案は、拒否形式を必要なサブコマンドごとに`parser_class`で指定する案と、推測されやすいオプション名を追加で受理する案である。前者は同じ判定を複数の呼び出し元へ分散させ、後者は受理する名前を増やしても別の推測した名前では同じ拒否が生じるため採用しない。
 
@@ -1607,9 +1637,9 @@ UWI終端の判断基準は`agent-toolkit:bugfix`が正本とする。書式と�
 
 ## atk serveの画面統合
 
-計画ファイル閲覧の実装は`pytools/claude_plans_viewer/`から`agent-toolkit/scripts/`配下へ移した。閲覧対象の計画ファイルはagent-toolkitが`atk plans`で作成・保管するものであり、閲覧機能だけが個人のdotfilesリポジトリ側に残ると、計画ファイルの書式変更のたびに配布境界をまたいだ2リポジトリの同時更新が必要になる。移設後は計画ファイルの生成側と閲覧側が同じ配布物に属する。
+計画ファイル閲覧の実装は`pytools/claude_plans_viewer/`から`agent-toolkit/agent_toolkit/`配下へ移した。閲覧対象の計画ファイルはagent-toolkitが`atk plans`で作成・保管するものであり、閲覧機能だけが個人のdotfilesリポジトリ側に残ると、計画ファイルの書式変更のたびに配布境界をまたいだ2リポジトリの同時更新が必要になる。移設後は計画ファイルの生成側と閲覧側が同じ配布物に属する。
 
-移設に伴い、配布物独立性（`agent-toolkit/`配下から`pytools/`を参照しない）を保つため、ファイルロックとwatchdogイベント判定はagent-toolkit側の実装へ置き換えた。private-notesの解決は`agent-toolkit/scripts/_atk/wi/common.py`の既存関数を用い、外部プロセスの起動を伴わない。作成日時インデックスのキャッシュディレクトリ名は統合前の名前を維持する。名前を変えると初回観測時刻が失われ、一覧の並び順が変わるためである。
+移設に伴い、配布物独立性（`agent-toolkit/`配下から`pytools/`を参照しない）を保つため、ファイルロックとwatchdogイベント判定はagent-toolkit側の実装へ置き換えた。private-notesの解決は`agent-toolkit/agent_toolkit/_atk/wi/common.py`の既存関数を用い、外部プロセスの起動を伴わない。作成日時インデックスのキャッシュディレクトリ名は統合前の名前を維持する。名前を変えると初回観測時刻が失われ、一覧の並び順が変わるためである。
 
 ### 計画一覧の対象判定
 
@@ -1634,7 +1664,7 @@ SSEは`/api/events`（AWI）、`/api/plans/events`（計画ファイル）、`/a
 
 3画面のヘッダー、ナビゲーション、ボタン及びモバイル時の折り返しは、統合したスタイルシートの共通部分で定める。画面固有の指定は、当該画面のコンテンツ整列に従属する水平方向の余白だけを上書きし、高さ、文字サイズ、内側の余白とブレークポイントを上書きしない。3画面を移動しても操作対象の大きさと位置が変わらない状態を保つためである。画面ごとに寸法を上書きする案は、共通側の変更が各画面の上書きで打ち消され、同じ部品の見え方が再び分かれるため採らない。
 
-リモートホスト側ヘルパーの起動コードは`agent-toolkit/scripts/_atk/serve/remote.py`の`remote_bootstrap`へ集約する。
+リモートホスト側ヘルパーの起動コードは`agent-toolkit/agent_toolkit/_atk/serve/remote.py`の`remote_bootstrap`へ集約する。
 計画ファイル画面とセッション画面は別々のヘルパーを起動するが、SSH越しの起動形は同じ制約を負う。
 起動コードは`python -c`へ1行で渡し、ヘルパー本体を`exec`で実行する。
 このときヘルパーは`python -c`が用意した名前空間をそのまま使い、当該名前空間には`__file__`が無い。
@@ -1652,9 +1682,9 @@ SSEは`/api/events`（AWI）、`/api/plans/events`（計画ファイル）、`/a
 
 セッション画面の本文は、記録の種別が`user`・`assistant`・`developer`であるイベントを既定で展開し、残りを既定で折りたたむ。Codexではシステム指示が`developer`ロールへ入るため、`developer`を折りたたむと利用者が最初に読む対象が既定で隠れる。`system`という表示種別は設けない。2026年9月8日にClaude Codeのtranscript 2,544件とCodexのrollout 7,741件を対象として`"role": "system"`を検索し、一致するファイルが無いことを確認した。Claude Codeの`type`が`system`である記録は運用通知である。内訳は`stop_hook_summary`・`turn_duration`・`api_error`・`scheduled_task_fire`・`compact_boundary`である。残りは`local_command`・`informational`・`agents_killed`・`bridge_status`である。いずれもシステムプロンプトを保持しない。当該運用通知を本文へ表示する案は、1セッションあたりの表示件数を大きく増やす一方で、利用者が読む対象である指示と発話を埋もれさせるため採らない。記録に現れない種別のために表示種別、ラベル及び既定の開閉を先行して設ける案も、観測できない条件のための恒常的な分岐を増やすため採らない。
 
-## agent-toolkit/scripts/のパッケージ構成
+## agent-toolkit/agent_toolkit/のパッケージ構成
 
-`agent-toolkit/scripts/`直下には、配布物の外部から絶対パスで解決される入口だけを置く。
+`agent-toolkit/agent_toolkit/`直下には、配布物の外部から絶対パスで解決される入口だけを置く。
 入口は、フック共通入口`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`、管理対象一時領域の後始末`_managed_temp.py`、及びリモートホスト上で読み込んで実行するヘルパー2件とする。
 それ以外の実装モジュールは、責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ収める。
 この6つを依存の層とし、この並び順を層の順序とする。
@@ -1676,8 +1706,8 @@ SSEは`/api/events`（AWI）、`/api/plans/events`（計画ファイル）、`/a
 
 直下の入口は接頭辞`_`を付けずに命名する。
 `_managed_temp.py`だけは接頭辞を残す。
-このパスは`agent-toolkit/scripts/_hooks/permissionrequest_codex.py`がCodex側の許可判定で解決し、hookの出力契約テストが生成するコマンド文字列にも現れる。
-改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/scripts/script_prefix_test.py`へ当該1件の除外を置く。
+このパスは`agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex.py`がCodex側の許可判定で解決し、hookの出力契約テストが生成するコマンド文字列にも現れる。
+改名すると同じコマンドが許可されなくなるため、名前を維持して`agent-toolkit/agent_toolkit/script_prefix_test.py`へ当該1件の除外を置く。
 
 サブパッケージ内のimportには相対importを使わず絶対importを使う。
 `scripts/check_script_imports.py`は、`sys.path.insert`の静的評価と絶対importの解決によりPEP 723スクリプトのimport到達性を検査する。

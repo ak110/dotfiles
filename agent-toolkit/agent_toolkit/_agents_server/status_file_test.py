@@ -93,6 +93,13 @@ def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib
             },
             subject.StatusFileIdentity("owner", "codex-child.json", "codex-child"),
         ),
+        (
+            {
+                "AGENT_TOOLKIT_OWNER_SESSION": "owner",
+                "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer-session",
+            },
+            subject.StatusFileIdentity("owner", "writer-session.json", "writer-session"),
+        ),
         ({}, None),
         ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, None),
         ({"CLAUDE_CODE_SESSION_ID": "../invalid"}, None),
@@ -115,6 +122,68 @@ def test_status_directory_uses_platform_state_dir(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     assert subject.status_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root"
     assert subject.notices_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "notices"
+    assert subject.hosts_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "hosts"
+
+
+def test_write_host_alias_resolves_writer_to_thread_id(tmp_path: pathlib.Path) -> None:
+    """書込主体から起動元threadへの索引は形式を検証して保存する。"""
+    subject.write_host_alias("root", "writer", "thread", tmp_path)
+
+    assert json.loads((subject.hosts_directory("root", tmp_path) / "writer.json").read_text(encoding="utf-8")) == {
+        "version": 1,
+        "host_session_id": "thread",
+    }
+    with pytest.raises(ValueError, match="invalid session_id"):
+        subject.write_host_alias("root", "bad/writer", "thread", tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_path: pathlib.Path) -> None:
+    """内側の3起動種別を親thread識別子へ射影して1つの状態ファイルへ集約する。"""
+    identity = subject.resolve_status_file_identity(
+        {"AGENT_TOOLKIT_OWNER_SESSION": "root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer"}
+    )
+    assert identity is not None
+    sessions = {
+        launch_kind: state.SessionState(
+            f"{launch_kind}-session",
+            str(tmp_path),
+            launch_kind=launch_kind,
+            announced=True,
+        )
+        for launch_kind in ("delegate", "explore", "shell")
+    }
+    writer = subject.StatusFileWriter(sessions, identity, state_root=tmp_path, aggregate_seconds=0)
+    writer.activate()
+    assert json.loads(writer.path.read_text(encoding="utf-8"))["host_session_id"] == "writer"
+
+    subject.write_host_alias("root", "writer", "parent-thread", tmp_path)
+    writer.flush()
+
+    payload = json.loads(writer.path.read_text(encoding="utf-8"))
+    assert payload["host_session_id"] == "parent-thread"
+    assert len(payload["sessions"]) == 3
+    assert writer.path in subject.list_status_files("root", tmp_path)
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path) -> None:
+    """保持期限を過ぎた書込主体索引をactivate時に回収する。"""
+    host_path = subject.hosts_directory("root", tmp_path) / "writer.json"
+    host_path.parent.mkdir(parents=True)
+    host_path.write_text('{"version": 1, "host_session_id": "thread"}', encoding="utf-8")
+    stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
+    os.utime(host_path, (stale_at, stale_at))
+    writer = subject.StatusFileWriter(
+        {}, subject.StatusFileIdentity("root", "root.json", None), state_root=tmp_path, aggregate_seconds=0
+    )
+
+    writer.activate()
+
+    assert not host_path.exists()
+    assert not host_path.parent.exists()
+    writer.deactivate()
 
 
 def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -124,6 +193,30 @@ def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.Mo
     assert subject.status_directory("root") == (
         tmp_path / "home" / ".local" / "state" / "agent-toolkit" / "agents-server" / "root"
     )
+
+
+@pytest.mark.parametrize(
+    ("file_names", "expected"),
+    [
+        (["root.json"], ["root.json"]),
+        (["child.json"], ["child.json"]),
+        (["root.json", "child.json"], ["child.json", "root.json"]),
+        (["root.json", "results/result.json"], ["root.json"]),
+    ],
+)
+def test_list_status_files_returns_direct_json_files_in_stable_order(
+    tmp_path: pathlib.Path,
+    file_names: list[str],
+    expected: list[str],
+) -> None:
+    """状態ディレクトリ直下のJSON通常ファイルだけを絶対パスの安定順で返す。"""
+    directory = subject.status_directory("root", tmp_path)
+    for file_name in file_names:
+        path = directory / file_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    assert subject.list_status_files("root", tmp_path) == [directory / file_name for file_name in expected]
 
 
 def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp_path: pathlib.Path) -> None:
@@ -189,6 +282,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     payload = json.loads(writer.path.read_text(encoding="utf-8"))
     assert payload["version"] == 1
     assert payload["host_session_id"] is None
+    datetime.datetime.fromisoformat(payload["heartbeat_at"])
     assert [item["session_id"] for item in payload["sessions"]] == ["visible"]
     assert payload["sessions"][0]["progress"] == "進捗"
     datetime.datetime.fromisoformat(payload["sessions"][0]["started_at"])
@@ -211,7 +305,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
 
 @pytest.mark.asyncio
 async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """期限到達後はsession表示と未回収の結果を除く。"""
+    """期限到達後はsession表示を除き、未回収の結果を保持する。"""
     session = state.SessionState("retained", str(tmp_path), announced=True, turn_seq=1)
     session.status = "completed"
     session.agent_message = "完了"
@@ -235,13 +329,14 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
     assert writer._retention_handle is not None
     await asyncio.sleep(0.05)
     assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert not result_path.exists()
+    assert result_path.exists()
     writer.deactivate()
+    assert result_path.exists()
 
 
 @pytest.mark.asyncio
-async def test_writer_removes_retained_result_without_live_session_at_deadline(tmp_path: pathlib.Path) -> None:
-    """破棄済みsessionから保持した結果も期限到達後に掃引する。"""
+async def test_writer_retains_result_without_live_session_after_deadline(tmp_path: pathlib.Path) -> None:
+    """破棄済みsessionから保持した結果も期限到達後に維持する。"""
     session = state.SessionState("stopped", str(tmp_path), announced=True)
     session.status = "completed"
     session.agent_message = "完了"
@@ -259,12 +354,13 @@ async def test_writer_removes_retained_result_without_live_session_at_deadline(t
     writer.flush()
     result_path = subject.results_directory("root", tmp_path) / "stopped.json"
     assert result_path.exists()
-    assert writer._retention_handle is not None
+    assert writer._retention_handle is None
 
     await asyncio.sleep(0.05)
 
-    assert not result_path.exists()
+    assert result_path.exists()
     writer.deactivate()
+    assert result_path.exists()
 
 
 @pytest.mark.asyncio
@@ -344,13 +440,92 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
     assert other_temporary.exists()
     assert retained_result.exists()
     assert retained_notice.exists()
-    assert not stale_result.exists()
+    assert stale_result.exists()
     assert not stale_notice.exists()
     writer.deactivate()
     assert other_writer.exists()
     assert other_temporary.exists()
     assert retained_result.exists()
     assert retained_notice.exists()
+    assert stale_result.exists()
+
+
+@pytest.mark.asyncio
+async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
+    """生存の印が失効した他の状態ファイルを削除する。"""
+    directory = subject.status_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    stale = directory / "stale.json"
+    stale.write_text(
+        json.dumps(
+            {
+                "heartbeat_at": (
+                    datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=subject.HEARTBEAT_EXPIRY_SECONDS + 1)
+                ).isoformat()
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = directory / "live.json"
+    live.write_text(
+        json.dumps({"heartbeat_at": datetime.datetime.now(datetime.UTC).isoformat()}),
+        encoding="utf-8",
+    )
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+
+    writer.activate()
+
+    assert not stale.exists()
+    assert live.exists()
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_preserves_state_file_without_heartbeat(tmp_path: pathlib.Path) -> None:
+    """旧形式の状態ファイルは他の書込主体が回収しない。"""
+    directory = subject.status_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    legacy = directory / "legacy.json"
+    legacy.write_text("{}", encoding="utf-8")
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+
+    writer.activate()
+    writer.flush()
+    writer.deactivate()
+
+    assert legacy.exists()
+
+
+@pytest.mark.asyncio
+async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """managerは稼働中に生存の印を定期更新し、終了時に更新タスクを回収する。"""
+    monkeypatch.setattr(subject, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager.activate()
+    initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+
+    await asyncio.sleep(0.03)
+
+    refreshed = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+    assert refreshed > initial
+    await manager.close()
+    assert manager._heartbeat_task is None
 
 
 @pytest.mark.asyncio

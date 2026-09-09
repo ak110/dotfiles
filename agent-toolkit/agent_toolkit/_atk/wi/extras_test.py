@@ -1,7 +1,7 @@
 """atk (agent-toolkit `atk wi`) の拡張サブコマンド・オプションのテスト。
 
 `add --source`・`list`/`show`のremote同期・`commit`・`list`の状態に基づく抽出・
-エディター経由の`add`・ファイルパス誤投入拒否・`mq add`の`--target-repo`の単体テストを集約する。
+エディター経由の`add`・`mq add`の`--target-repo`の単体テストを集約する。
 既存サブコマンドのテストは`atk_test.py`に分離する。
 共通ヘルパーは`atk_test.py`・`_atk_git_fake_test_helpers.py`から再利用する。
 """
@@ -35,6 +35,25 @@ from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-impo
 )
 
 
+def _add_with_target_repo(home: pathlib.Path, body_file: pathlib.Path) -> None:
+    """共通の`--target-repo`指定で本文ファイルを投入する。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "wi",
+                "add",
+                "--target-repo",
+                "github.com/example/otherrepo",
+                "--body-file",
+                str(body_file),
+            ],
+            home=home,
+            now=_FIXED_DT,
+        )
+
+    assert exc_info.value.code == 0
+
+
 class TestAddSourceOption:
     """addサブコマンド: --source指定時にfrontmatterへsource行を記録する。"""
 
@@ -47,6 +66,8 @@ class TestAddSourceOption:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
+        body_file = tmp_path / "body.md"
+        body_file.write_text("メッセージ\n\n## 実現性\nテスト用の投入経路を確認済み", encoding="utf-8")
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
@@ -57,7 +78,8 @@ class TestAddSourceOption:
                     "add",
                     "--source=session-review",
                     str(myrepo),
-                    "メッセージ\n\n- 実現性: テスト用の投入経路を確認済み",
+                    "--body-file",
+                    str(body_file),
                 ],
                 home=tmp_path,
                 now=_FIXED_DT,
@@ -76,11 +98,17 @@ class TestAddSourceOption:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
+        body_file = tmp_path / "body.md"
+        body_file.write_text("メッセージ", encoding="utf-8")
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "メッセージ"], home=tmp_path, now=_FIXED_DT)
+            atk.main(
+                ["wi", "add", str(myrepo), "--body-file", str(body_file)],
+                home=tmp_path,
+                now=_FIXED_DT,
+            )
 
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -646,97 +674,6 @@ class TestAddViaEditor:
         assert not list((notes / "inbox").iterdir())
 
 
-class TestAddFilePathArgumentRejected:
-    """`mq add`の位置引数がファイルパスに解釈される場合の誤操作拒否を検証する。"""
-
-    def test_md_file_path_argument_rejected(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """既存の`.md`ファイルパスを単独の位置引数として渡すと拒否される。"""
-        notes = _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        body_file = tmp_path / "body.md"
-        body_file.write_text("投入したい本文", encoding="utf-8")
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "ファイルパス" in captured.err
-        assert not list((notes / "inbox").glob("*.md"))
-
-    def test_nonexistent_md_path_string_not_rejected(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """`.md`で終わるが実在しないパス文字列は本文として通常投入される。"""
-        notes = _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.chdir(tmp_path)
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "docs/architecture.md"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
-        assert "docs/architecture.md" in content
-
-    def test_extensionless_temp_file_argument_rejected(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """`mktemp`生成の拡張子なし一時ファイルパスを単独の位置引数として渡すと拒否される。"""
-        notes = _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        body_file = tmp_path / "tmp.abc123"
-        body_file.write_text("投入したい本文", encoding="utf-8")
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), str(body_file)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "ファイルパス" in captured.err
-        assert not list((notes / "inbox").glob("*.md"))
-
-
 class TestAddTargetRepoOption:
     """`mq add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
 
@@ -749,24 +686,12 @@ class TestAddTargetRepoOption:
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
+        body_file = tmp_path / "body.md"
+        body_file.write_text("本文", encoding="utf-8")
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--target-repo", "github.com/example/otherrepo", "本文"],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-
-        assert exc_info.value.code == 0
+        _add_with_target_repo(tmp_path, body_file)
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/otherrepo" in content
 
@@ -779,25 +704,13 @@ class TestAddTargetRepoOption:
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
+        body_file = tmp_path / "body.md"
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
 
         frontmatter_body = "---\ntarget_repo: github.com/example/fmrepo\n---\n\n本文"
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "add", "--target-repo", "github.com/example/otherrepo", frontmatter_body],
-                home=tmp_path,
-                now=_FIXED_DT,
-            )
-
-        assert exc_info.value.code == 0
+        body_file.write_text(frontmatter_body, encoding="utf-8")
+        _add_with_target_repo(tmp_path, body_file)
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/fmrepo" in content
 
@@ -814,11 +727,21 @@ class TestUwiAddTargetRepoOption:
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
+        body_file = tmp_path / "body.md"
+        body_file.write_text("未確認の挙動？", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=uwi", "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                [
+                    "wi",
+                    "add",
+                    "--type=uwi",
+                    "--target-repo",
+                    "github.com/example/otherrepo",
+                    "--body-file",
+                    str(body_file),
+                ],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -837,11 +760,22 @@ class TestUwiAddTargetRepoOption:
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
+        body_file = tmp_path / "body.md"
+        body_file.write_text("未確認の挙動？", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", "--type=uwi", str(myrepo), "--target-repo", "github.com/example/otherrepo", "未確認の挙動？"],
+                [
+                    "wi",
+                    "add",
+                    "--type=uwi",
+                    str(myrepo),
+                    "--target-repo",
+                    "github.com/example/otherrepo",
+                    "--body-file",
+                    str(body_file),
+                ],
                 home=tmp_path,
                 now=_FIXED_DT,
             )

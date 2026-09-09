@@ -44,10 +44,10 @@
 
 - `merged_head`が`なし`でない場合は、`git -C <マージ先worktreeの絶対パス> rev-parse <マージ先branch名>`の出力と一致する。`なし`の場合は、当該レーンへ渡した`統合区分`が`マージなし`であることを照合し、Git参照を照合しない
 - `deferred_adopt_commits`のAWIファイル名の集合が、起動時に渡した延期`adopt`対象の集合と過不足なく一致する。各完全OIDは`git -C <記録した対象リポジトリの絶対パス> rev-parse --verify <完全OID>^{commit}`の出力と一致する。`マージあり`では各完全OIDが`merged_head`と一致し、`マージなし`ではAWIごとに起動時に渡した対象commitの完全OIDと一致する
-- `adopted`が挙げるファイル名の集合が、終端区分で`adopt`と指定した集合と過不足なく一致する。一致を確認した全ファイル名を引数として`atk wi show <ファイル名>... --target-repo=<記録した対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行の状態が全件`adopted`であることを確認する。状態フォルダーの全件を返す起動形は、当該フォルダーが終端した項目を累積し続けるため用いない。出力量を抑える場合は`--output-file`へ当該工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む
-- `rejected`が挙げるファイル名の集合が、終端区分で`reject`と指定した集合と過不足なく一致する。一致を確認した全ファイル名を引数として`atk wi show <ファイル名>... --target-repo=<記録した対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行の状態が全件`rejected`であることを確認する。状態フォルダーの全件を返す起動形は、当該フォルダーが終端した項目を累積し続けるため用いない。出力量を抑える場合は`--output-file`へ当該工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む
-件数の一致だけでは、別の項目を終端した報告と終端対象を列挙から省いた報告を区別できないため、集合の一致を先に確認してから各要素の実状態を照合する。
-各要素の照合は、当該操作の公開契約が定める終了状態を直接観測して行う。`adopted`は`atk wi adopt`の終了状態が`adopted`への移動であるため、当該状態への存在を観測する。`rejected`も`atk wi reject`の終了状態が`rejected`への移動であるため、当該状態への存在を観測する。`processing`に現れないことは、`inbox`と`hold`への移動、未終端のいずれとも区別しないため、終端の根拠に用いない。
+- `adopted`が挙げるファイル名の集合が、終端区分で`adopt`と指定した集合と過不足なく一致する。`termination_warnings`の行が無い場合は、この一致の確認だけで当該値の検収を終える
+- `rejected`が挙げるファイル名の集合が、終端区分で`reject`と指定した集合と過不足なく一致する。`termination_warnings`の行が無い場合は、この一致の確認だけで当該値の検収を終える
+`atk wi adopt`と`atk wi reject`は変更後の状態を自ら判定して成功を報告する公開契約を持つため、`termination_warnings`の行が無い受領では、統合担当が観測した終了状態を当該操作の観測として扱い、同じ状態を別のコマンドで取得し直さない。
+`termination_warnings`の行がある受領では、終端区分で`adopt`と`reject`に指定した全ファイル名を引数として`atk wi show <ファイル名>... --target-repo=<記録した対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行の状態が、当該ファイルの終端区分に対応する`adopted`又は`rejected`であることを確認する。状態フォルダーの全件を返す起動形は、当該フォルダーが終端した項目を累積し続けるため用いない。出力量を抑える場合は`--output-file`へ当該工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む。
 照合はいずれもコマンド1回で判定でき、成果物と実装差分の再読解を伴わない。呼び出し元は成果物、Git状態、検証結果とレビュー表を完了報告の再検収目的で読み直さない。
 
 ## 所有資源の回収
@@ -56,12 +56,11 @@
 回収対象は、`agent-toolkit/skills/process-wi/references/run-lanes.md`がレーンの入力へ記録すると定める値から解決する。当該記録は、専用managed-tempと専用worktreeの絶対パス、所有主体、作成目的、回収可否、専用branch名、対象リポジトリの絶対パス及び専用worktree作成時のHEAD完全OIDを持つ。当該記録の生成主体は、当該レーンを作成した呼び出し元である。本節の回収も同じ呼び出し元が担う。回収の認可は、呼び出し元が当該worktree、当該branchと当該レーンmanaged-tempの作成主体かつ所有主体であることに由来する。統合担当へ渡す入力から回収対象と回収可の権限を外しても、当該記録は呼び出し元が保持したままである。このため`マージあり`と`マージなし`のいずれの経路でも、同じ手順で回収対象を解決できる。回収対象を保持する記録形式を新たに設けない。
 回収の前に、当該レーンの統合担当が終端していることを確認する。回収は`統合区分`に対応する次の手順で行い、対象外worktree、複製元及び管理外領域は削除しない。
 
-- `マージあり`では、branchの削除の直前に、`git -C <マージ先worktreeの絶対パス> symbolic-ref --short HEAD`の出力が起動時に渡したマージ先branch名と一致することを照合する。一致した場合だけ、先に`git -C <記録した対象リポジトリの絶対パス> worktree remove <記録した所有worktreeの絶対パス>`で専用worktreeを削除する。Gitは所有branchをcheckoutしている専用worktreeが存在する間は当該branchを削除しないため、worktreeの削除をbranchの削除より先に行う。続けて`git -C <マージ先worktreeの絶対パス> merge-base --is-ancestor <所有branch名> <マージ先branch名>`を実行する。終了コードが0で所有branchがマージ先branchへ到達済みである場合だけ、`git -C <マージ先worktreeの絶対パス> branch -D <所有branch名>`で削除する。`git branch -d`を先に試さない。`git branch -d`は、対象branchにupstreamが設定されている場合、実行した作業ツリーが指すbranchではなくupstreamを統合判定の基準にする。所有branchにupstreamが設定されている場合、当該upstreamはマージ先branchのリモート追跡refを指し、レーンは作業対象リポジトリをpushしないため当該refはマージ済みのローカルcommitを含まない。この条件では`-d`が常に拒否され、到達確認を経た`-D`だけが成功するため、`-d`の実行と拒否の観測を経路から外す。upstreamを統合判定の基準にする挙動は、2026年9月3日にgit version 2.43.0で、upstreamに`origin/develop`を設定した専用branchをローカルの`develop`へff統合した直後に`branch -d`が未統合として拒否されることを実測した。再検証は`git branch -vv`で対象branchの追跡先を確認したうえで、同じ状態の`branch -d`の終了コードを観測する。
+- `マージあり`では、branchの削除の直前に、`git -C <マージ先worktreeの絶対パス> symbolic-ref --short HEAD`の出力が起動時に渡したマージ先branch名と一致することを照合する。一致した場合だけ、先に`git -C <記録した対象リポジトリの絶対パス> worktree remove <記録した所有worktreeの絶対パス>`で専用worktreeを削除する。Gitは所有branchをcheckoutしている専用worktreeが存在する間は当該branchを削除しないため、worktreeの削除をbranchの削除より先に行う。続けて`git -C <マージ先worktreeの絶対パス> merge-base --is-ancestor <所有branch名> <マージ先branch名>`を実行する。終了コードが0で所有branchがマージ先branchへ到達済みである場合だけ、`git -C <マージ先worktreeの絶対パス> branch -D <所有branch名>`で削除する。`git branch -d`を先に試さない。`git branch -d`は、対象branchにupstreamが設定されている場合、実行した作業ツリーが指すbranchではなくupstreamを統合判定の基準にする。所有branchにupstreamが設定されている場合、当該upstreamはマージ先branchのリモート追跡refを指し、レーンは作業対象リポジトリをpushしないため当該refはマージ済みのローカルcommitを含まない。この条件では`-d`が常に拒否され、到達確認を経た`-D`だけが成功するため、`-d`の実行と拒否の観測を経路から外す。監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/lane-integration.parent.md：所有資源の回収：2026年9月3日」にある。
 - `マージなし`では、`git -C <記録した所有worktreeの絶対パス> status --porcelain=v1`の出力が空であることを照合する。続いて、`git -C <記録した所有worktreeの絶対パス> symbolic-ref --short HEAD`が記録した専用branch名と一致することを照合する。`git -C <記録した所有worktreeの絶対パス> rev-parse HEAD`が専用worktree作成時のHEAD完全OIDと一致することも照合する。全て一致した場合だけ、`git -C <記録した対象リポジトリの絶対パス> worktree remove <記録した所有worktreeの絶対パス>`でworktreeを削除する。次に`git -C <記録した対象リポジトリの絶対パス> update-ref -d refs/heads/<所有branch名> <専用worktree作成時のHEAD完全OID>`を実行し、期待OIDから更新されていない所有branchだけを削除する。
 
 worktreeとbranchの回収後に、記録したレーンmanaged-tempを`atk managed-temp cleanup --path <レーンmanaged-tempの絶対パス>`で削除する。
-回収した所有worktreeと所有branchについて、`git -C <記録した対象リポジトリの絶対パス> worktree list`と`git -C <記録した対象リポジトリの絶対パス> branch --list <所有branch名>`の出力へ対象が現れないことを確認する。
-レーンmanaged-tempについては、`test ! -e <レーンmanaged-tempの絶対パス>`の終了コードが0であることを確認する。
+回収した所有worktreeと所有branchについては、`git worktree remove`と`git branch -D`が対象の削除を終了状態へ含める公開契約を持つため、当該コマンドの終了コード0と成功の報告で判定し、別のコマンドによる不在確認を追加しない。
 照合の不一致、削除の失敗又は確認の不成立を観測した場合は、以降の資源を削除しない。
 残存する資源を推測で削除せず、記録値と観測値の差分、残存対象と当該レーンのキュー項目の状態を`agent-toolkit:wi-standards`に従って登録する。
 当該レーンを終端して他のレーンを継続する。

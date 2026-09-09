@@ -2313,22 +2313,35 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
 
 
 @pytest.mark.asyncio
-async def test_plan_and_session_details_use_matching_typography(screen_harness: _ScreenHarness) -> None:
-    """計画とセッションの詳細本文でフォント、文字サイズ及び行高をそろえる。"""
-    page = screen_harness.page
-    await page.goto(screen_harness.base_url + "/plans")
+async def test_three_screen_bodies_use_matching_typography(screen_harness: _ScreenHarness) -> None:
+    """3画面の本文コンテナーで書体、文字サイズ、行高、字間及び文字色をそろえる。"""
+    harness = screen_harness
+    page = harness.page
+    read_styles = "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))"
+    typography = ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "color"]
+    gutters = ["maxWidth", "paddingLeft", "paddingRight"]
+
+    await page.goto(harness.base_url + "/")
+    await _open_question(page)
+    work_item_styles = await page.locator("#detail-content").evaluate(read_styles, typography)
+    await page.keyboard.press("Escape")
+
+    await page.goto(harness.base_url + "/plans")
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    plan_style = await page.locator("#preview").evaluate(
-        "element => { const style = getComputedStyle(element); return [style.fontFamily, style.fontSize, style.lineHeight]; }"
-    )
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    plan_styles = await page.locator("#preview").evaluate(read_styles, typography)
+    plan_gutters = await page.locator("#preview").evaluate(read_styles, gutters)
+    plan_toolbar = await page.locator("#screen-plans main > .toolbar").evaluate(read_styles, ["padding"])
+
+    await page.goto(harness.base_url + "/sessions")
     await page.locator("#sessions .session-item").first.click()
     await page.locator("#detail details").first.wait_for(state="visible")
-    session_style = await page.locator("#detail").evaluate(
-        "element => { const style = getComputedStyle(element); return [style.fontFamily, style.fontSize, style.lineHeight]; }"
-    )
+    session_styles = await page.locator("#detail").evaluate(read_styles, typography)
+    session_gutters = await page.locator("#detail").evaluate(read_styles, gutters)
+    session_toolbar = await page.locator("#screen-sessions main > .toolbar").evaluate(read_styles, ["padding"])
 
-    assert session_style == plan_style
+    assert work_item_styles == plan_styles == session_styles
+    assert session_gutters == plan_gutters
+    assert session_toolbar == plan_toolbar
 
 
 @pytest.mark.asyncio
@@ -2683,28 +2696,49 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
 
 
 @pytest.mark.asyncio
-async def test_session_detail_matches_plan_typography_and_gutters(screen_harness: _ScreenHarness) -> None:
-    """セッション画面の本文とツールバーは、計画ファイル画面と同じ書体、文字サイズ、最大幅及び余白で表示する。"""
+async def test_shell_parts_share_computed_style_across_three_screens(screen_harness: _ScreenHarness) -> None:
+    """共有シェル部品の計算スタイルを3画面と反復遷移の前後で維持する。"""
     harness = screen_harness
-    await harness.page.set_viewport_size({"width": 1280, "height": 800})
+    page = harness.page
+    properties = ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "color"]
     read_styles = "(element, names) => Object.fromEntries(names.map((name) => [name, getComputedStyle(element)[name]]))"
-    body_properties = ["fontFamily", "fontSize", "maxWidth", "paddingLeft", "paddingRight"]
-    toolbar_properties = ["padding"]
-
-    await harness.page.goto(harness.base_url + "/plans")
-    await harness.page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    plan_styles = await harness.page.locator("#preview").evaluate(read_styles, body_properties)
-    plan_toolbar_styles = await harness.page.locator("#screen-plans main > .toolbar").evaluate(read_styles, toolbar_properties)
-
-    await harness.page.goto(harness.base_url + "/sessions")
-    await harness.page.locator("#sessions .session-item").first.wait_for(state="visible")
-    session_styles = await harness.page.locator("#detail").evaluate(read_styles, body_properties)
-    session_toolbar_styles = await harness.page.locator("#screen-sessions main > .toolbar").evaluate(
-        read_styles, toolbar_properties
+    screens = (
+        ("ワークアイテム", "#screen-wi"),
+        ("計画ファイル", "#screen-plans"),
+        ("セッション", "#screen-sessions"),
     )
 
-    assert session_styles == plan_styles
-    assert session_toolbar_styles == plan_toolbar_styles
+    async def shell_styles(screen: str) -> dict[str, dict[str, str]]:
+        await page.locator(screen).wait_for(state="visible")
+        return {
+            "header": await page.locator(f"{screen} .app-header").evaluate(read_styles, properties),
+            "title": await page.locator(f"{screen} .app-header h1").evaluate(read_styles, properties),
+            "nav": await page.locator(f"{screen} .app-nav").evaluate(read_styles, properties),
+        }
+
+    await page.goto(harness.base_url + "/")
+    expected: dict[str, dict[str, str]] | None = None
+    for _ in range(2):
+        for link_name, screen in screens:
+            await page.locator("nav.app-nav").get_by_role("link", name=link_name).click()
+            current = await shell_styles(screen)
+            if expected is None:
+                expected = current
+            else:
+                assert current == expected
+
+    await page.goto(harness.base_url + "/plans")
+    plan_toolbar = await page.locator("#screen-plans main > .toolbar").evaluate(read_styles, properties)
+    await page.goto(harness.base_url + "/sessions")
+    session_toolbar = await page.locator("#screen-sessions main > .toolbar").evaluate(read_styles, properties)
+    assert session_toolbar == plan_toolbar
+
+    await page.goto(harness.base_url + "/")
+    dialog_styles = [
+        await page.locator(selector).evaluate(read_styles, properties)
+        for selector in ("#detail-dialog", "#create-dialog", "#delete-dialog")
+    ]
+    assert dialog_styles[1:] == dialog_styles[:-1]
 
 
 @pytest.mark.asyncio

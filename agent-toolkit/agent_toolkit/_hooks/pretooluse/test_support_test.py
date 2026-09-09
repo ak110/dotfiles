@@ -271,19 +271,6 @@ _VALID_H2_PLAN_CONTENT = (
 )
 
 
-_HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
-
-
-_SCRIPTS_DIR_PATH = pathlib.Path(__file__).resolve().parents[2]
-
-
-def _hook_entry_point_names() -> list[str]:
-    """hooks.json の command 文字列から entry point スクリプト名を抽出する。"""
-    text = _HOOKS_JSON_PATH.read_text(encoding="utf-8")
-    pattern = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/scripts/([^\"\s]+\.py)")
-    return sorted(set(pattern.findall(text)))
-
-
 def _init_git_repo(path: pathlib.Path) -> None:
     """一括ステージ警告テスト用の最小git repo初期化。"""
     subprocess.run(["git", "init", "-q", str(path)], check=True)
@@ -386,13 +373,11 @@ __all__ = [
     "_CYRILLIC_SAMPLE",
     "_EXECUTE_REVIEW_TASK_NAMES",
     "_HANGUL_SAMPLE",
-    "_HOOKS_JSON_PATH",
     "_MARKETPLACE_MANIFEST",
     "_NOTICE_PREFIX",
     "_NOTICE_SUFFIX",
     "_PLUGIN_MANIFEST",
     "_SCRIPT",
-    "_SCRIPTS_DIR_PATH",
     "_SECRETS_COPY_GUIDANCE",
     "_SECRETS_VALUE_EDIT_GUIDANCE",
     "_SHARE_DIR",
@@ -403,7 +388,6 @@ __all__ = [
     "_deny_substring_fixture",
     "_git_commit_initial",
     "_home_path",
-    "_hook_entry_point_names",
     "_init_git_repo",
     "_make_managed_temp_git_case",
     "_make_plan_file",

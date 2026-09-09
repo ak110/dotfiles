@@ -23,7 +23,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 ## 経路
 
 - 専用agent定義がある作業をClaude Codeで実行する場合は、当該定義を実装するAgent機能で起動する。`agent-toolkit`は専用agent定義を配布しないため、対象は実行ホスト組込の定義とプロジェクト側の定義に限る
-- Claude Codeからclaude系モデルの実行主体へ委譲する場合はAgentツールを既定とする。実行状況と応答をClaude CodeのUIで直接確認できるためである。例外として、「工程別モデル設定」の表が定めるキーを持つ工程の委譲先は、engineの別によらず`agents_server`で起動する。当該工程は同表のeffortを渡す必要があり、Agentツールにeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合にAgentツールへ自動で切り替える経路は設けず、当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。Agentツールは、ユーザー又は上位主体の明示指示があった場合の手段としてだけ用いる
+- Claude Codeからの委譲は`agents_server`を既定とする。「工程別モデル設定」の表が定めるキーを持つ工程は同表のeffortを渡す必要があり、`Agent`ツールにeffortに相当する引数が無いためである。`agents_server`のMCPツールを呼び出せない場合に`Agent`ツールへ自動で切り替える経路は設けず、当該工程は「工程別モデル設定」手順4に従い`needs_escalation`か未完了のいずれかで返す。`Agent`ツールを使うのは、前項が定める専用agent定義がある作業と、ユーザー又は上位主体の明示指示があった場合に限る
 - `agents_server`を利用できる環境では、ToolSearchで`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の実在ツールとスキーマを確認してから初回開始または継続開始を選ぶ
   - 新規開始は`start`へ工程別モデル設定のキー名から`_model`を除いた`model_type`と作業ディレクトリの絶対パスを渡す。engine、model、effortはサーバーが設定の候補列から解決するため、呼び出し側は指定しない。応答は`session_id`、`status`、`engine`、`model`、`effort`及び`model_type`を返し、`progress`を返さない。全候補がモデル実行環境の不可用で終端した場合は当該終端の`status`を返すため、起動の成否は当該項目で判別する
   - `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測するか、結果が不要なら`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、以降のターンで当該作業を観測する主体が残らない
@@ -69,7 +69,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 現に保存されているキーと実効値は`atk config show`で確認する。同コマンドは、候補のモデル名とeffortのいずれかが主に使う値の一覧に無い場合に、当該設定キーと候補を標準エラーへ警告として書く。
 
 `execute_fast_model`と`execute_model`のどちらを初回実装へ用いるかは、計画ファイル（詳細）の`### 実装担当のモデル区分`の`判定`から確定する。
-`判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「実装単位の実行」を正本とし、本書へ複製しない。
+`判定`の値と渡す`model_type`の対応は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「実装単位の実行」を正本とする。
 
 設定値の書式は`<engine>:<model>[/<effort>]`とし、`engine`は`claude`または`codex`とする。
 1つのキーへASCIIカンマ区切りで複数の候補を並べられる。候補は先頭から順に試し、モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
@@ -176,8 +176,7 @@ fast担当がエスカレーションを返した場合だけfix担当の作業�
 2. その他は標準モデルを選ぶ
 
 既定より高いreasoning effortを選べるのは、読むファイル数が少なく、推論の深さが結果を左右すると事前に判明している工程に限る。
-本項は、軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザー報告）。
-再検証は、同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」にある。
 
 モデルを明示する経路ではreasoning effortも併せて指定する。
 指定モデルを利用できない場合は、作業を成立させる利用可能なモデルへ切り替える。
@@ -187,7 +186,6 @@ fast担当がエスカレーションを返した場合だけfix担当の作業�
 ## 代替時の組合せの目安
 
 本節は、「工程別モデル設定」の代替起動で試す組合せを集約する。
-将来の見直しで書き換える箇所を1つに保つため、同じ目安を他節へ複製しない。
 本節は代替起動の候補選定にだけ適用し、モデルを明示する他の委譲には「modelとreasoning effort」を適用する。
 以下の対応関係と向き不向きはユーザーが運用上の目安として指定した値であり、検証した能力比較ではない。
 

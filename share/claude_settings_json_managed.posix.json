@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
+            "command": "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
           }
         ]
       },
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'dotfiles-claude-hook posttooluse; exit 0'"
+            "command": "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; dotfiles-claude-hook posttooluse; exit 0'"
           }
         ]
       }
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'dotfiles-claude-hook stop_bell; exit 0'"
+            "command": "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; dotfiles-claude-hook stop_bell; exit 0'"
           }
         ]
       }

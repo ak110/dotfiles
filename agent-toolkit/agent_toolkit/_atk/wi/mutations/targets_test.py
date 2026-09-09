@@ -54,9 +54,15 @@ def test_add_empty_awi_keeps_detailed_rejection(
     """実質空AWIのCLI拒否案内に判定条件と対象先頭を含める。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body_file = tmp_path / "body.md"
+    body_file.write_text("-", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "add", "--target-repo", "github.com/example/foo", "-"], home=tmp_path, now=_FIXED_DT)
+        atk.main(
+            ["wi", "add", "--target-repo", "github.com/example/foo", "--body-file", str(body_file)],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
 
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
@@ -848,22 +854,8 @@ def test_edit_plan_cli_uses_plan_base_commit_instead_of_current_head(
         return revision
 
     monkeypatch.setattr(mutations, "_resolve_commit", resolve_commit)
-
     with pytest.raises(SystemExit) as captured:
-        atk.main(
-            [
-                "wi",
-                "edit",
-                filename,
-                "統合本文",
-                "--plan-file",
-                str(plan),
-                "--target-repo",
-                "github.com/example/foo",
-            ],
-            home=tmp_path,
-            now=_FIXED_DT,
-        )
+        atk.main(_edit_plan_args(tmp_path, filename, "統合本文", plan), home=tmp_path, now=_FIXED_DT)
 
     assert captured.value.code == 0
     output = notes / "inbox" / filename

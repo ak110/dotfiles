@@ -246,9 +246,9 @@ def _ensure_environment(home: pathlib.Path) -> pathlib.Path:
     return root
 
 
-def _run_git(args: list[str], cwd: pathlib.Path) -> None:
+def _run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
     """gitコマンドをcwdで実行し、失敗時は例外を送出する。"""
-    _git_command.run_quiet(args, cwd)
+    _git_command.run_quiet(args, cwd, forward_error_output=forward_error_output)
 
 
 def _migrate_legacy_layout(private_notes: pathlib.Path) -> None:

@@ -211,6 +211,7 @@ class TestManagedTempPosix:
             del record["prefix"]
             del record["created_at"]
             del record["awis"]
+            del record["session_id"]
 
         _replace_records(target, convert_to_v1)
 
@@ -228,6 +229,7 @@ class TestManagedTempPosix:
         def convert_to_v2(record: dict[str, object]) -> None:
             record["schema_version"] = 2
             del record["awis"]
+            del record["session_id"]
 
         _replace_records(target, convert_to_v2)
 
@@ -276,6 +278,7 @@ class TestManagedTempPosix:
         def set_invalid(record: dict[str, object]) -> None:
             record["schema_version"] = 2
             del record["awis"]
+            del record["session_id"]
             if value is None:
                 del record[field]
             else:
@@ -327,6 +330,7 @@ class TestManagedTempPosix:
             del record["prefix"]
             del record["created_at"]
             del record["awis"]
+            del record["session_id"]
         else:
             del record["created_at"]
         changed.write_text(json.dumps(record), encoding="utf-8")
@@ -352,10 +356,12 @@ class TestManagedTempPosix:
             del record["prefix"]
             del record["created_at"]
             del record["awis"]
+            del record["session_id"]
 
         def convert_to_v2(record: dict[str, object]) -> None:
             record["schema_version"] = 2
             del record["awis"]
+            del record["session_id"]
 
         _replace_records(v1_target, convert_to_v1)
         _replace_records(v2_target, convert_to_v2)
@@ -368,18 +374,20 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 0
         lines = capsys.readouterr()
         assert [json.loads(line) for line in lines.out.splitlines()] == [
-            {"created_at": None, "awis": [], "path": str(v1_target), "prefix": None},
+            {"created_at": None, "awis": [], "path": str(v1_target), "prefix": None, "session_id": None},
             {
                 "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
                 "awis": [],
                 "path": str(v2_target),
                 "prefix": "publish-group",
+                "session_id": None,
             },
             {
                 "created_at": subject._load_private_json(subject._registry_path(v3_target))["created_at"],
                 "awis": ["20260830-061344-001.md"],
                 "path": str(v3_target),
                 "prefix": "implementation",
+                "session_id": None,
             },
         ]
         assert "warning: 管理対象を列挙できない" in lines.err
@@ -404,6 +412,7 @@ class TestManagedTempPosix:
             del record["prefix"]
             del record["created_at"]
             del record["awis"]
+            del record["session_id"]
 
         _replace_records(first, set_created_at)
         _replace_records(second, set_created_at)
@@ -610,6 +619,7 @@ class TestManagedTempPosix:
                 "prefix": "valid",
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
                 "awis": [],
+                "session_id": None,
             }
         ]
         assert capsys.readouterr().err == ""
@@ -635,6 +645,7 @@ class TestManagedTempPosix:
                 "prefix": "valid",
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
                 "awis": [],
+                "session_id": None,
             }
         ]
         assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
@@ -908,7 +919,7 @@ class TestManagedTempPosix:
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         error = capsys.readouterr().err
         assert f"warning: マーカーから登録を復元できない管理対象があります: {target}" in error
-        assert "実体を直接削除してください" in error
+        assert f"（回収する場合は atk managed-temp cleanup --path {target} --force-remove）" in error
         assert f"atk managed-temp cleanup --path {target} --recover-registry" not in error
 
         with pytest.raises(subject.ManagedTempError) as captured:

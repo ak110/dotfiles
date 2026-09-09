@@ -9,19 +9,13 @@
 ## 待機区間の構成
 
 - 機械的な完了通知の受領を待機解除の既定手段とする。シェルコマンドによる能動的な時間待ちは行わない
-- 稼働中の委譲先が2件以上ある区間では、待機を1件ずつ前景で実行せず、全ての委譲先に対する待機を
-  呼び出し元が同時に保持できる形で発行する。いずれか1件が終端した時点で呼び出し元が当該終端を観測でき、
-  他の委譲先に対する待機が当該観測を遅らせない形とする。Claude Codeでは、各委譲先に対する
-  `atk agents-wait <session_id>`をBashツールの`run_in_background=true`で発行する形が該当する。
-  「背景ジョブの起動形（Claude Code）」節が定める長時間コマンドの前景実行の既定は、この条件へ適用しない
-  （厳守規定。1件を前景で待機する間は、呼び出し元が別の委譲先の終端を観測できず、
-  次の指示までに待機時間と同じ遅延が生じるため）
+- `agents_server`を使う待機について、稼働中の委譲先の件数から前景待機と並行・背景待機を選ぶ規定は、実行時に配送される`wait`ツールの公開説明を正本とする。呼び出しの直前に当該説明を適用する
 - 観測手段が終端statusを返さずに制御を戻した場合は、戻り方で継続と終端を分ける。
   実行環境が当該観測を背景処理へ移し、完了時に通知すると戻り値が示す場合は、同じ観測を再発行しない。
   待機表明でターンを終え、当該通知の受領で再開する。
   待機表明でターンを終えるセッションに`/goal`が設定され、かつ当該セッションの未完了の背景タスクが当該観測の背景移行だけである場合は、本項に代えて後述の目標評価の条項を適用する。
-  2026年9月、Claude Codeで`agents_server`の`wait`が発行から120秒で背景タスクへ移り、完了時に当該タスクの通知として結果本文が届くことを実測した。120秒は背景タスクへ移行する閾値であり、待機の上限ではない。
-  再検証は`wait`を発行し、背景移行の通知を受領した後に完了通知の到達を確認する
+  120秒は背景タスクへ移行する閾値であり、待機の上限ではない。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月」にある
 - 完了通知の経路が確立しない戻り方では、同じターン内で当該観測を再発行してよい。
   観測が自身の待機上限に達して終端statusを返さずに戻り、実行環境が背景処理への移行を示さない場合が該当する。
   再発行の回数に上限は設けない
@@ -56,17 +50,15 @@
   `wait`は全ての追跡対象が終端するまで最初の結果を保留し、終端した識別子を示す継続指示で同じsessionを当該ターンにつき一度だけ自動的に再開する。
   Claude backendでは、背景実行したシェルのコマンド、背景で起動したAgent委譲、及び背景へ移行したMCPツールの呼び出しも、Claude Codeの完了通知による自動再開の対象になる。
   背景タスクを起動せずに待機を表明した場合は再開しない。この場合の待機対象の完了確認と再開指示は呼び出し元が行う。
-  2026年9月3日から9月4日にかけて、`agents_server`の`start`で起動した委譲先が外部コマンドの完了待ちを表明して`status: completed`で終端し、当該コマンドの終了後も再開しない事象を実測した。
-  2026年9月4日には、同じ経路で起動した委譲先が自ら起動した委譲先の終端を待たずに待機表明で終端し、呼び出し元が保持した`session_id`へ`send_message`を送って再開させた事象を実測した。
-  再検証は`agents_server`で委譲先を起動し、待機表明で終端させたうえで、完了通知の到達を確認する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日」にある。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月4日」にある
 - 呼び出し元は、前項の自動再開について再開の要否を判断せず、`send_message`による再開指示も送らない。
   `wait`は再開したturnの終端まで待ち、その結果を返す。
   委譲先の最終メッセージの文面から待機表明を読み取って判別しない。
   同じ文面が作業の完了報告としても現れるため、文面による判別は誤った再開と再開漏れの双方を生む
 - `agents_server`の`wait`が`timeout`の省略時に用いる上限は、実行ホストが1回のツール呼び出しへ課す上限を超えない値としてサーバーが確定する。
   待機する主体は当該上限の大小を判定せず、`timeout`へ値を渡さない。
-  2026年9月7日から9月8日にかけて、Codexで動く主体が発行した`wait`が`timed out awaiting tools/call after 300s`で失敗する事象を実測した。
-  再検証は、当該上限より長く稼働する委譲先へ`timeout`を省略した`wait`を発行し、当該失敗の有無を確認する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月7日」にある
 - `agents_server`の`wait`は、委譲先として起動されたセッションでは`timeout`の省略時に240秒を上限とする。
   当該上限へ達した応答は`status`と`elapsed_seconds`を返すため、同じ`session_id`へ`wait`を再発行して待機を継続する。
   240秒より短い上限を1回のMCPツール呼び出しへ課す実行主体では、`atk agents-wait <session_id>`を既定の待機手段とする。
@@ -82,7 +74,8 @@
   経過が閾値を超えた応答は`stalled`を伴う。`stalled`を伴う応答の受領それ自体を待機の打ち切りの根拠にせず、同じ`session_id`へ同じ待機手段を再発行する。
   当該応答は停滞の確定ではなく、長時間のコマンドの実行待ちでも成立するため、呼び出し元が当該委譲先の状況を調べる契機として扱う。
   停滞の確定と巻き取りは「停滞の検知と巻き取り」節に従う
-- `atk agents-wait`が`status`を`expired`とする応答を終了コード7で返した場合は、待機対象のsessionが`agents_server`の保持から失われている。
+- `agents_server`は終端結果を経過時間で解放せず、呼び出し元が同じ`session_id`へ最初の`wait`を発行して結果本文を受領するまで保持する。完了通知の受領から時間が経った後の`wait`も終端状態と結果本文を返す。保持の解放は結果本文の配送後と`stop`による明示的な破棄の後だけとする
+- `atk agents-wait`が`status`を`expired`とする応答を終了コード7で返した場合は、待機対象のsessionが終端結果を残さずに`agents_server`の保持から失われている。
   同じ`session_id`へ待機を再発行せず、「停滞の検知と巻き取り」節に従って未完了工程の巻き取り又は新規起動を判定する
 - `agents_server`の`wait`と`atk agents-wait`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答は終端前の復帰であり、同じ`session_id`へ同じ待機手段を再発行する。`status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も完了報告とともに受領して待機を終える。回収した通知は再び返らないため、受領した本文を保持する
 - `agents_server`のMCPサーバーが再起動した場合、同じ`session_id`はsession登録簿から遅延解決する。終端が確定している記録だけを同じ識別子の結果観測と会話再開へ用いる。終端が確定していない場合は`error.recovery=turn_unobserved`を受領し、同じ作業を新しい`start`でやり直さず、当該sessionが実行中である可能性を添えて呼び出し元へ返す。`missing`、`unreadable`、`no_resume_info`は当該sessionを失われたものとして扱ってよい
@@ -119,12 +112,8 @@ CIの完了、デプロイの反映など、外部サービスの状態が変わ
   実行識別子を入力とする観測手段だけに依存しない。
   待機が別のセッション又は別の実行主体へ渡る場合は、当該絶対パスを引き継ぐ対象へ含める
   （厳守規定。実行識別子は実行環境の再起動で失効し、失効後は当該識別子から終了状態と出力を取得できない）。
-  2026年9月4日、Claude Code 2.1.260で次の2点を実測した。
-  終了コード7で終わる`run_in_background=true`のBashについて、起動結果が返した出力ファイルは出力の全量と`[exited with code 7]`を保持した。
-  2026年9月2日に別のセッションが起動した背景ジョブの実行識別子は`TaskOutput`が`No task found with ID`で拒否し、
-  当該ジョブの出力ファイルは絶対パスのまま全出力と`[exited with code 0]`を保持していた。
-  再検証は同じ形で背景実行して当該ファイルを読み、終了済みセッションが残した出力ファイルの絶対パスの読み取りと、
-  同じ実行識別子が解決しないことを対にして確認する
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日」にある。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月2日」にある
 
 ## 待機の起動条件
 
@@ -163,6 +152,13 @@ Git差分、HEAD、成果物の更新時刻・行数、無応答、経過時間�
   広範な未完了調査を1つの委譲先へ再委譲せず、独立した作業単位の完了を個別に受領して統合する
 
 ## 完了通知を待ってターンを終える場合
+
+- blocking waitとその背景ジョブのいずれかが対象sessionを所有している間は、定期再確認の各回で当該sessionへ状態照会を発行しない。
+  所有の判定は、当該sessionに対する`agents_server`の`wait`、`atk agents-wait`又はこれらを起動した背景ジョブが終端の`status`を返していないことで行う。
+  定期再確認は、所有されていない待機対象の正本状態と完了通知、及び経過時間起動の義務だけを再確認する。
+  blocking waitが自身の上限へ達して`running`を返した場合の再発行と、完了通知を受領した後の`timeout=0`による結果配送の確定は、本項の対象にせず現行どおり発行する。
+  完了通知の不着を検出した場合と、待機手段が終端の`status`を返さないまま失敗した場合は、当該sessionを所有されていない対象として扱う
+  （厳守規定。同じsessionの終端観測をblocking waitと定期再確認の2経路が同時に所有すると、終端の検出を早めないまま照会だけが重複する）
 
 - 待機対象の完了通知から独立した定期再確認は、Claude Codeでは
   `agent-toolkit/skills/delegation/references/claude-code-runtime.md`「Cronによる定期再確認」節の作成・再利用・resume又はcompaction後の照合・削除の順序に従う。

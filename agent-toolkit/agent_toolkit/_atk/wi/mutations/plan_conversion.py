@@ -654,7 +654,7 @@ def convert_entries_to_plan(
         )
         if state == WI_STATE_HOLD:
             if message is None:
-                raise WebInputError("holdの入力には--messageを指定してください")
+                raise WebInputError("holdの入力には--body-fileを指定してください")
             destination = inbox_dir / min(paths, key=lambda path: path.name).name
             _assert_conversion_paths_clean(private_notes, [*paths, destination])
             return _convert_held_entries(
@@ -672,7 +672,7 @@ def convert_entries_to_plan(
                 skip_push=skip_push,
             )
         if message is not None:
-            raise WebInputError("inbox・processingの入力には--messageを指定できません")
+            raise WebInputError("inbox・processingの入力には--body-fileを指定できません")
         if len(paths) != len(normalized_filenames):
             raise WebInputError("変換対象を一意に特定できません")
         _assert_conversion_paths_clean(private_notes, paths)
@@ -802,7 +802,12 @@ def convert_entry_to_plan(
 
 def _cmd_convert_to_plan(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """convert-to-planサブコマンドを実行する。"""
-    message = getattr(args, "message", None)
+    body_file = getattr(args, "body_file", None)
+    try:
+        message = _add.read_body_files([body_file])[0] if body_file is not None else None
+    except WebInputError as error:
+        print(f"変換を拒否しました: {error}", file=sys.stderr)
+        sys.exit(1)
     target_repo, local_worktree = _add.resolve_add_target(args.target_repo)
     if message is not None and local_worktree is None:
         local_worktree = _candidate_local_worktree(args.target_repo)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
@@ -42,6 +43,29 @@ _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
 }
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
+
+
+def _settings_from_cmdline(cmdline: bytes) -> str | None:
+    """NUL区切りの起動引数から有効な`--settings`の値を返す。"""
+    arguments = cmdline.split(b"\0")
+    settings: str | None = None
+    for index, argument in enumerate(arguments):
+        if argument.startswith(b"--settings="):
+            value = argument.removeprefix(b"--settings=")
+            settings = os.fsdecode(value) if value else None
+        elif argument == b"--settings":
+            value = arguments[index + 1] if index + 1 < len(arguments) else b""
+            settings = os.fsdecode(value) if value else None
+    return settings
+
+
+def _parent_settings() -> str | None:
+    """親Claude Codeの起動引数からsettingsファイルを返す。"""
+    try:
+        cmdline = pathlib.Path(f"/proc/{os.getppid()}/cmdline").read_bytes()
+    except OSError:
+        return None
+    return _settings_from_cmdline(cmdline)
 
 
 class _CommandChannel:
@@ -91,6 +115,8 @@ def _build_options(
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
     委譲先の計画バンドルを委譲元の所有として記録できるよう、自プロセスで解決した所有セッション識別子も渡す。
+    子Claudeが親と同じ設定の下で動くよう、親の`--settings`層を継承する。
+    親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -127,6 +153,8 @@ def _build_options(
             }
         ),
     }
+    if (settings := _parent_settings()) is not None:
+        options["settings"] = settings
     if lightweight:
         options.update(
             skills=[],
