@@ -27,7 +27,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: AWI又はUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。",
+        "description": "目的: AWI又はUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文の一致判定だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remote及び対象リポジトリのいずれも変更せず、検証が成立した旨だけを標準出力へ書く。\n前提: 本文をMESSAGE、`--body-file`、$EDITORのいずれかで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
         "epilog": '実行例:\n\n  atk wi add "認証エラーの再現手順を整理する"',
     },
     "atk wi list": {

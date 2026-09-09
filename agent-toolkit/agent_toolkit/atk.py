@@ -298,6 +298,14 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "本文と引数の検証だけを行い、private-notes、remote及び対象リポジトリのいずれも変更せずに終了する。"
+            "検証が成立しない場合は終了コード1で終わる。--batchとは併用できない。"
+        ),
+    )
+    add.add_argument(
         "--type",
         choices=_common.WI_TYPES,
         default=None,
@@ -915,6 +923,8 @@ def _validate_add_args(args: argparse.Namespace) -> None:
     `--type`の既定値を`None`とすることで、`--batch`との併用判定で明示指定
     （`--type=awi`を含む）を区別する。検証後に通常add経路の既定値`awi`へ正規化する。
     """
+    if args.batch and args.dry_run:
+        args.subparser.error("--dry-runは--batchと併用できません。")
     if args.batch:
         conflicting = [
             name

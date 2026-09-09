@@ -373,6 +373,62 @@ def add_entries(
     `target_repo`を省略（`None`）した場合は、各メッセージのfrontmatterの`target_repo`を必須とし、
     `_repo_lock`取得前に全件の型・非空・解決可否を検証する。
     """
+    parsed_messages, normalized_target_repo, stored_plan_file = _validate_add_entries(
+        private_notes,
+        messages=messages,
+        target_repo=target_repo,
+        entry_type=entry_type,
+        question_type=question_type,
+        choices=choices,
+        target_commit=target_commit,
+        plan_file=plan_file,
+    )
+    with _repo_lock(private_notes, timeout=lock_timeout):
+        _pull(private_notes)
+        written = _add_entries_locked(
+            private_notes,
+            parsed_messages=parsed_messages,
+            target_repo=normalized_target_repo,
+            source=source,
+            now=now,
+            entry_type=entry_type,
+            scope=scope,
+            question_type=question_type,
+            choices=choices,
+            target_commit=target_commit,
+            plan_file=stored_plan_file,
+            depends_on=depends_on,
+        )
+        generated = [filename for filename, _content in written]
+        count = len(generated)
+        _commit_and_push(
+            private_notes,
+            f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
+            [WI_STATE_INBOX],
+        )
+        if saved_details is not None:
+            saved_details.update(
+                (
+                    filename,
+                    _read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
+                )
+                for filename, content in written
+            )
+    return generated
+
+
+def _validate_add_entries(
+    private_notes: pathlib.Path,
+    *,
+    messages: list[str],
+    target_repo: str | None,
+    entry_type: str,
+    question_type: str | None,
+    choices: str | None,
+    target_commit: str | None,
+    plan_file: str | None,
+) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
+    """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
@@ -407,38 +463,7 @@ def add_entries(
         _verify_plan_target_repos(parsed_messages, normalized_target_repo)
     if entry_type != WI_TYPE_AWI and question_type == "choice" and not choices:
         raise WebInputError("choice形式にはchoicesが必要です")
-    with _repo_lock(private_notes, timeout=lock_timeout):
-        _pull(private_notes)
-        written = _add_entries_locked(
-            private_notes,
-            parsed_messages=parsed_messages,
-            target_repo=normalized_target_repo,
-            source=source,
-            now=now,
-            entry_type=entry_type,
-            scope=scope,
-            question_type=question_type,
-            choices=choices,
-            target_commit=target_commit,
-            plan_file=stored_plan_file,
-            depends_on=depends_on,
-        )
-        generated = [filename for filename, _content in written]
-        count = len(generated)
-        _commit_and_push(
-            private_notes,
-            f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
-            [WI_STATE_INBOX],
-        )
-        if saved_details is not None:
-            saved_details.update(
-                (
-                    filename,
-                    _read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
-                )
-                for filename, content in written
-            )
-    return generated
+    return parsed_messages, normalized_target_repo, stored_plan_file
 
 
 def read_body_files(paths: list[str]) -> list[str]:
@@ -551,10 +576,23 @@ def _cmd_add(
                 print("---", file=sys.stderr)
                 print(message, file=sys.stderr)
         raise
-    dependency_dir = _subdir(private_notes, WI_STATE_INBOX)
+    dependency_dir = private_notes / WI_STATE_INBOX
     canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
     saved_details: dict[str, dict[str, object | None]] = {}
     try:
+        if args.dry_run:
+            _validate_add_entries(
+                private_notes,
+                messages=messages,
+                target_repo=target_repo,
+                entry_type=args.type,
+                question_type=args.question_type,
+                choices=args.choices,
+                target_commit=target_commit,
+                plan_file=args.plan_file,
+            )
+            print("検証が成立しました。")
+            return
         generated = add_entries(
             private_notes,
             messages=messages,

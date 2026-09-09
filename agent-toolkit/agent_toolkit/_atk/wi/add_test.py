@@ -46,6 +46,7 @@ def _cmd_add_args(
     source: str | None = None,
     entry_type: str = "awi",
     plan_file: str | None = None,
+    dry_run: bool = False,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
     return argparse.Namespace(
@@ -60,6 +61,7 @@ def _cmd_add_args(
         question_type="free-form" if entry_type == WI_TYPE_UWI else None,
         choices=None,
         plan_file=plan_file,
+        dry_run=dry_run,
         subparser=None,
     )
 
@@ -74,6 +76,121 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(add_module, "_pull", lambda _path: None)
     monkeypatch.setattr(add_module, "_commit_and_push", lambda *_args, **_kwargs: None)
+
+
+def test_add_dry_run_validates_without_side_effects(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--dry-run`は入力を検証し、保存・同期・commitを行わない。"""
+    notes = _setup_notes(tmp_path)
+    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(notes), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
+    before_head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    before_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
+    monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+
+    def reject_side_effect(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("dry-runでremote同期又はcommitを実行しました")
+
+    monkeypatch.setattr(add_module, "_pull", reject_side_effect)
+    monkeypatch.setattr(add_module, "_commit_and_push", reject_side_effect)
+
+    add_module._cmd_add(_cmd_add_args("本文", dry_run=True), notes, _FIXED_DT, tmp_path)
+
+    after_head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    after_files = sorted(path.relative_to(notes) for path in notes.rglob("*") if ".git" not in path.parts)
+    assert capsys.readouterr().out == "検証が成立しました。\n"
+    assert after_files == before_files
+    assert after_head == before_head
+
+
+def test_add_dry_run_rejects_invalid_input(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--dry-run`は実登録と同じ入力エラーを終了コード1で返す。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    args = _cmd_add_args("質問", entry_type=WI_TYPE_UWI, dry_run=True)
+    args.question_type = "choice"
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(args, notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert "choice形式にはchoicesが必要です" in capsys.readouterr().err
+    assert not list((notes / "inbox").iterdir())
+
+
+def test_add_dry_run_rejects_agent_awi_without_feasibility(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`実現性`欄が無いエージェント由来AWIは検証と実登録が同じ理由で拒否する。"""
+    notes = _setup_notes(tmp_path)
+    subprocess.run(["git", "init", "--initial-branch=main", str(notes)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.name", "atk-test"], check=True)
+    subprocess.run(["git", "-C", str(notes), "config", "user.email", "atk-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(notes), "commit", "--allow-empty", "-m", "base"], check=True, capture_output=True)
+    before_head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    _patch_cmd_add_operations(monkeypatch)
+
+    errors: list[str] = []
+    for dry_run in (True, False):
+        with pytest.raises(SystemExit) as exc_info:
+            add_module._cmd_add(
+                _cmd_add_args("本文", source="test", dry_run=dry_run),
+                notes,
+                _FIXED_DT,
+                tmp_path,
+            )
+        assert exc_info.value.code == 1
+        errors.append(capsys.readouterr().err)
+
+    assert errors[0] == errors[1]
+    assert "実現性" in errors[0]
+    assert not list((notes / "inbox").iterdir())
+    after_head = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert after_head == before_head
+
+
+def test_add_dry_run_rejects_batch(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--dry-run`と`--batch`の併用はusage errorにする。"""
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "add", "--batch", "--dry-run", "本文"], home=tmp_path, now=_FIXED_DT)
+
+    assert exc_info.value.code == 2
+    assert "--dry-runは--batchと併用できません" in capsys.readouterr().err
 
 
 def test_cmd_add_rejects_agent_awi_without_feasibility(

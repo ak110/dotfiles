@@ -163,6 +163,7 @@ def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) 
     mq_add_help = commands["atk wi add"].format_help()
     assert "--question-type" in mq_add_help
     assert "--target-repo" in mq_add_help
+    assert "--dry-run" in mq_add_help
     worktree_stash_help = commands["atk worktree-stash"].format_help()
     assert "refs/worktree/<ラベル>" in worktree_stash_help
 
