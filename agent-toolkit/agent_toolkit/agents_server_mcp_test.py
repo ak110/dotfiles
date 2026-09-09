@@ -591,6 +591,8 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "`status`と`elapsed_seconds`を返す" in wait_tool.description
     assert "固有のtimeout要件がなければ`timeout`を省略する" in wait_tool.description
     assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
+    assert "1件なら本ツールを前景で発行する" in wait_tool.description
+    assert "2件以上なら本ツールを1件ずつ前景で発行せず" in wait_tool.description
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
     assert send_timeout["description"] == (
