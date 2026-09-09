@@ -203,6 +203,16 @@ def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
         assert description in help_text
 
 
+def test_managed_temp_cleanup_help_explains_force_remove_boundary() -> None:
+    """cleanupは強制回収で維持する最低限の検証条件を示す。"""
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    help_text = commands["atk managed-temp cleanup"].format_help()
+
+    assert "--force-remove" in help_text
+    assert "一時rootの直下" in help_text
+    assert "現在の利用者が所有するディレクトリ" in help_text
+
+
 def test_review_table_init_help_describes_dialogue_review_table() -> None:
     commands = {command: parser for command, parser, _summary in _walk_commands()}
     parser = commands["atk review-table init"]

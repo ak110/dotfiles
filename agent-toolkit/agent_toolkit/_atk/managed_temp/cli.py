@@ -204,6 +204,11 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
         action="store_true",
         help="登録を失った管理対象を、実体側マーカーの検証を通過した場合に限り復元して後始末する",
     )
+    cleanup_parser.add_argument(
+        "--force-remove",
+        action="store_true",
+        help="通常の後始末が検証に失敗した場合に限り、管理情報、登録及び権限の検証を省いて実体と登録を回収する",
+    )
     list_parser = _atk_help.add_command(subparsers, "list", **_atk_help.HELP["atk managed-temp list"])
     list_parser.add_argument("--prefix", help="列挙する領域を用途識別子で限定する。")
     _output_file.add_output_file_arg(list_parser)
@@ -234,7 +239,11 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                 raise ManagedTempError(
                     f"--pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n{paths}"
                 )
-            cleanup_managed_temp(args.path, recover_registry=getattr(args, "recover_registry", False))
+            cleanup_managed_temp(
+                args.path,
+                recover_registry=getattr(args, "recover_registry", False),
+                force_remove=getattr(args, "force_remove", False),
+            )
         else:
             entries = list_managed_temp(args.prefix, report_recovery_candidates=True)
             for entry in entries:

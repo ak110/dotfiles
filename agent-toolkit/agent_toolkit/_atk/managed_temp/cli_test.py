@@ -23,6 +23,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
+from agent_toolkit._atk.managed_temp import cli as cli_subject
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
@@ -60,6 +61,22 @@ def test_cleanup_without_path_reports_managed_targets(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == expected
+
+
+def test_cleanup_passes_force_remove_to_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """公開CLIの`--force-remove`を後始末処理へ渡す。"""
+    calls: list[tuple[pathlib.Path, bool, bool]] = []
+
+    def cleanup(path: pathlib.Path, *, recover_registry: bool, force_remove: bool) -> None:
+        calls.append((path, recover_registry, force_remove))
+
+    monkeypatch.setattr(cli_subject, "cleanup_managed_temp", cleanup)
+
+    assert subject.main(["cleanup", "--path", str(tmp_path / "target"), "--force-remove"]) == 0
+    assert calls == [(tmp_path / "target", False, True)]
 
 
 @pytest.mark.parametrize(

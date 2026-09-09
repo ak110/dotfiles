@@ -52,6 +52,107 @@ def test_windows_ctypes_structures_match_sdk_layout() -> None:
     assert ctypes.sizeof(subject._ByHandleFileInformation) == 52
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX固有の所有者・権限検証")
+def test_force_remove_cleans_target_after_permission_validation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """通常の権限検証が失敗した所有対象を明示指定で強制回収する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("force-remove")
+    registry = subject._registry_path(target)
+    record = json.loads(registry.read_text(encoding="utf-8"))
+    consuming = registry.with_name(f"{registry.name}.consuming-{record['nonce']}")
+    consuming.write_text(registry.read_text(encoding="utf-8"), encoding="utf-8")
+    target.chmod(0o755)
+
+    with pytest.raises(subject.ManagedTempError):
+        subject.cleanup_managed_temp(target)
+    assert target.exists()
+    assert registry.exists()
+
+    subject.cleanup_managed_temp(target, force_remove=True)
+
+    assert not target.exists()
+    assert not registry.exists()
+    assert not consuming.exists()
+    assert "--force-remove" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX固有の所有者・権限検証")
+def test_force_remove_rejects_target_owned_by_another_user(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """現在の実効利用者が所有しない対象は強制回収しない。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("force-owner")
+    registry = subject._registry_path(target)
+    validated_root = subject._validate_root(target.parent)
+    monkeypatch.setattr(subject, "_validate_root", lambda _root: validated_root)
+    monkeypatch.setattr(subject.os, "geteuid", lambda: target.stat().st_uid + 1)
+
+    with pytest.raises(subject.ManagedTempError):
+        subject.cleanup_managed_temp(target, force_remove=True)
+
+    assert target.exists()
+    assert registry.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX固有の所有者・権限検証")
+def test_force_remove_rejects_target_below_an_unsafe_root(
+    tmp_path: pathlib.Path,
+) -> None:
+    """親ディレクトリを一時rootとして受理できない対象は強制回収しない。"""
+    unsafe_root = tmp_path / "unsafe-root"
+    unsafe_root.mkdir(mode=0o777)
+    unsafe_root.chmod(0o777)
+    target = unsafe_root / "nested"
+    target.mkdir(mode=0o700)
+
+    with pytest.raises(subject.ManagedTempError):
+        subject.cleanup_managed_temp(target, force_remove=True)
+
+    assert target.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX固有のsymlink検証")
+@pytest.mark.parametrize("replacement", ["symlink", "file"])
+def test_force_remove_preserves_non_directory_replacement_and_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    replacement: str,
+) -> None:
+    """対象がsymlink又は通常ファイルへ置換された場合は実体と登録を保持する。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp(f"force-{replacement}")
+    registry = subject._registry_path(target)
+    registry_body = registry.read_text(encoding="utf-8")
+    displaced = target.with_name(f"{target.name}-original")
+    target.rename(displaced)
+    outside = tmp_path / f"outside-{replacement}"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    if replacement == "symlink":
+        target.symlink_to(outside, target_is_directory=True)
+    else:
+        target.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(subject.ManagedTempError):
+        subject.cleanup_managed_temp(target, force_remove=True)
+
+    assert os.path.lexists(target)
+    if replacement == "symlink":
+        assert target.is_symlink()
+        assert target.resolve() == outside
+    else:
+        assert target.read_text(encoding="utf-8") == "keep"
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert registry.read_text(encoding="utf-8") == registry_body
+
+
 @pytest.mark.parametrize("directory", [False, True])
 def test_secure_path_fails_closed_when_minimal_handle_owner_differs(
     monkeypatch: pytest.MonkeyPatch,
