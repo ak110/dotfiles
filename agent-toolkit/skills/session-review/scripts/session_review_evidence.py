@@ -26,6 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
+from agent_toolkit._atk import config as _atk_config
+
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000
 _OMISSION_MARK = "…[省略]"
@@ -1426,7 +1428,7 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
     """コンパクション1回分のイベントを返す。該当しないレコードでは`None`を返す。
 
     Claude Codeは`subtype`が`compact_boundary`のsystemレコード、Codexは`type`が`compacted`の
-    レコードとして1回の発生を記録する。所要時間の欄はClaude Code側だけが持つ。
+    レコードとして1回の発生を記録する。Codexの所要時間は呼び出し側が計測記録から付与する。
     """
     entry = record.entry
     entry_type = entry.get("type")
@@ -1445,18 +1447,64 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
     return event
 
 
-def _stats_compaction_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+def _codex_record_thread_id(item: _CollectedRecord) -> str | None:
+    """Codex記録が属するthread IDを収集時の識別子又はsession metadataから返す。"""
+    if item.runtime != "codex":
+        return None
+    if item.record_id.startswith("codex:"):
+        return item.record_id.split(":", 1)[1]
+    for record in item.records:
+        entry = record.entry
+        payload = entry.get("payload")
+        if entry.get("type") == "session_meta" and isinstance(payload, dict):
+            thread_id = payload.get("id")
+            if isinstance(thread_id, str) and thread_id:
+                return thread_id
+    return None
+
+
+def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
+    """threadの有効な計測記録から所要秒数を記録順で返す。"""
+    try:
+        lines = (directory / f"{thread_id}.jsonl").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return []
+    durations: list[float] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(record, dict) or record.get("version") != 1 or record.get("thread_id") != thread_id:
+            continue
+        duration = record.get("duration_seconds")
+        if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            durations.append(float(duration))
+    return durations
+
+
+def _stats_compaction_events(
+    collected: list[_CollectedRecord],
+    compaction_record_dir: Path,
+) -> list[dict[str, Any]]:
     """全記録のコンパクションの発生位置と件数を返す。
 
     メイン記録・サブエージェント記録・委譲先セッションのいずれで発生した分も数える。
     発生が無い場合も件数0の集計イベントだけは返し、発生の有無を呼び出し側が判別できるようにする。
     """
-    events = [
-        event
-        for item in collected
-        for record in item.records
-        if (event := _compaction_event(record, item.record_id)) is not None
-    ]
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        thread_id = _codex_record_thread_id(item)
+        durations = iter(_compaction_durations(compaction_record_dir, thread_id)) if thread_id is not None else iter(())
+        for record in item.records:
+            event = _compaction_event(record, item.record_id)
+            if event is None:
+                continue
+            if event["engine"] == "codex":
+                duration = next(durations, None)
+                if duration is not None:
+                    event["duration_seconds"] = duration
+            events.append(event)
     events.sort(key=lambda event: (event["record"], event["line"]))
     counts = collections.Counter(event["record"] for event in events)
     total = {
@@ -1471,7 +1519,7 @@ def _stats_compaction_events(collected: list[_CollectedRecord]) -> list[dict[str
     return [*events, total]
 
 
-def _stats_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path) -> list[dict[str, Any]]:
     """セッション全体を対象とした集計イベント列を返す。
 
     `stats-total`はメイン記録・全サブエージェント記録・全Codexスレッドの3区分の合算とする。
@@ -1582,7 +1630,7 @@ def _stats_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
             event["hint"] = call["hint"]
         events.append(event)
     events.extend({"kind": "stats-token-peak", **peak} for peak in _stats_token_peaks(main_records, runtime))
-    events.extend(_stats_compaction_events(collected))
+    events.extend(_stats_compaction_events(collected, compaction_record_dir))
 
     if subagents:
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
@@ -2480,6 +2528,7 @@ def _bundle_events(
     collected: list[_CollectedRecord],
     unresolved: list[_UnresolvedRecord],
     directory: Path,
+    compaction_record_dir: Path,
 ) -> tuple[list[dict[str, Any]], int]:
     """4走査を1回の記録読み込みで行い、走査ごとの全量をファイルへ書いて要約だけを返す。
 
@@ -2496,7 +2545,7 @@ def _bundle_events(
     resolved = directory.resolve()
     timeline = _default_events(collected, [])
     warnings = _warning_collection_events(collected, [])
-    stats = _stats_events(collected)
+    stats = _stats_events(collected, compaction_record_dir)
     hook_notices = _hook_notice_events([record for item in collected for record in item.records])
 
     events: list[dict[str, Any]] = []
@@ -2590,6 +2639,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--codex-home",
         metavar="DIR",
         help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
+    )
+    parser.add_argument(
+        "--compaction-record-dir",
+        metavar="DIR",
+        help="Codexコンパクションの計測記録ディレクトリ。省略時はagent-toolkitのstate_dir配下を使う。",
     )
     parser.add_argument(
         "--observation-boundary",
@@ -2743,9 +2797,14 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
     collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home)
+    compaction_record_dir = (
+        Path(args.compaction_record_dir)
+        if args.compaction_record_dir is not None
+        else _atk_config.state_dir() / "agents-server" / "compaction"
+    )
 
     if args.bundle is not None:
-        events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle))
+        events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle), compaction_record_dir)
         _print_events(events)
         return exit_code
     if args.warn:
@@ -2763,7 +2822,7 @@ def main(argv: list[str] | None = None, *, _output_file_active: bool = False) ->
         _print_events(events)
         return exit_code
     if args.stats:
-        _print_events([*_stats_events(collected), *_unresolved_events(unresolved)])
+        _print_events([*_stats_events(collected, compaction_record_dir), *_unresolved_events(unresolved)])
         return 0
     if args.hook_notices:
         _print_events(

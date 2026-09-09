@@ -4533,7 +4533,8 @@ def test_stats_reports_critical_path() -> None:
             collected("codex:first", ["2026-09-02T00:00:10Z", "2026-09-02T00:00:30Z"]),
             collected("codex:second", ["2026-09-02T00:00:20Z", "2026-09-02T00:00:40Z"]),
             collected("codex:unmeasured", []),
-        ]
+        ],
+        pathlib.Path("/missing-compaction-records"),
     )
 
     assert _events_by_kind(events, "stats-critical-path") == [
@@ -4646,6 +4647,53 @@ def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) 
         "count": 1,
         "by_record": {"main": 1},
         "total_duration_seconds": 0.0,
+        "duration_unknown_count": 1,
+    }
+
+
+def test_stats_assigns_codex_compaction_measurements_in_occurrence_order(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同じthreadの計測記録を発生順に対応付け、残りは所要時間不明として数える。"""
+    thread_id = "019945be-498f-70f2-a964-93e2c8d38954"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "session_meta", "payload": {"id": thread_id}},
+            _codex_token_count_entry("2026-09-02T00:00:00Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+            {"type": "compacted", "timestamp": "2026-09-02T00:01:00Z", "payload": {"window_number": 1}},
+            {"type": "compacted", "timestamp": "2026-09-02T00:02:00Z", "payload": {"window_number": 2}},
+        ],
+    )
+    record_dir = tmp_path / "compaction"
+    record_dir.mkdir()
+    (record_dir / f"{thread_id}.jsonl").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "thread_id": thread_id,
+                "item_id": "item-1",
+                "started_at_ms": 1000,
+                "completed_at_ms": 3234,
+                "duration_seconds": 2.2,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert evidence.main([str(transcript), "--stats", "--compaction-record-dir", str(record_dir)]) == 0
+
+    events = _read_jsonl(capsys, raw=True)
+    compactions = _events_by_kind(events, "stats-compaction")
+    assert compactions[0]["duration_seconds"] == 2.2
+    assert "duration_seconds" not in compactions[1]
+    assert _events_by_kind(events, "stats-compaction-total")[0] == {
+        "kind": "stats-compaction-total",
+        "count": 2,
+        "by_record": {"main": 2},
+        "total_duration_seconds": 2.2,
         "duration_unknown_count": 1,
     }
 

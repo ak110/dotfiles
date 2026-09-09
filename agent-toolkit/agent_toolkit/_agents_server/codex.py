@@ -20,8 +20,11 @@ from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
+from agent_toolkit._agents_server import (
+    compaction_metrics,  # pylint: disable=wrong-import-position
+    status_file,  # pylint: disable=wrong-import-position
+)
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
-from agent_toolkit._agents_server import status_file  # pylint: disable=wrong-import-position
 from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import-position
     AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
@@ -844,6 +847,13 @@ class AppServerManager:
             self._condition.notify_all()
 
     async def _handle_notification(self, message: dict[str, Any]) -> None:
+        """App Server通知をsession状態へ反映する。
+
+        Codex CLI 0.153.4では``contextCompaction``の``item/started``と
+        ``item/completed``がそれぞれミリ秒単位の必須時刻を持つ。
+        監査記録は``docs/development/audit-records.md``の
+        「agent-toolkit/agent_toolkit/_agents_server/codex.py：コンパクション計測通知：2026年9月10日」に置く。
+        """
         method = message.get("method")
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
@@ -896,6 +906,7 @@ class AppServerManager:
                 # 直ちに公開する。保留すると解除の契機が期限の到来だけになり、呼び出し元が
                 # 最大`AUTO_RESUME_DEADLINE_SECONDS`だけ完了報告を受け取れない。
                 shared_state.record_unobserved_sessions(session, unobserved_session_ids)
+            session.compaction_started_at_ms.clear()
         elif method == "turn/plan/updated":
             plan = params.get("plan")
             if isinstance(plan, list):
@@ -907,13 +918,40 @@ class AppServerManager:
         elif method == "item/started":
             item = params.get("item")
             session.current_item = item if isinstance(item, dict) else None
-            if isinstance(item, dict) and item.get("type") == "fileChange":
-                session.diff_changed = True
+            if isinstance(item, dict):
+                if item.get("type") == "fileChange":
+                    session.diff_changed = True
+                item_id = item.get("id")
+                started_at_ms = params.get("startedAtMs")
+                if (
+                    item.get("type") == "contextCompaction"
+                    and isinstance(item_id, str)
+                    and item_id
+                    and isinstance(started_at_ms, int)
+                    and not isinstance(started_at_ms, bool)
+                ):
+                    session.compaction_started_at_ms[item_id] = started_at_ms
         elif method == "item/completed":
             item = params.get("item")
             if isinstance(item, dict):
                 session.current_item = None
                 self._consume_item(session, item)
+                item_id = item.get("id")
+                completed_at_ms = params.get("completedAtMs")
+                if (
+                    item.get("type") == "contextCompaction"
+                    and isinstance(item_id, str)
+                    and item_id in session.compaction_started_at_ms
+                    and isinstance(completed_at_ms, int)
+                    and not isinstance(completed_at_ms, bool)
+                ):
+                    compaction_metrics.append_compaction_record(
+                        session.session_id,
+                        item_id,
+                        session.compaction_started_at_ms[item_id],
+                        completed_at_ms,
+                    )
+                    del session.compaction_started_at_ms[item_id]
         elif method == "item/agentMessage/delta":
             delta = params.get("delta")
             if isinstance(delta, str):

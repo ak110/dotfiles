@@ -272,6 +272,7 @@ class SessionState:
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
     _progress_text: str = dataclasses.field(default="", repr=False)
     progress_items: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
+    compaction_started_at_ms: dict[str, int] = dataclasses.field(default_factory=dict, repr=False)
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
