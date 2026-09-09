@@ -12,8 +12,6 @@ from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-posi
 from agent_toolkit._atk import config as config_module  # noqa: E402  # pylint: disable=wrong-import-position
 
 _EXPECTED_CATEGORIES = {
-    "explore_model": "上位",
-    "explore_fast_model": "軽量",
     "pick_wi_model": "軽量",
     "plan_model": "計画",
     "plan_review_model": "軽量",
@@ -22,8 +20,18 @@ _EXPECTED_CATEGORIES = {
     "execute_review_model": "軽量",
     "session_review_model": "上位",
     "orchestrate_model": "上位",
+    "explore_model": "探索上位",
+    "explore_fast_model": "探索軽量",
 }
 _EXPECTED_MODELS = {
+    "探索上位": {
+        "codex": "codex:gpt-5.6-terra/medium",
+        "claude": "claude:opus[1m]/medium",
+    },
+    "探索軽量": {
+        "codex": "codex:gpt-5.6-luna/medium",
+        "claude": "claude:sonnet[1m]/medium",
+    },
     "上位": {
         "codex": "codex:gpt-5.6-sol/medium",
         "claude": "claude:opus[1m]/medium",
@@ -37,13 +45,26 @@ _EXPECTED_MODELS = {
         "claude": "claude:opus[1m]/medium",
     },
 }
+_EXPECTED_KEY_ORDER = (
+    "explore_model",
+    "explore_fast_model",
+    "pick_wi_model",
+    "plan_model",
+    "plan_review_model",
+    "execute_fast_model",
+    "execute_model",
+    "execute_review_model",
+    "session_review_model",
+    "orchestrate_model",
+)
 
 
 def _expected_preset_settings(primary_engine: str, reversed_keys: set[str]) -> dict[str, str]:
     """計画の区分表と候補順表から、実装と独立に期待値を導出する。"""
     other_engine = "claude" if primary_engine == "codex" else "codex"
     expected = {}
-    for key, category in _EXPECTED_CATEGORIES.items():
+    for key in _EXPECTED_KEY_ORDER:
+        category = _EXPECTED_CATEGORIES[key]
         first_engine, second_engine = (other_engine, primary_engine) if key in reversed_keys else (primary_engine, other_engine)
         expected[key] = f"{_EXPECTED_MODELS[category][first_engine]},{_EXPECTED_MODELS[category][second_engine]}"
     return expected
@@ -544,7 +565,7 @@ class TestConfigSet:
     def test_resolve_model_candidates_maps_model_type_and_rejects_unknown(self) -> None:
         """model_typeを対応設定の候補へ解決し、未知値は両方の受理形式を示して拒否する。"""
         assert config_module.resolve_model_candidates("explore_fast") == [
-            ("codex", "gpt-5.6-terra", "medium"),
+            ("codex", "gpt-5.6-luna", "medium"),
             ("claude", "sonnet[1m]", "medium"),
         ]
         with pytest.raises(ValueError, match=r"unknown model_type: no-such.*explore_fast.*plan"):
