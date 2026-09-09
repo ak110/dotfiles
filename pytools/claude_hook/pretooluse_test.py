@@ -1,0 +1,1125 @@
+"""pytools/claude_hook/pretooluse.py のテスト。
+
+dotfiles 個人環境専用の PreToolUse フックのテスト。
+mojibake / PS1 EOL は plugin 側 (agent-toolkit) が担う。
+独立スクリプトなのでfork-server経由（フォールバック時はsubprocess）で起動し
+exit code / stderr / stdout (JSON) を検証する。
+"""
+
+import json
+import os
+import pathlib
+import subprocess
+
+import pytest
+from agent_toolkit._testing import fork_runner as _fork_runner
+
+_HOME = pathlib.Path.home()
+
+_SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
+_DOTFILES_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
+_AT_RULES_DIR = _AT_DIR / "rules"
+
+# 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
+# テスト対象の「言及される名前」はプログラム的に組み立てる。
+_LOCAL_MD = "CLAUDE" + ".local.md"
+
+# `uv tool run` / `uvx` に続くコマンド名の並びも、本ファイル自身がブロックされないよう分割して組み立てる。
+_PYTOOLS_COMMAND = "claude-session-" + "export"
+_UV_TOOL_RUN = "uv tool " + "run"
+_UVX = "uv" + "x"
+
+
+def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    return _fork_runner.run_script(_SCRIPT, argv=("pretooluse",), input=text, env=env)
+
+
+def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
+    """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
+    if not result.stdout.strip():
+        return ""
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return ""
+    return data.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+class TestHomeClaudeEditWarning:
+    """`~/.claude/` 配下の直接編集警告 (allow + additionalContext、非ブロック)。"""
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "CLAUDE.md",
+            "rules/agent-toolkit/01-agent.md",
+            "agents/foo.md",
+            "skills/bar/SKILL.md",
+            "agent-toolkit/hooks/hooks.json",
+        ],
+    )
+    def test_warns(self, rel: str):
+        target = str(_HOME / ".claude" / rel)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "~/.claude/" in msg
+        assert ".chezmoi-source/dot_claude/" in msg
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
+        assert "自動生成のhook通知" in msg
+
+    def test_edit_warns(self):
+        target = str(_HOME / ".claude" / "CLAUDE.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
+            }
+        )
+        assert result.returncode == 0
+        assert ".chezmoi-source/dot_claude/" in _get_additional_context(result)
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "plans/foo.md",  # plan mode が書き込む
+            "jobs/session/tmp/material.md",  # Claude Code が生成するセッション作業領域
+            "projects/session.jsonl",  # Claude Code セッション
+            "todos/todo.json",
+            "shell-snapshots/foo.sh",
+            "ide/cache.json",
+            "statsig/cache",
+            "settings.json",  # Claude Code 自身が書き換える非 chezmoi 管理ファイル
+            "settings.local.json",  # ローカル設定 (`.local.` を含む)
+            "CLAUDE.local.md",  # ローカル メモ
+            "rules/agent-toolkit/agent.local.md",  # サブディレクトリ配下でも `.local.` 系は許可
+            "scratchpad/foo.md",  # 一時作業ファイル領域 (chezmoi 管理外)
+        ],
+    )
+    def test_silently_allowed(self, rel: str):
+        target = str(_HOME / ".claude" / rel)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_outside_home_claude_silently_allowed(self):
+        """`~/.claude/` 配下でなければ警告しない (例: `~/.claudette/foo` は別物)。"""
+        target = str(_HOME / ".claudette" / "foo")
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_chezmoi_source_silently_allowed(self):
+        """配布元の `.chezmoi-source/dot_claude/` 配下は警告しない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "/tmp/proj/.chezmoi-source/dot_claude/CLAUDE.md",
+                    "content": "x",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_relative_path_silently_allowed(self):
+        """相対パスは判定不能なため警告しない (誤検出を避ける)。"""
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": ".claude/CLAUDE.md", "content": "x"}})
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "./.claude/CLAUDE.md",  # 冗長な `.` セグメント
+            "foo/../.claude/CLAUDE.md",  # `..` で戻る
+            ".claude/./rules/agent-toolkit/01-agent.md",  # 途中の `.`
+        ],
+    )
+    def test_warns_with_non_canonical_segments(self, rel: str):
+        """非正規化パス (`./` や `../`) でも resolve 後に警告されること (I-1)。"""
+        target = str(_HOME / rel)
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}})
+        assert result.returncode == 0
+        assert ".chezmoi-source/dot_claude/" in _get_additional_context(result)
+
+    def test_symlinked_home_claude_warns(self, tmp_path: pathlib.Path):
+        """`~/.claude` がシンボリックリンクの場合でも resolve 後に警告されること (I-1)。"""
+        real_claude = tmp_path / "real_claude"
+        real_claude.mkdir()
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        (fake_home / ".claude").symlink_to(real_claude)
+        # Claude Code が resolve 後の実体パスを渡してくるケースを想定。
+        target = str(real_claude / "CLAUDE.md")
+        env = {**os.environ, "HOME": str(fake_home)}
+        result = _run(
+            {"tool_name": "Write", "tool_input": {"file_path": target, "content": "x"}},
+            env=env,
+        )
+        assert result.returncode == 0
+        assert ".chezmoi-source/dot_claude/" in _get_additional_context(result)
+
+    def test_combined_with_personal_file_mention(self):
+        """~/.claude/ 直接編集と個人ファイル言及が同時に検出されたら両方まとめて出力する。"""
+        target = str(_HOME / ".claude" / "CLAUDE.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": f"See {_LOCAL_MD} for details."},
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert ".chezmoi-source/dot_claude/" in msg
+        assert _LOCAL_MD in msg
+
+
+class TestPs1DirectivesBlock:
+    """PowerShell スクリプトの必須ディレクティブ欠落ブロック。"""
+
+    _OK_HEADER = "Set-StrictMode -Version Latest\r\n$ErrorActionPreference = 'Stop'\r\n"
+
+    @pytest.mark.parametrize("file_path", ["a.ps1", "scripts/foo.ps1.tmpl", "C:/x/setup.ps1"])
+    def test_missing_both_blocks(self, file_path: str):
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "Write-Host 'x'\r\n"}})
+        assert result.returncode == 2
+        assert "Set-StrictMode" in result.stderr
+        assert "ErrorActionPreference" in result.stderr
+        assert "Fix: " in result.stderr
+
+    def test_missing_only_strict_mode_blocks(self):
+        content = "$ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+        assert "Set-StrictMode" in result.stderr
+
+    def test_missing_only_error_action_blocks(self):
+        content = "Set-StrictMode -Version Latest\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+        assert "ErrorActionPreference" in result.stderr
+
+    def test_both_present_at_top_allowed(self):
+        result = _run(
+            {"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": self._OK_HEADER + "Write-Host 'x'\r\n"}}
+        )
+        assert result.returncode == 0
+
+    def test_both_present_after_comment_block_allowed(self):
+        """先頭コメントブロックの後に書かれていても 50 行以内なら許可。"""
+        comments = "\r\n".join(f"# comment {i}" for i in range(20)) + "\r\n"
+        content = comments + self._OK_HEADER + "Write-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 0
+
+    def test_bom_prefixed_template_allowed(self):
+        """chezmoi テンプレートで使われる先頭 BOM は除去してから判定する。"""
+        content = "\ufeff" + self._OK_HEADER + "{{ .chezmoi.homeDir }}\r\n"
+        result = _run({"tool_name": "Edit", "tool_input": {"file_path": "a.ps1.tmpl", "old_string": "x", "new_string": "y"}})
+        # Edit/MultiEdit は対象外なので無条件に通る
+        assert result.returncode == 0
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1.tmpl", "content": content}})
+        assert result.returncode == 0
+
+    def test_directives_after_50_lines_blocks(self):
+        """先頭 50 行を超えた位置にしかディレクティブが無ければブロック。"""
+        padding = "\r\n".join(f"# pad {i}" for i in range(60)) + "\r\n"
+        content = padding + self._OK_HEADER
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+
+    def test_edit_skipped(self):
+        """Edit はファイル先頭を含まないことが多いため対象外として通す。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "a.ps1", "old_string": "Old", "new_string": "New"},
+            }
+        )
+        assert result.returncode == 0
+
+    def test_multiedit_skipped(self):
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": "a.ps1",
+                    "edits": [{"old_string": "a", "new_string": "b"}],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_non_ps1_skipped(self):
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.sh", "content": "echo hi\n"}})
+        assert result.returncode == 0
+
+    def test_directive_in_comment_blocks(self):
+        """コメント行内に文字列だけ含まれる PS1 はブロックされること (I-2)。"""
+        content = "# TODO: add Set-StrictMode -Version Latest and $ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+        assert "Set-StrictMode" in result.stderr
+        assert "ErrorActionPreference" in result.stderr
+
+    def test_indented_directive_blocks(self):
+        """行頭にインデントされたディレクティブはブロックされること (I-2)。
+
+        関数/条件ブロック内に書かれている可能性があり、スクリプト全体には適用されないため。
+        """
+        content = "    " + self._OK_HEADER + "Write-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 2
+
+    def test_directive_with_extra_spaces_allowed(self):
+        """`Set-StrictMode  -Version  Latest` のように空白が複数でも許可されること (`\\s+` パターン確認)。"""
+        content = "Set-StrictMode  -Version  Latest\r\n$ErrorActionPreference  =  'Stop'\r\nWrite-Host 'x'\r\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 0
+
+
+class TestPersonalFileMentionWarning:
+    """個人用 / ローカル専用ファイル言及検出 (allow + additionalContext 警告)。
+
+    対象は `CLAUDE.local.md` と、ファイル名に `___` (3連アンダースコア) を含むトークン。
+    バックティック囲みの言及・対象ファイル自身の編集・``~/.claude/plans/`` 配下への書き込みは除外される。
+    """
+
+    # ``___`` を含むトークンもプログラム的に組み立てる（本テストファイル自身が警告を
+    # 誘発しないようにするため）。
+    _TRIPLE = "_" * 3
+    # 正規表現 `\w+___\w+` がファイル名全体（拡張子まで）を一致として抽出するわけではない点に注意する。
+    # `.` は word 文字でないため、マッチされるのは拡張子を除いた stem 部分（`foo___bar`）。
+    _TRIPLE_STEM = f"foo{_TRIPLE}bar"
+    _TRIPLE_TOKEN = f"{_TRIPLE_STEM}.md"
+
+    # --- CLAUDE.local.md 言及 ---
+
+    def test_content_reference_warns_but_passes(self):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": "docs/guide.md", "content": f"See {_LOCAL_MD} for details."},
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert _LOCAL_MD in msg
+        assert "warn" in msg.lower()
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
+        assert "自動生成のhook通知" in msg
+
+    def test_edit_reference_warns_but_passes(self):
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "README.md",
+                    "old_string": "foo",
+                    "new_string": f"Refer to {_LOCAL_MD}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert _LOCAL_MD in _get_additional_context(result)
+
+    def test_multiedit_reference_warns_but_passes(self):
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": "README.md",
+                    "edits": [
+                        {"old_string": "a", "new_string": "b"},
+                        {"old_string": "c", "new_string": f"See {_LOCAL_MD}"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert _LOCAL_MD in _get_additional_context(result)
+
+    def test_backtick_wrapped_reference_also_warns(self):
+        """バックティック囲みでも警告は表示する (文脈依存のため最終判断はコーディングエージェントに委ねる)。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"Recommended: create `{_LOCAL_MD}` in your project.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert _LOCAL_MD in _get_additional_context(result)
+
+    def test_editing_target_file_itself_is_allowed_silently(self):
+        """対象ファイル自体の編集は正当な操作として警告も表示しない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": f"/home/user/proj/{_LOCAL_MD}", "content": f"# {_LOCAL_MD}\nmemo"},
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_editing_target_file_with_windows_path_allowed_silently(self):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": f"C:\\proj\\{_LOCAL_MD}",
+                    "content": f"memo {_LOCAL_MD}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_old_string_reference_is_allowed_silently(self):
+        """言及を削除する Edit は old_string に書いてあっても警告しない。"""
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": "README.md",
+                    "old_string": f"See {_LOCAL_MD}",
+                    "new_string": "See docs",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    # --- ファイル名に `___` を含むトークンの言及 ---
+
+    def test_triple_underscore_mention_warns_but_passes(self):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"See {self._TRIPLE_TOKEN} for details.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert self._TRIPLE_STEM in msg
+        assert "___" in msg
+        assert "warn" in msg.lower()
+
+    def test_triple_underscore_in_backticks_also_warns(self):
+        """バックティック囲みでも警告は表示する (文脈依存のため最終判断はコーディングエージェントに委ねる)。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"Recommended: create `{self._TRIPLE_TOKEN}` locally.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert self._TRIPLE_STEM in _get_additional_context(result)
+
+    def test_triple_underscore_self_edit_is_allowed_silently(self):
+        """ファイル名自体に `___` を含むファイルの作成・編集は除外。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": f"/home/user/notes/{self._TRIPLE_TOKEN}",
+                    "content": f"memo referencing {self._TRIPLE_TOKEN}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_bare_triple_underscore_not_matched(self):
+        """区切り記号などに使われる裸の `___` (前後に word 文字なし) は検出しない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": "separator: ___ end",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_seven_underscore_mention_warns(self):
+        """7 文字の連続アンダースコアは警告対象。"""
+        sep7 = "_" * 7
+        stem = f"foo{sep7}bar"
+        token = f"{stem}.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"See {token} for details.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert stem in msg
+        assert "warn" in msg.lower()
+
+    def test_eight_underscore_mention_ignored(self):
+        """8 文字以上の連続アンダースコアは装飾用途とみなし警告しない。"""
+        sep8 = "_" * 8
+        token = f"foo{sep8}bar"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"See {token} for details.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_long_underscore_self_edit_not_excluded(self):
+        """8 文字以上のアンダースコアを含むファイル名は個人ファイルとみなさず除外しない。"""
+        sep8 = "_" * 8
+        long_name = f"foo{sep8}bar.md"
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": f"/home/user/notes/{long_name}",
+                    "content": f"memo referencing {self._TRIPLE_TOKEN}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert self._TRIPLE_STEM in msg
+
+    def test_both_patterns_reported_together(self):
+        """`CLAUDE.local.md` と `___` の両方が言及されたら両方報告する。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": "docs/guide.md",
+                    "content": f"Refer to {_LOCAL_MD} and {self._TRIPLE_TOKEN}.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert _LOCAL_MD in msg
+        assert self._TRIPLE_STEM in msg
+
+    # --- 新旧計画rootへの書き込みは計画保存領域のため警告を抑止 ---
+
+    def test_claude_plans_path_suppresses_local_md_warning(self):
+        """`~/.claude/plans/` 配下への書き込みでは `CLAUDE.local.md` 言及を警告しない。"""
+        plans_path = str(pathlib.Path.home() / ".claude" / "plans" / "sample-plan.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": plans_path, "content": f"See {_LOCAL_MD} for context."},
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_claude_plans_path_suppresses_triple_underscore_warning(self):
+        """`~/.claude/plans/` 配下への書き込みでは 3〜7 連続アンダースコア語の言及も警告しない。"""
+        plans_path = str(pathlib.Path.home() / ".claude" / "plans" / "sample-plan.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": plans_path,
+                    "old_string": "before",
+                    "new_string": f"reference to {self._TRIPLE_TOKEN}",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_private_notes_plans_path_suppresses_local_md_warning(self, tmp_path: pathlib.Path):
+        """新しいprivate-notes計画rootへの書き込みではローカルファイル言及を警告しない。"""
+        private_notes = tmp_path / "private-notes"
+        plans_path = str(private_notes / "plans" / "2026" / "08" / "30-plan-a1b2.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": plans_path, "content": f"See {_LOCAL_MD} for context."},
+            },
+            env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(private_notes)},
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_private_notes_plans_path_suppresses_triple_underscore_warning(self, tmp_path: pathlib.Path):
+        """新しいprivate-notes計画rootへの書き込みでは個人用stem言及を警告しない。"""
+        private_notes = tmp_path / "private-notes"
+        plans_path = str(private_notes / "plans" / "2026" / "08" / "30-plan-a1b2.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": plans_path,
+                    "old_string": "before",
+                    "new_string": f"reference to {self._TRIPLE_TOKEN}",
+                },
+            },
+            env={**os.environ, "AGENT_TOOLKIT_PRIVATE_NOTES": str(private_notes)},
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_outside_claude_plans_still_warns(self):
+        """plans/ 配下外への書き込みは引き続き警告する（抑止条件の境界確認）。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": "docs/guide.md", "content": f"See {_LOCAL_MD}."},
+            }
+        )
+        assert result.returncode == 0
+        assert _LOCAL_MD in _get_additional_context(result)
+
+
+class TestAgentToolkitDotfilesNamesCheck:
+    """agent-toolkit 配布物への dotfiles 固有名混入検出 (block + warn)。
+
+    対象は `agent-toolkit/` 配下。
+    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
+    warn 対象 (pyfltr / pytilpack) は OSS として正規参照される場合があるため通知のみ。
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "sync-cross-project",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
+            "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
+            "claude-session-export",  # pytools コマンド名 (project.scripts)
+            "psgrep",  # pytools コマンド名
+            "agent_toolkit_bump",  # scripts 名
+            "glatasks",  # 固定プロジェクト名
+            "gv",
+            "lc",
+            "smpr",
+        ],
+    )
+    def test_block_when_target_is_in_agent_toolkit(self, name: str):
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": f"See {name} for details."},
+            }
+        )
+        assert result.returncode == 2
+        assert name in result.stderr
+        assert "Fix: " in result.stderr
+        # コーディングエージェント宛てメッセージ規約: プレフィックスとサフィックスが付与されていること。
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
+        assert "自動生成のhook通知" in result.stderr
+
+    def test_block_in_agent_toolkit_rules(self):
+        target = str(_AT_RULES_DIR / "01-agent.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": target,
+                    "old_string": "x",
+                    "new_string": "Refer to glatasks for details.",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "glatasks" in result.stderr
+
+    def test_block_in_multiedit(self):
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": target,
+                    "edits": [
+                        {"old_string": "a", "new_string": "harmless"},
+                        {"old_string": "c", "new_string": "See smpr usage."},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "smpr" in result.stderr
+
+    @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
+    def test_warn_when_target_is_in_agent_toolkit(self, name: str):
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": f"See {name} for details."},
+            }
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert name in msg
+        assert "warn" in msg.lower()
+
+    def test_block_takes_precedence_over_warn(self):
+        """block と warn の両方が成立する場合は block を優先 (exit 2)。"""
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": target,
+                    "content": "Use pyfltr alongside glatasks tooling.",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert "glatasks" in result.stderr
+
+    def test_outside_distribution_silently_allowed(self):
+        """配布範囲外のファイル (例: scripts/) では混入しても通す。"""
+        target = str(_DOTFILES_ROOT / "scripts" / "fictional.py")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "Refer to glatasks and gv."},
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_relative_path_silently_allowed(self):
+        """相対パスは判定不能なため通す (誤検出を避ける)。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md",
+                    "content": "Refer to glatasks.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_word_boundary_avoids_substring_match(self):
+        """単語境界マッチで部分一致は検出しない (短い名前 `gv` / `lc` の誤検出回避)。"""
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": target,
+                    "content": "Use pygvX-extension and pylcY-tool.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_clean_content_silently_allowed(self):
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": target,
+                    "content": "Plain documentation without project-specific references.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_old_string_not_inspected(self):
+        """new_string のみが対象。old_string に違反語があっても通す。"""
+        target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": target,
+                    "old_string": "Refer to glatasks for details.",
+                    "new_string": "Refer to the upstream project.",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+
+class TestPytoolsCommandLaunchFormBlock:
+    """本リポジトリが配布するコマンドを`uv tool run`／`uvx`の引数へ置く記述の停止 (block)。
+
+    当該起動形はコマンド名を同名パッケージとしてレジストリから解決するため、
+    `uv tool install`で導入したエントリポイント名では解決できない。
+    """
+
+    _TARGET = str(_DOTFILES_ROOT / ".chezmoi-source" / "dot_claude" / "skills" / "example" / "SKILL.md")
+
+    @pytest.mark.parametrize(
+        "invocation",
+        [
+            f"{_UV_TOOL_RUN} {_PYTOOLS_COMMAND} --current",
+            f"{_UVX} {_PYTOOLS_COMMAND} --current",
+            f"{_UV_TOOL_RUN} --offline {_PYTOOLS_COMMAND} --help",
+            f"{_UVX} -q {_PYTOOLS_COMMAND}",
+            f"{_UV_TOOL_RUN} --python python3 {_PYTOOLS_COMMAND}",
+            f"{_UV_TOOL_RUN} --from x {_PYTOOLS_COMMAND}",
+            f"{_UVX} --with pkg {_PYTOOLS_COMMAND}",
+            f"{_UVX} --from=x {_PYTOOLS_COMMAND}",
+            f"{_UVX} --isolated --from x {_PYTOOLS_COMMAND}",
+        ],
+    )
+    def test_blocks_unresolvable_launch_form(self, invocation: str):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": self._TARGET, "content": f"```bash\n{invocation}\n```\n"},
+            }
+        )
+        assert result.returncode == 2
+        assert _PYTOOLS_COMMAND in result.stderr
+        assert "uv tool install" in result.stderr
+        assert "Fix: " in result.stderr
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse]" in result.stderr
+
+    def test_blocks_in_edit_new_string(self):
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": self._TARGET,
+                    "old_string": "x",
+                    "new_string": f"実行例: {_UV_TOOL_RUN} {_PYTOOLS_COMMAND} --all",
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert _PYTOOLS_COMMAND in result.stderr
+
+    def test_allows_command_name_in_launched_command_arguments(self):
+        """起動されるコマンドの引数位置にある配布コマンド名は、起動形の対象にしない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": self._TARGET,
+                    "content": f"```bash\n{_UVX} pyfltr run {_PYTOOLS_COMMAND}\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_direct_command_name_is_allowed(self):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": self._TARGET,
+                    "content": f"```bash\n{_PYTOOLS_COMMAND} --current\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    @pytest.mark.parametrize("invocation", [f"{_UVX} pyfltr run", f"{_UV_TOOL_RUN} prek", f"{_UVX} --from dotfiles ruff"])
+    def test_other_registry_packages_are_allowed(self, invocation: str):
+        """本リポジトリが配布しないコマンド名は、同じ起動形でも停止しない。"""
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": self._TARGET, "content": f"```bash\n{invocation}\n```\n"},
+            }
+        )
+        assert result.returncode == 0
+
+    def test_outside_dotfiles_checkout_is_allowed(self, tmp_path: pathlib.Path):
+        """本リポジトリ外のチェックアウトへの書き込みは対象にしない。"""
+        other = tmp_path / "other"
+        (other / ".git").mkdir(parents=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": str(other / "README.md"),
+                    "content": f"```bash\n{_UV_TOOL_RUN} {_PYTOOLS_COMMAND}\n```\n",
+                },
+            }
+        )
+        assert result.returncode == 0
+
+
+class TestAgentToolkitEditSkillWarning:
+    """`agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告。"""
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    @staticmethod
+    def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
+        path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    def test_warns_when_skill_not_invoked(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": "at-edit-warn",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        msg = _get_additional_context(result)
+        assert "agent-toolkit-edit" in msg
+        assert "[auto-generated: dotfiles/claude_hook_pretooluse][warn]" in msg
+
+    def test_silent_when_skill_invoked(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        sid = "at-edit-invoked"
+        self._write_state(tmp_path, sid, {"agent_toolkit_edit_skill_invoked": True})
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": sid,
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" not in _get_additional_context(result)
+
+    def test_silent_for_outside_agent_toolkit(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": "/tmp/x.md", "content": "harmless"},
+                "session_id": "at-edit-outside",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" not in _get_additional_context(result)
+
+    def test_silent_for_non_target_tool(self, tmp_path: pathlib.Path):
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")},
+                "session_id": "at-edit-read",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_silent_when_session_id_empty(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": target, "content": "harmless"},
+                "session_id": "",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" not in _get_additional_context(result)
+
+    def test_edit_in_agent_toolkit_warns(self, tmp_path: pathlib.Path):
+        target = str(_AT_DIR / "skills" / "plan-mode" / "SKILL.md")
+        env = self._state_env(tmp_path)
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": target, "old_string": "a", "new_string": "b"},
+                "session_id": "at-edit-edit",
+            },
+            env=env,
+        )
+        assert result.returncode == 0
+        assert "agent-toolkit-edit" in _get_additional_context(result)
+
+
+class TestReferenceDocsWarning:
+    """参照文書のReadを同じdotfilesチェックアウトの編集前に促す。"""
+
+    @staticmethod
+    def _state_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        return {**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
+
+    @staticmethod
+    def _write_state(tmp_path: pathlib.Path, session_id: str, paths: list[pathlib.Path]) -> None:
+        state_path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
+        state_path.write_text(
+            json.dumps({"dotfiles_reference_docs_read": [str(path.resolve()) for path in paths]}),
+            encoding="utf-8",
+        )
+
+    def test_warns_when_reference_docs_are_unread(self, tmp_path: pathlib.Path):
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "content": "harmless"},
+                "session_id": "reference-unread",
+            },
+            env=self._state_env(tmp_path),
+        )
+        message = _get_additional_context(result)
+        assert result.returncode == 0
+        assert "docs/development/concepts.md" in message
+        assert "docs/development/incidents.md" in message
+
+    def test_silent_after_both_docs_are_read_in_worktree(self, tmp_path: pathlib.Path):
+        sid = "reference-worktree"
+        self._write_state(
+            tmp_path,
+            sid,
+            [
+                _DOTFILES_ROOT / "docs" / "development" / "concepts.md",
+                _DOTFILES_ROOT / "docs" / "development" / "incidents.md",
+            ],
+        )
+        result = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "old_string": "a", "new_string": "b"},
+                "session_id": sid,
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "reference documents" not in _get_additional_context(result)
+
+    def test_other_checkout_docs_do_not_suppress_warning(self, tmp_path: pathlib.Path):
+        other = tmp_path / "other"
+        (other / ".git").mkdir(parents=True)
+        sid = "reference-other-checkout"
+        self._write_state(
+            tmp_path,
+            sid,
+            [
+                other / "docs" / "development" / "concepts.md",
+                other / "docs" / "development" / "incidents.md",
+            ],
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "content": "harmless"},
+                "session_id": sid,
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert "reference documents" in _get_additional_context(result)
+
+    def test_non_dotfiles_repository_is_not_targeted(self, tmp_path: pathlib.Path):
+        other = tmp_path / "other"
+        (other / ".git").mkdir(parents=True)
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(other / "AGENTS.md"), "content": "harmless"},
+                "session_id": "reference-non-dotfiles",
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "reference documents" not in _get_additional_context(result)
+
+    @pytest.mark.parametrize(
+        ("tool_name", "file_path", "session_id"),
+        [
+            ("Read", _DOTFILES_ROOT / "AGENTS.md", "reference-read-tool"),
+            ("Write", _DOTFILES_ROOT / "README.md", "reference-non-agent-doc"),
+            ("Write", _DOTFILES_ROOT / "AGENTS.md", ""),
+        ],
+    )
+    def test_non_target_conditions_are_silent(
+        self,
+        tmp_path: pathlib.Path,
+        tool_name: str,
+        file_path: pathlib.Path,
+        session_id: str,
+    ):
+        result = _run(
+            {
+                "tool_name": tool_name,
+                "tool_input": {"file_path": str(file_path), "content": "harmless"},
+                "session_id": session_id,
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "reference documents" not in _get_additional_context(result)
+
+
+class TestGeneralBehavior:
+    """共通の振る舞い。"""
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Write/Edit/MultiEdit 以外は全て通す
+            {"tool_name": "Bash", "tool_input": {"command": "echo test"}},
+            # tool_input が欠落していても通す
+            {"tool_name": "Write"},
+            # 通常の日本語は通す
+            {"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "こんにちは世界"}},
+        ],
+    )
+    def test_allowed(self, payload: dict):
+        result = _run(payload)
+        assert result.returncode == 0
+
+    def test_invalid_json(self):
+        """不正 JSON はフックを無効化 (安全側)。"""
+        result = _run("this is not json")
+        assert result.returncode == 0
+
+    def test_mojibake_no_longer_blocks(self):
+        """mojibake チェックは plugin 側に移管されたため dotfiles 側では通す。"""
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "hello \ufffd world"}})
+        assert result.returncode == 0
+
+    def test_ps1_lf_no_longer_blocks(self):
+        """PS1 EOL チェックは plugin 側に移管されたため dotfiles 側では通す。
+
+        新しい必須ディレクティブ チェックには引っかからないよう両ディレクティブを LF 改行で含めて検証する。
+        """
+        content = "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\nWrite-Host 'x'\n"
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        assert result.returncode == 0

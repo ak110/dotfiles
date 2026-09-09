@@ -13,14 +13,14 @@ $ErrorActionPreference = 'Stop'
 
 $cacheDir = Join-Path $env:LOCALAPPDATA 'dotfiles'
 $hashFile = Join-Path $cacheDir 'pytools.hash'
-$currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}'
+$currentHash = '{{ include (joinPath .chezmoi.workingTree "pyproject.toml") | sha256sum }}:{{ include (joinPath .chezmoi.workingTree "agent-toolkit/pyproject.toml") | sha256sum }}'
 $cachedHash = ''
 if (Test-Path $hashFile) {
     $cachedHash = (Get-Content $hashFile -Encoding UTF8 -Raw)
 }
 
 # キャッシュ判定は「入力ハッシュ一致」と「期待シム実在」の両方を条件とする。
-# pyproject.toml のハッシュのみで判定すると、過去の uv tool install 部分失敗で
+# プロジェクト定義のハッシュのみで判定すると、過去の uv tool install 部分失敗で
 # シムが欠落したまま再インストールが永久にスキップされる事象が発生するため、
 # post-apply 処理継続に必須のシムの実在もキャッシュキーへ組み込む。
 $expectedShimDir = Join-Path $env:USERPROFILE '.local\bin'
@@ -50,6 +50,17 @@ function Test-MediaRemoteProcess {
     return ($Process.CommandLine -like "*$escapedMediaRemoteBin*") -or
         ($Process.CommandLine -like '*pytools.media_remote*')
 }
+function Get-PytoolsEnvLockingProcess {
+    $prefix = $uvToolDir.TrimEnd('\') + '\'
+    foreach ($process in Get-CimInstance Win32_Process -ErrorAction SilentlyContinue) {
+        $isMediaRemote = Test-MediaRemoteProcess $process
+        $isInToolEnv = $process.ExecutablePath -and
+            $process.ExecutablePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+        if ($isInToolEnv -or $isMediaRemote) {
+            $process | Select-Object *, @{Name = 'IsMediaRemote'; Expression = { $isMediaRemote } }
+        }
+    }
+}
 # uv tool venvの場所はOSと環境変数（UV_TOOL_DIR等）で変動する。
 # `uv tool dir`の出力を一次情報源とし、取得失敗時はWindows既定配置へフォールバックする。
 $uvToolBaseDir = $null
@@ -76,22 +87,17 @@ $reinstallDeferred = $false
 $env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
 $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
 if ($needsReinstall) {
-    $prefix = $uvToolDir.TrimEnd('\') + '\'
-    $lockingProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        if (-not $_.ExecutablePath) { return $false }
-        if ($_.ExecutablePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-        if ($_.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-        return $false
-    })
+    $lockingProcs = @(Get-PytoolsEnvLockingProcess)
     $restorableProcs = @()
     $unrestorableProcs = @()
     foreach ($p in $lockingProcs) {
-        if (Test-MediaRemoteProcess $p) {
+        if ($p.IsMediaRemote) {
             $restorableProcs += $p
         } else {
             $unrestorableProcs += $p
         }
     }
+    Write-Host "  [pytools] 更新対象の使用中プロセス: 候補$($lockingProcs.Count)件 再起動可$($restorableProcs.Count)件 再起動不可$($unrestorableProcs.Count)件"
     if ($unrestorableProcs.Count -gt 0) {
         $reinstallDeferred = $true
         $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
@@ -99,9 +105,7 @@ if ($needsReinstall) {
         Write-Host '  [pytools] 再起動できないプロセスが更新対象を使用中 → 再インストールを次回へ延期'
     } else {
         foreach ($p in $restorableProcs) {
-            if (Test-MediaRemoteProcess $p) {
-                $mediaRemoteWasRunning = $true
-            }
+            $mediaRemoteWasRunning = $true
             Write-Host "  [pytools] $($p.Name) (PID=$($p.ProcessId)) を一時停止"
             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
         }
@@ -115,7 +119,7 @@ if ($needsReinstall) {
 # post-apply 配下の出力は列 2 にインデントを揃える (詳細は pytools/post_apply.py 参照)。
 if ($needsReinstall -and -not $reinstallDeferred) {
     if ($currentHash -ne $cachedHash) {
-        Write-Host '  [pytools] pyproject.toml に変更あり → 再インストール'
+        Write-Host '  [pytools] Pythonプロジェクト定義に変更あり → 再インストール'
     } else {
         Write-Host '  [pytools] 期待シムが欠落 → 再インストール'
     }
@@ -123,7 +127,7 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # $ErrorActionPreference = 'Stop' はネイティブ exe の非ゼロ終了を例外化しないため、
         # uv コマンド直後で $LASTEXITCODE を明示判定して throw する。
         # ハッシュ書き込みは uv tool install ・uv tool update-shell ・期待シム実在再確認のすべてが成功した場合のみ実行する。
-        & uv tool install --editable "{{ .chezmoi.workingTree }}"
+        & uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}"
         if ($LASTEXITCODE -ne 0) { throw "uv tool install が失敗しました (exit=$LASTEXITCODE)" }
         & uv tool update-shell
         if ($LASTEXITCODE -ne 0) { throw "uv tool update-shell が失敗しました (exit=$LASTEXITCODE)" }
@@ -183,9 +187,8 @@ if ($mediaRemoteWasRunning -and $env:COMPUTERNAME -eq 'stheno') {
 # （needsReinstall=$false）を対象として定常運用中のハング応答不能を回復する目的で実施する。
 # dotfiles-media-remote.exe のハング原因は未特定のため対症療法とする。
 if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {
-    $mediaRemoteProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        return (Test-MediaRemoteProcess $_)
-    })
+    $mediaRemoteProcs = @(Get-PytoolsEnvLockingProcess | Where-Object { $_.IsMediaRemote })
+    Write-Host "  [pytools] 対症療法の停止対象プロセス: 停止対象$($mediaRemoteProcs.Count)件"
     foreach ($p in $mediaRemoteProcs) {
         Write-Host "  [pytools] dotfiles-media-remote (PID=$($p.ProcessId)) を停止"
         Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue

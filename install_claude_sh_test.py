@@ -63,9 +63,9 @@ fi
 if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json" ]; then
     rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
     if [ "$CODEX_STUB_CREATE_CACHE" = "1" ]; then
-        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts"
-        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/hook.py"
-        printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/scripts/agents_server_mcp.py"
+        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit"
+        printf 'current hook\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/hook.py"
+        printf 'agents server\n' > "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_PLUGIN_AFTER_VERSION/agent_toolkit/agents_server_mcp.py"
     fi
     if [ -n "$CODEX_STUB_CONFLICT_VERSION" ]; then
         mkdir -p "$CODEX_PLUGIN_CACHE_ROOT/$CODEX_STUB_CONFLICT_VERSION"
@@ -190,7 +190,7 @@ def _run(
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
     claude_plugin_root = home / "claude-plugin"
-    claude_plugin_script = claude_plugin_root / "scripts" / "agents_server_mcp.py"
+    claude_plugin_script = claude_plugin_root / "agent_toolkit" / "agents_server_mcp.py"
     claude_plugin_script.parent.mkdir(parents=True, exist_ok=True)
     claude_plugin_script.write_text("agents server\n", encoding="utf-8")
     installed_plugins = home / ".claude" / "plugins" / "installed_plugins.json"
@@ -285,7 +285,10 @@ def test_agents_server_warmup_closes_standard_input() -> None:
     powershell_source = INSTALL_PS1.read_text(encoding="utf-8-sig")
 
     assert '"$script_path" --check-dependencies </dev/null >/dev/null' in shell_source
-    assert "$null | & uv run --no-project --script $scriptPath --check-dependencies *> $null" in powershell_source
+    assert (
+        "$null | & uv run --project $projectRoot --locked --no-default-groups $scriptPath --check-dependencies *> $null"
+        in powershell_source
+    )
 
 
 @pytest.mark.parametrize("kind", _runners())
@@ -297,11 +300,11 @@ def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path
 
     _run(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    warmups = [line for line in _log_lines(stub_log) if line.startswith("uv run --no-project --script ")]
+    warmups = [line for line in _log_lines(stub_log) if line.startswith("uv run --project ")]
     assert len(warmups) == 2
-    assert any(str(home / "claude-plugin" / "scripts" / "agents_server_mcp.py") in line for line in warmups)
+    assert any(str(home / "claude-plugin" / "agent_toolkit" / "agents_server_mcp.py") in line for line in warmups)
     assert any(
-        str(home / ".codex" / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/scripts/agents_server_mcp.py") in line
+        str(home / ".codex" / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/agents_server_mcp.py") in line
         for line in warmups
     )
 
@@ -333,7 +336,7 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         "codex plugin marketplace add ak110/dotfiles --json",
         "codex plugin marketplace upgrade ak110-dotfiles --json",
         "codex plugin add agent-toolkit@ak110-dotfiles --json",
-        "uv run --no-project --script",
+        "uv run --project",
         "agents_server_mcp.py --check-dependencies",
     ]
     last_index = -1
@@ -391,8 +394,8 @@ def test_restart_notice_requires_codex_plugin_state_change(
 
 
 @pytest.mark.parametrize("kind", _runners())
-def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """更新で削除された旧version名を現行cache実体へのリンクとして復元する。"""
+def test_plugin_update_does_not_restore_old_cache_path(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """更新で削除された旧version名を復元せず公式CLIの現versionだけを維持する。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"
@@ -413,41 +416,10 @@ def test_plugin_update_restores_old_cache_path(kind: str, tmp_path: pathlib.Path
         codex_home=codex_home,
     )
 
-    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
-    assert versions.read_text(encoding="utf-8") == "1.2.1\n1.2.2\n"
+    assert not (codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions").exists()
     for version in ("1.2.1", "1.2.2"):
         old_path = cache_root / version
-        assert old_path.is_symlink()
-        assert old_path.resolve() == (cache_root / "1.2.3").resolve()
-        assert (old_path / "scripts/hook.py").read_text(encoding="utf-8") == "current hook\n"
-
-
-def test_shell_restores_dot_version_to_hyphen_version(tmp_path: pathlib.Path, rules_url: str) -> None:
-    """先頭dotの旧versionを収集し、先頭hyphenの現行versionへ復元する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    codex_home = tmp_path / "custom-codex"
-    cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
-    dot_version = cache_root / ".1.2/scripts"
-    dot_version.mkdir(parents=True)
-    (dot_version / "hook.py").write_text("dot hook\n", encoding="utf-8")
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
-
-    _run(
-        "sh",
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.2", True),
-        codex_plugin_after=("-1.2", True),
-        codex_home=codex_home,
-    )
-
-    restored = cache_root / ".1.2"
-    assert restored.is_symlink()
-    assert restored.readlink() == pathlib.Path("-1.2")
-    assert (restored / "scripts/hook.py").read_text(encoding="utf-8") == "current hook\n"
+        assert not old_path.exists()
 
 
 @pytest.mark.parametrize("kind", _runners())
@@ -554,172 +526,9 @@ def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.
     assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in _log_lines(stub_log))
 
 
-def test_shell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Path, rules_url: str) -> None:
-    """shellの台帳置換失敗時は既存内容を保持して更新を中止する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    codex_home = tmp_path / "custom-codex"
-    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
-    versions.parent.mkdir(parents=True)
-    versions.write_text("1.2.1\n", encoding="utf-8")
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
-    mv_stub = stub_bin / "mv"
-    mv_stub.write_text(
-        "#!/bin/sh\n"
-        'case "$*" in\n'
-        '    *"/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions") exit 9 ;;\n'
-        "esac\n"
-        'exec /usr/bin/mv "$@"\n',
-        encoding="utf-8",
-    )
-    mv_stub.chmod(mv_stub.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    result = _run(
-        "sh",
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.2", True),
-        codex_plugin_after=("1.2.3", True),
-        codex_home=codex_home,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert versions.read_text(encoding="utf-8") == "1.2.1\n"
-    assert not any("codex plugin add" in line for line in _log_lines(stub_log))
-
-
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
-def test_powershell_ledger_replace_failure_keeps_existing_ledger(tmp_path: pathlib.Path) -> None:
-    """PowerShellの台帳置換失敗時は既存内容を保持して更新を中止する。"""
-    versions = tmp_path / "cache-compat/versions"
-    versions.parent.mkdir(parents=True)
-    versions.write_text("1.2.1\n", encoding="utf-8")
-    versions_path = str(versions).replace("'", "''")
-    result = _run_powershell_function_probe(
-        tmp_path,
-        ["Save-CodexCacheVersionLedger", "Install-CodexPlugin"],
-        f"""
-$codexCacheCompatVersions = '{versions_path}'
-$codexPluginId = 'agent-toolkit@ak110-dotfiles'
-$script:utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-$script:pluginAddCalled = $false
-function codex {{}}
-function Get-CodexCacheVersionSet {{ @('1.2.1', '1.2.2') }}
-function Get-CodexExpectedPluginVersion {{ '1.2.3' }}
-function Get-CodexPluginState {{ [PSCustomObject]@{{ Present = $true; Version = '1.2.2'; Enabled = $true }} }}
-function Invoke-RequiredNativeCommand {{
-    param([string]$command, [string[]]$arguments)
-    if ($arguments[0] -eq 'plugin' -and $arguments[1] -eq 'add') {{ $script:pluginAddCalled = $true }}
-}}
-$saveDefinition = $ast.Find({{
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        $node.Name -eq 'Save-CodexCacheVersionLedger'
-}}, $true)
-$replaceCall = '[System.IO.File]::Replace($temporary, $codexCacheCompatVersions, $backup)'
-$saveText = $saveDefinition.Extent.Text.Replace(
-    $replaceCall,
-    "throw 'injected ledger replace failure'"
-)
-if ($saveText -eq $saveDefinition.Extent.Text) {{ throw '置換失敗箇所を注入できません。' }}
-Invoke-Expression $saveText
-try {{ $null = Install-CodexPlugin }} catch {{ $failureMessage = $_.Exception.Message }}
-[PSCustomObject]@{{
-    Content = [System.IO.File]::ReadAllText($codexCacheCompatVersions)
-    PluginAddCalled = $script:pluginAddCalled
-    FailureMessage = $failureMessage
-}} | ConvertTo-Json -Compress
-""".strip(),
-    )
-
-    assert json.loads(result.stdout) == {
-        "Content": "1.2.1\n",
-        "PluginAddCalled": False,
-        "FailureMessage": "injected ledger replace failure",
-    }
-
-
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
-def test_powershell_existing_ledger_is_replaced_atomically(tmp_path: pathlib.Path) -> None:
-    """PowerShellでは既存台帳をbackup付きのatomic置換で更新する。"""
-    versions = tmp_path / "cache-compat/versions"
-    versions.parent.mkdir(parents=True)
-    versions.write_text("1.2.1\n", encoding="utf-8")
-    versions_path = str(versions).replace("'", "''")
-    result = _run_powershell_function_probe(
-        tmp_path,
-        ["Save-CodexCacheVersionLedger"],
-        f"""
-$codexCacheCompatVersions = '{versions_path}'
-$script:utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-function Get-CodexCacheVersionSet {{ @('1.2.1', '1.2.2') }}
-Save-CodexCacheVersionLedger
-[PSCustomObject]@{{
-    Content = [System.IO.File]::ReadAllText($codexCacheCompatVersions)
-    Files = @((Get-ChildItem -LiteralPath (Split-Path $codexCacheCompatVersions -Parent)).Name)
-}} | ConvertTo-Json -Compress
-""".strip(),
-    )
-
-    assert json.loads(result.stdout) == {"Content": "1.2.1\n1.2.2\n", "Files": ["versions"]}
-
-
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
-def test_powershell_cache_link_platform_branches(tmp_path: pathlib.Path) -> None:
-    """PowerShellのjunctionとsymbolic link分岐へ決定論的に到達する。"""
-    result = _run_powershell_function_probe(
-        tmp_path,
-        ["Invoke-CodexCacheLinkCreation"],
-        """
-$script:calls = @()
-function New-Item {
-    param([string]$ItemType, [string]$Path, [string]$Target)
-    $script:calls += [PSCustomObject]@{ ItemType = $ItemType; Path = $Path; Target = $Target }
-}
-Invoke-CodexCacheLinkCreation 'old-win' 'C:\\cache\\current' '2.0.0' $true
-Invoke-CodexCacheLinkCreation 'old-posix' '/cache/current' '2.0.0' $false
-$script:calls | ConvertTo-Json -Compress
-""".strip(),
-    )
-
-    assert json.loads(result.stdout) == [
-        {"ItemType": "Junction", "Path": "old-win", "Target": "C:\\cache\\current"},
-        {"ItemType": "SymbolicLink", "Path": "old-posix", "Target": "2.0.0"},
-    ]
-
-
 @pytest.mark.parametrize("kind", _runners())
-def test_same_version_recovers_from_compat_ledger(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """復元途中の中断後は同version再実行で台帳から旧名を回復する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    codex_home = tmp_path / "custom-codex"
-    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
-    versions.parent.mkdir(parents=True)
-    versions.write_text("1.2.1\n", encoding="utf-8")
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
-
-    _run(
-        kind,
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.3", True),
-        codex_plugin_after=("1.2.3", True),
-        codex_home=codex_home,
-    )
-
-    old_path = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.1"
-    assert old_path.resolve() == (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3").resolve()
-
-
-@pytest.mark.parametrize("kind", _runners())
-def test_same_version_without_ledger_does_not_create_one(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """互換対象がない同version再実行では台帳を新設しない。"""
+def test_same_version_does_not_create_compat_ledger(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """同version再実行でも廃止した互換台帳を新設しない。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"
@@ -738,60 +547,6 @@ def test_same_version_without_ledger_does_not_create_one(kind: str, tmp_path: pa
 
     versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
     assert not versions.exists()
-
-
-@pytest.mark.parametrize("kind", _runners())
-def test_update_fails_when_current_cache_is_missing(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """更新後の現行version実体が無ければ互換リンクを作成せず失敗する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    codex_home = tmp_path / "custom-codex"
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
-
-    result = _run(
-        kind,
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.2", True),
-        codex_plugin_after=("1.2.3", True),
-        codex_home=codex_home,
-        create_cache=False,
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert not (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2").exists()
-
-
-@pytest.mark.parametrize("kind", _runners())
-def test_cache_compat_conflict_fails_without_replacing_entry(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """旧名に通常エントリがある場合は上書きせず非0で終了する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    codex_home = tmp_path / "custom-codex"
-    versions = codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
-    versions.parent.mkdir(parents=True)
-    versions.write_text("1.2.1\n", encoding="utf-8")
-    stub_bin, stub_log = _make_command_stubs(tmp_path)
-
-    result = _run(
-        kind,
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.3", True),
-        codex_plugin_after=("1.2.3", True),
-        codex_home=codex_home,
-        conflict_version="1.2.1",
-        check=False,
-    )
-
-    assert result.returncode != 0
-    sentinel = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.1/keep"
-    assert sentinel.read_text(encoding="utf-8") == "keep\n"
 
 
 _REGISTERED_STATES = [

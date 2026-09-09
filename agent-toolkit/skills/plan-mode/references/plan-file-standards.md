@@ -49,7 +49,7 @@ private-notesの計画ファイルを編集ツールで直接書き換えない�
 `agent-toolkit:plan-mode`のSKILL.mdの「対話由来の小規模是正」節に当たり計画ファイルを作成しない処理では、実行レビュー指摘管理表を起動側が作成した管理対象一時領域の直下へ`dlg-<実装着手前の完全OID>.exec-review.tsv`として置く。当該表は計画作業rootへ置かず、実行レビューの完了まで当該一時領域で更新する。当該領域の作成と回収は起動側が所有し、回収の時機は同節の手順12が定める。当該表を計画バンドルとして扱わず、`atk plans commit`と`atk plans checkout`のいずれの対象にもしない。
 作成済みのレビュー表は、全ての要求を充足済みと確定して実装工程を省略する計画では計画レビュー完了まで、それ以外は実行レビュー完了まで作業rootで更新する。
 `atk plans commit`はレビュー表を計画バンドルとして収集し、計画ファイルと同じcommitでprivate-notesへ保存する。
-独立CI実行レビュー表はレビュー収束後に`atk plans commit ci-<起点OID>.exec-review.tsv`で`private-notes/plans/ci/`へ対象限定commit・pushする。再取得検証では次の3コマンドを順に実行する。`atk plans checkout ci/ci-<起点OID>.exec-review.tsv`、`atk review-table validate <作業側絶対パス>`、`atk plans commit ci-<起点OID>.exec-review.tsv`である。これにより保存実体を正式経路で読み戻し、検証後の作業側を再び消失させる。各保存後に作業側の不在とprivate-notesのclean状態を確認する。private-notesを直接編集せず、独立表を計画バンドルとしてもキューの`plan_file`としても扱わない。
+独立CI実行レビュー表はレビュー収束後に`atk plans commit ci-<起点OID>.exec-review.tsv`で`private-notes/plans/ci/`へ対象限定commit・pushする。private-notesを直接編集せず、独立表を計画バンドルとしてもキューの`plan_file`としても扱わない。
 
 本書、`agent-toolkit:plan-mode`のSKILL.md及び`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、
 計画に属するファイルとレビュー記録を次の呼称で指す。新規の記述では次表の呼称以外の別名を用いない。
@@ -595,6 +595,10 @@ uvx pyfltr run --commands=textlint,colloquial-check --enable=colloquial-check --
 実装開始時は、1つの計画ファイルへ1つの専用worktreeを対応付け、絶対パス、作成時のHEAD完全OID、所有主体、回収対象を記録する。
 結果・特記事項にはcommit、検証結果、計画との差異、阻害要因を必要な範囲で書く。
 完了報告を発行する主体は、報告の直前に`## 完了条件`を全文再読し、各条件の充足根拠又は未達理由を進捗ログの最終行へ記録する。
+実装工程を中断後に再開する主体は、進捗ログの最終行に加えて`## 概要`の目的、
+`## 変更履歴（計画時）`が保持するユーザー発言の逐語本文、及び計画ファイル（詳細）の`## 完了条件`を読み直す。
+未完了の工程が当該目的と当該完了条件へ対応することを確かめてから次の工程を選ぶ。
+
 計画時の人間向け変更要約は`## 変更履歴（計画時）`、実装工程の粗い再開記録は`## 進捗ログ（実行時）`、個別指摘の詳細はレビュー指摘管理表を正本とする。用途の異なる記録を行数やラウンド数で相互照合しない。
 
 ### 復元・巻き戻し型の変更
@@ -641,7 +645,7 @@ Jinjaフィルターや正規表現など、コードとして評価される文
 絶対パスを渡す（計画ファイル（詳細）のパスを渡さない）。
 
 ```sh
-uv run --script /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
+uv run --project <plugin rootの絶対パス> --locked --no-default-groups /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
 ```
 
 対象リポジトリがセッションの作業ディレクトリと異なる場合は、

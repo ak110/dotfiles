@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0"]
-# ///
 """Markdownの地の文・見出し中のダッシュ系禁止文字を検査する独立スクリプト。
 
 writing-standards SKILL.mdの「emダッシュ・horizontal bar・2倍ダッシュは

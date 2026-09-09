@@ -4,14 +4,12 @@ import concurrent.futures
 import datetime
 import pathlib
 import subprocess
-import sys
 
 import create_plan_files
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
-from _plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import fixture as _plan_fixture  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

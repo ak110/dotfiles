@@ -1,6 +1,11 @@
 [tools]
 "npm:@google/gemini-cli" = "latest"
 "npm:aws-cdk" = "latest"
+# actionlintの配布物はインストールrootへ実行ファイルと並んで`man`・`docs`のディレクトリを展開する。
+# `symlink_bins`のような実行ファイルの配置を変える設定は、miseが導入時にだけ当該配置を生成し、
+# 導入済みの版へ遡及して生成しない。このため当該設定を後から加えると`mise which`が解決に失敗する。
+# 2026年9月8日にcommit 7c3ba236で当該設定を加えたところ、pre-commitとCIのactionlint実行が停止した。
+# 配置を変える設定を加える場合は、同じ変更で全対象環境の再インストールを成立させてから加える。
 actionlint = "latest"
 chezmoi = "latest"
 # dotnetは共有ランタイムのルートへのsymlinkとして導入される。symlinkで導入済みの版は

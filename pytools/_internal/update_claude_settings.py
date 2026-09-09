@@ -67,6 +67,9 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[str, ...] = (
     "claude_hook.py stop;",
     # 2026-09: pretooluseフックへスクリプト実在検査を追加したため、検査を持たない旧形式エントリを除去
     "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse;",
+    # 2026-09: dotfiles固有hookをpytoolsのconsole scriptへ移したため旧共通入口を除去
+    "dotfiles/scripts/claude_hook.py",
+    "dotfiles\\scripts\\claude_hook.py",
 )
 
 # settings.json の env 配下から除去するキー。

@@ -82,6 +82,13 @@ def _configure_logging() -> tuple[list[logging.Handler], int]:
 
 # chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
 _REMOVED_PATHS: dict[Path, list[Path]] = {
+    Path.home() / "dotfiles": [
+        # dotfiles固有hookはpytoolsのconsole scriptへ移設したため、旧入口を除去する。
+        Path("scripts/claude_hook.py"),
+        Path("scripts/claude_hook_pretooluse.py"),
+        Path("scripts/claude_hook_posttooluse.py"),
+        Path("scripts/claude_hook_stop_bell.py"),
+    ],
     Path.home() / ".claude": [
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
@@ -308,7 +315,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run),
     _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
     _StepSpec("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
-    _StepSpec("atkキューの移行", migrate_atk_queue.run),
+    _StepSpec("atk計画の移行", migrate_atk_queue.run),
     _StepSpec("Windowsレジストリ設定", setup_registry.run),
     _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
     _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),

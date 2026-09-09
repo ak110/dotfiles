@@ -21,7 +21,6 @@ CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"
 CLAUDE_INSTALLED_PLUGINS="$HOME/.claude/plugins/installed_plugins.json"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_PLUGIN_CACHE_ROOT="$CODEX_HOME_DIR/plugins/cache/ak110-dotfiles/agent-toolkit"
-CODEX_CACHE_COMPAT_VERSIONS="$CODEX_HOME_DIR/plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions"
 
 # 配布対象ファイル一覧。
 # `scripts/gen-install-files.py`が`agent-toolkit/rules/*.md`から自動生成する。
@@ -182,78 +181,9 @@ raise SystemExit(1)
 PY
 }
 
-_valid_codex_version_name() {
-    local value="$1"
-    [ -n "$value" ] && [ "$value" != "." ] && [ "$value" != ".." ] && [[ "$value" =~ ^[A-Za-z0-9._+-]+$ ]]
-}
-
-_save_codex_cache_versions() {
-    local state_dir
-    local temporary
-    local entry
-    local version
-    state_dir=$(dirname "$CODEX_CACHE_COMPAT_VERSIONS")
-    mkdir -p "$state_dir"
-    temporary=$(mktemp "$state_dir/versions.XXXXXX")
-    if [ -f "$CODEX_CACHE_COMPAT_VERSIONS" ]; then
-        while IFS= read -r version || [ -n "$version" ]; do
-            if _valid_codex_version_name "$version"; then
-                printf '%s\n' "$version" >>"$temporary"
-            else
-                echo "不正なCodex plugin互換version名を無視します: '$version'" >&2
-            fi
-        done <"$CODEX_CACHE_COMPAT_VERSIONS"
-    fi
-    if [ -d "$CODEX_PLUGIN_CACHE_ROOT" ]; then
-        while IFS= read -r -d '' entry; do
-            [ -d "$entry" ] || [ -L "$entry" ] || continue
-            version=$(basename "$entry")
-            if _valid_codex_version_name "$version"; then
-                printf '%s\n' "$version" >>"$temporary"
-            else
-                echo "不正なCodex plugin cache version名を無視します: '$version'" >&2
-            fi
-        done < <(find "$CODEX_PLUGIN_CACHE_ROOT" -mindepth 1 -maxdepth 1 -print0)
-    fi
-    sort -u "$temporary" -o "$temporary"
-    mv "$temporary" "$CODEX_CACHE_COMPAT_VERSIONS"
-}
-
-_restore_codex_cache_links() {
-    local current_version="$1"
-    local target="$CODEX_PLUGIN_CACHE_ROOT/$current_version"
-    local destination
-    local link_target
-    local version
-    [ -f "$CODEX_CACHE_COMPAT_VERSIONS" ] || return 0
-    while IFS= read -r version || [ -n "$version" ]; do
-        if ! _valid_codex_version_name "$version"; then
-            echo "不正なCodex plugin互換version名を無視します: '$version'" >&2
-            continue
-        fi
-        [ "$version" != "$current_version" ] || continue
-        if [ ! -d "$target" ] || [ -L "$target" ]; then
-            echo "現行Codex plugin cache実体が存在しません: $target" >&2
-            return 1
-        fi
-        destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
-        if [ -L "$destination" ]; then
-            link_target=$(readlink "$destination")
-            [ "$link_target" = "$current_version" ] && continue
-            rm "$destination"
-        elif [ -e "$destination" ]; then
-            echo "通常エントリとCodex plugin互換バージョン名が競合しています: $destination" >&2
-            return 1
-        fi
-        ln -s -- "$current_version" "$destination"
-    done <"$CODEX_CACHE_COMPAT_VERSIONS"
-}
-
 _install_codex_plugin() {
     local before_state=""
     local before_state_known=0
-    local before_present="false"
-    local before_version=""
     local expected_version=""
     local after_state=""
     local after_present="false"
@@ -268,11 +198,6 @@ _install_codex_plugin() {
         return 1
     fi
     before_state_known=1
-    before_present=$(_codex_state_value "$before_state" present)
-    before_version=$(_codex_state_value "$before_state" version)
-    if [ "$before_present" = "true" ] && [ "$before_version" != "$expected_version" ]; then
-        _save_codex_cache_versions
-    fi
     codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null
     if ! after_state=$(_codex_plugin_state); then
         echo "Codex plugin更新後の状態を確認できません。" >&2
@@ -288,7 +213,6 @@ _install_codex_plugin() {
         echo "Codex plugin更新後の状態が期待値と一致しません。" >&2
         return 1
     fi
-    _restore_codex_cache_links "$after_version"
     echo "Codex側のagent-toolkitプラグインを設定しました。"
 }
 
@@ -311,17 +235,19 @@ if not isinstance(entries, list):
 for entry in entries:
     install_path = entry.get("installPath") if isinstance(entry, dict) else None
     if isinstance(install_path, str):
-        print(pathlib.Path(install_path) / "scripts/agents_server_mcp.py")
+        print(pathlib.Path(install_path) / "agent_toolkit/agents_server_mcp.py")
 PY
 }
 
 _warm_agents_server_path() {
     local script_path="$1"
+    local project_root=""
     if [ ! -f "$script_path" ]; then
         echo "agents_serverのウォームアップ対象が存在しないためスキップします: $script_path" >&2
         return 0
     fi
-    if ! uv run --no-project --script "$script_path" --check-dependencies </dev/null >/dev/null; then
+    project_root="$(dirname "$(dirname "$script_path")")"
+    if ! uv run --project "$project_root" --locked --no-default-groups "$script_path" --check-dependencies </dev/null >/dev/null; then
         echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
     fi
     return 0
@@ -343,7 +269,7 @@ _warm_agents_server() {
         echo "Claude Code plugin一覧からagents_serverのウォームアップ対象を解決できないためClaude Code分をスキップします。" >&2
     fi
     if expected_version=$(_codex_expected_plugin_version); then
-        script_paths+=("$CODEX_PLUGIN_CACHE_ROOT/$expected_version/scripts/agents_server_mcp.py")
+        script_paths+=("$CODEX_PLUGIN_CACHE_ROOT/$expected_version/agent_toolkit/agents_server_mcp.py")
     else
         echo "Codex pluginからagents_serverのウォームアップ対象バージョンを解決できないためCodex分をスキップします。" >&2
     fi

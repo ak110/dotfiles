@@ -1,4 +1,4 @@
-"""agent-toolkitキュー移行ステップを検証する。"""
+"""agent-toolkit計画移行ステップを検証する。"""
 
 import logging
 import subprocess
@@ -41,13 +41,13 @@ def test_run_defers_while_agent_is_running(monkeypatch: pytest.MonkeyPatch, proc
         pytest.param(_process(name="claude-statusline"), id="claude-statusline"),
     ),
 )
-def test_run_ignores_non_agent_processes_and_runs_both_migrations(
+def test_run_ignores_non_agent_processes_and_runs_plan_migration(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     process: SimpleNamespace,
 ) -> None:
     """無関係な実行体と接頭辞だけが一致する実行体は移行を抑止しない。"""
-    atk = tmp_path / "agent-toolkit/scripts/atk.py"
+    atk = tmp_path / "agent-toolkit/agent_toolkit/atk.py"
     atk.parent.mkdir(parents=True)
     atk.write_text("", encoding="utf-8")
     uv = tmp_path / "uv"
@@ -58,18 +58,13 @@ def test_run_ignores_non_agent_processes_and_runs_both_migrations(
 
     def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        output = (
-            "計画ファイルを移行しました: 0件（旧ファイル削除: 0件）"
-            if "plans" in command
-            else "0件を変換しました（うち0件を移動）。"
-        )
-        return subprocess.CompletedProcess(command, 0, output + "\n", "")
+        return subprocess.CompletedProcess(command, 0, "計画ファイルを移行しました: 0件（旧ファイル削除: 0件）\n", "")
 
     monkeypatch.setattr(migrate_atk_queue.claude_common, "run_subprocess", fake_run)
     assert migrate_atk_queue.run() is False
+    project = tmp_path / "agent-toolkit"
     assert calls == [
-        [str(uv), "run", "--no-project", "--script", str(atk), "plans", "migrate"],
-        [str(uv), "run", "--no-project", "--script", str(atk), "wi", "migrate"],
+        [str(uv), "run", "--project", str(project), "--locked", "--no-default-groups", str(atk), "plans", "migrate"],
     ]
 
 
@@ -117,21 +112,31 @@ def test_run_defers_when_process_information_cannot_be_read(
     assert "プロセス情報を取得できず判定不能 (AccessDenied)" in caplog.text
 
 
-def test_run_reports_changes_and_continues_after_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    atk = tmp_path / "agent-toolkit/scripts/atk.py"
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    (
+        pytest.param(subprocess.CompletedProcess(["uv"], 1, "", "失敗"), False, id="failure"),
+        pytest.param(
+            subprocess.CompletedProcess(["uv"], 0, "2件を移行しました（旧ファイル削除: 2件）\n", ""),
+            True,
+            id="changed",
+        ),
+    ),
+)
+def test_run_reports_plan_migration_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    result: subprocess.CompletedProcess[str],
+    expected: bool,
+) -> None:
+    atk = tmp_path / "agent-toolkit/agent_toolkit/atk.py"
     atk.parent.mkdir(parents=True)
     atk.write_text("", encoding="utf-8")
     monkeypatch.setattr(migrate_atk_queue.psutil, "process_iter", lambda _fields: [])
     monkeypatch.setattr(migrate_atk_queue.claude_common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(migrate_atk_queue.claude_common, "resolve_uv_path", lambda: tmp_path / "uv")
-    results = iter(
-        (
-            subprocess.CompletedProcess(["uv"], 1, "", "失敗"),
-            subprocess.CompletedProcess(["uv"], 0, "2件を変換しました（うち2件を移動）。\n", ""),
-        )
-    )
-    monkeypatch.setattr(migrate_atk_queue.claude_common, "run_subprocess", lambda *_args, **_kwargs: next(results))
-    assert migrate_atk_queue.run() is True
+    monkeypatch.setattr(migrate_atk_queue.claude_common, "run_subprocess", lambda *_args, **_kwargs: result)
+    assert migrate_atk_queue.run() is expected
 
 
 @pytest.mark.parametrize("missing", ("root", "uv", "atk"))
@@ -147,7 +152,7 @@ def test_run_skips_when_prerequisite_is_missing(
         migrate_atk_queue.claude_common, "resolve_uv_path", lambda: None if missing == "uv" else tmp_path / "uv"
     )
     if missing != "atk":
-        atk = tmp_path / "agent-toolkit/scripts/atk.py"
+        atk = tmp_path / "agent-toolkit/agent_toolkit/atk.py"
         atk.parent.mkdir(parents=True)
         atk.write_text("", encoding="utf-8")
     assert migrate_atk_queue.run() is False

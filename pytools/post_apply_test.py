@@ -686,11 +686,11 @@ class TestDefaultSteps:
         assert names.index(timer_name) == names.index(serve_name) + 1
         assert names.index(timer_name) < names.index("Windowsレジストリ設定")
 
-    def test_queue_migration_follows_autoupdate_before_windows_steps(self) -> None:
-        """atkキュー移行をLinux自動更新タイマーの直後かつWindows処理前に登録する。"""
+    def test_plan_migration_follows_autoupdate_before_windows_steps(self) -> None:
+        """atk計画移行をLinux自動更新タイマーの直後かつWindows処理前に登録する。"""
         steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
         names = [step.name for step in steps]
-        migration = "atkキューの移行"
+        migration = "atk計画の移行"
         assert names.count(migration) == 1
         assert names.index(migration) == names.index("dotfiles自動更新タイマー セットアップ (Linux)") + 1
         assert names.index(migration) < names.index("Windowsレジストリ設定")

@@ -24,7 +24,7 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list[list
     monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
-    claude_script = tmp_path / "claude" / "scripts" / "agents_server_mcp.py"
+    claude_script = tmp_path / "claude" / "agent_toolkit" / "agents_server_mcp.py"
     _write_script(claude_script)
     installed = tmp_path / "installed_plugins.json"
     installed.write_text(
@@ -40,7 +40,7 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list[list
         / "ak110-dotfiles"
         / "agent-toolkit"
         / "1.0.0"
-        / "scripts"
+        / "agent_toolkit"
         / "agents_server_mcp.py"
     )
     _write_script(codex_script)
@@ -64,7 +64,7 @@ def test_warms_all_targets_with_dependency_check(monkeypatch: pytest.MonkeyPatch
     calls = _setup(monkeypatch, tmp_path)
 
     assert _warmup.run() is False
-    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
+    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
     assert len(warmups) == 2
     assert all(cmd[-1] == "--check-dependencies" for cmd in warmups)
 
@@ -78,7 +78,7 @@ def test_repository_scripts_are_not_targets(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr(_warmup.claude_common, "find_dotfiles_root", lambda: repository)
 
     assert _warmup.run() is False
-    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
+    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
     assert len(warmups) == 2
     assert all(not any(str(repository) in argument for argument in cmd) for cmd in warmups)
 
@@ -90,12 +90,12 @@ def test_missing_target_is_logged_and_not_warmed(
 ) -> None:
     """不在の参照先を除外し、残る参照先だけをウォームアップする。"""
     calls = _setup(monkeypatch, tmp_path)
-    missing = tmp_path / "claude" / "scripts" / "agents_server_mcp.py"
+    missing = tmp_path / "claude" / "agent_toolkit" / "agents_server_mcp.py"
     missing.unlink()
     caplog.set_level(logging.INFO, logger=_warmup.__name__)
 
     assert _warmup.run() is False
-    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
+    warmups = [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
     assert len(warmups) == 1
     assert all(str(missing) not in argument for cmd in warmups for argument in cmd)
     assert f"対象が存在しないため除外: {missing}" in caplog.text
@@ -104,7 +104,7 @@ def test_missing_target_is_logged_and_not_warmed(
 def test_no_existing_target_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """参照先がすべて不在ならウォームアップを行わない。"""
     calls = _setup(monkeypatch, tmp_path)
-    (tmp_path / "claude" / "scripts" / "agents_server_mcp.py").unlink()
+    (tmp_path / "claude" / "agent_toolkit" / "agents_server_mcp.py").unlink()
     (
         tmp_path
         / "codex"
@@ -113,12 +113,12 @@ def test_no_existing_target_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
         / "ak110-dotfiles"
         / "agent-toolkit"
         / "1.0.0"
-        / "scripts"
+        / "agent_toolkit"
         / "agents_server_mcp.py"
     ).unlink()
 
     assert _warmup.run() is False
-    assert not [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
+    assert not [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
 
 
 def test_missing_uv_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

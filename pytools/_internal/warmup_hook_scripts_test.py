@@ -43,14 +43,11 @@ def _setup(
     `codex_entries`から組み立てた出力を返す。`uv run`の結果は`warmup_returncode`で指定し、
     `None`は実行自体の失敗（タイムアウト等）を表す。
     """
-    dotfiles_root = tmp_path / "dotfiles"
-    _write_script(dotfiles_root / "scripts" / "claude_hook.py")
-    monkeypatch.setattr(_warmup.claude_common, "find_dotfiles_root", lambda: dotfiles_root)
     monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
-    _write_script(plugin_cache / "scripts" / "hook.py")
+    _write_script(plugin_cache / "agent_toolkit" / "hook.py")
     installed_path = tmp_path / "installed_plugins.json"
     if installed_plugins is None:
         installed_plugins = {"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(plugin_cache)}]}}
@@ -76,12 +73,12 @@ def _setup(
 
 def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
     """Codexプラグインキャッシュ内のhookスクリプトパスを返す。"""
-    return codex_home / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version / "scripts" / "hook.py"
+    return codex_home / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version / "agent_toolkit" / "hook.py"
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
     """記録済みコマンドからウォームアップ対象パスを取り出す。"""
-    return [cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--no-project", "--script"])]
+    return [cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
 
 
 class TestPrerequisites:
@@ -104,7 +101,7 @@ class TestTargets:
     """ウォームアップ対象の列挙。"""
 
     def test_warms_all_existing_targets_once(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """実在する3系統のパスへ1回ずつ`uv run`を実行する。"""
+        """実在する2系統のpluginパスへ1回ずつ`uv run`を実行する。"""
         calls = _setup(monkeypatch, tmp_path)
         codex_script = _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
@@ -112,7 +109,6 @@ class TestTargets:
         warmed = _warmed(calls)
         assert sorted(warmed) == sorted(
             [
-                str(tmp_path / "dotfiles" / "scripts" / "claude_hook.py"),
                 str(
                     tmp_path
                     / "claude"
@@ -121,7 +117,7 @@ class TestTargets:
                     / "ak110-dotfiles"
                     / "agent-toolkit"
                     / "1.0.0"
-                    / "scripts"
+                    / "agent_toolkit"
                     / "hook.py"
                 ),
                 str(codex_script),
@@ -138,14 +134,14 @@ class TestTargets:
         )
 
         assert _warmup.run() is False
-        assert _warmed(calls) == [str(tmp_path / "dotfiles" / "scripts" / "claude_hook.py")]
+        assert not _warmed(calls)
 
     def test_broken_installed_plugins_json_is_excluded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """`installed_plugins.json`が不正でも例外を送出せず残る対象を実行する。"""
         calls = _setup(monkeypatch, tmp_path, installed_plugins="{ broken")
 
         assert _warmup.run() is False
-        assert _warmed(calls) == [str(tmp_path / "dotfiles" / "scripts" / "claude_hook.py")]
+        assert not _warmed(calls)
 
     def test_absent_installed_plugins_file_is_excluded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """`installed_plugins.json`が無い場合もClaude Code分だけを除外する。"""
@@ -153,7 +149,7 @@ class TestTargets:
         monkeypatch.setattr(_warmup, "_INSTALLED_PLUGINS_PATH", tmp_path / "absent.json")
 
         assert _warmup.run() is False
-        assert _warmed(calls) == [str(tmp_path / "dotfiles" / "scripts" / "claude_hook.py")]
+        assert not _warmed(calls)
 
 
 class TestCodexResolution:
@@ -208,7 +204,7 @@ class TestCodexResolution:
 
         assert _warmup.run() is False
         assert str(codex_script) not in _warmed(calls)
-        assert len(_warmed(calls)) == 2
+        assert len(_warmed(calls)) == 1
 
     def test_failed_codex_list_excludes_codex_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """一覧取得の失敗ではCodex分だけを除外して継続する。"""
@@ -240,7 +236,7 @@ class TestFailureHandling:
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() is False
-        assert len(_warmed(calls)) == 3
+        assert len(_warmed(calls)) == 2
 
     def test_continues_after_execution_error(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """実行自体の失敗（タイムアウト等でNone）でも残る対象を実行する。"""
@@ -248,4 +244,4 @@ class TestFailureHandling:
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
         assert _warmup.run() is False
-        assert len(_warmed(calls)) == 3
+        assert len(_warmed(calls)) == 2

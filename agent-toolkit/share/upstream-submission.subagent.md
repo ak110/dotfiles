@@ -35,9 +35,7 @@
 各組の本文を他の組から独立して読み直し、`agent-toolkit:wi-standards`の投入前検査に合格したことを確認する。
 検査に合格しない本文は修正して再検査し、合格するまで投入しない。
 無条件又は条件成立の組ごとに、起草した本文をAWIとして1回だけ投入する。同じ組へ2回投入しない。失敗後の再開で`upstream_filename`を受領した組は新規投入せず、既存の保存先を同じ投入経路で修復する。
-投入後に保存本文を取得し、送信元本文と保存本文の末尾改行の有無だけを同じ状態へ正規化して、それ以外を全文比較する。
-警告、エラー、全文不一致のいずれかを検出した場合は、同じ投入経路で修復して比較をやり直す。
-全文比較後に通常AWIの全項目が規定順で存在することも検収する。
+警告とエラーのいずれかを検出した場合は、同じ投入経路で修復して再投入する。
 修復できない組は`needs_escalation`の対象とし、他の組の投入を続ける。
 
 ## 出力
@@ -55,7 +53,7 @@ submissions:
   阻害要因: <needs_escalationの理由。既定値は「なし」>
 ```
 
-入力の各組を`submissions`へ重複なく1回ずつ記録する。全文比較まで成功した組は`result`を`completed`とし、条件が成立しない組は`condition_not_met`、修復できない組は`needs_escalation`とする。全組の`result`が`completed`又は`condition_not_met`の場合だけ全体の`status`を`completed`とし、1組以上が`needs_escalation`の場合は全体も`needs_escalation`とする。
+入力の各組を`submissions`へ重複なく1回ずつ記録する。投入に成功した組は`result`を`completed`とし、条件が成立しない組は`condition_not_met`、修復できない組は`needs_escalation`とする。全組の`result`が`completed`又は`condition_not_met`の場合だけ全体の`status`を`completed`とし、1組以上が`needs_escalation`の場合は全体も`needs_escalation`とする。
 `upstream_filename`には結果にかかわらず、投入結果として得た文字列をそのまま用いる。
 `upstream_filename`と`阻害要因`は、値が既定値`なし`と一致する場合に当該行を出力しない。呼び出し元は当該行の不在を当該既定値として解釈し、欠落として扱わない。
 

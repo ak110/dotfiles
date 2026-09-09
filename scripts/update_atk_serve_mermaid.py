@@ -27,7 +27,9 @@ import semantic_version
 
 PACKAGE_NAME = "mermaid"
 METADATA_URL = f"https://registry.npmjs.org/{PACKAGE_NAME}"
-VENDOR_DIRECTORY = pathlib.Path(__file__).parent.parent / "agent-toolkit" / "scripts" / "_atk" / "serve" / "static" / "vendor"
+VENDOR_DIRECTORY = (
+    pathlib.Path(__file__).parent.parent / "agent-toolkit" / "agent_toolkit" / "_atk" / "serve" / "static" / "vendor"
+)
 VENDOR_FILENAMES = ("mermaid.min.js", "LICENSE.mermaid.txt", "mermaid.json")
 
 _BUNDLE_MEMBER = "package/dist/mermaid.min.js"

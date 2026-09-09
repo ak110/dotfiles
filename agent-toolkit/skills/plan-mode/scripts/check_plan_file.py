@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["markdown-it-py[linkify]>=4.0.0", "platformdirs>=4.0"]
-# ///
 """計画の成立に必要な情報契約と実体だけを検査する。
 
 計画メタ情報、見出し構造、`関連WI`と提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
@@ -18,11 +13,10 @@ import subprocess
 import sys
 import typing
 
-_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[3]
+from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-sys.path.insert(0, str(_PLUGIN_ROOT / "scripts"))
-from _plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+_PLUGIN_DIR = pathlib.Path(_plan_file.__file__).resolve().parents[2]
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -104,7 +98,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
             errors.append(f"実在しないスキル参照: {skill}")
             continue
         name = qualified_name if separator else namespace
-        plugin_candidates = (_PLUGIN_ROOT / "skills" / name / "SKILL.md",)
+        plugin_candidates = (_PLUGIN_DIR / "skills" / name / "SKILL.md",)
         project_candidates = (
             work_dir / ".claude" / "skills" / name / "SKILL.md",
             work_dir / ".agents" / "skills" / name / "SKILL.md",
@@ -118,7 +112,7 @@ def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
             errors.append(f"実在しないサブエージェント参照: {agent}")
             continue
         name = qualified_name if separator else namespace
-        plugin_candidates = (_PLUGIN_ROOT / "agents" / f"{name}.md",)
+        plugin_candidates = (_PLUGIN_DIR / "agents" / f"{name}.md",)
         project_candidates = (work_dir / ".claude" / "agents" / f"{name}.md",)
         candidates = plugin_candidates if separator else plugin_candidates + project_candidates
         if not any(path.exists() for path in candidates):

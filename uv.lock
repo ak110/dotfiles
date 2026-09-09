@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.13, <4.0"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version == '3.14.*' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform != 'win32'",
@@ -20,6 +20,52 @@ pytilpack = false
 
 [manifest]
 overrides = [{ name = "mcp", specifier = ">=1.28.1,<2" }]
+
+[[package]]
+name = "agent-toolkit"
+version = "0.1.0"
+source = { editable = "agent-toolkit" }
+dependencies = [
+    { name = "argcomplete" },
+    { name = "claude-agent-sdk" },
+    { name = "filelock" },
+    { name = "markdown-it-py", extra = ["linkify"] },
+    { name = "mcp" },
+    { name = "mdit-py-plugins" },
+    { name = "platformdirs" },
+    { name = "pydantic" },
+    { name = "pyfltr" },
+    { name = "pytilpack", extra = ["quart"] },
+    { name = "pyyaml" },
+    { name = "watchdog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "argcomplete" },
+    { name = "claude-agent-sdk", specifier = ">=0.2.144,<0.3" },
+    { name = "filelock", specifier = ">=3.30" },
+    { name = "markdown-it-py", extras = ["linkify"], specifier = ">=4.0.0" },
+    { name = "mcp", specifier = ">=1.28.1,<2" },
+    { name = "mdit-py-plugins", specifier = ">=0.6" },
+    { name = "platformdirs", specifier = ">=4.0" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pyfltr", specifier = ">=3.17.7" },
+    { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
+    { name = "pyyaml" },
+    { name = "watchdog", specifier = ">=6.0.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jsonschema", specifier = ">=4.26" },
+    { name = "playwright", specifier = ">=1.61.0" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.17.7" },
+    { name = "pytest-asyncio", specifier = ">=1.0" },
+    { name = "pytest-timeout", specifier = ">=2" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "types-pyyaml" },
+]
 
 [[package]]
 name = "aiofiles"
@@ -1686,6 +1732,7 @@ name = "pytools"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "agent-toolkit" },
     { name = "argcomplete" },
     { name = "bashplotlib" },
     { name = "businesstimedelta" },
@@ -1730,6 +1777,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-toolkit", editable = "agent-toolkit" },
     { name = "argcomplete", specifier = ">=3.6.3" },
     { name = "bashplotlib" },
     { name = "businesstimedelta" },

@@ -1,0 +1,801 @@
+"""Claude Code PreToolUseフック: dotfiles個人環境専用チェック集。
+
+汎用的なチェック（mojibake検出・PowerShell LF-only検出など）は`agent-toolkit`
+プラグインが担当する。本スクリプトはdotfiles個人環境前提に依存する汎用性の
+低いチェックをまとめる。
+
+統合しているチェック:
+
+1. `~/.claude/`配下への直接編集警告（warn、非ブロック）
+2. PowerShellスクリプトの必須ディレクティブ欠落ブロック（block、Writeのみ）
+3. 個人用/ローカル専用ファイル言及検出（warn、非ブロック）
+4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
+5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
+6. コーディングエージェント向け文書の編集前における参照文書の未読警告（warn、非ブロック）
+7. 本リポジトリが配布するコマンドを解決できない起動形で書く記述の検出（block）
+各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
+検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
+本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
+予期せぬ例外の処理は共通エントリポイント（`pytools/claude_hook/__init__.py`）が担う。
+メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
+
+LLM宛て出力は`agent_toolkit._hooks.notice`の整形関数経由で整形する。
+プレフィックス／サフィックス規約と出力先フィールド（`reason`・`additionalContext`）の詳細は
+`_message_format`モジュールのdocstringを参照する。
+agent-toolkitはpytoolsの依存パッケージとして通常のimportで解決する。
+"""
+
+import json
+import pathlib
+import re
+import sys
+import tomllib
+
+from agent_toolkit._hooks.notice import (
+    block_formatter as _block_notice_formatter,
+)
+from agent_toolkit._hooks.notice import (
+    formatter as _notice_formatter,
+)
+from agent_toolkit._hooks.session_state import read_state
+from agent_toolkit._hooks.tool_input import new_content_fields
+from agent_toolkit._plan.locations import new_plans_root
+from agent_toolkit._plan.structure import (
+    is_agent_doc_target_file,
+)
+
+# このスクリプトの hook 識別子。プレフィックス `[auto-generated: dotfiles/claude_hook_pretooluse]` に展開される。
+_HOOK_ID = "dotfiles/claude_hook_pretooluse"
+
+_CLAUDE_LOCAL_MD = "CLAUDE.local.md"
+
+
+_llm_notice = _notice_formatter(_HOOK_ID)
+_block_notice = _block_notice_formatter(_HOOK_ID)
+
+
+def main(payload_text: str) -> int:
+    """エントリポイント。exit code を返す（0 または 2）。"""
+    try:
+        payload = json.loads(payload_text)
+    except (json.JSONDecodeError, ValueError):
+        # 想定外入力ではフックを無効化する（実処理の破損を避ける安全側の判定）。
+        return 0
+
+    tool_name = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_input, dict):
+        return 0
+
+    fields = new_content_fields(tool_name, tool_input)
+    if fields is None:
+        return 0
+
+    file_path_raw = tool_input.get("file_path")
+    file_path = file_path_raw if isinstance(file_path_raw, str) else ""
+    session_id_raw = payload.get("session_id", "")
+    session_id = session_id_raw if isinstance(session_id_raw, str) else ""
+    dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
+
+    # --- block 系 check（最初の違反で exit 2）---
+    if _check_ps1_directives(tool_name, fields, file_path):
+        return 2
+    dotfiles_block, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
+    if dotfiles_block is not None:
+        print(
+            _block_notice(
+                dotfiles_block,
+                fix="Replace the identifiers with generalized wording before editing the distribution file again.",
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    launch_form_block = _check_pytools_command_launch_form(tool_name, fields, file_path, dotfiles_root)
+    if launch_form_block is not None:
+        print(
+            _block_notice(
+                launch_form_block,
+                fix="Drop the runner prefix and call the installed command name directly.",
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    # --- warn 系 check ---
+    warnings: list[str] = []
+    home_claude_warning = _home_claude_edit_warning(tool_name, file_path)
+    if home_claude_warning is not None:
+        warnings.append(home_claude_warning)
+    personal_warning = _personal_file_mentions_warning(tool_name, fields, file_path)
+    if personal_warning is not None:
+        warnings.append(personal_warning)
+    if dotfiles_warn is not None:
+        warnings.append(dotfiles_warn)
+    skill_warning = _agent_toolkit_edit_skill_warning(tool_name, file_path, session_id, dotfiles_root)
+    if skill_warning is not None:
+        warnings.append(skill_warning)
+    reference_docs_warning = _reference_docs_warning(tool_name, file_path, session_id, dotfiles_root)
+    if reference_docs_warning is not None:
+        warnings.append(reference_docs_warning)
+    if warnings:
+        # 組み込みの ask ルール（`.claude/` 配下の確認ダイアログ等）は本フックの allow では
+        # 上書きできない。確認ダイアログの抑制が必要な経路は PermissionRequest フック
+        # （`agent-toolkit/agent_toolkit/_hooks/permissionrequest.py`）で別途処理する。
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "additionalContext": _llm_notice(
+                            " | ".join(warnings),
+                            tag="warn",
+                            removable_cause=True,
+                        ),
+                    }
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    return 0
+
+
+# --- PowerShell 必須ディレクティブ check (block) ---
+
+# 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
+# 行頭厳格マッチ（インデント不可）にすることで「コメント内に文字列が含まれるだけ」や
+# 「関数/条件ブロック内に書かれている（＝スクリプト全体には適用されない）」ケースをブロックする。
+_PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
+        "Set-StrictMode -Version Latest",
+    ),
+    (
+        re.compile(r"^\$ErrorActionPreference\s*=\s*'Stop'", re.MULTILINE),
+        "$ErrorActionPreference = 'Stop'",
+    ),
+)
+
+# 検査する先頭行数（コメントブロックを許容するため広めに取る）。
+_PS1_DIRECTIVES_HEAD_LINES = 50
+
+
+def _is_ps1(file_path: str) -> bool:
+    """対象拡張子か判定する（`.ps1` / `.ps1.tmpl`）。"""
+    lowered = file_path.lower()
+    return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
+
+
+def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
+    """PowerShell スクリプトの冒頭ディレクティブ欠落を検出したら True を返す。
+
+    Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため Write のみを対象とする。
+    LF/CRLF 改行のチェックは `agent-toolkit` プラグイン側で実施しているため重複させない。
+    """
+    if tool_name != "Write" or not _is_ps1(file_path):
+        return False
+    for field, value in fields:
+        # BOM（U+FEFF）は chezmoi テンプレートで使われることがあるため除去してから判定する。
+        normalized = value.lstrip("﻿")
+        head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
+        missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
+        if missing:
+            print(
+                _block_notice(
+                    f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}",
+                    fix=(
+                        "For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
+                        f" and `$ErrorActionPreference = 'Stop'` near the top"
+                        f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
+                    ),
+                ),
+                file=sys.stderr,
+            )
+            return True
+    return False
+
+
+# --- ~/.claude/ 配下の直接編集 check (warn) ---
+
+# 警告対象外のサブツリー（Claude Code のランタイム領域 / プラン作業領域）。
+# 配布対象（rules/ や agents/）は含めない。
+_HOME_CLAUDE_ALLOWED_DIRS: frozenset[str] = frozenset(
+    {
+        "plans",  # plan mode が書き込む計画ファイル
+        "jobs",  # Claude Code が生成するセッション作業領域
+        "scratchpad",  # 一時作業ファイル領域 (chezmoi 管理外)
+        "projects",  # Claude Code のセッション履歴
+        "todos",  # TodoWrite ストレージ
+        "shell-snapshots",  # シェル スナップショット
+        "ide",  # IDE 連携キャッシュ
+        "statsig",  # Statsig SDK のキャッシュ
+    }
+)
+
+# 警告対象外のファイル名（Claude Code 自身が書き換える非 chezmoi 管理ファイル）。
+_HOME_CLAUDE_ALLOWED_NAMES: frozenset[str] = frozenset(
+    {
+        "settings.json",  # Claude Code ランタイム設定 (autoMode 等を自身が書き換える)
+    }
+)
+
+# 警告対象外のファイル名部分一致（`*.local.*` 系ローカル設定）。
+_HOME_CLAUDE_ALLOWED_NAME_SUBSTRING = ".local."
+
+
+def _home_claude_edit_warning(tool_name: str, file_path: str) -> str | None:
+    """`~/.claude/` 配下への直接編集の警告メッセージを返す (該当しなければ None)。
+
+    chezmoi の配布先のため、配布対象ファイルを編集すると次回 `chezmoi apply` で
+    上書きされる。配布元 (`.chezmoi-source/dot_claude/`) を編集すべき。
+    ただし `settings.json` など非 chezmoi 管理ファイルを機械的に判別するのは
+    難しく、誤判定でブロックすると作業が止まるため、警告のみ表示し判断はコーディングエージェントに委ねる。
+    """
+    if not file_path:
+        return None
+    try:
+        target = pathlib.Path(file_path).expanduser()
+        # 相対パスでは ~/.claude 配下か判定できないためスキップする。
+        # （resolve すると CWD 基準で解決され誤検出になり得るので resolve 前に判定する）
+        if not target.is_absolute():
+            return None
+        # `.` / `..`・シンボリックリンクを解消して字句比較の迂回を防ぐ。
+        # strict=False で存在しないパスでも例外を送出しない。
+        target = target.resolve(strict=False)
+        home_claude = (pathlib.Path.home() / ".claude").resolve(strict=False)
+    except (ValueError, OSError):
+        return None
+    try:
+        rel = target.relative_to(home_claude)
+    except ValueError:
+        return None
+    parts = rel.parts
+    if not parts:
+        # `~/.claude` そのもの（実際にはディレクトリ）は対象外。
+        return None
+    if parts[0] in _HOME_CLAUDE_ALLOWED_DIRS:
+        return None
+    if rel.name in _HOME_CLAUDE_ALLOWED_NAMES:
+        return None
+    if _HOME_CLAUDE_ALLOWED_NAME_SUBSTRING in rel.name:
+        return None
+    return (
+        f"{tool_name} targets ~/.claude/ ({file_path})."
+        " If this file is distributed via chezmoi, edit `.chezmoi-source/dot_claude/` instead"
+        " (direct edits will be overwritten on next `chezmoi apply`)."
+        " Proceed only if the target is a non-chezmoi runtime/config file."
+    )
+
+
+# --- 個人用 / ローカル専用ファイル言及 check (warn) ---
+
+# ファイル名に連続アンダースコア（3〜7 文字）を含むトークンを検出する。
+# 個人用メモの慣習として使われるファイル名パターン。
+# 8 文字以上の連続アンダースコアは区切り線等の装飾用途とみなし対象外とする。
+# `[^\W_]` でアンダースコア列の前後を非アンダースコアの word 文字に限定し、
+# `(?!_)` で列が 7 文字を超えないことを保証する。
+# `re.ASCII` を指定していないため `\w` は Unicode の word 文字を表し、
+# 非 ASCII の文字を含むトークンも検出対象となる。
+# `\b` でword境界に固定することで、トークンの内側の部分マッチを避ける。
+_UNDERSCORE_RUN_TOKEN_PATTERN = re.compile(r"\b\w*[^\W_]_{3,7}(?!_)[^\W_]\w*\b")
+
+# 3〜7 文字の連続アンダースコアを検出するパターン（ファイル名判定用）。
+_SHORT_UNDERSCORE_RUN = re.compile(r"(?<!_)_{3,7}(?!_)")
+
+
+def _is_claude_local_md(file_path: str) -> bool:
+    """ファイルパス自体が CLAUDE.local.md かを判定する (言及チェック除外用)。"""
+    if not file_path:
+        return False
+    # パス区切りを正規化してファイル名を取得
+    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    return name == _CLAUDE_LOCAL_MD
+
+
+def _has_underscore_run_filename(file_path: str) -> bool:
+    """ファイル名自体に 3〜7 文字の連続アンダースコアが含まれるかを判定する (言及チェック除外用)。"""
+    if not file_path:
+        return False
+    name = file_path.replace("\\", "/").rsplit("/", 1)[-1]
+    return bool(_SHORT_UNDERSCORE_RUN.search(name))
+
+
+def _is_under_claude_plans(file_path: str) -> bool:
+    """書き込み先パスが新旧いずれかの計画root配下かを判定する (言及チェック除外用)。
+
+    計画root配下は版管理対象外または専用保存先の計画ファイル領域で、版管理経由での
+    ファイル名漏洩リスクが存在しないため警告を抑止する設計とする。
+    """
+    if not file_path:
+        return False
+    try:
+        resolved = pathlib.Path(file_path).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError):
+        return False
+    plans_dirs = (
+        (pathlib.Path.home() / ".claude" / "plans").resolve(strict=False),
+        new_plans_root().resolve(strict=False),
+    )
+    return any(resolved.is_relative_to(plans_dir) for plans_dir in plans_dirs)
+
+
+def _personal_file_mentions_warning(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """個人用 / ローカル専用ファイルの言及の警告メッセージを返す (該当しなければ None)。
+
+    対象は `CLAUDE.local.md` と、ファイル名に 3〜7 文字の連続アンダースコアを含むトークン。
+    対象ファイル自身の編集および書き込み先が新旧いずれかの計画root配下の場合は警告をスキップする。
+    文脈依存の判断はコーディングエージェントに委ね、hook は緩い警告のみを表示してブロックはしない。
+    """
+    if _is_under_claude_plans(file_path):
+        return None
+    messages: list[str] = []
+    if not _is_claude_local_md(file_path):
+        for field, value in fields:
+            if _CLAUDE_LOCAL_MD in value:
+                messages.append(f"'{_CLAUDE_LOCAL_MD}' in {tool_name}.{field}")
+                break
+    if not _has_underscore_run_filename(file_path):
+        for field, value in fields:
+            match = _UNDERSCORE_RUN_TOKEN_PATTERN.search(value)
+            if match:
+                messages.append(
+                    f"'{match.group()}' (filename-like token containing a run of 3-7 underscores) in {tool_name}.{field}"
+                )
+                break
+    if not messages:
+        return None
+    return (
+        "detected possible mention(s) of local-only personal file(s): "
+        + "; ".join(messages)
+        + ". Such files are typically gitignored personal memos."
+        " Referencing them from version-controlled files is often unintentional"
+        " and risks leaking the filename via ignore-lists or stale references."
+        " On the other hand, recommending end users to create their own local memo"
+        " file (e.g., in distributed docs/skills) is legitimate."
+        " Judge the context and keep the mention only if it is intentional."
+    )
+
+
+# --- agent-toolkit 配布物への dotfiles 固有名混入 check (block + warn) ---
+
+# 個人プロジェクト名の固定リスト。
+# ファイルシステムから機械的に取得できないため明示的に持つ。
+# OSS として紹介する想定がある pyfltr / pytilpack は warn にとどめ、
+# それ以外（個人非公開・特定プラットフォーム専用）は block する。
+_PERSONAL_PROJECTS_BLOCK: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
+_PERSONAL_PROJECTS_WARN: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
+# 配布物文面で参照する外部 CLI 名の許容リスト。
+# 配布物側が `command -v` 等で存在検査を行い、CLI 不在時に安全にフォールバックする
+# 分岐構造を取る場合に限り登録する。block / warn のいずれからも除外され、
+# 配布物文面 (`agent-toolkit/` 配下) への記述が許可される。
+# 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_BLOCK` との非衝突など) を確認する。
+_EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"atk"})
+
+
+def _check_dotfiles_specific_names(
+    tool_name: str, fields: list[tuple[str, str]], file_path: str
+) -> tuple[str | None, str | None]:
+    """agent-toolkit 配布物への dotfiles 固有名混入を検出する。
+
+    対象範囲は `agent-toolkit/` 配下。
+    block 対象は配布先のエンドユーザーにとって意味不明な参照となるため exit 2 で停止する。
+    warn 対象 (`pyfltr` / `pytilpack`) は OSS として正規参照される場合があるため通知のみ。
+
+    `(block_message, warn_message)` を返す。該当なしの側は None。
+    """
+    if not file_path:
+        return None, None
+    dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
+    if not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
+        return None, None
+    block_names, warn_names = _build_dotfiles_specific_names(dotfiles_root)
+    block_hits = _collect_word_hits(tool_name, fields, block_names)
+    warn_hits = _collect_word_hits(tool_name, fields, warn_names)
+    block_msg: str | None = None
+    if block_hits:
+        block_msg = (
+            "agent-toolkit distribution must not contain dotfiles-specific identifiers."
+            f" Hits: {'; '.join(block_hits)}."
+            " Personal skill names, pytools commands, scripts, and personal project names"
+            " like glatasks/gv/lc/smpr leak repository internals."
+            f" Target: {file_path}"
+        )
+    warn_msg: str | None = None
+    if warn_hits:
+        warn_msg = (
+            "agent-toolkit distribution references possibly dotfiles-related projects: "
+            + "; ".join(warn_hits)
+            + ". These names are personal projects but commonly referenced as OSS."
+            " Verify the reference is intentional and accurate."
+            f" Target: {file_path}"
+        )
+    return block_msg, warn_msg
+
+
+# --- 配布コマンドの起動形 check (block) ---
+
+# `uv tool run` と `uvx` の起動形の先頭を検出する。以降のトークンは走査で読み進める。
+_UV_TOOL_LAUNCH_PREFIX_RE = re.compile(r"\b(?:uvx|uv[ \t]+tool[ \t]+run)(?=[ \t]|$)")
+
+# 起動形の走査を打ち切る文字。コマンドの連結・パイプ・引用は起動形の外側とみなす。
+_UV_LAUNCH_STOP_CHARS = ";&|)`\"'"
+
+# 起動されるコマンド名として判定対象にする形。
+_UV_COMMAND_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9._-]*")
+
+# `uvx`と`uv tool run`が受理する、値を伴うオプションの名前。
+# uv 0.12.5の`uvx --help`が値の位置を示す形で表示するオプションから取得した。
+# 一覧に無いオプションは値を伴わないものとして扱うため、uv側の追加時は同じ手順で更新する。
+_UV_VALUE_OPTIONS: frozenset[str] = frozenset(
+    {
+        "--allow-insecure-host",
+        "--build-constraints",
+        "--cache-dir",
+        "--color",
+        "--config-file",
+        "--config-setting",
+        "--config-settings-package",
+        "--constraints",
+        "--default-index",
+        "--directory",
+        "--env-file",
+        "--exclude-newer",
+        "--exclude-newer-package",
+        "--extra-index-url",
+        "--find-links",
+        "--fork-strategy",
+        "--from",
+        "--index",
+        "--index-strategy",
+        "--index-url",
+        "--keyring-provider",
+        "--link-mode",
+        "--no-binary-package",
+        "--no-build-isolation-package",
+        "--no-build-package",
+        "--no-sources-package",
+        "--overrides",
+        "--prerelease",
+        "--prerelease-package",
+        "--project",
+        "--python",
+        "--python-platform",
+        "--refresh-package",
+        "--reinstall-package",
+        "--resolution",
+        "--torch-backend",
+        "--upgrade-group",
+        "--upgrade-package",
+        "--with",
+        "--with-editable",
+        "--with-requirements",
+        "-C",
+        "-P",
+        "-b",
+        "-c",
+        "-f",
+        "-i",
+        "-p",
+        "-w",
+    }
+)
+
+
+def _find_uv_tool_launches(value: str) -> list[tuple[str, str]]:
+    """`uvx`・`uv tool run`の起動形と、そこで起動されるコマンド名の組を列挙する。
+
+    行をまたぐ起動形は扱わないため行単位で走査する。
+    起動形の先頭からトークンを読み進め、オプション区間を越えた最初のコマンド名を取り出す。
+    """
+    launches: list[tuple[str, str]] = []
+    for line in value.splitlines():
+        for match in _UV_TOOL_LAUNCH_PREFIX_RE.finditer(line):
+            found = _scan_launched_command(line, match.end())
+            if found is None:
+                continue
+            name, end = found
+            launches.append((line[match.start() : end], name))
+    return launches
+
+
+def _scan_launched_command(line: str, start: int) -> tuple[str, int] | None:
+    """起動形の先頭の直後から走査し、コマンド名と当該トークンの終端位置を返す。
+
+    値を伴うオプションは一覧に基づいて判定し、次のトークンをコマンド名の候補から除く。
+    `=`を含むオプションは値を同じトークンへ持つため、次のトークンを候補から除かない。
+    """
+    position = start
+    skip_value = False
+    while position < len(line):
+        while position < len(line) and line[position] in " \t":
+            position += 1
+        end = position
+        while end < len(line) and line[end] not in " \t":
+            end += 1
+        token = line[position:end]
+        if not token or any(char in token for char in _UV_LAUNCH_STOP_CHARS):
+            return None
+        if skip_value:
+            skip_value = False
+        elif token.startswith("-"):
+            skip_value = "=" not in token and token in _UV_VALUE_OPTIONS
+        elif _UV_COMMAND_NAME_RE.fullmatch(token) is None:
+            return None
+        else:
+            return token, end
+        position = end
+    return None
+
+
+def _check_pytools_command_launch_form(
+    tool_name: str,
+    fields: list[tuple[str, str]],
+    file_path: str,
+    dotfiles_root: pathlib.Path,
+) -> str | None:
+    """本リポジトリが配布するコマンドを解決できない起動形で書く記述を検出する。
+
+    `uv tool run <name>` と `uvx <name>` は `<name>` を同名パッケージとしてレジストリから
+    解決する。本リポジトリの `[project.scripts]` が提供するコマンドは `uv tool install` で
+    導入したエントリポイント名であり、同名パッケージが存在しないためこれらの起動形は失敗する。
+    判定対象の名前は `[project.scripts]` から取得し、検査側では列挙しない。
+    検出範囲は本リポジトリのチェックアウト内のファイルへの書き込みに限る。
+    フックを無効化した環境と、フックを経由しない書き込み（`git` による取り込み、
+    外部エディターでの編集）は検出しない。
+    """
+    if not file_path:
+        return None
+    checkout_root = _find_git_checkout_root(file_path)
+    if checkout_root is None or not _is_dotfiles_checkout(checkout_root, dotfiles_root):
+        return None
+    commands = _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
+    if not commands:
+        return None
+    for field, value in fields:
+        for launch, name in _find_uv_tool_launches(value):
+            if name not in commands:
+                continue
+            return (
+                f"{tool_name}.{field}: `{launch}` resolves '{name}' as a registry package,"
+                " but this repository ships it as an entry point installed via `uv tool install`,"
+                " so the launch form fails at run time."
+                f" Target: {file_path}"
+            )
+    return None
+
+
+# --- agent-toolkit-edit スキル未起動警告 check (warn) ---
+
+
+def _agent_toolkit_edit_skill_warning(
+    tool_name: str,
+    file_path: str,
+    session_id: str,
+    dotfiles_root: pathlib.Path,
+) -> str | None:
+    """`agent-toolkit/` 配下編集時の `agent-toolkit-edit` スキル未起動警告を返す。
+
+    `agent-toolkit-edit` スキルは bump 種別判定・行数規定・編集手順を提供する。
+    PostToolUse (`pytools/claude_hook/posttooluse.py`) が当該スキル呼び出しを観測し
+    セッション状態の `agent_toolkit_edit_skill_invoked` を真にする。
+    """
+    if tool_name not in {"Write", "Edit", "MultiEdit"}:
+        return None
+    if not session_id:
+        return None
+    if not _is_in_agent_toolkit_distribution(file_path, dotfiles_root):
+        return None
+    state = read_state(session_id)
+    if state.get("agent_toolkit_edit_skill_invoked", False):
+        return None
+    return (
+        "editing files under `agent-toolkit/` without invoking the"
+        " `agent-toolkit-edit` skill first."
+        " Invoke the skill to load bump policy, 200-line guideline,"
+        " and editing workflow before proceeding."
+    )
+
+
+# --- コーディングエージェント向け文書の参照警告 check (warn) ---
+
+_REFERENCE_DOCS: tuple[pathlib.PurePosixPath, ...] = (
+    pathlib.PurePosixPath("docs/development/concepts.md"),
+    pathlib.PurePosixPath("docs/development/incidents.md"),
+)
+
+
+def _reference_docs_warning(
+    tool_name: str,
+    file_path: str,
+    session_id: str,
+    dotfiles_root: pathlib.Path,
+) -> str | None:
+    """同じdotfilesチェックアウトにある参照文書の未読警告を返す。"""
+    if tool_name not in {"Write", "Edit", "MultiEdit"} or not session_id:
+        return None
+    if not is_agent_doc_target_file(file_path):
+        return None
+    checkout_root = _find_git_checkout_root(file_path)
+    if checkout_root is None or not _is_dotfiles_checkout(checkout_root, dotfiles_root):
+        return None
+
+    expected = {
+        str((checkout_root / pathlib.Path(*relative.parts)).resolve(strict=False)): relative.as_posix()
+        for relative in _REFERENCE_DOCS
+    }
+    state = read_state(session_id)
+    recorded_raw = state.get("dotfiles_reference_docs_read", [])
+    recorded = {item for item in recorded_raw if isinstance(item, str)} if isinstance(recorded_raw, list) else set()
+    missing = [relative for absolute, relative in expected.items() if absolute not in recorded]
+    if not missing:
+        return None
+    paths = ", ".join(f"`{path}`" for path in missing)
+    return (
+        f"read {paths} in this checkout before editing coding-agent documentation."
+        " Continue the edit after using Read on the missing reference documents."
+    )
+
+
+def _find_git_checkout_root(file_path: str) -> pathlib.Path | None:
+    """絶対パスの祖先から`.git`を持つ最寄りのチェックアウトルートを返す。"""
+    if not file_path:
+        return None
+    try:
+        target = pathlib.Path(file_path).expanduser()
+        if not target.is_absolute():
+            return None
+        target = target.resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    current = target if target.is_dir() else target.parent
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def _resolve_git_dir(checkout_root: pathlib.Path) -> pathlib.Path | None:
+    """チェックアウトの`.git`ディレクトリ又はgitfileの参照先を返す。"""
+    marker = checkout_root / ".git"
+    try:
+        if marker.is_dir():
+            return marker.resolve(strict=False)
+        if not marker.is_file():
+            return None
+        line = marker.read_text(encoding="utf-8").splitlines()[0]
+    except (IndexError, OSError, UnicodeError):
+        return None
+    prefix = "gitdir:"
+    if not line.lower().startswith(prefix):
+        return None
+    raw = pathlib.Path(line[len(prefix) :].strip())
+    if not raw.is_absolute():
+        raw = checkout_root / raw
+    return raw.resolve(strict=False)
+
+
+def _is_dotfiles_checkout(checkout_root: pathlib.Path, dotfiles_root: pathlib.Path) -> bool:
+    """チェックアウトがdotfiles本体又はそのworktreeなら真を返す。"""
+    dotfiles_git_dir = _resolve_git_dir(dotfiles_root)
+    checkout_git_dir = _resolve_git_dir(checkout_root)
+    if dotfiles_git_dir is None or checkout_git_dir is None:
+        return False
+    dotfiles_marker = dotfiles_root / ".git"
+    common_git_dir = (
+        dotfiles_git_dir.parent.parent
+        if dotfiles_marker.is_file() and dotfiles_git_dir.parent.name == "worktrees"
+        else dotfiles_git_dir
+    )
+    if checkout_git_dir == common_git_dir:
+        return True
+    try:
+        relative = checkout_git_dir.relative_to(common_git_dir / "worktrees")
+    except ValueError:
+        return False
+    return bool(relative.parts)
+
+
+def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:
+    """対象ファイルが agent-toolkit 配布範囲のいずれかに含まれるかを判定する。
+
+    相対パスでは判定不能なためスキップする（resolve は CWD 基準で解決され誤検出になり得る）。
+    """
+    try:
+        target = pathlib.Path(file_path).expanduser()
+        if not target.is_absolute():
+            return False
+        target = target.resolve(strict=False)
+    except (ValueError, OSError):
+        return False
+    for base in _agent_toolkit_distribution_roots(dotfiles_root):
+        try:
+            target.relative_to(base.resolve(strict=False))
+            return True
+        except (ValueError, OSError):
+            continue
+    return False
+
+
+def _agent_toolkit_distribution_roots(dotfiles_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """マーケットプレイス経由で配布されるディレクトリの一覧を返す。"""
+    return (dotfiles_root / "agent-toolkit",)
+
+
+def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozenset[str], frozenset[str]]:
+    """Dotfiles 固有名 (block 対象 / warn 対象) を返す。
+
+    block 対象は次の 5 カテゴリの動的取得結果と固定の個人プロジェクト名の和集合。
+    各カテゴリは対象ディレクトリ未存在時に空集合を返す。
+    """
+    block: set[str] = set()
+    block |= _list_subdirs(dotfiles_root / ".chezmoi-source" / "dot_claude" / "skills")
+    block |= _list_subdirs(dotfiles_root / ".claude" / "skills")
+    block |= _list_pyproject_scripts(dotfiles_root / "pyproject.toml")
+    block |= _list_pytools_modules(dotfiles_root / "pytools")
+    block |= _list_scripts_modules(dotfiles_root / "scripts")
+    block |= _PERSONAL_PROJECTS_BLOCK
+    # warn 対象が誤って block に混入した場合は warn を優先する（保守的措置）。
+    block -= _PERSONAL_PROJECTS_WARN
+    # 存在検査付きで参照することを許容する外部 CLI 名は block・warn のいずれからも除外する。
+    block -= _EXTERNAL_CLI_ALLOWED
+    return frozenset(block), _PERSONAL_PROJECTS_WARN - _EXTERNAL_CLI_ALLOWED
+
+
+def _list_subdirs(path: pathlib.Path) -> set[str]:
+    """ディレクトリ直下のサブディレクトリ名を返す。未存在なら空集合。"""
+    if not path.is_dir():
+        return set()
+    return {child.name for child in path.iterdir() if child.is_dir()}
+
+
+def _list_pyproject_scripts(path: pathlib.Path) -> set[str]:
+    """`pyproject.toml` の `[project.scripts]` キー名を返す。読み込み失敗時は空集合。"""
+    if not path.is_file():
+        return set()
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, tomllib.TOMLDecodeError):
+        return set()
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return set()
+    scripts = project.get("scripts")
+    if not isinstance(scripts, dict):
+        return set()
+    return {name for name in scripts if isinstance(name, str)}
+
+
+def _list_pytools_modules(path: pathlib.Path) -> set[str]:
+    """`pytools/` 直下のモジュール名（拡張子除去）を返す。`__init__.py` と `_internal/` は除外。"""
+    if not path.is_dir():
+        return set()
+    return {child.stem for child in path.glob("*.py") if child.name != "__init__.py"}
+
+
+def _list_scripts_modules(path: pathlib.Path) -> set[str]:
+    """`scripts/` 直下のスクリプト名（拡張子除去）を返す。`*_test.py` は除外。"""
+    if not path.is_dir():
+        return set()
+    names: set[str] = set()
+    for child in list(path.glob("*.py")) + list(path.glob("*.sh")):
+        if child.suffix == ".py" and child.name.endswith("_test.py"):
+            continue
+        names.add(child.stem)
+    return names
+
+
+def _collect_word_hits(tool_name: str, fields: list[tuple[str, str]], names: frozenset[str]) -> list[str]:
+    """単語境界マッチで各フィールドから検出された名前を `'name' in field` 形式で列挙する。
+
+    同名が複数フィールドで出ても 1 件だけ記録する。
+    """
+    hits: list[str] = []
+    seen: set[str] = set()
+    for field, value in fields:
+        for name in sorted(names):
+            if name in seen:
+                continue
+            if re.search(rf"\b{re.escape(name)}\b", value):
+                hits.append(f"'{name}' in {tool_name}.{field}")
+                seen.add(name)
+    return hits

@@ -384,7 +384,7 @@ def _prerequisites_ok() -> bool:
         logger.info(log_format.format_status("plugins", "claude CLI 未検出のためスキップ"))
         return False
     if claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
-        logger.info(log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook は uv run --script を使う)"))
+        logger.info(log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook はuvプロジェクトを使う)"))
         return False
     return True
 

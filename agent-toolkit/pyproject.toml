@@ -1,0 +1,118 @@
+[project]
+name = "agent-toolkit"
+version = "0.1.0"
+description = "Coding agent workflow toolkit"
+requires-python = ">=3.12"
+dependencies = [
+    "argcomplete",
+    "claude-agent-sdk>=0.2.144,<0.3",
+    "filelock>=3.30",
+    "markdown-it-py[linkify]>=4.0.0",
+    "mcp>=1.28.1,<2",
+    "mdit-py-plugins>=0.6",
+    "platformdirs>=4.0",
+    "pydantic>=2",
+    "pyfltr>=3.17.7",
+    "pytilpack[quart]>=1.47.0",
+    "pyyaml",
+    "watchdog>=6.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_toolkit"]
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.26",
+    "playwright>=1.61.0",
+    "pyfltr[python]>=3.17.7",
+    "pytest-asyncio>=1.0",
+    "pytest-timeout>=2",
+    "pytest-xdist>=3.8.0",
+    "types-PyYAML",
+]
+
+[tool.uv]
+exclude-newer = "1 day"
+exclude-newer-package = { pyfltr = false, pytilpack = false }
+override-dependencies = ["mcp>=1.28.1,<2"]
+
+[tool.pyfltr]
+preset = "latest"
+python = true
+lychee-exclude = ["agent_toolkit/_atk/serve/static/index.html"]
+
+[tool.pylint."messages control"]
+disable = [
+    "broad-exception-caught",
+    "duplicate-code",
+    "fixme",
+    "invalid-name",
+    "line-too-long",
+    "logging-fstring-interpolation",
+    "logging-not-lazy",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "no-else-return",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-boolean-expressions",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-nested-blocks",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "too-many-return-statements",
+    "too-many-statements",
+]
+
+[tool.arid]
+min-lines = 10
+baseline = "arid-baseline.json"
+
+[tool.ruff]
+line-length = 128
+
+[tool.ruff.lint]
+select = ["D", "E", "F", "UP", "B", "SIM", "ICN", "I"]
+ignore = ["D107", "D415"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"**_test.py" = ["D"]
+"**/__init__.py" = ["D104"]
+
+[tool.mypy]
+allow_redefinition = true
+check_untyped_defs = true
+explicit_package_bases = true
+ignore_missing_imports = true
+strict_optional = true
+strict_equality = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+addopts = [
+    "--showlocals",
+    "-p", "no:cacheprovider",
+    "--maxfail=5",
+    "--durations=30",
+    "--durations-min=0.5",
+    "--timeout=60",
+]
+markers = ["browser: Chromiumを使う実ブラウザー統合テスト"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

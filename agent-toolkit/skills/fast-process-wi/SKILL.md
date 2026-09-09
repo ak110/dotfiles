@@ -41,7 +41,7 @@ AWIとUWIの共通概念、由来、承認、状態及び投入は`../wi-standar
 ## 実行順
 
 1. `atk wi list --status=processable --target-repo=<repo> --skip-pull`で候補を取得し、`atk wi show`で各本文を読む。「本スキルを選ぶ場面」の区分を全件へ適用し、項目ごとに直接実装経路と計画経路のいずれかへ割り当てる
-2. 処理対象のファイル名を`atk wi start-processing <filename>... --target-repo=<repo>`で`processing`へ移し、当該集合を固定する。実行後に全件が`processing`へ配置されたことを確認する
+2. 処理対象のファイル名を`atk wi start-processing <filename>... --target-repo=<repo>`で`processing`へ移し、当該集合を固定する
 3. `git -C <対象リポジトリの絶対パス> rev-parse HEAD`で処理開始時点の完全OIDを取得し、当該処理回の起点OIDとして保持する。以降の手順で取得し直さない
 4. 計画経路の項目がある場合は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`を全文読み、計画担当を起動する。起動文へは`起動経路: agent-toolkit:fast-process-wi`の行を含める。計画ファイルの分割の要否は`../plan-mode/references/plan-file-standards.md`の「計画ファイルの分割」が定める。`計画作成完了`を受領した後、`${CLAUDE_PLUGIN_ROOT}/share/plan-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を全文読み、計画レビューを収束させる。計画経路の項目が1件も無い場合は本手順を実行しない
 5. 主作業ツリーで全項目を実装する。計画経路の項目は手順4で確定した計画ファイル（詳細）の`### 実装単位`に従って実装し、直接実装経路の項目は計画ファイルを作成せずに実装する。いずれの経路でも専用worktreeを作成せず、通常型AWIを計画型へ変換しない。直接実装経路では、公開応答・状態遷移・共有データ・識別子・選択子のいずれかを変更する項目の消費側と状態数を確認する。同じ値を読む消費側が2件以上又は終端を含む状態が2種類以上ある場合は、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`の`## 実装`の手順8が計画を受領しない経路へ定める記録と独立再走査を適用する

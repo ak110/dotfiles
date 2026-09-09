@@ -7,8 +7,9 @@ import sys
 import agent_toolkit_bump as bump
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"))
-from _plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit"))
+# pylint: disable-next=wrong-import-position,import-error
+from agent_toolkit._plan import structure as _plan_format  # noqa: E402
 
 
 class TestParseVersion:

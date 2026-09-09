@@ -34,7 +34,7 @@ uvx pyfltr run --commands=colloquial-check --enable=colloquial-check --no-exclud
 日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`scripts/check_dash.py`で検査する。
 
 ```sh
-uv run --script path/to/writing-standards/scripts/check_dash.py path/to/file.md
+uv run --project <plugin rootの絶対パス> --locked --no-default-groups path/to/writing-standards/scripts/check_dash.py path/to/file.md
 ```
 
 コードブロック・インラインコード・URL内は対象外とし、検出対象の詳細は`check_dash.py`を正本とする。

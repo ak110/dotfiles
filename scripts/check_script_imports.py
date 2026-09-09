@@ -8,7 +8,7 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
 スクリプトを実行しない静的解析（`ast.parse`）のみで判定し、副作用を起こさない。
 対象種別ごとに検査方式を分ける。
 
-- 対象種別1: `scripts/`・`agent-toolkit/scripts/`・`agent-toolkit/skills/*/scripts/`
+- 対象種別1: `scripts/`・`agent-toolkit/scripts/`
   配下のPEP 723単独実行スクリプト（`*_test.py`を除く）。起点ごとのPEP 723依存と、
   静的に評価できる`sys.path.insert`が示す探索パスを用い、到達する内部モジュールを
   推移走査する。`ImportError`または`ModuleNotFoundError`で保護されたimportは除外する
@@ -16,8 +16,10 @@ r"""PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検�
   参照先モジュールファイルが実在するか、当該ファイル内に対象関数の定義（または再エクスポートによる
   束縛）が存在するかを`ast.parse`で確認する。プロジェクト依存の解決は`--no-project`環境では
   成立しないため対象外とする
-- 対象種別3: `agent-toolkit/scripts/`配下の責務別サブパッケージを再帰走査し、
+- 対象種別3: `agent-toolkit/agent_toolkit/`配下の責務別サブパッケージを再帰走査し、
   層の順序に反する絶対importと、非テストモジュールから`_testing`へのimportを検出する
+- 対象種別4: `agent-toolkit/agent_toolkit/`と`agent-toolkit/skills/*/scripts/`を走査し、
+  uvプロジェクトへ集約したPythonからPEP 723宣言が除去されていることを検査する
 
 スクリプトをimportまたは実行する方式は採らない。生成処理・ファイル書き込みなどの副作用を
 実行し得るうえ、`--help`への対応も保証されていないため。
@@ -66,7 +68,6 @@ def _script_directories() -> tuple[pathlib.Path, ...]:
     directories = [
         _REPO_ROOT / "scripts",
         _REPO_ROOT / "agent-toolkit/scripts",
-        *sorted((_REPO_ROOT / "agent-toolkit/skills").glob("*/scripts")),
     ]
     return tuple(path for path in directories if path.is_dir())
 
@@ -355,7 +356,7 @@ def _check_script_directories() -> list[str]:
 
 def _check_agent_toolkit_layers() -> list[str]:
     """agent-toolkitの責務層に反するimportを返す。"""
-    scripts_root = _REPO_ROOT / "agent-toolkit/scripts"
+    scripts_root = _REPO_ROOT / "agent-toolkit/agent_toolkit"
     order = {name: index for index, name in enumerate(_LAYER_ORDER)}
     problems: list[str] = []
     for layer in (*_LAYER_ORDER, "_testing"):
@@ -367,11 +368,29 @@ def _check_agent_toolkit_layers() -> list[str]:
                 continue
             tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
             for reference in _extract_imports(tree):
-                imported_layer = reference.name.partition(".")[0]
+                components = reference.name.split(".")
+                imported_layer = components[1] if components[0] == "agent_toolkit" and len(components) > 1 else components[0]
                 if imported_layer == "_testing" and not source_path.name.endswith("_test.py"):
                     problems.append(f"{_display_path(source_path)}: 非テストモジュールから`_testing`をimportしている")
                 elif imported_layer in order and layer in order and order[imported_layer] > order[layer]:
                     problems.append(f"{_display_path(source_path)}: 層の順序に反して`{imported_layer}`をimportしている")
+    return problems
+
+
+def _check_project_modules_have_no_pep723() -> list[str]:
+    """uvプロジェクトで動くPythonモジュールにPEP 723宣言が残っていないことを検査する。"""
+    roots = (
+        _REPO_ROOT / "agent-toolkit/agent_toolkit",
+        *sorted((_REPO_ROOT / "agent-toolkit/skills").glob("*/scripts")),
+    )
+    problems: list[str] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            if "# /// script" in text:
+                problems.append(f"{_display_path(path)}: uvプロジェクト配下にPEP 723宣言が残っている")
     return problems
 
 
@@ -429,7 +448,12 @@ def _check_project_scripts() -> list[str]:
 
 def main() -> int:
     """PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検査する。"""
-    problems = _check_script_directories() + _check_project_scripts() + _check_agent_toolkit_layers()
+    problems = (
+        _check_script_directories()
+        + _check_project_scripts()
+        + _check_agent_toolkit_layers()
+        + _check_project_modules_have_no_pep723()
+    )
     for problem in problems:
         print(f"error: {problem}", file=sys.stderr)
     return 1 if problems else 0

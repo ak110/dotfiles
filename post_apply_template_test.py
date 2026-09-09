@@ -77,7 +77,10 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     stop_loop = text.index("foreach ($p in $restorableProcs)")
     stop_process = text.index("Stop-Process -Id $p.ProcessId", stop_loop)
     install_guard = text.index("if ($needsReinstall -and -not $reinstallDeferred)")
-    install = text.index('& uv tool install --editable "{{ .chezmoi.workingTree }}"')
+    install = text.index(
+        '& uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" '
+        '--editable "{{ .chezmoi.workingTree }}"'
+    )
     deferred = text.index("} elseif ($reinstallDeferred) {")
 
     assert classification < guard < stop_loop < stop_process < install_guard < install < deferred
@@ -87,6 +90,8 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     assert "Stop-Process" not in text[guard:stop_loop]
     assert "再インストールを次回へ延期" in text[guard:stop_loop]
     assert "既存版で後続処理を継続" in text[deferred:]
+    assert text.count("Get-CimInstance Win32_Process") == 1
+    assert text.count("Get-PytoolsEnvLockingProcess") == 3
 
 
 def test_windows_install_failure_records_state_and_detail() -> None:
@@ -114,19 +119,22 @@ def test_windows_locking_processes_classify_and_record_restart_state(
     end = text.index("\n\n# post-apply 配下の出力", start)
     process_handling = text[start:end]
 
-    def run_scenario(name: str, fixtures: str) -> dict[str, object]:
+    def run_scenario(
+        name: str,
+        fixtures: str,
+        setup: str,
+        body: str,
+        result_expression: str,
+    ) -> tuple[dict[str, object], list[str]]:
         script = tmp_path / f"{name}.ps1"
         script.write_text(
             """Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$needsReinstall = $true
-$mediaRemoteWasRunning = $false
-$reinstallDeferred = $false
-$uvToolDir = 'C:\\tools\\pytools'
-$mediaRemoteBin = 'C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe'
-$env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
-$env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
+"""
+            + setup
+            + """
 $stopped = @()
+$getCimCalls = 0
 $fixtures = @(
 """
             + fixtures
@@ -134,6 +142,7 @@ $fixtures = @(
 function Get-CimInstance {
     [CmdletBinding()]
     param([string] $ClassName)
+    $script:getCimCalls += 1
     return $fixtures
 }
 function Stop-Process {
@@ -148,17 +157,9 @@ function Start-Sleep {
 """
             + classifier
             + "\n"
-            + process_handling
-            + """
-[pscustomobject]@{
-    Locking = @($lockingProcs | ForEach-Object { $_.ProcessId })
-    Restorable = @($restorableProcs | ForEach-Object { $_.ProcessId })
-    Unrestorable = @($unrestorableProcs | ForEach-Object { $_.ProcessId })
-    Stopped = @($stopped)
-    MediaRemoteWasRunning = $mediaRemoteWasRunning
-    ReinstallDeferred = $reinstallDeferred
-} | ConvertTo-Json -Compress
-""",
+            + body
+            + "\n"
+            + result_expression,
             encoding="utf-8-sig",
         )
         completed = subprocess.run(
@@ -169,18 +170,42 @@ function Start-Sleep {
         )
 
         assert completed.returncode == 0, completed.stderr or completed.stdout
-        return json.loads(completed.stdout.splitlines()[-1])
+        output = completed.stdout.splitlines()
+        return json.loads(output[-1]), output[:-1]
 
-    distributed_exe = run_scenario(
-        "distributed-media-remote",
-        """    [pscustomobject]@{
+    def run_reinstall_scenario(name: str, fixtures: str) -> tuple[dict[str, object], list[str]]:
+        return run_scenario(
+            name,
+            fixtures,
+            """$needsReinstall = $true
+$mediaRemoteWasRunning = $false
+$reinstallDeferred = $false
+$uvToolDir = 'C:\\tools\\pytools'
+$mediaRemoteBin = 'C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe'
+$env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
+$env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
+""",
+            process_handling,
+            """[pscustomobject]@{
+    Locking = @($lockingProcs | ForEach-Object { $_.ProcessId })
+    Restorable = @($restorableProcs | ForEach-Object { $_.ProcessId })
+    Unrestorable = @($unrestorableProcs | ForEach-Object { $_.ProcessId })
+    Stopped = @($stopped)
+    MediaRemoteWasRunning = $mediaRemoteWasRunning
+    ReinstallDeferred = $reinstallDeferred
+    GetCimCalls = $getCimCalls
+} | ConvertTo-Json -Compress
+""",
+        )
+
+    distributed_fixture = """    [pscustomobject]@{
         ProcessId = 1
         Name = 'DOTFILES-MEDIA-REMOTE.EXE'
         ExecutablePath = 'C:\\USERS\\TEST\\.LOCAL\\BIN\\DOTFILES-MEDIA-REMOTE.EXE'
         CommandLine = 'dotfiles-media-remote.exe serve'
     }
-""",
-    )
+"""
+    distributed_exe, distributed_output = run_reinstall_scenario("distributed-media-remote", distributed_fixture)
     assert distributed_exe == {
         "Locking": [1],
         "Restorable": [1],
@@ -188,11 +213,11 @@ function Start-Sleep {
         "Stopped": [1],
         "MediaRemoteWasRunning": True,
         "ReinstallDeferred": False,
+        "GetCimCalls": 1,
     }
+    assert "  [pytools] 更新対象の使用中プロセス: 候補1件 再起動可1件 再起動不可0件" in distributed_output
 
-    mixed = run_scenario(
-        "mixed-locking-processes",
-        """    [pscustomobject]@{
+    mixed_fixture = """    [pscustomobject]@{
         ProcessId = 2
         Name = 'pythonw.exe'
         ExecutablePath = 'C:\\tools\\pytools\\Scripts\\pythonw.exe'
@@ -210,8 +235,8 @@ function Start-Sleep {
         ExecutablePath = 'C:\\tools\\pytools\\Scripts\\unknown.exe'
         CommandLine = 'unknown.exe'
     }
-""",
-    )
+"""
+    mixed, mixed_output = run_reinstall_scenario("mixed-locking-processes", mixed_fixture)
     assert mixed == {
         "Locking": [2, 3, 4],
         "Restorable": [2, 3],
@@ -219,7 +244,89 @@ function Start-Sleep {
         "Stopped": [],
         "MediaRemoteWasRunning": False,
         "ReinstallDeferred": True,
+        "GetCimCalls": 1,
     }
+    assert "  [pytools] 更新対象の使用中プロセス: 候補3件 再起動可2件 再起動不可1件" in mixed_output
+
+    command_line_only_fixture = """    [pscustomobject]@{
+        ProcessId = 5
+        Name = 'pythonw.exe'
+        ExecutablePath = $null
+        CommandLine = 'pythonw.exe -m pytools.media_remote serve'
+    }
+"""
+    command_line_only, command_line_only_output = run_reinstall_scenario(
+        "command-line-only-media-remote", command_line_only_fixture
+    )
+    assert command_line_only == {
+        "Locking": [5],
+        "Restorable": [5],
+        "Unrestorable": [],
+        "Stopped": [5],
+        "MediaRemoteWasRunning": True,
+        "ReinstallDeferred": False,
+        "GetCimCalls": 1,
+    }
+    assert "  [pytools] 更新対象の使用中プロセス: 候補1件 再起動可1件 再起動不可0件" in command_line_only_output
+
+    empty, empty_output = run_reinstall_scenario("no-locking-processes", "")
+    assert empty == {
+        "Locking": [],
+        "Restorable": [],
+        "Unrestorable": [],
+        "Stopped": [],
+        "MediaRemoteWasRunning": False,
+        "ReinstallDeferred": False,
+        "GetCimCalls": 1,
+    }
+    assert empty_output == ["  [pytools] 更新対象の使用中プロセス: 候補0件 再起動可0件 再起動不可0件"]
+
+    treatment_start = text.index("if ($env:COMPUTERNAME -eq 'stheno' -and -not $needsReinstall) {")
+    treatment_end = text.index("\n\n# uv tool update-shell", treatment_start)
+    treatment = text[treatment_start:treatment_end]
+
+    def run_treatment_scenario(name: str, fixtures: str) -> tuple[dict[str, object], list[str]]:
+        return run_scenario(
+            f"{name}-treatment",
+            fixtures,
+            """$needsReinstall = $false
+$env:COMPUTERNAME = 'stheno'
+$env:LOCALAPPDATA = '/tmp'
+$uvToolDir = 'C:\\tools\\pytools'
+$mediaRemoteBin = 'C:\\Users\\test\\.local\\bin\\dotfiles-media-remote.exe'
+function Test-Path { return $false }
+""",
+            "$allCandidates = @(Get-PytoolsEnvLockingProcess)\n" + treatment,
+            """[pscustomobject]@{
+    Candidates = @($allCandidates | ForEach-Object { $_.ProcessId })
+    MediaRemote = @($mediaRemoteProcs | ForEach-Object { $_.ProcessId })
+    Stopped = @($stopped)
+    GetCimCalls = $getCimCalls
+} | ConvertTo-Json -Compress
+""",
+        )
+
+    distributed_treatment, distributed_treatment_output = run_treatment_scenario(
+        "distributed-media-remote", distributed_fixture
+    )
+    mixed_treatment, mixed_treatment_output = run_treatment_scenario("mixed-locking-processes", mixed_fixture)
+    command_line_treatment, command_line_treatment_output = run_treatment_scenario(
+        "command-line-only-media-remote", command_line_only_fixture
+    )
+    empty_treatment, empty_treatment_output = run_treatment_scenario("no-locking-processes", "")
+
+    assert distributed_treatment["Candidates"] == distributed_exe["Locking"]
+    assert mixed_treatment["Candidates"] == mixed["Locking"]
+    assert command_line_treatment["Candidates"] == command_line_only["Locking"]
+    assert empty_treatment["Candidates"] == empty["Locking"]
+    assert distributed_treatment == {"Candidates": [1], "MediaRemote": [1], "Stopped": [1], "GetCimCalls": 2}
+    assert mixed_treatment == {"Candidates": [2, 3, 4], "MediaRemote": [2, 3], "Stopped": [2, 3], "GetCimCalls": 2}
+    assert command_line_treatment == {"Candidates": [5], "MediaRemote": [5], "Stopped": [5], "GetCimCalls": 2}
+    assert empty_treatment == {"Candidates": [], "MediaRemote": [], "Stopped": [], "GetCimCalls": 2}
+    assert "  [pytools] 対症療法の停止対象プロセス: 停止対象1件" in distributed_treatment_output
+    assert "  [pytools] 対症療法の停止対象プロセス: 停止対象2件" in mixed_treatment_output
+    assert "  [pytools] 対症療法の停止対象プロセス: 停止対象1件" in command_line_treatment_output
+    assert empty_treatment_output == ["  [pytools] 対症療法の停止対象プロセス: 停止対象0件"]
 
 
 @pytest.mark.parametrize(
@@ -257,7 +364,11 @@ def test_expected_shims_cover_project_scripts(template: Path, suffix: str, patte
 def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
-    install = text.index('if uv tool install --editable "{{ .chezmoi.workingTree }}" && test_expected_shims; then')
+    install = text.index(
+        'if uv tool install --overrides "{{ joinPath .chezmoi.workingTree "agent-toolkit/uv-overrides.txt" }}" '
+        '--editable "{{ .chezmoi.workingTree }}" '
+        '--with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then'
+    )
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')
     failure = text.index("インストールに失敗しました", hash_write)
 

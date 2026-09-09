@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import pathlib
-import sys
+from typing import Literal
 
 import pytest
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from _testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+from agent_toolkit._testing.helpers import _write_transcript  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def test_output_file_saves_events_and_prints_path_and_line_count(
@@ -2427,7 +2426,8 @@ def _self_invocation_entries(command: str) -> list[dict]:
     "command",
     [
         "python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
-        "uv run --no-project --script /plugin/skills/session-review/scripts/session_review_evidence.py /tmp/foo.jsonl",
+        "uv run --project /plugin --locked --no-default-groups "
+        "/plugin/skills/session-review/scripts/session_review_evidence.py /tmp/foo.jsonl",
         "./agent-toolkit/skills/session-review/scripts/session_review_evidence.py --grep 'warn' /tmp/foo.jsonl",
         "cd /repo && python3 agent-toolkit/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl",
         "bash -lc 'python3 /plugin/skills/session-review/scripts/session_review_evidence.py --warn /tmp/foo.jsonl'",
@@ -3450,6 +3450,137 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_call(
     assert _events_by_kind(events, "stats-total")[0]["agent_thread_counts"] == {"claude": 1}
 
 
+def test_collect_resolves_codex_agents_server_delegations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Codexの3つの完了形状から`structuredContent`直下の識別子を解決する。"""
+    codex_home = tmp_path / "codex"
+    thread_ids = [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+    ]
+    for index, thread_id in enumerate(thread_ids, start=1):
+        _write_rollout(
+            codex_home,
+            thread_id,
+            [(f"2026-08-19T00:00:0{index}Z", {"input_tokens": index, "total_tokens": index})],
+        )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "timestamp": "2026-08-19T00:00:00Z",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "server": "agents_server",
+                        "arguments": {"engine": "codex"},
+                        "result": {"structuredContent": {"session_id": thread_ids[0]}},
+                    },
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__start",
+                    "call_id": "custom",
+                    "arguments": {"engine": "codex"},
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:02Z",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "custom",
+                    "output": {"structuredContent": {"session_id": thread_ids[1]}},
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:03Z",
+                "payload": {
+                    "type": "function_call",
+                    "name": "mcp__agents_server__start",
+                    "call_id": "function",
+                    "arguments": {"engine": "codex"},
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:04Z",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "function",
+                    "output": {"structuredContent": {"session_id": thread_ids[2]}},
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys)
+    assert {event["session_id"] for event in _events_by_kind(events, "stats-agent-thread")} == set(thread_ids)
+    assert not _events_by_kind(events, "unresolved-delegation")
+
+
+def test_collect_reports_unresolved_delegation(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """agents_server起動の出力から識別子を得られない場合は未確認範囲を返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__start",
+                    "call_id": "missing",
+                    "arguments": {"engine": "codex"},
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "custom_tool_call_output", "call_id": "missing", "output": {"status": "done"}},
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    assert _events_by_kind(_read_jsonl(capsys, raw=True), "unresolved-delegation") == [
+        {"kind": "unresolved-delegation", "record": "main", "line": 2}
+    ]
+
+
+def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Codexのitem_completedから識別子を得られない場合は未確認範囲を返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "server": "agents_server",
+                        "arguments": {"engine": "codex"},
+                        "result": {"status": "done"},
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    assert _events_by_kind(_read_jsonl(capsys, raw=True), "unresolved-delegation") == [
+        {"kind": "unresolved-delegation", "record": "main", "line": 1}
+    ]
+
+
 def test_stats_resolves_claude_session_from_claude_plugin_kill_tool_call(
     tmp_path: pathlib.Path,
     monkeypatch,
@@ -4156,6 +4287,51 @@ def _compaction_entry(timestamp: str, metadata: dict | None = None) -> dict:
     return entry
 
 
+# pylint: disable=protected-access
+def test_stats_reports_critical_path() -> None:
+    """並行threadの重複を二重計上せず、測定不能なthreadも分けて返す。"""
+
+    def collected(
+        record_id: str, timestamps: list[str], *, role: Literal["main", "subagent", "session"] = "session"
+    ) -> evidence._CollectedRecord:
+        return evidence._CollectedRecord(
+            record_id,
+            pathlib.Path(f"/{record_id}"),
+            [evidence._Record(index + 1, "", {"timestamp": timestamp}) for index, timestamp in enumerate(timestamps)],
+            "codex",
+            "main" if role == "session" else None,
+            1 if role == "session" else None,
+            None,
+            role,
+        )
+
+    events = evidence._stats_events(
+        [
+            collected("main", ["2026-09-02T00:00:00Z", "2026-09-02T00:01:00Z"], role="main"),
+            collected("codex:first", ["2026-09-02T00:00:10Z", "2026-09-02T00:00:30Z"]),
+            collected("codex:second", ["2026-09-02T00:00:20Z", "2026-09-02T00:00:40Z"]),
+            collected("codex:unmeasured", []),
+        ]
+    )
+
+    assert _events_by_kind(events, "stats-critical-path") == [
+        {
+            "kind": "stats-critical-path",
+            "elapsed_seconds": 60.0,
+            "main_only_seconds": 30.0,
+            "overlap_seconds": 10.0,
+            "segments": [
+                {"owner": "first", "exclusive_seconds": 10.0},
+                {"owner": "second", "exclusive_seconds": 10.0},
+            ],
+            "unmeasured_threads": ["unmeasured"],
+        }
+    ]
+
+
+# pylint: enable=protected-access
+
+
 def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Path, capsys) -> None:
     """メイン記録とサブエージェント記録のコンパクションを全件数え、記録に無い欄を補わない。"""
     transcript = _write_transcript(
@@ -4213,6 +4389,7 @@ def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Pat
         "count": 3,
         "by_record": {"main": 2, "agent-child": 1},
         "total_duration_seconds": 203.0,
+        "duration_unknown_count": 1,
     }
     assert list(total["by_record"]) == ["main", "agent-child"]
 
@@ -4247,6 +4424,7 @@ def test_stats_reports_codex_compaction_records(tmp_path: pathlib.Path, capsys) 
         "count": 1,
         "by_record": {"main": 1},
         "total_duration_seconds": 0.0,
+        "duration_unknown_count": 1,
     }
 
 
@@ -4261,7 +4439,13 @@ def test_stats_reports_zero_compaction_total_without_records(tmp_path: pathlib.P
     events = _read_jsonl(capsys, raw=True)
     assert not _events_by_kind(events, "stats-compaction")
     assert _events_by_kind(events, "stats-compaction-total") == [
-        {"kind": "stats-compaction-total", "count": 0, "by_record": {}, "total_duration_seconds": 0.0}
+        {
+            "kind": "stats-compaction-total",
+            "count": 0,
+            "by_record": {},
+            "total_duration_seconds": 0.0,
+            "duration_unknown_count": 0,
+        }
     ]
 
 

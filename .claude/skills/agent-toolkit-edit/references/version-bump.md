@@ -53,6 +53,9 @@ plugin cache directory配下の新versionのrootを解決し直す。
 
 ## plan modeでの取り扱い
 
+本節の前段が定める一般則は、単一のworktreeで実装する計画へ適用する。
+複数レーンを並列実装するAWI処理では、本節末尾の複数レーン向けの特則が前段に優先する。
+
 計画フェーズではbump要否や既存bumpとの差分を調査せず、種別（PATCH／MINOR／MAJOR）と
 「判定基準」節に基づく種別選定根拠を実装者向け領域へ記述する。
 具体的なversion数値は書かず`scripts/agent_toolkit_bump.py`の実行結果に従う。

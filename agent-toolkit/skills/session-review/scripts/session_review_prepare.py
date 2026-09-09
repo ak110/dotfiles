@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --no-project --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
 """セッション振り返りの証拠抽出に必要な準備項目を1行のJSONで取得する。
 
 本スクリプトは検査スクリプトではなくデータ取得ツールであるため、

@@ -6,11 +6,8 @@ import datetime
 import json
 import os
 import pathlib
-import sys
 
 import pytest
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)

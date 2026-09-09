@@ -42,8 +42,8 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         json.dumps({"name": "agent-toolkit", "version": "1.2.3"}),
         encoding="utf-8",
     )
-    (root / "agent-toolkit/scripts").mkdir()
-    (root / "agent-toolkit/scripts/hook.py").write_text("source", encoding="utf-8")
+    (root / "agent-toolkit/agent_toolkit").mkdir()
+    (root / "agent-toolkit/agent_toolkit/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: root)
@@ -233,8 +233,8 @@ def test_post_install_verification_failure_keeps_legacy_link(plugin_env: Path, m
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
 
 
-def test_legacy_removal_failure_restores_links(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """導入済みpluginのlegacy link除去失敗時は変更前のlinkを復元する。"""
+def test_legacy_removal_failure_does_not_restore_links(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """導入済みpluginのlegacy link除去失敗時も削除済みlinkを復元しない。"""
     destination = _legacy_link(plugin_env)
     state = _installed_state()
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), state])
@@ -250,8 +250,7 @@ def test_legacy_removal_failure_restores_links(plugin_env: Path, monkeypatch: py
     with pytest.raises(OSError, match="injected legacy removal failure"):
         install_codex_plugins.run()
 
-    assert destination.is_symlink()
-    assert destination.resolve() == (plugin_env / f"{_TOOLKIT_PREFIX}/skills/coding").resolve()
+    assert not destination.exists()
 
 
 def test_removes_broken_legacy_link_and_keeps_unrelated_entries(

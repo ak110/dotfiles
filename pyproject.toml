@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Personal command-line tools"
 requires-python = ">=3.13,<4.0"
 dependencies = [
+    "agent-toolkit",
     "argcomplete>=3.6.3",
     "bashplotlib",
     "businesstimedelta",
@@ -44,6 +45,7 @@ dateRelocator = "pytools.date_relocator:main"
 deletehomonym = "pytools.delete_homonym:main"
 dirsize = "pytools.dirsize:main"
 dotfiles-media-remote = "pytools.media_remote:main"
+dotfiles-claude-hook = "pytools.claude_hook:main"
 dotfiles-post-apply = "pytools.post_apply:main"
 EcoUtilities = "pytools.ecoutilities:main"
 fable = "pytools.claude_launcher:main_fable"
@@ -65,6 +67,9 @@ runAsAdmin = "pytools.run_as_admin:main"
 sonnet = "pytools.claude_launcher:main_sonnet"
 touch-file = "pytools.touch_file:main"
 update-ssh-config = "pytools.update_ssh_config:main"
+
+[tool.uv.sources]
+agent-toolkit = { path = "agent-toolkit", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -106,8 +111,8 @@ python = true
 # Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、既定の600秒では境界を超えるためCIタイムアウトを延伸する
 command-timeout = 900
 ty = true
-# scripts/、agent-toolkit/scripts/、agent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "agent-toolkit/scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# scripts/とagent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
+ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
 # pyfltrの既定では`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
@@ -115,7 +120,7 @@ ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra
 # lintの自動修正は`make format`（`uv run --frozen pyfltr fast`）のfix段が引き続き担う。
 ruff-format-by-check = false
 pylint-args = ["--jobs=4"]
-# リポジトリ直下とagent-toolkit/scripts/の`conftest.py`は、いずれもトップレベルのモジュール`conftest`へ
+# リポジトリ直下とagent-toolkit/agent_toolkit/の`conftest.py`は、いずれもトップレベルのモジュール`conftest`へ
 # 解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
 # 除外指定はパスではなくファイル名で一致するため、両方の`conftest.py`をmypyの対象から外す。
 # 両ファイルはruff・pylint・pyright・tyが引き続き検査する。
@@ -129,7 +134,7 @@ textlint-args = ["--cache"]
 lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
-    "agent-toolkit/scripts/_atk/serve/static/index.html",
+    "agent-toolkit/agent_toolkit/_atk/serve/static/index.html",
 ]
 # profile_ipy/はIPython自動生成プロファイル、
 # tone-examples.md・tone-examples-llm-tone.mdは意図的な違反例を収録するため検査対象外とする。
@@ -169,6 +174,7 @@ targets = [
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",
     "agent-toolkit/scripts/**/*.py",
+    "agent-toolkit/agent_toolkit/**/*.py",
     "agent-toolkit/bin/*",
     "agent-toolkit/completions/atk.bash",
     "completions/_pytools.bash",
@@ -268,11 +274,8 @@ convention = "google"
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
-# scripts/ から agent-toolkit/scripts/ の _hooks.stop_gate モジュールを import するため
-# そのパスを追加する。agent-toolkit/scripts/_hooks/posttooluse.py が
-# agent-toolkit/skills/plan-mode/scripts配下のモジュールを sys.path 経由で
-# 共有利用するため当該パスも追加する。
-extraPaths = ["agent-toolkit/scripts", "agent-toolkit/skills/plan-mode/scripts"]
+# agent-toolkitの計画補助スクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
+extraPaths = ["agent-toolkit/skills/plan-mode/scripts"]
 
 [tool.mypy]
 allow_redefinition = true
