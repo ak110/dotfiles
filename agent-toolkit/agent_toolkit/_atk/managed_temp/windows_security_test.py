@@ -908,7 +908,7 @@ class TestManagedTempPosix:
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         error = capsys.readouterr().err
         assert f"warning: マーカーから登録を復元できない管理対象があります: {target}" in error
-        assert "実体を直接削除してください" in error
+        assert f"（回収する場合は atk managed-temp cleanup --path {target} --force-remove）" in error
         assert f"atk managed-temp cleanup --path {target} --recover-registry" not in error
 
         with pytest.raises(subject.ManagedTempError) as captured:
