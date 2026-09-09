@@ -63,8 +63,8 @@ def test_agents_wait_any_removes_only_selected_result(
     assert second.exists()
 
 
-def test_agents_wait_any_rejects_overlapping_owner(tmp_path: pathlib.Path) -> None:
-    """同じsessionの待機所有権を保持する後発は終了コード8で拒否する。"""
+def test_agents_wait_any_rejects_overlapping_owner(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """同じsessionの待機所有権を保持する後発は理由と対象sessionを添えて終了コード8で拒否する。"""
     lock_path = status_file.status_directory("root-session", tmp_path) / "wait-any-locks" / "session-1.lock"
     lock_path.parent.mkdir(parents=True)
     with lock_path.open("a+b") as lock_file:
@@ -82,6 +82,7 @@ def test_agents_wait_any_rejects_overlapping_owner(tmp_path: pathlib.Path) -> No
         finally:
             release_lock(lock_file)
     assert lock_path.exists()
+    assert "session-1" in capsys.readouterr().err
 
 
 def test_agents_wait_any_allows_disjoint_sets(tmp_path: pathlib.Path) -> None:
