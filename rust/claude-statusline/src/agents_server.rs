@@ -16,8 +16,9 @@ use crate::subagent::{
 };
 
 const STATE_VERSION: u64 = 1;
-// Claude Code 2.1.261はstatuslineの各行を2セル字下げして描画する。
-const STATUSLINE_INDENT_COLUMNS: usize = 2;
+// Claude Codeの描画は先頭の字下げ2セルと行末の2セルを確保する。
+// 確保幅は描画された行の表示幅とCOLUMNSの差から導出した。
+const STATUSLINE_RESERVED_COLUMNS: usize = 4;
 
 #[derive(Debug)]
 pub(crate) struct StateFile {
@@ -311,7 +312,7 @@ fn terminal_columns() -> usize {
 }
 
 fn statusline_columns(columns: usize) -> usize {
-    columns.saturating_sub(STATUSLINE_INDENT_COLUMNS)
+    columns.saturating_sub(STATUSLINE_RESERVED_COLUMNS)
 }
 
 /// 現在の環境から状態ファイルを読み、statuslineに追加する行を返す。
@@ -453,8 +454,10 @@ mod tests {
     }
 
     #[test]
-    fn statusline_width_reserves_claude_indent() {
-        assert_eq!(statusline_columns(80), 78);
+    fn statusline_width_reserves_claude_render_margin() {
+        assert_eq!(statusline_columns(80), 76);
+        assert_eq!(statusline_columns(4), 0);
+        assert_eq!(statusline_columns(3), 0);
         assert_eq!(statusline_columns(1), 0);
     }
 
