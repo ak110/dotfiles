@@ -37,7 +37,7 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
 通常型AWIのファイル名を1件以上明示した場合は、同一対象リポジトリの全対象を計画調査より前に`hold`へ一括移動する。同じ`hold`集合は再開できるが、`atk wi process-loop`の着手対象にはしない。全入力をファイル名昇順で1組の計画へ統合し、自然言語要件を受領した場合は新しい計画型AWIを追加する。
 
 1. 全入力をファイル名昇順に並べ、同一`target_repo`のinbox通常型awiで`plan_file`を持たないことを一括検証する。UWI、既存計画型、別対象リポジトリ、欠落又は混在状態があれば、追加調査と状態を変更せず入力エラーとして返す。
-2. 検証に成功した場合だけ、`atk wi hold <filename>... --target-repo=<repo>`を1回実行する。`hold`へ移す前後の対象集合、保存本文及び単一遷移commitを照合する。
+2. 検証に成功した場合だけ、`atk wi hold <filename>... --target-repo=<repo>`を1回実行する。
 3. 計画作成、レビュー及び確認待ちの再開では、入力として確定した対象worktreeの絶対パスを保持する。計画時の旧worktreeパスが本文に残っていても、実行時に渡された対象worktreeへ解決し、対象外のworktreeを操作しない。
 4. 計画レビューまで完了した後、`## 計画バンドルの保存`を実施し、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
@@ -48,10 +48,10 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
    新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。
    計画型本文、`source: plan-and-add-awi`、計画ファイル、計画ベースの`target_commit`及び全入力の外部依存を保存する。
    最古の項目だけを計画型`inbox`へ移し、残る統合元を同じcommitで除去する。
-5. 変換結果を再取得し、統合先の`source`、本文、`plan_file`、`target_commit`、依存及び`inbox`配置、統合元の不在、変換commit並びにremote設定時のupstream包含を照合する。単一入力でも標準出力から変換commitとpush結果を取得する。単一入力と複数入力は同じ経路で処理し、後続の`rm`を呼ばない。
+5. 単一入力でも標準出力から変換commitとpush結果を取得する。単一入力と複数入力は同じ経路で処理し、後続の`rm`を呼ばない。
 6. 変換開始前に中断した場合は、全対象を`atk wi unhold <filename>... --target-repo=<repo>`で一括して戻す。
    入力検証、書込み又はcommitに失敗した場合は全入力が元の`hold`内容へ復元されていることを確認する。
-   pushだけが失敗した場合は変換済みのcleanなローカルcommitと保存結果を保持し、`atk wi commit`で滞留commitをpushしてから保存結果とupstream包含を再検証する。
+   pushだけが失敗した場合は変換済みのcleanなローカルcommitを保持し、`atk wi commit`で滞留commitをpushする。
    変換操作を繰り返して新しいcommitを作成しない。
 
 ## 自然言語要件モード

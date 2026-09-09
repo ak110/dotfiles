@@ -48,7 +48,7 @@ rebase、マージ及びレビュー表への記録をしない。直ちに計�
 ## 計画最終化と計画型変換
 
 計画最終化は、`統合区分`に対応する統合の完了後に実行する。`atk plans commit`が計画ファイルとレビュー指摘管理表を計画作業root`~/.claude/plans`から保存先へ移し、移動前の絶対パスを実体の無いパスにするためである。当該保存より後の工程で、計画ファイルとレビュー指摘管理表のいずれへも書き込まない。
-計画最終化を要する場合は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の「実行レビュー後の計画最終化」に従って、実装時の進捗を作業rootの計画へ反映する。続けて`atk plans commit <受領したメイン計画ファイル名>`を1回実行し、保存実体と作業側の消失を確認する。
+計画最終化を要する場合は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の「実行レビュー後の計画最終化」に従って、実装時の進捗を作業rootの計画へ反映する。続けて`atk plans commit <受領したメイン計画ファイル名>`を1回実行する。
 計画最終化で作業rootの計画へ書き込んだ後、`atk plans commit`より前に、現行plugin rootの`skills/plan-mode/scripts/check_plan_file.py`を自ら解決して計画構造検査を完了する。
 `--work-dir`には計画メタ情報の`対象リポジトリ`が記載する絶対パスを渡し、`--reject-migration-warnings`を付ける。
 当該絶対パスは当該レーンの専用worktreeであり、マージ先の作業ツリーを渡さない。

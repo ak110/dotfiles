@@ -49,7 +49,7 @@ private-notesの計画ファイルを編集ツールで直接書き換えない�
 `agent-toolkit:plan-mode`のSKILL.mdの「対話由来の小規模是正」節に当たり計画ファイルを作成しない処理では、実行レビュー指摘管理表を起動側が作成した管理対象一時領域の直下へ`dlg-<実装着手前の完全OID>.exec-review.tsv`として置く。当該表は計画作業rootへ置かず、実行レビューの完了まで当該一時領域で更新する。当該領域の作成と回収は起動側が所有し、回収の時機は同節の手順12が定める。当該表を計画バンドルとして扱わず、`atk plans commit`と`atk plans checkout`のいずれの対象にもしない。
 作成済みのレビュー表は、全ての要求を充足済みと確定して実装工程を省略する計画では計画レビュー完了まで、それ以外は実行レビュー完了まで作業rootで更新する。
 `atk plans commit`はレビュー表を計画バンドルとして収集し、計画ファイルと同じcommitでprivate-notesへ保存する。
-独立CI実行レビュー表はレビュー収束後に`atk plans commit ci-<起点OID>.exec-review.tsv`で`private-notes/plans/ci/`へ対象限定commit・pushする。再取得検証では次の3コマンドを順に実行する。`atk plans checkout ci/ci-<起点OID>.exec-review.tsv`、`atk review-table validate <作業側絶対パス>`、`atk plans commit ci-<起点OID>.exec-review.tsv`である。これにより保存実体を正式経路で読み戻し、検証後の作業側を再び消失させる。各保存後に作業側の不在とprivate-notesのclean状態を確認する。private-notesを直接編集せず、独立表を計画バンドルとしてもキューの`plan_file`としても扱わない。
+独立CI実行レビュー表はレビュー収束後に`atk plans commit ci-<起点OID>.exec-review.tsv`で`private-notes/plans/ci/`へ対象限定commit・pushする。private-notesを直接編集せず、独立表を計画バンドルとしてもキューの`plan_file`としても扱わない。
 
 本書、`agent-toolkit:plan-mode`のSKILL.md及び`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、
 計画に属するファイルとレビュー記録を次の呼称で指す。新規の記述では次表の呼称以外の別名を用いない。
