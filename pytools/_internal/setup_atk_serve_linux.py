@@ -10,8 +10,6 @@ import stat
 
 from pytools._internal import claude_common, log_format, systemd_user_unit
 
-assert claude_common  # 既存テストと外部monkeypatch契約を共通モジュール移行後も維持する。
-
 logger = logging.getLogger(__name__)
 
 _SERVICE_UNIT = "atk-serve.service"
