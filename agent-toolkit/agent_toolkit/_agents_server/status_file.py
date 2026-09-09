@@ -6,12 +6,11 @@ Codex backendの委譲先自身のシェルは、所有sessionと自身のCodex 
 2026年9月7日にCodex CLI 0.153.4の`start_shell`で起動したシェルに
 `CODEX_THREAD_ID`が存在することを確認した。
 
-Codex CLIが直接起動するMCPサーバープロセスには、所有session識別子、
-Claude Code session識別子及びCodex thread識別子のいずれも現れない。
-2026年9月7日にCodex CLI 0.153.4が起動したMCPサーバーの`/proc/<pid>/environ`から
-環境変数名だけを取得して確認した。この経路は書込主体を解決できないため、
-状態ファイルを書かない。各ホスト、CLI又はSDKの更改時は同じ2経路の環境変数を
-再取得し、識別子の有無を個別に検証する。
+Codex CLIが直接起動するMCPサーバープロセスへは、Codex App Server自身の環境が
+継承されない。Codex CLI 0.153.4で2026年9月9日に確認した。`thread/start`の
+`config.mcp_servers.agents_server`へ完全な定義を渡す場合だけ、`env`の識別子が
+当該プロセスへ届く。ホスト、CLI又はSDKを更新した時点では、同じ起動形で
+MCPサーバーの環境変数と起動通知を確認する。
 
 上り通知の配送媒体は本モジュールが定める共有状態ディレクトリとする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して実測した。この前提が崩れた場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
 """
@@ -66,6 +65,8 @@ def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileId
         host_session_id = environment.get("CLAUDE_CODE_SESSION_ID")
     elif environment.get("CODEX_THREAD_ID"):
         host_session_id = environment.get("CODEX_THREAD_ID")
+    elif environment.get("AGENT_TOOLKIT_STATUS_HOST_SESSION"):
+        host_session_id = environment.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
     if host_session_id is not None and not valid_session_id(host_session_id):
         return None
     if host_session_id is None and environment.get("AGENT_TOOLKIT_OWNER_SESSION"):
@@ -161,6 +162,27 @@ def notices_directory(root_session_id: str, state_root: pathlib.Path | None = No
     return status_directory(root_session_id, state_root) / "notices"
 
 
+def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """書込主体から起動元threadへの索引ディレクトリを返す。"""
+    return status_directory(root_session_id, state_root) / "hosts"
+
+
+def write_host_alias(
+    root_session_id: str,
+    writer_session_id: str,
+    host_session_id: str,
+    state_root: pathlib.Path | None = None,
+) -> None:
+    """書込主体を起動元threadへ対応付ける索引を書く。"""
+    if not all(valid_session_id(value) for value in (root_session_id, writer_session_id, host_session_id)):
+        raise ValueError("invalid session_id")
+    payload = {"version": 1, "host_session_id": host_session_id}
+    atomic_write(
+        hosts_directory(root_session_id, state_root) / f"{writer_session_id}.json",
+        json.dumps(payload, ensure_ascii=False) + "\n",
+    )
+
+
 def take_notices(
     root_session_id: str,
     session_id: str,
@@ -238,6 +260,7 @@ class StatusFileWriter:
         self._flush_handle: asyncio.TimerHandle | None = None
         self._retention_handle: asyncio.TimerHandle | None = None
         self._result_deadlines: dict[str, float] = {}
+        self._projected_host_session_id: str | None = None
         self._active = False
 
     @property
@@ -289,7 +312,7 @@ class StatusFileWriter:
         visible.sort(key=lambda session: session.started_at)
         payload: dict[str, Any] = {
             "version": 1,
-            "host_session_id": self._identity.host_session_id,
+            "host_session_id": self._resolve_host_session_id(),
             "updated_at": _updated_at(visible),
             "sessions": [_serialize_session(session) for session in visible],
         }
@@ -381,6 +404,7 @@ class StatusFileWriter:
         directories = (
             results_directory(self.root_session_id, self._state_root),
             notices_directory(self.root_session_id, self._state_root),
+            hosts_directory(self.root_session_id, self._state_root),
         )
         for directory in directories:
             if not directory.exists():
@@ -390,6 +414,29 @@ class StatusFileWriter:
                     path.unlink()
             if not any(directory.iterdir()):
                 directory.rmdir()
+
+    def _resolve_host_session_id(self) -> str | None:
+        """書込主体に対応する起動元threadを一度だけ状態ファイルへ射影する。"""
+        if self._projected_host_session_id is not None:
+            return self._projected_host_session_id
+        writer_session_id = self._identity.host_session_id
+        if writer_session_id is None:
+            return None
+        path = hosts_directory(self.root_session_id, self._state_root) / f"{writer_session_id}.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+            return writer_session_id
+        host_session_id = payload.get("host_session_id") if isinstance(payload, dict) else None
+        if (
+            isinstance(payload, dict)
+            and payload.get("version") == 1
+            and isinstance(host_session_id, str)
+            and valid_session_id(host_session_id)
+        ):
+            self._projected_host_session_id = host_session_id
+            return host_session_id
+        return writer_session_id
 
     def _schedule_retention(self, sessions: list[SessionState], now: float) -> None:
         if self._retention_handle is not None:

@@ -93,6 +93,13 @@ def test_write_root_alias_removes_aliases_with_missing_targets(tmp_path: pathlib
             },
             subject.StatusFileIdentity("owner", "codex-child.json", "codex-child"),
         ),
+        (
+            {
+                "AGENT_TOOLKIT_OWNER_SESSION": "owner",
+                "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer-session",
+            },
+            subject.StatusFileIdentity("owner", "writer-session.json", "writer-session"),
+        ),
         ({}, None),
         ({"AGENT_TOOLKIT_OWNER_SESSION": "owner"}, None),
         ({"CLAUDE_CODE_SESSION_ID": "../invalid"}, None),
@@ -115,6 +122,68 @@ def test_status_directory_uses_platform_state_dir(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     assert subject.status_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root"
     assert subject.notices_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "notices"
+    assert subject.hosts_directory("root") == tmp_path / "agent-toolkit" / "agents-server" / "root" / "hosts"
+
+
+def test_write_host_alias_resolves_writer_to_thread_id(tmp_path: pathlib.Path) -> None:
+    """書込主体から起動元threadへの索引は形式を検証して保存する。"""
+    subject.write_host_alias("root", "writer", "thread", tmp_path)
+
+    assert json.loads((subject.hosts_directory("root", tmp_path) / "writer.json").read_text(encoding="utf-8")) == {
+        "version": 1,
+        "host_session_id": "thread",
+    }
+    with pytest.raises(ValueError, match="invalid session_id"):
+        subject.write_host_alias("root", "bad/writer", "thread", tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_path: pathlib.Path) -> None:
+    """内側の3起動種別を親thread識別子へ射影して1つの状態ファイルへ集約する。"""
+    identity = subject.resolve_status_file_identity(
+        {"AGENT_TOOLKIT_OWNER_SESSION": "root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer"}
+    )
+    assert identity is not None
+    sessions = {
+        launch_kind: state.SessionState(
+            f"{launch_kind}-session",
+            str(tmp_path),
+            launch_kind=launch_kind,
+            announced=True,
+        )
+        for launch_kind in ("delegate", "explore", "shell")
+    }
+    writer = subject.StatusFileWriter(sessions, identity, state_root=tmp_path, aggregate_seconds=0)
+    writer.activate()
+    assert json.loads(writer.path.read_text(encoding="utf-8"))["host_session_id"] == "writer"
+
+    subject.write_host_alias("root", "writer", "parent-thread", tmp_path)
+    writer.flush()
+
+    payload = json.loads(writer.path.read_text(encoding="utf-8"))
+    assert payload["host_session_id"] == "parent-thread"
+    assert len(payload["sessions"]) == 3
+    assert writer.path in subject.list_status_files("root", tmp_path)
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path) -> None:
+    """保持期限を過ぎた書込主体索引をactivate時に回収する。"""
+    host_path = subject.hosts_directory("root", tmp_path) / "writer.json"
+    host_path.parent.mkdir(parents=True)
+    host_path.write_text('{"version": 1, "host_session_id": "thread"}', encoding="utf-8")
+    stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
+    os.utime(host_path, (stale_at, stale_at))
+    writer = subject.StatusFileWriter(
+        {}, subject.StatusFileIdentity("root", "root.json", None), state_root=tmp_path, aggregate_seconds=0
+    )
+
+    writer.activate()
+
+    assert not host_path.exists()
+    assert not host_path.parent.exists()
+    writer.deactivate()
 
 
 def test_status_directory_rejects_relative_xdg_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

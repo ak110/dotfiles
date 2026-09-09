@@ -537,6 +537,56 @@ mod tests {
     }
 
     #[test]
+    fn read_state_files_nests_writer_named_file_under_parent_thread() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "claude-statusline-writer-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(directory.join("hosts")).unwrap();
+        let root = serde_json::json!({
+            "version": 1,
+            "host_session_id": null,
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "sessions": [session("parent-thread", "claude", Value::Null, ("root", "delegate"), ("", "root"), "2025-12-31T23:59:00+00:00")],
+        });
+        let inner = serde_json::json!({
+            "version": 1,
+            "host_session_id": "parent-thread",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "sessions": [
+                session("delegate-session", "codex", Value::Null, ("delegate", "delegate"), ("", "delegate"), "2025-12-31T23:59:10+00:00"),
+                session("explore-session", "codex", Value::Null, ("explore", "explore"), ("", "explore"), "2025-12-31T23:59:11+00:00"),
+                session("shell-session", "codex", Value::Null, ("shell", "shell"), ("", "shell"), "2025-12-31T23:59:12+00:00"),
+            ],
+        });
+        let grandchild = serde_json::json!({
+            "version": 1,
+            "host_session_id": "delegate-session",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "sessions": [session("grandchild", "claude", Value::Null, ("review", "delegate"), ("", "grandchild"), "2025-12-31T23:59:20+00:00")],
+        });
+        fs::write(directory.join("root.json"), root.to_string()).unwrap();
+        fs::write(directory.join("writer.json"), inner.to_string()).unwrap();
+        fs::write(directory.join("grandchild.json"), grandchild.to_string()).unwrap();
+
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        let lines = render_state_files(&read_state_files(&directory), 100, now);
+
+        assert!(lines[0].starts_with("root (Claude)"));
+        assert!(lines[1].starts_with("└ delegate (Codex)"));
+        assert!(lines[2].starts_with("  └ review (Claude)"));
+        assert!(lines[3].starts_with("└ explore (Codex)"));
+        assert!(lines[4].starts_with("└ shell (Codex)"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn invalid_versions_and_incomplete_sessions_are_ignored() {
         let wrong_version = serde_json::json!({
             "version": 2,

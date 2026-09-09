@@ -15,11 +15,13 @@ import json
 import logging
 import os
 import sys
+import uuid
 from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any
 
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
+from agent_toolkit._agents_server import status_file  # pylint: disable=wrong-import-position
 from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import-position
     AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
@@ -358,6 +360,48 @@ class AppServerManager:
         self._publish_registry = publish_registry
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
+        self._writer_session_ids: dict[str, str] = {}
+
+    @staticmethod
+    def _agents_server_config(owner_session_id: str, writer_session_id: str) -> dict[str, Any]:
+        """内側のMCPサーバーへ状態ファイルの書込主体を配送する設定を返す。"""
+        plugin_root = Path(__file__).resolve().parents[2]
+        return {
+            "mcp_servers": {
+                "agents_server": {
+                    "command": "uv",
+                    "args": [
+                        "run",
+                        "--project",
+                        str(plugin_root),
+                        "--locked",
+                        "--no-default-groups",
+                        str(plugin_root / "agent_toolkit" / "agents_server_mcp.py"),
+                    ],
+                    "env": {
+                        "AGENT_TOOLKIT_OWNER_SESSION": owner_session_id,
+                        "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
+                    },
+                    "default_tools_approval_mode": "approve",
+                }
+            }
+        }
+
+    def _thread_config(
+        self, session_id: str | None = None, *, lightweight: bool
+    ) -> tuple[dict[str, Any], str | None, str | None]:
+        """thread開始・再開に必要な設定と書込主体を返す。"""
+        config: dict[str, Any] = {"project_doc_max_bytes": 0} if lightweight else {}
+        owner_session_id = _plan_file.resolve_owner_session_id()
+        if owner_session_id is None:
+            return config, None, None
+        writer_session_id = self._writer_session_ids.get(session_id) if session_id is not None else None
+        if writer_session_id is None:
+            writer_session_id = uuid.uuid4().hex
+            if session_id is not None:
+                self._writer_session_ids[session_id] = writer_session_id
+        config.update(self._agents_server_config(owner_session_id, writer_session_id))
+        return config, owner_session_id, writer_session_id
 
     def _schedule(self, awaitable: Coroutine[Any, Any, None]) -> None:
         """同じイベントループで回収する管理対象taskを登録する。"""
@@ -410,14 +454,18 @@ class AppServerManager:
         }
         if model is not None:
             params["model"] = model
-        if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
-            params["config"] = {"project_doc_max_bytes": 0}
+        config, owner_session_id, writer_session_id = self._thread_config(lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
+        if config:
+            params["config"] = config
         params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
         thread_response = await client.request("thread/start", params)
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
             raise AppServerError("thread/start returned no thread.id")
         session_id = thread["id"]
+        if owner_session_id is not None and writer_session_id is not None:
+            status_file.write_host_alias(owner_session_id, writer_session_id, session_id)
+            self._writer_session_ids[session_id] = writer_session_id
         session = SessionState(
             session_id=session_id,
             cwd=cwd,
@@ -615,8 +663,7 @@ class AppServerManager:
             return "reply_failed", session.public_status(), exc
         return "reply_started", session.public_status(), None
 
-    @staticmethod
-    async def _resume_thread(session: SessionState, client: Any) -> None:
+    async def _resume_thread(self, session: SessionState, client: Any) -> None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
@@ -626,13 +673,19 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
-        if session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
-            resume_params["config"] = {"project_doc_max_bytes": 0}
+        config, owner_session_id, writer_session_id = self._thread_config(
+            session.session_id,
+            lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS,
+        )
+        if config:
+            resume_params["config"] = config
         resume_params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[session.launch_kind]}\n{AUTO_RESUME_NOTICE}"
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
             raise AppServerError("thread/resume returned an unexpected thread.id")
+        if owner_session_id is not None and writer_session_id is not None:
+            status_file.write_host_alias(owner_session_id, writer_session_id, session.session_id)
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:
