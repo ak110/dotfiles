@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
@@ -32,6 +32,57 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 def test_required_read_document_fits_read_default_limit() -> None:
     """Readの既定上限で判断基準文書の全文へ到達する。"""
     assert len(pathlib.Path(required_reads.document_path()).read_text(encoding="utf-8").splitlines()) <= 2_000
+
+
+def _write_agents_server_wait_state(tmp_path: pathlib.Path, session_id: str, records: dict[str, dict]) -> None:
+    (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)).write_text(
+        json.dumps({"agents_server_sessions": records}), encoding="utf-8"
+    )
+
+
+def test_wait_is_blocked_when_owner_has_multiple_unfinished_sessions(tmp_path: pathlib.Path) -> None:
+    """同じ呼出主体の未終端2件ではblocking waitを遮断する。"""
+    session_id = "wait-mode-block"
+    _write_agents_server_wait_state(
+        tmp_path,
+        session_id,
+        {name: {"owner_agent_id": "main", "status": "running"} for name in ("remote-a", "remote-b")},
+    )
+    result = _run(
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "remote-a"}},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 2
+    assert "wait_any" in result.stderr
+
+    probe = _run(
+        {
+            "session_id": session_id,
+            "tool_name": "mcp__agents_server__wait",
+            "tool_input": {"session_id": "remote-a", "timeout": 0},
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert probe.returncode == 0
+
+
+def test_wait_is_allowed_when_other_owner_holds_unfinished_sessions(tmp_path: pathlib.Path) -> None:
+    """別所有と所有者不明のsessionは単一所有のwaitを遮断しない。"""
+    session_id = "wait-mode-allow"
+    _write_agents_server_wait_state(
+        tmp_path,
+        session_id,
+        {
+            "own": {"owner_agent_id": "main", "status": "running"},
+            "other": {"owner_agent_id": "agent-2", "status": "running"},
+            "legacy": {"status": "running"},
+        },
+    )
+    result = _run(
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "own"}},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0
 
 
 class TestBashCommandContractWarnings:

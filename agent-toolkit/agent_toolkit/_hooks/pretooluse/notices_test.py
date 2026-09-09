@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/notices.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
@@ -31,14 +31,14 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 class TestCodexApplyPatchEditChecks:
     """Codexの`apply_patch`入力に対する共通編集検査。"""
 
-    def test_add_file_warns_colloquial_without_revealing_word(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
-        """追加全文の口語表現を警告し、検出語そのものは出力しない。"""
+    def test_add_file_warns_colloquial_with_detected_term(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
+        """追加全文の口語表現を警告し、検出語を示す。"""
         patch_text = _patch(f"*** Add File: docs/note.md\n+概要は{deny_substring}該当する。\n")
         result = _run(_codex_payload(patch_text, tmp_path))
 
         assert result.returncode == 0
         assert "colloquial" in _additional_context(result)
-        assert deny_substring not in _agent_messages(result)
+        assert f"検出語: {deny_substring}" in _agent_messages(result)
 
     def test_removed_lines_only_do_not_warn(self, tmp_path: pathlib.Path, deny_substring: str) -> None:
         """削除行だけに該当表現があるpatchは警告しない。"""

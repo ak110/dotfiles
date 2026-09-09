@@ -33,6 +33,10 @@ wait:
 
 - 既存sessionの観測として通過 (pass-through)
 
+list:
+
+- 状態が変化していない再取得を再実行窓付きで遮断 (block)
+
 Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
@@ -70,6 +74,7 @@ Write / Edit / MultiEdit / apply_patch:
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
 - 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
+- 複数断片の全境界が現在内容へ一意に解決できるかの検査 (block)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
@@ -151,12 +156,16 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
 if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.agent_checks import (
         _AGENTS_SERVER_KILL_TOOLS,
+        _AGENTS_SERVER_LIST_TOOLS,
         _AGENTS_SERVER_SEND_TOOLS,
         _AGENTS_SERVER_START_TOOLS,
         _AGENTS_SERVER_TOOL_NAMES,
+        _AGENTS_SERVER_WAIT_TOOLS,
         _PLAN_MODE_SKILL_NAMES,
         _check_agents_server_continuation_input,
         _check_agents_server_cwd,
+        _check_agents_server_list_repeat,
+        _check_agents_server_wait_mode,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
@@ -168,6 +177,7 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.content_checks import (
         _check_colloquial,
         _check_direct_agent_toolkit_edits_after_plan_mode,
+        _check_edit_boundary_resolution,
         _check_edit_operation_blocks,
         _check_foreign_script_mixin,
         _check_mojibake,
@@ -326,6 +336,12 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
+    if tool_name in _AGENTS_SERVER_LIST_TOOLS:
+        if _check_agents_server_list_repeat(session_id):
+            return exit_with(2)
+        flush_pending_notices()
+        return 0
+
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         return exit_with(_handle_agents_server_tool(payload, tool_name, tool_input, session_id, emit_json))
 
@@ -381,8 +397,11 @@ def _handle_agents_server_tool(
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         if _check_agents_server_cwd(tool_input):
             return 2
-    elif tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS and _check_agents_server_continuation_input(
-        session_id, tool_input, tool_name
+    elif (
+        tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
+        and _check_agents_server_continuation_input(session_id, tool_input, tool_name)
+        or tool_name in _AGENTS_SERVER_WAIT_TOOLS
+        and _check_agents_server_wait_mode(payload, session_id, tool_input)
     ):
         return 2
     emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
@@ -532,6 +551,8 @@ def _handle_edit_tool(
     for operation in operations:
         if _check_edit_operation_blocks(tool_name, operation):
             return 2
+    if _check_edit_boundary_resolution(tool_name, operations):
+        return 2
     warnings: list[str] = []
     for index, operation in enumerate(operations):
         warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images, is_codex=is_codex))

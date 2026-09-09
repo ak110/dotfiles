@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/stopfailure_notifier.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/stopfailure_notifier.py のテスト。
 
 StopFailure発火内容のログ追記を、時刻固定の引数注入で検証する。
 """

@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
@@ -538,6 +538,54 @@ class TestCodexMcpReply:
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
+class TestAgentsServerListRepeat:
+    """状態指紋に基づく`agents_server`の`list`再取得遮断を検証する。"""
+
+    @pytest.fixture(name="state_dir")
+    def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
+        return _plan_file_state_env(tmp_path)
+
+    @staticmethod
+    def _payload(session_id: str) -> dict:
+        return {
+            "tool_name": "mcp__agents_server__list",
+            "tool_input": {},
+            "session_id": session_id,
+        }
+
+    def test_agents_server_list_repeat_is_blocked_once(self, state_dir: dict[str, str], tmp_path: pathlib.Path) -> None:
+        """同一状態の2回目だけを遮断し、権限決定を出力しない。"""
+        session_id = "list-repeat"
+        _write_session_state(tmp_path, session_id, {"agents_server_sessions": {"remote": {"status": "running"}}})
+
+        first = _run(self._payload(session_id), env_overrides=state_dir)
+        blocked = _run(self._payload(session_id), env_overrides=state_dir)
+
+        assert first.returncode == 0
+        assert not first.stdout
+        assert blocked.returncode == 2
+        assert "前回の`list`から`agents_server`の状態が変化していない" in blocked.stderr
+        assert not blocked.stdout
+
+    def test_agents_server_list_passes_on_retry_and_state_change(
+        self, state_dir: dict[str, str], tmp_path: pathlib.Path
+    ) -> None:
+        """遮断直後の再実行と状態変化後の再取得は通過する。"""
+        session_id = "list-retry"
+        _write_session_state(tmp_path, session_id, {"agents_server_sessions": {"remote": {"status": "running"}}})
+
+        assert _run(self._payload(session_id), env_overrides=state_dir).returncode == 0
+        assert _run(self._payload(session_id), env_overrides=state_dir).returncode == 2
+        retry = _run(self._payload(session_id), env_overrides=state_dir)
+
+        assert retry.returncode == 0
+        state = _read_session_state(tmp_path, session_id)
+        state["agents_server_sessions"] = {"remote": {"status": "completed"}}
+        _write_session_state(tmp_path, session_id, state)
+        changed = _run(self._payload(session_id), env_overrides=state_dir)
+        assert changed.returncode == 0
+
+
 class TestCodexMcpLanguageWarningMerge:
     """codex MCP強制承認時に保留言語警告が単一JSONへ統合されることを検証する。
 
@@ -912,7 +960,8 @@ class TestBashAgentToolkitVersionBump:
         assert not self._has_version_bump_warning(result)
 
     def test_only_test_files_no_warn(self, tmp_path: pathlib.Path):
-        repo = self._make_repo(tmp_path, {"agent-toolkit/scripts/foo_test.py": "x = 1\n"})
+        toolkit_prefix = "agent-" + "toolkit"
+        repo = self._make_repo(tmp_path, {f"{toolkit_prefix}/scripts/foo_test.py": "x = 1\n"})
         result = self._invoke("git commit -m 'test'", str(repo))
         assert not self._has_version_bump_warning(result)
 

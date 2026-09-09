@@ -33,14 +33,14 @@
   プロセス名の一致だけから生存状態又は対象を推定しない。
   成果物側の状態確認手段で回数上限付きで観測し、上限到達後は取得できた実測を添えて継続か停止かを判断する。
   成果物の更新時刻や末尾標識だけで完了を判定しない
-- `agents_server`の`wait`では、委譲先の終端を待つ場合に`timeout`を省略し、サブエージェントは`request_bucket`へ`subagent`を渡す。所要時間の見込みを自ら見積もって値を渡さない。次項の目標評価の条項が前景の待機を求める場合だけ、背景移行の閾値より短い値を`timeout`へ渡す
+- `agents_server`の`wait`と`wait_any`の使い分け、`timeout`及び`request_bucket`の選択は、実行時に配送される当該ツールの公開説明を正本とする。2件以上の未終端sessionがある区間の単一sessionへの`timeout`非0の`wait`はPreToolUseフックが遮断する。次項の目標評価の条項が前景の待機を求める場合だけ、背景移行の閾値より短い値を`timeout`へ渡す
 - 目標評価の発動条件は`agent-toolkit/share/rules-main.claude-code.md`の`/goal`の条項を正本とする。
   `agents_server`の`start`で起動した委譲先は独立したセッションとして動くため、委譲先の判定には委譲先が起動したタスクだけが入り、呼び出し元の判定には呼び出し元が起動したタスクだけが入る。
   当該セッションのAgent委譲とBash背景ジョブのいずれかの完了を待つ場合は、待機表明でターンを終える手順をそのまま用いる。
-  当該セッションの未完了の背景タスクがMCPツールの背景移行だけである場合は、`atk agents-wait`を背景ジョブとして起動し、待機表明でターンを終える。
-  `atk agents-wait`は`agents_server`の状態ディレクトリを解決できる実行主体でだけ成立する。解決できない主体では当該コマンドが終了コード4で終わるため、`wait`をそのまま用いる。
+  当該セッションの未完了の背景タスクがMCPツールの背景移行だけである場合は、対象が1件なら`atk agents-wait`、2件以上なら`atk agents-wait-any`を背景ジョブとして起動し、待機表明でターンを終える。
+  これらのCLIは`agents_server`の状態ディレクトリを解決できる実行主体でだけ成立する。解決できない主体では終了コード4で終わるため、対応するMCPの`wait`又は`wait_any`をそのまま用いる。`agents-wait-any`は指定sessionごとの待機所有権を取得し、重複する集合の後発起動を終了コード8で拒否する。
   引数へは待機するsessionの識別子だけを渡す。`agents_server`は新しいturnの開始で前のturnの終端結果を削除するため、待機するturnの番号を渡さない。
-  当該背景ジョブの完了通知を受領した後に`timeout=0`の`wait`を1回発行し、結果本文の配送を確定させる。
+  当該背景ジョブの完了通知を受領した後に、応答の`session_id`へ`timeout=0`の`wait`を1回発行し、結果本文の配送を確定させる。
   背景ジョブの起動を指定できない実行ホストでは、背景移行の閾値より短い`timeout`を渡した`wait`を同じターン内で再発行し、前景の待機として繰り返す。
   発動条件は`agent-toolkit/share/rules-main.claude-code.md`の`/goal`の条項を正本とする
 - 待機表明で終端した委譲先が再開する契機は、当該委譲先の起動経路で異なる。
@@ -56,12 +56,9 @@
   `wait`は再開したturnの終端まで待ち、その結果を返す。
   委譲先の最終メッセージの文面から待機表明を読み取って判別しない。
   同じ文面が作業の完了報告としても現れるため、文面による判別は誤った再開と再開漏れの双方を生む
-- `agents_server`の`wait`が`timeout`の省略時に用いる上限は、実行ホストが1回のツール呼び出しへ課す上限を超えない値としてサーバーが確定する。
-  待機する主体は当該上限の大小を判定せず、`timeout`へ値を渡さない。
+- `agents_server`の`wait`が`timeout`の省略時に用いる上限をサーバーが確定する規則と、当該上限へ達した応答の扱いは、実行時に配送される当該ツールの公開説明を正本とする。
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月7日」にある
-- `agents_server`の`wait`は、委譲先として起動されたセッションでは`timeout`の省略時に240秒を上限とする。
-  当該上限へ達した応答は`status`と`elapsed_seconds`を返すため、同じ`session_id`へ`wait`を再発行して待機を継続する。
-  240秒より短い上限を1回のMCPツール呼び出しへ課す実行主体では、`atk agents-wait <session_id>`を既定の待機手段とする。
+- `wait`の当該上限より短い上限を1回のMCPツール呼び出しへ課す実行主体では、`atk agents-wait <session_id>`を既定の待機手段とする。
   `atk agents-wait`はシェルの外部プロセスであり当該上限の対象にならず、`wait`と同じ条件で通知を回収して同じ`status`を返す。
   待機上限は`--timeout`の既定である3600秒のまま用い、所要時間の見込みから値を渡さない。
   当該上限へ達すると終了コード3で終わるため、この場合も`status`が`running`の応答と同じく同じ`session_id`へ再発行して待機を継続する。
@@ -70,14 +67,14 @@
 - 実行ホストの上限により`wait`の呼び出し自体が失敗した場合も、待機対象のsessionは終端せず実行を続ける。
   `list`で当該sessionの`status`を確認し、同じ`session_id`へ`wait`を再発行して待機を継続する。
   当該失敗を委譲先の停滞、中断又は再起動の根拠にしない
-- `agents_server`の`wait`と`atk agents-wait`の非終端応答は、待機対象のsessionの最終活動時刻を`updated_at`、そこからの経過秒数を`seconds_since_update`として返す。
+- `agents_server`の`wait`・`wait_any`と`atk agents-wait`・`atk agents-wait-any`の非終端応答は、応答の`session_id`が示すsessionの最終活動時刻を`updated_at`、そこからの経過秒数を`seconds_since_update`として返す。
   経過が閾値を超えた応答は`stalled`を伴う。`stalled`を伴う応答の受領それ自体を待機の打ち切りの根拠にせず、同じ`session_id`へ同じ待機手段を再発行する。
   当該応答は停滞の確定ではなく、長時間のコマンドの実行待ちでも成立するため、呼び出し元が当該委譲先の状況を調べる契機として扱う。
   停滞の確定と巻き取りは「停滞の検知と巻き取り」節に従う
 - `agents_server`は終端結果を経過時間で解放せず、呼び出し元が同じ`session_id`へ最初の`wait`を発行して結果本文を受領するまで保持する。完了通知の受領から時間が経った後の`wait`も終端状態と結果本文を返す。保持の解放は結果本文の配送後と`stop`による明示的な破棄の後だけとする
 - `atk agents-wait`が`status`を`expired`とする応答を終了コード7で返した場合は、待機対象のsessionが終端結果を残さずに`agents_server`の保持から失われている。
   同じ`session_id`へ待機を再発行せず、「停滞の検知と巻き取り」節に従って未完了工程の巻き取り又は新規起動を判定する
-- `agents_server`の`wait`と`atk agents-wait`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答は終端前の復帰であり、同じ`session_id`へ同じ待機手段を再発行する。`status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も完了報告とともに受領して待機を終える。回収した通知は再び返らないため、受領した本文を保持する
+- `agents_server`の`wait`・`wait_any`と`atk agents-wait`・`atk agents-wait-any`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答では、単一待機は同じ`session_id`、複数待機は終端していない残る集合へ同じ待機手段を再発行する。終端statusの応答は完了報告とともに受領し、選択したsessionを集合から除く。回収した通知は再び返らないため、受領した本文を保持する
 - `agents_server`のMCPサーバーが再起動した場合、同じ`session_id`はsession登録簿から遅延解決する。終端が確定している記録だけを同じ識別子の結果観測と会話再開へ用いる。終端が確定していない場合は`error.recovery=turn_unobserved`を受領し、同じ作業を新しい`start`でやり直さず、当該sessionが実行中である可能性を添えて呼び出し元へ返す。`missing`、`unreadable`、`no_resume_info`は当該sessionを失われたものとして扱ってよい
 - 1回の`wait`が待てる長さには、実行環境がMCPサーバーへ課すアイドル上限が別に働く。Claude Codeのstdioサーバーの既定は30分であり、`timeout`の省略時にサーバーが導出する上限はこれより短い。終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。1回の待機で終端まで待てない所要時間の委譲先は、この再発行を繰り返して待つ
 
@@ -154,7 +151,7 @@ Git差分、HEAD、成果物の更新時刻・行数、無応答、経過時間�
 ## 完了通知を待ってターンを終える場合
 
 - blocking waitとその背景ジョブのいずれかが対象sessionを所有している間は、定期再確認の各回で当該sessionへ状態照会を発行しない。
-  所有の判定は、当該sessionに対する`agents_server`の`wait`、`atk agents-wait`又はこれらを起動した背景ジョブが終端の`status`を返していないことで行う。
+  所有の判定は、当該sessionに対する`agents_server`の`wait`・`wait_any`、`atk agents-wait`・`atk agents-wait-any`又はこれらを起動した背景ジョブが終端の`status`を返していないことで行う。複数待機では指定集合の全sessionを同じ待機が所有する。
   定期再確認は、所有されていない待機対象の正本状態と完了通知、及び経過時間起動の義務だけを再確認する。
   blocking waitが自身の上限へ達して`running`を返した場合の再発行と、完了通知を受領した後の`timeout=0`による結果配送の確定は、本項の対象にせず現行どおり発行する。
   完了通知の不着を検出した場合と、待機手段が終端の`status`を返さないまま失敗した場合は、当該sessionを所有されていない対象として扱う

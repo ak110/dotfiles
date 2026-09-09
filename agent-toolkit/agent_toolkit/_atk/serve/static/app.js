@@ -27,7 +27,7 @@ const METADATA_FIELDS = [
   ['updated_at', '更新日時']
 ];
 const FRONTMATTER_LABELS = {target_repo: '対象リポジトリ', source: '投入元'};
-const FRONTMATTER_EXCLUDED_KEYS = new Set(['type']);
+const FRONTMATTER_EXCLUDED_KEYS = new Set(['type', 'origin_session', 'origin_locator']);
 
 let entries = [];
 let currentEntry = null;

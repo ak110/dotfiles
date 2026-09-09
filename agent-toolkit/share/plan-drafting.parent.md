@@ -1,5 +1,9 @@
 # 計画担当の起動と受領
 
+```text
+起動対象: plan-drafting.subagent.md
+```
+
 計画作成を要する工程の開始時に、メインが本書を全文読み、計画担当の起動、`計画作成完了`の受領及び指摘の配送へ適用する。
 
 ## 起動経路の明示
@@ -9,6 +13,8 @@
 計画担当はこの行の存在でユーザーとの共通理解に到達するための確認手順が不要であることを判別するため、経路にかかわらず同じ文言で明示する。
 
 ## 起動
+
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 
 `agents_server.start`へ`model_type="plan"`を渡して新規の計画担当を起動する。
 起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`を指す。次を名前付き必須入力とする。

@@ -1,5 +1,9 @@
 # 振り返り担当の起動と受領
 
+```text
+起動対象: session-review-delegate.subagent.md
+```
+
 `agent-toolkit:session-review`の両経路で、メインが本書を全文読み、対象セッションの取得、振り返り担当の起動、返却の検収及び引き継ぎ経路の終端へ適用する。
 
 ## 起動前の前提
@@ -17,6 +21,8 @@
 メインが`atk session-review-target`を1回実行し、終了コード0を確認する。Claude Codeでは`atk session-review-target --transcript=<現在のtranscriptの絶対パス>`、Codexでは`atk session-review-target --codex-thread-id=<CODEX_THREAD_IDの値>`とする。行が0件の場合は振り返り担当を起動せず、対象が無い旨を`agent-toolkit:completion-report`の振り返り欄へ渡す。行が1件の場合は`engine`と`session_id`をそのまま起動文へ渡す。
 
 ## 起動
+
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 
 起動の前に`atk managed-temp create --prefix session-review-output`を1回実行し、終了コード0と単一行の絶対パスを確認する。当該ディレクトリ直下の`<対象セッションの識別子>.md`を出力先ファイルとし、メインが所有する。
 

@@ -834,6 +834,69 @@ class AgentsServerManager:
             stop,
         )
 
+    async def wait_any(
+        self,
+        session_ids: list[str],
+        timeout: float | None = None,
+        request_bucket: str = "main",
+    ) -> dict[str, Any]:
+        """指定集合から最初に観測可能となったsessionを1件返す。"""
+        ordered_ids = sorted(set(session_ids))
+        if not ordered_ids or any(not isinstance(session_id, str) or not session_id for session_id in ordered_ids):
+            raise ValueError("session_ids must contain non-empty strings")
+        if timeout is None:
+            timeout = await self._resolve_wait_timeout(request_bucket)
+        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout < 0:
+            raise ValueError("timeout must be non-negative")
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + float(timeout)
+
+        while True:
+            for session_id in ordered_ids:
+                session = self.sessions.get(session_id)
+                if session is not None:
+                    await self._advance_child_session_wait(session)
+            async with self._condition:
+                terminal: list[SessionState] = []
+                for session_id in ordered_ids:
+                    candidate = self.sessions.get(session_id)
+                    if candidate is not None and candidate.result_available and not candidate.result_delivered:
+                        terminal.append(candidate)
+                terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
+                if terminal:
+                    session = terminal[0]
+                    response = self._response_with_notices(
+                        self._result_response(session), self._take_notices(session.session_id)
+                    )
+                    return {"session_id": session.session_id, **response}
+
+                for session_id in ordered_ids:
+                    session = self.sessions.get(session_id)
+                    if session is None:
+                        continue
+                    notices = self._take_notices(session_id)
+                    if notices:
+                        response = self._response_with_notices(self._result_response(session), notices)
+                        return {"session_id": session_id, **response}
+
+                retained = [self.sessions[session_id] for session_id in ordered_ids if session_id in self.sessions]
+                if not retained:
+                    session_id = ordered_ids[0]
+                    response = self._expired_result_response(session_id) or {"status": "expired"}
+                    return {"session_id": session_id, **response}
+
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    session = next((candidate for candidate in retained if not candidate.result_delivered), retained[0])
+                    response = (
+                        session.public_status()
+                        if session.result_available and session.result_delivered
+                        else self._result_response(session)
+                    )
+                    return {"session_id": session.session_id, **response}
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._condition.wait(), timeout=min(1.0, remaining))
+
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
@@ -1478,10 +1541,7 @@ async def wait(
     当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
     固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
     以下の`/goal`の条件に該当しない場合は、待機を発行する直前に稼働中の委譲先の件数を確認する。
-    1件なら本ツールを前景で発行する。2件以上なら本ツールを1件ずつ前景で発行せず、
-    全対象への本ツール呼び出しを同じ応答内で並列に発行する。
-    実行ホストが独立したツール呼び出しを並列化できない場合は、
-    各`session_id`に対する`atk agents-wait <session_id>`を背景ジョブとして起動する。
+    1件なら本ツールを前景で発行する。2件以上なら全対象を`wait_any`へ渡して前景で発行する。
     呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
     本ツールの背景移行で待たず、`atk agents-wait <session_id>`を
     実行ホストの背景ジョブとして起動して待機表明でターンを終える。
@@ -1497,6 +1557,27 @@ async def wait(
     応答へ載せた通知は回収済みとして再び返さない。
     """
     return await _MANAGER.wait(session_id, timeout, request_bucket, stop)
+
+
+@mcp.tool(name="wait_any", structured_output=True)
+async def wait_any(
+    session_ids: list[str],
+    timeout: Annotated[
+        float | None,
+        Field(description="待機上限秒数。省略するとrequest bucketから導出する。0は待機せず現状態を返す。"),
+    ] = None,
+    request_bucket: Annotated[
+        str,
+        Field(description="既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"),
+    ] = "main",
+) -> dict[str, Any]:
+    """複数の委譲先から最初に観測可能となったsessionを1件返す。
+
+    同じ呼び出し元が未終端sessionを2件以上所有する待機区間で使う。
+    応答は選択した`session_id`を必ず含み、残るsessionの結果は保持する。
+    終端前に`status: running`又は通知を受領した場合は、残る集合へ本ツールを再発行する。
+    """
+    return await _MANAGER.wait_any(session_ids, timeout, request_bucket)
 
 
 @mcp.tool(name="send_message", structured_output=True)

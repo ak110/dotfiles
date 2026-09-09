@@ -93,7 +93,7 @@ Bashツールのタイムアウト引数を上限まで引き上げた前景実�
 - 作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成し、
   用途の完了と内容の検収後は`atk managed-temp cleanup --path <検収済み絶対パス>`を単独で実行する。
   対応するAWIは`--awi <ファイル名>`を複数指定して記録できる。
-  `atk`はpluginの`bin/`からBashの`PATH`へ追加され、自身の位置から現行plugin rootの`scripts/_managed_temp.py`を解決する
+  `atk`はpluginの`bin/`からBashの`PATH`へ追加され、自身の位置から現行plugin rootの`agent_toolkit/_managed_temp.py`を解決する
 - 管理用のマーカーファイル（`.agent-toolkit-managed-temp.json`）と利用者専用登録簿は同じ版数付きの登録情報を保持する。
   スキーマ版数3では`prefix`・`created_at`・`awis`を必須とし、全項目の完全一致を検証する。
   スキーマ版数2は`prefix`と`created_at`を必須とする版数2のフィールド集合どうしだけを完全一致で検証する。

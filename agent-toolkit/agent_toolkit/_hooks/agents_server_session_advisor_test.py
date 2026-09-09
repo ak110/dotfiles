@@ -10,7 +10,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-    "`wait(session_id)`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
+    "単一sessionは`wait(session_id)`、複数sessionは`wait_any(session_ids)`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )
@@ -256,6 +256,18 @@ def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> 
         _record_start(tmp_path, local_session_id, remote_session_id)
         _record_bash(tmp_path, local_session_id, command)
         assert _run_stop(tmp_path, local_session_id) == ""
+
+
+def test_agents_wait_any_resolves_pending_observation_for_all_targets(tmp_path: pathlib.Path) -> None:
+    """Bash経由の複数待機は指定した全sessionの未観測状態を解消する。"""
+    local_session_id = "agents-wait-any"
+    remote_session_ids = ("remote-first", "remote-second")
+    for remote_session_id in remote_session_ids:
+        _record_start(tmp_path, local_session_id, remote_session_id)
+
+    _record_bash(tmp_path, local_session_id, f"atk agents-wait-any {' '.join(remote_session_ids)} --timeout=1")
+
+    assert _run_stop(tmp_path, local_session_id) == ""
 
 
 def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathlib.Path) -> None:

@@ -47,7 +47,10 @@ def test_resolvable_imports_only_returns_zero(_isolate_repo_root: pathlib.Path) 
 
 def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """独立スクリプトのimport不備とproject moduleのPEP 723残存を報告する。"""
-    _write_pep723_script(_isolate_repo_root / "agent-toolkit/scripts/broken.py", body="import missing_toolkit_dependency")
+    _write_pep723_script(
+        _isolate_repo_root / _TOOLKIT_PREFIX / "scripts/broken.py",
+        body="import missing_toolkit_dependency",
+    )
     _write_pep723_script(
         _isolate_repo_root / f"{_TOOLKIT_PREFIX}/skills/example/scripts/broken.py",
         body="import missing_skill_dependency",
@@ -55,7 +58,7 @@ def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, ca
 
     assert check_script_imports.main() == 1
     captured = capsys.readouterr()
-    assert "agent-toolkit/scripts/broken.py" in captured.err
+    assert f"{_TOOLKIT_PREFIX}/scripts/broken.py" in captured.err
     assert f"{_TOOLKIT_PREFIX}/skills/example/scripts/broken.py" in captured.err
     assert "uvプロジェクト配下にPEP 723宣言が残っている" in captured.err
 
@@ -63,11 +66,11 @@ def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, ca
 def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """サブディレクトリのPEP 723起点も再帰走査する。"""
     _write_pep723_script(
-        _isolate_repo_root / "agent-toolkit/scripts/_pkg/broken.py",
+        _isolate_repo_root / _TOOLKIT_PREFIX / "scripts/_pkg/broken.py",
         body="import missing_nested_dependency",
     )
     assert check_script_imports.main() == 1
-    assert "agent-toolkit/scripts/_pkg/broken.py" in capsys.readouterr().err
+    assert f"{_TOOLKIT_PREFIX}/scripts/_pkg/broken.py" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

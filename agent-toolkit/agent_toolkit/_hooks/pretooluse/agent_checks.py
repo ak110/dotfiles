@@ -132,6 +132,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     resolve_execution_segment,
     split_bash_segments,
 )
+from agent_toolkit._hooks.agent_id import resolve_hook_agent_id  # noqa: E402
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
@@ -251,12 +252,95 @@ _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_WAIT_ANY_TOOLS = frozenset(f"{namespace}wait_any" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_LIST_TOOLS = frozenset(f"{namespace}list" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
+    _AGENTS_SERVER_START_TOOLS
+    | _AGENTS_SERVER_WAIT_TOOLS
+    | _AGENTS_SERVER_WAIT_ANY_TOOLS
+    | _AGENTS_SERVER_SEND_TOOLS
+    | _AGENTS_SERVER_KILL_TOOLS
 )
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
+_AGENTS_SERVER_LIST_RETRY_WINDOW_SECONDS = 300
+
+
+def _check_agents_server_list_repeat(session_id: str) -> bool:
+    """状態変化のない`agents_server`の`list`再取得を一度だけ遮断する。
+
+    状態キー`agents_server_sessions`をキー順JSONへ正規化した指紋で前回の`list`からの
+    変化を判定する。直近の遮断から5分以内の再実行は、記録できない状態変化がある経路で
+    恒久的に停止しないよう通過させる。遮断する場合は、前回の結果を再利用するという
+    一意の代替手段を同じターンで実行できるためblockを返す。
+    """
+    if not session_id:
+        return False
+    now = time.time()
+    state = read_state(session_id)
+    fingerprint = json.dumps(state.get("agents_server_sessions"), ensure_ascii=False, sort_keys=True)
+    blocked_at = state.get("agents_server_list_blocked_at")
+    if isinstance(blocked_at, (int, float)) and now - blocked_at <= _AGENTS_SERVER_LIST_RETRY_WINDOW_SECONDS:
+
+        def _allow_retry(current: dict) -> dict:
+            current["agents_server_list_fingerprint"] = fingerprint
+            current.pop("agents_server_list_blocked_at", None)
+            return current
+
+        update_state(session_id, _allow_retry)
+        return False
+    if state.get("agents_server_list_fingerprint") != fingerprint:
+
+        def _record_fingerprint(current: dict) -> dict:
+            current["agents_server_list_fingerprint"] = fingerprint
+            return current
+
+        update_state(session_id, _record_fingerprint)
+        return False
+
+    def _mark_blocked(current: dict) -> dict:
+        current["agents_server_list_blocked_at"] = now
+        return current
+
+    update_state(session_id, _mark_blocked)
+    print(
+        _block_notice(
+            "blocked: 前回の`list`から`agents_server`の状態が変化していないため、同じ結果が返る。"
+            "前回の`list`の結果を再利用する。",
+            fix="完了通知の受領後など再取得が必要な場合は、5分以内に同じ`list`を再実行すると続行できる。",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
+def _check_agents_server_wait_mode(payload: dict, session_id: str, tool_input: dict) -> bool:
+    """所有する未終端sessionが複数ある区間の単一blocking waitを拒否する。"""
+    if tool_input.get("timeout") == 0:
+        return False
+    owner_agent_id = resolve_hook_agent_id(payload)
+    sessions = read_state(session_id).get("agents_server_sessions")
+    if not isinstance(sessions, dict):
+        return False
+    unfinished = sorted(
+        remote_session_id
+        for remote_session_id, record in sessions.items()
+        if isinstance(remote_session_id, str)
+        and isinstance(record, dict)
+        and record.get("owner_agent_id") == owner_agent_id
+        and record.get("status") == "running"
+    )
+    if len(unfinished) < 2:
+        return False
+    print(
+        _block_notice(
+            "blocked: 呼出主体が未終端sessionを2件以上所有する区間では単一sessionへのblocking waitを発行できない。",
+            fix=f"wait_anyへ未終端sessionをまとめて渡す: {', '.join(unfinished)}",
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 # --- 計画単位の状態管理 ---

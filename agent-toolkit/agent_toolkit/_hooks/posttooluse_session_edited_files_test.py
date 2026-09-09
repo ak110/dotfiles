@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/posttooluse.pyの`session_edited_files`蓄積機構のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/posttooluse.pyの`session_edited_files`蓄積機構のテスト。
 
 Write / Edit / MultiEditで編集したファイルパスを`session_edited_files`へ蓄積する挙動を検証する。
 pretooluse.pyの一括ステージ警告（`_check_bash_bulk_stage_with_unedited_files`）が

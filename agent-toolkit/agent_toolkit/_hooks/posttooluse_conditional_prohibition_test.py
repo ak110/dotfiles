@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/posttooluse.pyの条件付き禁止形機械検出（fb06）のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/posttooluse.pyの条件付き禁止形機械検出（fb06）のテスト。
 
 `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時に
 「〜した状態で…しない/禁止」パターンを警告検出する挙動を検証する。

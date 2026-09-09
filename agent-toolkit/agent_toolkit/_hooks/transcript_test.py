@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/transcript.py のテスト。"""
+"""agent-toolkit/agent_toolkit/_hooks/transcript.py のテスト。"""
 
 import json
 import pathlib

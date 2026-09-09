@@ -79,7 +79,7 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 通知本文がホストの出力上限を超える見込みがある場合は、載せる対象を上限の内側へ限り、載せなかった対象の取得手順を`fix`へ示す。
 
 `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
-`agent-toolkit/scripts/_hooks/rules_context.py`は、前者でメイン向け条文を追加するときに委譲先を除く。
+`agent-toolkit/agent_toolkit/_hooks/rules_context.py`は、前者でメイン向け条文を追加するときに委譲先を除く。
 判定には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を用い、後者ではサブエージェント向け条文を追加する。
 
 `Stop`と`SubagentStop`へ登録する判定は、いずれも委譲先で発火し得る。
@@ -142,9 +142,9 @@ Codexのシェル実行は、matcher上で`Bash`に一致する。
 <https://code.claude.com/docs/ja/hooks.md>を一次資料とする。
 本節は経路選択の方針だけを定める。
 
-イベントごとの出力契約の機械検査は`agent-toolkit/scripts/_hooks/output_contract.py`を正本とする。
+イベントごとの出力契約の機械検査は`agent-toolkit/agent_toolkit/_hooks/output_contract.py`を正本とする。
 同ファイルは公式のHooksリファレンスが定める契約をJSON Schemaで保持する。
-`agent-toolkit/scripts/_hooks/output_contract_test.py`が登録済みの全hookの出力を当該契約へ照合する。
+`agent-toolkit/agent_toolkit/_hooks/output_contract_test.py`が登録済みの全hookの出力を当該契約へ照合する。
 フックを追加又は変更する場合は、当該契約と検体を同じ変更単位で更新する。
 
 Claude Codeが表示する`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器が

@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
@@ -75,6 +75,30 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
+def test_wait_dispatch_invokes_multiple_session_guard(tmp_path: pathlib.Path) -> None:
+    """agents_serverのwait分岐は複数sessionの遮断検査へ到達する。"""
+    session_id = "dispatch-wait-mode"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    state_path.write_text(
+        json.dumps(
+            {
+                "agents_server_sessions": {
+                    "remote-a": {"owner_agent_id": "main", "status": "running"},
+                    "remote-b": {"owner_agent_id": "main", "status": "running"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = _run(
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "remote-a"}},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+
+    assert result.returncode == 2
+    assert "wait_any" in result.stderr
+
+
 def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path) -> None:
     """ヘルプ未観測の`atk`サブコマンドを遮断しない。"""
     result = _run(
@@ -135,6 +159,114 @@ class TestMojibakeCheck:
                 "tool_input": {"file_path": "/tmp/a.txt", "old_string": "破損した\ufffd文字", "new_string": "破損した文字"},
             }
         )
+        assert result.returncode == 0
+
+
+class TestEditBoundaryResolution:
+    """複数断片の境界解決による遮断。"""
+
+    def test_multiedit_missing_last_boundary_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "first", "new_string": "first-updated"},
+                        {"old_string": "missing", "new_string": "added"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert f"{target}: edits[1].new_string" in result.stderr
+        assert target.read_text(encoding="utf-8") == "first\nsecond\n"
+
+    def test_multiedit_all_boundaries_resolvable_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "first", "new_string": "first-updated"},
+                        {"old_string": "second", "new_string": "second-updated"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_boundary_check_skips_unreadable_and_single_fragment(self, tmp_path: pathlib.Path) -> None:
+        missing = tmp_path / "missing.txt"
+        unreadable = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(missing),
+                    "edits": [
+                        {"old_string": "first", "new_string": "first-updated"},
+                        {"old_string": "second", "new_string": "second-updated"},
+                    ],
+                },
+            }
+        )
+        single = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(missing),
+                    "old_string": "missing",
+                    "new_string": "added",
+                },
+            }
+        )
+        assert unreadable.returncode == 0
+        assert single.returncode == 0
+
+    def test_multiedit_ambiguous_boundary_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("repeat\nrepeat\nunique\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "repeat", "new_string": "updated"},
+                        {"old_string": "unique", "new_string": "changed"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert f"{target}: edits[0].new_string" in result.stderr
+
+    def test_apply_patch_ambiguous_hunk_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("repeat\nrepeat\nunique\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-repeat\n+updated\n@@\n-unique\n+changed\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
+        assert result.returncode == 2
+        assert f"{target}: hunk[0]" in result.stderr
+
+    def test_apply_patch_missing_hunk_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-first\n+updated\n@@\n-missing\n+added\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
+        assert result.returncode == 2
+        assert f"{target}: hunk[1]" in result.stderr
+
+    def test_apply_patch_unique_hunks_are_allowed(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-first\n+updated\n@@\n-second\n+changed\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
         assert result.returncode == 0
 
 
@@ -715,8 +847,7 @@ class TestColloquialCheck:
         assert "一致: 1件（行1、列4）" in _additional_context(result)
         assert "検出箇所を含む文全体" in _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
-        # 検出語そのものは出力に含めない（コンテキスト汚染防止）
-        assert deny_substring not in _agent_messages(result)
+        assert f"検出語: {deny_substring}" in _agent_messages(result)
 
     def test_lists_every_match_position_within_limit(self, deny_substring: str):
         content = f"概要は{deny_substring}該当する。\n" * 5
@@ -903,7 +1034,7 @@ class TestUserFacingTextChecks:
             assert result.returncode == 0
             assert "口語的な日本語表現" in _additional_context(result)
             assert "Target:" not in _additional_context(result)
-            assert deny_substring not in _agent_messages(result)
+            assert f"検出語: {deny_substring}" in _agent_messages(result)
         else:
             assert result.returncode == 2
             expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
@@ -940,6 +1071,13 @@ class TestUserFacingTextChecks:
 
         assert result.returncode == 0
         assert "口語的な日本語表現" in _additional_context(result)
+
+    def test_empty_file_path_uses_ask_user_question_as_target(self, deny_substring: str) -> None:
+        """質問入力の口語警告は空のパスではなくツール名を対象として示す。"""
+        result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
+
+        assert result.returncode == 0
+        assert "対象: AskUserQuestion" in _additional_context(result)
 
 
 class TestAskUserQuestionRequiredRead:

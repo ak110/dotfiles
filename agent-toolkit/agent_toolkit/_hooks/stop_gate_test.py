@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/stop_gate.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/stop_gate.py のテスト。
 
 公開関数`is_pending_async_work`の振る舞いを境界値・同値分割で網羅する。
 常時ログ関数（`append_stop_log`）も対象とする。

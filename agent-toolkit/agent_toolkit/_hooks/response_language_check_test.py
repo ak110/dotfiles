@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/response_language_check.py のテスト。"""
+"""agent-toolkit/agent_toolkit/_hooks/response_language_check.py のテスト。"""
 
 import json
 import pathlib

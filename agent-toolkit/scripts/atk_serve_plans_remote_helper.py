@@ -308,7 +308,7 @@ def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None) -> boo
 def _exclusive_file_lock(path: pathlib.Path) -> typing.Iterator[None]:
     """`path`をロックファイルとしてプロセス間の排他ロックを保持する。
 
-    `agent-toolkit/scripts/_common/file_lock.py`の`exclusive_file_lock`と同じ排他範囲を持つ。
+    `agent-toolkit/agent_toolkit/_common/file_lock.py`の`exclusive_file_lock`と同じ排他範囲を持つ。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+", encoding="utf-8") as handle:
@@ -493,7 +493,7 @@ def _cleanup_creation_time_temporaries() -> None:
 def _ctime_epoch(st: os.stat_result) -> float:
     """観測時点の作成日時候補をepoch秒で返す。`st_birthtime`（存在時）を優先する。
 
-    詳細は`agent-toolkit/scripts/_atk/serve/plans.py`の同名関数のdocstringを参照
+    詳細は`agent-toolkit/agent_toolkit/_atk/plans.py`の同名関数のdocstringを参照
     （リモートヘルパーは独立実行スクリプトのためロジックを重複させている）。
     """
     birthtime = getattr(st, "st_birthtime", None)

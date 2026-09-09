@@ -1,5 +1,9 @@
 # 上流投入担当の起動と受領
 
+```text
+起動対象: upstream-submission.subagent.md
+```
+
 `agent-toolkit:process-wi`のレーン工程で、レーンを起動する前にメインが本書を全文読み、上流投入担当の起動、入力の受け渡し及び返却値の検収へ適用する。
 呼び先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/upstream-submission.subagent.md`が定める。本書へ呼び先固有の作業手順を書かない。
 
@@ -16,6 +20,7 @@ pickerが項目ごとの`upstream_target_repo`と`upstream_request`を確定し�
 - `${CLAUDE_PLUGIN_ROOT}/share/upstream-submission.subagent.md`の絶対パス
 - 元項目を保持する対象リポジトリの絶対パス
 - 元項目と投入先の組ごとの、元項目のAWIファイル名、1件の`upstream_target_repo`及びpickerが返した`upstream_request`
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 - 投入先を受領した値へ固定し、自ら決定しないこと
 - 完了報告と成果物を日本語で書くこと
 

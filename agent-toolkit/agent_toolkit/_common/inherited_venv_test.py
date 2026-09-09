@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_common/inherited_venv.py のテスト。"""
+"""agent-toolkit/agent_toolkit/_common/inherited_venv.py のテスト。"""
 
 import os
 

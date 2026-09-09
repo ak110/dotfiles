@@ -1960,6 +1960,27 @@ def _write_uwi_file(
     return path
 
 
+@pytest.mark.parametrize("locator", ["rollout-123:1", "record set:42"])
+def test_wi_add_accepts_origin_locator(locator: str) -> None:
+    """`--origin-locator`は非空の記録集合識別子と1以上の行番号を受理する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    args = parser.parse_args(["wi", "add", "--origin-locator", locator])
+
+    assert args.origin_locator == locator
+
+
+@pytest.mark.parametrize("locator", ["", "rollout-123", ":1", "rollout-123:0", "rollout-123:-1", "rollout-123:one", "a:b:1"])
+def test_wi_add_rejects_invalid_origin_locator(locator: str) -> None:
+    """`--origin-locator`は指定形式以外をargparseの終了コード2で拒否する。"""
+    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["wi", "add", "--origin-locator", locator])
+
+    assert exc_info.value.code == 2
+
+
 class TestAddBatchOption:
     """`mq add --batch`のCLI分岐と併用制約を検証する。"""
 
@@ -2012,6 +2033,7 @@ class TestAddBatchOption:
             ["--choices=A,B"],
             ["--plan-file=/tmp/plan.md"],
             ["--depends-on=other.md"],
+            ["--origin-locator=rollout-123:1"],
         ],
     )
     def test_rejects_options_conflicting_with_batch(

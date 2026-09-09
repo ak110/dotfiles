@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・`atk agents-wait-any`・
 `atk agents-notify`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
 `atk review-audit <sub>`形式とする。
@@ -24,6 +24,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 - agents-wait: agents_serverが保存した終端結果又は通知を1行で出力する
+- agents-wait-any: 複数sessionの最初の終端結果又は通知を1行で出力する
 - agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
@@ -142,6 +143,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         "--plan-file",
         "--depends-on",
         "--body-file",
+        "--origin-locator",
     }
     while candidate_index < len(argv) and argv[candidate_index].startswith("-"):
         option = argv[candidate_index].split("=", 1)[0]
@@ -171,6 +173,13 @@ def _source_filter_type(value: str) -> str:
     remainder = value[1:] if value.startswith("!") else value
     if not remainder:
         raise argparse.ArgumentTypeError("空文字列は指定できません（例: --source=session-review）")
+    return value
+
+
+def _origin_locator_type(value: str) -> str:
+    """`<記録集合識別子>:<1以上の行番号>`形式の値だけをargparseへ渡す。"""
+    if re.fullmatch(r"[^:]+:[1-9][0-9]*", value) is None:
+        raise argparse.ArgumentTypeError("<記録集合識別子>:<1以上の行番号>の形式で指定してください")
     return value
 
 
@@ -275,7 +284,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "ファイル名は取り込み先と衝突しない限り元名を維持する。"
             "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
             "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
-            "--target-repo・--sourceとは併用できない。"
+            "--target-repo・--source・--origin-locatorとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
             "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
@@ -343,6 +352,13 @@ def _add_wi_add_parser(sub: Any) -> None:
             "session-review・alert-monitor・agent・human・plan）。"
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
+    )
+    add.add_argument(
+        "--origin-locator",
+        metavar="LOCATOR",
+        type=_origin_locator_type,
+        default=None,
+        help=("要求の出所となったユーザー発話の所在。<記録集合識別子>:<1以上の行番号>の形式で指定する。"),
     )
     _add_target_repo_arg(
         add,
@@ -861,6 +877,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default=3600.0,
         help="待機上限秒数。到達した場合は終了コード3で終わる。",
     )
+    agents_wait_any = _atk_help.add_command(top, "agents-wait-any", **_atk_help.HELP["atk agents-wait-any"])
+    agents_wait_any.add_argument("session_id", nargs="+", help="待機対象のsession識別子。")
+    agents_wait_any.add_argument(
+        "--timeout",
+        type=_nonnegative_finite_float,
+        default=3600.0,
+        help="待機上限秒数。到達した場合は終了コード3で終わる。",
+    )
     agents_notify = _atk_help.add_command(top, "agents-notify", **_atk_help.HELP["atk agents-notify"])
     agents_notify.set_defaults(subparser=agents_notify)
     notification_body = agents_notify.add_mutually_exclusive_group(required=True)
@@ -920,6 +944,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--depends-on", args.depends_on),
                 ("--target-repo", args.target_repo),
                 ("--source", args.source),
+                ("--origin-locator", args.origin_locator),
                 ("REPO_PATH", args.repo_path_override),
             )
             if value is not None
@@ -1022,6 +1047,8 @@ def main(
         sys.exit(0)
     if args.command == "agents-wait":
         sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.timeout))
+    if args.command == "agents-wait-any":
+        sys.exit(_atk_agents_wait.wait_for_any_result(args.session_id, args.timeout))
     if args.command == "agents-notify":
         body = args.body
         if args.body_file is not None:

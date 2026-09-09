@@ -6,9 +6,9 @@ PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
 判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
-`wait`は応答の`status`を問わず観測を試みたことになり、`kill`は結果を意図的に
+`wait`と`wait_any`は応答の`status`を問わず観測を試みたことになり、`kill`は結果を意図的に
 破棄するため、いずれも`pending_observation`を解消する。Bash経由で起動した
-`atk agents-wait`も観測の試みとして解消する。実行環境が`wait`・`kill`を背景タスクへ移し、
+`atk agents-wait`と`atk agents-wait-any`も観測の試みとして解消する。実行環境が待機・中断を背景タスクへ移し、
 構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
 一度解消したsessionでも、
 `send_message`が新しい作業を配送すれば再び警告対象になる。
@@ -32,7 +32,7 @@ _HOOK_ID = "agent-toolkit/agents_server_session_advisor"
 _SESSION_STATE_KEY = "agents_server_sessions"
 _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-    "`wait(session_id)`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
+    "単一sessionは`wait(session_id)`、複数sessionは`wait_any(session_ids)`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )

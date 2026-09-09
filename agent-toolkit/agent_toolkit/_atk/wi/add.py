@@ -234,6 +234,8 @@ _RESERVED_FRONTMATTER_KEYS = (
     "target_commit",
     "type",
     "source",
+    "origin_session",
+    "origin_locator",
     "scope",
     "question_type",
     "choices",
@@ -256,6 +258,8 @@ CLIオプションより優先して採用するが、`target_repo`は`_resolve_
 保存する。
 `type`・`scope`・`question_type`・`choices`はCLIオプション
 （`--type`・`--scope`・`--question-type`・`--choices`）の値で確定させ入力側の値を採用しない。
+`origin_session`・`origin_locator`はWIを投入したセッションとユーザー発話の所在を対応付ける
+CLI管理の識別情報として予約する。
 `target_commit`・`plan_file`・`queue_schedule`・`depends_on`・`cooldown_until`・`repair_target`・`repair_kind`・
 `reservation`・`reservation_companion`・`target_commit_history`はユーザーによる直接指定を禁止し、
 CLIが管理する識別情報、依存、修復UWI、旧形式の内部metadataとして予約する。
@@ -273,6 +277,8 @@ def _add_entries_locked(
     scope: str | None,
     question_type: str | None,
     choices: str | None,
+    origin_session: str | None = None,
+    origin_locator: str | None = None,
     target_commit: str | None = None,
     plan_file: str | None = None,
     repair_targets: list[str | None] | None = None,
@@ -321,6 +327,9 @@ def _add_entries_locked(
             frontmatter_data["target_commit"] = target_commit
         if item_source:
             frontmatter_data["source"] = item_source
+        if isinstance(origin_session, str) and origin_session and isinstance(origin_locator, str) and origin_locator:
+            frontmatter_data["origin_session"] = origin_session
+            frontmatter_data["origin_locator"] = origin_locator
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
         if entry_type != WI_TYPE_AWI:
             if scope:
@@ -358,6 +367,8 @@ def add_entries(
     scope: str | None = None,
     question_type: str | None = None,
     choices: str | None = None,
+    origin_session: str | None = None,
+    origin_locator: str | None = None,
     target_commit: str | None = None,
     plan_file: str | None = None,
     depends_on: tuple[str, ...] = (),
@@ -394,6 +405,8 @@ def add_entries(
             scope=scope,
             question_type=question_type,
             choices=choices,
+            origin_session=origin_session,
+            origin_locator=origin_locator,
             target_commit=target_commit,
             plan_file=stored_plan_file,
             depends_on=depends_on,
@@ -592,6 +605,8 @@ def _cmd_add(
             scope=args.scope,
             question_type=args.question_type,
             choices=args.choices,
+            origin_session=_plan_file.resolve_owner_session_id(),
+            origin_locator=args.origin_locator,
             target_commit=target_commit,
             plan_file=args.plan_file,
             depends_on=canonical_dependencies,

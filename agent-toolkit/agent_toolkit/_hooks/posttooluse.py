@@ -201,12 +201,14 @@ _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
+_AGENTS_SERVER_WAIT_ANY_TOOLS = frozenset(f"{namespace}wait_any" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_STOP_TOOLS = frozenset(f"{namespace}stop" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
     _AGENTS_SERVER_START_TOOLS
     | _AGENTS_SERVER_WAIT_TOOLS
+    | _AGENTS_SERVER_WAIT_ANY_TOOLS
     | _AGENTS_SERVER_SEND_TOOLS
     | _AGENTS_SERVER_KILL_TOOLS
     | _AGENTS_SERVER_STOP_TOOLS
@@ -304,7 +306,7 @@ def _is_nonempty_absolute_cwd(value: object) -> bool:
 
 def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
     """操作ごとの正本から委譲先session識別子を返す。"""
-    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS else tool_input
+    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_ANY_TOOLS else tool_input
     value = source.get("session_id") if isinstance(source, dict) else None
     return value if isinstance(value, str) and value else None
 
@@ -332,7 +334,7 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
     required_fields: tuple[str, ...]
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         required_fields = ("session_id", "status")
-    elif operation in {"wait", "kill"}:
+    elif operation in {"wait", "wait_any", "kill"}:
         required_fields = ("status",)
     elif operation == "send_message":
         required_fields = ("delivery",)
@@ -393,7 +395,7 @@ def _record_agents_server_session_state(
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
-        elif operation in {"wait", "kill", "stop"}:
+        elif operation in {"wait", "wait_any", "kill", "stop"}:
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
@@ -451,30 +453,37 @@ def _record_agents_server_observation_attempt(session_id: str, tool_input: dict,
     記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
     公開状態は移行通知から確定できないため更新しない。
     """
-    if operation not in {"wait", "kill"}:
+    if operation not in {"wait", "wait_any", "kill"}:
         return
-    remote_session_id = tool_input.get("session_id")
-    if not isinstance(remote_session_id, str) or not remote_session_id:
+    raw_session_ids = tool_input.get("session_ids") if operation == "wait_any" else [tool_input.get("session_id")]
+    if not isinstance(raw_session_ids, list):
         return
+    remote_session_ids = {value for value in raw_session_ids if isinstance(value, str) and value}
 
     def _mutator(state: dict) -> dict | None:
         sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
-        record = sessions.get(remote_session_id) if isinstance(sessions, dict) else None
-        if not isinstance(record, dict) or record.get("pending_observation") is False:
+        if not isinstance(sessions, dict):
             return None
-        record["pending_observation"] = False
-        return state
+        changed = False
+        for remote_session_id in remote_session_ids:
+            record = sessions.get(remote_session_id)
+            if isinstance(record, dict) and record.get("pending_observation") is not False:
+                record["pending_observation"] = False
+                changed = True
+        return state if changed else None
 
     update_state(session_id, _mutator)
 
 
-def _agents_wait_session_id(tokens: tuple[str, ...]) -> str | None:
-    """`atk agents-wait`の実行トークン列からsession識別子を返す。"""
+def _agents_wait_session_ids(tokens: tuple[str, ...]) -> tuple[str, ...]:
+    """`atk agents-wait`系の実行トークン列からsession識別子を返す。"""
     if len(tokens) < 3:
-        return None
+        return ()
     executable = tokens[0].replace("\\", "/")
-    if executable.rsplit("/", 1)[-1] not in {"atk", "atk.py"} or tokens[1] != "agents-wait":
-        return None
+    if executable.rsplit("/", 1)[-1] not in {"atk", "atk.py"} or tokens[1] not in {"agents-wait", "agents-wait-any"}:
+        return ()
+    multiple = tokens[1] == "agents-wait-any"
+    session_ids: list[str] = []
     index = 2
     while index < len(tokens):
         token = tokens[index]
@@ -485,11 +494,15 @@ def _agents_wait_session_id(tokens: tuple[str, ...]) -> str | None:
             index += 1
             continue
         if token == "--":
-            return tokens[index + 1] if index + 1 < len(tokens) else None
+            session_ids.extend(tokens[index + 1 :])
+            break
         if token.startswith("-"):
-            return None
-        return token
-    return None
+            return ()
+        session_ids.append(token)
+        index += 1
+        if not multiple:
+            break
+    return tuple(session_ids)
 
 
 def _record_agents_wait_observation_attempt(session_id: str, command: str) -> None:
@@ -497,7 +510,8 @@ def _record_agents_wait_observation_attempt(session_id: str, command: str) -> No
     remote_session_ids = {
         remote_session_id
         for segment in extract_execution_segments(command)
-        if segment.resolved and (remote_session_id := _agents_wait_session_id(segment.tokens)) is not None
+        if segment.resolved
+        for remote_session_id in _agents_wait_session_ids(segment.tokens)
     }
     if not remote_session_ids:
         return
@@ -825,6 +839,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         structured = _extract_agents_server_structured_response(tool_response)
         moved_to_background = _stop_gate.background_task_id_from_notice(tool_response) is not None
         operation = tool_name.rsplit("__", 1)[-1]
+        if operation == "wait_any":
+            _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
         if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and not moved_to_background:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
@@ -851,7 +867,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 remote_session_id=remote_session_id,
             )
         else:
-            if operation in {"wait", "kill"}:
+            if operation in {"wait", "wait_any", "kill"}:
                 _log_tracked_session_end(session_id, structured, remote_session_id)
             _record_agents_server_session_state(
                 session_id,

@@ -1,5 +1,9 @@
 # 終端担当の起動と受領
 
+```text
+起動対象: session-termination.subagent.md
+```
+
 `agent-toolkit:process-wi`の公開工程で、メインが本書を全文読み、終端担当の起動、入力の受け渡し及び返却値の検収へ適用する。
 呼び先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`が定める。本書へ呼び先固有の作業手順を書かない。
 
@@ -21,7 +25,8 @@
 - 直前にpushした完全OID。当該セッションで未pushの場合は`なし`
 - 統合後検証の検証コマンド。レーン工程で各レーンの計画ファイル（メイン）`## 検証区分`の`統合後検証`行から記録した値を重複なく並べる。全レーンの当該行が`なし`である場合は`なし`
 - 選定工程で記録した固有の終端工程と依存順。無い場合は`なし`
-- 延期`adopt`の対象AWIファイル名、先行する終端工程及び`deferred_adopt_commits`で当該AWIに対応付けて検収した完全OID。無い場合は`なし`
+- `延期adopt`: 対象AWIファイル名、先行する終端工程及び`deferred_adopt_commits`で当該AWIに対応付けて検収した完全OID。無い場合は`なし`
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 - 作業対象リポジトリへの書込みと`git push`可、固有の終端工程が明示する範囲でのタグ作成とrelease作成可という権限
 - 完了報告と成果物を日本語で書くこと
 

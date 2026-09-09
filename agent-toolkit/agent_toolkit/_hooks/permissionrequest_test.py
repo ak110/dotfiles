@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/permissionrequest.py の無条件許可と記録のテスト。"""
+"""agent-toolkit/agent_toolkit/_hooks/permissionrequest.py の無条件許可と記録のテスト。"""
 
 import json
 import pathlib

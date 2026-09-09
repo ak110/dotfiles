@@ -1,6 +1,6 @@
 # ruff: noqa: F401,I001
 # pylint: disable=unused-import
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/ のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """

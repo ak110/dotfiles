@@ -151,6 +151,7 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", raising=False)
 
 
 @pytest.fixture(autouse=True)

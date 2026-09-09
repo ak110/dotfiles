@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import state, status_file
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 
 def wait_for_result(
@@ -84,6 +85,87 @@ def wait_for_result(
             print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
             return 3
         time.sleep(min(1.0, remaining))
+
+
+def wait_for_any_result(
+    session_ids: list[str],
+    timeout: float,
+    *,
+    environment: Mapping[str, str] | None = None,
+    state_root: pathlib.Path | None = None,
+) -> int:
+    """指定したsession群の最初の終端結果又は通知を1件返す。"""
+    ordered_ids = sorted(set(session_ids))
+    if not ordered_ids or any(not status_file.valid_session_id(session_id) for session_id in ordered_ids):
+        print("session_idの形式が不正です", file=sys.stderr)
+        return 5
+    root_session_id = status_file.resolve_conversation_root_session_id(
+        os.environ if environment is None else environment, state_root
+    )
+    if root_session_id is None:
+        print(
+            "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait_any`で観測してください。",
+            file=sys.stderr,
+        )
+        return 4
+
+    lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-any-locks"
+    lock_directory.mkdir(parents=True, exist_ok=True)
+    lock_files: list[Any] = []
+    try:
+        for session_id in ordered_ids:
+            lock_file = (lock_directory / f"{session_id}.lock").open("a+b")
+            try:
+                acquire_lock(lock_file, blocking=False)
+            except OSError:
+                lock_file.close()
+                return 8
+            lock_files.append(lock_file)
+
+        result_directory = status_file.results_directory(root_session_id, state_root)
+        deadline = time.monotonic() + timeout
+        while True:
+            status_paths = status_file.list_status_files(root_session_id, state_root)
+            for session_id in ordered_ids:
+                result_path = result_directory / f"{session_id}.json"
+                result, read_error = _read_result(result_path)
+                if read_error is not None:
+                    print(f"終端結果ファイルを読めません: {result_path}: {read_error}", file=sys.stderr)
+                    return 6
+                notices = status_file.take_notices(root_session_id, session_id, state_root)
+                if result is not None:
+                    result["session_id"] = session_id
+                    if notices:
+                        result["notices"] = notices
+                    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+                    result_path.unlink(missing_ok=True)
+                    return 0
+                if notices:
+                    response = _running_response(session_id, _session_updated_at(status_paths, session_id))
+                    response["notices"] = notices
+                    print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+                    return 0
+
+            retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
+            if all(value is False for value in retained.values()):
+                print(json.dumps({"session_id": ordered_ids[0], "status": "expired"}, separators=(",", ":")))
+                return 7
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), ordered_ids[0])
+                print(
+                    json.dumps(
+                        _running_response(selected, _session_updated_at(status_paths, selected)),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                )
+                return 3
+            time.sleep(min(1.0, remaining))
+    finally:
+        for lock_file in reversed(lock_files):
+            release_lock(lock_file)
+            lock_file.close()
 
 
 def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
