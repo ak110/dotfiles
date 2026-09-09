@@ -48,6 +48,7 @@ def _cmd_add_args(
     entry_type: str = "awi",
     plan_file: str | None = None,
     dry_run: bool = False,
+    origin_locator: str | None = None,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
@@ -59,6 +60,7 @@ def _cmd_add_args(
         type=entry_type,
         depends_on=[],
         source=source,
+        origin_locator=origin_locator,
         scope=None,
         question_type="free-form" if entry_type == WI_TYPE_UWI else None,
         choices=None,
@@ -325,6 +327,29 @@ def test_cmd_add_accepts_human_awi_without_feasibility(
     add_module._cmd_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
+
+
+def test_cmd_add_saves_resolved_origin_session_with_locator(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_cmd_add`は実行環境から解決したセッションとlocatorの組を保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setattr(add_module._plan_file, "resolve_owner_session_id", lambda: "session-123")
+
+    add_module._cmd_add(
+        _cmd_add_args(tmp_path, "本文", origin_locator="rollout-456:17"),
+        notes,
+        _FIXED_DT,
+        tmp_path,
+    )
+
+    saved = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(saved)
+    assert parsed is not None
+    assert parsed[0]["origin_session"] == "session-123"
+    assert parsed[0]["origin_locator"] == "rollout-456:17"
 
 
 def test_cmd_add_rejects_missing_source_in_agent_environment(
@@ -644,6 +669,66 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     assert content.index("source: alert-monitor") < content.index("alert_keys: github-run:1")
 
 
+def test_flat_add_operation_saves_complete_origin_pair(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """origin_sessionとorigin_locatorの両方が非空の投入では対として保存する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source="session-review",
+        origin_session="session-123",
+        origin_locator="rollout-456:17",
+        now=_FIXED_DT,
+    )
+
+    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert list(parsed[0])[:5] == ["target_repo", "type", "source", "origin_session", "origin_locator"]
+    assert parsed[0]["origin_session"] == "session-123"
+    assert parsed[0]["origin_locator"] == "rollout-456:17"
+
+
+@pytest.mark.parametrize(
+    ("origin_session", "origin_locator"),
+    [
+        ("session-123", None),
+        (None, "rollout-456:17"),
+        ("", "rollout-456:17"),
+        ("session-123", ""),
+    ],
+)
+def test_flat_add_operation_omits_partial_origin_pair(
+    origin_session: str | None,
+    origin_locator: str | None,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """origin_sessionとorigin_locatorのいずれかが無い投入では両方を保存しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+
+    generated = add_module.add_entries(
+        notes,
+        messages=["本文"],
+        target_repo="github.com/example/repo",
+        source=None,
+        origin_session=origin_session,
+        origin_locator=origin_locator,
+        now=_FIXED_DT,
+    )
+
+    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert "origin_session" not in parsed[0]
+    assert "origin_locator" not in parsed[0]
+
+
 def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_repository_transfer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -710,6 +795,8 @@ def test_flat_add_operation_drops_input_queue_schedule(
         ("reservation", "forged"),
         ("reservation_companion", "forged"),
         ("target_commit_history", "forged"),
+        ("origin_session", "forged-session"),
+        ("origin_locator", "forged-rollout:1"),
     ],
 )
 def test_flat_add_operation_drops_input_repair_metadata(

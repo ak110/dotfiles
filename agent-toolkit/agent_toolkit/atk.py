@@ -142,6 +142,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         "--plan-file",
         "--depends-on",
         "--body-file",
+        "--origin-locator",
     }
     while candidate_index < len(argv) and argv[candidate_index].startswith("-"):
         option = argv[candidate_index].split("=", 1)[0]
@@ -171,6 +172,13 @@ def _source_filter_type(value: str) -> str:
     remainder = value[1:] if value.startswith("!") else value
     if not remainder:
         raise argparse.ArgumentTypeError("空文字列は指定できません（例: --source=session-review）")
+    return value
+
+
+def _origin_locator_type(value: str) -> str:
+    """`<記録集合識別子>:<1以上の行番号>`形式の値だけをargparseへ渡す。"""
+    if re.fullmatch(r"[^:]+:[1-9][0-9]*", value) is None:
+        raise argparse.ArgumentTypeError("<記録集合識別子>:<1以上の行番号>の形式で指定してください")
     return value
 
 
@@ -275,7 +283,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "ファイル名は取り込み先と衝突しない限り元名を維持する。"
             "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
             "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
-            "--target-repo・--sourceとは併用できない。"
+            "--target-repo・--source・--origin-locatorとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
             "構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）と同形の末尾行を"
@@ -343,6 +351,13 @@ def _add_wi_add_parser(sub: Any) -> None:
             "session-review・alert-monitor・agent・human・plan）。"
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
+    )
+    add.add_argument(
+        "--origin-locator",
+        metavar="LOCATOR",
+        type=_origin_locator_type,
+        default=None,
+        help=("要求の出所となったユーザー発話の所在。<記録集合識別子>:<1以上の行番号>の形式で指定する。"),
     )
     _add_target_repo_arg(
         add,
@@ -920,6 +935,7 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--depends-on", args.depends_on),
                 ("--target-repo", args.target_repo),
                 ("--source", args.source),
+                ("--origin-locator", args.origin_locator),
                 ("REPO_PATH", args.repo_path_override),
             )
             if value is not None
