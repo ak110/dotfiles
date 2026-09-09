@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/bash_command_parser.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/bash_command_parser.py のテスト。
 
 `split_bash_segments`と`extract_git_events`の挙動を、
 セグメント分割・cd/pushd追跡・git -C 解決・グローバルオプション分離の各観点で検証する。
@@ -18,6 +18,8 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     mask_heredoc_bodies,
     split_bash_segments,
 )
+
+_TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 
 class TestExtractExecutionSegments:
@@ -53,8 +55,9 @@ class TestExtractExecutionSegments:
         assert extract_execution_segments(command) == [ExecutionSegment((f"/repo/agent-toolkit/scripts/{name}",), True, True)]
 
     def test_other_agent_toolkit_pep723_script_is_not_identified(self) -> None:
-        command = "uv run --no-project --script /repo/agent-toolkit/scripts/other.py"
-        assert extract_execution_segments(command) == [ExecutionSegment(("/repo/agent-toolkit/scripts/other.py",), True, False)]
+        script = f"/repo/{_TOOLKIT_PREFIX}/scripts/other.py"
+        command = f"uv run --no-project --script {script}"
+        assert extract_execution_segments(command) == [ExecutionSegment((script,), True, False)]
 
 
 class TestSplitBashSegments:

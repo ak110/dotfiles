@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=protected-access,unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/content_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
@@ -462,7 +462,7 @@ class TestBashGitCommitWarning:
             pytest.param("git commit -m 't'", True, False, None, None, False, id="test-executed"),
             pytest.param("git status", False, False, None, None, False, id="non-commit-command"),
             pytest.param(
-                "grep -n 'git commit' agent-toolkit/scripts/_hooks/pretooluse.py",
+                "grep -n 'git commit' agent-toolkit/agent_toolkit/_hooks/pretooluse/content_checks.py",
                 False,
                 False,
                 None,

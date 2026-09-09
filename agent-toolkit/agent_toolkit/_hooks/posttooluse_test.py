@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/posttooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/posttooluse.py のテスト。
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
 plan file形式検査・SSOT検査・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、

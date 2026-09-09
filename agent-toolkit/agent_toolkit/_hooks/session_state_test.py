@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/session_state.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/session_state.py のテスト。
 
 並行書き込み時のキー保持・アトミック書き込みの保証・OS別ロックの動作を検証する。
 """

@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/dispatch.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """

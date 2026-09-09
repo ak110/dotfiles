@@ -1,6 +1,7 @@
-"""agent-toolkitスキルへの参照が追跡ファイルから実体へ解決することを検査する。
+"""agent-toolkitスキルとPythonファイルへの参照が追跡ファイルから実体へ解決することを検査する。
 
 `git ls-files`を入力にすることで、通常の検索が省く隠しディレクトリも対象に含める。
+検査対象は`.json`・`.md`・`.py`であり、`install-claude.sh`と`install-claude.ps1`は含まない。
 このファイル自身も走査対象となるため、欠損参照の検体は接頭辞から組み立てる。
 """
 
@@ -16,6 +17,10 @@ _SKILL_INVOCATION_PATTERN = re.compile(rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:
 _SKILL_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*/?"
 )
+_PYTHON_PATH_PATTERN = re.compile(
+    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/(?:scripts|agent_toolkit)/"
+    r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.py"
+)
 _SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
 _INCIDENTS = pathlib.Path("docs/development/incidents.md")
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
@@ -24,6 +29,7 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS): 5,
     (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS): 1,
     (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS): 1,
+    (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS): 1,
 }
 
 
@@ -49,6 +55,7 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
         content = (root / relative).read_text(encoding="utf-8")
         references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
         references.extend((match.group().rstrip("/"), relative) for match in _SKILL_PATH_PATTERN.finditer(content))
+        references.extend((match.group(), relative) for match in _PYTHON_PATH_PATTERN.finditer(content))
     return references
 
 
@@ -84,7 +91,7 @@ def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
 
 
 def test_agent_toolkit_references_resolve() -> None:
-    """追跡ファイルのagent-toolkitスキル参照が全て実体へ解決する。"""
+    """追跡中の`.json`・`.md`・`.py`にあるスキルとPython参照が全て実体へ解決する。"""
     root = pathlib.Path(__file__).resolve().parents[1]
     sources = _tracked_source_paths(root)
     assert any(path.parts[0] == ".claude" for path in sources)
@@ -106,6 +113,23 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
     assert not _unresolved_references(tmp_path, [source])
 
 
+def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path) -> None:
+    """Python参照の雛形とグロブを未解決の実体参照として扱わない。"""
+    source = pathlib.Path("source.md")
+    (tmp_path / source).write_text(
+        "\n".join(
+            [
+                f"{_PLUGIN_PREFIX}/agent_toolkit/*.py",
+                f"{_PLUGIN_PREFIX}/agent_toolkit/<name>.py",
+                f"{_PLUGIN_PREFIX}/skills/*/scripts/",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert not _unresolved_references(tmp_path, [source])
+
+
 def _known_legacy_references() -> list[str]:
     """事故記録へ保持する既知の失効参照を返す。"""
     return [
@@ -114,6 +138,7 @@ def _known_legacy_references() -> list[str]:
         *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 5,
         f"{_PLUGIN_PREFIX}:reviewee-standards",
         f"{_PLUGIN_PREFIX}:shell-exec",
+        f"{_PLUGIN_PREFIX}/scripts/hook.py",
     ]
 
 

@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/user_prompt_submit.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py のテスト。
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
 スラッシュコマンド起動時のセッション状態フラグ書き込みを網羅検証する。

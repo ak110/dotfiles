@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/stop_gate.py のテスト（`<task-id>`フォールバック解決）。
+"""agent-toolkit/agent_toolkit/_hooks/stop_gate.py のテスト（`<task-id>`フォールバック解決）。
 
 `<task-notification>`要素に`<tool-use-id>`が含まれない通知形式に対する
 `<task-id>`要素経由のフォールバック解決を、旧形式（userエントリ）・

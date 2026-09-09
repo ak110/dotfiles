@@ -4,7 +4,7 @@ description: >
   対象リポジトリのAWIを取得・検討・適用するときに起動する。
   「AWIがあった」「改善提案を反映」「振り返り結果を反映」などのキーワードで起動する。
 # 設計意図: docs/development/design.md の「終端工程」を参照。
-# 自動起動元: atk wi process-loopが本スキルの起動を目的文へ設定する。実装は agent-toolkit/scripts/_atk/wi/process_loop.py の_build_process_loop_prompt。
+# 自動起動元: atk wi process-loopが本スキルの起動を目的文へ設定する。実装は agent-toolkit/agent_toolkit/_atk/wi/process_loop.py の_build_process_loop_prompt。
 ---
 
 # AWI処理

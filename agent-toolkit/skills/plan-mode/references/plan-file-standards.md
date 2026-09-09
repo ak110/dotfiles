@@ -668,8 +668,8 @@ uv run --project <plugin rootの絶対パス> --locked --no-default-groups /abso
 検査対象本文の参照値は固定接頭辞と計画ファイルのディレクトリから安全に解決し、旧計画に残るportable表記と絶対パスは互換値として検査する。
 対応する`<stem>.detail.md`ファイルの実在により二ファイル形式と旧単一ファイル形式を分ける。
 二ファイル形式では計画ファイル（メイン）・計画ファイル（詳細）の両方の節構成を検査し、計画メタ情報の`関連WI`の有無により新規書式と旧二ファイル形式を分ける。
-detailが実在しない場合は、`agent-toolkit/scripts/_plan/structure.py`が定める旧単一ファイル形式の固定H2順で検査する。
-構造定数と値抽出は`agent-toolkit/scripts/_plan/structure.py`を正本とする。
+detailが実在しない場合は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が定める旧単一ファイル形式の固定H2順で検査する。
+構造定数と値抽出は`agent-toolkit/agent_toolkit/_plan/structure/`を正本とする。
 素材と要約の意味照合、根拠の妥当性、検討の実質はレビューで確認する。
 
 ## 保持・不変性・完全復元の契約

@@ -6,7 +6,7 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 呼び出し漏れを検知して当該ターンの継続をblockし再促する。
 
 `agent-toolkit:exit-session`呼び出しの記録はpluginのPostToolUse
-（`agent-toolkit/scripts/_hooks/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
+（`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
 反映する。本フックは同フラグをセッション状態ファイル経由で読み取るのみで、記録は行わない。
 
 判定順序は以下のとおり。

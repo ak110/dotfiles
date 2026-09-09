@@ -1,4 +1,4 @@
-"""agent-toolkit/scripts/_hooks/autonomous_exit.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py のテスト。
 
 agent-toolkit pluginが提供するStopフックを共通入口から起動し、環境変数・再帰呼び出し・
 非同期待機・呼び出し済み状態・blockの各契約を検証する。

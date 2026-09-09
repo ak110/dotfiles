@@ -1,6 +1,6 @@
 # ruff: noqa: E402,F401,F403,F405,I001
 # pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
-"""agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
+"""agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
@@ -960,7 +960,8 @@ class TestBashAgentToolkitVersionBump:
         assert not self._has_version_bump_warning(result)
 
     def test_only_test_files_no_warn(self, tmp_path: pathlib.Path):
-        repo = self._make_repo(tmp_path, {"agent-toolkit/scripts/foo_test.py": "x = 1\n"})
+        toolkit_prefix = "agent-" + "toolkit"
+        repo = self._make_repo(tmp_path, {f"{toolkit_prefix}/scripts/foo_test.py": "x = 1\n"})
         result = self._invoke("git commit -m 'test'", str(repo))
         assert not self._has_version_bump_warning(result)
 
