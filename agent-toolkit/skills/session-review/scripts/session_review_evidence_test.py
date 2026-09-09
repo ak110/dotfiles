@@ -150,6 +150,76 @@ def test_claude_question_answers_become_one_user_event_in_insertion_order(tmp_pa
     ]
 
 
+def _claude_answer_event(tmp_path: pathlib.Path, result: dict[str, object]) -> dict[str, str | int]:
+    """AskUserQuestionの回答記録から抽出した単一イベントを返す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "name": "AskUserQuestion", "id": "question"}],
+                },
+            },
+            {
+                "type": "user",
+                "toolUseResult": result,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "question", "content": "通常出力"}],
+                },
+            },
+        ],
+    )
+    event = evidence.load_and_extract(str(transcript))[0]
+    assert isinstance(event["text"], str)
+    return event
+
+
+def test_claude_answer_includes_annotation_notes(tmp_path: pathlib.Path) -> None:
+    """annotationsの文字列notesを自由記述として証拠化する。"""
+    event = _claude_answer_event(
+        tmp_path,
+        {"answers": {"質問": "回答"}, "annotations": {"質問": {"notes": "自由記述"}}},
+    )
+
+    assert event["text"] == "質問: 質問\n回答: 回答\n自由記述: 自由記述"
+
+
+def test_claude_answer_with_notes_only_keeps_recorded_answer(tmp_path: pathlib.Path) -> None:
+    """選択肢なしの自由記述でも記録済み回答を保持する。"""
+    event = _claude_answer_event(
+        tmp_path,
+        {"answers": {"質問": "(notes only)"}, "annotations": {"質問": {"notes": "自由記述"}}},
+    )
+
+    assert event["text"] == "質問: 質問\n回答: (notes only)\n自由記述: 自由記述"
+
+
+@pytest.mark.parametrize("annotations", [{"質問": {"preview": "選択肢"}}, None])
+def test_claude_answer_without_notes_is_unchanged(tmp_path: pathlib.Path, annotations: object) -> None:
+    """自由記述が無い回答の本文を変更しない。"""
+    result: dict[str, object] = {"answers": {"質問": "回答"}}
+    if annotations is not None:
+        result["annotations"] = annotations
+
+    event = _claude_answer_event(tmp_path, result)
+
+    assert event["text"] == "質問: 質問\n回答: 回答"
+    assert isinstance(event["text"], str)
+    assert "自由記述" not in event["text"]
+
+
+@pytest.mark.parametrize("annotations", [[], {"質問": "不正"}, {"質問": {"notes": ["不正"]}}])
+def test_claude_answer_ignores_non_string_annotation_notes(tmp_path: pathlib.Path, annotations: object) -> None:
+    """辞書以外又は文字列以外のnotesを自由記述として出力しない。"""
+    event = _claude_answer_event(tmp_path, {"answers": {"質問": "回答"}, "annotations": annotations})
+
+    assert isinstance(event["text"], str)
+    assert "自由記述" not in event["text"]
+
+
 @pytest.mark.parametrize(
     "answers",
     [
