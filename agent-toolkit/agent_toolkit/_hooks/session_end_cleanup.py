@@ -1,4 +1,4 @@
-"""SessionEnd hook: 期限切れの共有状態JSONを回収する。
+"""SessionEnd hook: セッション単位の一時領域と期限切れの共有状態JSONを回収する。
 
 セッション終了イベントは、同じ`session_id`が後から再び使われる場合にも発火する。
 `--continue`・`--resume`・`/resume`で戻ると同じ`session_id`で会話が続くため、
@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import sys
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     clear_session_state,
     sweep_stale_states,
@@ -26,7 +27,7 @@ _DISCARDED_REASON = "clear"
 
 
 def main(payload_text: str) -> int:
-    """期限切れの状態を回収し、会話破棄時だけ自セッションの状態も削除する。
+    """一時領域と期限切れ状態を回収し、会話破棄時だけ自セッション状態も削除する。
 
     失敗時もSessionEndを通過させる。
     """
@@ -39,6 +40,15 @@ def main(payload_text: str) -> int:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         session_id = None
+    if session_id is not None:
+        try:
+            managed_temp.cleanup_managed_temp(session_id=session_id)
+        except (managed_temp.ManagedTempError, OSError) as error:
+            print(
+                f"[session_end_cleanup] セッション単位の管理対象一時領域を回収できませんでした: "
+                f"session_id={session_id}: {error}",
+                file=sys.stderr,
+            )
     sweep_stale_states(keep_session_id=session_id)
     if payload.get("reason") != _DISCARDED_REASON or session_id is None:
         return 0

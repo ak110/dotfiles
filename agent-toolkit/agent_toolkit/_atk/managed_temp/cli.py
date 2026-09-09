@@ -190,14 +190,23 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
         action="append",
         help="この領域が対応するAWIのファイル名。複数回指定できる",
     )
+    create_parser.add_argument(
+        "--session-id",
+        help="このセッションの識別子。同じ識別子の領域が既にある場合は作成せず、その絶対パスを返す。",
+    )
     cleanup_parser = _atk_help.add_command(subparsers, "cleanup", **_atk_help.HELP["atk managed-temp cleanup"])
-    cleanup_parser.add_argument(
+    cleanup_target = cleanup_parser.add_mutually_exclusive_group()
+    cleanup_target.add_argument(
         "--path",
         type=pathlib.Path,
         help=(
             "後始末する管理対象一時ディレクトリの絶対パス。作成時に出力された値を指定する。"
             "省略した場合は現在の管理対象の絶対パスを示して終了する。"
         ),
+    )
+    cleanup_target.add_argument(
+        "--session-id",
+        help="後始末する領域を、作成時に指定したセッションの識別子で指定する。--pathとは同時に指定できない。",
     )
     cleanup_parser.add_argument(
         "--recover-registry",
@@ -218,15 +227,23 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
     """解析済み引数に対応する操作を実行し、終了状態を返す。"""
     try:
         if getattr(args, command_dest) == "create":
-            print(
+            created = (
                 create_managed_temp(
                     args.prefix,
                     getattr(args, "root", None),
                     tuple(getattr(args, "awi", None) or ()),
                 )
+                if args.session_id is None
+                else create_managed_temp(
+                    args.prefix,
+                    getattr(args, "root", None),
+                    tuple(getattr(args, "awi", None) or ()),
+                    session_id=args.session_id,
+                )
             )
+            print(created)
         elif getattr(args, command_dest) == "cleanup":
-            if args.path is None:
+            if args.path is None and args.session_id is None:
                 entries = list_managed_temp()
                 if not entries:
                     raise ManagedTempError("--pathを指定してください。現在の管理対象はありません。")
@@ -239,11 +256,18 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
                 raise ManagedTempError(
                     f"--pathを指定してください。現在の管理対象の絶対パスを作成時刻の昇順で示します。\n{paths}"
                 )
-            cleanup_managed_temp(
-                args.path,
-                recover_registry=getattr(args, "recover_registry", False),
-                force_remove=getattr(args, "force_remove", False),
-            )
+            if args.session_id is None:
+                cleanup_managed_temp(
+                    args.path,
+                    recover_registry=getattr(args, "recover_registry", False),
+                    force_remove=getattr(args, "force_remove", False),
+                )
+            else:
+                cleanup_managed_temp(
+                    session_id=args.session_id,
+                    recover_registry=getattr(args, "recover_registry", False),
+                    force_remove=getattr(args, "force_remove", False),
+                )
         else:
             entries = list_managed_temp(args.prefix, report_recovery_candidates=True)
             for entry in entries:

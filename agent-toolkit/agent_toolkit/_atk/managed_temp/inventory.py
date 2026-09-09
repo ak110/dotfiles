@@ -400,7 +400,12 @@ def _report_unregistered_candidates(prefix: str | None) -> None:
         )
 
 
-def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: bool = False) -> list[_ManagedTempEntry]:
+def list_managed_temp(
+    prefix: str | None = None,
+    *,
+    session_id: str | None = None,
+    report_recovery_candidates: bool = False,
+) -> list[_ManagedTempEntry]:
     """真正性検証を通過した管理対象を作成時刻順で返す。
 
     実体に依存しない検証（`path`欄の型と登録ファイル名との対応）と`prefix`による限定を通過した
@@ -427,16 +432,20 @@ def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: 
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
             schema_version = record.get("schema_version")
-            item_prefix = record.get("prefix") if schema_version in (2, 3, 4) else None
-            created_at = record.get("created_at") if schema_version in (2, 3, 4) else None
-            awis = record.get("awis") if schema_version == 4 else record.get("feedbacks") if schema_version == 3 else []
+            item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5) else None
+            created_at = record.get("created_at") if schema_version in (2, 3, 4, 5) else None
+            awis = record.get("awis") if schema_version in (4, 5) else record.get("feedbacks") if schema_version == 3 else []
+            item_session_id = record.get("session_id") if schema_version == 5 else None
             if (
                 not (item_prefix is None or isinstance(item_prefix, str))
                 or not (created_at is None or isinstance(created_at, str))
                 or not _awis_are_valid(awis)
+                or not (item_session_id is None or isinstance(item_session_id, str))
             ):
-                raise ManagedTempError("管理情報のprefix、created_at又はawisが不正")
+                raise ManagedTempError("管理情報のprefix、created_at、awis又はsession_idが不正")
             if prefix is not None and item_prefix != prefix:
+                continue
+            if session_id is not None and item_session_id != session_id:
                 continue
             if not os.path.lexists(path):
                 if _entity_absence_is_confirmed(record, path):
@@ -456,6 +465,7 @@ def list_managed_temp(prefix: str | None = None, *, report_recovery_candidates: 
                     "prefix": item_prefix,
                     "created_at": created_at,
                     "awis": typing.cast(list[str], awis),
+                    "session_id": item_session_id,
                 }
             )
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
@@ -924,12 +934,24 @@ def _force_remove_managed_temp(path_arg: pathlib.Path | str, original_error: Man
 
 
 def cleanup_managed_temp(
-    path_arg: pathlib.Path | str,
+    path_arg: pathlib.Path | str | None = None,
     *,
+    session_id: str | None = None,
     recover_registry: bool = False,
     force_remove: bool = False,
 ) -> None:
     """通常の後始末を行い、明示指定時だけ検証失敗後の強制回収を試みる。"""
+    if path_arg is not None and session_id is not None:
+        raise ManagedTempError("pathとsession_idは同時に指定できない")
+    if session_id is not None:
+        entries = list_managed_temp(session_id=session_id)
+        if not entries:
+            return
+        if len(entries) != 1:
+            raise ManagedTempError(f"session_idに対応する管理対象が複数ある: {session_id}")
+        path_arg = entries[0]["path"]
+    if path_arg is None:
+        raise ManagedTempError("path又はsession_idを指定する")
     try:
         _cleanup_managed_temp(path_arg, recover_registry=recover_registry)
     except ManagedTempError as error:

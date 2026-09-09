@@ -202,6 +202,7 @@ def test_managed_temp_create_help_lists_all_prefix_rules() -> None:
 
     for description, _satisfied in _managed_temp._PREFIX_RULES:  # pylint: disable=protected-access
         assert description in help_text
+    assert "このセッションの識別子。同じ識別子の領域が既にある場合は作成せず、その絶対パスを返す。" in help_text
 
 
 def test_managed_temp_cleanup_help_explains_force_remove_boundary() -> None:
@@ -212,6 +213,7 @@ def test_managed_temp_cleanup_help_explains_force_remove_boundary() -> None:
     assert "--force-remove" in help_text
     assert "一時rootの直下" in help_text
     assert "現在の利用者が所有するディレクトリ" in help_text
+    assert "後始末する領域を、作成時に指定したセッションの識別子で指定する。--pathとは同時に指定できない。" in help_text
 
 
 def test_review_table_init_help_describes_dialogue_review_table() -> None:
