@@ -51,6 +51,30 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
+def test_wait_any_observation_attempt_clears_all_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """wait_anyの観測試行は入力集合の全sessionを解消する。"""
+    state = {
+        "agents_server_sessions": {
+            "remote-a": {"pending_observation": True},
+            "remote-b": {"pending_observation": True},
+            "other": {"pending_observation": True},
+        }
+    }
+
+    def apply(_session_id: str, mutator: object) -> None:
+        assert callable(mutator)
+        mutator(state)
+
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
+    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt(
+        "local", {"session_ids": ["remote-a", "remote-b"]}, operation="wait_any"
+    )
+
+    assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
+    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is False
+    assert state["agents_server_sessions"]["other"]["pending_observation"] is True
+
+
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """状態ファイルの反映前でもstart応答のルート識別子から索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)

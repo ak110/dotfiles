@@ -76,6 +76,8 @@
 - `agents_server_list_fingerprint`・`agents_server_list_blocked_at`: PreToolUseが`agents_server`の`list`直前に、`agents_server_sessions`をキー順JSONへ正規化した指紋と直近の遮断時刻を記録する。同じ指紋での2回目の`list`を遮断し、遮断から5分以内の再実行では時刻を削除して通過させる。記録元と利用先は`agent_checks._check_agents_server_list_repeat`だけとし、寿命はセッション状態ファイルと同じとする。リセットは遮断直後の再実行だけで行う
 - `observed_required_reads`: 規範が全文読解を要求する文書のうち、同一セッションで全文読取を観測した文書の論理名を文字列の配列として保持する。記録はPostToolUseが行い、`Read`の`file_path`を実行ホストのパス規則で正規化した絶対パスが、稼働中のplugin rootから組み立てた当該文書の絶対パスと一致し、かつ`offset`と`limit`のいずれも指定されていない呼び出しだけを観測とする。別の作業ツリー又は別の複製にある同名の文書、部分読取及びシェル経由の読取は観測としない。利用先はPreToolUseの`AskUserQuestion`検査であり、当該配列に無い文書がある場合に当該ツール呼び出しを遮断する。寿命はセッション状態ファイルと同じとする
 
+`wait_any`の応答境界とBash経由の`atk agents-wait-any`では、入力で指定した全sessionの`pending_observation`を偽にする。`wait_any`が返した選択済みsessionの公開状態は応答の`session_id`と`status`から更新する。呼出主体が所有し`status`が`running`である記録が2件以上ある間は、PreToolUseフックが`timeout`非0の単一`wait`を遮断し、`wait_any`へ全対象を渡すよう要求する。`owner_agent_id`を持たない記録と別の所有主体の記録はこの件数へ含めない。
+
 ## 背景タスク系
 
 - `background_task_ids`: PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを重複なく記録する。

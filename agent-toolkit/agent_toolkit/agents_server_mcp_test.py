@@ -355,6 +355,7 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
         "start_explore",
         "start_shell",
         "wait",
+        "wait_any",
         "send_message",
         "kill",
         "list",
@@ -569,9 +570,11 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
     assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
     wait_tool = subject.mcp._tool_manager.get_tool("wait")
+    wait_any_tool = subject.mcp._tool_manager.get_tool("wait_any")
     send_tool = subject.mcp._tool_manager.get_tool("send_message")
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert wait_tool is not None
+    assert wait_any_tool is not None
     assert send_tool is not None
     assert kill_tool is not None
 
@@ -592,7 +595,9 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "固有のtimeout要件がなければ`timeout`を省略する" in wait_tool.description
     assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
     assert "1件なら本ツールを前景で発行する" in wait_tool.description
-    assert "2件以上なら本ツールを1件ずつ前景で発行せず" in wait_tool.description
+    assert "2件以上なら全対象を`wait_any`へ渡して前景で発行する" in wait_tool.description
+    assert wait_any_tool.parameters["properties"]["timeout"]["default"] is None
+    assert wait_any_tool.parameters["properties"]["request_bucket"]["default"] == "main"
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
     assert send_timeout["description"] == (
@@ -1570,6 +1575,95 @@ async def test_wait_returns_same_terminal_result_without_consuming_state(tmp_pat
         "error": {"message": "補足"},
     }
     _assert_no_forbidden_keys(first)
+
+
+@pytest.mark.asyncio
+async def test_wait_any_returns_first_available_session_and_retains_others(tmp_path: pathlib.Path) -> None:
+    """wait_anyは確定時刻が早い結果だけを選び、残る結果を保持する。"""
+    manager, _ = _manager_with_fake("codex")
+    later = subject.SessionState("later", str(tmp_path), engine="codex")
+    earlier = subject.SessionState("earlier", str(tmp_path), engine="codex")
+    _complete(later, message="後")
+    _complete(earlier, message="先")
+    later.finalized_at = "2026-09-10T00:00:02+00:00"
+    earlier.finalized_at = "2026-09-10T00:00:01+00:00"
+    manager.sessions.update({later.session_id: later, earlier.session_id: earlier})
+
+    response = await manager.wait_any([later.session_id, earlier.session_id], timeout=0)
+
+    assert response["session_id"] == earlier.session_id
+    assert response["agent_message"] == "先"
+    assert later.result_delivered is False
+
+
+@pytest.mark.asyncio
+async def test_wait_any_delivers_each_terminal_result_to_single_waiter(tmp_path: pathlib.Path) -> None:
+    """同時に待つ2件へ同じ終端結果を重複配送しない。"""
+    manager, _ = _manager_with_fake("codex")
+    sessions = [subject.SessionState(f"thread-{index}", str(tmp_path), engine="codex") for index in range(2)]
+    for session in sessions:
+        _complete(session, message=session.session_id)
+        manager.sessions[session.session_id] = session
+
+    responses = await asyncio.gather(
+        *(manager.wait_any([session.session_id for session in sessions], timeout=0) for _ in range(2))
+    )
+
+    assert {response["session_id"] for response in responses} == {session.session_id for session in sessions}
+
+
+@pytest.mark.asyncio
+async def test_wait_any_result_is_confirmed_by_zero_timeout_wait(tmp_path: pathlib.Path) -> None:
+    """wait_any後も単一waitは同じ終端本文を確認できる。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    _complete(session, message="結果")
+    manager.sessions[session.session_id] = session
+
+    selected = await manager.wait_any([session.session_id], timeout=0)
+    confirmed = await manager.wait(session.session_id, timeout=0)
+
+    assert selected["session_id"] == session.session_id
+    assert confirmed["agent_message"] == selected["agent_message"]
+
+
+@pytest.mark.asyncio
+async def test_wait_any_ignores_missing_session_while_retained_session_runs(tmp_path: pathlib.Path) -> None:
+    """保持中の対象があれば不在のsessionより待機可能な状態を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-retained", str(tmp_path), engine="codex")
+    manager.sessions[session.session_id] = session
+
+    response = await manager.wait_any(["thread-missing", session.session_id], timeout=0)
+
+    assert response["session_id"] == session.session_id
+    assert response["status"] == "running"
+    assert "agent_message" not in response
+
+    _complete(session, message="保持中の結果")
+    completed = await manager.wait_any(["thread-missing", session.session_id], timeout=0)
+
+    assert completed["session_id"] == session.session_id
+    assert completed["agent_message"] == "保持中の結果"
+
+
+@pytest.mark.asyncio
+async def test_wait_any_does_not_redeliver_selected_terminal_result(tmp_path: pathlib.Path) -> None:
+    """配送済みの終端結果を避け、残る未終端sessionの状態を返す。"""
+    manager, _ = _manager_with_fake("codex")
+    completed = subject.SessionState("thread-completed", str(tmp_path), engine="codex")
+    running = subject.SessionState("thread-running", str(tmp_path), engine="codex")
+    _complete(completed, message="配送済み")
+    manager.sessions.update({completed.session_id: completed, running.session_id: running})
+
+    selected = await manager.wait_any([completed.session_id, running.session_id], timeout=0)
+    response = await manager.wait_any([completed.session_id, running.session_id], timeout=0)
+
+    assert selected["session_id"] == completed.session_id
+    assert selected["agent_message"] == "配送済み"
+    assert response["session_id"] == running.session_id
+    assert response["status"] == "running"
+    assert "agent_message" not in response
 
 
 @pytest.mark.asyncio

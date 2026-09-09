@@ -6,8 +6,9 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import status_file
+from agent_toolkit._agents_server import agents_wait, status_file
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 
 @pytest.fixture(name="wait_environment")
@@ -41,6 +42,66 @@ def test_agents_wait_outputs_matching_result(
     assert not captured.err
     assert not (wait_environment / "session-1.json").exists()
     assert other_result.exists()
+
+
+def test_agents_wait_any_removes_only_selected_result(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """複数待機は昇順の最初の結果だけを回収する。"""
+    wait_environment.mkdir(parents=True)
+    first = wait_environment / "session-1.json"
+    second = wait_environment / "session-2.json"
+    first.write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+    second.write_text(json.dumps({"status": "failed"}), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents-wait-any", "session-2", "session-1", "--timeout=0"])
+
+    assert json.loads(capsys.readouterr().out)["session_id"] == "session-1"
+    assert not first.exists()
+    assert second.exists()
+
+
+def test_agents_wait_any_rejects_overlapping_owner(tmp_path: pathlib.Path) -> None:
+    """同じsessionの待機所有権を保持する後発は終了コード8で拒否する。"""
+    lock_path = status_file.status_directory("root-session", tmp_path) / "wait-any-locks" / "session-1.lock"
+    lock_path.parent.mkdir(parents=True)
+    with lock_path.open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=False)
+        try:
+            assert (
+                agents_wait.wait_for_any_result(
+                    ["session-1"],
+                    0,
+                    environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
+                    state_root=tmp_path,
+                )
+                == 8
+            )
+        finally:
+            release_lock(lock_file)
+    assert lock_path.exists()
+
+
+def test_agents_wait_any_allows_disjoint_sets(tmp_path: pathlib.Path) -> None:
+    """別sessionの待機所有権は互いに競合しない。"""
+    lock_path = status_file.status_directory("root-session", tmp_path) / "wait-any-locks" / "session-1.lock"
+    lock_path.parent.mkdir(parents=True)
+    with lock_path.open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=False)
+        try:
+            assert (
+                agents_wait.wait_for_any_result(
+                    ["session-2"],
+                    0,
+                    environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
+                    state_root=tmp_path,
+                )
+                == 3
+            )
+        finally:
+            release_lock(lock_file)
 
 
 def test_agents_wait_resolves_changed_conversation_session(
