@@ -294,6 +294,164 @@ async def test_wait_defers_result_until_child_session_terminates(
 
 
 @pytest.mark.asyncio
+async def test_wait_returns_result_when_child_session_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿から消えた孫sessionがあっても初回結果を返す。"""
+    client = ControlledClaudeClient("claude-child-missing")
+    manager, backend = _manager(client, monkeypatch)
+    child_session_id = "child-missing"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        _emit_child_start(client, child_session_id)
+        client.emit(ResultMessage("孫session不在時の結果"))
+
+        result = await manager.wait(session.session_id, timeout=1)
+
+        assert result["status"] == "completed"
+        assert result["error"] == {"unobservedSessions": [child_session_id]}
+        assert session.awaiting_auto_resume is False
+        assert not session.live_child_session_ids
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_result_when_child_session_is_unreadable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """解釈できない登録簿を持つ孫sessionがあっても初回結果を返す。"""
+    client = ControlledClaudeClient("claude-child-unreadable")
+    manager, backend = _manager(client, monkeypatch)
+    child_session_id = "child-unreadable"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        registry_path = session_registry.registry_directory() / f"{child_session_id}.json"
+        registry_path.parent.mkdir(parents=True)
+        registry_path.write_text("{", encoding="utf-8")
+        _emit_child_start(client, child_session_id)
+        client.emit(ResultMessage("孫session読取不能時の結果"))
+
+        result = await manager.wait(session.session_id, timeout=1)
+
+        assert result["status"] == "completed"
+        assert result["error"] == {"unobservedSessions": [child_session_id]}
+        assert session.awaiting_auto_resume is False
+        assert not session.live_child_session_ids
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unobserved_state", ["missing", "unreadable"])
+async def test_wait_preserves_unobserved_child_sessions_after_auto_resume(
+    unobserved_state: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """終端済みと未観測の孫sessionが混在しても未観測IDを再開結果へ残す。"""
+    client = ControlledClaudeClient(f"claude-child-mixed-{unobserved_state}")
+    manager, backend = _manager(client, monkeypatch)
+    terminal_session_id = f"child-terminal-{unobserved_state}"
+    unobserved_session_id = f"child-{unobserved_state}"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(terminal_session_id, terminal=True)
+        if unobserved_state == "unreadable":
+            registry_path = session_registry.registry_directory() / f"{unobserved_session_id}.json"
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            registry_path.write_text("{", encoding="utf-8")
+        _emit_child_start(client, terminal_session_id)
+        _emit_child_start(client, unobserved_session_id)
+        client.emit(ResultMessage("孫session混在時の初回結果"))
+
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+        await _await_state(lambda: len(client.queries) == 2)
+        client.emit(ResultMessage("孫session混在時の再開結果"))
+        result = await wait_task
+
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "孫session混在時の再開結果"
+        assert result["error"] == {"unobservedSessions": [unobserved_session_id]}
+        assert terminal_session_id in client.queries[1]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_accumulates_unobserved_child_sessions_across_auto_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """連続する自動再開で追跡を打ち切った全ての孫sessionを結果へ残す。"""
+    client = ControlledClaudeClient("claude-child-repeated-mixed")
+    manager, backend = _manager(client, monkeypatch)
+    first_terminal_session_id = "child-terminal-first"
+    missing_session_id = "child-missing-first"
+    second_terminal_session_id = "child-terminal-second"
+    unreadable_session_id = "child-unreadable-second"
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        session_registry.publish(first_terminal_session_id, terminal=True)
+        _emit_child_start(client, first_terminal_session_id)
+        _emit_child_start(client, missing_session_id)
+        client.emit(ResultMessage("1回目の孫session混在結果"))
+
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=5))
+        await _await_state(lambda: len(client.queries) == 2)
+
+        session_registry.publish(second_terminal_session_id, terminal=True)
+        registry_path = session_registry.registry_directory() / f"{unreadable_session_id}.json"
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text("{", encoding="utf-8")
+        _emit_child_start(client, second_terminal_session_id)
+        _emit_child_start(client, unreadable_session_id)
+        client.emit(ResultMessage("2回目の孫session混在結果"))
+        await _await_state(lambda: len(client.queries) == 3)
+
+        client.emit(ResultMessage("連続自動再開後の結果"))
+        result = await wait_task
+
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "連続自動再開後の結果"
+        assert result["error"] == {
+            "unobservedSessions": [missing_session_id, unreadable_session_id],
+        }
+        assert first_terminal_session_id in client.queries[1]
+        assert second_terminal_session_id in client.queries[2]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_wait_returns_result_without_child_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """背景taskだけで保留した結果はtask終端後に返す。"""
+    client = ControlledClaudeClient("claude-no-child")
+    manager, backend = _manager(client, monkeypatch)
+    try:
+        session = await _start(manager, tmp_path, monkeypatch)
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=1))
+        client.emit(TaskStartedMessage("task-1"))
+        client.emit(ResultMessage("孫なしの結果"))
+        await _await_state(lambda: session.awaiting_auto_resume)
+        client.emit(TaskUpdatedMessage("task-1", "completed"))
+
+        result = await wait_task
+
+        assert result["status"] == "completed"
+        assert "error" not in result
+        assert session.awaiting_auto_resume is False
+        assert not session.live_child_session_ids
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
 async def test_wait_response_keys_are_unchanged_with_child_sessions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -362,6 +520,23 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
         }
     finally:
         await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_unobserved_child_sessions_merge_with_existing_identifiers(tmp_path: pathlib.Path) -> None:
+    """既存の未観測session識別子を保ったまま新しい識別子を併合する。"""
+    session = state.SessionState("existing-unobserved", str(tmp_path))
+    session.error = {
+        "message": "既存エラー",
+        "unobservedSessions": ["child-existing"],
+    }
+
+    state.record_unobserved_sessions(session, {"child-existing", "child-new"})
+
+    assert session.error == {
+        "message": "既存エラー",
+        "unobservedSessions": ["child-existing", "child-new"],
+    }
 
 
 @pytest.mark.asyncio

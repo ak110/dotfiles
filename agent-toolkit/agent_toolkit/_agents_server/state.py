@@ -573,7 +573,7 @@ def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> flo
 
 def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:
     """未観測の孫session識別子を既存のerror項目へ併合する。"""
-    identifiers = sorted(session_ids)
+    identifiers = set(session_ids)
     current = session.error
     error: dict[str, Any]
     if isinstance(current, dict):
@@ -582,7 +582,10 @@ def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> 
         error = {"message": str(current)}
     else:
         error = {}
-    error["unobservedSessions"] = identifiers
+    existing_identifiers = error.get("unobservedSessions")
+    if isinstance(existing_identifiers, list):
+        identifiers.update(item for item in existing_identifiers if isinstance(item, str))
+    error["unobservedSessions"] = sorted(identifiers)
     session.error = error
     session.touch()
 

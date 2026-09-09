@@ -213,6 +213,7 @@ class AgentsServerManager:
         self._claude: Any = None
         self._wait_timeouts: dict[str, float] = {}
         self._carried_unavailable_candidates: dict[tuple[str, LaunchKind], ModelCandidate] = {}
+        self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = status_file.resolve_status_file_identity(os.environ)
             self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
@@ -222,6 +223,7 @@ class AgentsServerManager:
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
         add_terminal_listener(self._carry_over_unavailable_candidate)
+        add_terminal_listener(self._record_pending_unobserved_child_sessions)
 
     def activate(self) -> None:
         """状態ファイル出力を有効化する。"""
@@ -265,6 +267,7 @@ class AgentsServerManager:
 
     def _expire_session(self, session_id: str) -> None:
         """期限に到達したsession本体と終端結果を破棄し、再開状態を保持する。"""
+        self._pending_unobserved_child_sessions.pop(session_id, None)
         session = self.sessions.pop(session_id, None)
         if session is not None:
             self.expired_sessions[session_id] = dataclasses.replace(
@@ -501,6 +504,7 @@ class AgentsServerManager:
             session.result_delivered = not keep_result
         if not already_stopped:
             await self._backend(resume_state.engine).release_session(session_id)
+        self._pending_unobserved_child_sessions.pop(session_id, None)
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
@@ -579,6 +583,17 @@ class AgentsServerManager:
         if not _engine_unavailable(session) or candidate is None or session.model_type is None:
             return
         self._carried_unavailable_candidates[(session.model_type, session.launch_kind)] = candidate
+
+    def _record_pending_unobserved_child_sessions(self, session: SessionState) -> None:
+        """自動再開をまたいで保持した未観測の孫sessionを終端結果へ併合する。"""
+        if self.sessions.get(session.session_id) is not session:
+            return
+        pending = self._pending_unobserved_child_sessions.get(session.session_id)
+        if pending is None or pending[0] != session.turn_seq:
+            return
+        _, unobserved = self._pending_unobserved_child_sessions.pop(session.session_id)
+        if unobserved:
+            record_unobserved_sessions(session, unobserved)
 
     async def start(
         self,
@@ -820,10 +835,19 @@ class AgentsServerManager:
             for session_id, resolution in resolutions.items()
             if resolution.state is session_registry.Resolution.TERMINAL
         }
+        unobserved = {
+            session_id
+            for session_id, resolution in resolutions.items()
+            if resolution.state in {session_registry.Resolution.MISSING, session_registry.Resolution.UNREADABLE}
+        }
+        pending_unobserved = self._pending_unobserved_child_sessions.get(session.session_id)
+        if pending_unobserved is not None:
+            unobserved.update(pending_unobserved[1])
         for session_id in terminal:
             session.live_child_session_ids.discard(session_id)
             session.terminal_child_session_ids.add(session_id)
             session_registry.remove(session_id)
+        session.live_child_session_ids.difference_update(unobserved)
 
         if not has_pending_auto_resume_targets(session) and session.terminal_child_session_ids:
             identifiers = sorted(session.terminal_child_session_ids)
@@ -838,9 +862,12 @@ class AgentsServerManager:
             session.status = pending_result["status"]
             session.agent_message = pending_result["agent_message"]
             session.error = pending_result["error"]
+            if unobserved:
+                self._pending_unobserved_child_sessions[session.session_id] = (session.turn_seq + 1, unobserved)
             try:
                 await self._backend(session.engine).send_message(session, prompt)
             except Exception as exc:
+                self._pending_unobserved_child_sessions.pop(session.session_id, None)
                 session.awaiting_auto_resume = False
                 session.auto_resume_deadline = None
                 session.pending_result = None
@@ -849,7 +876,7 @@ class AgentsServerManager:
                 session.agent_message = pending_result["agent_message"]
                 session.error = {
                     "message": f"{type(exc).__name__}: {exc}",
-                    "unobservedSessions": identifiers,
+                    "unobservedSessions": sorted(set(identifiers) | unobserved),
                 }
                 session.turn_completed = True
                 session.turn_start_ambiguous = False
@@ -859,6 +886,12 @@ class AgentsServerManager:
                 finalize_pending_result(session, touch=False)
             if self._status_writer is not None:
                 self._status_writer.delete_result(session.session_id)
+            return
+
+        if not has_pending_auto_resume_targets(session):
+            finalize_pending_result(session)
+            if unobserved:
+                record_unobserved_sessions(session, unobserved)
             return
 
         deadline = session.auto_resume_deadline
@@ -1309,6 +1342,7 @@ class AgentsServerManager:
         for backend in backends:
             await backend.close()
         remove_terminal_listener(self._carry_over_unavailable_candidate)
+        remove_terminal_listener(self._record_pending_unobserved_child_sessions)
         if self._status_writer is not None:
             remove_touch_listener(self._status_writer.schedule)
             self._status_writer.deactivate()
