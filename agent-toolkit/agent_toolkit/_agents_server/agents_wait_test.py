@@ -29,6 +29,8 @@ def test_agents_wait_outputs_matching_result(
     wait_environment.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+    other_result = wait_environment / "session-2.json"
+    other_result.write_text(json.dumps({"session_id": "session-2", "status": "failed"}), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents-wait", "session-1", "--timeout=0"])
@@ -38,6 +40,7 @@ def test_agents_wait_outputs_matching_result(
     assert captured.out.count("\n") == 1
     assert not captured.err
     assert not (wait_environment / "session-1.json").exists()
+    assert other_result.exists()
 
 
 def test_agents_wait_resolves_changed_conversation_session(

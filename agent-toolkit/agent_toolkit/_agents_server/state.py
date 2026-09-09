@@ -267,6 +267,7 @@ class SessionState:
     pending_result: dict[str, Any] | None = None
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
+    # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
     _progress_text: str = dataclasses.field(default="", repr=False)

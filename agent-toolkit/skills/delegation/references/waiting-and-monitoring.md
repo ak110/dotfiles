@@ -74,7 +74,8 @@
   経過が閾値を超えた応答は`stalled`を伴う。`stalled`を伴う応答の受領それ自体を待機の打ち切りの根拠にせず、同じ`session_id`へ同じ待機手段を再発行する。
   当該応答は停滞の確定ではなく、長時間のコマンドの実行待ちでも成立するため、呼び出し元が当該委譲先の状況を調べる契機として扱う。
   停滞の確定と巻き取りは「停滞の検知と巻き取り」節に従う
-- `atk agents-wait`が`status`を`expired`とする応答を終了コード7で返した場合は、待機対象のsessionが`agents_server`の保持から失われている。
+- `agents_server`は終端結果を経過時間で解放せず、呼び出し元が同じ`session_id`へ最初の`wait`を発行して結果本文を受領するまで保持する。完了通知の受領から時間が経った後の`wait`も終端状態と結果本文を返す。保持の解放は結果本文の配送後と`stop`による明示的な破棄の後だけとする
+- `atk agents-wait`が`status`を`expired`とする応答を終了コード7で返した場合は、待機対象のsessionが終端結果を残さずに`agents_server`の保持から失われている。
   同じ`session_id`へ待機を再発行せず、「停滞の検知と巻き取り」節に従って未完了工程の巻き取り又は新規起動を判定する
 - `agents_server`の`wait`と`atk agents-wait`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答は終端前の復帰であり、同じ`session_id`へ同じ待機手段を再発行する。`status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も完了報告とともに受領して待機を終える。回収した通知は再び返らないため、受領した本文を保持する
 - `agents_server`のMCPサーバーが再起動した場合、同じ`session_id`はsession登録簿から遅延解決する。終端が確定している記録だけを同じ識別子の結果観測と会話再開へ用いる。終端が確定していない場合は`error.recovery=turn_unobserved`を受領し、同じ作業を新しい`start`でやり直さず、当該sessionが実行中である可能性を添えて呼び出し元へ返す。`missing`、`unreadable`、`no_resume_info`は当該sessionを失われたものとして扱ってよい

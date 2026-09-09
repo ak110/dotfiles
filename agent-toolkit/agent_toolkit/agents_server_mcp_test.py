@@ -413,7 +413,7 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "最後の例外を送出する" in tools["start"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
     assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
-    assert "`status`が`expired`" in tools["wait"].description
+    assert "最初の`wait`で受領するまで保持" in tools["wait"].description
     assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
     assert "unknown session" in tools["send_message"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
@@ -3391,11 +3391,11 @@ async def test_claude_kill_cleans_owned_pending_resume(
 
 
 @pytest.mark.asyncio
-async def test_claude_pending_resume_discards_previous_result_after_retention_deadline(
+async def test_claude_pending_resume_retains_previous_result_after_retention_deadline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開待機中に保持期限を越えた直前結果を後続応答へ含めない。"""
+    """再開待機中に保持期限を越えた直前結果を後続応答へ含める。"""
     client = BlockingResumeClaudeClient()
     manager = subject.AgentsServerManager()
     backend = claude_backend.ClaudeServerManager(
@@ -3425,7 +3425,7 @@ async def test_claude_pending_resume_discards_previous_result_after_retention_de
         response = await manager.send_message(session_id, "期限後指示", timeout=1)
 
         assert asyncio.get_running_loop().time() >= original_deadline
-        assert "previous_result" not in response
+        assert response["previous_result"]["agent_message"] == "期限付き結果"
         assert client.connect_calls == 1
         assert client.query_calls == 2
         assert client.queries == ["期限後指示"]
@@ -3838,11 +3838,11 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
 
 
 @pytest.mark.asyncio
-async def test_claude_retention_expiry_disconnects_and_removes_result_record(
+async def test_claude_retention_expiry_disconnects_and_retains_result_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持期限経過時にSDKを切断し、結果本文を破棄して再開状態を退避する。"""
+    """保持期限経過時にSDKを切断し、未回収結果を伴う再開状態を退避する。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, subject.SessionState] = {}
@@ -3876,13 +3876,13 @@ async def test_claude_retention_expiry_disconnects_and_removes_result_record(
             status="completed",
             agent_message="完了",
             finalized_at=session.finalized_at,
-            result_delivered=True,
+            result_delivered=False,
             retention_deadline=session.retention_deadline,
         )
     }
     response = await manager.wait(session.session_id, timeout=0)
-    assert response["status"] == "expired"
-    assert "agent_message" not in response
+    assert response == {"status": "completed", "agent_message": "完了"}
+    assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
 
 
 @pytest.mark.asyncio
@@ -3982,36 +3982,31 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
-async def test_expired_session_wait_is_rejected_by_shared_manager(engine: str, tmp_path: pathlib.Path) -> None:
-    """両engineで期限切れの結果本文を返さずexpiredを返す。"""
+async def test_expired_session_wait_returns_uncollected_result(engine: str, tmp_path: pathlib.Path) -> None:
+    """両engineで保持期限後も最初のwaitへ結果本文を返す。"""
     manager, _ = _manager_with_fake(engine)
     session = subject.SessionState("expired", str(tmp_path), engine=engine)
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
     response = await manager.wait(session.session_id, timeout=0)
-    assert response == {"status": "expired"}
+    assert response == {"status": "completed", "agent_message": "完了"}
     assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
     assert "expired" not in manager.sessions
-    assert manager.expired_sessions["expired"].session_id == "expired"
+    assert manager.expired_sessions["expired"].result_delivered is True
 
 
 @pytest.mark.asyncio
 async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: pathlib.Path) -> None:
-    """退避済みの期限切れ状態から結果本文を返さない。"""
+    """退避済みの期限切れ状態から未回収の結果本文を返す。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState("expired", str(tmp_path))
     _complete(session, message="退避結果")
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
-    manager.expired_sessions[session.session_id] = dataclasses.replace(
-        manager.expired_sessions[session.session_id],
-        result_delivered=True,
-    )
-
-    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
+    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is True
     response = await manager.wait(session.session_id, timeout=0)
-    assert response == {"status": "expired"}
+    assert response == {"status": "completed", "agent_message": "退避結果"}
     assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
 
 
@@ -4037,22 +4032,64 @@ def _publish_recovered_session(
 
 
 @pytest.mark.asyncio
-async def test_recovered_session_wait_reports_result_unavailable(
+async def test_recovered_session_wait_restores_persisted_result_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿から復元した終端sessionのwaitは本文回収不能を返す。"""
-    _publish_recovered_session(monkeypatch, tmp_path, "recovered-wait", "completed")
-    manager = subject.AgentsServerManager(status_writer=None)
+    """再起動後の最初のwaitだけが保存済みの終端結果本文を返す。"""
+    session_id = "recovered-wait"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, "failed")
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "current.json", None),
+        state_root=tmp_path,
+    )
+    persisted = subject.SessionState(session_id, str(tmp_path), engine="codex")
+    _complete(persisted, message="永続結果", error={"message": "失敗結果"})
+    writer.retain_result(persisted)
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session_id}.json"
+    manager = subject.AgentsServerManager(writer)
     backend = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", backend)
 
-    response = await manager.wait("recovered-wait", timeout=0)
+    response = await manager.wait(session_id, timeout=0)
+    second = await manager.wait(session_id, timeout=0)
 
-    assert response == {"status": "completed", "recovery": "result_unavailable"}
+    assert response == {
+        "status": "failed",
+        "agent_message": "永続結果",
+        "error": {"message": "失敗結果"},
+    }
+    assert second == {"status": "failed", "recovery": "result_unavailable"}
+    assert not result_path.exists()
     assert backend.send_calls == 0
     assert not backend.resume_calls
     assert not backend.release_calls
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_recovered_session_marks_persisted_result_as_uncollected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """登録簿からの復元時は結果ファイルの存在を回収状態へ反映する。"""
+    session_id = "recovered-result"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "current.json", None),
+        state_root=tmp_path,
+    )
+    persisted = subject.SessionState(session_id, str(tmp_path), engine="codex")
+    _complete(persisted, message="永続結果")
+    writer.retain_result(persisted)
+    manager = subject.AgentsServerManager(writer)
+
+    resume_state = manager._restore_registry_session(session_id)
+
+    assert resume_state is not None
+    assert resume_state.result_delivered is False
     await manager.close()
 
 
@@ -4080,11 +4117,11 @@ async def test_recovered_session_kill_reports_terminal(
 
 
 @pytest.mark.asyncio
-async def test_recovered_session_stop_keeps_previous_process_result(
+async def test_recovered_session_stop_discards_previous_process_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """復元したsessionのstopは前プロセスが公開した結果を変更しない。"""
+    """復元したsessionの明示破棄は前プロセスが公開した結果も削除する。"""
     session_id = "recovered-stop"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
     previous_writer = status_file.StatusFileWriter(
@@ -4107,10 +4144,14 @@ async def test_recovered_session_stop_keeps_previous_process_result(
     backend = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", backend)
 
-    for retain_result in (True, False, True, False):
-        assert await manager.stop(session_id, retain_result=retain_result) == {}
-        assert result_path.read_bytes() == previous_result
-        assert result_path.exists()
+    assert await manager.stop(session_id, retain_result=True) == {}
+    assert result_path.read_bytes() == previous_result
+
+    assert await manager.stop(session_id) == {}
+    assert not result_path.exists()
+
+    assert await manager.stop(session_id) == {}
+    assert not result_path.exists()
 
     assert not backend.release_calls
     await manager.close()
@@ -4440,11 +4481,11 @@ async def test_kill_stop_discards_only_after_terminal_result(tmp_path: pathlib.P
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["wait", "kill"])
-async def test_stopped_result_expires_before_later_observation(
+async def test_stopped_result_remains_available_after_retention_deadline(
     operation: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """stop=trueで保持した結果は期限到来後に本文を伴わないexpiredへ移る。"""
+    """stop=trueで保持した結果は期限到来後も最初の観測へ本文を返す。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState(f"stopped-{operation}", str(tmp_path), engine="codex")
     _complete(session, message="保持結果")
@@ -4459,24 +4500,23 @@ async def test_stopped_result_expires_before_later_observation(
 
     if operation == "wait":
         response = await manager.wait(session.session_id, timeout=0)
-        assert response["status"] == "expired"
-        assert "agent_message" not in response
+        assert response["status"] == "completed"
+        assert response["agent_message"] == "保持結果"
     else:
         response = await manager.kill(session.session_id, timeout=0)
-        assert response["status"] == "expired"
+        assert response["status"] == "completed"
         assert response["kill_requested"] is False
-        assert "agent_message" not in response
-    assert session.session_id not in manager.stopped_sessions
-    assert manager.expired_sessions[session.session_id].result_delivered is True
+        assert response["agent_message"] == "保持結果"
+    assert manager.stopped_sessions[session.session_id].result_delivered is True
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("expired", [False, True])
-async def test_send_message_includes_stopped_previous_result_only_before_deadline(
+async def test_send_message_includes_stopped_previous_result_regardless_of_deadline(
     expired: bool,
     tmp_path: pathlib.Path,
 ) -> None:
-    """stop=true後の再開は期限内だけ直前結果を返す。"""
+    """stop=true後の再開は未回収であれば期限後も直前結果を返す。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState(f"stopped-send-{expired}", str(tmp_path), engine="codex")
     _complete(session, message="直前結果")
@@ -4490,10 +4530,7 @@ async def test_send_message_includes_stopped_previous_result_only_before_deadlin
 
     response = await manager.send_message(session.session_id, "再開")
 
-    if expired:
-        assert "previous_result" not in response
-    else:
-        assert response["previous_result"]["agent_message"] == "直前結果"
+    assert response["previous_result"]["agent_message"] == "直前結果"
 
 
 @pytest.mark.asyncio

@@ -305,7 +305,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
 
 @pytest.mark.asyncio
 async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """期限到達後はsession表示と未回収の結果を除く。"""
+    """期限到達後はsession表示を除き、未回収の結果を保持する。"""
     session = state.SessionState("retained", str(tmp_path), announced=True, turn_seq=1)
     session.status = "completed"
     session.agent_message = "完了"
@@ -329,13 +329,14 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
     assert writer._retention_handle is not None
     await asyncio.sleep(0.05)
     assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert not result_path.exists()
+    assert result_path.exists()
     writer.deactivate()
+    assert result_path.exists()
 
 
 @pytest.mark.asyncio
-async def test_writer_removes_retained_result_without_live_session_at_deadline(tmp_path: pathlib.Path) -> None:
-    """破棄済みsessionから保持した結果も期限到達後に掃引する。"""
+async def test_writer_retains_result_without_live_session_after_deadline(tmp_path: pathlib.Path) -> None:
+    """破棄済みsessionから保持した結果も期限到達後に維持する。"""
     session = state.SessionState("stopped", str(tmp_path), announced=True)
     session.status = "completed"
     session.agent_message = "完了"
@@ -353,12 +354,13 @@ async def test_writer_removes_retained_result_without_live_session_at_deadline(t
     writer.flush()
     result_path = subject.results_directory("root", tmp_path) / "stopped.json"
     assert result_path.exists()
-    assert writer._retention_handle is not None
+    assert writer._retention_handle is None
 
     await asyncio.sleep(0.05)
 
-    assert not result_path.exists()
+    assert result_path.exists()
     writer.deactivate()
+    assert result_path.exists()
 
 
 @pytest.mark.asyncio
@@ -438,13 +440,14 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
     assert other_temporary.exists()
     assert retained_result.exists()
     assert retained_notice.exists()
-    assert not stale_result.exists()
+    assert stale_result.exists()
     assert not stale_notice.exists()
     writer.deactivate()
     assert other_writer.exists()
     assert other_temporary.exists()
     assert retained_result.exists()
     assert retained_notice.exists()
+    assert stale_result.exists()
 
 
 @pytest.mark.asyncio
