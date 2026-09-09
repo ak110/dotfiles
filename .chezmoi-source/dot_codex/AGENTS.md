@@ -162,7 +162,7 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
 | `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`・`mcp__agents_server__list`・`mcp__agents_server__stop`（agents_serverの委譲・探索委譲・シェル実行委譲・観測・継続・中断・一覧・破棄） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
-| `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeではユーザーへ直接質問する |
+| `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは「ユーザー確認の提示形式」節の固定テンプレートでユーザーへ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
 | `Read`・`Write`・`Edit` | ネイティブ機能を利用（`apply_patch`等） |
 | `Bash`・`Grep`・`Glob` | ネイティブ機能を利用（シェル経由） |
@@ -186,6 +186,23 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 `engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start`へ対応する`model_type`を渡し、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。
 指定engineの経路を利用できない場合は同文書の手順4に従って`needs_escalation`又は未完了として返す。
 `engine=codex`の場合は、当該工程の`model_type`を`agents_server`の`start`へ渡し、engine、model及びeffortの解決をサーバーへ委ねる。
+
+### ユーザー確認の提示形式
+
+構造化質問を利用できない場合は、次の固定テンプレートで質問を提示する。
+書式が固定されないと、ユーザーは質問の位置、推奨案及び回答単位を毎回読み直すことになり、読解負担と見落としが増えるため、自由形式へ置き換えない。
+
+```text
+❓ **Q1** - **<質問タイトル>**: <質問本文。複数段落や複数の選択肢を含んでもよい>
+
+➡️ <あなたの推奨回答>
+
+---
+
+❓ **Q2** - **<質問タイトル>**: <質問本文。複数段落や複数の選択肢を含んでもよい>
+
+➡️ <あなたの推奨回答>
+```
 
 公開サブコマンドがないplugin内部資源を実行する場合は、読み込んだagent-toolkitスキルの絶対パスから現行plugin rootを確定する。
 作業用一時領域は`atk managed-temp create --prefix <用途>`を単独で実行して作成する。
@@ -885,6 +902,12 @@ MCPサーバーが公開するツール（対象プロジェクトが提供す�
 ## 基本委譲契約
 
 単発の委譲では、起動前に対象、読取・書込権限及び完了条件を確定する。
+委譲元と委譲先は独立した文脈で動作し、委譲先は委譲元の会話履歴、委譲元が読み込んだファイルと委譲元が起動したスキルを引き継がない。
+委譲の手順を設計する主体は、この独立を前提として、同じ契約を委譲元側の文書と委譲先側の文書の双方へ置かない。
+返却形式、応答言語、成果物の書式その他の受け渡しの契約は、当該契約に従う主体が読む側の文書だけを正本とし、もう一方の文書へは当該正本を指す参照だけを置く。
+委譲先の内部の分岐と判断手順を委譲元側の文書へ再掲しない。
+同じ参照資料を双方へ読ませる指示は、当該資料を両者が異なる判断へ用いる場合だけ置き、その判断の差を条文へ書く
+（厳守規定。同じ契約が2箇所に置かれると、一方だけを改訂した後にどちらを正本とするかを実行主体が判定できない）。
 起動文の構成と必須入力の列挙形式は`agent-toolkit:delegation`のSKILL.mdの`## 送信`を正本とする。
 起動側が起動文へ載せる値に起因する欠落は、起動側が起動前に防ぐ。委譲先のタスク文書が要求する必須入力が起動文にそろっていること、絶対パスで示す入力のうち起動時点で作成済みのものが実在すること、委譲先が受領した値から自ら解決して読むplugin配下の資源が実在することを、起動前に確認する。
 実在確認とは別に、起動文が参照する記録済みのハッシュ・比較基準・契約が起動時点の実体と一致することと、委譲先が自ら解決するPATH上のコマンド・plugin配下の資源の版が起動側の前提と一致することを、起動前に確認する。

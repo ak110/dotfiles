@@ -12,6 +12,8 @@
 継続接続では同じ`model_type`を保持する。経路は`agent-toolkit:delegation`の工程別モデル設定に従う。
 起動文は`agent-toolkit:delegation`のSKILL.mdの`## 送信`に従い、1行目で`${CLAUDE_PLUGIN_ROOT}/share/plan-review.subagent.md`を指す。次の入力、今回のレビュー種別（`初回レビュー`又は`引き継ぎ再レビュー`）及び`round: <ラウンド番号>`を全レビュー共通の名前付き必須入力とする。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の正本`が定める値とする。
 初回・再レビュー固有の入力は、後続の規定に従って追加する。
+メインが計画初版を自ら起草した経路でも、計画レビュー担当の起動と収束判定は本書に従う。
+この経路では指摘を配送せず、メインが`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の「指摘の検収と修正」に従って自ら反映する。
 メインは、計画レビュー担当へ渡すplugin配下の資源の絶対パスを計画レビュー工程の開始時に1回解決し、同じ工程の初回レビュー、再レビュー及び指摘反映で同じ値を使う。
 あわせて、計画レビュー担当が同じrootから自ら解決して読む`skills/plan-mode/references/plan-file-standards.md`と`skills/plan-mode/scripts/check_plan_file.py`の実在も、同じ工程の開始時に1回確認する。この確認はメインが自ら行う検査であり、解決した絶対パスを計画レビュー担当へ渡さない。
 起動前に、`${CLAUDE_PLUGIN_ROOT}/share/plan-review.subagent.md`の`## 入力`が列挙する必須入力が起動文にそろっていることと、後掲の入力のうち絶対パスで示すものが実在することを確認する。元のユーザー指示が人間由来の場合は種別、出所と引用範囲がそろっていること、常駐自動起動の場合は起動事実がそろっていることも、当該確認の対象とする。

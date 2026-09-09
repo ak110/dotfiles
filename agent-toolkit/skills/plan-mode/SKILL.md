@@ -57,7 +57,7 @@ description: >
 
 1. 適用規範、変更対象、定義・参照・呼び出し元、既存テスト、生成・配布経路、類似実装のうち、計画ファイルへ書く内容を確定するために必要な範囲を調査する
 2. 計画の変更対象又は採用方針を左右する未確定判断を、判断同士の依存関係とともに列挙し、`agent-toolkit/rules/01-agent.md`「協調と自律」の確認要否判定を適用する。直接起動では`references/grilling.md`に従って確認を完了し、`agent-toolkit:process-wi`経路では確認事項をUWIへ登録する。計画担当として起動された場合は、いずれも行わず`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`の完了報告が定めるエスカレーションで呼び出し元へ返す
-3. 計画ファイル初版の起草は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`に従って計画担当へ委譲することを既定とする。実行環境が当該委譲の起動手段を提供しない場合と、自身が計画担当として起動された場合に限り、`references/plan-file-standards.md`を全文読んで自ら起草する
+3. 計画ファイル初版の起草主体を起動経路で分ける。`agent-toolkit:process-wi`と`agent-toolkit:fast-process-wi`から起動された場合は、`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.parent.md`に従って計画担当へ委譲する。`agent-toolkit:plan-mode`の直接起動と`agent-toolkit:plan-and-add-awi`からの起動では、`references/plan-file-standards.md`を全文読んで自ら起草する。実行環境が当該委譲の起動手段を提供しない場合と、自身が計画担当として起動された場合も自ら起草する
 4. 初版を起草した主体が`${CLAUDE_PLUGIN_ROOT}/share/plan-drafting.subagent.md`に従って計画構造検査と自己監査を完了する
 5. 起動経路に対応する次の1行だけを実施して終端する
 
