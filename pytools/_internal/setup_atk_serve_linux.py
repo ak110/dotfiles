@@ -21,16 +21,15 @@ _LAUNCHER_RELATIVE = pathlib.PurePath(".local") / "bin" / "atk-serve"
 _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVICE_UNIT
 _LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _LEGACY_SERVICE_UNIT
 
-# ランチャー本文のテンプレート。agent-toolkit プラグインはバージョン付きディレクトリへ
-# 展開されるため、最新バージョンの agent_toolkit/atk.py を起動時に解決する。
+# ランチャー本文のテンプレート。dotfiles 作業ツリーの agent-toolkit を直接参照し、
+# Claude Code のプラグインキャッシュ配置に依存せず解決先を1点に定める。
 # uv は systemd user service の PATH に存在しないため、導入時に解決した絶対パスを埋め込む。
 # ~/.local/bin/atk は install-claude.sh がプラグイン単体利用者向けに生成するラッパーで
 # 内容が競合するため、本モジュールはサービス専用の別名を用いる。
 _LAUNCHER_TEMPLATE = """#!/bin/sh
 set -eu
-script=$(find "$HOME/.claude/plugins/cache" -path '*/agent-toolkit/*/agent_toolkit/atk.py' \\
-  -type f 2>/dev/null | sort -V | tail -1)
-exec "{uv}" run --no-project --script "$script" serve "$@"
+exec "{uv}" run --project "{dotfiles}/agent-toolkit" --locked --no-default-groups \\
+  "{dotfiles}/agent-toolkit/agent_toolkit/atk.py" serve "$@"
 """
 
 # unit ファイル本文。ExecStart は systemd specifier %h を使い、
@@ -59,7 +58,7 @@ def run() -> bool:
 
     Returns:
         セットアップまたは restart を実施した場合 True、ホスト不一致・非 Linux・
-        uv 未検出で何もしなかった場合 False。
+        uv 又は dotfiles ルートを解決できず何もしなかった場合 False。
 
     Raises:
         systemd_user_unit.SetupError: restart 後にサービスが常駐状態へ至らない場合に送出する。
@@ -71,11 +70,15 @@ def run() -> bool:
     if uv is None:
         logger.info(log_format.format_status("atk-serve", "uvが見つからないため設定を見送る"))
         return False
+    dotfiles = claude_common.find_dotfiles_root()
+    if dotfiles is None:
+        logger.info(log_format.format_status("atk-serve", "dotfilesルートが見つからないため設定を見送る"))
+        return False
 
     _remove_legacy_unit()
 
     launcher = _launcher_path()
-    content = _LAUNCHER_TEMPLATE.format(uv=uv)
+    content = _LAUNCHER_TEMPLATE.format(uv=uv, dotfiles=dotfiles)
     if _read_text(launcher) != content:
         claude_common.atomic_write_text(launcher, content, mode=0o755, tag="atk-serve")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

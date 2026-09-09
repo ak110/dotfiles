@@ -1,6 +1,6 @@
 """pytools._internal.setup_atk_serve_linux のテスト。
 
-各分岐 (非 Linux・euryale 以外・uv 不在・ランチャー新規・ランチャー既存・共通処理への委譲) を検証する。
+各分岐 (非 Linux・euryale 以外・uv 不在・dotfilesルート不在・ランチャー配置・共通処理への委譲) を検証する。
 """
 
 # pylint: disable=protected-access
@@ -24,6 +24,7 @@ def _run_linux_euryale(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) 
     uv.parent.mkdir(parents=True, exist_ok=True)
     uv.touch()
     monkeypatch.setattr(claude_common, "resolve_executable", lambda _name, **_kwargs: uv)
+    monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
 
 
 def test_unit_excludes_host_specific_args() -> None:
@@ -112,6 +113,24 @@ class TestRunUvResolution:
         assert not (tmp_path / ".local" / "bin" / "atk-serve").exists()
         assert any("uvが見つからない" in record.message for record in caplog.records)
 
+    def test_missing_dotfiles_root_skips_setup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """dotfilesルートを解決できない場合はランチャーとunitを書き込まない。"""
+        _run_linux_euryale(monkeypatch, tmp_path)
+        monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: None)
+        monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
+
+        with caplog.at_level("INFO", logger=setup_atk_serve_linux.logger.name):
+            result = setup_atk_serve_linux.run()
+
+        assert result is False
+        assert not (tmp_path / ".local" / "bin" / "atk-serve").exists()
+        assert any("dotfilesルートが見つからない" in record.message for record in caplog.records)
+
 
 class TestRunLauncherDeployment:
     """ランチャー配置と共通 systemd 処理への委譲。"""
@@ -135,7 +154,10 @@ class TestRunLauncherDeployment:
             launcher.write_text(initial, encoding="utf-8")
             launcher.chmod(0o600)
         events: list[str] = []
-        expected = setup_atk_serve_linux._LAUNCHER_TEMPLATE.format(uv=prepared / ".local" / "bin" / "uv")
+        expected = setup_atk_serve_linux._LAUNCHER_TEMPLATE.format(
+            uv=prepared / ".local" / "bin" / "uv",
+            dotfiles=prepared,
+        )
 
         def write(path: pathlib.Path, content: str, *, mode: int, tag: str) -> None:
             del tag
@@ -167,7 +189,10 @@ class TestRunLauncherDeployment:
         """内容が一致するランチャーは書き直さず unit 設定へ進む。"""
         launcher = prepared / ".local" / "bin" / "atk-serve"
         launcher.write_text(
-            setup_atk_serve_linux._LAUNCHER_TEMPLATE.format(uv=prepared / ".local" / "bin" / "uv"),
+            setup_atk_serve_linux._LAUNCHER_TEMPLATE.format(
+                uv=prepared / ".local" / "bin" / "uv",
+                dotfiles=prepared,
+            ),
             encoding="utf-8",
         )
         launcher.chmod(0o755)
@@ -180,18 +205,21 @@ class TestRunLauncherDeployment:
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
         assert setup_atk_serve_linux.run()
 
-    def test_launcher_invokes_uv_without_plugin_wrapper(
+    def test_launcher_invokes_worktree_project_without_plugin_cache(
         self,
         prepared: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ランチャーが uv を直接起動し、PATH 依存の bin/atk を経由しないこと。"""
+        """ランチャーがdotfiles作業ツリーをprojectとして直接起動すること。"""
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
         assert setup_atk_serve_linux.run()
 
         content = (prepared / ".local" / "bin" / "atk-serve").read_text(encoding="utf-8")
-        assert "run --no-project --script" in content
-        assert "agent_toolkit/atk.py" in content
+        assert f'run --project "{prepared}/agent-toolkit" --locked --no-default-groups' in content
+        assert f'"{prepared}/agent-toolkit/agent_toolkit/atk.py" serve "$@"' in content
+        assert "plugins/cache" not in content
+        assert "--script" not in content
+        assert "find " not in content
         assert "bin/atk" not in content
         assert "exec uv " not in content
 
