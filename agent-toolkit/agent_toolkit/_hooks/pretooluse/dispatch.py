@@ -70,6 +70,7 @@ Write / Edit / MultiEdit / apply_patch:
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
 - 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
+- 複数断片の全境界が現在内容へ一意に解決できるかの検査 (block)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
 block系checkの検査対象は「新規に書き込まれる側」（変更後断片）を基本とする。
@@ -168,6 +169,7 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.content_checks import (
         _check_colloquial,
         _check_direct_agent_toolkit_edits_after_plan_mode,
+        _check_edit_boundary_resolution,
         _check_edit_operation_blocks,
         _check_foreign_script_mixin,
         _check_mojibake,
@@ -532,6 +534,8 @@ def _handle_edit_tool(
     for operation in operations:
         if _check_edit_operation_blocks(tool_name, operation):
             return 2
+    if _check_edit_boundary_resolution(tool_name, operations):
+        return 2
     warnings: list[str] = []
     for index, operation in enumerate(operations):
         warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images, is_codex=is_codex))

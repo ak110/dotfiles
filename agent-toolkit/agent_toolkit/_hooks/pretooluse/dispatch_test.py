@@ -138,6 +138,114 @@ class TestMojibakeCheck:
         assert result.returncode == 0
 
 
+class TestEditBoundaryResolution:
+    """複数断片の境界解決による遮断。"""
+
+    def test_multiedit_missing_last_boundary_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "first", "new_string": "first-updated"},
+                        {"old_string": "missing", "new_string": "added"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert f"{target}: edits[1].new_string" in result.stderr
+        assert target.read_text(encoding="utf-8") == "first\nsecond\n"
+
+    def test_multiedit_all_boundaries_resolvable_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "first", "new_string": "first-updated"},
+                        {"old_string": "second", "new_string": "second-updated"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 0
+
+    def test_boundary_check_skips_unreadable_and_single_fragment(self, tmp_path: pathlib.Path) -> None:
+        missing = tmp_path / "missing.txt"
+        unreadable = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(missing),
+                    "edits": [
+                        {"old_string": "first", "new_string": "first-updated"},
+                        {"old_string": "second", "new_string": "second-updated"},
+                    ],
+                },
+            }
+        )
+        single = _run(
+            {
+                "tool_name": "Edit",
+                "tool_input": {
+                    "file_path": str(missing),
+                    "old_string": "missing",
+                    "new_string": "added",
+                },
+            }
+        )
+        assert unreadable.returncode == 0
+        assert single.returncode == 0
+
+    def test_multiedit_ambiguous_boundary_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("repeat\nrepeat\nunique\n", encoding="utf-8")
+        result = _run(
+            {
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "file_path": str(target),
+                    "edits": [
+                        {"old_string": "repeat", "new_string": "updated"},
+                        {"old_string": "unique", "new_string": "changed"},
+                    ],
+                },
+            }
+        )
+        assert result.returncode == 2
+        assert f"{target}: edits[0].new_string" in result.stderr
+
+    def test_apply_patch_ambiguous_hunk_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("repeat\nrepeat\nunique\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-repeat\n+updated\n@@\n-unique\n+changed\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
+        assert result.returncode == 2
+        assert f"{target}: hunk[0]" in result.stderr
+
+    def test_apply_patch_missing_hunk_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-first\n+updated\n@@\n-missing\n+added\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
+        assert result.returncode == 2
+        assert f"{target}: hunk[1]" in result.stderr
+
+    def test_apply_patch_unique_hunks_are_allowed(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("first\nsecond\n", encoding="utf-8")
+        command = f"*** Begin Patch\n*** Update File: {target}\n@@\n-first\n+updated\n@@\n-second\n+changed\n*** End Patch"
+        result = _run({"tool_name": "apply_patch", "tool_input": {"command": command}, "turn_id": "turn-1"})
+        assert result.returncode == 0
+
+
 class TestPs1EolCheck:
     """PowerShell ファイルへの LF-only 書き込み検出。"""
 

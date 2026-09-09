@@ -178,6 +178,33 @@ def _check_edit_operation_blocks(
     return any(_check_lockfiles(tool_name, path) or _check_secrets(tool_name, path) for path in operation.display_paths)
 
 
+def _check_edit_boundary_resolution(
+    tool_name: str,
+    operations: list[_hook_tool_input.EditOperation],
+) -> bool:
+    """複数断片の全境界が現在内容へ一意に解決できるかを遮断前に確認する。"""
+    del tool_name  # noqa: PLW0613
+    if sum(len(operation.fragments) for operation in operations) < 2:
+        return False
+    unresolved = [
+        f"{operation.display_path}: {label}"
+        for operation in operations
+        if (labels := _hook_tool_input.unresolved_fragment_labels(operation))
+        for label in labels
+    ]
+    if not unresolved:
+        return False
+    print(
+        _block_notice(
+            "blocked: 複数の境界を持つ編集入力に、現在のファイル内容へ一意に適用できない境界がある。"
+            "対象ファイルは変更していない。\n" + "\n".join(unresolved),
+            fix="対象ファイルの現行内容を取得し、一致しない境界を現行の文面へそろえてから編集を再実行する。",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
 def _collect_edit_operation_warnings(
     tool_name: str,
     operation: _hook_tool_input.EditOperation,

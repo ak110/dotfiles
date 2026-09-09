@@ -169,6 +169,46 @@ def materialize(operation: EditOperation) -> MaterializedEdit | None:
     return MaterializedEdit(operation, before, after)
 
 
+def unresolved_fragment_labels(operation: EditOperation) -> tuple[str, ...] | None:
+    """現在内容へ一意に適用できない全断片のラベルを返す。
+
+    行単位断片を含む全断片について、境界の欠落と非一意を判定する。
+    入力または対象内容から判定できない操作はNoneを返して遮断対象から除く。
+    """
+    if operation.is_whole_write or operation.kind == KIND_DELETE or not operation.fragments:
+        return None
+    if any(fragment.before == "" for fragment in operation.fragments):
+        return None
+    read_path = operation.source_path if operation.kind == KIND_MOVE else operation.path
+    current = _read_text(read_path)
+    if current is None:
+        return None
+
+    unresolved: list[str] = []
+    if not operation.line_based:
+        for fragment in operation.fragments:
+            count = current.count(fragment.before)
+            if count == 0 or (not fragment.replace_all and count > 1):
+                unresolved.append(fragment.label)
+                continue
+            current = current.replace(fragment.before, fragment.after, -1 if fragment.replace_all else 1)
+        return tuple(unresolved)
+
+    lines = current.split("\n")
+    position = 0
+    for fragment in operation.fragments:
+        before_lines = fragment.before.split("\n")
+        indices = _find_sublist_indices(lines, before_lines, position)
+        if len(indices) != 1:
+            unresolved.append(fragment.label)
+            continue
+        index = indices[0]
+        after_lines = fragment.after.split("\n") if fragment.after else []
+        lines = lines[:index] + after_lines + lines[index + len(before_lines) :]
+        position = index + len(after_lines)
+    return tuple(unresolved)
+
+
 def _read_text(path: str | None) -> str | None:
     if not path:
         return None
@@ -454,6 +494,13 @@ def _find_sublist(lines: list[str], target: list[str], start: int) -> int | None
         if lines[index : index + len(target)] == target:
             return index
     return None
+
+
+def _find_sublist_indices(lines: list[str], target: list[str], start: int) -> list[int]:
+    """開始位置以降でtargetが一致する全ての開始位置を返す。"""
+    if not target or len(target) > len(lines):
+        return []
+    return [index for index in range(start, len(lines) - len(target) + 1) if lines[index : index + len(target)] == target]
 
 
 def _resolve(path: str, cwd: str) -> str:
