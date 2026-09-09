@@ -315,7 +315,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run),
     _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
     _StepSpec("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
-    _StepSpec("atkキューの移行", migrate_atk_queue.run),
+    _StepSpec("atk計画の移行", migrate_atk_queue.run),
     _StepSpec("Windowsレジストリ設定", setup_registry.run),
     _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
     _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
