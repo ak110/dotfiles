@@ -206,12 +206,11 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
     assert "alert_keys: github-dependabot:21" in content
     assert "source: alert-monitor" in content
     assert "# Dependabot未解決アラート1件" in content
-    assert "- 反映内容:" in content
-    assert "- 反映先: `github.com/owner/repo`" in content
-    assert "- 理由:" in content
-    assert "- メリット:" in content
-    assert "- デメリット:" in content
-    assert "- 完成条件:" in content
+    assert "## 反映内容と反映先" in content
+    assert "反映先は`github.com/owner/repo`とする。" in content
+    assert "## メリット" in content
+    assert "## デメリット" in content
+    assert "## 完成条件" in content
 
 
 def test_check_and_submit_alerts_writes_kind_specific_completion(
@@ -252,15 +251,15 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
     assert gitlab_count == 1
     awis = _saved_awis_by_heading(notes)
     workflow_completion = (
-        "- 完成条件: 対象ワークフロー`CI`の失敗が解消し、ブランチ`main`で当該ワークフローが成功する。"
+        "## 完成条件\n\n対象ワークフロー`CI`の失敗が解消し、ブランチ`main`で当該ワークフローが成功する。"
         "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
     )
     pipeline_completion = (
-        "- 完成条件: 対象パイプライン`200`の失敗が解消し、ブランチ`main`で後続のパイプラインが成功する。"
+        "## 完成条件\n\n対象パイプライン`200`の失敗が解消し、ブランチ`main`で後続のパイプラインが成功する。"
         "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
     )
     dependabot_completion = (
-        "- 完成条件: 対象アラートが未解決でなくなる。"
+        "## 完成条件\n\n対象アラートが未解決でなくなる。"
         "ロック済みバージョンが修正版以上の場合は、依存を変更せずアラートを棄却する。"
         "修正版未満の場合は依存を更新する"
     )

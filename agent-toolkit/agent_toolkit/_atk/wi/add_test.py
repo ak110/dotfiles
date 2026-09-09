@@ -215,12 +215,12 @@ def test_cmd_add_rejects_agent_awi_with_empty_feasibility(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """sourceを持つ通常AWIは値が空の`実現性`欄を拒否する。"""
+    """sourceを持つ通常AWIは空の`## 実現性`節を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args("本文\n- 実現性:   ", source="test"), notes, _FIXED_DT, tmp_path)
+        add_module._cmd_add(_cmd_add_args("本文\n## 実現性\n\n## 完成条件\n完了", source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "実現性" in capsys.readouterr().err
@@ -238,11 +238,11 @@ def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """コードフェンス内の同名行を固定書式の`実現性`欄として数えない。"""
+    """コードフェンス内の同名行を固定書式の`## 実現性`節として数えない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    message = f"本文\n\n{opening_fence}\n- 実現性: 見かけだけ\n{closing_fence}"
+    message = f"本文\n\n{opening_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     with pytest.raises(SystemExit) as exc_info:
         add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
 
@@ -267,7 +267,7 @@ def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    message = f"本文\n\n{opening_fence}\nコード例\n{non_closing_fence}\n- 実現性: 見かけだけ\n{closing_fence}"
+    message = f"本文\n\n{opening_fence}\nコード例\n{non_closing_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     with pytest.raises(SystemExit) as exc_info:
         add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
 
@@ -280,11 +280,11 @@ def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """開きフェンス以上の長さの同種フェンスで閉じた後の`実現性`欄を数える。"""
+    """開きフェンス以上の長さの同種フェンスで閉じた後の`## 実現性`節を数える。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    message = "本文\n\n```markdown\n- 実現性: 見かけだけ\n````\n- 実現性: 対象実装を確認済み"
+    message = "本文\n\n```markdown\n## 実現性\n見かけだけ\n````\n## 実現性\n対象実装を確認済み"
     add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
@@ -294,12 +294,12 @@ def test_cmd_add_accepts_agent_awi_with_feasibility(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """sourceを持つ通常AWIは非空の`実現性`欄があれば保存する。"""
+    """sourceを持つ通常AWIは非空の`## 実現性`節があれば保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
     add_module._cmd_add(
-        _cmd_add_args("本文\n- 実現性: 対象実装を確認済み", source="test"),
+        _cmd_add_args("本文\n## 実現性\n対象実装を確認済み", source="test"),
         notes,
         _FIXED_DT,
         tmp_path,
@@ -1534,7 +1534,7 @@ class TestAddRepoPathOverrideCli:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", str(myrepo), "--source", "session-review", "本文\n\n- 実現性: テスト用の投入経路を確認済み"],
+                ["wi", "add", str(myrepo), "--source", "session-review", "本文\n\n## 実現性\nテスト用の投入経路を確認済み"],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -2283,7 +2283,7 @@ def test_cli_add_outputs_source_and_extra_frontmatter(
     """投入の出力はsourceと非予約frontmatterを表示する。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
-    message = "---\ncustom_key: 値\n---\n投入本文\n\n- 実現性: テスト用の投入経路を確認済み"
+    message = "---\ncustom_key: 値\n---\n投入本文\n\n## 実現性\nテスト用の投入経路を確認済み"
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(

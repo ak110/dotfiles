@@ -1811,7 +1811,7 @@ class TestAddFrontmatterOverride:
 
         message = (
             "---\ntarget_repo: github.com/other/repo\nsource: session-review\n---\n\n"
-            "テスト本文\n\n- 実現性: テスト用の投入経路を確認済み"
+            "テスト本文\n\n## 実現性\nテスト用の投入経路を確認済み"
         )
 
         with pytest.raises(SystemExit) as exc_info:
@@ -1829,7 +1829,7 @@ class TestAddFrontmatterOverride:
         assert "target_repo: github.com/other/repo" in content
         assert "source: session-review" in content
         body = content.split("---\n\n", 1)[1]
-        assert body == "テスト本文\n\n- 実現性: テスト用の投入経路を確認済み"
+        assert body == "テスト本文\n\n## 実現性\nテスト用の投入経路を確認済み"
 
     def test_multiple_messages_mixed_frontmatter(
         self,
@@ -1872,7 +1872,7 @@ class TestAddFrontmatterOverride:
 
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
 
-        message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文\n\n- 実現性: テスト用の投入経路を確認済み"
+        message = "---\ntarget_repo: github.com/other/repo\n---\n\n本文\n\n## 実現性\nテスト用の投入経路を確認済み"
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add", str(myrepo), message, "--source", "cli-source"], home=tmp_path, now=_FIXED_DT)

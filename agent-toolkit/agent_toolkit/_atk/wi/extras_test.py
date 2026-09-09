@@ -57,7 +57,7 @@ class TestAddSourceOption:
                     "add",
                     "--source=session-review",
                     str(myrepo),
-                    "メッセージ\n\n- 実現性: テスト用の投入経路を確認済み",
+                    "メッセージ\n\n## 実現性\nテスト用の投入経路を確認済み",
                 ],
                 home=tmp_path,
                 now=_FIXED_DT,

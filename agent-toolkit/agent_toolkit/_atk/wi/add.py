@@ -123,7 +123,7 @@ def _body_is_effectively_empty(body: str) -> bool:
 
 
 _EMPTY_AWI_ERROR = "AWI本文が実質空です"
-_FEASIBILITY_FIELD_PATTERN = re.compile(r"^\s*-\s*実現性\s*[:：]\s*(?P<value>.*)$")
+_FEASIBILITY_HEADING_PATTERN = re.compile(r"^ {0,3}##\s+実現性\s*$")
 _CODE_FENCE_OPEN_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})")
 _CODE_FENCE_CLOSE_PATTERN = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})[ \t]*$")
 
@@ -146,12 +146,13 @@ def _require_agent_awi_feasibility(
     source: str | None,
     plan_file: str | None,
 ) -> None:
-    """エージェント由来の通常AWIに非空の`実現性`欄があることを検証する。"""
+    """エージェント由来の通常AWIに非空の`## 実現性`節があることを検証する。"""
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
     if entry_type != WI_TYPE_AWI or plan_file is not None or not item_source:
         return
-    match = None
+    feasibility_found = False
+    feasibility_has_content = False
     open_fence: str | None = None
     for line in body.splitlines():
         if open_fence is not None:
@@ -164,11 +165,15 @@ def _require_agent_awi_feasibility(
         if (opening_match := _CODE_FENCE_OPEN_PATTERN.match(line)) is not None:
             open_fence = opening_match.group("fence")
             continue
-        if (matched := _FEASIBILITY_FIELD_PATTERN.match(line)) is not None:
-            match = matched
+        if feasibility_found and re.match(r"^ {0,3}##\s+", line):
             break
-    if match is None or not match.group("value").strip():
-        raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須欄です。")
+        if _FEASIBILITY_HEADING_PATTERN.match(line) is not None:
+            feasibility_found = True
+            continue
+        if feasibility_found and line.strip():
+            feasibility_has_content = True
+    if not feasibility_found or not feasibility_has_content:
+        raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須節です。")
 
 
 def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
