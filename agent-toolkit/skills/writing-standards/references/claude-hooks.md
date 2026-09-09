@@ -83,6 +83,10 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 遮断は当該ターンの操作を失わせるため、実行主体が`fix`の文面どおりに再実行すれば成立する場合に限る。
 判定ごとにいずれを選んだかと選んだ根拠を、当該判定モジュールのdocstringへ記録する。
 
+遮断するフックが、遮断の解除に必要な情報を判定の時点で保持する場合は、当該情報を通知本文へ載せる。
+実行主体へ別の呼び出しでの取得を要求すると、遮断のたびに1ラウンドを消費するためである。
+通知本文がホストの出力上限を超える見込みがある場合は、載せる対象を上限の内側へ限り、載せなかった対象の取得手順を`fix`へ示す。
+
 `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
 `agent-toolkit/scripts/_hooks/rules_context.py`は、前者でメイン向け条文を追加するときに委譲先を除く。
 判定には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を用い、後者ではサブエージェント向け条文を追加する。
