@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 import sync_codex_plugin_manifests as subject
+import yaml
 
 from pytools._internal import claude_common
 
@@ -233,6 +234,18 @@ def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:
     assert isinstance(interface["defaultPrompt"], list)
     assert interface["defaultPrompt"]
     assert all(isinstance(prompt, str) and prompt and len(prompt) <= 128 for prompt in interface["defaultPrompt"])
+
+
+def test_openai_interface_display_name_matches_skill_directory() -> None:
+    """Codexの入力補助へスキルのディレクトリ名を表示する。"""
+    manifests = sorted((subject.REPO_ROOT / "agent-toolkit/skills").glob("*/agents/openai.yaml"))
+
+    assert manifests, "検査対象のagents/openai.yamlが存在しない"
+    for manifest in manifests:
+        data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        assert data["interface"]["display_name"] == manifest.parents[1].name, (
+            f"Codexの入力補助はinterface.display_nameを候補名として表示するため、スキルのディレクトリ名と一致させる: {manifest}"
+        )
 
 
 @pytest.mark.skipif(

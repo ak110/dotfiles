@@ -25,6 +25,8 @@ Claude Code固有の挙動には節ごとに「Claude Code固有」の注記を�
     - 他スキル・エージェントから呼ばれる前提: `user-invocable: false`
     - ユーザー手動起動専用: `disable-model-invocation: true`
     - 自動起動と手動起動の両方あり（混合型）: いずれも設定しない
+- Codex向けの`agents/openai.yaml`を置くスキルは、`interface.display_name`をスキルのディレクトリ名（frontmatterの`name`と同じ値）と一致させる
+  - Codexの入力補助は当該値を候補名として表示するため、ディレクトリ名と異なる値を置くと、スキル名を入力しても当該スキルを候補から選べない
 
 ## SKILL.md本体とreferences/の役割分担
 
