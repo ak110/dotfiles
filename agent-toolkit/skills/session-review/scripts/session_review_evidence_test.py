@@ -3378,10 +3378,10 @@ def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathl
 
 
 def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """Codex委譲の入力形態表の全形状からthreadIdを収集し、引用本文を収集せずrollout欠落をスキップする。
+    """起動ツールの構造化終端結果からthreadIdを収集し、引用と既存session操作は除外する。
 
-    `tool_use`入力・`mcpMeta.structuredContent`・JSON文字列型`toolUseResult`は同一threadIdへ重複排除し、
-    タスク通知の`<result>`要素だけで到達するthreadIdも収集する。
+    `mcpMeta.structuredContent`・JSON文字列型`toolUseResult`は起動`tool_result`へ対応付け、
+    同一threadIdへ重複排除する。タスク通知の`<result>`要素だけで到達するthreadIdも収集する。
     引用UUIDにも対応するrolloutを配置するため、誤って収集した場合は当該スレッドの
     `stats-agent-thread`が出力され、本テストが失敗する。
     """
@@ -3414,9 +3414,6 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     )
     _write_rollout(
         codex_home, notified_id, [("2026-08-19T00:00:00Z", {"input_tokens": 8, "output_tokens": 9, "total_tokens": 17})]
-    )
-    _write_rollout(
-        codex_home, sent_id, [("2026-08-19T00:00:00Z", {"input_tokens": 10, "output_tokens": 11, "total_tokens": 21})]
     )
     notification = (
         "<task-notification>\n"
@@ -3451,7 +3448,7 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                             "type": "tool_use",
                             "name": "mcp__agents_server__start",
                             "id": "a",
-                            "input": {"engine": "codex", "threadId": thread_id},
+                            "input": {"engine": "codex"},
                         }
                     ],
                 },
@@ -3461,7 +3458,10 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
                 "timestamp": "2026-08-19T00:00:02Z",
                 "mcpMeta": {"structuredContent": {"engine": "codex", "threadId": thread_id}},
                 "toolUseResult": json.dumps({"engine": "codex", "conversationId": thread_id}),
-                "message": {"role": "user", "content": "完了"},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "a", "content": "完了"}],
+                },
             },
             {
                 "type": "user",
@@ -3474,18 +3474,19 @@ def test_stats_discovers_codex_threads_from_structured_shapes(tmp_path: pathlib.
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     threads = _events_by_kind(events, "stats-agent-thread")
-    assert [event["thread"] for event in threads] == [sent_id, notified_id, thread_id]
-    assert [event["tokens"]["total_tokens"] for event in threads] == [21, 17, 9]
+    assert [event["thread"] for event in threads] == [notified_id, thread_id]
+    assert [event["tokens"]["total_tokens"] for event in threads] == [17, 9]
     assert quoted_id not in {event["thread"] for event in threads}
     assert missing_id not in {event["thread"] for event in threads}
+    assert sent_id not in {event["thread"] for event in threads}
 
 
-def test_stats_resolves_claude_session_from_codex_rollout_tool_call(
+def test_stats_resolves_claude_session_from_codex_rollout_tool_result(
     tmp_path: pathlib.Path,
     monkeypatch,
     capsys,
 ) -> None:
-    """Codex rolloutのcustom tool callからClaude sessionを解決し、エンジン別に集計する。"""
+    """Codex rolloutのcustom tool call終端結果からClaude sessionを解決し、エンジン別に集計する。"""
     session_id = "claude-session-11111111"
     claude_home = tmp_path / "home"
     claude_transcript = claude_home / ".claude" / "projects" / "repo" / f"{session_id}.jsonl"
@@ -3505,9 +3506,18 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_call(
                     "type": "custom_tool_call",
                     "name": "mcp__agents_server__start",
                     "call_id": "call-claude",
-                    "arguments": json.dumps({"engine": "claude", "session_id": session_id}),
+                    "arguments": json.dumps({"engine": "claude"}),
                 },
-            }
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-08-19T00:00:01Z",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-claude",
+                    "output": {"engine": "claude", "session_id": session_id},
+                },
+            },
         ],
     )
 
@@ -3547,6 +3557,7 @@ def test_collect_resolves_codex_agents_server_delegations(
                     "type": "item_completed",
                     "item": {
                         "server": "agents_server",
+                        "tool": "mcp__agents_server__start",
                         "arguments": {"engine": "codex"},
                         "result": {"structuredContent": {"session_id": thread_ids[0]}},
                     },
@@ -3557,7 +3568,7 @@ def test_collect_resolves_codex_agents_server_delegations(
                 "timestamp": "2026-08-19T00:00:01Z",
                 "payload": {
                     "type": "custom_tool_call",
-                    "name": "mcp__agents_server__start",
+                    "name": "mcp__agents_server__start_explore",
                     "call_id": "custom",
                     "arguments": {"engine": "codex"},
                 },
@@ -3576,7 +3587,7 @@ def test_collect_resolves_codex_agents_server_delegations(
                 "timestamp": "2026-08-19T00:00:03Z",
                 "payload": {
                     "type": "function_call",
-                    "name": "mcp__agents_server__start",
+                    "name": "mcp__agents_server__start_shell",
                     "call_id": "function",
                     "arguments": {"engine": "codex"},
                 },
@@ -3599,7 +3610,12 @@ def test_collect_resolves_codex_agents_server_delegations(
     assert not _events_by_kind(events, "unresolved-delegation")
 
 
-def test_collect_reports_unresolved_delegation(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("tool", ["start", "start_explore", "start_shell"])
+def test_collect_reports_unresolved_delegation(
+    tool: str,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """agents_server起動の出力から識別子を得られない場合は未確認範囲を返す。"""
     transcript = _write_transcript(
         tmp_path,
@@ -3608,7 +3624,7 @@ def test_collect_reports_unresolved_delegation(tmp_path: pathlib.Path, capsys: p
                 "type": "response_item",
                 "payload": {
                     "type": "custom_tool_call",
-                    "name": "mcp__agents_server__start",
+                    "name": f"mcp__agents_server__{tool}",
                     "call_id": "missing",
                     "arguments": {"engine": "codex"},
                 },
@@ -3637,6 +3653,7 @@ def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path,
                     "type": "item_completed",
                     "item": {
                         "server": "agents_server",
+                        "tool": "mcp__agents_server__start",
                         "arguments": {"engine": "codex"},
                         "result": {"status": "done"},
                     },
@@ -3651,21 +3668,122 @@ def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path,
     ]
 
 
-def test_stats_resolves_claude_session_from_claude_plugin_kill_tool_call(
+def test_collect_ignores_existing_session_operations_as_delegation_sources(
     tmp_path: pathlib.Path,
-    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """wait等の既存session操作と外側実行セルの文字列は委譲発見元にしない。"""
+    missing_session_id = "99999999-9999-4999-8999-999999999999"
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "functions.exec",
+                    "call_id": "outer-exec",
+                    "arguments": (
+                        'await tools.mcp__agents_server__wait({"session_id":"known"}); '
+                        'await tools.mcp__agents_server__start_shell({"command":"true"});'
+                    ),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "custom_tool_call_output", "call_id": "outer-exec", "output": {"status": "done"}},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "mcp__agents_server__wait",
+                    "call_id": "missing-wait",
+                    "arguments": {"session_id": missing_session_id},
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "missing-wait",
+                    "output": {"status": "failed"},
+                },
+            },
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "server": "agents_server",
+                        "tool": "mcp__agents_server__list",
+                        "arguments": {},
+                        "result": {"structuredContent": {"sessions": [{"session_id": missing_session_id}]}},
+                    },
+                },
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__plugin_agent-toolkit_agents_server__wait",
+                            "id": "claude-wait",
+                            "input": {"session_id": missing_session_id},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "mcpMeta": {"structuredContent": {"engine": "codex", "threadId": missing_session_id}},
+                "toolUseResult": {"engine": "codex", "session_id": missing_session_id},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "claude-wait", "content": "完了"}],
+                },
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__plugin_agent-toolkit_agents_server__list",
+                            "id": "claude-list",
+                            "input": {},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "mcpMeta": {"structuredContent": {"engine": "codex", "threadId": missing_session_id}},
+                "toolUseResult": {"engine": "codex", "session_id": missing_session_id},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "claude-list", "content": "完了"}],
+                },
+            },
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = _read_jsonl(capsys, raw=True)
+    assert not _events_by_kind(events, "stats-agent-thread")
+    assert not _events_by_kind(events, "unresolved-delegation")
+    assert not _events_by_kind(events, "unresolved-record")
+
+
+def test_stats_does_not_discover_session_from_claude_plugin_kill_tool_call(
+    tmp_path: pathlib.Path,
     capsys,
 ) -> None:
-    """Claude transcriptのplugin修飾名による`kill`からClaude sessionを解決する。"""
+    """Claude transcriptの`kill`入力は新しい委譲先の発見元にしない。"""
     session_id = "claude-session-kill-11111111"
-    claude_home = tmp_path / "home"
-    claude_transcript = claude_home / ".claude" / "projects" / "repo" / f"{session_id}.jsonl"
-    claude_transcript.parent.mkdir(parents=True)
-    claude_transcript.write_text(
-        json.dumps(_assistant_usage_entry("2026-08-19T00:00:02Z", "claude-kill", _usage(4, 5))) + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("HOME", str(claude_home))
     transcript = _write_transcript(
         tmp_path,
         [
@@ -3689,10 +3807,9 @@ def test_stats_resolves_claude_session_from_claude_plugin_kill_tool_call(
 
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
-    thread = _events_by_kind(events, "stats-agent-thread")[0]
-    assert thread["engine"] == "claude"
-    assert thread["session_id"] == session_id
-    assert thread["tokens"] == _usage(4, 5)
+    assert not _events_by_kind(events, "stats-agent-thread")
+    assert not _events_by_kind(events, "unresolved-delegation")
+    assert not _events_by_kind(events, "unresolved-record")
 
 
 def test_stats_recursively_discovers_native_subagent_activity_without_cycles(
@@ -3793,7 +3910,9 @@ def test_stats_resolves_runtime_unspecified_thread_once(
                     ],
                 },
             },
+            _codex_tool_result_entry("2026-08-19T00:00:01Z", "unspecified", thread_id, engine=None),
             _codex_tool_use_entry("2026-08-19T00:00:02Z", "specified", thread_id),
+            _codex_tool_result_entry("2026-08-19T00:00:02Z", "specified", thread_id),
         ],
     )
 
@@ -3886,6 +4005,29 @@ def _codex_tool_use_entry(
     }
 
 
+def _codex_tool_result_entry(
+    timestamp: str,
+    call_id: str,
+    thread_id: str,
+    *,
+    engine: str | None = "codex",
+) -> dict:
+    """Claude形式のagents_server終端結果を作成する。"""
+    result = {"threadId": thread_id}
+    if engine is not None:
+        result["engine"] = engine
+    return {
+        "type": "user",
+        "timestamp": timestamp,
+        "mcpMeta": {"structuredContent": result},
+        "toolUseResult": result,
+        "message": {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": call_id, "content": json.dumps(result)}],
+        },
+    }
+
+
 def test_stats_outputs_every_subagent_without_limit(tmp_path: pathlib.Path, capsys) -> None:
     """21件以上のサブエージェント記録を件数制限なく全成分合計降順で出力する。"""
     transcript = _write_transcript(
@@ -3923,6 +4065,7 @@ def test_stats_outputs_every_codex_thread_without_limit(tmp_path: pathlib.Path, 
             [("2026-08-19T00:00:01Z", {"input_tokens": index + 1, "output_tokens": 1, "total_tokens": index + 2})],
         )
         entries.append(_codex_tool_use_entry("2026-08-19T00:00:01Z", f"call-{index}", thread_id))
+        entries.append(_codex_tool_result_entry("2026-08-19T00:00:01Z", f"call-{index}", thread_id))
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     transcript = _write_transcript(tmp_path, entries)
 
@@ -3957,13 +4100,19 @@ def test_stats_collects_thread_ids_from_every_subagent(tmp_path: pathlib.Path, m
     _write_subagent(
         subagents,
         "agent-normal",
-        [_codex_tool_use_entry("2026-08-19T00:00:01Z", "call-normal", normal_thread)],
+        [
+            _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-normal", normal_thread),
+            _codex_tool_result_entry("2026-08-19T00:00:01Z", "call-normal", normal_thread),
+        ],
         {"agentType": "Explore"},
     )
     _write_subagent(
         subagents,
         "agent-other",
-        [_codex_tool_use_entry("2026-08-19T00:00:01Z", "call-other", other_thread)],
+        [
+            _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-other", other_thread),
+            _codex_tool_result_entry("2026-08-19T00:00:01Z", "call-other", other_thread),
+        ],
         {"agentType": "general-purpose"},
     )
 
@@ -3998,6 +4147,7 @@ def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Pa
         [
             {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
             _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-main", main_thread),
+            _codex_tool_result_entry("2026-08-19T00:00:01Z", "call-main", main_thread),
         ],
     )
     _write_subagent(
@@ -4007,6 +4157,7 @@ def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Pa
             {"type": "user", "timestamp": "2026-08-19T00:00:01Z", "message": {"role": "user", "content": "委譲"}},
             {"type": "user", "timestamp": "2026-08-19T00:00:01Z", "message": {"role": "user", "content": "追記"}},
             _codex_tool_use_entry("2026-08-19T00:00:01Z", "call-sub", sub_thread),
+            _codex_tool_result_entry("2026-08-19T00:00:01Z", "call-sub", sub_thread),
         ],
         {"agentType": "Explore"},
     )
@@ -4014,12 +4165,12 @@ def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Pa
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = _read_jsonl(capsys)
     threads = {event["thread"]: event for event in _events_by_kind(events, "stats-agent-thread")}
-    assert threads[main_thread]["line"] == 2
+    assert threads[main_thread]["line"] == 3
     assert "agent" not in threads[main_thread]
     assert threads[sub_thread]["agent"] == "agent-sub"
     assert "line" not in threads[sub_thread]
 
-    assert evidence.main([str(transcript), "--detail", "2"]) == 0
+    assert evidence.main([str(transcript), "--detail", "3"]) == 0
     detail = "".join(json.dumps(event, ensure_ascii=False) for event in _read_jsonl(capsys))
     assert main_thread in detail
 
@@ -4065,6 +4216,7 @@ def test_stats_total_sums_main_subagent_and_normalized_codex(tmp_path: pathlib.P
                 },
             },
             _codex_tool_use_entry("2026-08-19T00:00:02Z", "call-1", thread_id),
+            _codex_tool_result_entry("2026-08-19T00:00:02Z", "call-1", thread_id),
         ],
     )
     _write_subagent(
@@ -4931,6 +5083,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
                 "message": {"role": "user", "content": "<task-notification>内部通知</task-notification>"},
             },
             _codex_tool_use_entry("2026-09-02T00:00:00Z", "call-3", missing_thread),
+            _codex_tool_result_entry("2026-09-02T00:00:00Z", "call-3", missing_thread),
             {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "最終結果"}]}},
         ],
     )
@@ -4969,7 +5122,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         {"kind": "bundle-locator", "event_kind": "user", "record": "main", "line": 1},
         {"kind": "bundle-locator", "event_kind": "failed-tool", "record": "main", "line": 4, "text": "失敗の詳細"},
         {"kind": "bundle-locator", "event_kind": "agent-completion", "record": "main", "line": 7, "text": "agent-1: 完了報告"},
-        {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 9, "text": "最終結果"},
+        {"kind": "bundle-locator", "event_kind": "final-result", "record": "main", "line": 10, "text": "最終結果"},
     ]
     assert [event for event in bundle_events if event["kind"] == "bundle-warning-group"] == [
         {
@@ -4980,7 +5133,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         }
     ]
     assert [event for event in bundle_events if str(event["kind"]).startswith("stats-")] == []
-    assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 8}
+    assert bundle_events[-1] == {"kind": "unresolved-record", "record": missing_thread, "line": 9}
     assert [event for event in bundle_events if event["kind"] == "hook-notice"] == []
 
 
@@ -5146,7 +5299,10 @@ def test_delegate_record_with_ambiguous_thread_id_is_unresolved(
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     transcript = _write_transcript(
         tmp_path,
-        [_codex_tool_use_entry("2026-09-01T00:00:00Z", "ambiguous", thread_id)],
+        [
+            _codex_tool_use_entry("2026-09-01T00:00:00Z", "ambiguous", thread_id),
+            _codex_tool_result_entry("2026-09-01T00:00:00Z", "ambiguous", thread_id),
+        ],
     )
     for day, text in (("01", "混入してはならない記録1"), ("02", "混入してはならない記録2")):
         _write_jsonl(
@@ -5157,7 +5313,7 @@ def test_delegate_record_with_ambiguous_thread_id_is_unresolved(
     assert evidence.main([str(transcript)]) == 0
 
     events = _read_jsonl(capsys, raw=True)
-    assert events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 1}
+    assert events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 2}
     serialized = json.dumps(events, ensure_ascii=False)
     assert "混入してはならない記録1" not in serialized
     assert "混入してはならない記録2" not in serialized
@@ -5176,7 +5332,10 @@ def test_explicit_codex_home_applies_to_parent_and_delegate_records(
     rollout_dir = explicit_home / "sessions" / "2026" / "09" / "01"
     _write_jsonl(
         rollout_dir / f"rollout-parent-{parent_id}.jsonl",
-        [_codex_tool_use_entry("2026-09-01T00:00:00Z", "parent-child", child_id)],
+        [
+            _codex_tool_use_entry("2026-09-01T00:00:00Z", "parent-child", child_id),
+            _codex_tool_result_entry("2026-09-01T00:00:00Z", "parent-child", child_id),
+        ],
     )
     _write_jsonl(
         rollout_dir / f"rollout-child-{child_id}.jsonl",
@@ -5228,11 +5387,14 @@ def test_backup_only_thread_id_is_evidence_insufficient(
 
     transcript = _write_transcript(
         tmp_path,
-        [_codex_tool_use_entry("2026-09-01T00:00:00Z", "backup-only", thread_id)],
+        [
+            _codex_tool_use_entry("2026-09-01T00:00:00Z", "backup-only", thread_id),
+            _codex_tool_result_entry("2026-09-01T00:00:00Z", "backup-only", thread_id),
+        ],
     )
     assert evidence.main([str(transcript)]) == 0
     delegate_events = _read_jsonl(capsys, raw=True)
-    assert delegate_events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 1}
+    assert delegate_events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 2}
     assert "backupの写し" not in json.dumps(delegate_events, ensure_ascii=False)
 
 
@@ -5270,6 +5432,7 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
                     ],
                 },
             },
+            _codex_tool_result_entry("2026-08-30T00:00:00Z", "main-a", codex_a),
         ],
     )
     _write_subagent(
@@ -5293,9 +5456,9 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
                 "type": "response_item",
                 "payload": {
                     "type": "custom_tool_call",
-                    "name": "exec",
+                    "name": "mcp__agents_server__start",
                     "call_id": "exec-agents-server",
-                    "input": "await tools.mcp__agents_server__start({engine: 'claude'})",
+                    "arguments": {"engine": "claude"},
                 },
             },
             {
@@ -5347,6 +5510,7 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
                     ],
                 },
             },
+            _codex_tool_result_entry("2026-08-30T00:00:00Z", "b-c", codex_c),
             _hook_attachment(
                 {
                     "type": "hook_system_message",
@@ -5382,7 +5546,16 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
                 "payload": {
                     "type": "custom_tool_call",
                     "name": "mcp__agents_server__start",
-                    "arguments": {"engine": "codex", "session_id": missing},
+                    "call_id": "missing",
+                    "arguments": {"engine": "codex"},
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "missing",
+                    "output": {"engine": "codex", "session_id": missing},
                 },
             },
         ],
@@ -5398,7 +5571,7 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
         f"claude:{claude_b}/agent-child",
         f"codex:{codex_c}",
     }
-    assert default_events[-1] == {"kind": "unresolved-record", "record": missing, "line": 2}
+    assert default_events[-1] == {"kind": "unresolved-record", "record": missing, "line": 3}
     assert unrelated not in {event["record"] for event in default_events}
 
     assert evidence.main([str(transcript), "--warn"]) == 0

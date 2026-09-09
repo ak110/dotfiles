@@ -732,10 +732,12 @@ _CODEX_TOKEN_KEYS = (
 )
 _CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
 _THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
+# 新しい委譲記録の発見元は子sessionを生成する起動ツールに限る。
+# 既存session操作と外側実行セルの入力文字列は、新しい委譲の証拠にならない。
 _AGENTS_SERVER_TOOL_NAMES = frozenset(
     {
-        *(f"mcp__plugin_agent-toolkit_agents_server__{name}" for name in ("start", "wait", "send_message", "kill")),
-        *(f"mcp__agents_server__{name}" for name in ("start", "wait", "send_message", "kill")),
+        *(f"mcp__plugin_agent-toolkit_agents_server__{name}" for name in ("start", "start_explore", "start_shell")),
+        *(f"mcp__agents_server__{name}" for name in ("start", "start_explore", "start_shell")),
     }
 )
 _TASK_RESULT_PATTERN = re.compile(r"<task-notification\b[^>]*>.*?<result>\s*(.*?)\s*</result>", re.DOTALL)
@@ -942,20 +944,27 @@ def _thread_id_from_mapping(value: Any) -> str | None:
 
 
 def _agents_server_call_ids(records: list[_Record]) -> set[str]:
-    """Codexの呼び出し入力にagents_server名を含む呼び出しIDを返す。"""
+    """ClaudeとCodexのagents_server起動ツール呼び出しIDを返す。"""
     call_ids: set[str] = set()
     for record in records:
+        message = record.entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                call_id = block.get("id")
+                if isinstance(call_id, str) and block.get("name") in _AGENTS_SERVER_TOOL_NAMES:
+                    call_ids.add(call_id)
+
         payload = record.entry.get("payload")
         if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call", "function_call"}:
             continue
         call_id = payload.get("call_id")
         if not isinstance(call_id, str):
             continue
-        values = (payload.get("input"), payload.get("arguments"))
         name = payload.get("name")
-        if name in _AGENTS_SERVER_TOOL_NAMES or any(
-            isinstance(value, str) and any(tool_name in value for tool_name in _AGENTS_SERVER_TOOL_NAMES) for value in values
-        ):
+        if name in _AGENTS_SERVER_TOOL_NAMES:
             call_ids.add(call_id)
     return call_ids
 
@@ -986,25 +995,25 @@ def _thread_ids_from_record(
 
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
-    if isinstance(content, list):
-        for block in content:
-            if not isinstance(block, dict) or block.get("type") != "tool_use":
-                continue
-            if block.get("name") in _AGENTS_SERVER_TOOL_NAMES:
-                add_mapping(block.get("input"))
+    result_call_ids = (
+        {
+            block.get("tool_use_id")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str)
+        }
+        if isinstance(content, list)
+        else set()
+    )
 
-    mcp_meta = entry.get("mcpMeta")
-    if isinstance(mcp_meta, dict):
-        add_mapping(mcp_meta.get("structuredContent"))
+    if result_call_ids & agents_server_call_ids:
+        mcp_meta = entry.get("mcpMeta")
+        if isinstance(mcp_meta, dict):
+            add_mapping(mcp_meta.get("structuredContent"))
 
-    tool_result = entry.get("toolUseResult")
-    add_mapping(tool_result)
+        add_mapping(entry.get("toolUseResult"))
 
     payload = entry.get("payload")
     if isinstance(payload, dict):
-        name = payload.get("name")
-        if payload.get("type") == "custom_tool_call" and name in _AGENTS_SERVER_TOOL_NAMES:
-            add_mapping(payload.get("arguments") or payload.get("input"))
         if payload.get("type") == "custom_tool_call_output" and payload.get("call_id") in agents_server_call_ids:
             output = payload.get("output")
             add_mapping(output)
@@ -1017,8 +1026,11 @@ def _thread_ids_from_record(
                 add_mapping(text)
         if entry.get("type") == "event_msg" and payload.get("type") == "item_completed":
             item = payload.get("item")
-            if isinstance(item, dict) and item.get("server") == "agents_server":
-                add_mapping(item.get("arguments"))
+            if (
+                isinstance(item, dict)
+                and item.get("server") == "agents_server"
+                and item.get("tool") in _AGENTS_SERVER_TOOL_NAMES
+            ):
                 add_mapping(item.get("result"))
 
     notification_texts: list[str] = []
@@ -1208,6 +1220,7 @@ def _collect_records(
                 and payload.get("type") == "item_completed"
                 and isinstance(item, dict)
                 and item.get("server") == "agents_server"
+                and item.get("tool") in _AGENTS_SERVER_TOOL_NAMES
                 and not thread_ids
             ):
                 unresolved.append(_UnresolvedRecord(source.record_id, record.line, "unresolved-delegation"))
