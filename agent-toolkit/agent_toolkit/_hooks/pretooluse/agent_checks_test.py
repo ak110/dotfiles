@@ -22,10 +22,16 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._hooks import required_reads
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+
+
+def test_required_read_document_fits_read_default_limit() -> None:
+    """Readの既定上限で判断基準文書の全文へ到達する。"""
+    assert len(pathlib.Path(required_reads.document_path()).read_text(encoding="utf-8").splitlines()) <= 2_000
 
 
 class TestBashCommandContractWarnings:

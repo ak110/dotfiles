@@ -54,6 +54,7 @@ from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks import required_reads as _required_reads  # noqa: E402
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -769,6 +770,25 @@ def _handle_bash_tool(
     update_state(session_id, _apply_bash_updates)
 
 
+def _record_required_read_observation(session_id: str, tool_input: dict) -> None:
+    """部分読取ではない対象文書のReadだけを全文読解として記録する。"""
+    if "offset" in tool_input or "limit" in tool_input:
+        return
+    file_path = tool_input.get("file_path")
+    if not isinstance(file_path, str) or not _required_reads.matches_document(file_path):
+        return
+
+    def _record(state: dict) -> dict | None:
+        recorded = state.get("observed_required_reads")
+        names = [value for value in recorded if isinstance(value, str)] if isinstance(recorded, list) else []
+        if _required_reads.DOCUMENT_NAME in names:
+            return None
+        state["observed_required_reads"] = [*names, _required_reads.DOCUMENT_NAME]
+        return state
+
+    update_state(session_id, _record)
+
+
 def _dispatch(payload_text: str, notices: list[str]) -> int:
     """payloadを解析し、通知本文を`notices`へ蓄積する。終了コードは常に0。"""
     parsed = _parse_hook_payload(payload_text)
@@ -842,8 +862,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             )
         return 0
 
-    # Readは本フックで状態更新を行わない。
+    # Readは対象文書の全文読取だけを状態へ記録する。
     if tool_name == "Read":
+        _record_required_read_observation(session_id, tool_input)
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため

@@ -160,6 +160,7 @@ if TYPE_CHECKING:
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
+        check_required_read_before_ask_user_question,
         _handle_language_check,
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
@@ -315,7 +316,7 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
+        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, session_id, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
@@ -486,10 +487,14 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
 def _handle_user_facing_text_tool(
     tool_name: str,
     tool_input: dict,
+    session_id: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
     """質問・計画本文へ編集入力と同じ言語品質検査を適用する。"""
+    if tool_name == "AskUserQuestion" and check_required_read_before_ask_user_question(session_id) == "block":
+        flush_warning()
+        return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2

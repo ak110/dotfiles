@@ -22,6 +22,7 @@ import pytest
 
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._hooks import required_reads
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
@@ -882,7 +883,16 @@ class TestGitLogChecked:
 
 
 class TestReadHandlerNoop:
-    """Readは対象パスによらずセッション状態を更新しない。"""
+    """Readは対象文書の全文読取だけを状態へ記録する。"""
+
+    def test_required_full_read_is_recorded(self, tmp_path: pathlib.Path) -> None:
+        sid = "read-required"
+        _run(
+            {"session_id": sid, "tool_name": "Read", "tool_input": {"file_path": required_reads.document_path()}},
+            state_dir=tmp_path,
+        )
+
+        assert _read_state(tmp_path, sid)["observed_required_reads"] == [required_reads.DOCUMENT_NAME]
 
     @pytest.mark.parametrize(
         "file_path",
