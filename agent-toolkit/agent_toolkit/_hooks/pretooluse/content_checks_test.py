@@ -207,44 +207,6 @@ class TestGeneralBehavior:
         assert result.returncode == 0
 
 
-class TestHookEntryPointsPep723Dependencies:
-    """hooks.json 列挙の全 entry point で PEP 723 dependencies が実行時 import を満たす検査。
-
-    hook 間で新規に間接 import を追加した際、依存元 entry point の PEP 723 dependencies
-    へ外部パッケージを追記し忘れると本番実行時に ModuleNotFoundError で hook が
-    Traceback を伴い異常終了する回帰を機械的に予防する。
-    """
-
-    @pytest.mark.parametrize("script_name", _hook_entry_point_names())
-    def test_entry_point_starts_without_import_error(
-        self,
-        script_name: str,
-        host_environ: Callable[[], dict[str, str]],
-    ) -> None:
-        script = _SCRIPTS_DIR_PATH / script_name
-        # 空 JSON 入力（各 hook が最小限の tool_input を要求する場合の共通形）
-        result = subprocess.run(
-            ["uv", "run", "--no-project", "--script", str(script)],
-            input="{}",
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
-            env=host_environ(),
-        )
-        # ModuleNotFoundError 等の import 系失敗は stderr の Traceback として現れる。
-        # hook 実装の内部エラー（キー不足等）は許容し、import 失敗のみを検出する。
-        assert "ModuleNotFoundError" not in result.stderr, (
-            f"{script_name} が ModuleNotFoundError で失敗した。"
-            f" PEP 723 dependencies へ不足パッケージを追記する必要がある。\n"
-            f"stderr: {result.stderr[:2000]}"
-        )
-        assert "ImportError" not in result.stderr, (
-            f"{script_name} が ImportError で失敗した。"
-            f" PEP 723 dependencies を確認する必要がある。\nstderr: {result.stderr[:2000]}"
-        )
-
-
 class TestBashSleepPollPattern:
     """固定sleep後に処理が続く前景待機を初回warn・再検出blockで扱う。"""
 

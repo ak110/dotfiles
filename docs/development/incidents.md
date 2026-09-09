@@ -460,6 +460,11 @@
 
 ## フック・セッション状態の不全
 
+- 2026年9月9日: `agent-toolkit/scripts/hook.py`を`agent-toolkit/agent_toolkit/hook.py`へ移した変更を`develop`へマージした後、当該マージより前に開始した稼働中セッションの全ツール呼び出しがフックの起動失敗で拒否された。
+  直接原因: 稼働中のセッションは起動時に読み込んだ`hooks.json`の旧パスを参照し続けるが、当該移動が旧パスへ互換入口を残さなかった。マーケットプレイスがdirectory型で作業ツリーを直接参照するため、`${CLAUDE_PLUGIN_ROOT}`は配布キャッシュではなく当該作業ツリーへ解決される。
+  影響: 互換入口の作成も委譲による迂回もツール呼び出しを要するため自己回復できず、ユーザーがClaude Codeを再起動するまで復旧しなかった。
+  対策: 稼働中セッションが起動時に解決する入口（`hooks.json`の`command`と`.mcp.json`のMCPサーバー起動対象）のリポジトリ相対パスを固定値として検査へ写し、当該パスを変える変更が検査の失敗として現れるようにする。入口を移動する計画は、`agent-toolkit:writing-standards`の`references/claude-hooks.md`が定める互換入口の残置を同一commitへ含める
+
 - 2026年9月7日: 常駐ループのセッションで`agent-toolkit:exit-session`が未起動のままターンが終端し、ユーザーの指摘まで常駐ループが停止した。
   直接原因: Stopの自律終了ゲートが`stop_hook_active`の真だけを根拠に無条件approveへ遷移し、唯一の遮断機会を先行するターンで消費した。
   対策: Stopの共通入口へ連続blockの上限管理を置き、3つのfail-closedゲートから当該無条件approveを撤去する

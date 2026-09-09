@@ -5,6 +5,7 @@
 パスの不在は配布物を成立させないためerrorとして扱う。
 """
 
+import json
 import pathlib
 import re
 
@@ -44,6 +45,23 @@ def test_plugin_root_references_resolve() -> None:
     assert _collect_references(root)
     unresolved = _unresolved_references(root)
     assert not unresolved, _format_unresolved(unresolved)
+
+
+def test_session_resolved_entry_points_are_pinned() -> None:
+    """稼働中セッションが解決する入口の相対パスを固定する。"""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    hooks = json.loads((root / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]
+    commands = [handler["command"] for groups in hooks.values() for group in groups for handler in group["hooks"]]
+    expected_hook = f"{_PREFIX}agent_toolkit/hook.py"
+    message = (
+        "稼働中セッションは起動時に読み込んだ定義の旧パスを参照し続けるため、入口の変更は全ツール呼び出しを遮断する。"
+        "agent-toolkit:writing-standardsのreferences/claude-hooks.mdが求める旧パスへの互換入口を残すこと"
+    )
+    assert commands and all(expected_hook in command for command in commands), message
+
+    mcp = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+    expected_mcp = f"{_PREFIX}agent_toolkit/agents_server_mcp.py"
+    assert expected_mcp in mcp["mcpServers"]["agents_server"]["args"], message
 
 
 def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
