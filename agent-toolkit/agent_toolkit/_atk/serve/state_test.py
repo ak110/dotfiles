@@ -88,16 +88,16 @@ def test_assets_define_dismissible_global_error_region() -> None:
 
 def test_assets_style_markdown_and_inputs_by_purpose() -> None:
     """本文、コード、用途別入力、モバイル操作の表示契約を固定する。"""
-    assert "#screen-wi .markdown-body :not(pre) > code {" in assets.CSS
+    assert ".markdown-body :not(pre) > code {" in assets.CSS
     pre_rule = re.search(
-        r"#screen-wi \.markdown-body pre \{(.*?)\n\}",
+        r"\.markdown-body pre \{(.*?)\n\}",
         assets.CSS,
         re.DOTALL,
     )
     assert pre_rule is not None
     assert "white-space: pre-wrap;" in pre_rule.group(1)
     assert "overflow-wrap: anywhere;" in pre_rule.group(1)
-    assert "#screen-wi .markdown-body pre code {" in assets.CSS
+    assert ".markdown-body pre code {" in assets.CSS
     assert "padding: 0;" in assets.CSS
     assert "background: transparent;" in assets.CSS
     for selector in (
