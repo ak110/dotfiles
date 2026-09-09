@@ -33,6 +33,10 @@ wait:
 
 - 既存sessionの観測として通過 (pass-through)
 
+list:
+
+- 状態が変化していない再取得を再実行窓付きで遮断 (block)
+
 Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
@@ -152,12 +156,14 @@ from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wro
 if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.agent_checks import (
         _AGENTS_SERVER_KILL_TOOLS,
+        _AGENTS_SERVER_LIST_TOOLS,
         _AGENTS_SERVER_SEND_TOOLS,
         _AGENTS_SERVER_START_TOOLS,
         _AGENTS_SERVER_TOOL_NAMES,
         _PLAN_MODE_SKILL_NAMES,
         _check_agents_server_continuation_input,
         _check_agents_server_cwd,
+        _check_agents_server_list_repeat,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
@@ -325,6 +331,12 @@ def main(payload_text: str) -> int:
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:
             _reset_plan_mode_state(session_id)
+        flush_pending_notices()
+        return 0
+
+    if tool_name in _AGENTS_SERVER_LIST_TOOLS:
+        if _check_agents_server_list_repeat(session_id):
+            return exit_with(2)
         flush_pending_notices()
         return 0
 

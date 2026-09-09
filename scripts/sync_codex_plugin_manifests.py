@@ -97,7 +97,7 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "SubagentStart": CodexHookProjection((CODEX_RULES_CONTEXT_COMMAND,), additional_context_limit=0),
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
-        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill",
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
