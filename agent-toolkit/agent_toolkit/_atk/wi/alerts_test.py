@@ -189,6 +189,7 @@ def _saved_awis_by_heading(notes: pathlib.Path) -> dict[str, str]:
 
 def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """新規アラートをAWIへ投入し、件数とfrontmatterを返す。"""
+    monkeypatch.setenv("AI_AGENT", "1")
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
     payload = [{"number": 21, "security_advisory": {}, "dependency": {}}]

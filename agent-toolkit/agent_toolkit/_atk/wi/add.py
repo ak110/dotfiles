@@ -176,6 +176,20 @@ def _require_agent_awi_feasibility(
         raise WebInputError("実現性を記載してください。agent-toolkit:wi-standardsの`## 通常AWIの本文`が定める必須節です。")
 
 
+def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
+    """CLIのエージェント投入でsourceが確定していることを検証する。
+
+    環境変数では呼出元を区別できないため、ユーザーの手動投入を受領する
+    Web UI等の共有保存関数には本検査を適用しない。
+    """
+    raw_source = frontmatter.get("source", source)
+    item_source = raw_source if isinstance(raw_source, str) else source
+    if is_agent_environment() and not item_source:
+        raise WebInputError(
+            "エージェント環境ではsourceの明示が必須です。--sourceオプション、又は本文先頭のfrontmatterで指定してください。"
+        )
+
+
 def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
     """`target_repo`省略時に、全メッセージのfrontmatterが解決可能な対象リポジトリを持つことを検証する。
 
@@ -550,6 +564,7 @@ def _cmd_add(
                     file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
+            _require_agent_source(frontmatter, args.source)
             _require_agent_awi_feasibility(
                 body,
                 frontmatter,

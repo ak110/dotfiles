@@ -321,6 +321,39 @@ def test_cmd_add_accepts_human_awi_without_feasibility(
     assert len(list((notes / "inbox").iterdir())) == 1
 
 
+def test_cmd_add_rejects_missing_source_in_agent_environment(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """source未指定のエージェント投入を保存前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+
+    with pytest.raises(SystemExit) as exc_info:
+        add_module._cmd_add(_cmd_add_args("本文"), notes, _FIXED_DT, tmp_path)
+
+    assert exc_info.value.code == 1
+    assert not list((notes / "inbox").iterdir())
+    assert "--source" in capsys.readouterr().err
+
+
+def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """本文先頭のfrontmatterでsourceが確定すれば投入する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    message = "---\nsource: test\n---\n\n本文\n\n## 実現性\n対象実装を確認済み"
+
+    add_module._cmd_add(_cmd_add_args(message), notes, _FIXED_DT, tmp_path)
+
+    assert len(list((notes / "inbox").iterdir())) == 1
+
+
 def test_cmd_add_accepts_uwi_without_feasibility(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2077,7 +2110,7 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["wi", "add", "本文\n\n```markdown\n## ユーザーコメント\n```"],
+            ["wi", "add", "--source", "test", "本文\n\n```markdown\n## ユーザーコメント\n```\n\n## 実現性\n確認済み"],
             home=tmp_path,
             now=_FIXED_DT,
         )

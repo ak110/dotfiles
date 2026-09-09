@@ -535,7 +535,7 @@ def test_agent_environment_allows_comment_neutral_edit_and_append(
 ) -> None:
     """ユーザーコメントを持たない通常本文の編集と追記はエージェント環境でも成功する。"""
     notes = _setup_notes(tmp_path)
-    edit_path = _write_awi_file(notes, "edit.md", body="編集前")
+    edit_path = _write_awi_file(notes, "edit.md", body="編集前", source="test")
     append_path = _write_awi_file(notes, "append.md", body="追記前")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -557,7 +557,12 @@ def test_agent_environment_edit_preserves_saved_user_comment(
 ) -> None:
     """予約節を含まないMESSAGEで保存済みユーザーコメント節を保持する。"""
     notes = _setup_notes(tmp_path)
-    path = _write_awi_file(notes, "fb.md", body="編集前\n\n## ユーザーコメント\n\n保持する")
+    path = _write_awi_file(
+        notes,
+        "fb.md",
+        body="編集前\n\n## ユーザーコメント\n\n保持する",
+        source="test",
+    )
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -644,6 +649,49 @@ class TestNoninteractiveEdit:
         assert path.read_text(encoding="utf-8") == (
             "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
         )
+
+    def test_agent_environment_rejects_edit_without_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """sourceを持たない項目のsource未指定編集を拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        original = path.read_text(encoding="utf-8")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+
+        assert exc_info.value.code == 1
+        assert path.read_text(encoding="utf-8") == original
+        error = capsys.readouterr().err
+        assert "frontmatter" in error
+        assert "--source" not in error
+
+    def test_agent_environment_accepts_source_added_or_changed_by_edit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エージェント編集でsourceの新規指定と変更を受理する。"""
+        notes = _setup_notes(tmp_path)
+        missing = _write_awi_file(notes, "missing.md", body="編集前")
+        existing = _write_awi_file(notes, "existing.md", body="編集前", source="old")
+        monkeypatch.setenv("AI_AGENT", "1")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        for filename, source in (("missing.md", "new"), ("existing.md", "changed")):
+            message = f"---\nsource: {source}\n---\n\n編集後"
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(["wi", "edit", filename, message], home=tmp_path)
+            assert exc_info.value.code == 0
+
+        assert "source: new" in missing.read_text(encoding="utf-8")
+        assert "source: changed" in existing.read_text(encoding="utf-8")
 
 
 class TestEditBodyFile:
@@ -958,7 +1006,7 @@ class TestEditBodyFile:
     ) -> None:
         """エージェント環境でもholdの本文置換を受理する。"""
         notes = _setup_notes(tmp_path)
-        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前")
+        inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         hold = notes / "hold"
         path = inbox_path.rename(hold / inbox_path.name)
         monkeypatch.setenv("AI_AGENT", "1")

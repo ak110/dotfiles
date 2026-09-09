@@ -166,6 +166,18 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
+def _require_agent_edit_source(content: str) -> None:
+    """エージェント環境の編集結果でsourceが確定していることを検証する。"""
+    if not is_agent_environment():
+        return
+    parsed = _frontmatter.parse_frontmatter(content)
+    raw_source = parsed[0].get("source") if parsed is not None else None
+    if not isinstance(raw_source, str) or not raw_source:
+        raise WebInputError(
+            "エージェント環境ではsourceの明示が必須です。本文先頭のfrontmatterで`source: <出所>`を指定してください。"
+        )
+
+
 def edit_entry_content(
     private_notes: pathlib.Path,
     *,
@@ -489,6 +501,13 @@ def _cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if message is None and _reject_agent_user_comment_change(original, edited):
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
+        sys.exit(1)
+    try:
+        _require_agent_edit_source(edited)
+    except WebInputError as error:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        print(f"編集を拒否しました: {error}", file=sys.stderr)
         sys.exit(1)
     finalized_content: dict[str, str] = {}
     try:

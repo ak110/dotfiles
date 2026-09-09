@@ -884,6 +884,7 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     expected_target: str,
 ) -> None:
     """追加APIがCLIと同じ解決契約のtarget_repoをfrontmatterへ保存する。"""
+    monkeypatch.setenv("AI_AGENT", "1")
 
     def resolve(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
         del cwd
