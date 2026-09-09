@@ -37,6 +37,8 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
+HEARTBEAT_INTERVAL_SECONDS = 30
+HEARTBEAT_EXPIRY_SECONDS = 120
 
 
 @dataclasses.dataclass(frozen=True)
@@ -282,6 +284,7 @@ class StatusFileWriter:
         """書込を有効化し、前回プロセスの残存状態を初期化する。"""
         self._active = True
         self._remove_owned_and_expired_files()
+        self._remove_stale_status_files()
         self.flush()
 
     def schedule(self) -> None:
@@ -296,6 +299,7 @@ class StatusFileWriter:
         if not self._active:
             return
         self._flush_handle = None
+        self._remove_stale_status_files()
         now = asyncio.get_running_loop().time()
         self._remove_expired_results(now)
         self._write_terminal_results(now)
@@ -313,6 +317,7 @@ class StatusFileWriter:
         payload: dict[str, Any] = {
             "version": 1,
             "host_session_id": self._resolve_host_session_id(),
+            "heartbeat_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "updated_at": _updated_at(visible),
             "sessions": [_serialize_session(session) for session in visible],
         }
@@ -437,6 +442,21 @@ class StatusFileWriter:
             self._projected_host_session_id = host_session_id
             return host_session_id
         return writer_session_id
+
+    def _remove_stale_status_files(self) -> None:
+        """生存の印が失効した他の書込主体の状態ファイルを削除する。"""
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
+        for path in self._directory.glob("*.json"):
+            if path == self._path:
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                heartbeat_at = payload.get("heartbeat_at") if isinstance(payload, dict) else None
+                heartbeat = datetime.datetime.fromisoformat(heartbeat_at) if isinstance(heartbeat_at, str) else None
+            except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+                continue
+            if heartbeat is not None and heartbeat.tzinfo is not None and heartbeat < cutoff:
+                path.unlink(missing_ok=True)
 
     def _schedule_retention(self, sessions: list[SessionState], now: float) -> None:
         if self._retention_handle is not None:

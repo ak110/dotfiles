@@ -282,6 +282,7 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     payload = json.loads(writer.path.read_text(encoding="utf-8"))
     assert payload["version"] == 1
     assert payload["host_session_id"] is None
+    datetime.datetime.fromisoformat(payload["heartbeat_at"])
     assert [item["session_id"] for item in payload["sessions"]] == ["visible"]
     assert payload["sessions"][0]["progress"] == "進捗"
     datetime.datetime.fromisoformat(payload["sessions"][0]["started_at"])
@@ -444,6 +445,84 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
     assert other_temporary.exists()
     assert retained_result.exists()
     assert retained_notice.exists()
+
+
+@pytest.mark.asyncio
+async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
+    """生存の印が失効した他の状態ファイルを削除する。"""
+    directory = subject.status_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    stale = directory / "stale.json"
+    stale.write_text(
+        json.dumps(
+            {
+                "heartbeat_at": (
+                    datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=subject.HEARTBEAT_EXPIRY_SECONDS + 1)
+                ).isoformat()
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = directory / "live.json"
+    live.write_text(
+        json.dumps({"heartbeat_at": datetime.datetime.now(datetime.UTC).isoformat()}),
+        encoding="utf-8",
+    )
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+
+    writer.activate()
+
+    assert not stale.exists()
+    assert live.exists()
+    writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_writer_preserves_state_file_without_heartbeat(tmp_path: pathlib.Path) -> None:
+    """旧形式の状態ファイルは他の書込主体が回収しない。"""
+    directory = subject.status_directory("root", tmp_path)
+    directory.mkdir(parents=True)
+    legacy = directory / "legacy.json"
+    legacy.write_text("{}", encoding="utf-8")
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+
+    writer.activate()
+    writer.flush()
+    writer.deactivate()
+
+    assert legacy.exists()
+
+
+@pytest.mark.asyncio
+async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """managerは稼働中に生存の印を定期更新し、終了時に更新タスクを回収する。"""
+    monkeypatch.setattr(subject, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
+    writer = subject.StatusFileWriter(
+        {},
+        subject.StatusFileIdentity("root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = agents_server_mcp.AgentsServerManager(writer)
+    manager.activate()
+    initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+
+    await asyncio.sleep(0.03)
+
+    refreshed = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+    assert refreshed > initial
+    await manager.close()
+    assert manager._heartbeat_task is None
 
 
 @pytest.mark.asyncio

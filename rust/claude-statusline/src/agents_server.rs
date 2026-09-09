@@ -16,6 +16,7 @@ use crate::subagent::{
 };
 
 const STATE_VERSION: u64 = 1;
+const HEARTBEAT_EXPIRY_SECONDS: i64 = 120;
 // Claude Codeの描画は先頭の字下げ2セルと行末の2セルを確保する。
 // 確保幅は描画された行の表示幅とCOLUMNSの差から導出した。
 const STATUSLINE_RESERVED_COLUMNS: usize = 4;
@@ -105,7 +106,7 @@ pub(crate) fn read_state_files(directory: &Path) -> Vec<StateFile> {
             let file_name = path.file_name()?.to_str()?.to_string();
             let raw = fs::read_to_string(path).ok()?;
             let value = serde_json::from_str::<Value>(&raw).ok()?;
-            let mut state_file = parse_state_file(file_name, &value)?;
+            let mut state_file = parse_state_file(file_name, &value, Utc::now())?;
             retain_sessions_with_results(&mut state_file, |session_id| {
                 directory
                     .join("results")
@@ -133,12 +134,20 @@ fn is_state_file(path: &Path) -> bool {
     path.extension().and_then(|extension| extension.to_str()) == Some("json")
 }
 
-fn parse_state_file(file_name: String, value: &Value) -> Option<StateFile> {
+fn parse_state_file(file_name: String, value: &Value, now: DateTime<Utc>) -> Option<StateFile> {
     let object = value.as_object()?;
     if object.get("version")?.as_u64()? != STATE_VERSION {
         return None;
     }
     let host_session_id = optional_string(object, "host_session_id")?;
+    if let Some(heartbeat_at) = object.get("heartbeat_at") {
+        let heartbeat = DateTime::parse_from_rfc3339(heartbeat_at.as_str()?)
+            .ok()?
+            .with_timezone(&Utc);
+        if now.signed_duration_since(heartbeat).num_seconds() > HEARTBEAT_EXPIRY_SECONDS {
+            return None;
+        }
+    }
     object.get("updated_at")?.as_str()?;
     let sessions = object
         .get("sessions")?
@@ -344,6 +353,9 @@ mod tests {
     }
 
     fn state_file(file_name: &str, host: Value, sessions: Value) -> StateFile {
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
         parse_state_file(
             file_name.to_string(),
             &serde_json::json!({
@@ -352,6 +364,7 @@ mod tests {
                 "updated_at": "2026-01-01T00:00:00+00:00",
                 "sessions": sessions,
             }),
+            now,
         )
         .unwrap()
     }
@@ -597,7 +610,7 @@ mod tests {
             "updated_at": "2026-01-01T00:00:00+00:00",
             "sessions": [],
         });
-        assert!(parse_state_file("root.json".to_string(), &wrong_version).is_none());
+        assert!(parse_state_file("root.json".to_string(), &wrong_version, Utc::now()).is_none());
 
         let file = state_file(
             "root.json",
@@ -618,6 +631,37 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         assert_eq!(render_state_files(&[file], 80, now).len(), 1);
+    }
+
+    #[test]
+    fn stale_heartbeat_files_are_hidden() {
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        let stale = serde_json::json!({
+            "version": 1,
+            "host_session_id": null,
+            "heartbeat_at": "2025-12-31T23:57:59+00:00",
+            "updated_at": "2025-12-31T23:57:59+00:00",
+            "sessions": [],
+        });
+        let invalid = serde_json::json!({
+            "version": 1,
+            "host_session_id": null,
+            "heartbeat_at": "invalid",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "sessions": [],
+        });
+
+        assert!(parse_state_file("stale.json".to_string(), &stale, now).is_none());
+        assert!(parse_state_file("invalid.json".to_string(), &invalid, now).is_none());
+    }
+
+    #[test]
+    fn files_without_heartbeat_are_shown() {
+        let file = state_file("root.json", Value::Null, serde_json::json!([]));
+
+        assert_eq!(file.file_name, "root.json");
     }
 
     #[test]

@@ -29,6 +29,7 @@ Codex CLIが起動するMCPサーバープロセスへは、`codex app-server`�
 | session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | MCPサーバーだけ |
 | statusline向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents-wait` | 当該ルートに属する各MCPサーバー |
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を起動元のsession識別子へ解決する主体 | 当該sessionを起動したMCPサーバー |
+| 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | 当該状態ファイルを書き込むMCPサーバー |
 | 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents-wait`、statusline | MCPサーバー（作成と削除）、`atk agents-wait`（削除） |
 | 全sessionの終端登録と再開情報 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー | 当該sessionを所有するMCPサーバー |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents-wait` | `atk agents-notify` |
@@ -48,7 +49,7 @@ MCPサーバーは状態ファイルの書込先として解決したルートse
 - MCPサーバーのメモリーにだけ存在する状態は、プロセス境界の外にある`atk`のCLIとフックからは更新できない。当該状態を判定へ用いる経路が、CLI経由の操作でも成立するかを個別に確認する。
 - 同じ事実を2つの表現で保持する状態を新設しない。未回収の終端結果は、当該ファイルを書いた主体の公開台帳とファイルの在否から`published`、`consumed`、`unpublished`へ区分する。回収済みと判定するのは`consumed`だけであり、ファイルが不在であることだけを根拠にしない。`SessionState.result_delivered`はファイルを削除する契機を表す内部状態であり、ファイル表現を持たない経路に限り用いる。
 
-各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルだけを削除できる。`results`、`notices`および`hosts`配下は共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。
+各MCPサーバーは、自身が所有する状態ファイルと対応する一時ファイルに加え、生存の印が失効した他の状態ファイルを削除できる。生存の印を持たない状態ファイルは削除しない。`results`、`notices`および`hosts`配下は共有するため、各書込主体が削除できるのは保持期限を超えたファイルだけとする。
 
 - 再起動をまたぐsessionの解決はsession登録簿を正本とする。statusline向け状態ファイルは書込主体を解決できる経路でだけ作成されるため、解決の入力にしない。登録簿が終端を示さないsessionは、別プロセスがturnを実行している可能性を排除できないため再開しない。
 

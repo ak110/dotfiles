@@ -214,6 +214,7 @@ class AgentsServerManager:
         self._wait_timeouts: dict[str, float] = {}
         self._carried_unavailable_candidates: dict[tuple[str, LaunchKind], ModelCandidate] = {}
         self._pending_unobserved_child_sessions: dict[str, tuple[int, set[str]]] = {}
+        self._heartbeat_task: asyncio.Task[None] | None = None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = status_file.resolve_status_file_identity(os.environ)
             self._status_writer = status_file.StatusFileWriter(self.sessions, identity) if identity is not None else None
@@ -229,6 +230,14 @@ class AgentsServerManager:
         """状態ファイル出力を有効化する。"""
         if self._status_writer is not None:
             self._status_writer.activate()
+            self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
+
+    async def _refresh_heartbeat(self) -> None:
+        """MCPサーバーの生存中に状態ファイルの生存の印を更新する。"""
+        assert self._status_writer is not None
+        while True:
+            await asyncio.sleep(status_file.HEARTBEAT_INTERVAL_SECONDS)
+            self._status_writer.flush()
 
     def _backend(self, engine: str) -> Any:
         if engine == "codex":
@@ -1329,6 +1338,10 @@ class AgentsServerManager:
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            await asyncio.gather(self._heartbeat_task, return_exceptions=True)
+            self._heartbeat_task = None
         pending_resumes = tuple(self._pending_resumes.values())
         for pending in pending_resumes:
             pending.discard_previous_result()
