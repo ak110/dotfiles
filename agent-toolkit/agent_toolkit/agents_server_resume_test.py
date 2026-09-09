@@ -19,6 +19,13 @@ from agent_toolkit._agents_server import session_registry, state, status_file
 
 _STREAM_END = object()
 
+# 状態遷移の観測は経過時間で打ち切る。反復回数で打ち切ると、CPU競合時に
+# 実時間の待機量が不足して自動再開の送信前に打ち切られる。
+_STATE_TIMEOUT = 10.0
+# 自動再開を観測する検体では、_STATE_TIMEOUTより長い待機上限をmanager.waitへ与える。
+# 観測前にwaitが期限切れになると自動再開の送信自体が発生しない。
+_RESUME_WAIT_TIMEOUT = 30.0
+
 
 class SystemMessage:
     """Claude SDKの初期化メッセージを再現する。"""
@@ -152,12 +159,14 @@ async def _start(
     return manager.sessions[response["session_id"]]
 
 
-async def _await_state(predicate: Any) -> None:
-    for _ in range(100):
+async def _await_state(predicate: Any, timeout: float = _STATE_TIMEOUT) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
         if predicate():
             return
+        if asyncio.get_running_loop().time() >= deadline:
+            raise AssertionError("状態遷移が完了しなかった")
         await asyncio.sleep(0.01)
-    raise AssertionError("状態遷移が完了しなかった")
 
 
 @pytest.fixture(autouse=True)
@@ -198,7 +207,7 @@ async def _auto_resume_after_child_termination(
     child_session_id: str,
 ) -> dict[str, Any]:
     """孫sessionを終端させ、継続指示後の結果を返す。"""
-    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
     await _await_state(lambda: session.awaiting_auto_resume)
     assert wait_task.done() is False
     session_registry.publish(child_session_id, terminal=True)
@@ -367,7 +376,7 @@ async def test_wait_preserves_unobserved_child_sessions_after_auto_resume(
         _emit_child_start(client, unobserved_session_id)
         client.emit(ResultMessage("孫session混在時の初回結果"))
 
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: len(client.queries) == 2)
         client.emit(ResultMessage("孫session混在時の再開結果"))
         result = await wait_task
@@ -399,7 +408,7 @@ async def test_wait_accumulates_unobserved_child_sessions_across_auto_resumes(
         _emit_child_start(client, missing_session_id)
         client.emit(ResultMessage("1回目の孫session混在結果"))
 
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=5))
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: len(client.queries) == 2)
 
         session_registry.publish(second_terminal_session_id, terminal=True)
@@ -435,7 +444,7 @@ async def test_wait_returns_result_without_child_sessions(
     manager, backend = _manager(client, monkeypatch)
     try:
         session = await _start(manager, tmp_path, monkeypatch)
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=1))
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
         client.emit(TaskStartedMessage("task-1"))
         client.emit(ResultMessage("孫なしの結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
@@ -619,7 +628,7 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
     manager, backend = _manager(client, monkeypatch)
     try:
         session = await _start(manager, tmp_path, monkeypatch)
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=1))
+        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
         client.emit(TaskStartedMessage("task-1"))
         client.emit(ResultMessage("初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
