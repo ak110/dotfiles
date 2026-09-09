@@ -105,6 +105,7 @@ amend・fixupの直後は、`git status --short`で追跡ファイルに未コ�
 
 ## 操作前後の確認
 
+- fixupとamendは、次の5つを1つの工程として順に完了してからcommitを実行する。第1に、変更したファイルを対象とする正式formatterを実行する。第2に、formatterが変更した差分を`git diff`で検収する。第3に、当該commitへ帰属する差分だけをstageする。第4に、`git status --short`で未stageの差分が残らないことを確認する。第5に、fixup又はamendのcommitを実行する（厳守規定。pre-commitがcommitの実行時に初めて差分を変更すると、stage済みの差分と未stageの差分が併存し、当該commitが成立しない）。pre-commitが差分を変更した場合は成功扱いにせず、`## 失敗時の扱い`に従う
 - 操作直前に`## 履歴確認の起動形`が定める起動形の`git log`を単独で実行して対象commitの件名と差分を再特定し、
   `git blame -- <修正したファイルのリポジトリ相対パス>`または`git log -p -n 20 -- <修正したファイルのリポジトリ相対パス>`と
   `git show --stat <sha>`で統合先を確定する
