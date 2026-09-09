@@ -1,7 +1,6 @@
 # rules-main.claude-code.md: Claude Codeのメインエージェントだけに適用する規範
 
 本文書はClaude Codeのメインエージェントだけに適用し、`99-claude-code.md`と同じ拘束力を持つ。
-サブエージェント及び委譲先は本文書を適用しない。
 
 ## ツールAPIと権限
 

@@ -11,7 +11,7 @@ description: >
 # 計画モード
 
 本スキルは、調査から計画ファイルの作成、計画レビュー及び起動経路別の終端までの工程制御を定める。
-計画ファイルの成果物契約は`references/plan-file-standards.md`、各工程の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書を正本とし、本書へ再掲しない。
+計画ファイルの成果物契約は`references/plan-file-standards.md`、各工程の内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下のタスク文書を正本とする。
 
 ユーザーが`agent-toolkit:plan-mode`又は`agent-toolkit:plan-and-add-awi`を直接起動した場合は、`references/grilling.md`に従いユーザーとの共通理解へ到達するまで確認を繰り返す。
 起動プロンプトが起動経路として`agent-toolkit:process-wi`と`agent-toolkit:fast-process-wi`のいずれかを明示している場合は`references/grilling.md`を使わず、必要な確認事項だけをUWIへ登録する。
