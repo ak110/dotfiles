@@ -106,6 +106,7 @@ def test_agents_notify_rejects_root_identity(
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
 
