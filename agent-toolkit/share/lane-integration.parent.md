@@ -1,5 +1,9 @@
 # 統合担当の起動と受領
 
+```text
+起動対象: lane-integration.subagent.md
+```
+
 `agent-toolkit:process-wi`のレーン工程のレーンで、呼び出し元が本書を全文読み、統合担当の起動、入力の受け渡し及び返却値の検収へ適用する。
 呼び先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`が定める。本書へ呼び先固有の作業手順を書かない。
 
@@ -27,6 +31,8 @@
 - 計画型変換の要否と、`atk wi convert-to-plan`の`--plan-file`へ渡す可搬値及び対象AWIファイル名一覧
 - AWIファイル名ごとの終端区分（`adopt`、`reject`又は`終端しない`）と、`adopt`で用いる完全OIDの決定規則
 - `終端しない`のうち延期`adopt`対象のAWIファイル名と完全OIDの決定規則。`マージあり`ではffマージ後のベースHEAD完全OIDを用いる規則、`マージなし`では充足根拠として計画に記録された対象commitの完全OIDそのものを渡す。延期`adopt`対象が無い場合は`なし`
+- `延期adopt対象`: 当該レーンで終端せず後続の工程へ延期するAWIのファイル名の一覧。無い場合は`なし`
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 - 記録した対象リポジトリの絶対パス
 - 作業対象リポジトリへのpush不可という権限
 - 完了報告と成果物を日本語で書くこと

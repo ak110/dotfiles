@@ -29,6 +29,10 @@ uvx pyfltr run --commands=colloquial-check --enable=colloquial-check --no-exclud
 
 検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とする。Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
 
+辞書の実体は`pyfltr`パッケージの`pyfltr.colloquial.check`が保持する`DENY_PATH`と`ALLOW_PATH`が指す。対象リポジトリが`pyfltr`を依存に持つ場合は、`uv run --frozen python -c 'import pyfltr.colloquial.check as c; print(c.DENY_PATH, c.ALLOW_PATH)'`で解決する。依存に持たない場合は、同じPythonの式を`uvx --from pyfltr python -c`へ渡して解決する。環境ごとに変わる`site-packages`の絶対パスを規範へ固定しない。
+
+辞書ファイルの本文は、成果物と文書を書く主体による読込を当該ファイル自身が禁じる。検出語を文脈へ取り込むと当該語の生成確率が上がるためである。`agent-toolkit/rules/01-agent.md`「行動指針」が定めるとおり、当該主体は辞書を読む対象から外し、起草の後に前掲のCLI形式で検査して検出箇所を解消する。
+
 ## ダッシュチェック
 
 日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`scripts/check_dash.py`で検査する。

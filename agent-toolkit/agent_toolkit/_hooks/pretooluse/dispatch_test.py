@@ -823,8 +823,7 @@ class TestColloquialCheck:
         assert "一致: 1件（行1、列4）" in _additional_context(result)
         assert "検出箇所を含む文全体" in _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
-        # 検出語そのものは出力に含めない（コンテキスト汚染防止）
-        assert deny_substring not in _agent_messages(result)
+        assert f"検出語: {deny_substring}" in _agent_messages(result)
 
     def test_lists_every_match_position_within_limit(self, deny_substring: str):
         content = f"概要は{deny_substring}該当する。\n" * 5
@@ -1011,7 +1010,7 @@ class TestUserFacingTextChecks:
             assert result.returncode == 0
             assert "口語的な日本語表現" in _additional_context(result)
             assert "Target:" not in _additional_context(result)
-            assert deny_substring not in _agent_messages(result)
+            assert f"検出語: {deny_substring}" in _agent_messages(result)
         else:
             assert result.returncode == 2
             expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
@@ -1048,6 +1047,13 @@ class TestUserFacingTextChecks:
 
         assert result.returncode == 0
         assert "口語的な日本語表現" in _additional_context(result)
+
+    def test_empty_file_path_uses_ask_user_question_as_target(self, deny_substring: str) -> None:
+        """質問入力の口語警告は空のパスではなくツール名を対象として示す。"""
+        result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
+
+        assert result.returncode == 0
+        assert "対象: AskUserQuestion" in _additional_context(result)
 
 
 class TestAskUserQuestionRequiredRead:

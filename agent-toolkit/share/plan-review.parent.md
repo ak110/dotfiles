@@ -1,8 +1,14 @@
 # 計画レビュー担当の起動と収束判定
 
+```text
+起動対象: plan-review.subagent.md
+```
+
 計画担当の計画構造検査と自己監査の完了後、メインが本書に従って計画レビュー担当を起動し、指摘反映後の収束を判定する。レビュー表の共通ライフサイクル、`track`、モデル解決及び収束判定は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`を適用する。
 
 ## 起動
+
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 
 自己監査を完了後、メインが`agent-toolkit:delegation`に従って計画レビュー担当を起動する。
 計画レビューの`track`は`plan-review`とし、計画ごとに1つの表を全ラウンドで使う。
@@ -23,7 +29,7 @@
 - 構造検査の対象リポジトリ。計画メタ情報の`対象リポジトリ`に記載された絶対パスをそのまま渡す
 - 差分読取用作業ツリー。変更後ファイル、Git差分及びテスト対象を読む場所とし、構造検査の対象リポジトリと同じ値になる場合も省略せずに渡す
 - プロジェクト規範
-- `agent-toolkit:review-standards`のSKILL.md
+- `レビュー規範`: `agent-toolkit:review-standards`のSKILL.md
 - レビュー指摘管理表の絶対パス。ファイル名と配置は`agent-toolkit:plan-mode`の計画ファイル基準が定め、メインが`plan-review`の`track`用の表を新設してから渡す
 - 計画担当が報告した、計画本文の外へ置いた確定入力ファイルの絶対パス。該当するファイルが無い場合は渡さない
 

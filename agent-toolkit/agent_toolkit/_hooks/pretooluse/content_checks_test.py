@@ -1,5 +1,5 @@
 # ruff: noqa: E402,F401,F403,F405,I001
-# pylint: disable=unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
+# pylint: disable=protected-access,unused-import,unused-wildcard-import,wildcard-import,wrong-import-position,undefined-variable
 """agent-toolkit/scripts/_hooks/pretooluse.py のテスト。
 
 subprocessで起動しexit code・stderr・stdoutを検証する。
@@ -22,10 +22,21 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+
+
+def test_colloquial_notice_references_existing_writing_rules(deny_substring: str) -> None:
+    """口語警告は発話と成果物の実在する記述規範を参照する。"""
+    notice = content_checks._check_colloquial("Write", None, f"概要は{deny_substring}該当する。", "note.md")
+
+    assert notice is not None
+    assert "agent-toolkit/share/rules-main.md" in notice
+    assert "references/writing.md" in notice
+    assert "agent-toolkit/rules/01-agent.md`「日本語」" not in notice
 
 
 class TestLanguageEscalation:

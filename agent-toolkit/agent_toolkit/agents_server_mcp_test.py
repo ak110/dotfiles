@@ -678,30 +678,91 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
         return {"status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
-    prompt = "\n".join(
-        [
-            f"{task_document} の手順を実行せよ。",
-            "レビュー基準: 計画",
-            f"対象リポジトリ: {tmp_path}",
-            f"対象worktree: {tmp_path}",
-            "プロジェクト規範: AGENTS.md",
-            "適用する作成規範スキル: agent-toolkit:writing-standards",
-            "agent-toolkit:review-standardsのSKILL.md: /plugin/review-standards/SKILL.md",
-            "開始時点の完全OID: 0000000000000000000000000000000000000000",
-            "レビュー対象HEADの完全OID: 1111111111111111111111111111111111111111",
-            "変更ファイル一覧: 対象.py",
-            "検証結果: 成功",
-            "review_contract: 契約",
-            "レビュー指摘管理表: /tmp/review.tsv",
-            "track: exec-review",
-            "round: 1",
-        ]
-    )
+    prompt = "\n".join([f"{task_document} の手順を実行せよ。", *_observed_input_lines(task_document.name, tmp_path)])
 
     response = await subject.start("execute_review", prompt, str(tmp_path))
 
     assert response == {"status": "running"}
     assert called is True
+
+
+def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
+    """実運用で観測した起動文の名前付き入力を組み立てる。"""
+    shared_worktree = [f"対象worktree: {root}", f"プロジェクト規範: {root / 'AGENTS.md'}"]
+    handoff = f"引き継ぎ記録先: {root / 'handoff.md'}"
+    if task_name == "exec-review.subagent.md":
+        return [
+            "レビュー基準: 計画",
+            f"対象リポジトリ: {root}",
+            *shared_worktree,
+            "適用する作成規範スキル: agent-toolkit:writing-standards",
+            "agent-toolkit:review-standardsのSKILL.md: /plugin/review-standards/SKILL.md",
+            "開始時点の完全OID: 0000000000000000000000000000000000000000",
+            "レビュー対象HEADの完全OID: 1111111111111111111111111111111111111111",
+            "変更ファイル一覧: note.md",
+            "検証結果: 成功",
+            "review_contract: 契約",
+            "レビュー指摘管理表: /tmp/review.tsv",
+            "track: exec-review",
+            "round: 1",
+            "レビュー種別: 初回レビュー",
+            handoff,
+        ]
+    if task_name == "exec.subagent.md":
+        return [
+            "担当種別: fast担当",
+            *shared_worktree,
+            "実装するコミット単位: 単位1",
+            "目的: 契約の検証",
+            "変更説明: 文書を変更する",
+            "作成規範: agent-toolkit:writing-standards",
+            "追加指示: なし",
+            "許容済みの挙動変化: なし",
+            f"git操作に用いるworktree: {root}",
+            f"複製元: {root.parent}",
+            f"対象外worktree: {root.parent / 'other'}",
+            handoff,
+        ]
+    if task_name == "pick-wi.subagent.md":
+        return [
+            f"対象リポジトリ: {root}",
+            f"プロジェクト規範: {root / 'AGENTS.md'}",
+            f"選定結果の出力先ファイル: {root / 'selection.json'}",
+            handoff,
+        ]
+    raise ValueError(f"未対応のタスク文書: {task_name}")
+
+
+@pytest.mark.parametrize("task_name", ["exec-review.subagent.md", "exec.subagent.md", "pick-wi.subagent.md"])
+def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
+    """実運用で観測した3種類の起動文が必須入力検査を通過する。"""
+    task_document = subject._SHARE_DIRECTORY / task_name
+    prompt = "\n".join([f"{task_document}の手順を実行せよ。", *_observed_input_lines(task_name, tmp_path)])
+
+    assert subject._validate_required_prompt_inputs(prompt) is None
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """startは引き継ぎ記録先だけを欠く実装起動文をbackendへ渡さない。"""
+    task_document = subject._SHARE_DIRECTORY / "exec.subagent.md"
+    input_lines = [
+        line for line in _observed_input_lines(task_document.name, tmp_path) if not line.startswith("引き継ぎ記録先:")
+    ]
+    prompt = "\n".join([f"{task_document}の手順を実行せよ。", *input_lines])
+    called = False
+
+    async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"status": "running"}
+
+    monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+
+    with pytest.raises(ValueError, match=rf"引き継ぎ記録先.*{re.escape(str(task_document))}"):
+        await subject.start("execute", prompt, str(tmp_path))
+
+    assert called is False
 
 
 @pytest.mark.asyncio

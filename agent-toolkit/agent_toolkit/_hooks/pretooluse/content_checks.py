@@ -566,8 +566,7 @@ def _check_home_path(tool_name: str, fields: list[tuple[str, str]], file_path: s
 # --- 口語表現混入check (warn) ---
 
 # モジュールロード時に1回だけコンパイルする。
-# 検出語そのものをコーディングエージェントのコンテキストへ持ち込まないよう、
-# 本ファイルからパターンの実体を文字列で参照しない。
+# 本ファイルからパターンの実体を文字列で参照せず、辞書を正本として読み込む。
 _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
@@ -599,9 +598,8 @@ def _check_colloquial(
 ) -> str | None:
     """口語的な日本語表現の混入を検出して警告本文を返す（warn）。
 
-    検出語・行抜粋・置換候補は出力せず、総件数と先頭`_COLLOQUIAL_MAX_LISTED_MATCHES`件までの
-    位置（行・列）だけを示す（コーディングエージェントのコンテキスト汚染防止）。
-    上限を超える一致は総件数だけで示す。
+    総件数、検出語の一覧及び先頭`_COLLOQUIAL_MAX_LISTED_MATCHES`件までの位置（行・列）を示す。
+    上限を超える一致の位置は総件数だけで示す。
     allowlistに一致する部分を先に除去してからdenylistを適用し、
     複合動詞・複合名詞などの標準用語が誤検出されることを抑える。
     """
@@ -626,12 +624,15 @@ def _check_colloquial(
     if not hits:
         return None
     listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
+    detected_terms = "、".join(dict.fromkeys(hit[2] for hit in hits))
+    target = file_path or tool_name
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
-        f"一致: {len(hits)}件（{listed}）。"
-        "検出箇所を含む文全体を、正式な書き言葉（標準的な技術用語、辞書形、比喩的な動詞を使わない表現）へ"
-        "`agent-toolkit/rules/01-agent.md`「日本語」節に従って書き換える。"
-        f"単語だけを同義語へ置き換えず、文全体を組み直す。 対象: {file_path}",
+        f"一致: {len(hits)}件（{listed}）。検出語: {detected_terms}。"
+        "ユーザーへ向けた発話は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」、"
+        "それ以外の成果物は`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
+        "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"
+        f" 対象: {target}",
         tag=_WARN_TAG,
         removable_cause=True,
     )
