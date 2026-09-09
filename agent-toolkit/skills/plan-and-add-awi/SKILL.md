@@ -42,7 +42,7 @@ AWIの共通概念、本文、由来及び投入は`agent-toolkit:wi-standards`�
 4. 計画レビューまで完了した後、`## 計画バンドルの保存`を実施し、全入力をファイル名昇順で次のコマンドへ1回渡す。
 
    ```sh
-   atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-awi-body> --depends-on=<filename>... --target-repo=<repo>
+   atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --body-file=<plan-awi-body-file> --depends-on=<filename>... --target-repo=<repo>
    ```
 
    新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値とし、実在確認が必要な場合だけ共通resolverで実体へ解決する。

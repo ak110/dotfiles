@@ -63,7 +63,7 @@ pickerはAWI本文、対象実装、計画の先行成果依存を調査し、�
 計画レビューが収束した後は、全入力をファイル名昇順で次のコマンドへ1回だけ渡す。
 
 ```sh
-atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --message=<plan-awi-body> --depends-on=<filename>... --target-repo=<repo>
+atk wi convert-to-plan <filename>... --plan-file=<portable-main-plan-path> --body-file=<plan-awi-body-file> --depends-on=<filename>... --target-repo=<repo>
 ```
 
 新規計画の`--plan-file`は`$(atk config get private_notes)/plans/`から始まるportable値を指定する。
@@ -95,7 +95,7 @@ activeなUWI素材は状態を変更せず、統合依存へ保持できる。
 
 テキスト表示の`target_repo`と要約は、stdoutがTTYである場合だけ端末幅に応じて短縮する。パイプやリダイレクトなど非TTYのテキスト表示では全文を保持し、機械取得で本文の手掛かりを失わせない。人間がTTYで表示する既存の幅適応は維持する。
 
-`atk wi convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`hold`入力では`--message`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
+`atk wi convert-to-plan FILENAME...`は、`inbox`又は`processing`入力では各項目の本文、`source`、`target_commit`及び状態を保持して計画実装型へ変換する。`hold`入力では`--body-file`を必須とし、計画素材と入力集合を検証して最古項目へ統合する。異なる状態の入力は混在させない。いずれも入力全体を事前検証してから1つのロック区間、1回のcommit及び1回以下のpushで処理する。
 
 ### ユーザーコメントの由来と編集境界
 

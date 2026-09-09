@@ -12,7 +12,6 @@ adopt・reject・rm・editサブコマンドと、ファイル名引数の不正
 共通ヘルパーは`atk_test.py`から再利用する。
 """
 
-import argparse
 import contextlib
 import datetime
 import pathlib
@@ -44,6 +43,16 @@ _USER_COMMENT_ERROR = user_comment.AGENT_USER_COMMENT_EDIT_ERROR + "\n"
 
 
 from agent_toolkit._atk.wi.mutations.test_support_test import *  # noqa: F403
+
+
+def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, append: bool = False) -> list[str]:
+    """本文をファイルへ保存し、`atk wi edit`の引数列を返す。"""
+    body_path = tmp_path / f"{filename}.body.md"
+    body_path.write_text(message, encoding="utf-8")
+    args = ["wi", "edit", filename]
+    if append:
+        args.append("--append")
+    return [*args, "--body-file", str(body_path)]
 
 
 def test_transition_explicit_state_contract_matches_web_operations() -> None:
@@ -292,7 +301,7 @@ def test_convert_to_plan_validates_saved_plan_after_pull(
 @pytest.mark.parametrize(
     ("state", "message", "expected"),
     [
-        ("hold", None, "--message"),
+        ("hold", None, "--body-file"),
         ("inbox", "統合本文", "指定できません"),
     ],
 )
@@ -366,12 +375,15 @@ def test_convert_to_plan_ignores_unrelated_worktree_change(
     assert status.stdout == " M unrelated.txt\n"
 
 
-def test_cmd_convert_to_plan_displays_commit_for_single_hold_input(
+def test_cli_convert_to_plan_reads_body_file_for_single_hold_input(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """単一hold入力でも保存結果、commit及びpush結果を表示する。"""
+    """単一hold入力の本文ファイルを読み、保存結果、commit及びpush結果を表示する。"""
+    _setup_notes(tmp_path)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("統合本文", encoding="utf-8")
     details: dict[str, object | None] = {
         "target_repo": "github.com/example/foo",
         "target_commit": "b" * 40,
@@ -386,25 +398,47 @@ def test_cmd_convert_to_plan_displays_commit_for_single_hold_input(
         "resolve_add_target",
         lambda _value: ("github.com/example/foo", tmp_path / "target-worktree"),
     )
-    monkeypatch.setattr(
-        mutations,
-        "convert_entries_to_plan",
-        lambda *_args, **_kwargs: {"entries": [details], "commit": "c" * 40, "integrated": True},
-    )
-    args = argparse.Namespace(
-        filename=["20260827-000000-001.md"],
-        message="統合本文",
-        plan_file="/tmp/plan.md",
-        depends_on=None,
-        target_repo="github.com/example/foo",
-        skip_push=False,
-    )
+    captured: dict[str, object] = {}
 
-    mutations._cmd_convert_to_plan(args, tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
+    def convert(*_args: object, **kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"entries": [details], "commit": "c" * 40, "integrated": True}
 
+    monkeypatch.setattr(mutations, "convert_entries_to_plan", convert)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "wi",
+                "convert-to-plan",
+                "20260827-000000-001.md",
+                "--plan-file=/tmp/plan.md",
+                f"--body-file={body_path}",
+                "--target-repo=github.com/example/foo",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 0
+    assert captured["message"] == "統合本文"
     output = capsys.readouterr().out
     assert "変換commit: " + "c" * 40 in output
     assert "push: 完了" in output
+
+
+def test_cli_convert_to_plan_rejects_message_option_without_changes(
+    tmp_path: pathlib.Path,
+) -> None:
+    """旧`--message`をparserで拒否し、対象項目を変更しない。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_convert_awi(notes, "awi.md", state="hold")
+    original = path.read_text(encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "convert-to-plan", "awi.md", "--plan-file=plan.md", "--message=本文"], home=tmp_path)
+
+    assert exc_info.value.code == 2
+    assert path.read_text(encoding="utf-8") == original
 
 
 def test_convert_to_plan_reports_body_mismatch_and_omits_body_on_success(
@@ -692,7 +726,9 @@ def test_edit_accepts_crlf_entry_with_and_without_target_repo(
     path = notes / "inbox" / "fb-001.md"
     path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\nold\r\n")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    argv = ["wi", "edit", "fb-001.md", "新本文"]
+    body_path = tmp_path / "body.md"
+    body_path.write_text("新本文", encoding="utf-8")
+    argv = ["wi", "edit", "fb-001.md", "--body-file", str(body_path)]
     if with_target_repo:
         argv[2:2] = ["--target-repo", "github.com/example/foo"]
 
@@ -787,9 +823,9 @@ class TestEditWithChanges:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as edit_exit:
-            atk.main(["wi", "edit", "fb-001.md", "編集後"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
         with pytest.raises(SystemExit) as append_exit:
-            atk.main(["wi", "edit", "--append", "fb-001.md", "追記"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "追記", append=True), home=tmp_path)
 
         assert edit_exit.value.code == 0
         assert append_exit.value.code == 0
@@ -813,7 +849,7 @@ class TestEditWithChanges:
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "edit", "fb-001.md", "変更"], home=tmp_path)
+            atk.main(_edit_body_args(tmp_path, "fb-001.md", "変更"), home=tmp_path)
 
         assert exc_info.value.code == 2
         assert "inbox・processing・holdのいずれにも存在しません" in capsys.readouterr().err
@@ -1044,6 +1080,8 @@ def test_edit_plan_cli_rejects_invalid_or_unresolvable_plan_base(
         return subprocess.CompletedProcess([], 0 if commit_resolves else 1, "a" * 40 if commit_resolves else "", "")
 
     monkeypatch.setattr(mutations.subprocess, "run", resolve_run)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("統合本文", encoding="utf-8")
 
     with pytest.raises(SystemExit) as captured:
         atk.main(
@@ -1051,11 +1089,9 @@ def test_edit_plan_cli_rejects_invalid_or_unresolvable_plan_base(
                 "wi",
                 "edit",
                 filename,
-                "統合本文",
-                "--plan-file",
-                str(plan),
-                "--target-repo",
-                "github.com/example/foo",
+                f"--body-file={body_path}",
+                f"--plan-file={plan}",
+                "--target-repo=github.com/example/foo",
             ],
             home=tmp_path,
             now=_FIXED_DT,

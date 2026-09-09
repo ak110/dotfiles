@@ -62,9 +62,11 @@ def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body:
     return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n{body}\n\n"
 
 
-def _batch_args(text: str) -> argparse.Namespace:
+def _batch_args(tmp_path: pathlib.Path, text: str) -> argparse.Namespace:
     """一括投入コマンドへ渡す最小引数を返す。"""
-    return argparse.Namespace(messages=[text], body_file=None)
+    body_path = tmp_path / "batch.md"
+    body_path.write_text(text, encoding="utf-8")
+    return argparse.Namespace(body_file=[str(body_path)])
 
 
 def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
@@ -79,7 +81,7 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
     text = _entry_text("awi.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
 
     with pytest.raises(SystemExit) as exc_info:
-        batch._cmd_add_batch(_batch_args(text), notes, _FIXED_DT, tmp_path)
+        batch._cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert not list((notes / "inbox").iterdir())
@@ -97,7 +99,7 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
         monkeypatch.delenv(name, raising=False)
     text = _entry_text("awi.md", body="本文\n\n## ユーザーコメント\n\nユーザーの記入")
 
-    batch._cmd_add_batch(_batch_args(text), notes, _FIXED_DT, tmp_path)
+    batch._cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
 
     assert "## ユーザーコメント" in (notes / "inbox" / "awi.md").read_text(encoding="utf-8")
 

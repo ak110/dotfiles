@@ -6,14 +6,14 @@
 共通ヘルパーは`_atk_git_fake_test_helpers.py`から再利用する。
 """
 
-# pylint: disable=protected-access
+# pylint: disable=protected-access,subprocess-run-check
 
 import argparse
 import contextlib
 import pathlib
 import subprocess
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import Callable, Iterator
+from typing import Any, cast
 
 import pytest
 
@@ -41,6 +41,7 @@ def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pat
 
 
 def _cmd_add_args(
+    tmp_path: pathlib.Path,
     message: str,
     *,
     source: str | None = None,
@@ -49,9 +50,10 @@ def _cmd_add_args(
     dry_run: bool = False,
 ) -> argparse.Namespace:
     """`_cmd_add`の単体テストへ必要な引数を返す。"""
+    body_path = tmp_path / "body.md"
+    body_path.write_text(message, encoding="utf-8")
     return argparse.Namespace(
-        body_file=None,
-        messages=[message],
+        body_file=[str(body_path)],
         repo_path_override=None,
         target_repo="github.com/example/repo",
         type=entry_type,
@@ -105,7 +107,7 @@ def test_add_dry_run_validates_without_side_effects(
     monkeypatch.setattr(add_module, "_pull", reject_side_effect)
     monkeypatch.setattr(add_module, "_commit_and_push", reject_side_effect)
 
-    add_module._cmd_add(_cmd_add_args("本文", dry_run=True), notes, _FIXED_DT, tmp_path)
+    add_module._cmd_add(_cmd_add_args(tmp_path, "本文", dry_run=True), notes, _FIXED_DT, tmp_path)
 
     after_head = subprocess.run(
         ["git", "-C", str(notes), "rev-parse", "HEAD"],
@@ -127,7 +129,7 @@ def test_add_dry_run_rejects_invalid_input(
     """`--dry-run`は実登録と同じ入力エラーを終了コード1で返す。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    args = _cmd_add_args("質問", entry_type=WI_TYPE_UWI, dry_run=True)
+    args = _cmd_add_args(tmp_path, "質問", entry_type=WI_TYPE_UWI, dry_run=True)
     args.question_type = "choice"
 
     with pytest.raises(SystemExit) as exc_info:
@@ -161,7 +163,7 @@ def test_add_dry_run_rejects_agent_awi_without_feasibility(
     for dry_run in (True, False):
         with pytest.raises(SystemExit) as exc_info:
             add_module._cmd_add(
-                _cmd_add_args("本文", source="test", dry_run=dry_run),
+                _cmd_add_args(tmp_path, "本文", source="test", dry_run=dry_run),
                 notes,
                 _FIXED_DT,
                 tmp_path,
@@ -186,8 +188,10 @@ def test_add_dry_run_rejects_batch(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`--dry-run`と`--batch`の併用はusage errorにする。"""
+    body_path = tmp_path / "body.md"
+    body_path.write_text("本文", encoding="utf-8")
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "add", "--batch", "--dry-run", "本文"], home=tmp_path, now=_FIXED_DT)
+        atk.main(["wi", "add", "--batch", "--dry-run", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 2
     assert "--dry-runは--batchと併用できません" in capsys.readouterr().err
@@ -203,7 +207,7 @@ def test_cmd_add_rejects_agent_awi_without_feasibility(
     _patch_cmd_add_operations(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args("本文", source="test"), notes, _FIXED_DT, tmp_path)
+        add_module._cmd_add(_cmd_add_args(tmp_path, "本文", source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "実現性" in capsys.readouterr().err
@@ -220,7 +224,9 @@ def test_cmd_add_rejects_agent_awi_with_empty_feasibility(
     _patch_cmd_add_operations(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args("本文\n## 実現性\n\n## 完成条件\n完了", source="test"), notes, _FIXED_DT, tmp_path)
+        add_module._cmd_add(
+            _cmd_add_args(tmp_path, "本文\n## 実現性\n\n## 完成条件\n完了", source="test"), notes, _FIXED_DT, tmp_path
+        )
 
     assert exc_info.value.code == 1
     assert "実現性" in capsys.readouterr().err
@@ -244,7 +250,7 @@ def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
 
     message = f"本文\n\n{opening_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
+        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "実現性" in capsys.readouterr().err
@@ -269,7 +275,7 @@ def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
 
     message = f"本文\n\n{opening_fence}\nコード例\n{non_closing_fence}\n## 実現性\n見かけだけ\n{closing_fence}"
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
+        add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert "実現性" in capsys.readouterr().err
@@ -285,7 +291,7 @@ def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
     _patch_cmd_add_operations(monkeypatch)
 
     message = "本文\n\n```markdown\n## 実現性\n見かけだけ\n````\n## 実現性\n対象実装を確認済み"
-    add_module._cmd_add(_cmd_add_args(message, source="test"), notes, _FIXED_DT, tmp_path)
+    add_module._cmd_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -299,7 +305,7 @@ def test_cmd_add_accepts_agent_awi_with_feasibility(
     _patch_cmd_add_operations(monkeypatch)
 
     add_module._cmd_add(
-        _cmd_add_args("本文\n## 実現性\n対象実装を確認済み", source="test"),
+        _cmd_add_args(tmp_path, "本文\n## 実現性\n対象実装を確認済み", source="test"),
         notes,
         _FIXED_DT,
         tmp_path,
@@ -316,7 +322,7 @@ def test_cmd_add_accepts_human_awi_without_feasibility(
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
-    add_module._cmd_add(_cmd_add_args("本文"), notes, _FIXED_DT, tmp_path)
+    add_module._cmd_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -332,7 +338,7 @@ def test_cmd_add_rejects_missing_source_in_agent_environment(
     monkeypatch.setenv("AI_AGENT", "1")
 
     with pytest.raises(SystemExit) as exc_info:
-        add_module._cmd_add(_cmd_add_args("本文"), notes, _FIXED_DT, tmp_path)
+        add_module._cmd_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
     assert not list((notes / "inbox").iterdir())
@@ -349,7 +355,7 @@ def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     monkeypatch.setenv("AI_AGENT", "1")
     message = "---\nsource: test\n---\n\n本文\n\n## 実現性\n対象実装を確認済み"
 
-    add_module._cmd_add(_cmd_add_args(message), notes, _FIXED_DT, tmp_path)
+    add_module._cmd_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
 
     assert len(list((notes / "inbox").iterdir())) == 1
 
@@ -363,7 +369,7 @@ def test_cmd_add_accepts_uwi_without_feasibility(
     _patch_cmd_add_operations(monkeypatch)
 
     add_module._cmd_add(
-        _cmd_add_args("質問本文", source="test", entry_type=WI_TYPE_UWI),
+        _cmd_add_args(tmp_path, "質問本文", source="test", entry_type=WI_TYPE_UWI),
         notes,
         _FIXED_DT,
         tmp_path,
@@ -384,7 +390,7 @@ def test_cmd_add_accepts_plan_awi_without_feasibility(
     plan.write_text("# 計画\n", encoding="utf-8")
 
     add_module._cmd_add(
-        _cmd_add_args("計画本文", source="test", plan_file=str(plan)),
+        _cmd_add_args(tmp_path, "計画本文", source="test", plan_file=str(plan)),
         notes,
         _FIXED_DT,
         tmp_path,
@@ -466,11 +472,16 @@ def test_cli_add_does_not_output_saved_bodies(
         '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
         "2件目。\n\n```text\n字下げしない本文\n```",
     ]
+    body_paths: list[str] = []
+    for index, message in enumerate(messages):
+        body_path = tmp_path / f"body-{index}.md"
+        body_path.write_text(message, encoding="utf-8")
+        body_paths.extend(("--body-file", str(body_path)))
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["wi", "add", "--target-repo", "github.com/example/repo", *messages],
+            ["wi", "add", "--target-repo", "github.com/example/repo", *body_paths],
             home=tmp_path,
             now=_FIXED_DT,
         )
@@ -835,6 +846,8 @@ def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Pat
 def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """UWIで保存されないdepends_on指定を成功扱いにしない。"""
     _setup_notes(tmp_path)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("確認しますか？", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
@@ -846,7 +859,8 @@ def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest
                 "--type=uwi",
                 "--depends-on",
                 "awi.md",
-                "確認しますか？",
+                "--body-file",
+                str(body_path),
             ],
             home=tmp_path,
             now=_FIXED_DT,
@@ -1458,8 +1472,10 @@ class TestAddOrderEditorFirst:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
+        body_path = tmp_path / "body.md"
+        body_path.write_text("本文", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
@@ -1487,8 +1503,10 @@ class TestAddRepoPathOverrideCli:
 
         monkeypatch.setattr(subprocess, "run", fake_run)
 
+        body_path = tmp_path / "body.md"
+        body_path.write_text("本文", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -1518,27 +1536,22 @@ class TestAddRepoPathOverrideCli:
         assert "REPO_PATH" not in error_line
         assert "MESSAGE" not in error_line
 
-    def test_directory_followed_by_message_uses_compat_path(
+    def test_directory_followed_by_body_file_uses_compat_path(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """MESSAGE先頭が実在ディレクトリで残り本文がある場合、旧REPO_PATH形式として互換動作する。"""
+        """実在ディレクトリに本文ファイルが続く場合、旧REPO_PATH形式として互換動作する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        _patch_add_git(monkeypatch, myrepo)
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
+        body_path = tmp_path / "body.md"
+        body_path.write_text("本文", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
@@ -1546,28 +1559,23 @@ class TestAddRepoPathOverrideCli:
         assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
         assert "本文" in content
 
-    def test_directory_followed_by_option_and_message_uses_compat_path(
+    def test_directory_followed_by_option_and_body_file_uses_compat_path(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """REPO_PATHとMESSAGEの間にオプションを配置する旧形式でも互換動作する。"""
+        """REPO_PATHと本文ファイルの間にオプションを配置する旧形式でも互換動作する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        _patch_add_git(monkeypatch, myrepo)
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
+        body_path = tmp_path / "body.md"
+        body_path.write_text("本文\n\n## 実現性\nテスト用の投入経路を確認済み", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "add", str(myrepo), "--source", "session-review", "本文\n\n## 実現性\nテスト用の投入経路を確認済み"],
+                ["wi", "add", str(myrepo), "--source", "session-review", "--body-file", str(body_path)],
                 home=tmp_path,
                 now=_FIXED_DT,
             )
@@ -1578,16 +1586,15 @@ class TestAddRepoPathOverrideCli:
         assert "本文" in content
         assert "source: session-review" in content
 
-    def test_oversized_message_does_not_raise_oserror(
+    def test_positional_message_is_rejected_without_writing(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """OS上限を超える長さのMESSAGEでもREPO_PATH誤検出による`OSError`を送出せずcwd解決される。"""
+        """本文の位置引数を受理せずprivate-notesを変更しない。"""
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
-        oversized_message = "本文" * 5000
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             resp = _fake_git_worktree_remote_response(cmd, cwd_repo, kwargs)
@@ -1599,14 +1606,10 @@ class TestAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", oversized_message], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", "本文"], home=tmp_path, now=_FIXED_DT)
 
-        assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
-        # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
-        # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
-        assert "target_repo: github.com/example/myrepo" in content
-        assert oversized_message in content
+        assert exc_info.value.code == 2
+        assert not list((notes / "inbox").iterdir())
 
 
 def test_cli_add_omits_target_commit_for_url_only_target(
@@ -1624,10 +1627,12 @@ def test_cli_add_omits_target_commit_for_url_only_target(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("本文", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["wi", "add", "--target-repo", "github.com/example/remote", "本文"],
+            ["wi", "add", "--target-repo", "github.com/example/remote", "--body-file", str(body_path)],
             home=tmp_path,
             now=_FIXED_DT,
         )
@@ -1658,9 +1663,11 @@ def test_cli_add_rejects_existing_path_outside_worktree(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("本文", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "add", str(bare_repo), "本文"], home=tmp_path, now=_FIXED_DT)
+        atk.main(["wi", "add", str(bare_repo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 2
     assert "ローカルworktreeではありません" in capsys.readouterr().err
@@ -1697,9 +1704,11 @@ def test_cli_add_rejects_unresolved_head_commit(
         return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    body_path = tmp_path / "body.md"
+    body_path.write_text("本文", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
-        atk.main(["wi", "add", str(myrepo), "本文"], home=tmp_path, now=_FIXED_DT)
+        atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 2
     assert not list((notes / "inbox").iterdir())
@@ -1761,17 +1770,12 @@ class TestAddEmptyBodyRejection:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo)
+        body_path = tmp_path / "body.md"
+        body_path.write_text("", encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), ""], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -1787,17 +1791,12 @@ class TestAddEmptyBodyRejection:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo)
+        body_path = tmp_path / "body.md"
+        body_path.write_text("-", encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "-"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
 
@@ -1811,18 +1810,12 @@ class TestAddEmptyBodyRejection:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        _patch_add_git(monkeypatch, myrepo)
+        body_path = tmp_path / "body.md"
+        body_path.write_text("-\n-\n", encoding="utf-8")
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        # 先頭ハイフンの複数文字列引数はargparseがオプションと誤認するため`--`で区切る
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "--", "-\n-\n"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 1
 
@@ -1836,17 +1829,12 @@ class TestAddEmptyBodyRejection:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        _patch_add_git(monkeypatch, myrepo)
+        body_path = tmp_path / "body.md"
+        body_path.write_text("- 理由: 動作確認済みのため採用", encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "- 理由: 動作確認済みのため採用"], home=tmp_path, now=_FIXED_DT)
+            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
         assert list((notes / "inbox").iterdir())
@@ -1934,6 +1922,55 @@ def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
     monkeypatch.setattr(subprocess, "run", fake_run)
 
 
+def _patch_add_editor(monkeypatch: pytest.MonkeyPatch, body: str) -> None:
+    """現在のGit fakeを保ったまま、本文を保存するエディターfakeを重ねる。"""
+    git_run = cast(Callable[..., subprocess.CompletedProcess[Any]], subprocess.run)
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        if cmd[0] == "fake-editor":
+            pathlib.Path(cmd[1]).write_text(body, encoding="utf-8")
+            return subprocess.CompletedProcess(cmd, returncode=0)
+        return git_run(cmd, *args, **kwargs)
+
+    monkeypatch.setenv("EDITOR", "fake-editor")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+
+def _add_body_input_args(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    body: str,
+    input_kind: str,
+) -> list[str]:
+    """エディター又は本文ファイルの指定に対応するadd引数列を返す。"""
+    if input_kind == "editor":
+        _patch_add_editor(monkeypatch, body)
+        return ["wi", "add"]
+    body_path = tmp_path / "body.md"
+    body_path.write_text(body, encoding="utf-8")
+    return ["wi", "add", "--body-file", str(body_path)]
+
+
+def _invoke_add_body_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    body: str,
+    *options: str,
+) -> None:
+    """本文ファイルによるCLI投入をGit副作用なしで成功させる。"""
+    _setup_notes(tmp_path)
+    body_path = tmp_path / "body.md"
+    body_path.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            ["wi", "add", "--target-repo", "github.com/example/repo", *options, "--body-file", str(body_path)],
+            home=tmp_path,
+            now=_FIXED_DT,
+        )
+    assert exc_info.value.code == 0
+
+
 class TestAddBodyFile:
     """`mq add --body-file`によるシェル引用符を経由しない本文入力経路を検証する。"""
 
@@ -2009,12 +2046,12 @@ class TestAddBodyFile:
         content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
         assert f"\n{message_file}\n" in content
 
-    def test_body_file_rejects_positional_message(
+    def test_positional_message_is_rejected(
         self,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """MESSAGE位置引数との併用はusage表示付きでexit 2になる。"""
+        """本文ファイルの有無にかかわらずMESSAGE位置引数を拒否する。"""
         _setup_notes(tmp_path)
         body_path = tmp_path / "body.md"
         body_path.write_text("本文\n", encoding="utf-8")
@@ -2024,7 +2061,7 @@ class TestAddBodyFile:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "併用できません" in captured.err
+        assert "解釈できない引数" in captured.err
 
     def test_body_file_missing_path_rejected(
         self,
@@ -2042,7 +2079,7 @@ class TestAddBodyFile:
         assert "--body-file" in captured.err
 
 
-@pytest.mark.parametrize("input_kind", ["position", "body-file"])
+@pytest.mark.parametrize("input_kind", ["editor", "body-file"])
 def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
     input_kind: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -2056,11 +2093,7 @@ def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
     _patch_add_git(monkeypatch, repo)
     monkeypatch.setenv("AI_AGENT", "1")
     body = "本文\n\n## ユーザーコメント\n\nユーザーの記入"
-    argv = ["wi", "add", body]
-    if input_kind == "body-file":
-        body_path = tmp_path / "body.md"
-        body_path.write_text(body, encoding="utf-8")
-        argv = ["wi", "add", "--body-file", str(body_path)]
+    argv = _add_body_input_args(monkeypatch, tmp_path, body, input_kind)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
@@ -2070,7 +2103,7 @@ def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
     assert "ユーザーコメント節を含む本文を投入できません" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("input_kind", ["position", "body-file"])
+@pytest.mark.parametrize("input_kind", ["editor", "body-file"])
 def test_add_accepts_reserved_user_comment_heading_outside_agent_environment(
     input_kind: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -2084,11 +2117,7 @@ def test_add_accepts_reserved_user_comment_heading_outside_agent_environment(
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     body = "本文\n\n## ユーザーコメント\n\nユーザーの記入"
-    argv = ["wi", "add", body]
-    if input_kind == "body-file":
-        body_path = tmp_path / "body.md"
-        body_path.write_text(body, encoding="utf-8")
-        argv = ["wi", "add", "--body-file", str(body_path)]
+    argv = _add_body_input_args(monkeypatch, tmp_path, body, input_kind)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
@@ -2107,10 +2136,12 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
     repo.mkdir()
     _patch_add_git(monkeypatch, repo)
     monkeypatch.setenv("AI_AGENT", "1")
+    body_path = tmp_path / "body.md"
+    body_path.write_text("本文\n\n```markdown\n## ユーザーコメント\n```\n\n## 実現性\n確認済み", encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
-            ["wi", "add", "--source", "test", "本文\n\n```markdown\n## ユーザーコメント\n```\n\n## 実現性\n確認済み"],
+            ["wi", "add", "--source", "test", "--body-file", str(body_path)],
             home=tmp_path,
             now=_FIXED_DT,
         )
@@ -2291,17 +2322,7 @@ def test_cli_add_outputs_body_match_without_saved_body(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """投入の出力は一致判定だけを書き、保存本文を再掲しない。"""
-    _setup_notes(tmp_path)
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(
-            ["wi", "add", "--target-repo", "github.com/example/repo", "投入本文"],
-            home=tmp_path,
-            now=_FIXED_DT,
-        )
-
-    assert exc_info.value.code == 0
+    _invoke_add_body_file(monkeypatch, tmp_path, "投入本文")
     output = capsys.readouterr().out
     assert "    body_match: 一致\n" in output
     assert "saved_body" not in output
@@ -2314,18 +2335,8 @@ def test_cli_add_outputs_source_and_extra_frontmatter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """投入の出力はsourceと非予約frontmatterを表示する。"""
-    _setup_notes(tmp_path)
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
     message = "---\ncustom_key: 値\n---\n投入本文\n\n## 実現性\nテスト用の投入経路を確認済み"
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(
-            ["wi", "add", "--target-repo", "github.com/example/repo", "--source", "test-source", message],
-            home=tmp_path,
-            now=_FIXED_DT,
-        )
-
-    assert exc_info.value.code == 0
+    _invoke_add_body_file(monkeypatch, tmp_path, message, "--source", "test-source")
     output = capsys.readouterr().out
     assert "    source: test-source\n" in output
     assert '    extra_frontmatter: {"custom_key": "値"}\n' in output
@@ -2337,17 +2348,7 @@ def test_cli_add_outputs_missing_source_and_extra_frontmatter_as_none(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """sourceと非予約frontmatterが無い投入は「なし」と表示する。"""
-    _setup_notes(tmp_path)
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, "", ""))
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(
-            ["wi", "add", "--target-repo", "github.com/example/repo", "投入本文"],
-            home=tmp_path,
-            now=_FIXED_DT,
-        )
-
-    assert exc_info.value.code == 0
+    _invoke_add_body_file(monkeypatch, tmp_path, "投入本文")
     output = capsys.readouterr().out
     assert "    source: なし\n" in output
     assert "    extra_frontmatter: なし\n" in output

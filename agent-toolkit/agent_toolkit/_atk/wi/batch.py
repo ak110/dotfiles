@@ -421,10 +421,6 @@ def _collect_batch_texts(args: argparse.Namespace) -> list[str]:
     エディター経路は原文保持のため`strip`を適用しない収集形（`strip=False`）を用いる。
     """
     body_files = getattr(args, "body_file", None)
-    if args.messages:
-        if body_files:
-            args.subparser.error("--body-fileとMESSAGE位置引数は併用できません")
-        return list(args.messages)
     if body_files:
         try:
             return read_body_files(body_files)
@@ -445,7 +441,7 @@ def _cmd_add_batch(
 ) -> None:
     """`mq add --batch`: `show`形式のテキストを一括でinboxへ取り込む。
 
-    入力はMESSAGE位置引数群、`--body-file`群、$EDITORのいずれか1経路から収集する。
+    入力は`--body-file`群、$EDITORのいずれか1経路から収集する。
     remote同期失敗時は確定済みの入力をstderrへ再表示し、内容の消失を防ぐ。
     """
     texts = _collect_batch_texts(args)

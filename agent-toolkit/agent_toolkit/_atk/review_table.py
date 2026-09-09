@@ -397,14 +397,12 @@ def show(
 
 
 def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
-    """セル本文を受け取るオプションと、同じ本文をファイルから読むオプションを対で登録する。
+    """セル本文をファイルから読むオプションを登録する。
 
     `atk wi add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
     シェルの引用規則を経由せずに渡せるようにする。
     """
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(f"--{option}", help=description)
-    group.add_argument(
+    parser.add_argument(
         f"--{option}-file",
         metavar="PATH",
         help=f"{description}を記載したファイルのパス。引用符・改行・バッククォートを含む本文をシェルのエスケープを介さず渡す場合に使う。",
@@ -423,22 +421,15 @@ def _read_cell_file(option: str, raw_path: str) -> str:
 
 
 def _cell_value(args: argparse.Namespace, dest: str) -> str:
-    """`--<名前>`と`--<名前>-file`のうち指定された方からセル本文を返す。"""
+    """`--<名前>-file`からセル本文を返す。"""
     raw_path = getattr(args, f"{dest}_file", None)
     if raw_path is not None:
         return _read_cell_file(f"--{dest.replace('_', '-')}-file", raw_path)
-    return getattr(args, dest, None) or ""
+    return ""
 
 
-def _cell_value_with_positional(args: argparse.Namespace, dest: str, positional: str) -> str:
-    """ファイル指定を優先し、未指定の場合だけ位置引数へフォールバックする。"""
-    if getattr(args, f"{dest}_file", None) is not None:
-        return _cell_value(args, dest)
-    return _cell_value(args, dest) or getattr(args, positional) or ""
-
-
-def _required_value(args: argparse.Namespace, option: str, positional: str) -> str:
-    value = _cell_value_with_positional(args, option, positional)
+def _required_value(args: argparse.Namespace, option: str) -> str:
+    value = _cell_value(args, option)
     if not isinstance(value, str) or not value:
         raise ValueError(f"--{option}を指定する")
     return value
@@ -460,7 +451,12 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を指定する。"
     )
     init_parser.add_argument("path", help=path_help)
-    add_command_parser = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk review-table add"])
+    add_command_parser = _atk_help.add_command(
+        sub,
+        "add",
+        allow_abbrev=False,
+        **_atk_help.HELP["atk review-table add"],
+    )
     add_command_parser.add_argument("path", help=path_help)
     add_command_parser.add_argument(
         "--round",
@@ -479,18 +475,17 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=LEVEL_VALUES,
         help="指摘レベル。要件、仕様、詳細又は実装を指定する。",
     )
-    for name, positional, description in (
-        ("location", "location_arg", "追加する指摘箇所"),
-        ("issue", "issue_arg", "追加する指摘内容"),
+    for name, description in (
+        ("location", "追加する指摘箇所"),
+        ("issue", "追加する指摘内容"),
     ):
-        help_text = (
-            "指摘箇所。`--location`か`--location-file`でも指定できる。"
-            if name == "location"
-            else "指摘内容。`--issue`か`--issue-file`でも指定できる。"
-        )
-        add_command_parser.add_argument(positional, nargs="?", help=help_text)
         _add_cell_options(add_command_parser, name, description)
-    respond_parser = _atk_help.add_command(sub, "respond", **_atk_help.HELP["atk review-table respond"])
+    respond_parser = _atk_help.add_command(
+        sub,
+        "respond",
+        allow_abbrev=False,
+        **_atk_help.HELP["atk review-table respond"],
+    )
     respond_parser.add_argument("path", help=path_help)
     respond_parser.add_argument(
         "--round",
@@ -501,16 +496,10 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=_TRACK_INPUT_VALUES,
         help="更新する行を特定するレビューの区分。省略すると他の列だけで行を特定する。",
     )
-    for name, positional, description in (
-        ("location", "location_arg", "更新する行を特定する指摘箇所"),
-        ("issue", "issue_arg", "更新する行を特定する指摘内容"),
+    for name, description in (
+        ("location", "更新する行を特定する指摘箇所"),
+        ("issue", "更新する行を特定する指摘内容"),
     ):
-        help_text = (
-            "更新する行を特定する指摘箇所。`--location`か`--location-file`でも指定できる。"
-            if name == "location"
-            else "更新する行を特定する指摘内容。`--issue`か`--issue-file`でも指定できる。"
-        )
-        respond_parser.add_argument(positional, nargs="?", help=help_text)
         _add_cell_options(respond_parser, name, description)
     respond_parser.add_argument(
         "--response-needed",
@@ -558,14 +547,14 @@ def dispatch(args: argparse.Namespace) -> int:
     if command == "validate":
         return validate(args.path, require_responses=not args.allow_unanswered)
     if command == "add":
-        location = _required_value(args, "location", "location_arg")
-        issue = _required_value(args, "issue", "issue_arg")
+        location = _required_value(args, "location")
+        issue = _required_value(args, "issue")
         return add(args.path, args.round, args.track, location, issue, args.level)
     if command == "respond":
         round_value = args.round or ""
         track = args.track or ""
-        location = _cell_value_with_positional(args, "location", "location_arg")
-        issue = _cell_value_with_positional(args, "issue", "issue_arg")
+        location = _cell_value(args, "location")
+        issue = _cell_value(args, "issue")
         if not any((round_value, track, location, issue)):
             raise ValueError("round・track・location・issueのいずれかを指定する")
         return respond(

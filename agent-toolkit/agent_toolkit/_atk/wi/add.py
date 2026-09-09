@@ -29,7 +29,6 @@ from agent_toolkit._atk.wi.common import (
     _pull,
     _reject_bare_repo_path_override,
     _repo_lock,
-    _resolve_repo_path_override,
     _subdir,
     _validate_filename,
     is_agent_environment,
@@ -228,25 +227,6 @@ def _verify_plan_target_repos(
                 "plan_file指定時はメッセージfrontmatterで対象リポジトリを別の値へ上書きできません。"
                 f"投入先={target_repo}、frontmatter={item_target_repo}"
             )
-
-
-def reject_message_file_path(message: str, *, file_input_hint: str = "") -> None:
-    """本文文字列が実在通常ファイルのパスだけの場合に`WebInputError`を送出する。
-
-    `file_input_hint`にはファイル内容を渡す正しい手段を呼び出し側が渡す。
-    手段はサブコマンドごとに異なるため、本関数へ固定文言を持たせない。
-    """
-    value = message.strip()
-    if not value:
-        return
-    try:
-        if pathlib.Path(value).is_file():
-            raise WebInputError(
-                f"MESSAGEがファイルパス '{value}' として解釈できます。MESSAGEは本文文字列を受け取ります。" + file_input_hint
-            )
-    except OSError:
-        # パス長制限などで検査できない文字列は本文として扱う。
-        return
 
 
 _RESERVED_FRONTMATTER_KEYS = (
@@ -522,25 +502,19 @@ def _cmd_add(
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`_body_is_effectively_empty`）の場合は`_repo_lock`取得前に拒否する。
     計画実装型の分類は`--plan-file`の指定だけで確定する。
-    `--body-file`を指定した場合は当該ファイルの内容を本文として扱い、MESSAGE位置引数とは併用を拒否する。
+    `--body-file`を指定した場合は当該ファイルの内容を本文として扱う。
     シェルの引用規則を経由せずに引用符・改行を含む長文を渡す経路であり、複数回指定で複数件を投入する。
-    本文文字列（位置引数またはエディター確定内容）が実在する通常ファイルのパスと解釈できる場合は、
-    本文文字列でなくファイル内容の渡し忘れによる誤操作とみなし`_repo_lock`取得前に拒否する
-    （拡張子は問わない。`mktemp`が生成する拡張子なしの一時ファイルパスの誤投入も検出対象に含めるためである）。
     """
     body_files = getattr(args, "body_file", None)
     if body_files:
-        if args.messages:
-            args.subparser.error("--body-fileとMESSAGE位置引数は併用できません")
         try:
             messages = read_body_files(body_files)
         except WebInputError as error:
             print(f"投入を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)
-        # 本文がファイル由来と確定しているため、旧REPO_PATH位置引数形式の互換抽出は適用しない。
-        repo_path_override = args.repo_path_override
     else:
-        messages, repo_path_override = _resolve_repo_path_override(args.messages, args.repo_path_override)
+        messages = []
+    repo_path_override = args.repo_path_override
     _reject_bare_repo_path_override(repo_path_override, messages, args.subparser)
     target_value = repo_path_override if repo_path_override is not None else args.target_repo
     target_repo, local_worktree = resolve_add_target(target_value)
@@ -557,11 +531,6 @@ def _cmd_add(
                     "ユーザーコメントはユーザーだけが書き込みます。"
                     "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
                     "ユーザーの発言は本文中へ出所を示して引用してください。"
-                )
-            if not body_files:
-                reject_message_file_path(
-                    message,
-                    file_input_hint="ファイル内容を本文として渡す場合は --body-file <path> を使ってください。",
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             _require_agent_source(frontmatter, args.source)
