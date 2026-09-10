@@ -12,6 +12,7 @@ import logging
 import os
 import pathlib
 import re
+import secrets
 import warnings
 from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
@@ -130,6 +131,33 @@ def _elapsed_seconds(started_at_value: str) -> int | None:
 def _shell_prompt(command: str, summary_policy: str) -> str:
     """コマンドと要約方針を、シェル実行委譲先への指示本文へ組み立てる。"""
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
+
+
+def _delivery_sender_label() -> str:
+    """配送本文の`from`属性が示す呼び出し元の種別とsession識別子を返す。"""
+    identity = status_file.resolve_status_file_identity(os.environ)
+    if identity is None:
+        return "unresolved"
+    if identity.host_session_id is None:
+        return f"main:{identity.root_session_id}"
+    return f"delegate:{identity.host_session_id}"
+
+
+def _wrap_delivery_body(body: str) -> str:
+    """委譲先へ配送する本文を、呼び出し元が作成した配送であることを示す標識で囲む。
+
+    2つの前提に依存する。第1に`nonce`が本文へ出現しないこと、第2に`from`が示す
+    session識別子が属性値へそのまま置ける文字だけで構成されることである。
+    前者が崩れると受信側が本文中の文字列を配送の境界と取り違え、
+    後者が崩れると開始タグの属性が閉じずに標識全体が本文として読まれる。
+    いずれの場合も、呼び出し元が構成した指示がユーザー発話として扱われる。
+    受信側の解釈は`agent-toolkit/share/rules-subagent.md`「受領した本文の出所」が定める。
+    """
+    nonce = secrets.token_hex(8)
+    while nonce in body:
+        nonce = secrets.token_hex(8)
+    sender = _delivery_sender_label()
+    return f'<cross-session-message from="{sender}" nonce="{nonce}">\n{body}\n</cross-session-message>'
 
 
 def _validate_required_prompt_inputs(prompt: str) -> str | None:
@@ -628,6 +656,7 @@ class AgentsServerManager:
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
         display_label = status_file.normalize_label(prompt if label is None else label)
+        delivery_body = _wrap_delivery_body(prompt)
         for candidate_index, candidate in enumerate(candidates):
             engine, model, effort = candidate
             if engine not in SUPPORTED_ENGINES:
@@ -635,7 +664,7 @@ class AgentsServerManager:
             _validate_model_effort(model, effort)
             # backendが資源を作成した後に失敗することもあるため、例外では候補を進めない。
             session = await self._backend(engine).start(
-                prompt,
+                delivery_body,
                 cwd,
                 model,
                 effort,
@@ -890,7 +919,7 @@ class AgentsServerManager:
 
         if not has_pending_auto_resume_targets(session) and session.terminal_child_session_ids:
             identifiers = sorted(session.terminal_child_session_ids)
-            prompt = (
+            prompt = _wrap_delivery_body(
                 "あなたが`agents_server`で起動した次のsessionは終端した。\n"
                 f"終端したsession: {', '.join(identifiers)}\n"
                 "各sessionの結果を確認し、所定の返却形式を返せ。"
@@ -1139,6 +1168,7 @@ class AgentsServerManager:
         _validate_prompt(prompt)
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ValueError("timeout must be positive")
+        prompt = _wrap_delivery_body(prompt)
         try:
             async with asyncio.timeout(float(timeout)):
                 while True:

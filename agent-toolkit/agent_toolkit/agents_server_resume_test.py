@@ -17,6 +17,7 @@ import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import session_registry, state, status_file
+from agent_toolkit._testing.helpers import delivery_payload
 
 _STREAM_END = object()
 
@@ -758,7 +759,7 @@ async def test_send_message_finalizes_pending_result_before_starting_reply(
         assert session.status == "running"
         assert session.auto_resume_consumed is False
         assert session.live_task_ids == {"task-1"}
-        assert client.queries == ["調査", "続行"]
+        assert [delivery_payload(value) for value in client.queries] == ["調査", "続行"]
 
         client.emit(TaskUpdatedMessage("task-1", "completed"))
         client.emit(ResultMessage("reply結果"))
