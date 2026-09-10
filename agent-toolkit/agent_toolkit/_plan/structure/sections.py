@@ -1393,6 +1393,30 @@ def has_progress_log_rows(content: str) -> bool:
     )
 
 
+def progress_log_rows(content: str) -> list[tuple[str, str, str]]:
+    """`## 進捗ログ`の固定表の内容行を出現順に返す。
+
+    各行の3つの値は`PLAN_PROGRESS_TABLE_HEADER`の並びに対応する。
+    節が無い場合、固定表が無い場合及び列数の異なる行がある場合は`ValueError`を送出する。
+    """
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
+    if progress_index is None:
+        raise ValueError(f"`## {PLAN_H2_PROGRESS}`が無い")
+    start, end = heading_subtree_range(headings, progress_index)
+    tables = [table for table in extract_tables(lines_within(body, start, end)) if table.header == PLAN_PROGRESS_TABLE_HEADER]
+    if not tables:
+        raise ValueError(f"`## {PLAN_H2_PROGRESS}`に{list(PLAN_PROGRESS_TABLE_HEADER)}の固定表が無い")
+    rows: list[tuple[str, str, str]] = []
+    for table in tables:
+        for index, row in enumerate(table.rows):
+            if len(row) != len(PLAN_PROGRESS_TABLE_HEADER):
+                raise ValueError(f"`## {PLAN_H2_PROGRESS}`の表の列数が一致しない: {table.row_location(index)}")
+            rows.append((row[0], row[1], row[2]))
+    return rows
+
+
 def _check_progress_section(body: list[tuple[int, str]], headings: list[PlanHeading], progress_index: int | None) -> list[str]:
     """`## 進捗ログ`の固定表を検査する。"""
     if progress_index is None:

@@ -74,6 +74,15 @@ def build_parser(parser) -> None:
         metavar="PLAN_FILE",
         help=("plans rootからの相対メイン計画パス、またはci/ci-{原因commit完全OID}.exec-review.tsv。"),
     )
+    progress_parser = _atk_help.add_command(sub, "progress", **_atk_help.HELP["atk plans progress"])
+    progress_parser.add_argument(
+        "plan_file",
+        metavar="PLAN_FILE",
+        help=(
+            "計画作業root直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、または"
+            "保存root相対のyyyy/MM/dd-{名称}-{16進数4桁}.md。"
+        ),
+    )
     list_parser = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
     _output_file.add_output_file_arg(list_parser)
     _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
@@ -901,6 +910,56 @@ def commit_ci_review(
     return {"plan_file": relative.as_posix(), "paths": (relative_path,), "message": message, "kind": "ci-review"}
 
 
+def _resolve_progress_source(
+    private_notes: pathlib.Path,
+    plan_file: str,
+    *,
+    home: pathlib.Path | str | None,
+) -> pathlib.Path:
+    """進捗ログを読む計画ファイル（メイン）の実体を返す。
+
+    保存root相対で指定した場合は保存rootの実体を先に探し、無い場合だけ同名の作業側の実体を返す。
+    保存済み計画参照の既存の解決規則と同じ順序にそろえる。
+    """
+    working_root = _plan_file.working_plans_root(home)
+    try:
+        working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
+    except ValueError as working_error:
+        try:
+            relative_main = _validate_saved_plan_relative_path(plan_file)
+        except _common.WebInputError as saved_error:
+            raise _common.WebInputError(str(working_error)) from saved_error
+        candidates = (_plan_file.new_plans_root(private_notes) / relative_main, working_root / relative_main.name)
+    else:
+        candidates = (working_root / working_relative,)
+    for candidate in candidates:
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate
+    raise _common.WebInputError(f"指定したメイン計画が見つかりません: {plan_file}")
+
+
+def plan_progress(
+    private_notes: pathlib.Path,
+    plan_file: str,
+    *,
+    home: pathlib.Path | str | None = None,
+) -> tuple[dict[str, str], ...]:
+    """指定した計画ファイル（メイン）の進捗ログの行を出現順に返す。
+
+    対象ファイルを読み取りだけで解析する。進捗行が1件も無い計画では空のtupleを返す。
+    再開位置を確定する消費側が同じ入力から同じ値を得るため、行の並びを本文の出現順で保つ。
+    """
+    main = _resolve_progress_source(private_notes, plan_file, home=home)
+    try:
+        rows = _plan_format.progress_log_rows(main.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise _common.WebInputError(f"進捗ログを読み取れません: {main}: {error}") from error
+    return tuple(
+        {"datetime": recorded_at, "completed_step": completed_step, "notes": notes}
+        for recorded_at, completed_step, notes in rows
+    )
+
+
 def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str, object], ...]:
     """計画作業rootの計画ファイル（メイン）を所有セッションと最終更新時刻とともに返す。
 
@@ -1472,6 +1531,10 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
         subject = "独立CI実行レビュー表" if result.get("kind") == "ci-review" else "計画bundle"
         print(f"{subject}を保存rootへ移動して{action}: {result['plan_file']}")
         return 0
+    if args.plans_subcommand == "progress":
+        for row in plan_progress(private_notes, args.plan_file, home=home):
+            print(json.dumps(row, ensure_ascii=False))
+        return 0
     if args.plans_subcommand == "list":
         for entry in list_working_plans(home):
             owner = entry["owner_session"] or "なし"
@@ -1491,6 +1554,7 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
 # テスト・既存呼び出し向けの短い別名。
 commit = commit_plan
 checkout = checkout_plan
+progress = plan_progress
 checkout_review = checkout_ci_review
 migrate = migrate_plans
 rewrite_references = rewrite_plan_references

@@ -378,3 +378,44 @@ def test_origin_check_skips_when_source_is_unresolvable(tmp_path: pathlib.Path) 
     assert not errors, errors
     assert not notices, notices
     assert any(_plan_fixture.WI_FILES[0][0] in skip for skip in skips), skips
+
+
+def test_progress_log_rows_returns_rows_in_document_order() -> None:
+    """進捗ログの固定表の内容行を本文の出現順に3列のまま返す。"""
+    content = (
+        "# plan\n\n"
+        f"## {_plan_format.PLAN_H2_PROGRESS}\n\n"
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
+        "| 2026-09-09 10:00 | 先の工程 | 終了コード0 |\n"
+        "| 2026-09-09 11:00 | 後の工程 | 警告0件 |\n"
+    )
+
+    assert _plan_format.progress_log_rows(content) == [
+        ("2026-09-09 10:00", "先の工程", "終了コード0"),
+        ("2026-09-09 11:00", "後の工程", "警告0件"),
+    ]
+
+
+def test_progress_log_rows_returns_empty_list_for_row_less_table() -> None:
+    """内容行が無い固定表では空の一覧を返す。"""
+    content = f"# plan\n\n## {_plan_format.PLAN_H2_PROGRESS}\n\n| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
+
+    assert not _plan_format.progress_log_rows(content)
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (f"# plan\n\n## {_plan_format.PLAN_H2_OVERVIEW}\n\n概要だけ。\n", "が無い"),
+        (f"# plan\n\n## {_plan_format.PLAN_H2_PROGRESS}\n\n表の無い本文。\n", "の固定表が無い"),
+        (
+            f"# plan\n\n## {_plan_format.PLAN_H2_PROGRESS}\n\n"
+            "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 2026-09-09 10:00 | 工程 |\n",
+            "列数が一致しない",
+        ),
+    ],
+)
+def test_progress_log_rows_rejects_broken_structure(content: str, expected: str) -> None:
+    """節、固定表及び列構成のいずれかが成立しない本文を拒否する。"""
+    with pytest.raises(ValueError, match=expected):
+        _plan_format.progress_log_rows(content)

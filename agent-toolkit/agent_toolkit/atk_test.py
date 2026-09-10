@@ -2195,3 +2195,13 @@ class TestAddBatchOption:
         assert exc_info.value.code == 1
         assert "投入を拒否しました" in capsys.readouterr().err
         assert not list((notes / "inbox").iterdir())
+
+
+def test_plans_progress_resolves_subcommand_and_plan_file() -> None:
+    """最上位のコマンドラインから進捗取得のサブコマンドと計画ファイルの指定を解決する。"""
+    args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
+        ["plans", "progress", "2026/09/09-example-1a2b.md"]
+    )
+
+    assert args.plans_subcommand == "progress"
+    assert args.plan_file == "2026/09/09-example-1a2b.md"

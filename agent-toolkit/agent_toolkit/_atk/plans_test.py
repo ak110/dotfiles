@@ -1,6 +1,7 @@
 """`atk plans checkout`・`commit`と旧計画root移行の実Git検証。"""
 
 import datetime
+import json
 import os
 import pathlib
 import subprocess
@@ -1656,3 +1657,119 @@ def test_dispatch_list_prints_owner_and_update_time_per_plan(
     assert result == 0
     entries = _atk_plans.list_working_plans(home)
     assert capsys.readouterr().out == f"{plan}\tなし\t{entries[0]['updated_at']}\n"
+
+
+_PROGRESS_PLAN_TEMPLATE = """# plan
+
+## 進捗ログ（実行時）
+
+| 日時 | 完了した工程 | 結果・特記事項 |
+| --- | --- | --- |
+{rows}"""
+
+
+def _write_saved_progress_plan(notes: pathlib.Path, relative: pathlib.Path, rows: str) -> pathlib.Path:
+    """進捗ログを持つ保存済みメイン計画を作成する。"""
+    main = notes / "plans" / relative
+    main.parent.mkdir(parents=True, exist_ok=True)
+    main.write_text(_PROGRESS_PLAN_TEMPLATE.format(rows=rows), encoding="utf-8")
+    return main
+
+
+def test_dispatch_progress_prints_one_json_document_per_row(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """進捗ログの各行を3つのキーを持つJSON文書として1行ずつ書く。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/09/09-進捗取得-a1b2.md")
+    _write_saved_progress_plan(
+        notes,
+        relative,
+        "| 2026-09-09 10:00 | 統合順1の実装 | 近接検証が終了コード0 |\n| 2026-09-09 11:00 | 統合順2の実装 | 警告0件 |\n",
+    )
+    args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
+
+    result = _atk_plans.dispatch(args, notes, home)
+
+    assert result == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert [json.loads(line) for line in lines] == [
+        {"datetime": "2026-09-09 10:00", "completed_step": "統合順1の実装", "notes": "近接検証が終了コード0"},
+        {"datetime": "2026-09-09 11:00", "completed_step": "統合順2の実装", "notes": "警告0件"},
+    ]
+
+
+def test_dispatch_progress_writes_nothing_for_empty_progress_table(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """進捗行が1件も無い計画では何も書かず終了コード0で終わる。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/09/09-進捗なし-a1b3.md")
+    _write_saved_progress_plan(notes, relative, "")
+    args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
+
+    result = _atk_plans.dispatch(args, notes, home)
+
+    assert result == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_progress_prefers_saved_plan_and_falls_back_to_working_copy(tmp_path: pathlib.Path) -> None:
+    """保存root相対の指定では保存側を先に読み、保存側が無い場合だけ同名の作業側を読む。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/09/09-優先順位-a1b4.md")
+    _write_saved_progress_plan(notes, relative, "| 2026-09-09 10:00 | 保存側の工程 | 保存側 |\n")
+    working_root = _plan_file.working_plans_root(home)
+    working_root.mkdir(parents=True)
+    working_main = working_root / relative.name
+    working_main.write_text(
+        _PROGRESS_PLAN_TEMPLATE.format(rows="| 2026-09-09 12:00 | 作業側の工程 | 作業側 |\n"),
+        encoding="utf-8",
+    )
+
+    saved_rows = _atk_plans.plan_progress(notes, relative.as_posix(), home=home)
+    (notes / "plans" / relative).unlink()
+    working_rows = _atk_plans.plan_progress(notes, relative.as_posix(), home=home)
+
+    assert [row["completed_step"] for row in saved_rows] == ["保存側の工程"]
+    assert [row["completed_step"] for row in working_rows] == ["作業側の工程"]
+
+
+def test_progress_rejects_missing_plan_file(tmp_path: pathlib.Path) -> None:
+    """計画ファイルが実在しない指定を拒否する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+
+    with pytest.raises(_common.WebInputError, match="指定したメイン計画が見つかりません"):
+        _atk_plans.plan_progress(notes, "2026/09/09-不在-a1b5.md", home=home)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "# plan\n\n## 概要\n\n概要だけの計画。\n",
+        "# plan\n\n## 進捗ログ（実行時）\n\n進捗表の無い本文。\n",
+        "# plan\n\n## 進捗ログ（実行時）\n\n| 日時 | 完了した工程 |\n| --- | --- |\n| 2026-09-09 10:00 | 工程 |\n",
+    ],
+)
+def test_progress_rejects_broken_progress_structure(tmp_path: pathlib.Path, content: str) -> None:
+    """節、固定表及び列構成のいずれかが成立しない計画を拒否する。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/09/09-構造不成立-a1b6.md")
+    main = notes / "plans" / relative
+    main.parent.mkdir(parents=True, exist_ok=True)
+    main.write_text(content, encoding="utf-8")
+
+    with pytest.raises(_common.WebInputError, match="進捗ログを読み取れません"):
+        _atk_plans.plan_progress(notes, relative.as_posix(), home=home)

@@ -253,3 +253,18 @@ def test_structured_output_commands_state_their_format(command: str, format_name
 
     assert description is not None
     assert format_name in description
+
+
+def test_plans_progress_help_states_output_keys_and_failure_conditions() -> None:
+    """進捗取得のヘルプは解析形式、出力の3キー及び非0で終わる条件を示す。"""
+    summaries = {command: summary for command, _parser, summary in _walk_commands()}
+    commands = {command: parser for command, parser, _summary in _walk_commands()}
+    summary = summaries["atk plans progress"]
+    description = commands["atk plans progress"].description
+
+    assert summary is not None
+    assert "JSON Lines" in summary
+    assert description is not None
+    assert "`datetime`、`completed_step`、`notes`" in description
+    assert "進捗行が1件も無い場合は何も書かず終了コード0で終わる" in description
+    assert "計画ファイルが実在しない場合と進捗表の構造が成立しない場合は非0の終了コードで終わる" in description
