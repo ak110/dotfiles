@@ -99,8 +99,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     path_list = ", ".join(str(path) for path in paths)
     body = _notice(
         f"当該セッションが所有する計画バンドルが計画作業ルートに残っている: {path_list}\n"
-        "実行レビューが収束したバンドルだけを"
+        "保存の契機に達したバンドルだけを"
         "`atk plans commit <計画作業ルート内の計画ファイル（メイン）名>`でprivate-notesへ保存する。"
+        "契機は当該セッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
         "残りのバンドルはその場に残してターンを終了する。",
         removable_cause=True,
     )

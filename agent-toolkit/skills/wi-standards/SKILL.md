@@ -20,7 +20,7 @@ UWIは、回答を得るまで元の作業を再開又は確定できない事�
 - `normal`はレビュー済み計画が関連していないAWI、`plan`はレビュー済み計画が関連するAWIである。
 - 変更量にかかわらず、キュー項目に由来する全ての実装要求は実装前に計画と計画レビューを完了する。`normal`を計画なしで実装しない。`agent-toolkit:fast-process-wi`が直接実装経路で処理する`normal`だけを例外とし、当該項目は計画の代わりに独立コンテキストの実行レビューで検収する。同スキルが計画経路で処理する`normal`は本則のとおり計画と計画レビューを経る。対話でユーザーから直接受領した要求の扱いは`agent-toolkit:plan-mode`の「対話由来の小規模是正」節が定める。
 - `agent-toolkit:plan-and-add-awi`は、自然言語要件から新しい`inbox(plan)`を作成する経路と、既存の`inbox(normal)`を`hold(normal)`へ移して同じ項目を`inbox(plan)`へ変換する経路を持つ。
-- 計画ファイルと同じstemの付属ファイルは、実行レビューが収束するまで計画作業root`~/.claude/plans`の直下で更新する。private-notes配下の計画ファイルを編集せず、保存先への移動は`atk plans commit`だけが行う。
+- 計画ファイルと同じstemの付属ファイルは、当該計画の保存の契機に達するまで計画作業root`~/.claude/plans`の直下で更新する。契機は起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準の`## 計画ファイルの保存と参照`が定める。private-notes配下の計画ファイルを編集せず、保存先への移動は`atk plans commit`だけが行う。
 - `plan_file`へは、計画の作成時点で保存先を指す可搬値`$(atk config get private_notes)/plans/yyyy/MM/<メイン計画ファイル名>`を書く。計画ファイルの実体が計画作業rootと保存先のどちらにあっても同じ値が同じ計画を指すため、保存先への移動後も値を書き換えない。
 
 ## 通常AWIの本文

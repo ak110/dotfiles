@@ -339,12 +339,14 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "plan_save_advisor.py:101 本文",
         "当該セッションが所有する計画バンドルが計画作業`root`に残っている: {path_list}\\n"
-        "実行レビューが収束した計画バンドルだけを`private-notes`へ移す。残りはそのまま置いてターンを終える。",
+        "保存の契機に達した計画バンドルだけを`private-notes`へ移す。"
+        "契機は当該セッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
+        "残りはそのまま置いてターンを終える。",
     ),
     (
         "plan_save_advisor.py:101 解消手段",
-        "収束した計画ごとに`atk plans commit <計画作業rootにある計画ファイル（メイン）のファイル名>`を実行する。"
-        "収束したものが無い場合はターンを終える。",
+        "保存の契機に達した計画ごとに`atk plans commit <計画作業rootにある計画ファイル（メイン）のファイル名>`を実行する。"
+        "契機に達したものが無い場合はターンを終える。",
     ),
     (
         "subagent_stop_advisor.py:47 本文",
