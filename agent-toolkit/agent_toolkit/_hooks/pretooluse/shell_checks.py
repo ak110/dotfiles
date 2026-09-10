@@ -1183,9 +1183,19 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
     return (tuple(operands if pattern_is_option else operands[1:]), frozenset(options))
 
 
-def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
-    """除外指定の無い再帰`grep`がディレクトリを読む場合に警告する。"""
+_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
+    "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
+    "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。"
+)
+
+
+def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str, session_id: str) -> str | None:
+    """除外指定の無い再帰`grep`がディレクトリを読む場合に、同一セッションの1件目を警告、2件目以降を遮断する。
+
+    反復が母集団の欠落を招く警告のため、代替手段が複数あっても2件目以降は遮断へ昇格する。
+    """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
+    detected = False
     for pipeline in _extract_execution_pipelines(command):
         for segment in pipeline:
             if not segment.resolved or segment.tokens[0] not in _GREP_COMMANDS:
@@ -1199,14 +1209,27 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
             if options & {"--include", "--exclude", "--exclude-dir"}:
                 continue
             if not files or any(token != "-" and (token.endswith("/") or (base / token).is_dir()) for token in files):
-                return _llm_notice(
-                    "warn: 除外設定を反映しない再帰`grep`をディレクトリへ実行している。"
-                    "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
-                    "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。",
-                    tag=_WARN_TAG,
-                    removable_cause=True,
-                )
-    return None
+                detected = True
+                break
+        if detected:
+            break
+    if not detected:
+        return None
+    already_detected = _record_repeat_detection(session_id, "recursive_grep_detected")
+    if already_detected:
+        print(
+            _block_notice(
+                "block: 除外設定を反映しない再帰`grep`のディレクトリ実行を、当該セッションで再び検出した。",
+                fix=_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX,
+            ),
+            file=sys.stderr,
+        )
+        return "block"
+    return _llm_notice(
+        f"warn: 除外設定を反映しない再帰`grep`をディレクトリへ実行している。{_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX}",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
 
 
 def _check_bash_state_change_command_chaining(command: str) -> str | None:

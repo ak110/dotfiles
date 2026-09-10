@@ -183,6 +183,7 @@ if TYPE_CHECKING:
         _check_mojibake,
         _check_plan_mode_skill_first,
         _collect_edit_operation_warnings,
+        check_user_facing_typo,
     )
     from agent_toolkit._hooks.pretooluse.git_checks import (
         _check_bash_agent_toolkit_version_bump,
@@ -448,13 +449,16 @@ def _handle_bash_tool(
         return 2
     if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
         return 2
+    recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd, session_id)
+    if recursive_grep_result == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
         _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
         _check_bash_unbounded_home_traversal(command),
-        _check_bash_recursive_grep_without_exclusion(command, cwd),
+        recursive_grep_result,
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -510,21 +514,23 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ編集入力と同じ言語品質検査を適用する。"""
+    """質問・計画本文へ編集入力と同じ言語品質検査、及び誤字検査を適用する。"""
     if tool_name == "AskUserQuestion" and check_required_read_before_ask_user_question(session_id) == "block":
         flush_warning()
         return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2
-    warning = next(
+    colloquial_warning = next(
         (warning for _, value in fields if (warning := _check_colloquial(tool_name, None, value, "")) is not None),
         None,
     )
-    if warning is None:
+    typo_warning = check_user_facing_typo(tool_name, fields)
+    warnings = [warning for warning in (colloquial_warning, typo_warning) if warning is not None]
+    if not warnings:
         flush_warning()
     else:
-        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": warning}})
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
     return 0
 
 

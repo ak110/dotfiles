@@ -1081,6 +1081,29 @@ class TestUserFacingTextChecks:
         assert "対象: AskUserQuestion" in _additional_context(result)
 
 
+class TestUserFacingTypoCheck:
+    """ユーザーが直接読む本文への誤字検査（warn のみ、exit code は 0）。"""
+
+    def test_typo_in_user_facing_text_warns(self) -> None:
+        result = _run(_user_facing_payload("question", "番面の説明を確認してください。"))
+        assert result.returncode == 0
+        assert "誤字候補" in _additional_context(result)
+        assert content_checks.typo_detected_terms_text([("番面", "画面")]) in _agent_messages(result)
+
+    def test_typo_in_exit_plan_mode_warns(self) -> None:
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "番面遷移を実装する。"}})
+        assert result.returncode == 0
+        assert "誤字候補" in _additional_context(result)
+
+    def test_typo_and_colloquial_warnings_are_combined(self, deny_substring: str) -> None:
+        """誤字検査と口語表現検査の警告を1つの`additionalContext`へ改行で結合する。"""
+        result = _run(_user_facing_payload("question", f"番面は{deny_substring}該当する。"))
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "誤字候補" in context
+        assert "口語的な日本語表現" in context
+
+
 class TestAskUserQuestionRequiredRead:
     """判断基準文書の全文読解を観測するまで質問を遮断する。"""
 

@@ -116,6 +116,51 @@ class TestBashCommandContractWarnings:
         assert result.returncode == 0
         assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
 
+    def test_recursive_grep_repeat_blocks(self, tmp_path: pathlib.Path) -> None:
+        """除外設定の無い再帰`grep`は、同一セッションの2件目から遮断する。"""
+        (tmp_path / "docs").mkdir()
+        env = _plan_file_state_env(tmp_path)
+        session_id = "recursive-grep-repeat"
+        first = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep -rn foo docs/"},
+                "cwd": str(tmp_path),
+                "session_id": session_id,
+            },
+            env_overrides=env,
+        )
+        assert first.returncode == 0
+        assert "除外設定を反映しない再帰`grep`" in _additional_context(first)
+        second = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep -rn bar docs/"},
+                "cwd": str(tmp_path),
+                "session_id": session_id,
+            },
+            env_overrides=env,
+        )
+        assert second.returncode == 2
+        assert "当該セッションで再び検出した" in second.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        ["grep -rn --include=*.md foo docs/", "rg -n foo docs/"],
+    )
+    def test_recursive_grep_safe_forms_do_not_block_on_repeat(self, command: str, tmp_path: pathlib.Path) -> None:
+        """除外指定を持つ形は、同一セッションで反復しても遮断しない。"""
+        (tmp_path / "docs").mkdir()
+        env = _plan_file_state_env(tmp_path)
+        session_id = f"recursive-grep-safe-repeat-{command.split()[0]}"
+        for _ in range(2):
+            result = _run(
+                {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "session_id": session_id},
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+            assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
+
     @pytest.mark.parametrize(
         "command",
         ["atk wi unhold a.md && atk wi edit b.md", "git commit -m x; echo done", "git -C . commit -m x; echo done"],

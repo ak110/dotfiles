@@ -571,7 +571,7 @@ _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DE
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
 _COLLOQUIAL_MAX_LISTED_MATCHES = 5
-"""口語表現検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+"""口語表現検査及び誤字検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
 _MANAGED_TEMP_MARKER = ".agent-toolkit-managed-temp.json"
 
 COLLOQUIAL_DETECTED_TERMS_LABEL = "検出語"
@@ -584,6 +584,53 @@ def colloquial_detected_terms_text(detected_terms: Iterable[str]) -> str:
     """
     joined = "、".join(dict.fromkeys(detected_terms))
     return f"{COLLOQUIAL_DETECTED_TERMS_LABEL}: {joined}。"
+
+
+# --- ユーザーが直接読む本文への誤字検査 (warn) ---
+
+_TYPO_DICT_PATH = pathlib.Path(__file__).parent / "typo_words.txt"
+# モジュールロード時に1回だけコンパイルする。実際に観測した誤字だけを登録した辞書のため、
+# 口語表現検査と異なりallowlistは持たない。
+_TYPO_PATTERNS = _colloquial_check.load_patterns(_TYPO_DICT_PATH)
+
+TYPO_DETECTED_TERMS_LABEL = "誤字候補"
+
+
+def typo_detected_terms_text(detected_pairs: Iterable[tuple[str, str | None]]) -> str:
+    """誤字検査の通知本文が誤字候補を示す部分を返す。
+
+    同じ仕様を複数の検体が別方向に固定して一致しなくなることを防ぐため、実装と検体はこの1箇所だけを参照する。
+    """
+    joined = "、".join(
+        f"{detected}→{replacement}" if replacement is not None else detected
+        for detected, replacement in dict.fromkeys(detected_pairs)
+    )
+    return f"{TYPO_DETECTED_TERMS_LABEL}: {joined}。"
+
+
+def check_user_facing_typo(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
+    """ユーザーが直接読む本文への日本語の変換誤りを検出して警告本文を返す（warn）。
+
+    総件数、欄名及び先頭`_COLLOQUIAL_MAX_LISTED_MATCHES`件までの位置（行・列）を示す。
+    上限を超える一致の位置は総件数だけで示す。誤字候補と置換候補は`typo_detected_terms_text`経由で示す。
+    """
+    matches: list[tuple[str, int, int, str, str | None]] = []
+    for field, value in fields:
+        for line_no, column, detected, _snippet, replacement in _colloquial_check.scan_text(value, _TYPO_PATTERNS, []):
+            matches.append((field, line_no, column, detected, replacement))
+    if not matches:
+        return None
+    listed = "; ".join(
+        f"{field}の行{line_no}、列{column}" for field, line_no, column, *_ in matches[:_COLLOQUIAL_MAX_LISTED_MATCHES]
+    )
+    terms = typo_detected_terms_text((detected, replacement) for _, _, _, detected, replacement in matches)
+    return _llm_notice(
+        f"`{tool_name}`が渡すユーザー向け本文に誤字候補を検出した。一致: {len(matches)}件（{listed}）。{terms}"
+        "変換誤りかどうかを本文の文脈で判定し、誤りである場合は当該箇所を修正してから同じ呼び出しを再発行する。"
+        f" 対象: {tool_name}",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
 
 
 def _is_in_managed_temp(file_path: str) -> bool:
