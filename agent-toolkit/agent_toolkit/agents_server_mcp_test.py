@@ -293,6 +293,20 @@ def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.05)
 
 
+@pytest.fixture(autouse=True)
+def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """待機上限の導出を省き、未終端sessionの待機で検体を待たせない。
+
+    `wait`は待機上限を入力として受け取らないため、上限の導出だけをテスト用の値へ差し替える。
+    """
+    monkeypatch.setattr(subject._wait_schedule, "get_wait_timeout", lambda request_bucket: 0.0)
+
+
+def _set_wait_timeout(manager: subject.AgentsServerManager, timeout: float) -> None:
+    """導出を経由せずに当該managerの待機上限を確定する。"""
+    manager._wait_timeouts["main"] = timeout
+
+
 def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> None:
     """MCP初期化後にプラグイン配置を除去しても両backendを生成できる。"""
     source_dir = pathlib.Path(__file__).parent
@@ -355,7 +369,6 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
         "start_explore",
         "start_shell",
         "wait",
-        "wait_any",
         "send_message",
         "kill",
         "list",
@@ -375,10 +388,9 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     assert {"command", "cwd", "summary_policy"} == shell_tool.parameters["properties"].keys()
     for tool in (start_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
-    for tool_name in ("wait", "kill"):
-        tool = subject.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert tool.parameters["properties"]["stop"]["default"] is False
+    kill_tool = subject.mcp._tool_manager.get_tool("kill")
+    assert kill_tool is not None
+    assert kill_tool.parameters["properties"]["stop"]["default"] is False
     stop_tool = subject.mcp._tool_manager.get_tool("stop")
     assert stop_tool is not None
     assert stop_tool.parameters["properties"].keys() == {"session_id"}
@@ -414,7 +426,7 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "最後の例外を送出する" in tools["start"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
     assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
-    assert "最初の`wait`で受領するまで保持" in tools["wait"].description
+    assert "最初の呼び出しで受領するまで保持" in tools["wait"].description
     assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
     assert "unknown session" in tools["send_message"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
@@ -493,8 +505,11 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
         "progress",
         "label",
         "result_available",
+        "updated_at",
+        "seconds_since_update",
     }
-    assert all(set(session) == expected_keys for session in response["sessions"])
+    # 停滞の印は最終活動時刻からの経過が閾値を超えたsessionだけへ付くため、鍵集合の比較から除く。
+    assert all(set(session) - {"stalled"} == expected_keys for session in response["sessions"])
     assert response["sessions"][0]["status"] == "expired"
     assert response["sessions"][0]["progress"] == ""
     assert response["sessions"][1]["status"] == "running"
@@ -570,34 +585,21 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
     assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
     wait_tool = subject.mcp._tool_manager.get_tool("wait")
-    wait_any_tool = subject.mcp._tool_manager.get_tool("wait_any")
     send_tool = subject.mcp._tool_manager.get_tool("send_message")
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert wait_tool is not None
-    assert wait_any_tool is not None
     assert send_tool is not None
     assert kill_tool is not None
 
-    wait_timeout = wait_tool.parameters["properties"]["timeout"]
-    assert wait_timeout["default"] is None
-    assert wait_timeout["description"] == (
-        "待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。"
-        "委譲先として起動されたセッションでは240秒を上限とする。0は待機せず現状態を返す。"
-    )
-    wait_bucket = wait_tool.parameters["properties"]["request_bucket"]
-    assert wait_bucket["default"] == "main"
-    assert wait_bucket["description"] == (
-        "既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"
-    )
-    assert "プロンプトキャッシュの保持期間から導出した上限" in wait_tool.description
+    assert wait_tool.parameters["properties"] == {}
+    assert wait_tool.parameters.get("required", []) == []
+    assert "引数を受け取らない" in wait_tool.description
+    assert "プロンプトキャッシュの保持期間から導出した値" in wait_tool.description
     assert "委譲先として起動されたセッションでは240秒を上限とする" in wait_tool.description
     assert "`status`と`elapsed_seconds`を返す" in wait_tool.description
-    assert "固有のtimeout要件がなければ`timeout`を省略する" in wait_tool.description
-    assert "`timeout=0`は待機せず現状態を返す" in wait_tool.description
-    assert "1件なら本ツールを前景で発行する" in wait_tool.description
-    assert "2件以上なら全対象を`wait_any`へ渡して前景で発行する" in wait_tool.description
-    assert wait_any_tool.parameters["properties"]["timeout"]["default"] is None
-    assert wait_any_tool.parameters["properties"]["request_bucket"]["default"] == "main"
+    assert "最初に終端した1件の結果を返す" in wait_tool.description
+    assert "待機せずに現状態を確認する場合は`list`を発行する" in wait_tool.description
+    assert "本ツールを前景で発行する" in wait_tool.description
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
     assert send_timeout["description"] == (
@@ -632,8 +634,8 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert "`session_id`、`status`" in start_tool.description
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`/goal`が設定され" in wait_tool.description
-    assert "`atk agents-wait <session_id>`" in wait_tool.description
-    assert "`timeout=0`の本ツールを1回発行" in wait_tool.description
+    assert "`atk agents-wait`を実行ホストの背景ジョブとして起動" in wait_tool.description
+    assert "完了通知を受領した後に本ツールを1回発行" in wait_tool.description
     assert "`delivery`" in send_tool.description
     assert "`previous_result`" in send_tool.description
     assert "`--" + "turn`へそのまま渡す" not in send_tool.description
@@ -855,12 +857,11 @@ async def test_success_response_key_sets_for_all_tools(
 
     session_id = str(started["session_id"])
     session = manager.sessions[session_id]
-    assert (await manager.wait(session_id, timeout=0)).keys() == {
+    assert (await manager.wait()).keys() == {
+        "session_id",
         "status",
         "progress",
         "elapsed_seconds",
-        "updated_at",
-        "seconds_since_update",
     }
     assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery"}
     session.turn_id = "turn-1"
@@ -869,13 +870,24 @@ async def test_success_response_key_sets_for_all_tools(
     terminal_id = str(explored["session_id"])
     terminal = manager.sessions[terminal_id]
     _complete(terminal, message="完了")
-    assert (await manager.wait(terminal_id, timeout=0)).keys() == {"status", "agent_message"}
+    assert (await manager.wait()).keys() == {"session_id", "status", "agent_message"}
     assert await manager.stop(terminal_id) == {}
 
     listed = manager.list_sessions(include_terminated=True)
     assert listed.keys() == {"sessions", "omitted"}
     assert all(
-        item.keys() == {"session_id", "status", "progress", "model_type", "launch_kind", "label", "result_available"}
+        item.keys()
+        == {
+            "session_id",
+            "status",
+            "progress",
+            "model_type",
+            "launch_kind",
+            "label",
+            "result_available",
+            "updated_at",
+            "seconds_since_update",
+        }
         for item in listed["sessions"]
     )
 
@@ -1055,7 +1067,27 @@ async def test_start_returns_failed_session_when_every_candidate_is_unavailable(
     assert codex.start_calls == [("first", "high", "delegate"), ("second", "high", "delegate")]
     assert response["status"] == "failed"
     assert response["model"] == "second"
-    assert (await manager.wait(response["session_id"], timeout=0))["error"] == codex.error
+    assert (await manager.wait())["error"] == codex.error
+
+
+async def _carry_over_late_unavailability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    candidates: list[tuple[str, str, str]],
+) -> tuple[subject.AgentsServerManager, FakeBackend]:
+    """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
+    manager = subject.AgentsServerManager()
+    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
+    _install_backend(manager, "codex", delayed)
+
+    await manager.start("plan", "調査", str(tmp_path))
+    await asyncio.gather(*delayed.pending)
+    assert (await manager.wait())["status"] == "failed"
+    available = FakeBackend(manager.sessions, "codex")
+    _install_backend(manager, "codex", available)
+    return manager, available
 
 
 @pytest.mark.asyncio
@@ -1065,17 +1097,7 @@ async def test_late_engine_unavailability_carries_over_to_next_start(
 ) -> None:
     """開始確認の上限後に失敗した候補を、同じ起動条件の次回から除外する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
-    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = subject.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
-
-    failed = await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
-    assert (await manager.wait(failed["session_id"], timeout=0))["status"] == "failed"
-    available = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", available)
+    manager, available = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
 
     response = await manager.start("plan", "再試行", str(tmp_path))
 
@@ -1091,17 +1113,7 @@ async def test_available_start_clears_carried_over_candidate(
 ) -> None:
     """持ち越し後の起動が成立した時点で除外を解除する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
-    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = subject.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
-
-    failed = await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
-    await manager.wait(failed["session_id"], timeout=0)
-    available = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", available)
+    manager, _ = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
 
     recovered = await manager.start("plan", "再試行", str(tmp_path))
     following = await manager.start("plan", "通常起動", str(tmp_path))
@@ -1118,17 +1130,7 @@ async def test_carried_over_candidate_is_dropped_when_no_candidate_remains(
 ) -> None:
     """持ち越し除外だけで候補が尽きる場合は除外を破棄して全候補を使う。"""
     candidates = [("codex", "only", "high")]
-    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
-    monkeypatch.setattr(subject, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = subject.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
-
-    failed = await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
-    await manager.wait(failed["session_id"], timeout=0)
-    available = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", available)
+    manager, available = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
 
     response = await manager.start("plan", "再試行", str(tmp_path))
 
@@ -1150,9 +1152,9 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
     _install_backend(manager, "codex", delayed)
 
-    failed = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
+    await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
     await asyncio.gather(*delayed.pending)
-    await manager.wait(failed["session_id"], timeout=0)
+    await manager.wait()
     available = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", available)
 
@@ -1348,7 +1350,7 @@ async def test_start_shell_runs_command_on_the_explore_fast_route(
     assert session.launch_kind == "shell"
     _complete(session, message="終了コード0")
 
-    observed = await manager.wait(started["session_id"], 0)
+    observed = await manager.wait()
     assert observed["status"] == "completed"
     assert observed["agent_message"] == "終了コード0"
 
@@ -1508,9 +1510,8 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     wait_task = asyncio.create_task(
         asyncio.to_thread(
             agents_wait.wait_for_result,
-            session.session_id,
             1,
-            environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
         )
     )
@@ -1566,10 +1567,11 @@ async def test_wait_returns_same_terminal_result_without_consuming_state(tmp_pat
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     _complete(session, message="最終結果", error={"message": "補足"})
     manager.sessions[session.session_id] = session
-    first = await manager.wait(session.session_id, timeout=0)
-    second = await manager.wait(session.session_id, timeout=0)
+    first = await manager.wait()
+    second = await manager.wait()
     assert first == second
     assert first == {
+        "session_id": session.session_id,
         "status": "failed",
         "agent_message": "最終結果",
         "error": {"message": "補足"},
@@ -1578,8 +1580,8 @@ async def test_wait_returns_same_terminal_result_without_consuming_state(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_wait_any_returns_first_available_session_and_retains_others(tmp_path: pathlib.Path) -> None:
-    """wait_anyは確定時刻が早い結果だけを選び、残る結果を保持する。"""
+async def test_wait_returns_first_available_session_and_retains_others(tmp_path: pathlib.Path) -> None:
+    """waitは確定時刻が早い結果だけを選び、残る結果を保持する。"""
     manager, _ = _manager_with_fake("codex")
     later = subject.SessionState("later", str(tmp_path), engine="codex")
     earlier = subject.SessionState("earlier", str(tmp_path), engine="codex")
@@ -1589,7 +1591,7 @@ async def test_wait_any_returns_first_available_session_and_retains_others(tmp_p
     earlier.finalized_at = "2026-09-10T00:00:01+00:00"
     manager.sessions.update({later.session_id: later, earlier.session_id: earlier})
 
-    response = await manager.wait_any([later.session_id, earlier.session_id], timeout=0)
+    response = await manager.wait()
 
     assert response["session_id"] == earlier.session_id
     assert response["agent_message"] == "先"
@@ -1597,7 +1599,7 @@ async def test_wait_any_returns_first_available_session_and_retains_others(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_wait_any_delivers_each_terminal_result_to_single_waiter(tmp_path: pathlib.Path) -> None:
+async def test_wait_delivers_each_terminal_result_to_single_waiter(tmp_path: pathlib.Path) -> None:
     """同時に待つ2件へ同じ終端結果を重複配送しない。"""
     manager, _ = _manager_with_fake("codex")
     sessions = [subject.SessionState(f"thread-{index}", str(tmp_path), engine="codex") for index in range(2)]
@@ -1605,50 +1607,13 @@ async def test_wait_any_delivers_each_terminal_result_to_single_waiter(tmp_path:
         _complete(session, message=session.session_id)
         manager.sessions[session.session_id] = session
 
-    responses = await asyncio.gather(
-        *(manager.wait_any([session.session_id for session in sessions], timeout=0) for _ in range(2))
-    )
+    responses = await asyncio.gather(*(manager.wait() for _ in range(2)))
 
     assert {response["session_id"] for response in responses} == {session.session_id for session in sessions}
 
 
 @pytest.mark.asyncio
-async def test_wait_any_result_is_confirmed_by_zero_timeout_wait(tmp_path: pathlib.Path) -> None:
-    """wait_any後も単一waitは同じ終端本文を確認できる。"""
-    manager, _ = _manager_with_fake("codex")
-    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
-    _complete(session, message="結果")
-    manager.sessions[session.session_id] = session
-
-    selected = await manager.wait_any([session.session_id], timeout=0)
-    confirmed = await manager.wait(session.session_id, timeout=0)
-
-    assert selected["session_id"] == session.session_id
-    assert confirmed["agent_message"] == selected["agent_message"]
-
-
-@pytest.mark.asyncio
-async def test_wait_any_ignores_missing_session_while_retained_session_runs(tmp_path: pathlib.Path) -> None:
-    """保持中の対象があれば不在のsessionより待機可能な状態を返す。"""
-    manager, _ = _manager_with_fake("codex")
-    session = subject.SessionState("thread-retained", str(tmp_path), engine="codex")
-    manager.sessions[session.session_id] = session
-
-    response = await manager.wait_any(["thread-missing", session.session_id], timeout=0)
-
-    assert response["session_id"] == session.session_id
-    assert response["status"] == "running"
-    assert "agent_message" not in response
-
-    _complete(session, message="保持中の結果")
-    completed = await manager.wait_any(["thread-missing", session.session_id], timeout=0)
-
-    assert completed["session_id"] == session.session_id
-    assert completed["agent_message"] == "保持中の結果"
-
-
-@pytest.mark.asyncio
-async def test_wait_any_does_not_redeliver_selected_terminal_result(tmp_path: pathlib.Path) -> None:
+async def test_wait_does_not_redeliver_selected_terminal_result(tmp_path: pathlib.Path) -> None:
     """配送済みの終端結果を避け、残る未終端sessionの状態を返す。"""
     manager, _ = _manager_with_fake("codex")
     completed = subject.SessionState("thread-completed", str(tmp_path), engine="codex")
@@ -1656,8 +1621,8 @@ async def test_wait_any_does_not_redeliver_selected_terminal_result(tmp_path: pa
     _complete(completed, message="配送済み")
     manager.sessions.update({completed.session_id: completed, running.session_id: running})
 
-    selected = await manager.wait_any([completed.session_id, running.session_id], timeout=0)
-    response = await manager.wait_any([completed.session_id, running.session_id], timeout=0)
+    selected = await manager.wait()
+    response = await manager.wait()
 
     assert selected["session_id"] == completed.session_id
     assert selected["agent_message"] == "配送済み"
@@ -1667,12 +1632,13 @@ async def test_wait_any_does_not_redeliver_selected_terminal_result(tmp_path: pa
 
 
 @pytest.mark.asyncio
-async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pathlib.Path) -> None:
-    """未終端sessionのtimeout=0は本文なしの現状態を返す。"""
+async def test_wait_does_not_return_unfinished_result(tmp_path: pathlib.Path) -> None:
+    """未終端sessionの待機上限応答は本文なしの現状態を返す。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
-    response = await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait()
+    assert response["session_id"] == session.session_id
     assert response["status"] == "running"
     assert response["progress"] == ""
     assert isinstance(response["elapsed_seconds"], int)
@@ -1680,17 +1646,25 @@ async def test_wait_timeout_zero_does_not_return_unfinished_result(tmp_path: pat
 
 
 @pytest.mark.asyncio
-async def test_wait_running_response_reports_seconds_since_update(tmp_path: pathlib.Path) -> None:
-    """実行中のwait応答は最終活動時刻と経過秒数を返す。"""
+async def test_list_reports_seconds_since_update_and_stall(tmp_path: pathlib.Path) -> None:
+    """listは保持中sessionの最終活動時刻と経過秒数を返し、閾値超過へ停滞の印を付ける。"""
     manager, _ = _manager_with_fake("codex")
-    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
-    manager.sessions[session.session_id] = session
+    fresh = subject.SessionState("thread-fresh", str(tmp_path), engine="codex")
+    stalled = subject.SessionState("thread-stalled", str(tmp_path), engine="codex")
+    stalled.updated_at = "2000-01-01T00:00:00+00:00"
+    manager.sessions.update({fresh.session_id: fresh, stalled.session_id: stalled})
 
-    response = await manager.wait(session.session_id, timeout=0)
+    listed = {entry["session_id"]: entry for entry in manager.list_sessions()["sessions"]}
 
-    assert response["updated_at"] == session.updated_at
-    assert isinstance(response["seconds_since_update"], int)
-    assert "stalled" not in response
+    assert listed[fresh.session_id]["updated_at"] == fresh.updated_at
+    assert isinstance(listed[fresh.session_id]["seconds_since_update"], int)
+    assert "stalled" not in listed[fresh.session_id]
+    assert listed[stalled.session_id]["updated_at"] == stalled.updated_at
+    assert listed[stalled.session_id]["stalled"] is True
+
+    response = await manager.wait()
+
+    assert {"updated_at", "seconds_since_update", "stalled"}.isdisjoint(response)
 
 
 @pytest.mark.asyncio
@@ -1704,7 +1678,8 @@ async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) ->
     manager = subject.AgentsServerManager(writer)
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
-    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=2))
+    _set_wait_timeout(manager, 2.0)
+    wait_task = asyncio.create_task(manager.wait())
     await asyncio.sleep(0)
     notices = status_file.notices_directory("root-session", tmp_path)
     _write_notice(notices, session.session_id, 2, "2026-09-06T00:00:02+00:00", "後の通知")
@@ -1718,7 +1693,8 @@ async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) ->
         {"sent_at": "2026-09-06T00:00:01+00:00", "body": "先の通知"},
         {"sent_at": "2026-09-06T00:00:02+00:00", "body": "後の通知"},
     ]
-    second = await manager.wait(session.session_id, timeout=0)
+    _set_wait_timeout(manager, 0.0)
+    second = await manager.wait()
     assert "notices" not in second
     await manager.close()
 
@@ -1738,7 +1714,7 @@ async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: 
     notices = status_file.notices_directory("root-session", tmp_path)
     _write_notice(notices, session.session_id, 1, "2026-09-06T00:00:01+00:00", "終端前の通知")
 
-    response = await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait()
 
     assert response["status"] == "completed"
     assert response["agent_message"] == "最終結果"
@@ -1748,11 +1724,11 @@ async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_wait_without_timeout_uses_derived_bucket_default(
+async def test_wait_derives_timeout_from_the_main_bucket_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """timeout省略時はbucket別の導出値を上限に使い、同じbucketでは導出を繰り返さない。"""
+    """待機上限はmainのbucketから1度だけ導出し、以降の呼び出しへ再利用する。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
@@ -1765,11 +1741,10 @@ async def test_wait_without_timeout_uses_derived_bucket_default(
 
     monkeypatch.setattr(subject._wait_schedule, "get_wait_timeout", fake_get_wait_timeout)
 
-    assert (await manager.wait(session.session_id))["status"] == "running"
-    assert (await manager.wait(session.session_id, request_bucket="subagent"))["status"] == "running"
-    assert (await manager.wait(session.session_id))["status"] == "running"
+    assert (await manager.wait())["status"] == "running"
+    assert (await manager.wait())["status"] == "running"
 
-    assert requested_buckets == ["main", "subagent"]
+    assert requested_buckets == ["main"]
 
 
 @pytest.mark.asyncio
@@ -2107,7 +2082,7 @@ async def test_send_message_omits_previous_result_after_wait_returned_result(tmp
     _complete(session, message="回収済み結果")
     manager.sessions[session.session_id] = session
 
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "回収済み結果"
+    assert (await manager.wait())["agent_message"] == "回収済み結果"
     response = await manager.send_message(session.session_id, "続行")
 
     assert "previous_result" not in response
@@ -2136,7 +2111,7 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     session = manager.sessions[started["session_id"]]
     _complete(session, message="結果A")
     writer.flush()
-    assert (await manager.wait(session.session_id, timeout=0))["status"] == "completed"
+    assert (await manager.wait())["status"] == "completed"
     assert session.turn_seq == 1
 
     continued = await manager.send_message(session.session_id, "続行")
@@ -2146,9 +2121,8 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     wait_task = asyncio.create_task(
         asyncio.to_thread(
             agents_wait.wait_for_result,
-            session.session_id,
             1,
-            environment={"AGENT_TOOLKIT_OWNER_SESSION": "root-session"},
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
         )
     )
@@ -2190,7 +2164,7 @@ async def test_send_message_keeps_previous_result_for_unwaited_second_turn(
     _complete(session, message="結果A")
     manager.sessions[session.session_id] = session
 
-    await manager.wait(session.session_id, timeout=0)
+    await manager.wait()
     first = await manager.send_message(session.session_id, "1回目")
     assert "previous_result" not in first
 
@@ -2206,7 +2180,7 @@ async def test_send_message_keeps_previous_result_after_wait_without_result(tmp_
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
 
-    assert "agent_message" not in await manager.wait(session.session_id, timeout=0)
+    assert "agent_message" not in await manager.wait()
     _complete(session, message="未回収結果")
     response = await manager.send_message(session.session_id, "続行")
 
@@ -3011,8 +2985,8 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
         with pytest.raises(TimeoutError, match="send_message timed out: thread-pending"):
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
-        response = await manager.wait(session_id, timeout=0)
-        assert set(response) == {"status", "progress", "elapsed_seconds", "updated_at", "seconds_since_update"}
+        response = await manager.wait()
+        assert set(response) == {"session_id", "status", "progress", "elapsed_seconds"}
         assert response["status"] == "running"
         assert response["progress"] == ""
         assert isinstance(response["elapsed_seconds"], int)
@@ -3484,8 +3458,8 @@ async def test_claude_resume_timeout_drops_prompt_without_duplicate_resume(
         assert client.query_started.is_set()
         await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
         assert not client.queries
-        response = await manager.wait(session_id, timeout=0)
-        assert set(response) == {"status", "progress", "elapsed_seconds", "updated_at", "seconds_since_update"}
+        response = await manager.wait()
+        assert set(response) == {"session_id", "status", "progress", "elapsed_seconds"}
         assert response["status"] == "running"
         assert response["progress"] == ""
         assert isinstance(response["elapsed_seconds"], int)
@@ -3835,7 +3809,8 @@ async def test_wait_returns_current_registry_state_after_replacement(tmp_path: p
     original = subject.SessionState("claude-replaced", str(tmp_path), engine="claude")
     manager.sessions[original.session_id] = original
 
-    wait_task = asyncio.create_task(manager.wait(original.session_id, timeout=1))
+    _set_wait_timeout(manager, 1.0)
+    wait_task = asyncio.create_task(manager.wait())
     await asyncio.sleep(0)
     replacement = subject.SessionState(original.session_id, str(tmp_path), engine="claude")
     _complete(replacement, message="差し替え後の結果")
@@ -4035,9 +4010,9 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
             retention_deadline=session.retention_deadline,
         )
     }
-    response = await manager.wait(session.session_id, timeout=0)
-    assert response == {"status": "completed", "agent_message": "完了"}
-    assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
+    response = await manager.wait()
+    assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "完了"}
+    assert await manager.wait() == {"status": "expired"}
 
 
 @pytest.mark.asyncio
@@ -4085,7 +4060,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
             break
         await asyncio.sleep(0.01)
 
-    result = await manager.wait(session.session_id, timeout=0)
+    result = await manager.wait()
     assert result["error"] == {"message": "stream failed"}
     response = await manager.send_message(session.session_id, "続行")
 
@@ -4144,9 +4119,9 @@ async def test_expired_session_wait_returns_uncollected_result(engine: str, tmp_
     _complete(session)
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
-    response = await manager.wait(session.session_id, timeout=0)
-    assert response == {"status": "completed", "agent_message": "完了"}
-    assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
+    response = await manager.wait()
+    assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "完了"}
+    assert await manager.wait() == {"status": "expired"}
     assert "expired" not in manager.sessions
     assert manager.expired_sessions["expired"].result_delivered is True
 
@@ -4160,8 +4135,8 @@ async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: path
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
     assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is True
-    response = await manager.wait(session.session_id, timeout=0)
-    assert response == {"status": "completed", "agent_message": "退避結果"}
+    response = await manager.wait()
+    assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "退避結果"}
     assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
 
 
@@ -4187,11 +4162,12 @@ def _publish_recovered_session(
 
 
 @pytest.mark.asyncio
-async def test_recovered_session_wait_restores_persisted_result_once(
+async def test_recovered_session_restores_persisted_result_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """再起動後の最初のwaitだけが保存済みの終端結果本文を返す。"""
+    """再起動後の最初の待機だけが保存済みの終端結果本文を返す。"""
     session_id = "recovered-wait"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "failed")
     writer = status_file.StatusFileWriter(
@@ -4207,15 +4183,26 @@ async def test_recovered_session_wait_restores_persisted_result_once(
     backend = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", backend)
 
-    response = await manager.wait(session_id, timeout=0)
-    second = await manager.wait(session_id, timeout=0)
+    assert (
+        agents_wait.wait_for_result(
+            0,
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 0
+    )
+    restored = json.loads(capsys.readouterr().out)
+    second = await manager.kill(session_id, timeout=0)
 
-    assert response == {
+    assert restored == {
+        "session_id": session_id,
         "status": "failed",
         "agent_message": "永続結果",
         "error": {"message": "失敗結果"},
+        "turn_seq": persisted.turn_seq,
+        "finalized_at": persisted.finalized_at,
     }
-    assert second == {"status": "failed", "recovery": "result_unavailable"}
+    assert second == {"status": "failed", "recovery": "result_unavailable", "kill_requested": False}
     assert not result_path.exists()
     assert backend.send_calls == 0
     assert not backend.resume_calls
@@ -4324,9 +4311,9 @@ async def test_recovered_session_restores_each_terminal_status(
     _publish_recovered_session(monkeypatch, tmp_path, session_id, terminal_status)
     manager = subject.AgentsServerManager(status_writer=None)
 
-    response = await manager.wait(session_id, timeout=0)
+    response = await manager.kill(session_id, timeout=0)
 
-    assert response == {"status": terminal_status, "recovery": "result_unavailable"}
+    assert response == {"status": terminal_status, "recovery": "result_unavailable", "kill_requested": False}
     await manager.close()
 
 
@@ -4354,7 +4341,7 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
 
     monkeypatch.setattr(backend, "send_message", fail_delivery)
 
-    response = await manager.wait(session.session_id, timeout=0)
+    response = await manager.wait()
 
     assert response["status"] == "failed"
     assert response["agent_message"] == "保留していた本文"
@@ -4390,8 +4377,7 @@ async def test_stop_discards_terminal_session(
     assert "terminal" not in manager.expired_sessions
     assert manager.stopped_sessions["terminal"].session_id == "terminal"
     assert backend.release_calls == ["terminal"]
-    with pytest.raises(ValueError, match="identifier scheme mismatch: terminal"):
-        await manager.wait("terminal", timeout=0)
+    assert await manager.wait() == {"status": "expired"}
 
 
 @pytest.mark.asyncio
@@ -4590,22 +4576,24 @@ async def test_send_message_resumes_stopped_session(tmp_path: pathlib.Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_wait_stop_discards_only_after_terminal_result(tmp_path: pathlib.Path) -> None:
-    """waitのstop既定値とrunning応答は保持し、終端結果の応答後だけ破棄する。"""
+async def test_wait_keeps_the_session_after_returning_the_terminal_result(tmp_path: pathlib.Path) -> None:
+    """waitは破棄の指定を受け取らず、終端結果を返した後もsessionを保持する。"""
     manager, backend = _manager_with_fake("codex")
-    session = subject.SessionState("wait-stop", str(tmp_path), engine="codex")
+    session = subject.SessionState("wait-keep", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
 
-    assert (await manager.wait(session.session_id, timeout=0))["status"] == "running"
-    assert (await manager.wait(session.session_id, timeout=0, stop=True))["status"] == "running"
-    assert session.session_id in manager.sessions
+    assert (await manager.wait())["status"] == "running"
     _complete(session)
-    response = await manager.wait(session.session_id, timeout=0, stop=True)
+    response = await manager.wait()
 
     assert response["status"] == "completed"
     assert response["agent_message"] == "完了"
+    assert session.session_id in manager.sessions
+    assert session.session_id not in manager.stopped_sessions
+    assert not backend.release_calls
+
+    assert await manager.stop(session.session_id) == {}
     assert session.session_id in manager.stopped_sessions
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
     assert backend.release_calls == [session.session_id]
 
 
@@ -4645,7 +4633,7 @@ async def test_stopped_result_remains_available_after_retention_deadline(
     session = subject.SessionState(f"stopped-{operation}", str(tmp_path), engine="codex")
     _complete(session, message="保持結果")
     manager.sessions[session.session_id] = session
-    await manager.wait(session.session_id, timeout=0, stop=True)
+    await manager.kill(session.session_id, timeout=0, stop=True)
     retained = manager.stopped_sessions[session.session_id]
     assert retained.retention_deadline == session.retention_deadline
     manager.stopped_sessions[session.session_id] = dataclasses.replace(
@@ -4654,7 +4642,7 @@ async def test_stopped_result_remains_available_after_retention_deadline(
     )
 
     if operation == "wait":
-        response = await manager.wait(session.session_id, timeout=0)
+        response = await manager.wait()
         assert response["status"] == "completed"
         assert response["agent_message"] == "保持結果"
     else:
@@ -4676,7 +4664,7 @@ async def test_send_message_includes_stopped_previous_result_regardless_of_deadl
     session = subject.SessionState(f"stopped-send-{expired}", str(tmp_path), engine="codex")
     _complete(session, message="直前結果")
     manager.sessions[session.session_id] = session
-    await manager.wait(session.session_id, timeout=0, stop=True)
+    await manager.kill(session.session_id, timeout=0, stop=True)
     if expired:
         manager.stopped_sessions[session.session_id] = dataclasses.replace(
             manager.stopped_sessions[session.session_id],
@@ -4689,7 +4677,7 @@ async def test_send_message_includes_stopped_previous_result_regardless_of_deadl
 
 
 @pytest.mark.asyncio
-async def test_wait_stop_retains_result_for_agents_wait(
+async def test_kill_stop_retains_result_for_agents_wait(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -4708,12 +4696,11 @@ async def test_wait_stop_retains_result_for_agents_wait(
     _complete(session, message="CLI回収")
     manager.sessions[session.session_id] = session
 
-    await manager.wait(session.session_id, timeout=0, stop=True)
+    await manager.kill(session.session_id, timeout=0, stop=True)
     result_path = status_file.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
     assert result_path.exists()
     assert (
         agents_wait.wait_for_result(
-            session.session_id,
             0,
             environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
@@ -4748,18 +4735,18 @@ async def test_expired_session_kill_returns_success_response(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["wait", "send_message"])
+@pytest.mark.parametrize("operation", ["send_message", "kill"])
 async def test_unknown_session_is_distinct_from_expired_session(
     operation: str,
 ) -> None:
     """未登録のUUIDを期限切れ識別子と区別し、喪失時の復旧手順を返す。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
-    if operation == "wait":
-        assert await manager.wait(session_id, timeout=0) == {"status": "expired", "recovery": "missing"}
-        return
     with pytest.raises(ValueError) as exc_info:
-        await manager.send_message(session_id, "続行")
+        if operation == "send_message":
+            await manager.send_message(session_id, "続行")
+        else:
+            await manager.kill(session_id, timeout=0)
     message = str(exc_info.value)
     assert message.startswith(f"unknown session: {session_id}")
     assert "agents_server may have restarted" in message
@@ -4767,32 +4754,19 @@ async def test_unknown_session_is_distinct_from_expired_session(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("operation", "expected_label"),
-    [
-        ("wait", "session"),
-        ("send_message", "session"),
-        ("kill", "session"),
-        ("stop", "session"),
-    ],
-)
-async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(
-    operation: str,
-    expected_label: str,
-) -> None:
+@pytest.mark.parametrize("operation", ["send_message", "kill", "stop"])
+async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(operation: str) -> None:
     """体系外の識別子をsession喪失と区別して公開操作から返す。"""
     manager, _ = _manager_with_fake("codex")
     with pytest.raises(ValueError) as exc_info:
-        if operation == "wait":
-            await manager.wait("agent-session", timeout=0)
-        elif operation == "send_message":
+        if operation == "send_message":
             await manager.send_message("agent-session", "続行")
         elif operation == "kill":
             await manager.kill("agent-session", timeout=0)
         else:
             await manager.stop("agent-session")
     message = str(exc_info.value)
-    assert message.startswith(f"{expected_label} identifier scheme mismatch: agent-session")
+    assert message.startswith("session identifier scheme mismatch: agent-session")
     assert "unknown session" not in message
 
 
@@ -4800,17 +4774,15 @@ async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(
 async def test_identifier_resolution_precedes_scheme_classification(tmp_path: pathlib.Path) -> None:
     """登録済み状態の解決後にだけ未解決識別子の体系を判定する。"""
     manager, _ = _manager_with_fake("codex")
-    registered = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    registered = subject.SessionState("agent-session", str(tmp_path), engine="codex")
+    _complete(registered, message="登録済み")
     manager.sessions[registered.session_id] = registered
 
-    response = await manager.wait(registered.session_id, timeout=0)
-    assert response["status"] == "running"
+    assert (await manager.kill(registered.session_id, timeout=0))["agent_message"] == "登録済み"
 
-    missing_uuid = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
-    assert await manager.wait(missing_uuid, timeout=0) == {"status": "expired", "recovery": "missing"}
-
+    manager.sessions.pop(registered.session_id)
     with pytest.raises(ValueError) as mismatch_exc:
-        await manager.wait("agent-session", timeout=0)
+        await manager.kill(registered.session_id, timeout=0)
     assert "identifier scheme mismatch" in str(mismatch_exc.value)
     assert "unknown session" not in str(mismatch_exc.value)
 

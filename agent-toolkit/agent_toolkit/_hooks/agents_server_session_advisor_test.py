@@ -10,7 +10,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _WARNING_BODY = (
     "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-    "単一sessionは`wait(session_id)`、複数sessionは`wait_any(session_ids)`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
+    "`wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
     "観測しないまま終了すると、当該作業の成果を回収する主体が残らない。"
 )
@@ -36,6 +36,8 @@ def _record_operation(
     tool_input: dict[str, object] = {"session_id": remote_session_id}
     if operation in {"start", "start_explore"}:
         tool_input = {"cwd": str(state_directory), "prompt": "委譲する"}
+    elif operation == "wait":
+        tool_input = {}
     elif operation == "send_message":
         tool_input["prompt"] = "続行する"
     payload: dict[str, object] = {
@@ -246,9 +248,9 @@ def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
 def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> None:
     """Bash経由のatk agents-waitが未観測作業を解消する。"""
     commands = (
-        "atk agents-wait remote-direct --timeout=1",
+        "atk agents-wait --timeout=1",
         "uv run --project /plugin/agent-toolkit --locked --no-default-groups "
-        "/plugin/agent-toolkit/agent_toolkit/atk.py agents-wait --timeout 1 remote-script",
+        "/plugin/agent-toolkit/agent_toolkit/atk.py agents-wait --timeout 1",
     )
     for index, command in enumerate(commands):
         local_session_id = f"agents-wait-{index}"
@@ -258,14 +260,29 @@ def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> 
         assert _run_stop(tmp_path, local_session_id) == ""
 
 
-def test_agents_wait_any_resolves_pending_observation_for_all_targets(tmp_path: pathlib.Path) -> None:
-    """Bash経由の複数待機は指定した全sessionの未観測状態を解消する。"""
-    local_session_id = "agents-wait-any"
-    remote_session_ids = ("remote-first", "remote-second")
-    for remote_session_id in remote_session_ids:
+def test_agents_wait_resolves_pending_observation_for_all_owned_sessions(tmp_path: pathlib.Path) -> None:
+    """待機は呼出主体が所有する全sessionの未観測状態を解消する。"""
+    local_session_id = "agents-wait-owned"
+    for remote_session_id in ("remote-first", "remote-second"):
         _record_start(tmp_path, local_session_id, remote_session_id)
 
-    _record_bash(tmp_path, local_session_id, f"atk agents-wait-any {' '.join(remote_session_ids)} --timeout=1")
+    _record_bash(tmp_path, local_session_id, "atk agents-wait --timeout=1")
+
+    assert _run_stop(tmp_path, local_session_id) == ""
+
+
+def test_wait_response_resolves_pending_observation_for_unselected_sessions(tmp_path: pathlib.Path) -> None:
+    """終端1件を返した待機でも、同じ呼出主体の残るsessionの未観測状態を解消する。"""
+    local_session_id = "wait-unselected"
+    for remote_session_id in ("remote-selected", "remote-unselected"):
+        _record_start(tmp_path, local_session_id, remote_session_id)
+
+    _record_operation(
+        tmp_path,
+        local_session_id,
+        "wait",
+        {"session_id": "remote-selected", "status": "completed", "agent_message": "完了"},
+    )
 
     assert _run_stop(tmp_path, local_session_id) == ""
 
@@ -291,7 +308,7 @@ def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathli
         encoding="utf-8",
     )
 
-    _record_bash(tmp_path, local_session_id, f"atk agents-wait {remote_session_id} --timeout=1")
+    _record_bash(tmp_path, local_session_id, "atk agents-wait --timeout=1")
 
     assert _run_stop(tmp_path, local_session_id) == ""
 
@@ -302,7 +319,7 @@ def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_pat
     remote_session_id = "remote-argument"
     _record_start(tmp_path, local_session_id, remote_session_id)
 
-    _record_bash(tmp_path, local_session_id, f"printf '%s' 'atk agents-wait {remote_session_id} --timeout=1'")
+    _record_bash(tmp_path, local_session_id, "printf '%s' 'atk agents-wait --timeout=1'")
 
     assert _run_stop(tmp_path, local_session_id)
 

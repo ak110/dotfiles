@@ -160,12 +160,10 @@ if TYPE_CHECKING:
         _AGENTS_SERVER_SEND_TOOLS,
         _AGENTS_SERVER_START_TOOLS,
         _AGENTS_SERVER_TOOL_NAMES,
-        _AGENTS_SERVER_WAIT_TOOLS,
         _PLAN_MODE_SKILL_NAMES,
         _check_agents_server_continuation_input,
         _check_agents_server_cwd,
         _check_agents_server_list_repeat,
-        _check_agents_server_wait_mode,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
@@ -398,11 +396,8 @@ def _handle_agents_server_tool(
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         if _check_agents_server_cwd(tool_input):
             return 2
-    elif (
-        tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
-        and _check_agents_server_continuation_input(session_id, tool_input, tool_name)
-        or tool_name in _AGENTS_SERVER_WAIT_TOOLS
-        and _check_agents_server_wait_mode(payload, session_id, tool_input)
+    elif tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS and _check_agents_server_continuation_input(
+        session_id, tool_input, tool_name
     ):
         return 2
     emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})

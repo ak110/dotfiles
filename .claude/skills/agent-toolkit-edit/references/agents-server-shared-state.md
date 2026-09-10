@@ -10,7 +10,7 @@
 | 実行主体 | 実体 | 寿命 |
 | --- | --- | --- |
 | MCPサーバー | `agent-toolkit/agent_toolkit/agents_server_mcp.py` | ホストがMCPサーバーを起動する単位ごとに1プロセス。起動時の`CLAUDE_CODE_SESSION_ID`を保持し続ける。各プロセスが保持するsessionの集合は独立する |
-| `atk`のCLI | `atk agents-wait`、`atk agents-wait-any`、`atk agents-notify` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
+| `atk`のCLI | `atk agents-wait`、`atk agents-notify` | 呼び出しごとの短命プロセス。現行のsession識別子を得る |
 | フック | `agent-toolkit/agent_toolkit/_hooks/posttooluse.py` | イベントごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 | statusline | `rust/claude-statusline` | 描画ごとの短命プロセス。入力JSONで現行のsession識別子を得る |
 
@@ -27,14 +27,14 @@ Codex CLIが起動するMCPサーバープロセスへは、`codex app-server`�
 | 共有状態 | 正本 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
 | session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | MCPサーバーだけ |
-| statusline向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents-wait`、`atk agents-wait-any` | 当該ルートに属する各MCPサーバー |
+| statusline向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents-wait` | 当該ルートに属する各MCPサーバー |
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を起動元のsession識別子へ解決する主体 | 当該sessionを起動したMCPサーバー |
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイルを書き込むMCPサーバー | statusline、同じルートに属する他のMCPサーバー | 当該状態ファイルを書き込むMCPサーバー |
-| 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents-wait`、`atk agents-wait-any`、statusline | MCPサーバー（作成と削除）、待機CLI（選択した結果だけを削除） |
-| 複数待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-any-locks/<session_id>.lock`のファイルロック | `atk agents-wait-any` | `atk agents-wait-any`。ロックファイル自体は解放後も保持する |
+| 終端結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`の存在 | MCPサーバー、`atk agents-wait`、statusline | MCPサーバー（作成と削除）、待機CLI（選択した結果だけを削除） |
+| 待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<session_id>.lock`のファイルロック | `atk agents-wait` | `atk agents-wait`。ロックファイル自体は解放後も保持する |
 | 全sessionの終端登録と再開情報 | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー | 当該sessionを所有するMCPサーバー |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | session-reviewの証拠抽出器 | agents_serverのCodex backend |
-| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents-wait`、`atk agents-wait-any` | `atk agents-notify` |
+| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents-wait` | `atk agents-notify` |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents-wait` | PostToolUseフック（`start`系応答の`root_session_id`を入力とする） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
 

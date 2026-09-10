@@ -25,95 +25,40 @@ def _fail(message: str, code: int) -> int:
 
 
 def wait_for_result(
-    session_id: str,
     timeout: float,
     *,
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
 ) -> int:
-    """終端結果又は通知を標準出力へ書き、終了コードを返す。
+    """自身が保持するsessionの最初の終端結果又は通知を1件返す。
 
-    終端結果と通知が無いまま状態ファイル全体からsessionが消失した場合は、
+    対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
+    双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
+    対象集合は待機の発行時点で確定し、待機中に開始したsessionを含めない。
+    終端結果と通知が無いまま状態ファイル全体から対象が消失した場合は、
     MCPのwaitと同じ`status: expired`を終了コード7で返す。既存の成功と
     エラーの終了コードから区別し、待機上限まで消失を見逃さないためである。
     """
-    if not status_file.valid_session_id(session_id):
-        return _fail(f"session_idの形式が不正です: {session_id}", 5)
-    root_session_id = status_file.resolve_conversation_root_session_id(
-        os.environ if environment is None else environment, state_root
-    )
-    if root_session_id is None:
+    env = os.environ if environment is None else environment
+    root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
+    identity = status_file.resolve_status_file_identity(env)
+    if root_session_id is None or identity is None:
         return _fail(
             "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait`で観測してください。",
             4,
         )
-    result_path = status_file.results_directory(root_session_id, state_root) / f"{session_id}.json"
-    started_at = time.monotonic()
-    deadline = time.monotonic() + timeout
-    while True:
-        result, read_error = _read_result(result_path)
-        if read_error is not None:
-            return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
-        status_paths = status_file.list_status_files(root_session_id, state_root)
-        notices = status_file.take_notices(root_session_id, session_id, state_root)
-        if result is not None:
-            if notices:
-                result["notices"] = notices
-            print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-            result_path.unlink(missing_ok=True)
-            return 0
-        if notices:
-            response: dict[str, Any] = _running_response(session_id, _session_updated_at(status_paths, session_id))
-            response["notices"] = notices
-            print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
-            return 0
-        retained = _session_is_retained(
-            status_paths,
-            session_id,
-        )
-        if retained is False:
-            response = {"session_id": session_id, "status": "expired"}
-            print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
-            return 7
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            print(
-                json.dumps(
-                    _running_response(session_id, _session_updated_at(status_paths, session_id)),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-            )
-            return 3
-        updated_at = _session_updated_at(status_paths, session_id)
-        response = _running_response(session_id, updated_at)
-        if response.get("stalled") and time.monotonic() - started_at >= state.STALL_NOTICE_SECONDS:
-            print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
-            return 3
-        time.sleep(min(1.0, remaining))
+    own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
+    result_directory = status_file.results_directory(root_session_id, state_root)
+    listed = _read_sessions(own_status_path)
+    invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
+    if invalid:
+        return _fail(f"session_idの形式が不正です: {invalid[0]}", 5)
+    ordered_ids = sorted({session["session_id"] for session in listed or ()} | _retained_result_session_ids(result_directory))
+    if not ordered_ids and listed is not None:
+        print(json.dumps({"status": "expired"}, separators=(",", ":")))
+        return 7
 
-
-def wait_for_any_result(
-    session_ids: list[str],
-    timeout: float,
-    *,
-    environment: Mapping[str, str] | None = None,
-    state_root: pathlib.Path | None = None,
-) -> int:
-    """指定したsession群の最初の終端結果又は通知を1件返す。"""
-    ordered_ids = sorted(set(session_ids))
-    if not ordered_ids or any(not status_file.valid_session_id(session_id) for session_id in ordered_ids):
-        return _fail("session_idの形式が不正です", 5)
-    root_session_id = status_file.resolve_conversation_root_session_id(
-        os.environ if environment is None else environment, state_root
-    )
-    if root_session_id is None:
-        return _fail(
-            "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait_any`で観測してください。",
-            4,
-        )
-
-    lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-any-locks"
+    lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_files: list[Any] = []
     try:
@@ -126,8 +71,8 @@ def wait_for_any_result(
                 return _fail(f"同じsessionの待機所有権を別の実行が保持しています: {session_id}", 8)
             lock_files.append(lock_file)
 
-        result_directory = status_file.results_directory(root_session_id, state_root)
-        deadline = time.monotonic() + timeout
+        started_at = time.monotonic()
+        deadline = started_at + timeout
         while True:
             status_paths = status_file.list_status_files(root_session_id, state_root)
             for session_id in ordered_ids:
@@ -150,25 +95,34 @@ def wait_for_any_result(
                     return 0
 
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
-            if all(value is False for value in retained.values()):
+            if ordered_ids and all(value is False for value in retained.values()):
                 print(json.dumps({"session_id": ordered_ids[0], "status": "expired"}, separators=(",", ":")))
                 return 7
+            selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
+            response = _running_response(selected, None if selected is None else _session_updated_at(status_paths, selected))
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), ordered_ids[0])
-                print(
-                    json.dumps(
-                        _running_response(selected, _session_updated_at(status_paths, selected)),
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    )
-                )
+                print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+                return 3
+            if response.get("stalled") and time.monotonic() - started_at >= state.STALL_NOTICE_SECONDS:
+                print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
                 return 3
             time.sleep(min(1.0, remaining))
     finally:
         for lock_file in reversed(lock_files):
             release_lock(lock_file)
             lock_file.close()
+
+
+def _retained_result_session_ids(result_directory: pathlib.Path) -> set[str]:
+    """終端結果ファイルが残るsession識別子を返す。"""
+    try:
+        paths = tuple(result_directory.iterdir())
+    except OSError:
+        return set()
+    return {
+        path.stem for path in paths if path.suffix == ".json" and path.is_file() and status_file.valid_session_id(path.stem)
+    }
 
 
 def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -233,9 +187,14 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
     return sessions
 
 
-def _running_response(session_id: str, updated_at: str | None) -> dict[str, Any]:
-    """非終端の待機応答へ最終活動時刻の観測値を加える。"""
-    response: dict[str, Any] = {"session_id": session_id, "status": "running"}
+def _running_response(session_id: str | None, updated_at: str | None) -> dict[str, Any]:
+    """非終端の待機応答へ最終活動時刻の観測値を加える。
+
+    対象を1件も解決できない場合は`session_id`を省き、`status`だけを返す。
+    """
+    response: dict[str, Any] = {"status": "running"}
+    if session_id is not None:
+        response = {"session_id": session_id, "status": "running"}
     if updated_at is None:
         return response
     try:

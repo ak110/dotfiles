@@ -9,7 +9,6 @@ import dataclasses
 import datetime
 import json
 import logging
-import math
 import os
 import pathlib
 import re
@@ -88,14 +87,6 @@ def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return False
     return isinstance(manifest, dict) and manifest.get("name") == "agent-toolkit"
-
-
-def _is_uuid_session_id(session_id: str) -> bool:
-    """session登録簿の不在を終端として扱えるUUID形式かを返す。"""
-    try:
-        return str(UUID(session_id)) == session_id.lower()
-    except ValueError:
-        return False
 
 
 @dataclasses.dataclass
@@ -394,11 +385,15 @@ class AgentsServerManager:
         progress: str,
         result_available: bool,
     ) -> dict[str, Any]:
-        """sessionを一覧向けの公開項目へ射影する。"""
+        """sessionを一覧向けの公開項目へ射影する。
+
+        最終活動時刻からの経過が閾値を超えたsessionへ`stalled`を付す。
+        停滞の判定は待機せずに行えるよう、非終端の待機応答ではなく本項目で返す。
+        """
         label = session.label
         if len(label) > 100:
             label = f"{label[:100]}…"
-        return {
+        listed: dict[str, Any] = {
             "session_id": session.session_id,
             "status": status,
             "progress": progress,
@@ -407,6 +402,13 @@ class AgentsServerManager:
             "label": label,
             "result_available": result_available,
         }
+        seconds_since_update = _elapsed_seconds(session.updated_at)
+        if seconds_since_update is not None:
+            listed["updated_at"] = session.updated_at
+            listed["seconds_since_update"] = seconds_since_update
+            if seconds_since_update >= state.STALL_NOTICE_SECONDS:
+                listed["stalled"] = True
+        return listed
 
     def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
         """保持中のsessionを開始時刻順の公開項目へ射影する。
@@ -733,129 +735,74 @@ class AgentsServerManager:
         self._wait_timeouts[request_bucket] = resolved
         return resolved
 
-    async def wait(
-        self,
-        session_id: str,
-        timeout: float | None = None,
-        request_bucket: str = "main",
-        stop: bool = False,
-    ) -> dict[str, Any]:
-        """sessionの終端を待ち、登録簿の現在値から結果本文を返す。
+    def _wait_target_ids(self) -> list[str]:
+        """待機の対象となる保持中sessionを識別子順に返す。
 
-        `timeout`が`None`の場合は、実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間から導出した上限を使う。
+        未回収の終端結果を持つ破棄済み又は期限切れsessionも対象へ含め、
+        呼び出し元が結果本文を回収できないまま失う経路を残さない。
         """
-        stopped_state = self._resolve_stopped_session(session_id)
-        recovered_state: SessionResumeState | None = None
-        if stopped_state is None:
-            recovered_state = self._restore_registry_session(session_id)
-            stopped_state = recovered_state
-        if recovered_state is not None:
-            recovered_response = self._take_stopped_result(session_id, recovered_state)
-            if recovered_response is not None:
-                self.stopped_sessions.pop(session_id, None)
-                return recovered_response
-            return self._recovered_result_response(recovered_state)
-        if stopped_state is not None:
-            stopped_response = self._take_stopped_result(session_id, stopped_state)
-            if stopped_response is not None:
-                notices = self._take_notices(session_id)
-                return self._response_with_notices(stopped_response, notices)
-        expired_response = self._expired_result_response(session_id)
-        if expired_response is not None:
-            expired_response = self._response_with_notices(expired_response, self._take_notices(session_id))
-            return await self._stop_after_terminal_response(session_id, expired_response, stop)
-        if timeout is None:
-            timeout = await self._resolve_wait_timeout(request_bucket)
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout < 0:
-            raise ValueError("timeout must be non-negative")
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + float(timeout)
-        pending = self._pending_resumes.get(session_id)
-        if pending is not None:
-            notices = self._take_notices(session_id)
-            if notices:
-                response = self._response_with_notices(self._pending_resume_status(pending), notices)
-                return await self._stop_after_terminal_response(session_id, response, stop)
-            if timeout == 0:
-                return await self._stop_after_terminal_response(
-                    session_id,
-                    self._pending_resume_status(pending),
-                    stop,
-                )
-            while self._pending_resumes.get(session_id) is pending and not pending.task.done():
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    return self._pending_resume_status(pending)
-                try:
-                    await asyncio.wait_for(asyncio.shield(pending.task), timeout=min(1.0, remaining))
-                except TimeoutError:
-                    notices = self._take_notices(session_id)
-                    if notices:
-                        response = self._response_with_notices(self._pending_resume_status(pending), notices)
-                        return await self._stop_after_terminal_response(session_id, response, stop)
-        if (
-            recovered_state is None
-            and stopped_state is None
-            and _is_uuid_session_id(session_id)
-            and session_registry.resolve(session_id).state is session_registry.Resolution.MISSING
-        ):
-            return {"status": "expired", "recovery": "missing"}
-        session = self._get_session(session_id)
-        await self._advance_child_session_wait(session)
-        notices = self._take_notices(session_id)
-        if session.result_available or notices:
-            response = self._response_with_notices(self._result_response(session), notices)
-            return await self._stop_after_terminal_response(session_id, response, stop)
-        if not session.result_available:
-            while not session.result_available:
-                await self._advance_child_session_wait(session)
-                if session.result_available:
-                    break
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    break
-                async with self._condition:
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(
-                            self._condition.wait_for(
-                                lambda: (current := self.sessions.get(session_id)) is None or current.result_available
-                            ),
-                            timeout=min(0.1 if session.awaiting_auto_resume else 1.0, remaining),
-                        )
-                session = self._get_session(session_id)
-                await self._advance_child_session_wait(session)
-                notices = self._take_notices(session_id)
-                if session.result_available or notices:
-                    response = self._response_with_notices(self._result_response(session), notices)
-                    return await self._stop_after_terminal_response(session_id, response, stop)
-        return await self._stop_after_terminal_response(
-            session_id,
-            self._result_response(self._get_session(session_id)),
-            stop,
-        )
+        targets = set(self.sessions) | set(self._pending_resumes)
+        for session_id, resume_state in (*self.expired_sessions.items(), *self.stopped_sessions.items()):
+            if self._stopped_result_response(resume_state) is not None:
+                targets.add(session_id)
+        return sorted(targets)
 
-    async def wait_any(
-        self,
-        session_ids: list[str],
-        timeout: float | None = None,
-        request_bucket: str = "main",
-    ) -> dict[str, Any]:
-        """指定集合から最初に観測可能となったsessionを1件返す。"""
-        ordered_ids = sorted(set(session_ids))
-        if not ordered_ids or any(not isinstance(session_id, str) or not session_id for session_id in ordered_ids):
-            raise ValueError("session_ids must contain non-empty strings")
-        if timeout is None:
-            timeout = await self._resolve_wait_timeout(request_bucket)
-        if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout < 0:
-            raise ValueError("timeout must be non-negative")
+    def _retained_result_response(self, session_id: str) -> dict[str, Any] | None:
+        """破棄済み又は期限切れsessionの未回収の終端結果だけを返す。"""
+        stopped_state = self._resolve_stopped_session(session_id)
+        if stopped_state is not None:
+            response = self._take_stopped_result(session_id, stopped_state)
+            if response is None:
+                return None
+            return self._response_with_notices(response, self._take_notices(session_id))
+        if self._resolve_expired_session(session_id) is None:
+            return None
+        response = self._expired_result_response(session_id)
+        if response is None or "agent_message" not in response:
+            return None
+        return self._response_with_notices(response, self._take_notices(session_id))
+
+    async def wait(self) -> dict[str, Any]:
+        """委譲先の終端を待ち、終端時だけ結果本文を返す。
+
+        引数を受け取らない。対象は当該MCPサーバープロセスが保持する起動中のsession全体とし、最初に終端した1件の結果を返す。
+        残るsessionの終端結果は次の呼び出しまで保持する。
+        待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
+        当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
+        保持中のsessionの最終活動時刻と停滞の印は`list`が返す。待機せずに現状態を確認する場合は`list`を発行する。
+        以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
+        呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
+        本ツールの背景移行で待たず、`atk agents-wait`を実行ホストの背景ジョブとして起動して待機表明でターンを終える。
+        当該背景ジョブの完了通知を受領した後に本ツールを1回発行し、結果本文の配送を確定させる。
+        委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
+        呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
+        終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
+        終端結果は呼び出し元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
+        受領した終端結果のsessionを破棄する場合は`stop`を発行する。
+        終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
+        委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
+        再待機の要否は`notices`の有無ではなく`status`で判定する。
+        `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
+        応答へ載せた通知は回収済みとして再び返さない。
+        """
+        timeout = await self._resolve_wait_timeout("main")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout)
+        ordered_ids = self._wait_target_ids()
+        # 保留中の結果を進める判定は待機の刻みごとに1回だけ行う。
+        # backendは背景作業の完了通知で受け取った再開turnの結果へ保留中の結果を差し替えるため、
+        # 通知のたびに判定すると当該差し替えの前に保留中の結果を確定してしまう。
+        advance_pending = True
 
         while True:
             for session_id in ordered_ids:
+                retained_response = self._retained_result_response(session_id)
+                if retained_response is not None:
+                    return {"session_id": session_id, **retained_response}
                 session = self.sessions.get(session_id)
-                if session is not None:
+                if session is not None and advance_pending:
                     await self._advance_child_session_wait(session)
+            advance_pending = False
             async with self._condition:
                 terminal: list[SessionState] = []
                 for session_id in ordered_ids:
@@ -880,22 +827,26 @@ class AgentsServerManager:
                         return {"session_id": session_id, **response}
 
                 retained = [self.sessions[session_id] for session_id in ordered_ids if session_id in self.sessions]
-                if not retained:
+                pending_ids = [session_id for session_id in ordered_ids if session_id in self._pending_resumes]
+                if not retained and not pending_ids:
+                    if not ordered_ids:
+                        return {"status": "expired"}
                     session_id = ordered_ids[0]
-                    response = self._expired_result_response(session_id) or {"status": "expired"}
-                    return {"session_id": session_id, **response}
+                    return {"session_id": session_id, "status": "expired"}
 
                 remaining = deadline - loop.time()
                 if remaining <= 0:
+                    if not retained:
+                        session_id = pending_ids[0]
+                        response = self._pending_resume_status(self._pending_resumes[session_id])
+                        return {"session_id": session_id, **response}
                     session = next((candidate for candidate in retained if not candidate.result_delivered), retained[0])
-                    response = (
-                        session.public_status()
-                        if session.result_available and session.result_delivered
-                        else self._result_response(session)
-                    )
-                    return {"session_id": session.session_id, **response}
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._condition.wait(), timeout=min(1.0, remaining))
+                    return {"session_id": session.session_id, **self._result_response(session)}
+                interval = 0.1 if any(candidate.awaiting_auto_resume for candidate in retained) else 1.0
+                try:
+                    await asyncio.wait_for(self._condition.wait(), timeout=min(interval, remaining))
+                except TimeoutError:
+                    advance_pending = True
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
@@ -990,25 +941,17 @@ class AgentsServerManager:
     def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
         """wait又はkillの応答を組み立て、返した終端結果を回収済みにする。
 
-        `elapsed_seconds`はturnの`started_at`起点、`seconds_since_update`は`updated_at`起点である。
+        `elapsed_seconds`はturnの`started_at`起点である。
+        最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。
         """
         response = session.public_status(include_result=session.result_available)
         if response.get("status") == "running":
             elapsed_seconds = _elapsed_seconds(session.started_at)
             if elapsed_seconds is not None:
                 response["elapsed_seconds"] = elapsed_seconds
-            seconds_since_update = _elapsed_seconds(session.updated_at)
-            if seconds_since_update is not None:
-                response["updated_at"] = session.updated_at
-                response["seconds_since_update"] = seconds_since_update
-                if seconds_since_update >= state.STALL_NOTICE_SECONDS:
-                    response["stalled"] = True
         if not include_progress:
             response.pop("progress", None)
             response.pop("elapsed_seconds", None)
-            response.pop("updated_at", None)
-            response.pop("seconds_since_update", None)
-            response.pop("stalled", None)
         if "agent_message" in response:
             session.result_delivered = True
             session.touch()
@@ -1029,12 +972,6 @@ class AgentsServerManager:
         elapsed_seconds = _elapsed_seconds(pending.state.started_at)
         if elapsed_seconds is not None:
             response["elapsed_seconds"] = elapsed_seconds
-        seconds_since_update = _elapsed_seconds(pending.state.updated_at)
-        if seconds_since_update is not None:
-            response["updated_at"] = pending.state.updated_at
-            response["seconds_since_update"] = seconds_since_update
-            if seconds_since_update >= state.STALL_NOTICE_SECONDS:
-                response["stalled"] = True
         return response
 
     async def _run_resume(self, resume_state: SessionResumeState, prompt: ResumePrompt) -> SessionState:
@@ -1518,66 +1455,30 @@ async def start_shell(
 
 
 @mcp.tool(name="wait", structured_output=True)
-async def wait(
-    session_id: str,
-    timeout: Annotated[
-        float | None,
-        Field(
-            description="待機上限秒数。省略するとプロンプトキャッシュの保持期間から導出した上限を使う。委譲先として起動されたセッションでは240秒を上限とする。0は待機せず現状態を返す。"
-        ),
-    ] = None,
-    request_bucket: Annotated[
-        str,
-        Field(description="既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"),
-    ] = "main",
-    stop: Annotated[
-        bool,
-        Field(description="終端結果を返した応答に限り、同じsessionを応答後に破棄する。"),
-    ] = False,
-) -> dict[str, Any]:
+async def wait() -> dict[str, Any]:
     """委譲先の終端を待ち、終端時だけ結果本文を返す。
 
-    `timeout`を省略した場合の既定は、プロンプトキャッシュの保持期間から導出した上限とする。委譲先として起動されたセッションでは240秒を上限とする。
+    引数を受け取らない。対象は当該MCPサーバープロセスが保持する起動中のsession全体とし、最初に終端した1件の結果を返す。
+    残るsessionの終端結果は次の呼び出しまで保持する。
+    待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
     当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
-    固有のtimeout要件がなければ`timeout`を省略する。`timeout=0`は待機せず現状態を返す。
-    以下の`/goal`の条件に該当しない場合は、待機を発行する直前に稼働中の委譲先の件数を確認する。
-    1件なら本ツールを前景で発行する。2件以上なら全対象を`wait_any`へ渡して前景で発行する。
+    保持中のsessionの最終活動時刻と停滞の印は`list`が返す。待機せずに現状態を確認する場合は`list`を発行する。
+    以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
     呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
-    本ツールの背景移行で待たず、`atk agents-wait <session_id>`を
-    実行ホストの背景ジョブとして起動して待機表明でターンを終える。
-    当該背景ジョブの完了通知を受領した後に`timeout=0`の本ツールを1回発行し、結果本文の配送を確定させる。
+    本ツールの背景移行で待たず、`atk agents-wait`を実行ホストの背景ジョブとして起動して待機表明でターンを終える。
+    当該背景ジョブの完了通知を受領した後に本ツールを1回発行し、結果本文の配送を確定させる。
     委譲先が背景作業を残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
     呼び出し元は背景作業の完了後に`send_message`で再開を指示しない。
-    終端前に`status: running`が返った場合は、同じ`session_id`へ`wait`を再発行して待機を継続する。
-    終端結果は呼び出し元が最初の`wait`で受領するまで保持し、経過時間では解放しない。
+    終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
+    終端結果は呼び出し元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
+    受領した終端結果のsessionを破棄する場合は`stop`を発行する。
     終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
     委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でも当該通知を`notices`へ載せて復帰する。
     再待機の要否は`notices`の有無ではなく`status`で判定する。
-    `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して`wait`を再発行しない。
+    `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
     応答へ載せた通知は回収済みとして再び返さない。
     """
-    return await _MANAGER.wait(session_id, timeout, request_bucket, stop)
-
-
-@mcp.tool(name="wait_any", structured_output=True)
-async def wait_any(
-    session_ids: list[str],
-    timeout: Annotated[
-        float | None,
-        Field(description="待機上限秒数。省略するとrequest bucketから導出する。0は待機せず現状態を返す。"),
-    ] = None,
-    request_bucket: Annotated[
-        str,
-        Field(description="既定timeoutの導出に使うrequest bucket。呼び出し元がサブエージェントの場合だけ`subagent`を渡す。"),
-    ] = "main",
-) -> dict[str, Any]:
-    """複数の委譲先から最初に観測可能となったsessionを1件返す。
-
-    同じ呼び出し元が未終端sessionを2件以上所有する待機区間で使う。
-    応答は選択した`session_id`を必ず含み、残るsessionの結果は保持する。
-    終端前に`status: running`又は通知を受領した場合は、残る集合へ本ツールを再発行する。
-    """
-    return await _MANAGER.wait_any(session_ids, timeout, request_bucket)
+    return await _MANAGER.wait()
 
 
 @mcp.tool(name="send_message", structured_output=True)
@@ -1651,6 +1552,9 @@ async def list_sessions(include_terminated: bool = False) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
     各sessionの`session_id`、`status`、`progress`、`model_type`、`launch_kind`、`label`及び`result_available`を返す。
+    あわせて各sessionの最終活動時刻を`updated_at`、そこからの経過秒数を`seconds_since_update`として返す。
+    経過が閾値を超えたsessionには`stalled`を付す。
+    待機せずに停滞を判定する場合は本ツールを発行する。
     `label`は起動文又はコマンドの先頭100文字までとし、切り詰めた場合は末尾へ`…`を付す。
     結果本文は返さないため、終端の観測と結果の受領は`wait`で行う。
     既定では未回収結果を持たない終端済み又は`expired`のsessionを除き、除いた件数を`omitted`へ返す。

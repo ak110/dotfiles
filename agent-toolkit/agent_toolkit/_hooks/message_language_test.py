@@ -378,7 +378,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("pending_question_advisor.py:_BLOCK_FIX", "AskUserQuestionで確認するか、当該問いかけを本文から除いて応答を書き直す。"),
     (
         "agents_server_session_advisor.py:_WARNING_BODY",
-        "`agents_server`の`session`に、観測を試みていない作業が残っている。`wait(session_id)`で観測するか、"
+        "`agents_server`の`session`に、観測を試みていない作業が残っている。`wait`で観測するか、"
         "結果が不要なら`kill(session_id)`で破棄してから終了する。`send_message`は新しい作業を配送するだけで観測しないため、"
         "この警告は解消しない。観測しないまま終了すると、当該作業の成果を回収する主体が残らない。",
     ),

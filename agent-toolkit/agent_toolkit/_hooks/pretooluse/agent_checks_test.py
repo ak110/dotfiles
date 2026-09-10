@@ -40,49 +40,28 @@ def _write_agents_server_wait_state(tmp_path: pathlib.Path, session_id: str, rec
     )
 
 
-def test_wait_is_blocked_when_owner_has_multiple_unfinished_sessions(tmp_path: pathlib.Path) -> None:
-    """同じ呼出主体の未終端2件ではblocking waitを遮断する。"""
-    session_id = "wait-mode-block"
-    _write_agents_server_wait_state(
-        tmp_path,
-        session_id,
+@pytest.mark.parametrize(
+    "records",
+    [
         {name: {"owner_agent_id": "main", "status": "running"} for name in ("remote-a", "remote-b")},
-    )
-    result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "remote-a"}},
-        env_overrides=_plan_file_state_env(tmp_path),
-    )
-    assert result.returncode == 2
-    assert "wait_any" in result.stderr
-
-    probe = _run(
-        {
-            "session_id": session_id,
-            "tool_name": "mcp__agents_server__wait",
-            "tool_input": {"session_id": "remote-a", "timeout": 0},
-        },
-        env_overrides=_plan_file_state_env(tmp_path),
-    )
-    assert probe.returncode == 0
-
-
-def test_wait_is_allowed_when_other_owner_holds_unfinished_sessions(tmp_path: pathlib.Path) -> None:
-    """別所有と所有者不明のsessionは単一所有のwaitを遮断しない。"""
-    session_id = "wait-mode-allow"
-    _write_agents_server_wait_state(
-        tmp_path,
-        session_id,
         {
             "own": {"owner_agent_id": "main", "status": "running"},
             "other": {"owner_agent_id": "agent-2", "status": "running"},
             "legacy": {"status": "running"},
         },
-    )
+    ],
+    ids=["same-owner", "mixed-owner"],
+)
+def test_wait_is_allowed_regardless_of_unfinished_session_count(tmp_path: pathlib.Path, records: dict[str, dict]) -> None:
+    """未終端sessionの件数と所有主体によらず待機の発行を遮断しない。"""
+    session_id = "wait-mode-allow"
+    _write_agents_server_wait_state(tmp_path, session_id, records)
     result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "own"}},
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {}},
         env_overrides=_plan_file_state_env(tmp_path),
     )
     assert result.returncode == 0
+    assert "blocked" not in result.stderr
 
 
 class TestBashCommandContractWarnings:

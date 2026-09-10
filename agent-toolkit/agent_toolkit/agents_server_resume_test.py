@@ -6,6 +6,7 @@
 import asyncio
 import json
 import pathlib
+from collections.abc import Coroutine
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -25,6 +26,15 @@ _STATE_TIMEOUT = 10.0
 # 自動再開を観測する検体では、_STATE_TIMEOUTより長い待機上限をmanager.waitへ与える。
 # 観測前にwaitが期限切れになると自動再開の送信自体が発生しない。
 _RESUME_WAIT_TIMEOUT = 30.0
+
+
+def _wait_with_timeout(manager: subject.AgentsServerManager, timeout: float) -> Coroutine[Any, Any, dict[str, Any]]:
+    """待機上限を確定してから引数なしのwaitを発行する。
+
+    `wait`は待機上限を入力として受け取らないため、上限の導出結果だけをテスト用の値へ差し替える。
+    """
+    manager._wait_timeouts["main"] = timeout
+    return manager.wait()
 
 
 class SystemMessage:
@@ -207,7 +217,7 @@ async def _auto_resume_after_child_termination(
     child_session_id: str,
 ) -> dict[str, Any]:
     """孫sessionを終端させ、継続指示後の結果を返す。"""
-    wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
+    wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
     await _await_state(lambda: session.awaiting_auto_resume)
     assert wait_task.done() is False
     session_registry.publish(child_session_id, terminal=True)
@@ -316,7 +326,7 @@ async def test_wait_returns_result_when_child_session_is_missing(
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session不在時の結果"))
 
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["status"] == "completed"
         assert result["error"] == {"unobservedSessions": [child_session_id]}
@@ -343,7 +353,7 @@ async def test_wait_returns_result_when_child_session_is_unreadable(
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session読取不能時の結果"))
 
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["status"] == "completed"
         assert result["error"] == {"unobservedSessions": [child_session_id]}
@@ -366,7 +376,7 @@ async def test_wait_preserves_unobserved_child_sessions_after_auto_resume(
     terminal_session_id = f"child-terminal-{unobserved_state}"
     unobserved_session_id = f"child-{unobserved_state}"
     try:
-        session = await _start(manager, tmp_path, monkeypatch)
+        await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(terminal_session_id, terminal=True)
         if unobserved_state == "unreadable":
             registry_path = session_registry.registry_directory() / f"{unobserved_session_id}.json"
@@ -376,7 +386,7 @@ async def test_wait_preserves_unobserved_child_sessions_after_auto_resume(
         _emit_child_start(client, unobserved_session_id)
         client.emit(ResultMessage("孫session混在時の初回結果"))
 
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: len(client.queries) == 2)
         client.emit(ResultMessage("孫session混在時の再開結果"))
         result = await wait_task
@@ -402,13 +412,13 @@ async def test_wait_accumulates_unobserved_child_sessions_across_auto_resumes(
     second_terminal_session_id = "child-terminal-second"
     unreadable_session_id = "child-unreadable-second"
     try:
-        session = await _start(manager, tmp_path, monkeypatch)
+        await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(first_terminal_session_id, terminal=True)
         _emit_child_start(client, first_terminal_session_id)
         _emit_child_start(client, missing_session_id)
         client.emit(ResultMessage("1回目の孫session混在結果"))
 
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         await _await_state(lambda: len(client.queries) == 2)
 
         session_registry.publish(second_terminal_session_id, terminal=True)
@@ -444,7 +454,7 @@ async def test_wait_returns_result_without_child_sessions(
     manager, backend = _manager(client, monkeypatch)
     try:
         session = await _start(manager, tmp_path, monkeypatch)
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         client.emit(TaskStartedMessage("task-1"))
         client.emit(ResultMessage("孫なしの結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
@@ -477,7 +487,7 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
 
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
-        assert set(result) == {"agent_message", "status"}
+        assert set(result) == {"session_id", "agent_message", "status"}
     finally:
         await backend.close()
 
@@ -493,12 +503,12 @@ async def test_unobserved_child_sessions_appear_in_error(
     manager, backend = _manager(client, monkeypatch)
     child_session_id = "child-deadline"
     try:
-        session = await _start(manager, tmp_path, monkeypatch)
+        await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child_session_id, terminal=False)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("孫session待機中"))
 
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["error"] == {"unobservedSessions": [child_session_id]}
     finally:
@@ -516,12 +526,12 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
     manager, backend = _manager(client, monkeypatch)
     child_session_id = "child-error"
     try:
-        session = await _start(manager, tmp_path, monkeypatch)
+        await _start(manager, tmp_path, monkeypatch)
         session_registry.publish(child_session_id, terminal=False)
         _emit_child_start(client, child_session_id)
         client.emit(ResultMessage("失敗結果", is_error=True, errors=["既存エラー"]))
 
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["error"] == {
             "message": "既存エラー",
@@ -609,7 +619,7 @@ async def test_codex_child_session_is_published_as_unobserved(
     send_message = AsyncMock()
     monkeypatch.setattr(backend, "send_message", send_message)
     try:
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
         assert result["error"] == {"unobservedSessions": [child_session_id]}
         assert session.live_child_session_ids == set()
         send_message.assert_not_awaited()
@@ -628,7 +638,7 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
     manager, backend = _manager(client, monkeypatch)
     try:
         session = await _start(manager, tmp_path, monkeypatch)
-        wait_task = asyncio.create_task(manager.wait(session.session_id, timeout=_RESUME_WAIT_TIMEOUT))
+        wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         client.emit(TaskStartedMessage("task-1"))
         client.emit(ResultMessage("初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
@@ -647,7 +657,7 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
         assert session.auto_resume_consumed is True
         assert session.live_task_ids == set()
         await _await_state(lambda: session.session_id not in manager.sessions)
-        assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
+        assert await _wait_with_timeout(manager, 0) == {"status": "expired"}
     finally:
         await backend.close()
 
@@ -663,7 +673,7 @@ async def test_result_without_background_task_is_immediately_available(
     try:
         session = await _start(manager, tmp_path, monkeypatch)
         client.emit(ResultMessage("通常結果"))
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["agent_message"] == "通常結果"
         assert session.auto_resume_consumed is False
@@ -691,13 +701,13 @@ async def test_pending_result_is_finalized_without_auto_resume(
         if completion == "stream_end":
             client.end_stream()
 
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["agent_message"] == "保留結果"
         assert session.awaiting_auto_resume is False
         assert session.pending_result is None
         await _await_state(lambda: session.session_id not in manager.sessions)
-        assert await manager.wait(session.session_id, timeout=0) == {"status": "expired"}
+        assert await _wait_with_timeout(manager, 0) == {"status": "expired"}
     finally:
         await backend.close()
 
@@ -752,7 +762,7 @@ async def test_send_message_finalizes_pending_result_before_starting_reply(
 
         client.emit(TaskUpdatedMessage("task-1", "completed"))
         client.emit(ResultMessage("reply結果"))
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
         assert result["agent_message"] == "reply結果"
     finally:
         await backend.close()
@@ -777,7 +787,7 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
             client.emit(ResultMessage("再開結果", origin={"kind": "task-notification"}))
         else:
             client.emit(ResultMessage("通常結果"))
-        await manager.wait(session.session_id, timeout=1)
+        await _wait_with_timeout(manager, 1)
 
         response = await manager.send_message(session.session_id, "次の作業", timeout=1)
         assert response["delivery"] == "reply_started"
@@ -788,7 +798,7 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
         await _await_state(lambda: session.awaiting_auto_resume)
         client.emit(TaskNotificationMessage("task-2", "completed"))
         client.emit(ResultMessage("次の再開結果", origin={"kind": "task-notification"}))
-        result = await manager.wait(session.session_id, timeout=1)
+        result = await _wait_with_timeout(manager, 1)
 
         assert result["agent_message"] == "次の再開結果"
     finally:

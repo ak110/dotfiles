@@ -135,8 +135,8 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 `send_message`は、起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、呼び出し側は検収済み状態を渡して新規起動する。
 `start`・`start_explore`・`start_shell`が返した`session_id`と、`send_message`で新しい指示を配送したsessionは、同じ応答の中で`wait`を発行して観測する。結果が不要な場合は`kill`で破棄する。観測を試みていない作業を残したままターンを終えると、当該作業を観測する主体が残らない。`kill`は停止が必要であることと`send_message`による訂正では足りないことを確認してから使う。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。保持していた`session_id`の回復と、並行する委譲先の残作業の把握に使う。
-`stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`wait`と`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。
-`wait`はtimeoutまで状態を観測し、終端時は結果本文を同じ応答から取得する。`timeout`を省略した場合の既定は、実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定する。固有のtimeout要件がなければ`timeout`を省略し、呼び出し元がサブエージェントの場合は`request_bucket`へ`subagent`を渡す。`timeout=0`は待機せず現状態を返し、
+`stop`は再開する予定の無いsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。破棄したsessionへの`send_message`は暗黙再開するため、再開の余地は残る。実行中turnを持つsessionは破棄できない。`kill`へ`stop=true`を渡した場合は、終端結果を返した応答に限って同じ破棄が生じる。`wait`は引数を受け取らないため、受領した終端結果のsessionを破棄する場合は`stop`を発行する。
+`wait`は引数を受け取らず、呼び出し元が保持する起動中のsession全体を対象として最初に終端した1件の結果を返す。待機上限は、実行ホストの1回のツール呼び出しの上限とプロンプトキャッシュの保持期間からサーバーが確定し、委譲先として起動されたセッションでは240秒とする。待機せずに現状態と停滞の印を得る場合は`list`を発行する。
 終端結果の再取得も同じ本文を返す。`send_message(session_id, prompt, timeout=270)`は実行中turnへsteerし、終端済みturnでは結果回収を前提にせず
 同じsessionでreplyを開始する。send_messageの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。timeoutは追加指示の配送結果が確定するまでの待機上限であり、委譲先の応答生成の完了は待たない。`0`以下は受理しない。上限到達時は配送の成否が確定しないため`wait`で状態を確認する。`kill(session_id, timeout=270)`は実行中turnだけを中断する。killの通常の既定は270秒であり、固有のtimeout要件がなければ引数を省略して通常既定を使う。`timeout=0`は要求配送後の現状態を返す。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終端は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 正のtimeoutは終端結果を待つが、timeout超過時もsessionを破棄しないため、`wait`で状態を確認し、終端後は`send_message`で同じsessionを再開できる。終端結果の保持期限30分を過ぎた場合と、sessionを所有する実行主体が終了した場合のいずれも、同じ`send_message`が保持済みの実効条件から会話を暗黙に再開する。

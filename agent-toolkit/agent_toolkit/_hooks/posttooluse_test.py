@@ -51,13 +51,34 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
-def test_wait_any_observation_attempt_clears_all_targets(monkeypatch: pytest.MonkeyPatch) -> None:
-    """wait_anyの観測試行は入力集合の全sessionを解消する。"""
+def test_wait_observation_attempt_clears_sessions_of_the_caller(monkeypatch: pytest.MonkeyPatch) -> None:
+    """待機の観測試行は呼出主体が所有する全sessionを解消する。"""
     state = {
         "agents_server_sessions": {
-            "remote-a": {"pending_observation": True},
-            "remote-b": {"pending_observation": True},
-            "other": {"pending_observation": True},
+            "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
+            "remote-b": {"pending_observation": True, "owner_agent_id": "main"},
+            "other": {"pending_observation": True, "owner_agent_id": "child-1"},
+        }
+    }
+
+    def apply(_session_id: str, mutator: object) -> None:
+        assert callable(mutator)
+        mutator(state)
+
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
+    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt("local", {}, operation="wait", owner_agent_id="main")
+
+    assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
+    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is False
+    assert state["agents_server_sessions"]["other"]["pending_observation"] is True
+
+
+def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """中断の観測試行は入力のsessionだけを解消する。"""
+    state = {
+        "agents_server_sessions": {
+            "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
+            "remote-b": {"pending_observation": True, "owner_agent_id": "main"},
         }
     }
 
@@ -67,12 +88,11 @@ def test_wait_any_observation_attempt_clears_all_targets(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
     _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt(
-        "local", {"session_ids": ["remote-a", "remote-b"]}, operation="wait_any"
+        "local", {"session_id": "remote-a"}, operation="kill", owner_agent_id="main"
     )
 
     assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["other"]["pending_observation"] is True
+    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is True
 
 
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -179,7 +199,7 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
 class TestCodexBashStateRecording:
     """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
 
-    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents-wait remote-session"
+    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents-wait --timeout=1"
 
     def test_codex_bash_does_not_record_success_dependent_state(self, tmp_path: pathlib.Path) -> None:
         session_id = "codex-success-dependent-state"
@@ -209,6 +229,7 @@ class TestCodexBashStateRecording:
                     "session_id": remote_session_id,
                     "status": "running",
                     "pending_observation": True,
+                    "owner_agent_id": "main",
                 }
             }
         }
@@ -1418,7 +1439,7 @@ class TestAgentsServerSessionState:
             ("start", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
             ("start_explore", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
             ("start_shell", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
-            ("wait", {"session_id": "remote"}, {"status": "completed", "agent_message": "完了"}),
+            ("wait", {}, {"session_id": "remote", "status": "completed", "agent_message": "完了"}),
             ("send_message", {"session_id": "remote"}, {"delivery": "reply_started"}),
             ("kill", {"session_id": "remote"}, {"status": "interrupted", "kill_requested": True}),
             ("stop", {"session_id": "remote"}, {}),
@@ -1472,12 +1493,14 @@ class TestAgentsServerSessionState:
         start_tools = ("start", "start_explore")
         status = "running" if tool_name in (*start_tools, "send_message", "stop") else "interrupted"
         tool_input = {"cwd": str(tmp_path)} if tool_name in start_tools else {"session_id": remote_session_id}
+        if tool_name == "wait":
+            tool_input = {}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {}
-        if tool_name in start_tools:
+        if tool_name in start_tools or tool_name == "wait":
             response.update({"session_id": remote_session_id, "status": status})
-        elif tool_name in {"wait", "kill"}:
+        elif tool_name == "kill":
             response["status"] = status
         elif tool_name == "send_message":
             response["delivery"] = "reply_started"
@@ -1550,12 +1573,12 @@ class TestAgentsServerSessionState:
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(state, ensure_ascii=False), encoding="utf-8"
         )
-        tool_input = {"session_id": remote_session_id}
+        tool_input: dict[str, object] = {} if tool_name == "wait" else {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {}
         if tool_name == "wait":
-            response["status"] = "running"
+            response.update({"session_id": remote_session_id, "status": "running"})
         elif tool_name == "send_message":
             response["delivery"] = "reply_started"
         if tool_name == "kill":
@@ -1638,7 +1661,7 @@ class TestAgentsServerSessionState:
             {
                 "session_id": sid,
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {"session_id": remote_session_id},
+                "tool_input": {},
                 "tool_response": {
                     "structuredContent": {
                         "session_id": remote_session_id,
@@ -1668,12 +1691,14 @@ class TestAgentsServerSessionState:
             tool_input: dict[str, object] = {"session_id": remote_session_id}
             if operation in {"start", "start_explore"}:
                 tool_input = {"cwd": str(tmp_path), "prompt": "委譲する"}
+            elif operation == "wait":
+                tool_input = {}
             elif operation == "send_message":
                 tool_input["prompt"] = "続行する"
             response: dict[str, object]
-            if operation in {"start", "start_explore"}:
+            if operation in {"start", "start_explore", "wait"}:
                 response = {"session_id": remote_session_id, "status": status}
-            elif operation in {"wait", "kill"}:
+            elif operation == "kill":
                 response = {"status": status}
             elif operation == "send_message":
                 response = {"delivery": delivery}
@@ -1847,7 +1872,7 @@ class TestAgentsServerSessionState:
             {
                 "session_id": sid,
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {"session_id": remote_session_id},
+                "tool_input": {},
                 "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "completed"}},
             },
             state_dir=tmp_path,
@@ -1916,7 +1941,7 @@ class TestAgentsServerSessionState:
             {
                 "session_id": sid,
                 "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
-                "tool_input": {"session_id": remote_session_id},
+                "tool_input": {} if operation == "wait" else {"session_id": remote_session_id},
                 "tool_response": self._background_notice_response(operation),
             },
             state_dir=tmp_path,
@@ -1970,9 +1995,9 @@ class TestAgentsServerSessionState:
         result = _run(
             {
                 "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
                 "tool_input": {"session_id": "remote-unknown"},
-                "tool_response": self._background_notice_response("wait"),
+                "tool_response": self._background_notice_response("kill"),
             },
             state_dir=tmp_path,
         )

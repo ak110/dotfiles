@@ -93,10 +93,9 @@
 `git -C <対象リポジトリの絶対パス> worktree add --detach <検査用worktreeの絶対パス> <マージ先branch名>`で作成し、`git -C <検査用worktreeの絶対パス> rev-parse HEAD`の出力をbaseline完全OIDとして記録する。
 複製元に`.worktreeinclude`がある実行環境では作成時の自動複製を活用し、無い場合はGit管理外の実行前提ファイルを同じ相対パスへ複製する。
 検証コマンドは`agents_server`の`start_shell`へ渡して分離した文脈で実施し、`summary_policy`へ終了コードと標準エラーの失敗行を逐語で返すことを指定する。
-`start_shell`が`session_id`を返した同じ応答の中で、メインは当該sessionの終端を前景で観測する。観測手段は、当該時点でメインが所有する未終端sessionの集合から決める。当該集合は、メインが当該処理回で起動して`session_id`を保持し、まだ終端結果を受領していないsessionとし、baselineのsessionを含めて数える。当該集合は、新設のPreToolUse検査が`agents_server_sessions`の`owner_agent_id`から解決する母集団と同じものである。
-当該集合が1件だけである場合は、baselineの`session_id`へ`wait`を発行する。2件以上である場合は、当該集合を`session_ids`へ渡した`wait_any`を発行する。呼出主体が所有する未終端sessionが2件以上ある間の`timeout`非0の単一`wait`はPreToolUseが遮断するため、当該区間では`wait_any`だけが成立する。
-`wait_any`がbaseline以外のsessionの終端を返した場合は、当該結果本文を当該sessionの担当工程の受領結果として保持し、対応するレーンの後続工程へそのまま渡す。当該sessionを未終端集合から除き、残る集合へ同じ判定を適用して待機を継続する。
-baselineのsessionの終端を受領するまで当該再待機を繰り返し、受領した時点で検査結論を確定する。`status`が`running`の応答を受領した場合も同じ集合へ待機を再発行する。背景ジョブによる観測と待機表明でのターンの終端はしない。`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」が背景ジョブによる観測を許すのは`/goal`の目標評価が発動する場合に限られ、本工程は当該発動条件を持たないためである。
+`start_shell`が`session_id`を返した同じ応答の中で、メインは当該sessionの終端を前景で観測する。観測手段は`wait`とし、待機対象の指定を渡さない。`wait`は呼び出し元が保持する起動中のsession全体を対象とし、最初に終端した1件の結果を返す。
+`wait`がbaseline以外のsessionの終端を返した場合は、当該結果本文を当該sessionの担当工程の受領結果として保持し、対応するレーンの後続工程へそのまま渡す。当該sessionを除いた残りへ`wait`を再発行して待機を継続する。
+baselineのsessionの終端を受領するまで当該再待機を繰り返し、受領した時点で検査結論を確定する。`status`が`running`の応答を受領した場合も`wait`を再発行する。背景ジョブによる観測と待機表明でのターンの終端はしない。`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」が背景ジョブによる観測を許すのは`/goal`の目標評価が発動する場合に限られ、本工程は当該発動条件を持たないためである。
 受領した結果は、baseline完全OIDと対応付けて記録する。記録する値は、当該baseline完全OID、`検証済み`又は`要修正`の結論、`start_shell`が返した完全なsession識別子、`要修正`の場合の失敗行、及び当該待機で先に受領した他のsessionの結果本文とする。本工程は未観測のsessionと未終了の背景ジョブをいずれも残さない。
 
 以降のレーンの計画レビュー収束を受領した時点では、記録した結論に応じて次のとおり扱う。

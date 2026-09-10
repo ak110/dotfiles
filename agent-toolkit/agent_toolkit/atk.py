@@ -1,7 +1,7 @@
 # PYTHON_ARGCOMPLETE_OK
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・`atk agents-wait-any`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
 `atk agents-notify`・`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
 `atk review-audit <sub>`形式とする。
@@ -24,7 +24,6 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
 - agents-wait: agents_serverが保存した終端結果又は通知を1行で出力する
-- agents-wait-any: 複数sessionの最初の終端結果又は通知を1行で出力する
 - agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
@@ -870,16 +869,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="判定対象のrequest bucket（mainまたはsubagent）。",
     )
     agents_wait = _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
-    agents_wait.add_argument("session_id", help="待機対象のsession識別子。")
     agents_wait.add_argument(
-        "--timeout",
-        type=_nonnegative_finite_float,
-        default=3600.0,
-        help="待機上限秒数。到達した場合は終了コード3で終わる。",
-    )
-    agents_wait_any = _atk_help.add_command(top, "agents-wait-any", **_atk_help.HELP["atk agents-wait-any"])
-    agents_wait_any.add_argument("session_id", nargs="+", help="待機対象のsession識別子。")
-    agents_wait_any.add_argument(
         "--timeout",
         type=_nonnegative_finite_float,
         default=3600.0,
@@ -1046,9 +1036,7 @@ def main(
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
     if args.command == "agents-wait":
-        sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.timeout))
-    if args.command == "agents-wait-any":
-        sys.exit(_atk_agents_wait.wait_for_any_result(args.session_id, args.timeout))
+        sys.exit(_atk_agents_wait.wait_for_result(args.timeout))
     if args.command == "agents-notify":
         body = args.body
         if args.body_file is not None:

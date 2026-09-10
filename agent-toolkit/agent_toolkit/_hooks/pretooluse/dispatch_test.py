@@ -76,8 +76,8 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
-def test_wait_dispatch_invokes_multiple_session_guard(tmp_path: pathlib.Path) -> None:
-    """agents_serverのwait分岐は複数sessionの遮断検査へ到達する。"""
+def test_wait_dispatch_approves_without_session_guard(tmp_path: pathlib.Path) -> None:
+    """agents_serverのwait分岐は検査を経ずに承認へ到達する。"""
     session_id = "dispatch-wait-mode"
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     state_path.write_text(
@@ -92,12 +92,13 @@ def test_wait_dispatch_invokes_multiple_session_guard(tmp_path: pathlib.Path) ->
         encoding="utf-8",
     )
     result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "remote-a"}},
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {}},
         env_overrides=_plan_file_state_env(tmp_path),
     )
 
-    assert result.returncode == 2
-    assert "wait_any" in result.stderr
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert not result.stderr
 
 
 def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path) -> None:

@@ -242,7 +242,6 @@ def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
         ("atk wi list", "JSON Lines"),
         ("atk plans list", "TSV"),
         ("atk agents-wait", "単一のJSON文書"),
-        ("atk agents-wait-any", "単一のJSON文書"),
         ("atk managed-temp list", "JSON Lines"),
         ("atk review-table show", "raw TSV"),
     ],
