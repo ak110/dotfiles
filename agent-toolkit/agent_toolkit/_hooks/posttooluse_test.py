@@ -1485,13 +1485,13 @@ class TestAgentsServerSessionState:
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
         assert record["status"] == "failed"
 
-    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill", "stop"))
+    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
         remote_session_id = "thread-json"
         start_tools = ("start", "start_explore")
-        status = "running" if tool_name in (*start_tools, "send_message", "stop") else "interrupted"
+        status = "running" if tool_name in (*start_tools, "send_message") else "interrupted"
         tool_input = {"cwd": str(tmp_path)} if tool_name in start_tools else {"session_id": remote_session_id}
         if tool_name == "wait":
             tool_input = {}
@@ -1566,7 +1566,10 @@ class TestAgentsServerSessionState:
 
     @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """継続・観測・中断・破棄ツールはcwd mapを参照し、session記録へcwdを保存しない。"""
+        """継続・観測・中断ツールはcwd mapを参照し、session記録へcwdを保存しない。
+
+        破棄ツールはsession記録を除去し、cwd mapは変更しない。
+        """
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
         state: dict[str, object] = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
@@ -1606,10 +1609,13 @@ class TestAgentsServerSessionState:
         assert result.returncode == 0
         current = _read_state(tmp_path, sid)
         assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
-        assert "cwd" not in current["agents_server_sessions"][remote_session_id]
+        if tool_name == "stop":
+            assert remote_session_id not in current.get("agents_server_sessions", {})
+        else:
+            assert "cwd" not in current["agents_server_sessions"][remote_session_id]
 
-    def test_stop_clears_pending_observation_without_replacing_status(self, tmp_path: pathlib.Path) -> None:
-        """stop成功応答で既存statusを保ち、未観測作業を解消する。"""
+    def test_stop_removes_session_record(self, tmp_path: pathlib.Path) -> None:
+        """stop成功応答で当該sessionのエントリーを状態キーから除去する。"""
         sid = "pending-stop"
         remote_session_id = "remote-stop"
         state = {
@@ -1637,9 +1643,9 @@ class TestAgentsServerSessionState:
         )
 
         assert result.returncode == 0
-        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
-        assert record["status"] == "completed"
-        assert record["pending_observation"] is False
+        current = _read_state(tmp_path, sid)
+        assert remote_session_id not in current["agents_server_sessions"]
+        assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
 
     def test_missing_cwd_map_does_not_fallback_to_session_record(self, tmp_path: pathlib.Path) -> None:
         """cwd map欠落時も古いsession記録のcwdへフォールバックしない。"""

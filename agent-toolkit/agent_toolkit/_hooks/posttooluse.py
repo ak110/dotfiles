@@ -374,8 +374,6 @@ def _record_agents_server_session_state(
         if operation == "send_message":
             delivery = structured.get("delivery")
             status = "running" if delivery in {"reply_started", "reply_ambiguous"} else previous.get("status")
-        elif operation == "stop":
-            status = previous.get("status")
         if not isinstance(status, str):
             return None
         record = dict(previous)
@@ -393,7 +391,7 @@ def _record_agents_server_session_state(
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
-        elif operation in {"wait", "kill", "stop"}:
+        elif operation in {"wait", "kill"}:
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
@@ -422,6 +420,25 @@ def _record_agents_server_session_state(
         root_session_id = structured.get("root_session_id")
         if isinstance(root_session_id, str) and root_session_id:
             _agents_server_status_file.write_root_alias(session_id, root_session_id)
+
+
+def _remove_agents_server_session_record(session_id: str, remote_session_id: str | None) -> None:
+    """破棄したsessionの記録を状態キーから除去する。
+
+    `stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その成功応答は
+    当該sessionが終端済み、期限切れ又は既破棄のいずれかであることを含意する。
+    """
+    if remote_session_id is None:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict) or remote_session_id not in sessions:
+            return None
+        del sessions[remote_session_id]
+        return state
+
+    update_state(session_id, _mutator)
 
 
 def _log_tracked_session_end(session_id: str, structured: dict, remote_session_id: str | None = None) -> None:
@@ -868,6 +885,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 model_type=model_type,
                 remote_session_id=remote_session_id,
             )
+        elif operation == "stop":
+            _remove_agents_server_session_record(session_id, remote_session_id)
         else:
             if operation in {"wait", "kill"}:
                 _log_tracked_session_end(session_id, structured, remote_session_id)
