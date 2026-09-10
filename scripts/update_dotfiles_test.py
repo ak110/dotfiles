@@ -181,7 +181,7 @@ def test_run_git_pull_disables_submodule_recursion(monkeypatch: pytest.MonkeyPat
 
 
 def test_run_git_pull_decodes_output_as_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
-    """工程1の取得出力をUTF-8で復号する。"""
+    """工程1の取得出力をUTF-8でデコードする。"""
     calls: list[list[str]] = []
     encodings: list[str | None] = []
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls, encodings=encodings))
@@ -343,7 +343,7 @@ def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_run_step_decodes_captured_output_as_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
-    """工程2以降の取得出力をUTF-8で復号する。"""
+    """工程2以降の取得出力をUTF-8でデコードする。"""
     calls: list[list[str]] = []
     encodings: list[str | None] = []
     monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, encodings=encodings))
@@ -361,7 +361,7 @@ def test_run_step_decodes_captured_output_as_utf8(monkeypatch: pytest.MonkeyPatc
 
 
 def test_run_step_decodes_utf8_bytes(capsys: pytest.CaptureFixture[str]) -> None:
-    """CP932では復号できないUTF-8出力を文字列として転送する。"""
+    """CP932ではデコードできないUTF-8出力を文字列として転送する。"""
     code = "import sys; sys.stdout.buffer.write('日本語—'.encode('utf-8')); sys.stderr.buffer.write('警告—'.encode('utf-8'))"
 
     returncode, output = update_dotfiles._run_step(  # pylint: disable=protected-access

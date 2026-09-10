@@ -201,7 +201,7 @@ def test_add_rereads_decoded_cells_after_storage_write(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """追加は保存層を経た復号済みセルを一致判定へ渡す。"""
+    """追加は保存層を経たデコード済みセルを一致判定へ渡す。"""
     path = tmp_path / "review.tsv"
     original_atomic_write = table.atomic_write
 
@@ -228,7 +228,7 @@ def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応要では復号済み本文を照合し、一致判定だけを出力する。"""
+    """対応要ではデコード済み本文を照合し、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     response = '応答本文へ"二重引用符"と\\逆斜線を含める。\nタブ\tも含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -493,7 +493,7 @@ def test_show_jsonl_decodes_control_characters_and_quotes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """jsonl出力は制御文字と引用符を含むセルを保存前の本文へ復号する。"""
+    """jsonl出力は制御文字と引用符を含むセルを保存前の本文へデコードする。"""
     path = tmp_path / "review.tsv"
     issue = '改行\nタブ\t二重引用符"と`backtick`'
     table.init(path)
@@ -525,7 +525,7 @@ def test_show_jsonl_filters_decoded_rows_by_track(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """jsonl出力でも指定したtrackの復号済み行だけを表示する。"""
+    """jsonl出力でも指定したtrackのデコード済み行だけを表示する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "統合後指摘")
@@ -1032,7 +1032,7 @@ def test_cell_file_options_are_shown_in_help(
             "show",
             (
                 "表示対象を指定したレビュー区分の行だけに限定する",
-                "出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する",
+                "出力形式。tsvは保存済みのraw TSV、jsonlはデコード済みのJSON Linesを表示する",
             ),
         ),
         ("validate", ("未応答行を許容し、8列と複合キーなどの構造だけを検証する",)),
@@ -1206,7 +1206,7 @@ def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pa
 
 
 def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path: pathlib.Path) -> None:
-    """一致しない部分キーへ、復号済み候補行を示して再指定を可能にする。"""
+    """一致しない部分キーへ、デコード済み候補行を示して再指定を可能にする。"""
     path = tmp_path / "review.tsv"
     issue = '本文に"引用"を含む指摘'
     table.init(path)
@@ -1220,7 +1220,7 @@ def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path
     assert "一意に解決できない: 0件" in message
     assert "指定された部分キー:" in message
     assert f"issue={issue}" in message
-    candidate_section = message.split("候補行（復号済み）:\n", maxsplit=1)[1]
+    candidate_section = message.split("候補行（デコード済み）:\n", maxsplit=1)[1]
     assert encoded_issue not in candidate_section
 
     assert table.respond(path, "1", _TRACK, "module.py:10", issue, "yes", "対応した", "") == 0

@@ -72,7 +72,7 @@ def _cell(value: str) -> str:
 
 
 def _decode_cell(value: str, *, line: int, column: int) -> str:
-    """JSON文字列セルを復号し、形式不正をエラーにする。"""
+    """JSON文字列セルをデコードし、形式不正をエラーにする。"""
     try:
         decoded = json.loads(value)
     except (json.JSONDecodeError, TypeError) as error:
@@ -88,7 +88,7 @@ def _normalize_track(value: str) -> str:
 
 
 def _parse_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行とtrack正規化済みの復号行を対応づけて返す。"""
+    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
     rows: list[tuple[str, list[str]]] = []
     for line_number, raw_line in enumerate(text.splitlines(keepends=True), start=1):
         line = raw_line.rstrip("\r\n")
@@ -124,7 +124,7 @@ def _read_table_text(path: Path) -> str:
 
 
 def _read(path: Path) -> list[list[str]]:
-    """TSVを読み、JSON復号済みの行一覧を返す。"""
+    """TSVを読み、JSONデコード済みの行一覧を返す。"""
     return [row for _, row in _parse_text(_read_table_text(path))]
 
 
@@ -287,7 +287,7 @@ def _response_value(raw: str) -> str:
 
 
 def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], matches: list[int]) -> str:
-    """一意に解決できない部分キーと復号済み候補行を整形する。"""
+    """一意に解決できない部分キーとデコード済み候補行を整形する。"""
     requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
     candidate_rows = [rows[index] for index in matches] if matches else rows
     candidate_lines = [
@@ -298,8 +298,8 @@ def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], 
     candidates = "\n".join(candidate_lines) or "  - 候補行なし"
     return (
         f"指定された部分キー: {requested}\n"
-        f"候補行（復号済み）:\n{candidates}\n"
-        "レビュー表のセルはJSON文字列として保存されるため、キーには復号後の値を指定する。"
+        f"候補行（デコード済み）:\n{candidates}\n"
+        "レビュー表のセルはJSON文字列として保存されるため、キーにはデコード後の値を指定する。"
     )
 
 
@@ -525,7 +525,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "--format",
         choices=("tsv", "jsonl"),
         default="tsv",
-        help="出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する。",
+        help="出力形式。tsvは保存済みのraw TSV、jsonlはデコード済みのJSON Linesを表示する。",
     )
     _output_file.add_output_file_arg(show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])

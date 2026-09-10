@@ -359,7 +359,7 @@ def test_collect_new_alerts_warns_when_json_stdout_is_not_utf8(
     monkeypatch.setattr(_json_command.subprocess, "run", fake_run)
 
     assert not alerts.collect_new_alerts("github.com/owner/repo", None, tmp_path, forge="github")
-    assert "標準出力をUTF-8として復号できません" in capsys.readouterr().err
+    assert "標準出力をUTF-8としてデコードできません" in capsys.readouterr().err
 
 
 def test_collect_new_alerts_keeps_non_utf8_stderr_as_bytes_notation(

@@ -54,7 +54,7 @@ def _make_cp932_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
 class _RawBytesZipInfo(zipfile.ZipInfo):
     """ファイル名として任意の生バイト列を書き込む ZipInfo。
 
-    CP932 strict で復号できないバイト列を含むエントリをテストで合成するために使う。
+    CP932 strict でデコードできないバイト列を含むエントリをテストで合成するために使う。
     bit 11 はセットしない。
     """
 
@@ -703,7 +703,7 @@ class TestFilenameEncoding:
         """bit 11 未設定の CP932 日本語エントリと bit 11 付き UTF-8 日本語エントリの混在で双方破損しない。
 
         CP932 の 2 バイト目に ``0x5C`` を含む文字 (ソ) を CP932 側に格納して、
-        ``info.filename`` 経由ではなく ``info.orig_filename`` 経由で復号できていることを担保する。
+        ``info.filename`` 経由ではなく ``info.orig_filename`` 経由でデコードできていることを担保する。
         """
         archive = tmp_path / "mixed.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
@@ -732,7 +732,7 @@ class TestFilenameEncoding:
         assert "safe.txt" in entries
 
     def test_cp932_decode_failure_falls_back_per_entry(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """CP932 strict で復号できないエントリだけ CP437 にフォールバックする。
+        """CP932 strict でデコードできないエントリだけ CP437 にフォールバックする。
 
         他の CP932 エントリは正しく日本語名で展開される。アーカイブ単位の一括判定では
         1 件の失敗で全体が CP437 に転落するため、エントリ単位フォールバックが
@@ -740,7 +740,7 @@ class TestFilenameEncoding:
         """
         archive = tmp_path / "fallback.zip"
         # 0x81 は CP932 の有効な lead byte だが 0x39 ('9') は有効な trail byte 範囲外なため
-        # strict 復号で必ず失敗する。CP437 ではそれぞれ ``ü`` ``9`` として復号される。
+        # strict デコードで必ず失敗する。CP437 ではそれぞれ ``ü`` ``9`` としてデコードされる。
         raw_invalid = b"\x81\x39hi.txt"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr(_Cp932ZipInfo("和文.txt"), b"a")

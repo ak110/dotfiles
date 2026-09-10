@@ -125,7 +125,7 @@ def _run_alert_json_command(
         if failure.kind == "not-found":
             return AlertCollectError(f"{command[0]}コマンドが見つかりません")
         if failure.kind == "decode":
-            return AlertCollectError(f"{operation}の標準出力をUTF-8として復号できません: {failure.detail}")
+            return AlertCollectError(f"{operation}の標準出力をUTF-8としてデコードできません: {failure.detail}")
         if failure.kind == "exit":
             if _is_disabled_response(failure.stdout, disabled_messages):
                 return AlertFeatureDisabledError(f"{operation}: 対象リポジトリで当該機能が無効")

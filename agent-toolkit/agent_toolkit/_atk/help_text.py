@@ -278,7 +278,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table show": {
         "summary": "レビュー表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は各セルをJSON文字列として保存したraw TSV、`jsonl`は復号済みのJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は各セルをJSON文字列として保存した1行1レコードのraw TSV、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定すると当該trackの行だけを、`--round`を指定すると当該ラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。復号済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は各セルをJSON文字列として保存したraw TSV、`jsonl`はデコード済みのJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は各セルをJSON文字列として保存した1行1レコードのraw TSV、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定すると当該trackの行だけを、`--round`を指定すると当該ラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.plan-review.tsv",
     },
     "atk review-table validate": {
