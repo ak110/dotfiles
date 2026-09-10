@@ -4357,6 +4357,72 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
 
 
 @pytest.mark.asyncio
+async def test_wait_delivers_child_session_result_without_kill(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別プロセスが起動した子sessionの終端後、killを用いないwaitが委譲先の結果を配送する。
+
+    子sessionの登録簿レコードが残らない場合も、共有の終端結果ファイルから終端を判定する。
+    """
+    monkeypatch.setattr(session_registry._atk_config, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: [("claude", "model", "high")])
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "claude")
+    _install_backend(manager, "claude", backend)
+    writer.activate()
+    started = await manager.start("execute", "委譲する", str(tmp_path))
+    delegate = manager.sessions[started["session_id"]]
+
+    # 委譲先が別プロセスのMCPサーバーへstart_exploreを発行した状態を模す。
+    child_writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "delegate-host.json", "delegate-host"),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    child_writer.activate()
+    child = subject.SessionState("grandchild", str(tmp_path), engine="claude", launch_kind="explore")
+    child_writer.sessions[child.session_id] = child
+    state.consume_agents_server_tool_result(
+        delegate,
+        "mcp__agents_server__start_explore",
+        {},
+        {"session_id": child.session_id, "status": "running"},
+    )
+    state.begin_auto_resume_wait(
+        delegate,
+        {"status": "completed", "agent_message": "子sessionの結果を待つ本文", "error": None},
+    )
+
+    _complete(child, message="子sessionの結果")
+    child_writer.flush()
+    session_registry.remove(child.session_id)
+
+    pending = await manager.wait()
+
+    # 子sessionの終端を観測した待機が、killを伴わずに継続指示を1回配送する。
+    assert pending["status"] == "running"
+    assert backend.send_calls == 1
+    assert (status_file.results_directory("root-session", tmp_path) / f"{child.session_id}.json").is_file()
+
+    _complete(delegate, message="子sessionを確認した最終結果")
+    response = await manager.wait()
+
+    assert response["status"] == "completed"
+    assert response["agent_message"] == "子sessionを確認した最終結果"
+    assert "error" not in response
+    child_writer.deactivate()
+    await manager.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("engine", "model_type"), (("codex", None), ("claude", "execute_fast")))
 async def test_stop_discards_terminal_session(
     engine: str,

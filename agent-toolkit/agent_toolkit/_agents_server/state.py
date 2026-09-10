@@ -541,9 +541,9 @@ def consume_agents_server_tool_result(
     if not isinstance(session_id, str) or not session_id:
         return
     if result.get("status") in TERMINAL_STATUSES | {"expired"}:
+        # 当該レコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
         session.live_child_session_ids.discard(session_id)
         session.terminal_child_session_ids.add(session_id)
-        session_registry.remove(session_id)
 
 
 def finalize_pending_result(session: SessionState, *, touch: bool = True) -> None:

@@ -257,6 +257,8 @@ class AgentsServerManager:
         self._pending_unobserved_child_sessions.pop(session_id, None)
         session = self.sessions.pop(session_id, None)
         if session is not None:
+            if session.publish_registry:
+                session_registry.remove(session_id)
             resume_state = SessionResumeState.from_session(session)
             self.expired_sessions[session_id] = resume_state
             if self._status_writer is not None:
@@ -514,6 +516,7 @@ class AgentsServerManager:
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
+        session_registry.remove(session_id)
         if self._status_writer is not None:
             try:
                 if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
@@ -848,6 +851,16 @@ class AgentsServerManager:
                 except TimeoutError:
                     advance_pending = True
 
+    def _child_result_is_terminal(self, session_id: str) -> bool:
+        """孫sessionの共有された終端結果ファイルが終端を示すかを返す。
+
+        当該ファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
+        別プロセスが起動した孫sessionの終端も同じ経路で判定できる。
+        """
+        if self._status_writer is None or not status_file.valid_session_id(session_id):
+            return False
+        return self._status_writer.read_result(session_id) is not None
+
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端又は保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
@@ -858,18 +871,21 @@ class AgentsServerManager:
             for session_id, resolution in resolutions.items()
             if resolution.state is session_registry.Resolution.TERMINAL
         }
-        unobserved = {
-            session_id
-            for session_id, resolution in resolutions.items()
-            if resolution.state in {session_registry.Resolution.MISSING, session_registry.Resolution.UNREADABLE}
-        }
+        unobserved: set[str] = set()
+        for session_id, resolution in resolutions.items():
+            if resolution.state not in {session_registry.Resolution.MISSING, session_registry.Resolution.UNREADABLE}:
+                continue
+            # レコードの不在は削除と保持期限の経過からも生じるため、終端結果ファイルを終端の第2の根拠とする。
+            if self._child_result_is_terminal(session_id):
+                terminal.add(session_id)
+                continue
+            unobserved.add(session_id)
         pending_unobserved = self._pending_unobserved_child_sessions.get(session.session_id)
         if pending_unobserved is not None:
             unobserved.update(pending_unobserved[1])
         for session_id in terminal:
             session.live_child_session_ids.discard(session_id)
             session.terminal_child_session_ids.add(session_id)
-            session_registry.remove(session_id)
         session.live_child_session_ids.difference_update(unobserved)
 
         if not has_pending_auto_resume_targets(session) and session.terminal_child_session_ids:
