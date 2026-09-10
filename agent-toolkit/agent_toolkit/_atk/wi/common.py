@@ -738,7 +738,7 @@ def _iter_entries(
             yield path, target_repo, text, state, actual_type
 
 
-UNANSWERED_UWI_NOTICE_HEADER = "# 未回答UWI通知（`atk wi list`と`atk wi show`の絞り込みは適用しない）"
+UNANSWERED_UWI_NOTICE_HEADER = "# 未回答UWI通知（`atk wi list`と`atk wi show`の対象限定は適用しない）"
 """未回答UWI通知の種別ヘッダー。
 
 `atk wi list`・`atk wi show`が出力する一覧の種別ヘッダー（`# awi`・`# uwi`）とは
