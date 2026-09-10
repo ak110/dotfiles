@@ -572,6 +572,9 @@ _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.A
 
 _COLLOQUIAL_MAX_LISTED_MATCHES = 5
 """口語表現検査及び誤字検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+
+_ColloquialHit = tuple[int, int, str, str, str | None]
+"""口語表現検査の一致1件（行番号、列、検出文字列、行抜粋、置換候補）。"""
 _MANAGED_TEMP_MARKER = ".agent-toolkit-managed-temp.json"
 
 COLLOQUIAL_DETECTED_TERMS_LABEL = "検出語"
@@ -584,6 +587,15 @@ def colloquial_detected_terms_text(detected_terms: Iterable[str]) -> str:
     """
     joined = "、".join(dict.fromkeys(detected_terms))
     return f"{COLLOQUIAL_DETECTED_TERMS_LABEL}: {joined}。"
+
+
+def _colloquial_hit_summary(hits: list[_ColloquialHit]) -> str:
+    """口語表現検査の通知本文が一致件数、位置及び検出語を示す部分を返す。
+
+    警告と遮断のどちらの応答水準でも同じ形式を示すため、両経路はこの1箇所だけを参照する。
+    """
+    listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
+    return f"一致: {len(hits)}件（{listed}）。{colloquial_detected_terms_text(hit[2] for hit in hits)}"
 
 
 # --- ユーザーが直接読む本文への誤字検査 (warn) ---
@@ -681,11 +693,10 @@ def _check_colloquial(
         hits = [hit for hit in hits if hit[0] in changed_lines]
     if not hits:
         return None
-    listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
     target = file_path or tool_name
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
-        f"一致: {len(hits)}件（{listed}）。{colloquial_detected_terms_text(hit[2] for hit in hits)}"
+        f"{_colloquial_hit_summary(hits)}"
         "ユーザーへ向けた発話は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」、"
         "それ以外の成果物は`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
         "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"
@@ -693,6 +704,33 @@ def _check_colloquial(
         tag=_WARN_TAG,
         removable_cause=True,
     )
+
+
+def _check_user_facing_colloquial(tool_name: str, fields: list[tuple[str, str]]) -> bool:
+    """ユーザーへ提示する本文の口語表現を検出したらTrueを返す（block）。
+
+    当該本文はツールの実行と同時にユーザーへ到達し、到達後の書き換えが当該回の提示へ及ばない。
+    このため成果物への書き込みと同じ検出内容でも応答水準を遮断とし、書き換えた本文の再発行を求める。
+    """
+    for field, value in fields:
+        hits = _colloquial_check.scan_text(value, _COLLOQUIAL_DENY_PATTERNS, _COLLOQUIAL_ALLOW_PATTERNS)
+        if not hits:
+            continue
+        print(
+            _block_notice(
+                "blocked: ユーザーへ提示する本文に口語的な日本語表現を検出した。"
+                f"{_colloquial_hit_summary(hits)}"
+                "ユーザーへ向けた発話は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従う。"
+                f" 対象: {tool_name}.{field}",
+                fix=(
+                    "検出箇所を含む文全体を書き換えてから同じツールを再発行する。"
+                    "単語だけを同義語へ置き換えず、文全体を組み直す。"
+                ),
+            ),
+            file=sys.stderr,
+        )
+        return True
+    return False
 
 
 # --- 「Xを根拠にYしない」形式の増加検出 (warn, FB10) ---

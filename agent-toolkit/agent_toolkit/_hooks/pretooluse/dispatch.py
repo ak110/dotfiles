@@ -14,7 +14,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 任意ツール:
 
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
+- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
@@ -173,13 +173,13 @@ if TYPE_CHECKING:
         _reset_plan_mode_state,
     )
     from agent_toolkit._hooks.pretooluse.content_checks import (
-        _check_colloquial,
         _check_direct_agent_toolkit_edits_after_plan_mode,
         _check_edit_boundary_resolution,
         _check_edit_operation_blocks,
         _check_foreign_script_mixin,
         _check_mojibake,
         _check_plan_mode_skill_first,
+        _check_user_facing_colloquial,
         _collect_edit_operation_warnings,
         check_user_facing_typo,
     )
@@ -509,23 +509,28 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ編集入力と同じ言語品質検査、及び誤字検査を適用する。"""
+    """質問・計画本文へ編集入力と同じ言語品質検査、及び誤字検査を適用する。
+
+    ユーザーへ直接到達する本文を対象とする検査の応答水準は、到達後に是正できるかで決める。
+    本関数が扱う文字化け、日本語以外の文字の混入及び口語表現は、いずれも当該本文が
+    ユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、同じ遮断経路へそろえる。
+    誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
+    """
     if tool_name == "AskUserQuestion" and check_required_read_before_ask_user_question(session_id) == "block":
         flush_warning()
         return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
-    if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
+    if (
+        _check_mojibake(tool_name, fields)
+        or _check_foreign_script_mixin(tool_name, fields)
+        or _check_user_facing_colloquial(tool_name, fields)
+    ):
         return 2
-    colloquial_warning = next(
-        (warning for _, value in fields if (warning := _check_colloquial(tool_name, None, value, "")) is not None),
-        None,
-    )
     typo_warning = check_user_facing_typo(tool_name, fields)
-    warnings = [warning for warning in (colloquial_warning, typo_warning) if warning is not None]
-    if not warnings:
+    if typo_warning is None:
         flush_warning()
     else:
-        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": typo_warning}})
     return 0
 
 

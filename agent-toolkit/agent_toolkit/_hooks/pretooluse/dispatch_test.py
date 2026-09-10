@@ -1032,13 +1032,16 @@ class TestUserFacingTextChecks:
         }
         result = _run(_user_facing_payload(field, values[check]))
 
+        assert result.returncode == 2
         if check == "colloquial":
-            assert result.returncode == 0
-            assert "口語的な日本語表現" in _additional_context(result)
-            assert "Target:" not in _additional_context(result)
-            assert content_checks.colloquial_detected_terms_text([deny_substring]) in _agent_messages(result)
+            assert "口語的な日本語表現" in result.stderr
+            assert content_checks.colloquial_detected_terms_text([deny_substring]) in result.stderr
+            assert "文全体を書き換えてから同じツールを再発行する" in result.stderr
+            reissued = _run(_user_facing_payload(field, "確認する対象を選択してください。"))
+            assert reissued.returncode == 0
+            assert reissued.stdout == ""
+            assert reissued.stderr == ""
         else:
-            assert result.returncode == 2
             expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
             assert expected in result.stderr
 
@@ -1071,15 +1074,15 @@ class TestUserFacingTextChecks:
 
         result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
 
-        assert result.returncode == 0
-        assert "口語的な日本語表現" in _additional_context(result)
+        assert result.returncode == 2
+        assert "口語的な日本語表現" in result.stderr
 
-    def test_empty_file_path_uses_ask_user_question_as_target(self, deny_substring: str) -> None:
-        """質問入力の口語警告は空のパスではなくツール名を対象として示す。"""
+    def test_block_notice_shows_tool_name_and_field_as_target(self, deny_substring: str) -> None:
+        """質問入力の口語遮断はツール名と入力フィールドを対象として示す。"""
         result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
 
-        assert result.returncode == 0
-        assert "対象: AskUserQuestion" in _additional_context(result)
+        assert result.returncode == 2
+        assert "対象: AskUserQuestion.questions[0].question" in result.stderr
 
 
 class TestUserFacingTypoCheck:
@@ -1096,13 +1099,12 @@ class TestUserFacingTypoCheck:
         assert result.returncode == 0
         assert "誤字候補" in _additional_context(result)
 
-    def test_typo_and_colloquial_warnings_are_combined(self, deny_substring: str) -> None:
-        """誤字検査と口語表現検査の警告を1つの`additionalContext`へ改行で結合する。"""
+    def test_colloquial_block_precedes_typo_warning(self, deny_substring: str) -> None:
+        """口語表現と誤字を同時に含む本文は、警告を返さず口語表現の遮断で終わる。"""
         result = _run(_user_facing_payload("question", f"番面は{deny_substring}該当する。"))
-        assert result.returncode == 0
-        context = _additional_context(result)
-        assert "誤字候補" in context
-        assert "口語的な日本語表現" in context
+        assert result.returncode == 2
+        assert "口語的な日本語表現" in result.stderr
+        assert "誤字候補" not in result.stdout
 
 
 class TestAskUserQuestionRequiredRead:
