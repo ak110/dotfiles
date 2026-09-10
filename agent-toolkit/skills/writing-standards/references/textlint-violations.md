@@ -27,6 +27,9 @@ textlintを中心としつつ、`pyfltr`経由で同時実行される他のツ�
   （`preset-jtf-style 1.1.3.箇条書き`の`shouldUsePoint: false`規定に整合。
   当リポジトリでは`shouldUsePoint`を`false`で運用する）
 - 冗長表現（`ja-no-redundant-expression`の`dict5`系）は`tone-examples.md`の「冗長表現」に従い、サ変動詞単独形へ置き換える
+- 順序付きリストの1項目へ空行で区切った入れ子の箇条書き又は段落を追加すると、`preset-jtf-style 1.1.3.箇条書き`が当該リストの全項目を句点の統一検査の対象とする。
+  全ての項目が句点で終わる手順の一覧では、入れ子の要素を独立した節へ移して各項目を1行に保つ。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日」にある
 
 ## コードフェンスとラベル
 

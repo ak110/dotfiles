@@ -145,3 +145,11 @@ H2見出しは索引元の条文が指す文字列と一致させる。索引元
 ## agent-toolkit/skills/writing-standards/references/session-records.md：集計値の典拠：2026年9月3日
 
 本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
+
+## agent-toolkit/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
+
+2026年9月10日、pyfltr 3.17.9のtextlintと本リポジトリの`.textlintrc.yaml`（`preset-jtf-style`の`1.1.3.箇条書き`を`shouldUsePoint: false`で運用する設定）で実測した。
+全ての項目が句点で終わる順序付きリストは同ルールへ一致0件であった。
+同じリストの1項目へ空行で区切った入れ子の箇条書きと段落を追加すると、句点で終わる他の4項目へ箇条書きの文末から句点を外す指摘が返った。
+入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
+再検証は、同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。

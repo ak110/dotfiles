@@ -145,7 +145,7 @@
 説明できない場合は修正を確定せず、不足する検証又は判断を呼び出し元へ返す。
 
 レビュー表が指定された場合は、渡された修正対象の`track`集合だけを扱う。
-渡された集合の外に属する`track`の行を採否判断と更新の対象にしない。応答は`atk review-table respond <表の絶対パス> --round <ラウンド番号> --track <区分> --response-needed <yes|no>`の形式で実行する。対応要では`--response-file <対応内容PATH>`を、対応不要では`--no-response-reason-file <理由PATH>`を添える。同じ`round`と`track`で行を一意に特定できない場合は`--location-file`と`--issue-file`も指定する。指摘箇所、指摘内容、対応内容及び理由はいずれもファイル経由で渡す。これらをコマンドライン引数で渡す受理形式は存在しない。保存本文の照合と修復は本スキルの「レビュー指摘管理表の共通操作」に従う。
+渡された集合の外に属する`track`の行を採否判断と更新の対象にしない。応答は`atk review-table respond <表の絶対パス> --round <ラウンド番号> --track <区分> --response-needed <yes|no>`の形式で実行する。対応要では`--response-file <対応内容PATH>`を、対応不要では`--no-response-reason-file <理由PATH>`を添える。同じ`round`と`track`で行を一意に特定できない場合は`--location-file`と`--issue-file`も指定する。この2つのオプションへは、デコード後の指摘箇所と指摘内容を書く。表の各セルはJSON文字列として保存されるため、保存済みのraw TSVから読んだ値をそのまま渡すと一致する行が0件になる。渡す値は`atk review-table show <表の絶対パス> --track <レビュー区分> --round <ラウンド番号> --format=jsonl`のデコード済み出力から取得するか、raw TSVの各セルをJSON文字列としてデコードして得る。指摘箇所、指摘内容、対応内容及び理由はいずれもファイル経由で渡す。これらをコマンドライン引数で渡す受理形式は存在しない。保存本文の照合と修復は本スキルの「レビュー指摘管理表の共通操作」に従う。
 検証は表全体を対象とし、扱う`track`集合による限定は採否判断と更新にだけ適用する。
 実行レビューでは、修正対象を`exec-review`の単一trackに限定する。
 実行レビュー担当へ渡す情報は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の生成契約に従って呼び出し元が渡した`review_contract`と直接影響範囲を超えて自ら拡張しない。
