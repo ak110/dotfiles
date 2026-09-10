@@ -15,6 +15,15 @@ from agent_toolkit._agents_server import state, status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 
+def _fail(message: str, code: int) -> int:
+    """標準エラーへ理由を出力してから非0の終了コードで異常終了する。
+
+    理由を伴わない異常終了をこの経路では表現できないよう、`message`を必須の引数とする。
+    """
+    print(message, file=sys.stderr)
+    return code
+
+
 def wait_for_result(
     session_id: str,
     timeout: float,
@@ -29,25 +38,22 @@ def wait_for_result(
     エラーの終了コードから区別し、待機上限まで消失を見逃さないためである。
     """
     if not status_file.valid_session_id(session_id):
-        print(f"session_idの形式が不正です: {session_id}", file=sys.stderr)
-        return 5
+        return _fail(f"session_idの形式が不正です: {session_id}", 5)
     root_session_id = status_file.resolve_conversation_root_session_id(
         os.environ if environment is None else environment, state_root
     )
     if root_session_id is None:
-        print(
+        return _fail(
             "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait`で観測してください。",
-            file=sys.stderr,
+            4,
         )
-        return 4
     result_path = status_file.results_directory(root_session_id, state_root) / f"{session_id}.json"
     started_at = time.monotonic()
     deadline = time.monotonic() + timeout
     while True:
         result, read_error = _read_result(result_path)
         if read_error is not None:
-            print(f"終端結果ファイルを読めません: {result_path}: {read_error}", file=sys.stderr)
-            return 6
+            return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
         status_paths = status_file.list_status_files(root_session_id, state_root)
         notices = status_file.take_notices(root_session_id, session_id, state_root)
         if result is not None:
@@ -97,17 +103,15 @@ def wait_for_any_result(
     """指定したsession群の最初の終端結果又は通知を1件返す。"""
     ordered_ids = sorted(set(session_ids))
     if not ordered_ids or any(not status_file.valid_session_id(session_id) for session_id in ordered_ids):
-        print("session_idの形式が不正です", file=sys.stderr)
-        return 5
+        return _fail("session_idの形式が不正です", 5)
     root_session_id = status_file.resolve_conversation_root_session_id(
         os.environ if environment is None else environment, state_root
     )
     if root_session_id is None:
-        print(
+        return _fail(
             "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait_any`で観測してください。",
-            file=sys.stderr,
+            4,
         )
-        return 4
 
     lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-any-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
@@ -119,7 +123,7 @@ def wait_for_any_result(
                 acquire_lock(lock_file, blocking=False)
             except OSError:
                 lock_file.close()
-                return 8
+                return _fail(f"同じsessionの待機所有権を別の実行が保持しています: {session_id}", 8)
             lock_files.append(lock_file)
 
         result_directory = status_file.results_directory(root_session_id, state_root)
@@ -130,8 +134,7 @@ def wait_for_any_result(
                 result_path = result_directory / f"{session_id}.json"
                 result, read_error = _read_result(result_path)
                 if read_error is not None:
-                    print(f"終端結果ファイルを読めません: {result_path}: {read_error}", file=sys.stderr)
-                    return 6
+                    return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
                 notices = status_file.take_notices(root_session_id, session_id, state_root)
                 if result is not None:
                     result["session_id"] = session_id

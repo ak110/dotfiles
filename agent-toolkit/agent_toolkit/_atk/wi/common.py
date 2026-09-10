@@ -738,6 +738,14 @@ def _iter_entries(
             yield path, target_repo, text, state, actual_type
 
 
+UNANSWERED_UWI_NOTICE_HEADER = "# 未回答UWI通知（`atk wi list`と`atk wi show`の対象限定は適用しない）"
+"""未回答UWI通知の種別ヘッダー。
+
+`atk wi list`・`atk wi show`が出力する一覧の種別ヘッダー（`# awi`・`# uwi`）とは
+別の文面とし、通知と一覧出力を読み手が判別できるようにする。
+"""
+
+
 def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str | None) -> None:
     """未回答UWIが存在する場合に種別ヘッダ付きの1件1行形式で通知する。"""
     entries = [
@@ -747,7 +755,7 @@ def notify_unanswered_uwis_if_any(private_notes: pathlib.Path, target_repo: str 
     ]
     if not entries:
         return
-    print(f"# {WI_TYPE_UWI}", file=sys.stderr)
+    print(UNANSWERED_UWI_NOTICE_HEADER, file=sys.stderr)
     for path, entry_repo, text, state in entries:
         label = f"{state}/unanswered"
         repo_budget = _target_repo_budget(path.name, label)

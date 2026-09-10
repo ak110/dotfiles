@@ -98,7 +98,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING
 
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
@@ -574,6 +574,17 @@ _COLLOQUIAL_MAX_LISTED_MATCHES = 5
 """口語表現検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
 _MANAGED_TEMP_MARKER = ".agent-toolkit-managed-temp.json"
 
+COLLOQUIAL_DETECTED_TERMS_LABEL = "検出語"
+
+
+def colloquial_detected_terms_text(detected_terms: Iterable[str]) -> str:
+    """口語表現検査の通知本文が検出語を示す部分を返す。
+
+    同じ仕様を複数の検体が別方向に固定して一致しなくなることを防ぐため、実装と検体はこの1箇所だけを参照する。
+    """
+    joined = "、".join(dict.fromkeys(detected_terms))
+    return f"{COLLOQUIAL_DETECTED_TERMS_LABEL}: {joined}。"
+
 
 def _is_in_managed_temp(file_path: str) -> bool:
     """Git作業ツリー境界より内側に管理対象一時領域のマーカーがある場合に真を返す。"""
@@ -624,11 +635,10 @@ def _check_colloquial(
     if not hits:
         return None
     listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
-    detected_terms = "、".join(dict.fromkeys(hit[2] for hit in hits))
     target = file_path or tool_name
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
-        f"一致: {len(hits)}件（{listed}）。検出語: {detected_terms}。"
+        f"一致: {len(hits)}件（{listed}）。{colloquial_detected_terms_text(hit[2] for hit in hits)}"
         "ユーザーへ向けた発話は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」、"
         "それ以外の成果物は`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
         "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"

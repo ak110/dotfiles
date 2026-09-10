@@ -23,6 +23,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._hooks import required_reads
+from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
@@ -847,7 +848,7 @@ class TestColloquialCheck:
         assert "一致: 1件（行1、列4）" in _additional_context(result)
         assert "検出箇所を含む文全体" in _additional_context(result)
         assert "[auto-generated: agent-toolkit/pretooluse][warn]" in _additional_context(result)
-        assert f"検出語: {deny_substring}" in _agent_messages(result)
+        assert content_checks.colloquial_detected_terms_text([deny_substring]) in _agent_messages(result)
 
     def test_lists_every_match_position_within_limit(self, deny_substring: str):
         content = f"概要は{deny_substring}該当する。\n" * 5
@@ -1034,7 +1035,7 @@ class TestUserFacingTextChecks:
             assert result.returncode == 0
             assert "口語的な日本語表現" in _additional_context(result)
             assert "Target:" not in _additional_context(result)
-            assert f"検出語: {deny_substring}" in _agent_messages(result)
+            assert content_checks.colloquial_detected_terms_text([deny_substring]) in _agent_messages(result)
         else:
             assert result.returncode == 2
             expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"

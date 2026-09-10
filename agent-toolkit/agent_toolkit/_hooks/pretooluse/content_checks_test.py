@@ -39,6 +39,18 @@ def test_colloquial_notice_references_existing_writing_rules(deny_substring: str
     assert "agent-toolkit/rules/01-agent.md`「日本語」" not in notice
 
 
+def test_colloquial_detected_terms_spec_has_single_source() -> None:
+    """`_hooks/`配下の`*_test.py`が検出語ラベルとコロンからなる文字列を直接固定しないことを検査する。
+
+    同じ仕様を別方向に固定した検体が更新から取り残される事態を防ぐため、
+    期待値は`content_checks.colloquial_detected_terms_text`経由でだけ組み立てさせる。
+    """
+    hooks_dir = pathlib.Path(__file__).resolve().parents[1]
+    forbidden = f"{content_checks.COLLOQUIAL_DETECTED_TERMS_LABEL}: "
+    offending = [path for path in hooks_dir.rglob("*_test.py") if forbidden in path.read_text(encoding="utf-8")]
+    assert not offending
+
+
 class TestLanguageEscalation:
     """言語検査のエスカレーション（連続英語ターン → ブロック）。
 

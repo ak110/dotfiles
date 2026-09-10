@@ -26,6 +26,7 @@ from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-posi
 from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import common as _wi_common  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -1329,7 +1330,7 @@ class TestUnansweredUwiNotification:
         assert exc_info.value.code == 0
         stderr = capsys.readouterr().err
         assert stderr.count("[inbox/unanswered]") == count
-        assert stderr.startswith("# uwi\n") if count else not stderr
+        assert stderr.startswith(f"{_wi_common.UNANSWERED_UWI_NOTICE_HEADER}\n") if count else not stderr
 
     def test_suppresses_notify_when_list_covers_all_unanswered(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1370,7 +1371,7 @@ class TestUnansweredUwiNotification:
             atk.main(["wi", "list", "--source=session-review", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# uwi" in captured.err
+        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER in captured.err
 
     def test_does_not_suppress_notify_when_list_has_status_inbox(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1383,7 +1384,7 @@ class TestUnansweredUwiNotification:
             atk.main(["wi", "list", "--status=inbox", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# uwi" in captured.err
+        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER in captured.err
 
     def test_suppresses_notify_when_show_all_covers_unanswered(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1396,7 +1397,7 @@ class TestUnansweredUwiNotification:
             atk.main(["wi", "show", "--all", "--type=uwi", "--answered=no", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# uwi" not in captured.err
+        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER not in captured.err
 
     def test_does_not_suppress_notify_when_show_with_filename(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1409,7 +1410,7 @@ class TestUnansweredUwiNotification:
             atk.main(["wi", "show", f"{_FIXED_TIMESTAMP}-001.md", "--skip-pull"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "# uwi" in captured.err
+        assert _wi_common.UNANSWERED_UWI_NOTICE_HEADER in captured.err
 
 
 class TestInboxAlwaysEnabled:
