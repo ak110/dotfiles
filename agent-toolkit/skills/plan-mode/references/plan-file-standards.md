@@ -437,9 +437,17 @@ pyfltrを文章検査へ用いる対象リポジトリでは、次のコマン�
 uvx pyfltr run --commands=textlint,colloquial-check --enable=colloquial-check --no-exclude --no-fix --allow-external-paths --work-dir <対象リポジトリの絶対パス> --output-format=jsonl <一時ファイルの絶対パス>
 ```
 
-検査が実際に実行されたことは、出力のうち`source`が`external-path`である`warning`レコードが0件であることと、`summary`の`commands_summary.no_issues.succeeded`が`--commands`へ指定したコマンドの件数と一致することの両方で判定する。
+検査が実際に実行されたことは、次の4つがすべて成立することで判定する。
+
+- 出力のうち`source`が`external-path`である`warning`レコードが0件である
+- `summary`の`commands_summary.total`が`--commands`へ指定したコマンドの件数と一致する
+- `summary`の`commands_summary.no_issues.skipped`が0である
+- `summary`の`commands_summary.needs_action`が`resolution_failed`のキーを持たない
+
 いずれかが成立しない場合は、当該文面が検査されていないものとして扱い、計画へ記載しない。検査経路の入力形を修復してから再実行する。
-終了コードと`diagnostics`の値だけを検査の成否の根拠にしない。対象から除外された場合も終了コードは0となり、`diagnostics`は0のまま返るためである。
+判定条件へは、当該検査が問題を検出しなかったことに依存する集計値を用いない。検査が対象へ到達したかは対象が検査対象の集合へ入ったかで定まり、検出結果の内容とは独立に決まるためである。
+終了コード、`diagnostics`の値及び`commands_summary.no_issues.succeeded`だけを検査の成否の根拠にしない。対象から除外された場合も終了コードは0となり`diagnostics`は0のまま返り、`no_issues.succeeded`は挿入先ファイルが既存の指摘を持つ場合に`--commands`の件数と一致しないためである。
+`kind`が`command`であるレコードの対象ファイル数も判定条件に用いない。当該レコードは指摘0件で成功したコマンドについて出力されないため、指摘の無い実行では到達の指標にならない。
 
 計画ファイル（詳細）へ記載した変更対象は、生成元、参照元、呼び出し元、配布先及び既存テストの検索結果と照合する。
 該当しない接続先は、検索対象と不一致結果を根拠として対象外であることを記載する。
