@@ -1,7 +1,11 @@
 """install.sh のテスト。
 
 隔離 `$HOME` に現在のリポジトリを複製して install.sh を実行し、chezmoi による
-デプロイが行われることを検証する。外部ネットワーク依存を避けるため:
+デプロイが行われることを検証する。隔離の対象は `$HOME` と `PATH` であり、外部到達性は
+遮断しない。install.sh 配下の `uv tool install` は PyPI と python-build-standalone へ
+実際に到達するため、外部到達性設定（プロキシ変数）は親環境から引き継ぐ。
+
+到達先を差し替えられる分岐は、次の手段で実 GitHub・実 HTTP への依存を除く。
 
 - git clone 分岐は事前に `$FAKE_HOME/dotfiles` を用意して回避
 - chezmoi ダウンロード分岐はシステムの chezmoi バイナリを `$FAKE_HOME/.local/bin/`
@@ -11,6 +15,7 @@
 """
 
 import http.server
+import os
 import pathlib
 import shutil
 import socketserver
@@ -68,8 +73,9 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
                 "LANG": "C.UTF-8",
                 "DOTFILES_TMUX_PLUGIN_ORIGIN_BASE": f"file://{mirror_base}",
                 "DOTFILES_STATUSLINE_DOWNLOAD_URL": f"http://127.0.0.1:{port}/binary",
+                **_external_reachability_env(),
             }
-            subprocess.run(
+            completed = subprocess.run(
                 ["bash", str(INSTALL_SH)],
                 env=env,
                 check=True,
@@ -81,12 +87,21 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
             httpd.shutdown()
             thread.join()
 
+    # install.shは配下の処理の失敗を縮退して終了コード0で終わるため、
+    # 後段のassertが失敗した場合に原因の段を特定できるよう実行時の出力を保存する。
+    stdout_log = tmp_path / "install-sh.stdout.log"
+    stderr_log = tmp_path / "install-sh.stderr.log"
+    stdout_log.write_text(completed.stdout, encoding="utf-8")
+    stderr_log.write_text(completed.stderr, encoding="utf-8")
+
     # 5. ルールファイルがデプロイされていること。
     # rules側の配布対象は生成一覧を正本とし、POSIX版とWindows版の完全一致を検査する。
     # その他の規約はagent-toolkitプラグインのスキルが担う。
     # 代表として01-agent.mdの存在のみを検証する（ファイル一覧の一致は install_script_ssot_test.py が担う）。
     rules_dir = fake_home / ".claude" / "rules" / "agent-toolkit"
-    assert (rules_dir / "01-agent.md").exists(), "01-agent.md が chezmoi でデプロイされていない"
+    assert (rules_dir / "01-agent.md").exists(), (
+        f"01-agent.md が chezmoi でデプロイされていない（install.shの出力: {stdout_log} / {stderr_log}）"
+    )
 
     # tmuxプラグイン3件（tpm・catppuccin/tmux・tmux-cpu）が正しくcloneされていることを検証する。
     plugins_dir = fake_home / ".tmux" / "plugins"
@@ -160,6 +175,18 @@ def _make_git_mirror(base: pathlib.Path, rel_path: str, *, tag: str | None) -> s
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
     ).stdout.strip()
+
+
+def _external_reachability_env() -> dict[str, str]:
+    """親環境にある外部到達性設定だけを取り出して返す。
+
+    install.sh配下の`uv tool install`はPyPIとpython-build-standaloneへ実際に到達するため、
+    プロキシ経由でのみ外部へ到達するホストでは当該設定なしにインタープリターを取得できない。
+    存在しない変数は追加しないため、直接到達できるホストへ渡す環境は変わらない。
+    HOMEやXDG_*を含む親環境全体は引き継がない（隔離の漏れが実HOMEへの書き込みとして現れるため）。
+    """
+    keys = ("http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+    return {key: os.environ[key] for key in keys if key in os.environ}
 
 
 def _rev_parse_head(repo: pathlib.Path) -> str:
