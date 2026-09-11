@@ -782,7 +782,8 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default="auto",
         help="アラート検出対象のホスティング種別（既定auto。repo_idのhostから自動判定）。",
     )
-    loop.add_argument(
+    resume_group = loop.add_mutually_exclusive_group()
+    resume_group.add_argument(
         "--resume",
         nargs="?",
         const="",
@@ -792,6 +793,14 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
             "初回にorchestrate_model設定で決まったオーケストレーターの過去セッションを再開する。"
             "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
             "2回目以降は新規セッションとして起動する。"
+        ),
+    )
+    resume_group.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help=(
+            "対象リポジトリでagent-toolkit:process-wiを起動した直近の中断セッションを自動特定し、"
+            "候補情報を表示して確認のうえ再開する。--resumeとは同時指定できない。初回のみ有効。"
         ),
     )
     _atk_help.add_command(

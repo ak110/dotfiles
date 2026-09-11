@@ -23,6 +23,7 @@ import watchdog.observers
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.wi import alerts as _alerts
+from agent_toolkit._atk.wi import auto_resume as _auto_resume
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi.common import _count_pending_entries, _pull, _repo_lock
 from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATE_PROCESSING
@@ -728,6 +729,9 @@ def _without_resume_args(argv: list[str]) -> list[str]:
             if index < len(argv) and not argv[index].startswith("-"):
                 index += 1
             continue
+        if arg == "--auto-resume":
+            index += 1
+            continue
         result.append(arg)
         index += 1
     return result
@@ -1123,6 +1127,8 @@ def _cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> 
     _resolve_orchestrator_specs()
     local_path = _resolve_local_worktree(args.target_repo)
     target_repo_id = _resolve_repo_id(args.target_repo, cwd=local_path)
+    if args.auto_resume and args.resume is None:
+        args.resume = _auto_resume.select_session(target_repo_id, local_path)
     prompt = _build_process_loop_prompt()
     dotfiles_root = _resolve_dotfiles_root()
     startup_hash = _code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None

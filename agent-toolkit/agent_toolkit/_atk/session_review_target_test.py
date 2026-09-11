@@ -10,6 +10,7 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._atk import session_records as _session_records
 from agent_toolkit._atk import session_review_target as target
 
 
@@ -40,8 +41,8 @@ def _prepare_homes(
 ) -> tuple[pathlib.Path, pathlib.Path]:
     claude_home = tmp_path / "claude"
     codex_home = tmp_path / "codex"
-    monkeypatch.setattr(target, "default_claude_home", lambda: claude_home)
-    monkeypatch.setattr(target, "default_codex_home", lambda: codex_home)
+    monkeypatch.setattr(_session_records, "default_claude_home", lambda: claude_home)
+    monkeypatch.setattr(_session_records, "default_codex_home", lambda: codex_home)
     return claude_home, codex_home
 
 
@@ -185,7 +186,7 @@ def test_dispatch_resolves_each_cwd_once(
     _write_record(project / "other-new.jsonl", [_claude_record(other_repository)], 30)
     _write_record(project / "other-old.jsonl", [_claude_record(other_repository)], 20)
     _write_record(project / "target.jsonl", [_claude_record(repository), _claude_process_wi_record()], 10)
-    real_resolve = target.resolve_repo_id
+    real_resolve = _session_records.resolve_repo_id
     resolved_cwds: list[pathlib.Path | None] = []
 
     def resolve(value: str | None, *, cwd: pathlib.Path | None = None) -> str:
@@ -193,7 +194,7 @@ def test_dispatch_resolves_each_cwd_once(
             resolved_cwds.append(cwd)
         return real_resolve(value, cwd=cwd)
 
-    monkeypatch.setattr(target, "resolve_repo_id", resolve)
+    monkeypatch.setattr(_session_records, "resolve_repo_id", resolve)
 
     assert target.dispatch(_arguments(repository, "--codex-thread-id=current")) == 0
 
