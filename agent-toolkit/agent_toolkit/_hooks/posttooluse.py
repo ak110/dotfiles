@@ -112,9 +112,10 @@ _COMMAND_PREFIX_PATTERN = re.compile(r"(\A|[;&|])(\s*)(?:[A-Za-z_]\w*=\S*\s+|tim
 def _strip_command_prefixes(command: str) -> str:
     """コマンド先頭・セグメント区切り直後の環境変数代入と時間制限の接頭辞を除去する。
 
-    用途: テスト実行検出やgit操作検出の正規表現が、`LOCALAPPDATA=/tmp/dummy uvx pyfltr ...`や
-    `timeout 600 uvx pyfltr run ...`のような接頭辞付きコマンドにマッチせず、
-    検証済みでも未検証として警告される問題に追従する。
+    用途: git操作検出が`timeout 600 git log ...`のような接頭辞付きコマンドのサブコマンドを取得できず、
+    確認済みでも未確認として警告される問題に追従する。
+    実行位置のトークン列を入力とする検査（検証コマンドの検出など）は同じ接頭辞を自ら解決するため、
+    本関数の適用結果に依存しない。
     適用範囲: Bashコマンド文字列。`KEY=VALUE`と`timeout <時間>`の単純形式のみを対象とし、
     クォート内に空白を含む値・`env`コマンド経由・行継続バックスラッシュ・
     `timeout`のオプション付き形式（`-k 10s 600`等、引数の境界を字句だけで確定できない）は対象外とする。
@@ -122,22 +123,91 @@ def _strip_command_prefixes(command: str) -> str:
     return _COMMAND_PREFIX_PATTERN.sub(r"\1\2", command)
 
 
-# --- テスト実行検出パターン ---
+# --- テスト実行検出 ---
 
-_TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # 直接実行系
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*)?(?:python\s+-m\s+)?pytest\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
-    re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
-    # タスクランナー経由（make / mise run / npm | pnpm | yarn（run省略可）/ just / task）で
-    # test / check / validateアクション
-    re.compile(
-        r"(?:^|[;&|]\s*)"
-        r"(?:make\s+|(?:npm|pnpm|yarn)\s+(?:run\s+)?|mise\s+run\s+|just\s+|task\s+)"
-        r"(?:test|check|validate)\b"
-    ),
-)
+_PYFLTR_VERIFY_SUBCOMMAND_HEADS: frozenset[str] = frozenset({"run", "ci", "fast", "agent"})
+"""検証を実行する`pyfltr`のサブコマンドの先頭語。
+
+`run-for-agent`のようなハイフン区切りのサブコマンドを含めるため、先頭語で照合する。
+`list-runs`・`show-run`のように実行済みrunを参照するだけのサブコマンドは先頭語が一致せず対象外となる。
+"""
+
+_PRECOMMIT_EXECUTABLES: frozenset[str] = frozenset({"pre-commit", "prek"})
+
+_TASK_RUNNERS_WITHOUT_SUBCOMMAND: frozenset[str] = frozenset({"make", "just", "task"})
+"""実行ファイル名の直後にアクション名を取るタスクランナー。"""
+
+_TASK_RUNNERS_WITH_OPTIONAL_RUN: frozenset[str] = frozenset({"npm", "pnpm", "yarn"})
+"""アクション名の前の`run`を省略できるタスクランナー。"""
+
+_TASK_RUNNER_VERIFY_KEYWORDS: tuple[str, ...] = ("test", "check", "validate")
+"""タスクランナーのアクション名を検証の実行と判定する語。
+
+`ci-local-check`・`test-browser`・`e2etest`のような複合名を検出するため、アクション名との完全一致ではなく
+部分一致で照合する。検出漏れは検証済みのcommitへ誤った警告を返す側の誤りであり、
+本判定では当該方向の誤りを優先して避ける。
+"""
+
+
+def _executable_name(token: str) -> str:
+    """実行トークンからディレクトリ部分を除いた実行ファイル名を返す。"""
+    return token.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _operand_index(tokens: tuple[str, ...], start: int) -> int | None:
+    """`start`以降で最初にオプションでないトークンの添字を返す。無い場合はNoneを返す。"""
+    for index in range(start, len(tokens)):
+        if not tokens[index].startswith("-"):
+            return index
+    return None
+
+
+def _is_verification_invocation(tokens: tuple[str, ...]) -> bool:
+    """実行位置のトークン列が検証コマンドの起動であるかを返す。
+
+    入力は`resolve_execution_segment`が`uv run`・`uvx`・`timeout`・環境変数代入などの実行前置語を
+    解決した後のトークン列とする。前置語のオプションの部分集合を列挙した文字列一致で判定しないため、
+    `uv run --no-sync pyfltr run-for-agent`のように列挙外のオプションを伴う正規の起動も検出する。
+    `uv run --with pytest python -c ...`のようにオプションの値へ検証コマンド名が現れる形は、
+    実行位置が`python`に解決されるため検出しない。
+    """
+    if not tokens:
+        return False
+    executable = _executable_name(tokens[0])
+    if executable == "pytest":
+        return True
+    operand = _operand_index(tokens, 1)
+    if executable == "pyfltr":
+        return operand is not None and tokens[operand].split("-", 1)[0] in _PYFLTR_VERIFY_SUBCOMMAND_HEADS
+    if executable in _PRECOMMIT_EXECUTABLES:
+        return operand is not None and tokens[operand] == "run"
+    if executable == "cargo":
+        return operand is not None and tokens[operand] == "test"
+    return _is_task_runner_verification(executable, tokens, operand)
+
+
+def _is_task_runner_verification(executable: str, tokens: tuple[str, ...], operand: int | None) -> bool:
+    """タスクランナー経由の検証アクションの起動であるかを返す。"""
+    if executable in _TASK_RUNNERS_WITH_OPTIONAL_RUN:
+        if operand is not None and tokens[operand] == "run":
+            operand = _operand_index(tokens, operand + 1)
+    elif executable == "mise":
+        if operand is None or tokens[operand] != "run":
+            return False
+        operand = _operand_index(tokens, operand + 1)
+    elif executable not in _TASK_RUNNERS_WITHOUT_SUBCOMMAND:
+        return False
+    if operand is None:
+        return False
+    return any(keyword in tokens[operand] for keyword in _TASK_RUNNER_VERIFY_KEYWORDS)
+
+
+def _has_verification_invocation(command: str) -> bool:
+    """Bashコマンドの実行位置のいずれかが検証コマンドの起動であるかを返す。"""
+    return any(
+        segment.resolved and _is_verification_invocation(segment.tokens) for segment in extract_execution_segments(command)
+    )
+
 
 # --- git関連サブコマンドの分類 ---
 
@@ -755,7 +825,7 @@ def _handle_bash_tool(
 
     def _apply_bash_updates(state: dict) -> dict | None:
         changed = False
-        if not state.get("test_executed", False) and any(pattern.search(command) for pattern in _TEST_PATTERNS):
+        if not state.get("test_executed", False) and _has_verification_invocation(command):
             state["test_executed"] = True
             changed = True
         log_state = state.get("git_log_checked")

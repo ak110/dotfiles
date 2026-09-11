@@ -282,6 +282,15 @@ class TestTestExecution:
             "uv run --frozen pyfltr run",
             "uv run --frozen pytest",
             "uv run --frozen prek run",
+            # `uv run`の列挙外オプション（値を取らない形・値を取る形・複数併用）
+            "uv run --no-sync pyfltr run-for-agent",
+            "uv run --python 3.12 pytest",
+            "uv run --with pyfltr-plugin pyfltr run .",
+            "uv run --locked --no-default-groups pyfltr ci",
+            # タスクランナー自身のオプションと複合アクション名
+            "make -j4 test",
+            "make ci-local-check",
+            "npm run test:unit",
             # タスクランナー経由（test / check / validateアクションを各ランナーで網羅）
             "make test",
             "make check",
@@ -323,12 +332,25 @@ class TestTestExecution:
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
 
-    @pytest.mark.parametrize("command", ["uv run --with pyfltr-plugin pyfltr run .", "uv run --python 3.12 pytest"])
-    def test_uv_run_with_value_option_is_not_detected(self, tmp_path: pathlib.Path, command: str) -> None:
-        """値を伴うuv runのオプションをテスト実行として誤認しない。"""
-        sid = "test-uv-run-value-option"
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # 検証コマンド名が`uv run`のオプションの値として現れる形（実行位置は`python`）
+            "uv run --with pytest python -c 'print(1)'",
+            "uv run --with pyfltr python script.py",
+            # 実行済みrunを参照するだけの`pyfltr`サブコマンド
+            "uv run --frozen pyfltr list-runs",
+            "uv run --frozen pyfltr show-run 01ABC",
+            # アクション名を取らないタスクランナーの起動
+            "mise exec -- node index.js",
+            "npm run",
+        ],
+    )
+    def test_non_verification_command_is_not_detected(self, tmp_path: pathlib.Path, command: str) -> None:
+        """検証の実行に当たらないコマンドを`test_executed`の対象にしない。"""
+        sid = "test-non-verification"
         _run({"session_id": sid, "tool_input": {"command": command}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("test_executed") is not True
+        assert _read_state(tmp_path, sid).get("test_executed") is not True, f"command={command!r} detected"
 
     @pytest.mark.parametrize(
         "tool_response",
