@@ -1596,6 +1596,40 @@ class TestBodySectionReferenceExists:
         # 警告が出ること
         assert "section name does not exist" in _additional_context(result)
 
+    @staticmethod
+    def _write_plugin_tree(tmp_path: pathlib.Path, section: str) -> pathlib.Path:
+        """plugin manifestを持つ配布物の構成を配置し、参照元ファイルのパスを返す。"""
+        plugin_root = tmp_path / "agent-toolkit"
+        (plugin_root / ".claude-plugin").mkdir(parents=True)
+        (plugin_root / ".claude-plugin" / "plugin.json").write_text("{}\n", encoding="utf-8")
+        referenced = plugin_root / "share" / "referenced.md"
+        referenced.parent.mkdir()
+        referenced.write_text(f"# {section}\n\n本文です。", encoding="utf-8")
+        target_file = plugin_root / "skills" / "sample" / "SKILL.md"
+        target_file.parent.mkdir(parents=True)
+        return target_file
+
+    @pytest.mark.parametrize(
+        ("section", "expected"),
+        [("存在する節", ""), ("存在しない節", "section name does not exist")],
+        ids=["existing", "missing"],
+    )
+    def test_plugin_root_reference_resolves_to_plugin_root(self, tmp_path: pathlib.Path, section: str, expected: str) -> None:
+        """実行時パスの参照書式はplugin rootへ展開して節名を照合する。"""
+        target_file = self._write_plugin_tree(tmp_path, "存在する節")
+        prefix = "${CLAUDE_PLUGIN_" + "ROOT}/"
+        content = f"本文\n\n`{prefix}share/referenced.md`「{section}」節を参照。"
+
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target_file), "content": content}})
+
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "referenced file path does not exist" not in context
+        if expected:
+            assert expected in context
+        else:
+            assert "does not exist" not in context
+
 
 class TestAgentTaskLaunchIndependence:
     """Agent／Task起動が委譲スキル状態から独立していることを確認する。"""

@@ -784,6 +784,19 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
 # frontmatter区間（`^---$`〜`^---$`）の抽出用。
 _FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
 
+# 実行時パスの参照書式が用いるplugin root相対の接頭辞。
+# 本ファイル自身も配布物の参照実在検査の走査対象となるため、接頭辞は分割して組み立てる。
+_PLUGIN_ROOT_REFERENCE_PREFIX = "${CLAUDE_PLUGIN_" + "ROOT}/"
+
+
+def _resolve_plugin_root_reference(ancestors: tuple[pathlib.Path, ...], relative: str) -> pathlib.Path | None:
+    """Plugin manifestを持つ祖先を起点に、plugin root相対の参照を解決する。"""
+    for candidate in ancestors:
+        if (candidate / ".claude-plugin" / "plugin.json").exists():
+            resolved = candidate / relative
+            return resolved if resolved.exists() else None
+    return None
+
 
 def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | None:
     """`file_path`の祖先ディレクトリを起点に`referenced`（相対パス）の実ファイルを探索する。
@@ -796,10 +809,16 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     2. リポジトリルート配下の`agent-toolkit/rules/`・`agent-toolkit/skills/`
        （近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
 
+    実行時パスの参照書式（plugin root相対の接頭辞付き）で書かれた参照は、
+    plugin manifestを持つ祖先ディレクトリを起点として1経路だけで解決する。
+    当該書式は解決の起点が一意であり、祖先と近隣の探索で別の同名ファイルへ一致させないためである。
+
     いずれの経路でも実在しない場合は`None`を返す。
     """
     start = pathlib.Path(file_path).resolve().parent
     ancestors = (start, *start.parents)
+    if referenced.startswith(_PLUGIN_ROOT_REFERENCE_PREFIX):
+        return _resolve_plugin_root_reference(ancestors, referenced.removeprefix(_PLUGIN_ROOT_REFERENCE_PREFIX))
     search_roots: list[pathlib.Path] = list(ancestors)
 
     repo_root: pathlib.Path | None = None
