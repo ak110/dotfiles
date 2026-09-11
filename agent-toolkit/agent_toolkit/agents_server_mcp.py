@@ -29,6 +29,7 @@ from agent_toolkit._agents_server.state import (
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
+    SessionInitializationTimeoutError,
     SessionOwnerGoneError,
     SessionResumeState,
     SessionState,
@@ -55,6 +56,7 @@ try:
 except ImportError:  # pragma: no cover - mcpの依存版が警告型を公開しない場合
     IncompleteFieldDefinitionWarning = None  # type: ignore[assignment,misc]
 
+_LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 DEFAULT_KILL_TIMEOUT = 270.0
 DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
 SUPPORTED_ENGINES = frozenset({"claude", "codex"})
@@ -663,7 +665,8 @@ class AgentsServerManager:
                 raise ValueError(f"unsupported engine: {engine}")
             _validate_model_effort(model, effort)
             # backendが資源を作成した後に失敗することもあるため、例外では候補を進めない。
-            session = await self._backend(engine).start(
+            session = await self._start_until_initialized(
+                engine,
                 delivery_body,
                 cwd,
                 model,
@@ -701,6 +704,46 @@ class AgentsServerManager:
             unavailable_session.touch()
             return unavailable_response
         raise RuntimeError(f"no available model candidates: {model_type}")
+
+    async def _start_until_initialized(
+        self,
+        engine: str,
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        *,
+        model_type: str,
+        launch_kind: LaunchKind,
+        excluded_candidates: frozenset[ModelCandidate],
+    ) -> SessionState:
+        """初期化の上限超過だけを同じ候補で再試行し、全試行の超過を例外で確定する。
+
+        上限超過はbackendが当該sessionの資源を解放してから返るため、再試行は新しい起動として成立する。
+        初期化へ到達しない事象は候補のmodelに依存しないため、次候補へは進めず同じ候補で試みる。
+        """
+        last_timeout: SessionInitializationTimeoutError | None = None
+        for attempt in range(1, state.SESSION_INITIALIZATION_ATTEMPTS + 1):
+            try:
+                return await self._backend(engine).start(
+                    prompt,
+                    cwd,
+                    model,
+                    effort,
+                    model_type=model_type,
+                    launch_kind=launch_kind,
+                    excluded_candidates=excluded_candidates,
+                )
+            except SessionInitializationTimeoutError as exc:
+                last_timeout = exc
+                if attempt < state.SESSION_INITIALIZATION_ATTEMPTS:
+                    _LOG.warning("session初期化が上限へ達したため同じ候補で再試行します: engine=%s, 試行=%d", engine, attempt)
+        assert last_timeout is not None
+        raise SessionInitializationTimeoutError(
+            f"{engine} session initialization timed out on every attempt: "
+            f"attempts={state.SESSION_INITIALIZATION_ATTEMPTS}, cwd={cwd}, "
+            f"model_type={model_type}, launch_kind={launch_kind}"
+        ) from last_timeout
 
     async def _abandon_unavailable_session(self, session: SessionState) -> None:
         """次候補へ進む前に可用性失敗sessionの全資源を解放する。"""

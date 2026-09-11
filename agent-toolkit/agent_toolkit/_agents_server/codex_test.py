@@ -1,5 +1,6 @@
 """Codex backendのsession状態遷移を検証する。"""
 
+import asyncio
 import pathlib
 from typing import Any
 
@@ -20,6 +21,56 @@ class _ThreadStartClient:
         assert method == "thread/start"
         self.params = params
         return {"thread": {"id": "inner-thread"}}
+
+
+class _SilentClient:
+    """要求を受理したまま応答を返さないApp Serverクライアントの検体。"""
+
+    async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        del method, params  # noqa
+        await asyncio.Event().wait()
+        return {}  # pragma: no cover - 待機が解けないことを表す到達不能の分岐
+
+
+class _HangingStream:
+    """行を返さないまま待機し続けるストリームの検体。"""
+
+    async def readline(self) -> bytes:
+        await asyncio.Event().wait()
+        return b""  # pragma: no cover - 待機が解けないことを表す到達不能の分岐
+
+
+class _AcceptingStdin:
+    """書き込みを受理するだけのstdinの検体。"""
+
+    def write(self, data: bytes) -> None:
+        del data  # noqa
+
+    async def drain(self) -> None:
+        return None
+
+
+class _SilentProcess:
+    """起動後にJSON-RPC応答を返さない子プロセスの検体。"""
+
+    def __init__(self) -> None:
+        self.stdin = _AcceptingStdin()
+        self.stdout = _HangingStream()
+        self.stderr = _HangingStream()
+        self.returncode: int | None = None
+
+    def terminate(self) -> None:
+        self.returncode = -15
+
+    def kill(self) -> None:
+        self.returncode = -9
+
+    async def wait(self) -> int:
+        return self.returncode if self.returncode is not None else 0
+
+
+async def _ignore_message(message: dict[str, Any]) -> None:
+    del message  # noqa
 
 
 class _InspectableAppServerManager(subject.AppServerManager):
@@ -86,6 +137,40 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     assert server["default_tools_approval_mode"] == "approve"
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in server["env"]
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
+
+
+@pytest.mark.asyncio
+async def test_client_start_aborts_when_initialize_never_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """initializeの応答が返らない接続を上限で打ち切り、子プロセスを終了する。"""
+    monkeypatch.setattr(shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
+    process = _SilentProcess()
+
+    async def _spawn(*args: Any, **kwargs: Any) -> _SilentProcess:
+        del args, kwargs  # noqa
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _spawn)
+    client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
+
+    with pytest.raises(shared_state.SessionInitializationTimeoutError):
+        await client.start()
+
+    assert client.closed is True
+    assert process.returncode == -15
+
+
+@pytest.mark.asyncio
+async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """thread/startの応答が返らない起動を上限で打ち切り、session状態を登録せずに例外で返す。"""
+    monkeypatch.setattr(shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
+    manager = subject.AppServerManager()
+    monkeypatch.setattr(manager, "_ensure_client", lambda: _return(_SilentClient()))
+
+    with pytest.raises(shared_state.SessionInitializationTimeoutError):
+        await manager.start("実装する", str(tmp_path))
+
+    assert not manager.sessions
+    await manager.close()
 
 
 async def _return(value: Any) -> Any:

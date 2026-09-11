@@ -21,6 +21,16 @@ AUTO_RESUME_DEADLINE_SECONDS = 1800.0
 # 値は利用者の提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
 # 超過は停滞の確定ではなく呼び出し元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
+# backendがsessionの初期化を完了するまで起動側が待つ上限秒数と、同じ候補で試みる回数。
+# Claude Codeの記録では、start系ツールの呼び出しから起動された子sessionの記録の先頭エントリまでの
+# 経過が233件中232件で47.65秒以内に収まり、残る1件が604.22秒だった。
+# 同じ母集団のうち7件は初期化が到達せず、ホストがMCPツール呼び出しを1800.5秒で打ち切っていた。
+# 1回の上限は観測の上位側へ2倍弱の余裕を残す値とし、回数との積をホストの打ち切りの10分の1に収める。
+# 起動直後の可用性失敗を待つ上限は本値の後段へ直列に続くため、起動が返るまでの最大の経過は両者の和となる。
+# 監査記録は`docs/development/audit-records.md`の
+# 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
+SESSION_INITIALIZATION_TIMEOUT = 90.0
+SESSION_INITIALIZATION_ATTEMPTS = 2
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
 SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules-subagent.md"
@@ -98,6 +108,13 @@ def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
 def remove_terminal_listener(listener: Callable[[SessionState], None]) -> None:
     """turnの終端結果が確定したsessionの通知先を解除する。"""
     _TERMINAL_LISTENERS.discard(listener)
+
+
+class SessionInitializationTimeoutError(RuntimeError):
+    """backendがsessionの初期化を上限内に完了せず、起動を打ち切ったことを示す。
+
+    起動を要求した主体は無制限に待たされる代わりに本例外を受領し、対象と原因を報告できる。
+    """
 
 
 class SessionOwnerGoneError(RuntimeError):

@@ -975,6 +975,70 @@ async def test_start_raises_first_failure_when_backend_start_fails(
 
 
 @pytest.mark.asyncio
+async def test_start_retries_same_candidate_when_initialization_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """初期化の上限超過では次候補へ進めず、同じ候補の再試行で起動を返す。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    manager, backend = _manager_with_fake("codex")
+    original_start = backend.start
+    calls: list[str | None] = []
+
+    async def timeout_first_start(
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        **kwargs: Any,
+    ) -> subject.SessionState:
+        calls.append(model)
+        if len(calls) == 1:
+            raise state.SessionInitializationTimeoutError("initialization timed out")
+        return await original_start(prompt, cwd, model, effort, **kwargs)
+
+    monkeypatch.setattr(backend, "start", timeout_first_start)
+
+    response = await manager.start("plan", "調査", str(tmp_path))
+
+    assert calls == ["first", "first"]
+    assert response["model"] == "first"
+    assert response["session_id"] in manager.sessions
+
+
+@pytest.mark.asyncio
+async def test_start_raises_when_every_initialization_attempt_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """全試行が初期化の上限へ達した起動を、対象を示す例外で確定する。"""
+    candidates = [("codex", "first", "high"), ("codex", "second", "high")]
+    monkeypatch.setattr(subject._atk_config, "resolve_model_candidates", lambda _model_type: candidates)
+    monkeypatch.setattr(state, "SESSION_INITIALIZATION_ATTEMPTS", 3)
+    manager, backend = _manager_with_fake("codex")
+    calls: list[str | None] = []
+
+    async def always_timeout(
+        _prompt: str,
+        _cwd: str,
+        model: str | None,
+        _effort: str | None,
+        **_kwargs: Any,
+    ) -> subject.SessionState:
+        calls.append(model)
+        raise state.SessionInitializationTimeoutError("initialization timed out")
+
+    monkeypatch.setattr(backend, "start", always_timeout)
+
+    with pytest.raises(state.SessionInitializationTimeoutError, match="timed out on every attempt"):
+        await manager.start("plan", "調査", str(tmp_path))
+
+    assert calls == ["first", "first", "first"]
+    assert not manager.sessions
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("delayed", [False, True])
 async def test_start_advances_candidate_when_engine_reports_unavailable(
     delayed: bool,
