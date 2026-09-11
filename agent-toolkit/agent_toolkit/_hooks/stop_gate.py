@@ -100,6 +100,29 @@ _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 # 同一hookプロセスで複数判定が同じStop入力を参照する場合に、transcriptの全走査を再利用する。
 _PENDING_ASYNC_WORK_CACHE: dict[tuple[object, ...], bool] = {}
 
+# 同一hookプロセスで複数判定モジュールが同じtranscriptの解析済みエントリを再利用するためのキャッシュ。
+# 1エントリー限定（`_PENDING_ASYNC_WORK_CACHE`と同じ方式）。`transcript_path`のみをキーとし、
+# フラッシュ待機（`_wait_for_end_turn`）と解析（`_read_transcript_entries`）の両方を1回に集約する。
+_TRANSCRIPT_ENTRIES_CACHE: dict[str, list[dict]] = {}
+
+
+def read_transcript_entries_cached(transcript_path: str) -> list[dict]:
+    """transcriptのフラッシュ待機と解析を同一プロセス内で1回に集約して返す。
+
+    `is_pending_async_work`と他の判定モジュール（`termination_order_advisor`等）が
+    同じStop入力のtranscriptを走査する際、`_wait_for_end_turn`によるポーリングと
+    `_read_transcript_entries`によるJSONL解析の重複実行を避ける。
+    同一`transcript_path`への2回目以降の呼び出しは、直前の解析結果をそのまま返す。
+    `transcript_path`が変わった場合はキャッシュを入れ替える。
+    """
+    if transcript_path in _TRANSCRIPT_ENTRIES_CACHE:
+        return _TRANSCRIPT_ENTRIES_CACHE[transcript_path]
+    _wait_for_end_turn(transcript_path)
+    entries = _read_transcript_entries(transcript_path)
+    _TRANSCRIPT_ENTRIES_CACHE.clear()
+    _TRANSCRIPT_ENTRIES_CACHE[transcript_path] = entries
+    return entries
+
 
 def _pending_cache_key(
     transcript_path: str,
@@ -193,9 +216,8 @@ def is_pending_async_work(
     if cache_key in _PENDING_ASYNC_WORK_CACHE:
         return _PENDING_ASYNC_WORK_CACHE[cache_key]
 
-    _wait_for_end_turn(transcript_path)
+    entries = read_transcript_entries_cached(transcript_path)
     cache_key = _pending_cache_key(transcript_path, session_id, background_tasks)
-    entries = _read_transcript_entries(transcript_path)
     last_tool_use = _get_last_tool_use_block(entries)
     last_async = _last_tool_use_is_async_wait(last_tool_use)
     launched, completed, host_reported_launched = _describe_pending_background_entries(
