@@ -10,12 +10,20 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）でのスキル起動を検出し�
 - plan-mode → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
 
+Claude CodeのsessionTitleは、process-loop起動セッションでは`process-loop`、
+process-wi手動起動セッションでは`process-wi`の固定値を優先する
+（両条件が真の場合はprocess-loopを優先する）。
+いずれにも該当しないセッションは従来どおり計画ファイルのstemを一度だけ反映する。
+固定値の判定は、当該呼び出しでのスキル起動フラグ更新の後に行う
+（同一呼び出しで検出したスラッシュコマンド起動を、その場でsessionTitleへ反映するため）。
+
 例外時はfail-openで exit 0 を返す。
 """
 
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import time
@@ -55,6 +63,10 @@ def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
 _PLAN_MODE_NAMES_EXTENDED = _extend_with_short_names(_PLAN_MODE_SKILL_NAMES)
 _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 
+# process-loop起動セッションであることを示す環境変数名（`autonomous_exit.py`と同じ）。
+_ENV_PROCESS_LOOP_SESSION = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
+_LEGACY_ENV_PROCESS_LOOP_SESSION = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
+
 # ホスト判定後の手動コマンドから<name>を抽出する。
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
@@ -90,6 +102,19 @@ def _set_process_wi_invoked(state: dict) -> dict | None:
         return None
     state["process_wi_skill_invoked"] = True
     return state
+
+
+def _fixed_session_title(session_id: str) -> str | None:
+    """process-loop起動またはprocess-wi手動起動セッションの固定sessionTitleを返す。
+
+    両条件が真の場合はprocess-loopを優先する。計画ファイルstemの反映（`claim_session_title`
+    経由で一度だけ確定する）とは異なり、対象セッションである間は呼び出しごとに同じ固定値を返す。
+    """
+    if os.environ.get(_ENV_PROCESS_LOOP_SESSION) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP_SESSION) == "1":
+        return "process-loop"
+    if read_state(session_id).get("process_wi_skill_invoked") is True:
+        return "process-wi"
+    return None
 
 
 def _plan_session_title(session_id: str) -> str | None:
@@ -162,36 +187,28 @@ def main(payload_text: str) -> int:
         # 発火条件は受領側が変更できないため、原因の除去を求める反復注記を付けない。
         additional_context = _llm_notice(_VERIFICATION_NOTICE_BODY, tag=_WARN_TAG, removable_cause=False)
 
+    if not is_normal_prompt:
+        match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
+        if match is not None:
+            name = match.group(1)
+            full_name = f"agent-toolkit:{name}"
+
+            # 対応スキル別にフラグを設定する。sessionTitleの固定値判定より先に行い、
+            # 当該呼び出しでの起動を同じ応答へ反映できるようにする。
+            if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
+                update_state(session_id, _set_plan_mode_invoked)
+            if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
+                update_state(session_id, _set_process_wi_invoked)
+
     # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
-    # Codexはスキル起動の状態記録だけを行い、計画名を出力しない。
-    plan_session_title = None
+    # Codexはスキル起動の状態記録だけを行い、sessionTitleを出力しない。
+    session_title = None
     if not is_codex:
-        plan_session_title = _plan_session_title(session_id)
+        session_title = _fixed_session_title(session_id)
+        if session_title is None:
+            session_title = _plan_session_title(session_id)
 
-    if is_normal_prompt:
-        if plan_session_title is not None or additional_context is not None:
-            _emit_hook_output(
-                session_title_output=plan_session_title,
-                additional_context=additional_context,
-            )
-        return 0
-
-    match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
-    if match is None:
-        if plan_session_title is not None:
-            _emit_hook_output(session_title_output=plan_session_title, additional_context=None)
-        return 0
-
-    name = match.group(1)
-    full_name = f"agent-toolkit:{name}"
-
-    # 対応スキル別にフラグを設定する。
-    if name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES:
-        update_state(session_id, _set_plan_mode_invoked)
-    if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
-        update_state(session_id, _set_process_wi_invoked)
-
-    if plan_session_title is not None:
-        _emit_hook_output(session_title_output=plan_session_title, additional_context=None)
+    if session_title is not None or additional_context is not None:
+        _emit_hook_output(session_title_output=session_title, additional_context=additional_context)
 
     return 0
