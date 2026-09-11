@@ -30,6 +30,21 @@ Codexでは`type`が`compacted`のレコードとして残り、所要時間の�
   ツールが読み取ったファイルの本文は実行結果と同じ領域に入るため、書式の一致だけで判定すると
   当該本文に含まれる例示が実行時の事象として報告される
 
+## スキル起動の判定
+
+Claude Codeの記録では、スキルの起動を`Skill`ツールの結果レコードで判定する。
+`type`が`user`のレコードの`message.content`にある`tool_result`要素の`content`が`Launching skill: <スキル名>`と完全一致することを条件とする。
+同じ起動の要求側は`type`が`assistant`のレコードの`tool_use`要素であり、`name`が`Skill`、`input.skill`がスキル名を持つ。
+スキル名の部分一致による検索は用いない。利用可能なスキルの一覧を持つ`attachment`型のレコードが多数一致するためである。
+
+Codexの記録には、スキルの起動を一意に示すレコードが無い。
+Codexはスキルを`SKILL.md`の読み取りとして実行するため、スキル名は利用可能なスキルの一覧、文脈の再掲、及び`SKILL.md`のパスを含むコマンドの入出力へ現れる。
+Codexでスキルの起動を判定する場合は、当該スキルの起動を依頼したプロンプト本文の包含だけを条件とする。
+判定の対象は、`type`が`response_item`、`payload.type`が`message`、`payload.role`が`user`のレコードの`content`にある`input_text`要素の`text`とする。
+最初のuser役のレコードは実行環境が挿入する前置きであるため、レコードの位置で判定しない。
+当該プロンプト本文を経ない起動は判定不能として扱う。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。
+
 ## 集計値の典拠
 
 セッション記録から集計したトークン量、リクエスト数又は所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
