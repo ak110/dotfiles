@@ -271,8 +271,9 @@ def _check_agents_server_list_repeat(session_id: str) -> bool:
 
     状態キー`agents_server_sessions`をキー順JSONへ正規化した指紋で前回の`list`からの
     変化を判定する。直近の遮断から5分以内の再実行は、記録できない状態変化がある経路で
-    恒久的に停止しないよう通過させる。遮断する場合は、前回の結果を再利用するという
-    一意の代替手段を同じターンで実行できるためblockを返す。
+    恒久的に停止しないよう通過させる。遮断する場合は、前回の結果を再利用する代替手段を
+    同じターンで実行できるためblockを返す。あわせて、状態を進める`wait`と`stop`の
+    呼び出し形を通知本文へ示す。
     """
     if not session_id:
         return False
@@ -306,7 +307,10 @@ def _check_agents_server_list_repeat(session_id: str) -> bool:
     print(
         _block_notice(
             "blocked: 前回の`list`から`agents_server`の状態が変化していないため、同じ結果が返る。"
-            "前回の`list`の結果を再利用する。",
+            "前回の`list`の結果を再利用する。"
+            "状態を進める操作は`list`ではない。終端を待つ場合は引数を取らない`wait`を、"
+            "終端済みの委譲先を一覧から除く場合は`stop(session_id)`を発行する。"
+            "これらは状態を変えるため、続けて発行する`list`は遮断されない。",
             fix="完了通知の受領後など再取得が必要な場合は、5分以内に同じ`list`を再実行すると続行できる。",
         ),
         file=sys.stderr,

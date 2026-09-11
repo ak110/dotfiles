@@ -565,6 +565,8 @@ class TestAgentsServerListRepeat:
         assert not first.stdout
         assert blocked.returncode == 2
         assert "前回の`list`から`agents_server`の状態が変化していない" in blocked.stderr
+        assert "`stop(session_id)`" in blocked.stderr
+        assert "引数を取らない`wait`" in blocked.stderr
         assert not blocked.stdout
 
     def test_agents_server_list_passes_on_retry_and_state_change(
