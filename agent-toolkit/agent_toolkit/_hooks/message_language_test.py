@@ -83,6 +83,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "pretooluse.py:1588 本文",
         "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、停滞検知の手順を完了した場合に限る。"
+        "当該手順の完了条件は`agent-toolkit:delegation`の"
+        "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
         "進行が遅いことや非効率に見"
         "えることだけでは停止の指示にならない。"
         "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"

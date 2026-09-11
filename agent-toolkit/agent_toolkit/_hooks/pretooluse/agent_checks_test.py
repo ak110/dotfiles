@@ -835,14 +835,15 @@ class TestTaskStopBlock:
         blocked_at = _read_session_state(tmp_path, "task-stop-first")["task_stop_blocked_at"]
         assert before <= blocked_at <= time.time()
 
-    def test_block_message_states_the_four_conditions(self, state_dir: dict[str, str]) -> None:
-        """遮断文面が停止の根拠、不十分な理由、確認手段、再実行方法を示す。"""
+    def test_block_message_states_the_stop_conditions(self, state_dir: dict[str, str]) -> None:
+        """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
         stderr = self._invoke("task-stop-message", state_dir).stderr
         assert "明示的な即時停止要求" in stderr
         assert "停滞検知の手順" in stderr
         assert "進行が遅い" in stderr
         assert "AskUserQuestionで確認" in stderr
         assert "5分以内にTaskStopを再実行" in stderr
+        assert "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節" in stderr
 
     def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
         """遮断文面が利用者介入時の追加指示既定と停止限定条件を示す。"""
