@@ -92,7 +92,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi set-dependencies": {
         "summary": "AWIの明示依存だけを更新する",
-        "description": "目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox又はprocessingにあること。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
+        "description": "目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox、processing又はholdにあること。依存の更新は保存状態を変えない。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
     },
     "atk wi answer": {

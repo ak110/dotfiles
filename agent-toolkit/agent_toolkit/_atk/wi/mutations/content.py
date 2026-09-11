@@ -108,7 +108,7 @@ if TYPE_CHECKING:
         _resolve_conversion_targets,
         _resolve_editable_targets,
         _resolve_processable_targets,
-        _resolve_removable_targets,
+        _resolve_active_targets,
         commit_entries,
     )
     from agent_toolkit._atk.wi.mutations.transitions import (

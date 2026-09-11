@@ -269,6 +269,44 @@ def test_set_dependencies_rejects_mutual_and_existing_chain_cycles(
         mutations.set_entry_dependencies(notes, filename=filename, depends_on=dependencies)
 
 
+def test_set_dependencies_updates_held_entry_and_keeps_hold_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """hold状態の項目の依存を更新し、保存状態をholdのまま維持する。"""
+    notes = _setup_notes(tmp_path)
+    held = _write_convert_awi(notes, "held.md", state="hold")
+    _write_convert_awi(notes, "first.md")
+    _disable_convert_git(monkeypatch)
+
+    mutations.set_entry_dependencies(notes, filename="held.md", depends_on=("first.md",))
+
+    assert held.exists()
+    assert not (notes / "inbox" / "held.md").exists()
+    assert not (notes / "processing" / "held.md").exists()
+    parsed = frontmatter_parser.parse_frontmatter(held.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["depends_on"] == ["first.md"]
+
+
+def test_set_dependencies_detects_cycle_through_held_entry(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """循環検出の母集団へhold状態の項目を含める。"""
+    notes = _setup_notes(tmp_path)
+    held = _write_convert_awi(notes, "held.md", state="hold")
+    held.write_text(
+        held.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [first.md]\n"),
+        encoding="utf-8",
+    )
+    _write_convert_awi(notes, "first.md")
+    _disable_convert_git(monkeypatch)
+
+    with pytest.raises(mutations.WebInputError, match="循環"):
+        mutations.set_entry_dependencies(notes, filename="first.md", depends_on=("held.md",))
+
+
 def test_convert_multiple_entries_uses_one_commit_in_input_order(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

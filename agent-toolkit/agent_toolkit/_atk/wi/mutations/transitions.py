@@ -116,7 +116,7 @@ if TYPE_CHECKING:
         _resolve_commit,
         _resolve_conversion_targets,
         _resolve_processable_targets,
-        _resolve_removable_targets,
+        _resolve_active_targets,
         commit_entries,
     )
 
@@ -167,7 +167,7 @@ def _resolve_transition_paths(
             missing_is_conflict=missing_is_conflict,
         )
     if action == "remove":
-        return _resolve_removable_targets(
+        return _resolve_active_targets(
             filenames,
             inbox_dir,
             processing_dir,
