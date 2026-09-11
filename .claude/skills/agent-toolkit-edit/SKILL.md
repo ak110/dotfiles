@@ -19,7 +19,7 @@ description: >
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`: 順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけに適用する規範。
-  振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents.md`「規範追記時の判定」に従う
+  振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
   個人環境完結は`DOTFILES_`を使う。個別の環境変数の一覧と用途は
@@ -107,7 +107,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
   （ハッシュ照合・SHA256記録・ブロック機構・状態フラグ書き込み等）を説明する記述を書かない。
   エンドユーザーには挙動の観測結果（特定操作がブロックされる・警告が返る等）のみを提示する。
   - 例外: SSOT目的で状態フラグ一覧・hook間連携仕様を集約する資料
-    （`<plugin root>/skills/writing-standards/references/session-state-flags.md`等）は本規定の対象外とする
+    （`<plugin root>/skills/writing-standards/references/session-state-and-flags.md`等）は本規定の対象外とする
 
 スキル・サブエージェント編集時は次を守る。
 
@@ -186,7 +186,7 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
 ## セッション状態フラグ
 
 `agent-toolkit`プラグインが定義する全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の
-`references/session-state-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
+`references/session-state-and-flags.md`に置く。フラグを追加・変更する際は同ファイルを更新する。
 
 SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_skill_invoked`フラグが立たず
 警告が返るため、必ずSkillツールで起動する。
