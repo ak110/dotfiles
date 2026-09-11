@@ -4994,8 +4994,20 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
-    with pytest.raises(ValueError, match="必須入力が欠けています"):
+    with pytest.raises(ValueError) as exc_info:
         await subject.start("execute", f"{task_document} の手順を実行せよ。", str(tmp_path))
+    message = str(exc_info.value)
+    assert "必須入力が欠けています: 対象" in message
+    assert str(task_document) in message
+    assert "必須入力の行は`<項目名>:`で始める" in message
+
+
+def test_validate_required_prompt_inputs_shows_first_line_format() -> None:
+    """1行目からタスク文書を取得できない場合は受理する書式を警告へ添える。"""
+    warning = subject._validate_required_prompt_inputs("対象: /repo\n手順を実行せよ。")
+    assert warning is not None
+    assert "起動文の1行目からタスク文書の絶対パスを取得できません" in warning
+    assert "`.subagent.md`で終わるタスク文書の絶対パスで始める" in warning
 
 
 def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_path: pathlib.Path) -> None:

@@ -80,6 +80,13 @@ _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 
+# 検査が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
+_REQUIRED_INPUT_LINE_FORMAT = (
+    "受理する書式: 必須入力の行は`<項目名>:`で始める。"
+    "項目名へ別の語を連結した行は当該項目として解決しないため、補足する語は別の行へ書く。"
+)
+_TASK_DOCUMENT_LINE_FORMAT = "受理する書式: 起動文の1行目は`.subagent.md`で終わるタスク文書の絶対パスで始める。"
+
 
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
     """agent-toolkit pluginのshare直下にあるタスク文書だけを受理する。"""
@@ -167,7 +174,9 @@ def _validate_required_prompt_inputs(prompt: str) -> str | None:
     lines = prompt.splitlines()
     match = _TASK_DOCUMENT_PATTERN.match(lines[0] if lines else "")
     if match is None:
-        return "必須入力検査を実施できません: 起動文の1行目からタスク文書の絶対パスを取得できません。"
+        return (
+            f"必須入力検査を実施できません: 起動文の1行目からタスク文書の絶対パスを取得できません。{_TASK_DOCUMENT_LINE_FORMAT}"
+        )
     task_document = pathlib.Path(match.group("path")).resolve()
     if not _is_agent_toolkit_task_document(task_document):
         return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
@@ -195,7 +204,9 @@ def _validate_required_prompt_inputs(prompt: str) -> str | None:
     prompt_lines = lines[1:]
     missing = [name for name in required_names if not any(line.startswith(f"{name}:") for line in prompt_lines)]
     if missing:
-        raise ValueError(f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}")
+        raise ValueError(
+            f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}"
+        )
     return None
 
 
