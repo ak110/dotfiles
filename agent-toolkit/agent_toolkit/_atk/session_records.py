@@ -24,6 +24,14 @@ _CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
 # `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す起動プロンプト本文。
+#
+# 完全一致ではなく包含で判定する。2026年9月10日の実測（監査記録参照）で、当該プロンプト本文の
+# 完全一致は実記録2169件に対して0件だった。記録される`text`は実行環境が挿入する前置き
+# （``# AGENTS.md instructions``又は``<recommended_plugins>``で始まる）を含むため、完全一致では
+# 成立しない。期待する契約は、`atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役
+# レコードを持つセッションを候補とすることであり、包含判定で当該契約を満たす。
+# 監査記録は`docs/development/audit-records.md`の
+# 「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。
 _CODEX_PROCESS_WI_PROMPT = "/goal `agent-toolkit:process-wi`を完遂してください。"
 
 _TEXT_EXCERPT_LIMIT = 200
@@ -88,7 +96,11 @@ def resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
 
 
 def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
-    """実行系固有の保存形式にprocess-wiの起動標識があれば真を返す。"""
+    """実行系固有の保存形式にprocess-wiの起動標識があれば真を返す。
+
+    Codexでは`_CODEX_PROCESS_WI_PROMPT`の包含で判定する。当該定数のdocstringが持つ
+    確定した現象・期待する契約・直接的原因を根拠とする。
+    """
     if engine == "claude":
         message = record.get("message")
         if record.get("type") != "user" or not isinstance(message, dict):
@@ -108,7 +120,10 @@ def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
         and payload.get("role") == "user"
         and isinstance(content, list)
         and any(
-            isinstance(item, dict) and item.get("type") == "input_text" and item.get("text") == _CODEX_PROCESS_WI_PROMPT
+            isinstance(item, dict)
+            and item.get("type") == "input_text"
+            and isinstance(item.get("text"), str)
+            and _CODEX_PROCESS_WI_PROMPT in item["text"]
             for item in content
         )
     )

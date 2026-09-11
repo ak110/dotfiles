@@ -12,6 +12,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import session_records
+from agent_toolkit._atk.wi import process_loop
 
 
 def _write_record(path: pathlib.Path, records: list[object], modified_at: int = 10) -> None:
@@ -77,18 +78,60 @@ class TestInvokedProcessWi:
 
         assert session_records.invoked_process_wi(path, "claude") is True
 
-    def test_codex_prompt_exact_match_required(self, tmp_path: pathlib.Path) -> None:
+    def test_codex_prompt_contained_in_larger_text_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """Codexの起動判定は完全一致ではなく包含で行う。
+
+        確定した現象: 起動プロンプトの完全一致条件は、実記録2169件へ適用しても0件だった
+        （2026年9月10日実測。監査記録の当該見出しを参照）。
+        期待する契約: `atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役
+        レコードを持つセッションを候補とする。
+        直接的原因: 記録される`text`は実行環境が挿入する前置き
+        （``# AGENTS.md instructions``又は``<recommended_plugins>``で始まる）を含むため、
+        完全一致では成立しない。
+        """
         path = tmp_path / "records.jsonl"
         _write_record(
             path,
             [
                 _codex_message_record(
-                    role="user", item_type="input_text", text="/goal `agent-toolkit:process-wi`を完遂してください。"
+                    role="user",
+                    item_type="input_text",
+                    text="# AGENTS.md instructions\n以下略\n/goal `agent-toolkit:process-wi`を完遂してください。",
                 )
             ],
         )
 
         assert session_records.invoked_process_wi(path, "codex") is True
+
+    def test_codex_preamble_only_record_does_not_match(self, tmp_path: pathlib.Path) -> None:
+        """前置きだけを含む最初のuser役レコードは起動判定へ寄与しない。
+
+        確定した現象: 最初のuser役レコードの本文は実行環境が挿入する前置きであり、
+        起動プロンプト本文を含まない（2026年9月10日実測）。
+        期待する契約: 判定はレコードの位置ではなく本文の包含だけで行う。
+        直接的原因: 包含判定へ改めても、前置き文字列自体には起動プロンプト本文が
+        現れないため、位置に依存せず誤って真とはならない。
+        """
+        path = tmp_path / "records.jsonl"
+        _write_record(
+            path,
+            [_codex_message_record(role="user", item_type="input_text", text="# AGENTS.md instructions\n以下略")],
+        )
+
+        assert session_records.invoked_process_wi(path, "codex") is False
+
+    def test_codex_prompt_constant_is_pinned_to_process_loop_builder(self) -> None:
+        """判定文の定数は`atk wi process-loop`が渡す起動プロンプトと一致し続ける。
+
+        確定した現象: 判定文を保持する定数`_CODEX_PROCESS_WI_PROMPT`は、`_build_process_loop_prompt`
+        が返す値と別々に保持されている。
+        期待する契約: 判定文の定数と起動プロンプトの実体は同じ文字列を保つ。
+        直接的原因: 一方だけを変更すると判定が無効化されるため、双方の一致を検査で固定する。
+        """
+        assert (
+            process_loop._build_process_loop_prompt()  # pylint: disable=protected-access
+            == session_records._CODEX_PROCESS_WI_PROMPT  # pylint: disable=protected-access
+        )
 
     def test_missing_marker_returns_false(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "records.jsonl"
