@@ -41,12 +41,18 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     _copy_repo(REPO_ROOT, fake_dotfiles)
     _disable_codex_cli_setup(fake_dotfiles)
 
-    # 2. システムの chezmoi を fake_home/.local/bin に配置（ダウンロード分岐を回避）
+    # 2. システムの chezmoi と uv を fake_home/.local/bin に配置（ダウンロード分岐を回避）。
+    # uv は run_after_post-apply.sh.tmpl が `uv tool install` で dotfiles-post-apply を導入する際に必要だが、
+    # 実インストール先（例: ~/.local/bin）が /usr/bin・/bin・/usr/local/bin のいずれにも無い環境では
+    # 後続のPATHへ解決されず、pytools導入とルール配布が無言でスキップされる。
     chezmoi_bin = shutil.which("chezmoi")
     assert chezmoi_bin is not None
+    uv_bin = shutil.which("uv")
+    assert uv_bin is not None
     local_bin = fake_home / ".local" / "bin"
     local_bin.mkdir(parents=True)
     shutil.copy2(chezmoi_bin, local_bin / "chezmoi")
+    shutil.copy2(uv_bin, local_bin / "uv")
     _write_fake_cli(local_bin / "claude")
     _write_fake_cli(local_bin / "codex")
     _write_fake_npm(local_bin / "npm")
