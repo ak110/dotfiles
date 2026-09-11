@@ -682,12 +682,16 @@ Jinjaフィルターや正規表現など、コードとして評価される文
 
 `skills/plan-mode/scripts/check_plan_file.py`が計画の構造と実体を計画構造検査する。
 同じ祖先見出しの下に同じ文言の見出しが複数現れる状態は不正とし、祖先見出しを含む経路の一意性で判定する。
-本スクリプトはPEP 723スクリプトであり、次の形で実行する。引数には常に計画ファイル（メイン）`<計画名>.md`の
-絶対パスを渡す（計画ファイル（詳細）のパスを渡さない）。
+本スクリプトはplugin同梱の`agent_toolkit`パッケージへ依存するため、当該パッケージを解決する次のいずれかの形で実行する。
+引数には常に計画ファイル（メイン）`<計画名>.md`の絶対パスを渡す（計画ファイル（詳細）のパスを渡さない）。
 
 ```sh
 uv run --project <plugin rootの絶対パス> --locked --no-default-groups /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
+PYTHONPATH=<plugin rootの絶対パス> python /absolute/path/to/plan-mode/scripts/check_plan_file.py --reject-migration-warnings /absolute/path/to/plan.md
 ```
+
+`uvx --from agent-toolkit python <スクリプトの絶対パス>`は当該パッケージを解決せず、実行が`ModuleNotFoundError`で止まる。
+本スクリプトは当該解決の失敗を検出した場合に、上記の起動形を示して終了コード2で終わる。
 
 対象リポジトリがセッションの作業ディレクトリと異なる場合は、
 `--work-dir /absolute/path/to/target-repository`を付ける。

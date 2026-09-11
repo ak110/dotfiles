@@ -26,7 +26,19 @@ import sys
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
-from agent_toolkit._atk import config as _atk_config
+try:
+    from agent_toolkit._atk import config as _atk_config
+except ImportError as _import_error:
+    _SELF = Path(__file__).resolve()
+    print(
+        f"agent_toolkitパッケージを解決できません: {_import_error}。"
+        f"本スクリプトはplugin同梱パッケージへ依存するため、"
+        f"`uv run --project {_SELF.parents[3]} --locked --no-default-groups {_SELF} <引数>`"
+        f"又は`PYTHONPATH={_SELF.parents[3]} python {_SELF} <引数>`の形で起動する。"
+        f"`uvx --from agent-toolkit python {_SELF}`は当該パッケージを解決しない。",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 _MAX_TEXT_LENGTH = 2000
 _MAX_DETAIL_LENGTH = 8000

@@ -17,9 +17,27 @@ import sys
 import tempfile
 from collections.abc import Iterator
 
-from agent_toolkit._common import file_lock as _file_lock  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+try:
+    from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        file_lock as _file_lock,
+    )
+    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        locations as _plan_file,
+    )
+    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        structure as _plan_format,
+    )
+except ImportError as _import_error:
+    _SELF = pathlib.Path(__file__).resolve()
+    print(
+        f"agent_toolkitパッケージを解決できません: {_import_error}。"
+        f"本スクリプトはplugin同梱パッケージへ依存するため、"
+        f"`uv run --project {_SELF.parents[3]} --locked --no-default-groups {_SELF} <引数>`"
+        f"又は`PYTHONPATH={_SELF.parents[3]} python {_SELF} <引数>`の形で起動する。"
+        f"`uvx --from agent-toolkit python {_SELF}`は当該パッケージを解決しない。",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 PLAN_STEM_PLACEHOLDER = "__PLAN_STEM__"
 """本文中で最終計画stemが未確定であることを示す固定プレースホルダー。"""
