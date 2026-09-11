@@ -29,6 +29,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
+_HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.codex.json"
 _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
 
 
@@ -421,20 +422,34 @@ class TestTestExecution:
         assert _read_state(tmp_path, sid).get("test_executed") is not True
 
     def test_posttooluse_matcher_routes_pyfltr_mcp_run_for_agent(self):
-        """MCP成功イベントがPostToolUse実装へ配送されるmatcherを維持する。"""
+        """MCP成功イベントがPostToolUse実装へ配送されるmatcherを維持する。
+
+        実装側の`AGENTS_SERVER_HOOK_TOOL_NAMES`（Claude Code名前空間分）を入力として反復し、
+        hooks.jsonのPostToolUse matcherが全要素へ一致することを検査する。
+        実装側の集合へ要素を追加しても本検査を反復せず追加し忘れると、当該要素だけ検査から漏れる。
+        """
+        module = _load_posttooluse_module()
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
         assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
-        assert (
-            re.fullmatch(
-                matcher,
-                "mcp__plugin_agent-toolkit_agents_server__send_message",
-            )
-            is not None
-        )
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__start_explore") is not None
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__kill") is not None
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__stop") is not None
+        claude_tool_names = {
+            name
+            for name in module.AGENTS_SERVER_HOOK_TOOL_NAMES
+            if name.startswith("mcp__plugin_agent-toolkit_agents_server__")
+        }
+        assert claude_tool_names
+        for tool_name in claude_tool_names:
+            assert re.fullmatch(matcher, tool_name) is not None, tool_name
+
+    def test_posttooluse_codex_matcher_covers_agents_server_tool_names(self):
+        """Codex向けhooks.codex.jsonのPostToolUse matcherが実装側のCodex名前空間ツール名を被覆する。"""
+        module = _load_posttooluse_module()
+        hooks = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
+        codex_tool_names = {name for name in module.AGENTS_SERVER_HOOK_TOOL_NAMES if name.startswith("mcp__agents_server__")}
+        assert codex_tool_names
+        for tool_name in codex_tool_names:
+            assert re.fullmatch(matcher, tool_name) is not None, tool_name
 
     @pytest.mark.parametrize(
         "tool_name",

@@ -23,11 +23,26 @@ from pyfltr.colloquial import check as _colloquial_check
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._hooks import required_reads
+from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+
+_HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
+_HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+
+
+def _matcher_covers(matcher: str, tool_name: str) -> bool:
+    """matcherがtool_nameへ一致するかを判定する。
+
+    `re.fullmatch`は`*`だけのパターンへ`re.error: nothing to repeat`を送出するため、
+    matcherが`*`である場合は正規表現として評価せず全一致として扱う。
+    """
+    if matcher == "*":
+        return True
+    return re.fullmatch(matcher, tool_name) is not None
 
 
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
@@ -99,6 +114,23 @@ def test_wait_dispatch_approves_without_session_guard(tmp_path: pathlib.Path) ->
     assert result.returncode == 0
     assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
     assert not result.stderr
+
+
+def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
+    """PreToolUse matcherが実装側のagents_serverツール名集合全体を被覆する。
+
+    実装側の`agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES`を入力として反復し、
+    hooks.json（Claude Code、matcherは`*`）とhooks.codex.json（Codex）の双方が
+    全要素を被覆することを検査する。実装側の集合へ要素を追加してもmatcherへ
+    追加し忘れると、Codex側の当該要素だけが検査から漏れて本検査が失敗する。
+    """
+    claude_matcher = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
+    codex_matcher = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
+    assert claude_matcher == "*"
+    for tool_name in agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES:
+        assert _matcher_covers(claude_matcher, tool_name)
+        if tool_name.startswith("mcp__agents_server__"):
+            assert _matcher_covers(codex_matcher, tool_name), tool_name
 
 
 def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path) -> None:
