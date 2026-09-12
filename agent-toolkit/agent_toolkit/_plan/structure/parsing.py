@@ -64,6 +64,7 @@ if TYPE_CHECKING:
         PLAN_BUG_FILE_REFERENCE_PREFIX,
         PLAN_BUG_TABLE_HEADER,
         PLAN_BUG_TABLE_ROWS,
+        PLAN_CURRENT_VERIFICATION_TABLE_ROWS,
         PLAN_DETAIL_H2_ORDER,
         PLAN_DETAIL_SUFFIX,
         PLAN_EXCLUSION_H3,
@@ -73,6 +74,10 @@ if TYPE_CHECKING:
         PLAN_H2_ALIASES,
         PLAN_H2_BUG,
         PLAN_H2_COMPLETION,
+        PLAN_H2_CURRENT_HISTORY,
+        PLAN_H2_CURRENT_PERMANENCE,
+        PLAN_H2_CURRENT_PROGRESS,
+        PLAN_H2_CURRENT_VERIFICATION,
         PLAN_H2_HISTORY,
         PLAN_H2_IMPLEMENTATION,
         PLAN_H2_LEGACY_AGENT_JUDGMENT,
@@ -80,6 +85,7 @@ if TYPE_CHECKING:
         PLAN_H2_LEGACY_PROGRESS,
         PLAN_H2_MATERIALS,
         PLAN_H2_OVERVIEW,
+        PLAN_H2_REQUIREMENTS,
         PLAN_H2_PERMANENCE,
         PLAN_H2_PROGRESS,
         PLAN_H2_TERMINATION,
@@ -117,6 +123,8 @@ if TYPE_CHECKING:
         PLAN_MATERIAL_TABLE_HEADER,
         PLAN_MATERIAL_TYPES,
         PLAN_METADATA_DETAIL_FIELD,
+        PLAN_METADATA_BUG_FIELD,
+        PLAN_METADATA_CURRENT_FIELDS,
         PLAN_METADATA_FALLBACK_H2,
         PLAN_METADATA_FIELD_ALIASES,
         PLAN_METADATA_FIELDS,
@@ -134,6 +142,7 @@ if TYPE_CHECKING:
         PLAN_PROGRESS_TABLE_HEADER,
         PLAN_QUEUE_ID_PATTERN,
         PLAN_REFACTORING_TABLE_ROWS,
+        PLAN_SINGLE_FILE_H2_ORDER,
         PLAN_REQUIREMENT_ID_PATTERN,
         PLAN_REQUIREMENT_TABLE_HEADER,
         PLAN_TWO_FILE_MAIN_H2_ORDER,
@@ -386,7 +395,12 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
     conflicts: list[str] = []
     for field, raw_value in entries:
         canonical_field = canonical_metadata_field(field)
-        if canonical_field not in (*PLAN_METADATA_MAIN_FIELDS, PLAN_METADATA_DETAIL_FIELD):
+        if canonical_field not in (
+            *PLAN_METADATA_MAIN_FIELDS,
+            *PLAN_METADATA_CURRENT_FIELDS,
+            PLAN_METADATA_DETAIL_FIELD,
+            PLAN_METADATA_BUG_FIELD,
+        ):
             continue
         normalized = _strip_backticks(raw_value)
         if canonical_field in values and values[canonical_field] != normalized:

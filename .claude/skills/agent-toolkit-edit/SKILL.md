@@ -120,7 +120,7 @@ agents_serverの実装を変更する場合と調査する場合は、着手前�
 - 相互参照が発生する共通観点は横断スキル配下`references/`へ集約してよい
 - 並行する手順を別スキルに新設する際は、既存スキルの表記との整合を確認する
 - 「実行時エラーで判明する仕様」「具体例」は再発リスクと影響度を踏まえて保持判断する
-- レビュー工程の契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-and-add-awi`側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
+- 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-mode`の直接起動側の双方を同じ変更単位で更新する。両系統は共通化しておらず、片方だけの改訂は運用差を生む
 
 ### プラグイン内リソースの参照書式
 
@@ -132,10 +132,8 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 
 ## スキル間の連携
 
-`agent-toolkit:plan-mode`から作業を開始し、承認後はメインが`agents_server`で実装担当を直接起動して引き継ぐ。
+`agent-toolkit:plan-mode`から作業を開始した場合は、承認後にメインがカレントディレクトリで直接実装する。
 工程の詳細は各スキルを正本とする。
-計画ファイルの実装者向け領域にあるレビューステップへ
-`レビューは実施しない（ユーザー指示）`とあればレビュー工程をスキップする。
 
 ## バージョン更新
 
@@ -144,7 +142,7 @@ Agent PluginsのMCP定義をCodexへ射影する場合は、`args`・`cwd`・`en
 全レーン後に版数を更新する時点では、`agent-toolkit/skills/process-wi/references/finish-session.md`を全文読む。
 `.claude/skills/agent-toolkit-edit/references/version-bump.md`の手順へ入る前に同ファイルを全文読む。
 `agent-toolkit/`配下を変更対象に含む計画を作成する場合は、計画の起草前に同文書「plan modeでの取り扱い」節を読み、
-実装資料の変更説明へ記載すべきファイル群を確定する。
+`## 要件・外部仕様`へ記載すべきファイル群を確定する。
 rebase・merge時の版数競合は`references/version-bump.md`「競合解決と統合後の確認」節に従って解決する。
 `version`／`description`は以下の箇所で完全に同一文字列に保つ。
 
@@ -170,8 +168,8 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   新規追加・削除・改名を加える場合は連携整合を保つ。
   既知の呼び出し元スキル群を`grep -rn`で洗い出し、連携先の対応記述を同一計画内で同時更新する
 - `agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`の編集は`.chezmoi-source/dot_codex/AGENTS.md`の再生成差分を生じさせる。
-  計画の実装資料へ編集する正本だけを変更説明として記載する。
-  `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は実装者向け領域へ記載し、
+  計画の`## 要件・外部仕様`へ編集する正本だけを変更説明として記載する。
+  `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は`## 検証`へ記載し、
   自動生成先は変更対象の説明へ重複して記載しない
 - `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`の編集は、生成差分もClaude配布一覧の変更も生じさせないが、バージョン更新の規定は適用する

@@ -183,7 +183,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
         "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 工程別のモデルと推論の深さを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位の単一値であり、全てのセッションが共有する。\n前提: KEYは変更できるキー、VALUEは`<claude|codex>:<モデル>[/<effort>]`の形式で指定する。複数の候補はASCIIカンマ区切りで並べる。\n復元・後始末: 元の値へ戻す場合は、同じコマンドで以前の値を設定する。並行して稼働するセッションへも新しい値が波及する。",
-        "epilog": "実行例:\n\n  atk config set plan_model codex:gpt-5.6-sol/medium",
+        "epilog": "実行例:\n\n  atk config set execute_model codex:gpt-5.6-sol/medium",
     },
     "atk config apply-preset": {
         "summary": "工程別モデル設定をプリセットから一括保存する",

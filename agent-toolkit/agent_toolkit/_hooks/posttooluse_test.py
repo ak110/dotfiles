@@ -2159,7 +2159,7 @@ class TestAgentsServerProcessLoopLog:
 
     def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
         """終端していない観測では終了時刻を記録しない。"""
-        text = self._run_session(tmp_path, model_type="plan", final_status="running")
+        text = self._run_session(tmp_path, model_type="execute", final_status="running")
         assert "event=subagent_start" in text
         assert "event=subagent_end" not in text
 

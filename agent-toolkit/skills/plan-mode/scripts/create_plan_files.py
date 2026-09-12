@@ -1,14 +1,13 @@
 """plan-modeが使う新規計画ファイルの内部作成処理。
 
 このスクリプトは公開CLIではなく、plan-modeが管理対象一時領域へ準備した
-メイン・detail・bug本文を`~/.claude/plans`へ確定するための内部APIを提供する。
+メイン本文と任意のバグ本文を`~/.claude/plans`へ確定するための内部APIを提供する。
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
-import datetime
 import os
 import pathlib
 import re
@@ -70,15 +69,6 @@ def _validate_plan_name(plan_name: str) -> str:
     if plan_name.endswith(".md"):
         raise ValueError("計画名に拡張子を指定できません")
     return plan_name
-
-
-def _validate_date(value: datetime.date | None) -> datetime.date:
-    """計画名へ埋め込む日付を検証して返す。"""
-    if value is None:
-        return datetime.date.today()
-    if not isinstance(value, datetime.date):
-        raise TypeError("dateはdatetime.dateで指定してください")
-    return value
 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
@@ -214,7 +204,7 @@ def _check_structure(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """確定した二ファイル計画を既存の構造検査へ渡す。"""
+    """確定した計画ファイル群を構造検査へ渡す。"""
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     errors, _warnings = check_plan_file.check(
@@ -234,7 +224,6 @@ def _finalize_candidate(
     plans_root: pathlib.Path,
     stem: str,
     main_content: bytes,
-    detail_content: bytes,
     bug_content: bytes | None,
     work_dir: pathlib.Path,
     private_notes: pathlib.Path | str | None,
@@ -246,8 +235,7 @@ def _finalize_candidate(
     所有セッションを解決できない環境では記録を書かず、作成そのものは成功として扱う。
     """
     main_path = directory / f"{stem}.md"
-    detail_path = directory / f"{stem}.detail.md"
-    targets = [(main_path, main_content, ".md.tmp"), (detail_path, detail_content, ".detail.md.tmp")]
+    targets = [(main_path, main_content, ".md.tmp")]
     if bug_content is not None:
         targets.append((directory / f"{stem}.bugs.md", bug_content, ".bugs.md.tmp"))
     _require_plans_root_path(directory, plans_root)
@@ -286,34 +274,30 @@ def _finalize_candidate(
 
 def create_plan_files(
     main_source: pathlib.Path | str,
-    detail_source: pathlib.Path | str,
     plan_name: str,
     *,
     bug_source: pathlib.Path | str | None = None,
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
-    date: datetime.date | None = None,
     work_dir: pathlib.Path | str | None = None,
     max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
 ) -> tuple[pathlib.Path, ...]:
     """入力本文を計画作業rootへ作成し、確定済みパスを返す。
 
-    ``main_source``、``detail_source``及び任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
+    ``main_source``及び任意の``bug_source``は管理対象一時領域にあるUTF-8本文を指す。
     private-notesは既存の可搬参照の検査にだけ使い、計画本文は作業rootへ保存する。
     """
     if max_attempts <= 0:
         raise ValueError("max_attemptsは1以上にしてください")
     name = _validate_plan_name(plan_name)
-    plan_date = _validate_date(date)
     main_content = _read_source(main_source)
-    detail_content = _read_source(detail_source)
     bug_content = _read_source(bug_source) if bug_source is not None else None
-    sources = [pathlib.Path(main_source), pathlib.Path(detail_source)]
+    sources = [pathlib.Path(main_source)]
     if bug_source is not None:
         sources.append(pathlib.Path(bug_source))
     resolved_sources = [source.expanduser().resolve() for source in sources]
     if len(set(resolved_sources)) != len(resolved_sources):
-        raise ValueError("メイン、detail及びbugに同じ入力ファイルを指定できません")
+        raise ValueError("メインとbugに同じ入力ファイルを指定できません")
 
     metadata, metadata_errors = _plan_format.parse_plan_metadata(main_content.decode("utf-8"))
     if metadata_errors:
@@ -335,11 +319,14 @@ def create_plan_files(
         _file_lock.acquire_lock(lock_file)
         try:
             _require_plans_root_path(plans_root, plans_root)
-            for _attempt in range(max_attempts):
-                token = secrets.token_hex(2)
-                if _TOKEN_RE.fullmatch(token) is None:
-                    raise PlanCreationError(f"乱数suffixが4桁16進数ではありません: {token}")
-                stem = f"{plan_date.day:02d}-{name}-{token}"
+            for attempt in range(max_attempts):
+                if attempt == 0:
+                    stem = name
+                else:
+                    token = secrets.token_hex(2)
+                    if _TOKEN_RE.fullmatch(token) is None:
+                        raise PlanCreationError(f"乱数suffixが4桁16進数ではありません: {token}")
+                    stem = f"{name}-{token}"
                 if _candidate_is_taken(plans_root, stem):
                     continue
                 try:
@@ -348,7 +335,6 @@ def create_plan_files(
                         plans_root,
                         stem,
                         _replace_placeholder(main_content, stem),
-                        _replace_placeholder(detail_content, stem),
                         _replace_placeholder(bug_content, stem) if bug_content is not None else None,
                         checked_work_dir,
                         notes_for_resolver,
@@ -361,35 +347,25 @@ def create_plan_files(
     raise PlanCreationError(f"計画ファイル名の衝突を解消できませんでした（試行回数={max_attempts}）")
 
 
-def _parse_date(value: str) -> datetime.date:
-    """CLIの日付引数を検証する。"""
-    try:
-        return datetime.date.fromisoformat(value)
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("日付はYYYY-MM-DDで指定してください") from error
-
-
 def main(argv: list[str] | None = None) -> int:
     """内部作成処理のCLI入口。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--main-source", required=True, type=pathlib.Path)
-    parser.add_argument("--detail-source", required=True, type=pathlib.Path)
-    parser.add_argument("--bug-source", type=pathlib.Path)
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--main-source", dest="main_source", type=pathlib.Path)
+    source_group.add_argument("--source", dest="main_source", type=pathlib.Path)
+    parser.add_argument("--bugs-source", type=pathlib.Path)
     parser.add_argument("--name", required=True)
     parser.add_argument("--private-notes", type=pathlib.Path)
     parser.add_argument("--home", type=pathlib.Path)
-    parser.add_argument("--date", type=_parse_date)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
     args = parser.parse_args(argv)
     try:
         paths = create_plan_files(
             args.main_source,
-            args.detail_source,
             args.name,
-            bug_source=args.bug_source,
+            bug_source=args.bugs_source,
             private_notes=args.private_notes,
             home=args.home,
-            date=args.date,
             work_dir=args.work_dir,
         )
     except (OSError, UnicodeError, PlanCreationError, TypeError, ValueError) as error:

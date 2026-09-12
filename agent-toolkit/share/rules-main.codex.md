@@ -135,7 +135,7 @@ Web調査ツールのように逐次呼び出しを要求する個別ツール�
 
 計画ファイルの起草前に調査の完了を観測可能にし、根拠不足のまま本文作成へ移る事象を防ぐ。
 メインが計画ファイル初版を起草する作業へ、Codexのネイティブplan modeの利用有無を問わず適用する。
-`agent-toolkit:plan-and-add-awi`を含む、起動スキル経由の作業も対象とする。
+起動スキル経由の作業も対象とする。
 レビュー指摘の反映と進捗ログの追記は、初版の起草開始を制御する本手順の対象外とする。
 
 - `update_plan`へ「調査」と「計画ファイル起草」を独立工程として登録し、調査工程を`completed`へ更新した後に起草工程を`in_progress`へ更新する
@@ -181,7 +181,7 @@ Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始�
 `agent-toolkit:delegation`が定める`agents_server`経路は、実際の別主体へ委譲するときに使う。
 出力量が大きいコマンドの隔離には`agents_server`の`start_shell`を使う。
 `agent-toolkit:delegation`が定める汎用エージェント代替経路は、実際の別主体へ委譲するときだけ使う。
-計画レビュー系・計画準拠実行レビュー系・独立実行レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
+実行レビュー系・実装修正系は系統ごとに別の実際の別主体を起動し、履歴を混同しない。
 
 `agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の表に対応するキーを持つ工程では、同文書の手順に従って`engine`を解決する。
 `engine=claude`の場合は同文書の手順3に従い、公開されたClaude実行機能を使う。CodexからClaudeへ委譲する場合は`agents_server`の`start`へ対応する`model_type`を渡し、`engine=claude`をCodexの`spawn_agent`へ置換してはならない。

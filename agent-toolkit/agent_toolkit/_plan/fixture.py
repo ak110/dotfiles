@@ -111,6 +111,12 @@ VERIFICATION_TABLE: str = (
 PROGRESS_TABLE: str = f"{_header_row(_plan_format.PLAN_PROGRESS_TABLE_HEADER)}\n"
 PROGRESS_ROW: str = "| 2026-08-09 12:00 | 実装 | 成功。 |\n"
 
+CURRENT_VERIFICATION_TABLE: str = (
+    f"{_header_row(_plan_format.PLAN_VERIFICATION_TABLE_HEADER)}\n"
+    f"| {_plan_format.PLAN_CURRENT_VERIFICATION_TABLE_ROWS[0]} | {VERIFICATION_COMMAND} |\n"
+    f"| {_plan_format.PLAN_CURRENT_VERIFICATION_TABLE_ROWS[1]} | {INTEGRATION_COMMAND} |\n"
+)
+
 PERMANENCE_ROW: str = "| 更新経路を恒久化する | エージェント提案詳細 | 対象ファイル | 後続の更新でも参照するため。 |"
 PERMANENCE_TABLE: str = f"{_header_row(_plan_format.PLAN_PERMANENCE_TABLE_HEADER)}\n{PERMANENCE_ROW}"
 REFACTORING_TABLE: str = rows_table(_plan_format.PLAN_REFACTORING_TABLE_ROWS)
@@ -166,6 +172,66 @@ def human_action_table(*, wi: bool) -> str:
     if wi:
         rows.append(WI_ACTION_ROW)
     return "\n".join([_header_row(_plan_format.PLAN_HUMAN_ACTION_TABLE_HEADER), *rows])
+
+
+def current_plan(
+    *,
+    repo: str | pathlib.Path = REPOSITORY,
+    work_type: str = "通常変更",
+    related_wi: tuple[tuple[str, str], ...] = (),
+    bug_reference: str | None = None,
+) -> str:
+    """現行の1ファイル計画の正常系本文を返す。"""
+    bug_line = f"\n- {_plan_format.PLAN_METADATA_BUG_FIELD}: `{bug_reference}`" if bug_reference is not None else ""
+    return f"""# 計画の主題
+
+## {_plan_format.PLAN_H2_OVERVIEW}
+
+対象の公開契約を更新する。
+
+### {_plan_format.PLAN_METADATA_H3}
+
+- 起動経路: `agent-toolkit:plan-mode`
+- 対象リポジトリ: `{repo}`
+{_related_wi_block(related_wi)}
+- 作業種別: {work_type}{bug_line}
+
+## {_plan_format.PLAN_H2_ACTION}
+
+{human_action_table(wi=bool(related_wi))}
+
+## {_plan_format.PLAN_H2_REQUIREMENTS}
+
+公開契約の判定を更新し、対象の検査で結果を確認する。
+
+## {_plan_format.PLAN_H2_CURRENT_PERMANENCE}
+
+### {_plan_format.PLAN_PERMANENCE_H3[0]}
+
+{PERMANENCE_TABLE}
+
+### {_plan_format.PLAN_PERMANENCE_H3[1]}
+
+{REFACTORING_TABLE}
+
+## {_plan_format.PLAN_H2_CURRENT_HISTORY}
+
+{USER_EVENT_HEADING}
+
+```text
+{USER_EVENT_TEXT}
+```
+
+## {_plan_format.PLAN_H2_CURRENT_VERIFICATION}
+
+{CURRENT_VERIFICATION_TABLE}
+## {_plan_format.PLAN_H2_TERMINATION}
+
+なし
+
+## {_plan_format.PLAN_H2_CURRENT_PROGRESS}
+
+{PROGRESS_TABLE}"""
 
 
 def _related_wi_block(entries: tuple[tuple[str, str], ...]) -> str:

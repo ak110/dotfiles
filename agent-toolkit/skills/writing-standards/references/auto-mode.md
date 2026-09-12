@@ -72,7 +72,7 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
 - `git commit --amend`はデフォルトの`soft_deny`が自身の作成したHEADへのamendを`clears`するが、
   別判断軸（`autonomous post-review cleanup`など）で拒否される場合がある
 - Self Modificationの許可ルールは、正規のAWI処理フロー由来・ユーザー投入AWI限定
-  （自己生成起点を除外）・計画レビュー工程経由を条件とする
+  （自己生成起点を除外）・計画に基づく実装工程を条件とする
 - マージ許可ルールは承認条件を付けない無条件許可とする（ユーザー指定）。
   AWI本文・UWI回答による承認はtranscript外の実体でありclassifierが参照できないため、
   承認条件付きのルールでは承認済みマージの再拒否が残る。

@@ -4,9 +4,6 @@ from __future__ import annotations
 
 TRACKED_MODEL_TYPES: frozenset[str] = frozenset(
     {
-        "plan",
-        "plan_review",
-        "execute_fast",
         "execute",
         "execute_review",
     }

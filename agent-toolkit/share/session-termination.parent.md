@@ -25,7 +25,6 @@
 - `プロジェクト規範`: プロジェクト規範の絶対パス
 - `bump種別`: 各レーンが記録したbump種別と選定根拠。該当する記録が無い場合は`bump不要`
 - 直前にpushした完全OID。当該セッションで未pushの場合は`なし`
-- `統合後検証`: 統合後検証の検証コマンド。レーン工程で各レーンの計画ファイル（メイン）`## 検証区分`の`統合後検証`行から記録した値を重複なく並べる。全レーンの当該行が`なし`である場合は`なし`
 - `固有の終端工程`: 選定工程で記録した固有の終端工程と依存順。無い場合は`なし`
 - `延期adopt`: 対象AWIファイル名、先行する終端工程及び`deferred_adopt_commits`で当該AWIに対応付けて検収した完全OID。無い場合は`なし`
 - `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
@@ -37,7 +36,7 @@
 `終端完了`に続く8行を受領し、次のとおり照合する。いずれかが一致しない場合は同じ終端担当へ差し戻し、成果物と実装差分の再読解をしない。
 
 - `git -C <対象リポジトリの絶対パス> rev-parse <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
-- `post_integration_verification`が、`統合後検証`へ`なし`を渡した場合は`なし`、それ以外は`成功`又は`CI委譲`である。`CI委譲`を受領した場合は、当該検証の結論を`ci_result`の照合で確定し、当該行の値だけを理由に差し戻さない
+- `overall_verification`が`CI判定`又は`ローカル成功`である。`CI判定`では全体検査とCIの同値性が成立した根拠を`terminal_steps`が挙げ、`ローカル成功`では対象リポジトリのタスクランナーが定める全体検査を1回実行した結果を同じ行が挙げる
 - `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
 - `ci_verified_head`と`final_branch_head`が異なる場合は、両OIDの差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head>`で取得する。当該完全OIDの集合が、`terminal_steps`が挙げる生成commitの完全OIDの集合と過不足なく一致することを確認する。この場合に`final_branch_head`のCIを照会せず、`final_branch_head`のCIが成功したものとして扱わない
 - `base_branch_state`が`公開済み`である

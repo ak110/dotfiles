@@ -719,18 +719,18 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "exec.subagent.md":
         return [
-            "担当種別: fast担当",
+            "担当種別: レーン担当",
+            "起動経路: agent-toolkit:process-wi",
             *shared_worktree,
-            "実装するコミット単位: 単位1",
-            "目的: 契約の検証",
-            "変更説明: 文書を変更する",
+            "AWIファイル名一覧: 20260101-000000-001.md (origin: human)",
+            "固有指示: なし",
+            "再開位置: なし",
             "作成規範: agent-toolkit:writing-standards",
-            "追加指示: なし",
-            "許容済みの挙動変化: なし",
-            f"git操作に用いるworktree: {root}",
             f"複製元: {root.parent}",
             f"対象外worktree: {root.parent / 'other'}",
+            f"git操作に用いるworktree: {root}",
             handoff,
+            "権限: commit可、ffマージ可、作業対象リポジトリへのpush不可",
         ]
     if task_name == "pick-wi.subagent.md":
         return [

@@ -64,6 +64,7 @@ if TYPE_CHECKING:
         PLAN_BUG_FILE_REFERENCE_PREFIX,
         PLAN_BUG_TABLE_HEADER,
         PLAN_BUG_TABLE_ROWS,
+        PLAN_CURRENT_VERIFICATION_TABLE_ROWS,
         PLAN_DETAIL_H2_ORDER,
         PLAN_DETAIL_SUFFIX,
         PLAN_EXCLUSION_H3,
@@ -73,6 +74,10 @@ if TYPE_CHECKING:
         PLAN_H2_ALIASES,
         PLAN_H2_BUG,
         PLAN_H2_COMPLETION,
+        PLAN_H2_CURRENT_HISTORY,
+        PLAN_H2_CURRENT_PERMANENCE,
+        PLAN_H2_CURRENT_PROGRESS,
+        PLAN_H2_CURRENT_VERIFICATION,
         PLAN_H2_HISTORY,
         PLAN_H2_IMPLEMENTATION,
         PLAN_H2_LEGACY_AGENT_JUDGMENT,
@@ -80,6 +85,7 @@ if TYPE_CHECKING:
         PLAN_H2_LEGACY_PROGRESS,
         PLAN_H2_MATERIALS,
         PLAN_H2_OVERVIEW,
+        PLAN_H2_REQUIREMENTS,
         PLAN_H2_PERMANENCE,
         PLAN_H2_PROGRESS,
         PLAN_H2_TERMINATION,
@@ -117,6 +123,8 @@ if TYPE_CHECKING:
         PLAN_MATERIAL_TABLE_HEADER,
         PLAN_MATERIAL_TYPES,
         PLAN_METADATA_DETAIL_FIELD,
+        PLAN_METADATA_BUG_FIELD,
+        PLAN_METADATA_CURRENT_FIELDS,
         PLAN_METADATA_FALLBACK_H2,
         PLAN_METADATA_FIELD_ALIASES,
         PLAN_METADATA_FIELDS,
@@ -134,6 +142,7 @@ if TYPE_CHECKING:
         PLAN_PROGRESS_TABLE_HEADER,
         PLAN_QUEUE_ID_PATTERN,
         PLAN_REFACTORING_TABLE_ROWS,
+        PLAN_SINGLE_FILE_H2_ORDER,
         PLAN_REQUIREMENT_ID_PATTERN,
         PLAN_REQUIREMENT_TABLE_HEADER,
         PLAN_TWO_FILE_MAIN_H2_ORDER,
@@ -714,7 +723,10 @@ def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading]
 
 
 def extract_bug_file_reference(content: str) -> str | None:
-    """本文のバグ調査節が単独で参照する分離先パスを返す。"""
+    """計画メタ情報又は旧バグ調査節が単独で参照する分離先パスを返す。"""
+    metadata, _errors = parse_plan_metadata(content)
+    if metadata is not None and PLAN_METADATA_BUG_FIELD in metadata.values:
+        return metadata.values[PLAN_METADATA_BUG_FIELD]
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)
@@ -774,6 +786,9 @@ def _check_permanence_sections(
     headings: list[PlanHeading],
     index: int,
     work_type: str | None,
+    *,
+    parent_label: str = "`## 恒久化・リファクタリング内容`",
+    current_format: bool = False,
 ) -> list[str]:
     """恒久化とリファクタリングの検討実体を検査する。
 
@@ -785,7 +800,7 @@ def _check_permanence_sections(
         index,
         3,
         PLAN_PERMANENCE_H3,
-        "`## 恒久化・リファクタリング内容`",
+        parent_label,
         optional=PLAN_LEGACY_PERMANENCE_H3,
     )
     for position, heading in child_headings(headings, index, 3):
@@ -800,14 +815,31 @@ def _check_permanence_sections(
         if not any(line.strip().startswith("|") for _lineno, line in section):
             continue
         tables = extract_tables(section)
-        if heading.text == "恒久化" and work_type == "通常変更":
-            table, table_errors = _check_fixed_table(section, PLAN_PERMANENCE_TABLE_HEADER, "通常変更の`### 恒久化`")
+        if heading.text == "恒久化" and (work_type == "通常変更" or current_format):
+            label = "`### 恒久化`" if current_format else "通常変更の`### 恒久化`"
+            table, table_errors = _check_fixed_table(section, PLAN_PERMANENCE_TABLE_HEADER, label)
             if table is None:
-                errors.append(f"通常変更の`### 恒久化`は{list(PLAN_PERMANENCE_TABLE_HEADER)}の4列表を置く")
+                errors.append(f"{label}は{list(PLAN_PERMANENCE_TABLE_HEADER)}の4列表を置く")
             else:
                 errors.extend(table_errors)
-        elif heading.text == "リファクタリング" and _find_table_with_rows(tables, PLAN_REFACTORING_TABLE_ROWS) is None:
-            errors.append(f"`### リファクタリング`は対象ごとに{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く")
+        elif heading.text == "リファクタリング":
+            matching = [
+                table
+                for table in tables
+                if table.header == PLAN_BUG_TABLE_HEADER and table.row_labels() == PLAN_REFACTORING_TABLE_ROWS
+            ]
+            if not matching:
+                errors.append(
+                    f"`### リファクタリング`は対象ごとに{list(PLAN_BUG_TABLE_HEADER)}の2列と"
+                    f"{list(PLAN_REFACTORING_TABLE_ROWS)}の4行表を置く"
+                )
+            elif current_format:
+                for table in matching:
+                    errors.extend(
+                        f"`### リファクタリング`の表に空cellまたは列数不一致の行がある: {table.row_location(row_index)}"
+                        for row_index, row in enumerate(table.rows)
+                        if len(row) != 2 or any(not cell for cell in row)
+                    )
     return errors
 
 
@@ -1488,12 +1520,12 @@ def _check_h3_and_deeper(
         parent = canonical_h2_name(
             next((candidate.text for candidate in reversed(headings[:index]) if candidate.level == 2), "")
         )
-        if parent in freeform_parents:
-            continue
-        if heading.level == 3 and parent not in allowed_h3_parents:
-            errors.append(f"`## {parent}`直下に自由なH3は置かない: `### {heading.text}`")
-        elif heading.level > 3:
+        if heading.level > 3:
             errors.append(f"`## {parent}`配下にH4以深の見出しは置かない: `{'#' * heading.level} {heading.text}`")
+        elif parent in freeform_parents:
+            continue
+        elif heading.level == 3 and parent not in allowed_h3_parents:
+            errors.append(f"`## {parent}`直下に自由なH3は置かない: `### {heading.text}`")
     return errors
 
 
@@ -1658,6 +1690,127 @@ def check_plan_main_structure(
     if human_format:
         allowed_h3_parents.add(PLAN_H2_HISTORY)
     errors.extend(_check_h3_and_deeper(headings, allowed_h3_parents, frozenset()))
+    return work_type, errors
+
+
+def _check_nonempty_section(body: list[tuple[int, str]], headings: list[PlanHeading], heading_name: str) -> list[str]:
+    """指定したH2の本文が空でないことを検査する。"""
+    index = find_heading_index(headings, 2, heading_name)
+    if index is None:
+        return []
+    start, end = heading_subtree_range(headings, index)
+    if any(line.strip() for _lineno, line in lines_within(body, start, end)):
+        return []
+    return [f"`## {heading_name}`を空にしない"]
+
+
+def check_plan_single_file_structure(
+    content: str,
+    *,
+    origin_notices: list[str] | None = None,
+    origin_skips: list[str] | None = None,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[str | None, list[str]]:
+    """現行の1ファイル計画を検査して(作業種別, 違反一覧)を返す。"""
+    body = list(iter_markdown_body_lines(content))
+    headings = extract_headings(content)
+    errors = _check_h1(headings)
+    errors.extend(check_duplicate_headings(content))
+
+    parsed, _parse_errors = parse_plan_metadata(content)
+    parsed_work_type = parsed.values.get("作業種別") if parsed is not None else None
+    expected_metadata = PLAN_METADATA_CURRENT_FIELDS
+    if parsed_work_type == "バグ対応":
+        expected_metadata = (*expected_metadata, PLAN_METADATA_BUG_FIELD)
+    work_type, metadata_errors = _check_metadata_block(content, expected_fields=expected_metadata)
+    errors.extend(metadata_errors)
+    errors.extend(_check_fixed_h2_layout(headings, list(PLAN_SINGLE_FILE_H2_ORDER)))
+
+    overview_index = find_heading_index(headings, 2, PLAN_H2_OVERVIEW)
+    if overview_index is not None:
+        errors.extend(_check_overview_section(body, headings, overview_index))
+
+    action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
+    errors.extend(
+        _check_action_section(
+            body,
+            headings,
+            action_index,
+            None,
+            set(),
+            set(),
+            set(),
+            frozenset(filename for filename, _summary in parsed.related_wi) if parsed is not None else frozenset(),
+            origin_notices=origin_notices,
+            origin_skips=origin_skips,
+            private_notes=private_notes,
+            home=home,
+        )
+    )
+    if not has_human_action_table(content):
+        errors.append(f"`## {PLAN_H2_ACTION}`には{list(PLAN_HUMAN_ACTION_TABLE_HEADER)}の4列表が必要")
+
+    errors.extend(_check_nonempty_section(body, headings, PLAN_H2_REQUIREMENTS))
+
+    permanence_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_PERMANENCE)
+    if permanence_index is not None:
+        errors.extend(
+            _check_permanence_sections(
+                body,
+                headings,
+                permanence_index,
+                work_type,
+                parent_label=f"`## {PLAN_H2_CURRENT_PERMANENCE}`",
+                current_format=True,
+            )
+        )
+
+    history_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_HISTORY)
+    errors.extend(
+        _check_human_history_section(
+            headings,
+            history_index,
+            content,
+            require_user_event=has_adopted_human_user_instruction(content),
+        )
+    )
+
+    verification_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_VERIFICATION)
+    if verification_index is not None:
+        start, end = heading_subtree_range(headings, verification_index)
+        table = _find_table_with_rows(extract_tables(lines_within(body, start, end)), PLAN_CURRENT_VERIFICATION_TABLE_ROWS)
+        if table is None or table.header != PLAN_VERIFICATION_TABLE_HEADER:
+            errors.append(
+                f"`## {PLAN_H2_CURRENT_VERIFICATION}`は{list(PLAN_VERIFICATION_TABLE_HEADER)}の2列と"
+                f"固定2行（{list(PLAN_CURRENT_VERIFICATION_TABLE_ROWS)}）の表にする"
+            )
+        else:
+            errors.extend(
+                f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}"
+                for index, row in enumerate(table.rows)
+                if len(row) != 2 or not row[1]
+            )
+
+    termination_index = find_heading_index(headings, 2, PLAN_H2_TERMINATION)
+    errors.extend(_check_termination_section(body, headings, termination_index))
+    progress_index = find_heading_index(headings, 2, PLAN_H2_CURRENT_PROGRESS)
+    errors.extend(_check_progress_section(body, headings, progress_index))
+
+    allowed_h3_parents = {
+        PLAN_H2_OVERVIEW,
+        PLAN_H2_REQUIREMENTS,
+        PLAN_H2_CURRENT_PERMANENCE,
+        PLAN_H2_CURRENT_HISTORY,
+        PLAN_H2_HISTORY,
+    }
+    errors.extend(
+        _check_h3_and_deeper(
+            headings,
+            allowed_h3_parents,
+            frozenset({PLAN_H2_REQUIREMENTS, PLAN_H2_CURRENT_HISTORY, PLAN_H2_HISTORY}),
+        )
+    )
     return work_type, errors
 
 

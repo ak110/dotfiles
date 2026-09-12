@@ -172,6 +172,24 @@ PLAN_H2_IMPLEMENTATION: str = "実装資料"
 PLAN_H2_COMPLETION: str = "完了条件"
 PLAN_H2_PROGRESS: str = "進捗ログ（実行時）"
 
+PLAN_H2_REQUIREMENTS: str = "要件・外部仕様"
+PLAN_H2_CURRENT_PERMANENCE: str = "恒久化・リファクタリング"
+PLAN_H2_CURRENT_HISTORY: str = "変更履歴"
+PLAN_H2_CURRENT_VERIFICATION: str = "検証"
+PLAN_H2_CURRENT_PROGRESS: str = "進捗ログ"
+
+PLAN_SINGLE_FILE_H2_ORDER: tuple[str, ...] = (
+    PLAN_H2_OVERVIEW,
+    PLAN_H2_ACTION,
+    PLAN_H2_REQUIREMENTS,
+    PLAN_H2_CURRENT_PERMANENCE,
+    PLAN_H2_CURRENT_HISTORY,
+    PLAN_H2_CURRENT_VERIFICATION,
+    PLAN_H2_TERMINATION,
+    PLAN_H2_CURRENT_PROGRESS,
+)
+"""現行の1ファイル計画が固定順で持つH2。"""
+
 PLAN_H2_LEGACY_HISTORY: str = "変更履歴"
 PLAN_H2_LEGACY_PROGRESS: str = "進捗ログ"
 PLAN_H2_LEGACY_AGENT_JUDGMENT: str = "エージェント判断"
@@ -271,11 +289,28 @@ PLAN_METADATA_MAIN_FIELDS: tuple[str, ...] = (
 )
 """新書式計画ファイル（メイン）の計画メタ情報が持つ項目と順序。"""
 
+PLAN_METADATA_CURRENT_FIELDS: tuple[str, ...] = (
+    "起動経路",
+    "対象リポジトリ",
+    PLAN_METADATA_RELATED_WI_FIELD,
+    "作業種別",
+)
+"""現行の1ファイル計画が持つ計画メタ情報の固定4項目。"""
+
+PLAN_METADATA_BUG_FIELD: str = "計画ファイル（バグ）"
+"""バグ対応の1ファイル計画だけが末尾に持つ計画メタ情報。"""
+
 PLAN_METADATA_TWO_FILE_FIELDS: tuple[str, ...] = (*PLAN_METADATA_FIELDS, PLAN_METADATA_DETAIL_FIELD)
 """改訂前の二ファイル計画が持つ計画メタ情報の項目と順序。読み取り互換専用。"""
 
 PLAN_METADATA_QUOTED_FIELDS: frozenset[str] = frozenset(
-    {"起動経路", "対象リポジトリ", "ベースコミット", PLAN_METADATA_DETAIL_FIELD}
+    {
+        "起動経路",
+        "対象リポジトリ",
+        "ベースコミット",
+        PLAN_METADATA_DETAIL_FIELD,
+        PLAN_METADATA_BUG_FIELD,
+    }
 )
 """値をバッククォートで囲む項目。`関連WI`と`作業種別`は裸で書く。"""
 
@@ -398,6 +433,9 @@ PLAN_IMPLEMENTATION_UNIT_ID_PATTERN = re.compile(r"^U-[0-9]{3}$")
 PLAN_VERIFICATION_TABLE_HEADER: tuple[str, ...] = ("区分", "検証コマンド")
 PLAN_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("レーン内検証", "統合後検証")
 """`## 検証区分`が持つ固定2行2列表。行は`レーン内検証`・`統合後検証`の順で固定する。"""
+
+PLAN_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("近接検証", "全体検証")
+"""現行の`## 検証`が持つ固定2行。"""
 
 PLAN_MATERIAL_TABLE_HEADER: tuple[str, ...] = ("素材ID", "種別", "キューID", "投入元", "引用範囲")
 PLAN_REQUIREMENT_TABLE_HEADER: tuple[str, ...] = (
