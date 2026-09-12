@@ -74,7 +74,6 @@ if TYPE_CHECKING:
         is_target_path,
         list_files,
         local_host_info,
-        read_mermaid_bundle,
         read_pygments_css,
         resolve_under_root,
         root_info,

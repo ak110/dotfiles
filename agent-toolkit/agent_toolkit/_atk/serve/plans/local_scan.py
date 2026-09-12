@@ -422,11 +422,6 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
     return target
 
 
-def read_mermaid_bundle() -> str:
-    """同梱したMermaidの単一ファイルbundleを読み込む。"""
-    return (_STATIC_DIR / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")
-
-
 def read_pygments_css() -> str:
     """Pygmentsのスタイルシートを返す。
 

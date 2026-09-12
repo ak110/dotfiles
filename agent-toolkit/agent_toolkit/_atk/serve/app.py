@@ -899,13 +899,6 @@ def _register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -
     async def plans_js() -> quart.Response:
         return _no_store(assets.PLANS_JS, "text/javascript; charset=utf-8")
 
-    @app.get("/static/vendor/mermaid.min.js")
-    async def mermaid_script() -> quart.Response:
-        bundle = await asyncio.to_thread(assets.read_mermaid_bundle)
-        response = _no_store(bundle, "text/javascript; charset=utf-8")
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
-
     @app.get("/api/plans/host-status")
     async def plans_host_status() -> quart.Response:
         async with context.state.lock:

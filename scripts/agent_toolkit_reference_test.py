@@ -44,7 +44,9 @@ def _tracked_source_paths(root: pathlib.Path) -> list[pathlib.Path]:
     return sorted(
         pathlib.Path(raw.decode("utf-8"))
         for raw in result.stdout.split(b"\0")
-        if raw and pathlib.Path(raw.decode("utf-8")).suffix in _SOURCE_SUFFIXES
+        if raw
+        and pathlib.Path(raw.decode("utf-8")).suffix in _SOURCE_SUFFIXES
+        and (root / pathlib.Path(raw.decode("utf-8"))).is_file()
     )
 
 

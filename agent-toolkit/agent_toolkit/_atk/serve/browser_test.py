@@ -25,6 +25,7 @@ from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 
 _BROWSER_TEST_ENV = "AGENT_TOOLKIT_SERVE_BROWSER_TESTS"
+_MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@latest/dist/mermaid.min.js"
 _SERVER_START_TIMEOUT_SEC = 10.0
 _SAVE_RELEASE_DELAY_SEC = 1.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
@@ -3143,7 +3144,7 @@ async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness
 
     initial_blob_url = await svg_image.get_attribute("src")
     assert initial_blob_url is not None
-    mermaid_responses = [status for url, status in harness.responses if url.endswith("/static/vendor/mermaid.min.js")]
+    mermaid_responses = [status for url, status in harness.responses if url == _MERMAID_CDN_URL]
     assert mermaid_responses == [200]
     assert not any("/chunks/" in url or url.endswith(".mjs") for url in harness.requests)
 
@@ -3446,8 +3447,24 @@ async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness:
 
 
 @pytest.mark.asyncio
-async def test_forwarded_prefix_uses_base_path_for_diagrams(screen_harness: _ScreenHarness) -> None:
-    """ベースパス配下でも図の資産を正しい経路から読み込む。"""
+async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_harness: _ScreenHarness) -> None:
+    """CDNからMermaidを取得できない場合も図の位置へエラーを表示し、本文を保つ。"""
+    harness = screen_harness
+    await harness.page.route(_MERMAID_CDN_URL, lambda route: route.abort())
+
+    await harness.page.goto(harness.base_url + "/plans")
+
+    error = harness.page.locator("#preview .diagram-mermaid .diagram-error")
+    await error.wait_for(state="visible")
+    assert "Mermaidの読み込みに失敗しました" in await error.inner_text()
+    assert await harness.page.locator("#preview .diagram-mermaid details").is_visible()
+    assert "本文-初回" in await harness.page.locator("#preview").inner_text()
+    assert await harness.page.locator("#preview .diagram-svg img").is_visible()
+
+
+@pytest.mark.asyncio
+async def test_forwarded_prefix_uses_cdn_for_mermaid(screen_harness: _ScreenHarness) -> None:
+    """ベースパス配下でもMermaidは同じCDNから読み込む。"""
     harness = screen_harness
     await harness.context.set_extra_http_headers({"X-Forwarded-Prefix": "/atk"})
     response = await harness.page.goto(harness.base_url + "/atk/plans")
@@ -3458,4 +3475,4 @@ async def test_forwarded_prefix_uses_base_path_for_diagrams(screen_harness: _Scr
     svg_image = harness.page.locator("#preview .diagram-svg img")
     await svg_image.wait_for(state="visible")
     assert await svg_image.evaluate("(image) => image.complete && image.naturalWidth > 0")
-    assert any(url.endswith("/atk/static/vendor/mermaid.min.js") for url in harness.requests)
+    assert _MERMAID_CDN_URL in harness.requests

@@ -1,4 +1,4 @@
-"""`atk serve`の自己完結型フロントエンド資産。"""
+"""`atk serve`へ同梱するフロントエンド資産。"""
 
 import base64
 import pathlib
@@ -48,8 +48,3 @@ SHELL_JS = _read_static_text("shell.js")
 PLANS_JS = _read_static_text("plans.js")
 # セッション画面。
 SESSIONS_JS = _read_static_text("sessions.js")
-
-
-def read_mermaid_bundle() -> str:
-    """同梱したMermaidの単一ファイルbundleを読み込む。"""
-    return (_STATIC_DIR / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")
