@@ -6,10 +6,10 @@
 r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 
 `chezmoi git pull --rebase` → `chezmoi init`（テンプレート再展開） →
-`chezmoi status`（apply予定ファイルの表示） → `chezmoi apply`の4段を、
-プロセス間排他ロック下で直列実行する。
-`--force`指定時はapply直前に`chezmoi diff --no-pager`を追加し、差分表示後に
-`chezmoi apply --force`で確認入力を待たずに反映する。
+`chezmoi status`（apply予定ファイルの表示） → `chezmoi diff --no-pager` →
+`chezmoi apply --force`の5段を、プロセス間排他ロック下で直列実行する。
+pull又は退避復元が競合した場合は、元HEADと未コミット内容を専用参照へ保存し、
+設定済み上流へ作業branchを合わせて更新を継続する。
 
 複数の`update-dotfiles`起動（`atk wi process-loop`の複数常駐・手動実行との重複等）が
 同時に`git pull`・`chezmoi apply`を実行するとpullとファイル操作の競合を招くため、
@@ -39,6 +39,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 
 import filelock
 import platformdirs
@@ -165,6 +166,146 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     return process.returncode
 
 
+def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
+    """dotfilesリポジトリでGitを実行し、標準出力と標準エラーを取得する。"""
+    return subprocess.run(
+        ["git", "-C", str(_DOTFILES_ROOT), *arguments],
+        check=False,
+        capture_output=True,
+        encoding="utf-8",
+        env=_child_env(),
+    )
+
+
+def _git_value(*arguments: str) -> str | None:
+    """Gitの成功した単一値を返し、失敗時は診断を転送する。"""
+    result = _git_capture(*arguments)
+    if result.returncode != 0:
+        if result.stderr:
+            sys.stderr.write(result.stderr)
+        return None
+    return result.stdout.strip()
+
+
+def _git_operation_in_progress() -> bool:
+    """既存のmerge又はrebaseが進行中の場合に真を返す。"""
+    for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply"):
+        path = _git_value("rev-parse", "--git-path", name)
+        if path is None:
+            return True
+        candidate = pathlib.Path(path)
+        if not candidate.is_absolute():
+            candidate = _DOTFILES_ROOT / candidate
+        if candidate.exists():
+            return True
+    return False
+
+
+def _git_path_exists(name: str) -> bool:
+    """Git管理パスを作業ツリー基準へ解決し、実在を返す。"""
+    path = _git_value("rev-parse", "--git-path", name)
+    if path is None:
+        return False
+    candidate = pathlib.Path(path)
+    if not candidate.is_absolute():
+        candidate = _DOTFILES_ROOT / candidate
+    return candidate.exists()
+
+
+def _run_git_change(*arguments: str) -> bool:
+    """単一のGit状態変更を実行し、失敗時の診断を転送する。"""
+    result = _git_capture(*arguments)
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        (sys.stdout if result.returncode == 0 else sys.stderr).write(result.stderr)
+    return result.returncode == 0
+
+
+def _save_worktree(label: str) -> str | None:
+    """未コミット内容をworktree固有refへ退避し、ref名を返す。"""
+    result = subprocess.run(
+        ["atk", "worktree-stash", "save", f"--label={label}"],
+        cwd=_DOTFILES_ROOT,
+        check=False,
+        capture_output=True,
+        encoding="utf-8",
+        env=_child_env(),
+    )
+    if result.returncode != 0:
+        if result.stderr:
+            sys.stderr.write(result.stderr)
+        return None
+    ref = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+    if not ref.startswith("refs/worktree/"):
+        print("未コミット内容の退避先refを取得できませんでした。", file=sys.stderr)
+        return None
+    print(f"未コミット内容を{ref}へ退避しました。")
+    return ref
+
+
+def _restore_worktree(ref: str) -> bool:
+    """worktree固有refからindexを含む未コミット内容を復元する。"""
+    restored = _run_git_change("stash", "apply", "--index", ref)
+    if restored:
+        print(f"未コミット内容を復元しました。復旧用refは保持します: {ref}")
+    return restored
+
+
+def _clean_saved_untracked(paths: tuple[str, ...]) -> bool:
+    """退避済みの未追跡パスだけを作業ツリーから除く。"""
+    return not paths or _run_git_change("clean", "-fd", "--", *paths)
+
+
+def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
+    """Git更新を実行し、競合時は復旧参照を保持して上流へ合わせる。"""
+    if _git_operation_in_progress():
+        print("既存のmerge又はrebaseが進行中のため、更新を開始しません。", file=sys.stderr)
+        return 1
+    branch = _git_value("symbolic-ref", "--quiet", "--short", "HEAD")
+    upstream = _git_value("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    original_head = _git_value("rev-parse", "HEAD")
+    if not branch or not upstream or not original_head:
+        print("現在branch、設定済み上流又はHEADを解決できません。", file=sys.stderr)
+        return 1
+    status = _git_value("status", "--porcelain=v1", "--untracked-files=all")
+    if status is None:
+        return 1
+    untracked_output = _git_value("ls-files", "--others", "--exclude-standard")
+    if untracked_output is None:
+        return 1
+    untracked = tuple(line for line in untracked_output.splitlines() if line)
+    suffix = f"{time.time_ns()}-{os.getpid()}"
+    stash_ref = _save_worktree(f"update-dotfiles-{suffix}") if status else None
+    if status and stash_ref is None:
+        return 1
+
+    pull_code = _run_git_pull(step_no, total, timeout=timeout)
+    rebase_in_progress = any(_git_path_exists(name) for name in ("rebase-merge", "rebase-apply"))
+    if pull_code != 0 and not rebase_in_progress:
+        if stash_ref is not None and not _restore_worktree(stash_ref):
+            print(f"未コミット内容は{stash_ref}から復旧できます。", file=sys.stderr)
+        return pull_code
+    if pull_code == 0 and (stash_ref is None or _restore_worktree(stash_ref)):
+        return 0
+
+    recovery_branch = f"update-dotfiles-recovery-{suffix}"
+    if not _run_git_change("branch", recovery_branch, original_head):
+        print("復旧用branchを保存できなかったため、自動回復を中止します。", file=sys.stderr)
+        return 1
+    if rebase_in_progress and not _run_git_change("rebase", "--abort"):
+        return 1
+    if not _run_git_change("reset", "--hard", upstream):
+        return 1
+    if not _clean_saved_untracked(untracked):
+        return 1
+    print(
+        f"競合から回復し、{branch}を{upstream}へ合わせました。"
+        f"元のcommitは{recovery_branch}、未コミット内容は{stash_ref or 'なし'}から復旧できます。"
+    )
+    return 0
+
+
 def _filter_apply_pending(status_output: str) -> list[str]:
     """`chezmoi status`出力から2列目（apply予定を表す列）が空白以外の行のみ抽出する。
 
@@ -178,28 +319,23 @@ def _filter_apply_pending(status_output: str) -> list[str]:
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(description="dotfilesを取得し、chezmoiで反映する")
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="適用前の差分を表示し、destination側の変更を確認なしで上書きする",
-    )
     return parser.parse_args([] if argv is None else argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
-    args = _parse_args(argv)
+    _parse_args(argv)
     try:
         git_timeout = _git_timeout()
     except ValueError as error:
         print(error, file=sys.stderr)
         return 2
-    total = 5 if args.force else 4
+    total = 5
     lock_dir = _LOCK_PATH.parent
     lock_dir.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
-            returncode = _run_git_pull(1, total, timeout=git_timeout)
+            returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
             if returncode != 0:
                 return returncode
 
@@ -224,21 +360,24 @@ def main(argv: list[str] | None = None) -> int:
             for line in _filter_apply_pending(status_output):
                 print(line)
 
-            if args.force:
-                returncode, diff_output = _run_step(
-                    4,
-                    total,
-                    "chezmoi diff (上書き前の差分)",
-                    ["chezmoi", "diff", "--no-pager"],
-                    capture=True,
-                )
-                if diff_output:
-                    sys.stdout.write(diff_output)
-                if returncode != 0:
-                    return returncode
+            returncode, diff_output = _run_step(
+                4,
+                total,
+                "chezmoi diff (上書き前の差分)",
+                ["chezmoi", "diff", "--no-pager"],
+                capture=True,
+            )
+            if diff_output:
+                sys.stdout.write(diff_output)
+            if returncode != 0:
+                return returncode
 
-            apply_argv = ["chezmoi", "apply", "--force"] if args.force else ["chezmoi", "apply"]
-            returncode, _ = _run_step(total, total, "chezmoi apply (post-apply実行)", apply_argv)
+            returncode, _ = _run_step(
+                total,
+                total,
+                "chezmoi apply (post-apply実行)",
+                ["chezmoi", "apply", "--force"],
+            )
             if returncode != 0:
                 return returncode
     except filelock.Timeout:

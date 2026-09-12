@@ -540,14 +540,14 @@ Claude Codeの委譲・背景処理の待機は、機械的な完了通知を待
 委譲先の起動失敗を別経路へ迂回せず、失敗として返す。
 通常処理及び明示的な連続処理は、起動時に固定した項目だけを処理し、後始末後にready項目を再取得しない。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行し、完了した全条件一致だけを停止可能とし、未実行、読取失敗、値の不一致のいずれかを停止不能とする。
-`agent-toolkit:exit-session`は起動時の判定を再利用せず停止直前にprobeを新規実行し、表示済みPIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
+`atk agents-exit-session`は起動時の判定を再利用せず停止直前に対象を新規識別し、PIDの開始時刻と実行ファイルのデバイス・inodeを再照合して一致した場合だけ停止する。
 本体停止は、現在のClaude Code又はCodex本体として安全に一意識別した自身か、自身が起動して停止識別子を保持した対象だけに行う。
 共用プロセス、識別不能な環境及び前記のどちらにも該当しない対象では終了案内で完了する。
 
 ### Claude CodeとCodexの規範配置
 
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
-Codexだけの公開能力との差分は`agent-toolkit/share/codex-agents-base.md`へ上書きとして置き、共有規範へCodex固有の条件を持ち込まない。
+Codexだけの公開能力との差分は`agent-toolkit/share/rules-main.codex.md`へ上書きとして置き、共有規範へCodex固有の条件を持ち込まない。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
 `scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成入口となる。
 `scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持及びCodex固有上書きの配置を検査する。
@@ -1099,7 +1099,7 @@ AWIの調査と項目別採否は計画担当が所有し、メインは計画�
 この配置により、エージェントの記憶だけに依存せず、実際に観測できる境界で規範を補強できる。
 
 Stopの登録は共通入口1件とする。
-共通入口から、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。次に、`autonomous_exit.py`による常駐ループの`agent-toolkit:exit-session`呼び忘れを判定する。
+共通入口から、`agent-toolkit/agent_toolkit/_hooks/stop_gate.py`の`is_pending_async_work`による入力待ちを判定する。次に、`autonomous_exit.py`による常駐ループの`atk agents-exit-session`実行漏れを判定する。
 続いて、`plan_save_advisor.py`で計画作業rootに残る計画バンドルの保存を確認し、`agents_server_session_advisor.py`で観測を試みていない作業が残るsessionを警告する。
 最後に、`pending_question_advisor.py`で地の文の問いかけによる終了を遮断する。
 共通入口は判定の順序、例外の隔離、応答の集約及び連続blockの上限管理だけを持つ。判定条件と通知本文は各判定モジュールが持つ。
@@ -1493,7 +1493,7 @@ CIが担う検証もpushの前に実行する案は、同じ検査の二重実�
 
 状態を問わず全件を毎回取得する案は、Pull Request数に比例するinline commentの照会を削減できないため採用しない。
 
-終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは選定工程で完了した`agent-toolkit:session-review`を再実施せず、固有成果と振り返り結果を1回だけ固定報告し、その後に`agent-toolkit:exit-session`を起動する。各工程は同じ完了本文を再生成しない。
+終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは選定工程で完了した`agent-toolkit:session-review`を再実施せず、固有成果と振り返り結果を1回だけ固定報告し、その後に`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
 
 終端担当の起動後に生じた是正commitはローカルのベースbranchへ保持し、終端担当を再起動しない。次のセッションの公開工程は初回の終端担当で当該commitを公開し、ベースbranchのHEADについてCIを確認する。
 

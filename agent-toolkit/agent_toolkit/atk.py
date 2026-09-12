@@ -44,6 +44,7 @@ from typing import Any
 
 # pylint: disable=wrong-import-position,protected-access
 from agent_toolkit._agents_server import agents_wait as _atk_agents_wait  # noqa: E402
+from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
@@ -877,13 +878,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="判定対象のrequest bucket（mainまたはsubagent）。",
     )
-    agents_wait = _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
-    agents_wait.add_argument(
-        "--timeout",
-        type=_nonnegative_finite_float,
-        default=3600.0,
-        help="待機上限秒数。到達した場合は終了コード3で終わる。",
-    )
+    _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
+    _atk_help.add_command(top, "agents-exit-session", **_atk_help.HELP["atk agents-exit-session"])
     agents_notify = _atk_help.add_command(top, "agents-notify", **_atk_help.HELP["atk agents-notify"])
     agents_notify.set_defaults(subparser=agents_notify)
     notification_body = agents_notify.add_mutually_exclusive_group(required=True)
@@ -903,6 +899,20 @@ def _build_parser() -> argparse.ArgumentParser:
     _review_audit.build_parser(top)
     _session_review_target.build_parser(top)
     return parser
+
+
+def format_command_help(command_path: tuple[str, ...]) -> str | None:
+    """公開サブコマンドの経路に対応するヘルプをCLI定義から生成する。"""
+    parser = _build_parser()
+    for name in command_path:
+        choices = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            None,
+        )
+        if choices is None or name not in choices:
+            return None
+        parser = choices[name]
+    return parser.format_help()
 
 
 def _validate_rm_args(args: argparse.Namespace) -> None:
@@ -1045,7 +1055,9 @@ def main(
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
     if args.command == "agents-wait":
-        sys.exit(_atk_agents_wait.wait_for_result(args.timeout))
+        sys.exit(_atk_agents_wait.wait_for_result())
+    if args.command == "agents-exit-session":
+        sys.exit(_agents_exit_session.main())
     if args.command == "agents-notify":
         body = args.body
         if args.body_file is not None:

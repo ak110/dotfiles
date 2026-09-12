@@ -256,6 +256,60 @@ class TestCodexBashStateRecording:
         assert "amend_pending_status_check" not in current
 
 
+class TestAtkHelpObservation:
+    """実行済みヘルプの応答だけを同一セッションの案内抑止へ使う。"""
+
+    @staticmethod
+    def _pre_payload(session_id: str) -> dict:
+        return {
+            "session_id": session_id,
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk wi list"},
+            "cwd": "/repo",
+        }
+
+    def test_successful_help_suppresses_next_notice(self, tmp_path: pathlib.Path) -> None:
+        session_id = "atk-help-success"
+        before = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+        before_output = json.loads(before.stdout)
+        assert before.returncode == 0
+        assert "使い方: atk wi list" in before_output["hookSpecificOutput"]["additionalContext"]
+        assert "permissionDecision" not in before_output["hookSpecificOutput"]
+
+        observed = _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi list --help"},
+                "tool_response": {"stdout": "使い方: atk wi list [options]"},
+                "cwd": "/repo",
+            },
+            state_dir=tmp_path,
+        )
+        after = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+
+        assert observed.returncode == 0
+        assert after.returncode == 0
+        assert after.stdout == ""
+
+    def test_missing_help_response_keeps_notice(self, tmp_path: pathlib.Path) -> None:
+        session_id = "atk-help-failed"
+        _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi list --help"},
+                "cwd": "/repo",
+            },
+            state_dir=tmp_path,
+        )
+
+        result = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+
+        assert result.returncode == 0
+        assert "additionalContext" in json.loads(result.stdout)["hookSpecificOutput"]
+
+
 class TestTestExecution:
     """テスト実行検出。"""
 
@@ -1161,19 +1215,22 @@ class TestAwiSkillFlags:
 
 
 class TestExitSessionResetsProcessAwisFlag:
-    """exit-sessionスキル起動検知時の自動振り返り起点フラグリセット。
+    """終了CLIの機械可読な応答で自動振り返り起点フラグをリセットする。"""
 
-    `agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端するため、
-    exit-session起動を完了シグナルとする。
-    """
+    @staticmethod
+    def _invoke(session_id: str, state_dir: pathlib.Path) -> None:
+        _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk agents-exit-session"},
+                "tool_response": {"stdout": '{"exit_session_invoked":true,"status":"unsupported"}'},
+            },
+            state_dir=state_dir,
+        )
 
-    @pytest.mark.parametrize(
-        "skill",
-        ["agent-toolkit:exit-session", "exit-session"],
-    )
-    def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
-        """exit-session起動でprocess_wi_skill_invokedが偽になる。"""
-        sid = f"exit-{skill.replace(':', '-')}"
+    def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
+        sid = "exit-cli"
         # 事前に自動振り返り起点フラグを立てる。
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(
@@ -1184,32 +1241,25 @@ class TestExitSessionResetsProcessAwisFlag:
             ),
             encoding="utf-8",
         )
-        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
+        self._invoke(sid, tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_wi_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
-        """既に偽の状態でもexit-sessionの記録だけを追加する。"""
+        """既に偽の状態でも終了CLIの記録だけを追加する。"""
         sid = "exit-idem"
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
         )
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:exit-session"},
-            },
-            state_dir=tmp_path,
-        )
+        self._invoke(sid, tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_wi_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
-        """exit-session記録とリセット済み状態がそろう場合は再書き込みしない。"""
+        """終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
         path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         path.write_text(
@@ -1224,14 +1274,7 @@ class TestExitSessionResetsProcessAwisFlag:
             encoding="utf-8",
         )
         mtime_before = path.stat().st_mtime_ns
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:exit-session"},
-            },
-            state_dir=tmp_path,
-        )
+        self._invoke(sid, tmp_path)
         assert _read_state(tmp_path, sid)["marker"] == "keep"
         assert path.stat().st_mtime_ns == mtime_before
 
@@ -1240,7 +1283,7 @@ class TestProcessAwisInvokedNonIdempotent:
     """process-wiスキル再起動時のフラグ強制上書き。"""
 
     def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:
-        """exit-session後の再起動でフラグが確実にTrueへ戻る。"""
+        """終了CLI起動後の再起動でフラグが確実にTrueへ戻る。"""
         sid = "reinvoke"
         # 事前にフラグを立てる。
         _run(
@@ -1252,12 +1295,13 @@ class TestProcessAwisInvokedNonIdempotent:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
-        # exit-session起動でリセット。
+        # 終了CLI起動でリセット。
         _run(
             {
                 "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:exit-session"},
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk agents-exit-session"},
+                "tool_response": {"stdout": '{"exit_session_invoked":true,"status":"unsupported"}'},
             },
             state_dir=tmp_path,
         )

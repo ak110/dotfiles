@@ -181,7 +181,7 @@ targets = [
     "install-claude.sh",
     "install-claude.ps1",
     "pytools/**/*.py",
-    "agent-toolkit/share/codex-agents-base.md",
+    "agent-toolkit/share/rules-main.codex.md",
     "scripts/codex_shared_rules.py",
     "scripts/gen-completions.py",
     "scripts/gen-install-files.py",

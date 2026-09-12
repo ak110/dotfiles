@@ -1129,6 +1129,69 @@ def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
     )
 
 
+_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
+
+
+def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
+    """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
+    if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
+        return None
+    from agent_toolkit._atk.help_text import HELP  # pylint: disable=import-outside-toplevel
+
+    arguments = tuple("wi" if index == 0 and value == "mq" else value for index, value in enumerate(tokens[1:]))
+    paths = (tuple(key.split()[1:]) for key in HELP if key.startswith("atk "))
+    return next(
+        (path for path in sorted(paths, key=len, reverse=True) if arguments[: len(path)] == path),
+        None,
+    )
+
+
+def _check_bash_atk_help_observation(command: str, session_id: str) -> str | None:
+    """未観測の最下層`atk`サブコマンドへ、CLI定義から生成したヘルプを添える。"""
+    paths: list[tuple[str, ...]] = []
+    for segment in _extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens or _segment_is_help_only(segment):
+            continue
+        path = _recognized_atk_command_path(segment.tokens)
+        if path is not None and path not in paths:
+            paths.append(path)
+    if not paths:
+        return None
+    state = read_state(session_id)
+    recorded = state.get(_ATK_HELP_OBSERVED_KEY)
+    observed = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
+    missing = [path for path in paths if " ".join(path) not in observed]
+    if not missing:
+        return None
+    try:
+        from agent_toolkit.atk import format_command_help  # pylint: disable=import-outside-toplevel
+
+        help_sections = [format_command_help(path) for path in missing]
+    except Exception as error:  # noqa: BLE001 - Hookはヘルプ生成不能を安全側へ倒す
+        print(
+            _block_notice(
+                f"block: atkサブコマンドのヘルプを生成できない: {error}",
+                fix="`atk <サブコマンド> --help`を単独で実行して受理形式を確認する。",
+            ),
+            file=sys.stderr,
+        )
+        return "block"
+    if any(section is None for section in help_sections):
+        print(
+            _block_notice(
+                "block: atkサブコマンドのヘルプ定義を解決できない。",
+                fix="`atk <サブコマンド> --help`を単独で実行して受理形式を確認する。",
+            ),
+            file=sys.stderr,
+        )
+        return "block"
+    bodies = [f"$ atk {' '.join(path)} --help\n{section}" for path, section in zip(missing, help_sections, strict=True)]
+    return _llm_notice(
+        "info: 未観測のatkサブコマンドについて、実行前に現行ヘルプを案内する。\n" + "\n".join(bodies),
+        tag="notice",
+    )
+
+
 def _segment_is_state_changing(segment: _ExecutionSegment) -> bool:
     """区間が列挙済みの状態変更コマンドであるかを返す。
 

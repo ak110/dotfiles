@@ -94,8 +94,8 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない
 - `process_wi_skill_invoked`: process-wiスキルの起動を記録する。
-  PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に偽へ戻す。セッション終了まで保持する
-- `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
+  PostToolUse(Skill)とUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受領した時点で偽へ戻す。セッション終了まで保持する
+- `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`atk agents-exit-session`の実行と機械可読な応答を記録し、
   `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。

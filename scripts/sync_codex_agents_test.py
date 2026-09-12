@@ -1,6 +1,8 @@
 """sync_codex_agentsのテスト。"""
 
 import re
+import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -20,11 +22,11 @@ def _root(
     (tmp_path / "agent-toolkit/rules").mkdir(parents=True)
     (tmp_path / "agent-toolkit/share").mkdir(parents=True)
     (tmp_path / ".chezmoi-source/dot_codex").mkdir(parents=True)
-    (tmp_path / "agent-toolkit/share/codex-agents-base.md").write_text("base\n", encoding="utf-8")
+    (tmp_path / "agent-toolkit/share/rules-main.codex.md").write_text("base\n", encoding="utf-8")
     (tmp_path / ".chezmoi-source/dot_claude/rules").mkdir(parents=True)
     (tmp_path / subject.PERSONAL_SOURCE).write_text("personal\n", encoding="utf-8")
     (tmp_path / subject.CODEX_CONFIG).write_text(
-        f"project_doc_max_bytes = {max_bytes}\nproject_doc_warn_ratio = {warn_ratio}\n",
+        f"project_doc_max_bytes = {max_bytes}\nproject_doc_warn_ratio = {warn_ratio}\ntool_output_token_limit = 20000\n",
         encoding="utf-8",
     )
     (tmp_path / "AGENTS.md").write_text(project, encoding="utf-8")
@@ -92,7 +94,7 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_two_layer_wait_contract_is_structurally_synced() -> None:
-    source = (subject.REPO_ROOT / "agent-toolkit/share/codex-agents-base.md").read_text(encoding="utf-8")
+    source = (subject.REPO_ROOT / "agent-toolkit/share/rules-main.codex.md").read_text(encoding="utf-8")
     generated = (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8")
     assert generated == subject.render()
 
@@ -153,10 +155,30 @@ def test_sync_rejects_out_of_range_warn_ratio(tmp_path: Path, warn_ratio: float)
         subject.sync(root)
 
 
-def test_config_template_uses_shared_project_doc_limit() -> None:
-    template = (subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml").read_text(encoding="utf-8")
-    assert 'include (joinPath .chezmoi.workingTree "scripts/codex_config.toml") | fromToml' in template
-    assert 'setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes' in template
+def test_config_template_applies_shared_limits_and_preserves_existing_values() -> None:
+    """chezmoiの実行結果へ共有設定を反映し、無関係な利用者設定を保持する。"""
+    template = subject.REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
+    result = subprocess.run(
+        [
+            "chezmoi",
+            "execute-template",
+            "--file",
+            str(template),
+            "--with-stdin",
+            "--working-tree",
+            str(subject.REPO_ROOT),
+        ],
+        input='model = "gpt-test"\nproject_doc_max_bytes = 1\ntool_output_token_limit = 2\n',
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rendered = tomllib.loads(result.stdout)
+    assert rendered["project_doc_max_bytes"] == 262144
+    assert rendered["tool_output_token_limit"] == 20000
+    assert rendered["model"] == "gpt-test"
 
 
 def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> None:

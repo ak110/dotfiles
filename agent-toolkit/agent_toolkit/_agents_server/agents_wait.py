@@ -14,6 +14,8 @@ from typing import Any
 from agent_toolkit._agents_server import state, status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
+_WAIT_TIMEOUT_SECONDS = 3600.0
+
 
 def _fail(message: str, code: int) -> int:
     """標準エラーへ理由を出力してから非0の終了コードで異常終了する。
@@ -25,7 +27,6 @@ def _fail(message: str, code: int) -> int:
 
 
 def wait_for_result(
-    timeout: float,
     *,
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
@@ -72,7 +73,7 @@ def wait_for_result(
             lock_files.append(lock_file)
 
         started_at = time.monotonic()
-        deadline = started_at + timeout
+        deadline = started_at + _WAIT_TIMEOUT_SECONDS
         while True:
             status_paths = status_file.list_status_files(root_session_id, state_root)
             for session_id in ordered_ids:

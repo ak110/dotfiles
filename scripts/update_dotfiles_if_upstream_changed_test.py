@@ -81,7 +81,7 @@ def test_changed_commit_runs_update_once(
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, working_directories=working_directories))
 
     assert upstream_update.main([]) == 0
-    assert calls.count([str(update_dotfiles), "--force"]) == 1
+    assert calls.count([str(update_dotfiles)]) == 1
     assert working_directories
     assert set(working_directories) == {update_dotfiles.parent.parent}
 
@@ -96,7 +96,7 @@ def test_update_failure_is_propagated(
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, update_returncode=7))
 
     assert upstream_update.main([]) == 7
-    assert calls.count([str(update_dotfiles), "--force"]) == 1
+    assert calls.count([str(update_dotfiles)]) == 1
 
 
 @pytest.mark.parametrize(

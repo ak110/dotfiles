@@ -187,7 +187,7 @@ class TestBlockCondition:
         assert isinstance(reason, str)
         assert "agent-toolkit:process-wi" in reason
         assert "agent-toolkit:completion-report" in reason
-        assert "agent-toolkit:exit-session" in reason
+        assert "atk agents-exit-session" in reason
         assert "Fix: " in reason
         assert "agent-toolkit/autonomous_exit" in reason
 
@@ -199,7 +199,7 @@ class TestBlockCondition:
             state_dir=tmp_path,
         )
         reason = _parse_decision(result)["reason"]
-        assert reason.index("agent-toolkit:completion-report") < reason.index("agent-toolkit:exit-session")
+        assert reason.index("agent-toolkit:completion-report") < reason.index("atk agents-exit-session")
 
     def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合もblockする。"""

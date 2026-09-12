@@ -216,12 +216,12 @@ class TestWorktreeStashDispatch:
 class TestAgentsWaitParser:
     """`agents-wait`の公開parserを検証する。"""
 
-    def test_accepts_only_timeout(self) -> None:
-        """待機上限だけを受理し、待機対象の入力を持たない。"""
+    def test_accepts_no_arguments(self) -> None:
+        """待機対象と待機上限の入力を持たない。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["agents-wait", "--timeout=12"])
+        args = parser.parse_args(["agents-wait"])
         assert args.command == "agents-wait"
-        assert args.timeout == 12
+        assert not hasattr(args, "timeout")
         assert not hasattr(args, "session_id")
 
     @pytest.mark.parametrize(
@@ -229,6 +229,7 @@ class TestAgentsWaitParser:
         [
             ["agents-wait", "session-1"],
             ["agents-wait", "session-1", "--timeout=0"],
+            ["agents-wait", "--timeout=12"],
         ],
     )
     def test_rejects_wait_target_arguments(self, argv: list[str]) -> None:
@@ -249,6 +250,21 @@ class TestAgentsWaitParser:
         assert command_action.choices is not None
         waits = [name for name in command_action.choices if str(name).startswith("agents-wait")]
         assert waits == ["agents-wait"]
+
+
+class TestAgentsExitSessionParser:
+    """`agents-exit-session`は外部から識別子を受け取らない。"""
+
+    def test_accepts_no_arguments(self) -> None:
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        args = parser.parse_args(["agents-exit-session"])
+        assert args.command == "agents-exit-session"
+
+    def test_rejects_target_argument(self) -> None:
+        parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["agents-exit-session", "123"])
+        assert exc_info.value.code == 2
 
 
 class TestWaitScheduleParser:

@@ -20,7 +20,7 @@
 ## 質問表示
 
 `AskUserQuestion`で質問を提示する。
-当該ツールを利用できない実行環境では、`agent-toolkit/share/codex-agents-base.md`「ユーザー確認の提示形式」が定める固定テンプレートで提示する。
+当該ツールを利用できない実行環境では、`agent-toolkit/share/rules-main.codex.md`「ユーザー確認の提示形式」が定める固定テンプレートで提示する。
 質問を提示したら、そのラウンドの回答を待ってから次のラウンドへ進む。
 
 ## 終了条件

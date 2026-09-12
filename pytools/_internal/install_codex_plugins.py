@@ -21,6 +21,14 @@ _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     ),
     command="codex app-server daemon restart",
 )
+_CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
+    message=(
+        "Codexプラグインの導入又は更新でHook定義が変わった場合は、定義を確認して信頼してください。"
+        "信頼後に新しいセッションを開始し、SessionStartの規範注入を確認してください。"
+        "再信頼の操作だけではSessionStartの規範注入を検収できません。"
+    ),
+    command="/hooks",
+)
 _CODEX_EXECUTABLE: contextvars.ContextVar[Path] = contextvars.ContextVar("codex_executable", default=Path("codex"))
 
 # Codexでは使用しないため、導入済みなら除去するプラグイン。
@@ -186,6 +194,7 @@ def _sync_local_plugin(
     if needs_plugin_add:
         if not _command(["plugin", "add", plugin_id]):
             raise RuntimeError("Codex plugin addに失敗")
+        notices.append(_CODEX_HOOK_TRUST_NOTICE)
         _append_restart_notice_if_daemon_running(notices)
         _verify_expected_state(plugin_id, version)
     removed_legacy_links = _remove_legacy_links(root)

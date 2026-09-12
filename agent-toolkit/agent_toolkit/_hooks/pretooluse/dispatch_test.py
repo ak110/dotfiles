@@ -1055,27 +1055,25 @@ class TestUserFacingTextChecks:
     """ユーザーが直接読む質問・計画本文へ共通本文検査を適用する。"""
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
-    @pytest.mark.parametrize("check", ["mojibake", "foreign", "colloquial"])
-    def test_checks_each_user_facing_field(self, field: str, check: str, deny_substring: str) -> None:
+    @pytest.mark.parametrize("check", ["mojibake", "foreign"])
+    def test_checks_each_user_facing_field(self, field: str, check: str) -> None:
         values = {
             "mojibake": "日本語の�本文",
             "foreign": "日本語に가が混入した本文",
-            "colloquial": f"概要は{deny_substring}該当する。",
         }
         result = _run(_user_facing_payload(field, values[check]))
 
         assert result.returncode == 2
-        if check == "colloquial":
-            assert "口語的な日本語表現" in result.stderr
-            assert content_checks.colloquial_detected_terms_text([deny_substring]) in result.stderr
-            assert "文全体を書き換えてから同じツールを再発行する" in result.stderr
-            reissued = _run(_user_facing_payload(field, "確認する対象を選択してください。"))
-            assert reissued.returncode == 0
-            assert reissued.stdout == ""
-            assert reissued.stderr == ""
-        else:
-            expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
-            assert expected in result.stderr
+        expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
+        assert expected in result.stderr
+
+    @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
+    def test_colloquial_text_is_not_blocked(self, field: str, deny_substring: str) -> None:
+        result = _run(_user_facing_payload(field, f"概要は{deny_substring}該当する。"))
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
 
     @pytest.mark.parametrize(
         "payload",
@@ -1106,37 +1104,42 @@ class TestUserFacingTextChecks:
 
         result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
 
-        assert result.returncode == 2
-        assert "口語的な日本語表現" in result.stderr
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
 
-    def test_block_notice_shows_tool_name_and_field_as_target(self, deny_substring: str) -> None:
-        """質問入力の口語遮断はツール名と入力フィールドを対象として示す。"""
-        result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
+    def test_exit_plan_mode_colloquial_text_is_not_blocked(self, deny_substring: str) -> None:
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": f"概要は{deny_substring}該当する。"}})
 
-        assert result.returncode == 2
-        assert "対象: AskUserQuestion.questions[0].question" in result.stderr
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
 
 
 class TestUserFacingTypoCheck:
     """ユーザーが直接読む本文への誤字検査（warn のみ、exit code は 0）。"""
 
-    def test_typo_in_user_facing_text_warns(self) -> None:
-        result = _run(_user_facing_payload("question", "番面の説明を確認してください。"))
+    @pytest.mark.parametrize(
+        ("detected", "replacement"),
+        [("番面", "画面"), ("迲回", "迂回"), ("模型定義", "モデル定義")],
+    )
+    def test_typo_in_user_facing_text_warns(self, detected: str, replacement: str) -> None:
+        result = _run(_user_facing_payload("question", f"{detected}の説明を確認してください。"))
         assert result.returncode == 0
         assert "誤字候補" in _additional_context(result)
-        assert content_checks.typo_detected_terms_text([("番面", "画面")]) in _agent_messages(result)
+        assert content_checks.typo_detected_terms_text([(detected, replacement)]) in _agent_messages(result)
 
     def test_typo_in_exit_plan_mode_warns(self) -> None:
         result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "番面遷移を実装する。"}})
         assert result.returncode == 0
         assert "誤字候補" in _additional_context(result)
 
-    def test_colloquial_block_precedes_typo_warning(self, deny_substring: str) -> None:
-        """口語表現と誤字を同時に含む本文は、警告を返さず口語表現の遮断で終わる。"""
+    def test_typo_warning_remains_when_colloquial_text_is_present(self, deny_substring: str) -> None:
+        """口語表現と誤字を同時に含む本文でも誤字警告を返す。"""
         result = _run(_user_facing_payload("question", f"番面は{deny_substring}該当する。"))
-        assert result.returncode == 2
-        assert "口語的な日本語表現" in result.stderr
-        assert "誤字候補" not in result.stdout
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert "誤字候補" in _additional_context(result)
 
 
 class TestAskUserQuestionRequiredRead:

@@ -34,6 +34,26 @@ def _skill_entry(skill: str, *, tool_use_id: str = "toolu_skill") -> dict:
     }
 
 
+def _exit_entry(*, tool_use_id: str = "toolu_exit") -> dict:
+    """終了CLIのBash起動を含むアシスタントエントリを生成する。"""
+    return {
+        "type": "assistant",
+        "message": {
+            "id": "msg_exit",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "Bash",
+                    "input": {"command": "atk agents-exit-session"},
+                }
+            ],
+            "stop_reason": "end_turn",
+        },
+    }
+
+
 def _async_wait_entry(*, tool_use_id: str = "toolu_async") -> dict:
     """非同期待機系ツール（Agent）の起動を含むアシスタントエントリを生成する。"""
     return {
@@ -93,7 +113,7 @@ def test_blocks_when_termination_skill_missing(
     assert decision == "block"
     assert "agent-toolkit:process-wi" in body
     assert "agent-toolkit:completion-report" in body
-    assert "agent-toolkit:exit-session" in body
+    assert "atk agents-exit-session" in body
 
 
 def test_blocks_when_termination_order_reversed(
@@ -107,7 +127,7 @@ def test_blocks_when_termination_order_reversed(
         tmp_path,
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
-            _skill_entry("agent-toolkit:exit-session", tool_use_id="toolu_2"),
+            _exit_entry(tool_use_id="toolu_2"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_3"),
         ],
     )
@@ -115,7 +135,7 @@ def test_blocks_when_termination_order_reversed(
     decision, body = termination_order_advisor.evaluate(_payload("sess-reversed", str(transcript)))
 
     assert decision == "block"
-    assert "agent-toolkit:exit-session" in body
+    assert "atk agents-exit-session" in body
 
 
 def test_approves_when_termination_order_satisfied(
@@ -130,7 +150,7 @@ def test_approves_when_termination_order_satisfied(
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
-            _skill_entry("agent-toolkit:exit-session", tool_use_id="toolu_3"),
+            _exit_entry(tool_use_id="toolu_3"),
         ],
     )
 
@@ -151,7 +171,7 @@ def test_blocks_when_second_invocation_lacks_new_termination(
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
-            _skill_entry("agent-toolkit:exit-session", tool_use_id="toolu_3"),
+            _exit_entry(tool_use_id="toolu_3"),
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_4"),
         ],
     )

@@ -1,2 +1,3 @@
 project_doc_max_bytes = 262144
 project_doc_warn_ratio = 0.8
+tool_output_token_limit = 20000

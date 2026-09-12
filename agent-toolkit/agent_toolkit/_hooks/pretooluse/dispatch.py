@@ -179,7 +179,6 @@ if TYPE_CHECKING:
         _check_foreign_script_mixin,
         _check_mojibake,
         _check_plan_mode_skill_first,
-        _check_user_facing_colloquial,
         _collect_edit_operation_warnings,
         check_user_facing_typo,
     )
@@ -194,6 +193,7 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.notices import _llm_notice
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _check_bash_codex_exec,
+        _check_bash_atk_help_observation,
         _check_bash_help_with_execution,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
@@ -447,6 +447,9 @@ def _handle_bash_tool(
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd, session_id)
     if recursive_grep_result == "block":
         return 2
+    atk_help_result = _check_bash_atk_help_observation(command, session_id)
+    if atk_help_result == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
@@ -454,6 +457,7 @@ def _handle_bash_tool(
         _check_bash_recursive_home_search(command),
         _check_bash_unbounded_home_traversal(command),
         recursive_grep_result,
+        atk_help_result,
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -509,10 +513,10 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ編集入力と同じ言語品質検査、及び誤字検査を適用する。
+    """質問・計画本文へ言語品質検査及び誤字検査を適用する。
 
     ユーザーへ直接到達する本文を対象とする検査の応答水準は、到達後に是正できるかで決める。
-    本関数が扱う文字化け、日本語以外の文字の混入及び口語表現は、いずれも当該本文が
+    本関数が扱う文字化け及び日本語以外の文字の混入は、いずれも当該本文が
     ユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、同じ遮断経路へそろえる。
     誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
     """
@@ -520,11 +524,7 @@ def _handle_user_facing_text_tool(
         flush_warning()
         return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
-    if (
-        _check_mojibake(tool_name, fields)
-        or _check_foreign_script_mixin(tool_name, fields)
-        or _check_user_facing_colloquial(tool_name, fields)
-    ):
+    if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2
     typo_warning = check_user_facing_typo(tool_name, fields)
     if typo_warning is None:

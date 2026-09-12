@@ -1,6 +1,6 @@
 """`scripts/update_dotfiles.py`のテスト。
 
-通常4段とforce時5段の直列実行順序・fail-fast・排他ロック・標準ストリームを検証する。
+通常5段の直列実行順序・fail-fast・排他ロック・標準ストリームを検証する。
 """
 
 import contextlib
@@ -22,6 +22,20 @@ pty = None if sys.platform == "win32" else importlib.import_module("pty")
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
+
+_REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
+
+
+@pytest.fixture(autouse=True)
+def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """段階順の単体テストでは、Git回復の統合挙動を低水準pullから分離する。"""
+    monkeypatch.setattr(
+        update_dotfiles,
+        "_update_git_with_recovery",
+        lambda step_no, total, timeout: update_dotfiles._run_git_pull(  # pylint: disable=protected-access
+            step_no, total, timeout=timeout
+        ),
+    )
 
 
 def _fake_run(
@@ -387,8 +401,8 @@ def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatc
     assert environment["MISE_AUTO_INSTALL"] == "0"
 
 
-class TestFourStepsInOrder:
-    """4段が順に呼ばれ、成功時にexit code 0を返すことを検証する。"""
+class TestFiveStepsInOrder:
+    """5段が順に呼ばれ、成功時にexit code 0を返すことを検証する。"""
 
     def test_all_steps_succeed(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls: list[list[str]] = []
@@ -400,11 +414,12 @@ class TestFourStepsInOrder:
         assert calls[0][:2] == ["chezmoi", "git"]
         assert calls[1][:2] == ["chezmoi", "init"]
         assert calls[2][:2] == ["chezmoi", "status"]
-        assert calls[3][:2] == ["chezmoi", "apply"]
+        assert calls[3][:2] == ["chezmoi", "diff"]
+        assert calls[4][:2] == ["chezmoi", "apply"]
         assert "--quiet" in calls[0]
-        assert "--force" not in calls[3]
+        assert "--force" in calls[4]
 
-    def test_force_adds_diff_before_forced_apply(
+    def test_diff_precedes_forced_apply(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -419,7 +434,7 @@ class TestFourStepsInOrder:
         )
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
-        assert update_dotfiles.main(["--force"]) == 0
+        assert update_dotfiles.main() == 0
         assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
         assert calls[3] == ["chezmoi", "diff", "--no-pager"]
         assert calls[4] == ["chezmoi", "apply", "--force"]
@@ -458,7 +473,7 @@ class TestStepFailureStopsExecution:
         monkeypatch.setattr(subprocess, "run", _fake_run({"diff": 7}, calls))
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
-        assert update_dotfiles.main(["--force"]) == 7
+        assert update_dotfiles.main() == 7
         assert [call[1] for call in calls] == ["git", "init", "status", "diff"]
 
 
@@ -543,7 +558,7 @@ class TestCapturedStderr:
         assert update_dotfiles.main() == 0
         assert capsys.readouterr().err == "chezmoi status warning\n"
 
-    def test_force_diff_stderr_is_forwarded(
+    def test_diff_stderr_is_forwarded(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -558,14 +573,15 @@ class TestCapturedStderr:
         )
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
-        assert update_dotfiles.main(["--force"]) == 0
+        assert update_dotfiles.main() == 0
         assert capsys.readouterr().err == "chezmoi diff warning\n"
 
 
-def test_unknown_argument_exits_2() -> None:
-    """未知引数はargparseの終了コード2で拒否する。"""
+@pytest.mark.parametrize("argument", ["--force", "--unknown"])
+def test_removed_or_unknown_argument_exits_2(argument: str) -> None:
+    """廃止済み又は未知の引数はargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
-        update_dotfiles.main(["--unknown"])
+        update_dotfiles.main([argument])
     assert exc_info.value.code == 2
 
 
@@ -735,6 +751,103 @@ class TestLockExclusion:
                 release_path.write_text("release", encoding="utf-8")
                 holder.wait(timeout=5)
         assert not calls
+
+
+def _git(repo: pathlib.Path, *arguments: str) -> str:
+    """テスト用Gitリポジトリでコマンドを実行し、標準出力を返す。"""
+    result = subprocess.run(  # noqa: S603
+        ["git", "-C", str(repo), *arguments],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _create_git_pair(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+    """ローカル作業ツリー、上流更新用作業ツリー、bare上流を作成する。"""
+    remote = tmp_path / "remote.git"
+    seed = tmp_path / "seed"
+    local = tmp_path / "local"
+    subprocess.run(["git", "init", "--bare", "--initial-branch=master", str(remote)], check=True, capture_output=True)  # noqa: S603
+    subprocess.run(["git", "init", "--initial-branch=master", str(seed)], check=True, capture_output=True)  # noqa: S603
+    _git(seed, "config", "user.name", "Test User")
+    _git(seed, "config", "user.email", "test@example.invalid")
+    (seed / "tracked.txt").write_text("base\n", encoding="utf-8")
+    _git(seed, "add", "tracked.txt")
+    _git(seed, "commit", "-m", "base")
+    _git(seed, "remote", "add", "origin", str(remote))
+    _git(seed, "push", "-u", "origin", "master")
+    subprocess.run(["git", "clone", str(remote), str(local)], check=True, capture_output=True)  # noqa: S603
+    _git(local, "config", "user.name", "Test User")
+    _git(local, "config", "user.email", "test@example.invalid")
+    return local, seed, remote
+
+
+def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> None:
+    """競合回復テストのpullだけを一時Gitリポジトリへ向ける。"""
+
+    def _pull(_step_no: int, _total: int, *, timeout: int | None) -> int:
+        del timeout
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(local), "pull", "--rebase", "--quiet"],
+            check=False,
+        ).returncode
+
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", _pull)
+
+
+class TestGitConflictRecovery:
+    """一時Git上流でcommit競合と未コミット復元競合からの回復を検証する。"""
+
+    def test_rebase_conflict_preserves_original_commit_and_tracks_upstream(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        local, seed, _remote = _create_git_pair(tmp_path)
+        (local / "tracked.txt").write_text("local commit\n", encoding="utf-8")
+        _git(local, "add", "tracked.txt")
+        _git(local, "commit", "-m", "local")
+        original_head = _git(local, "rev-parse", "HEAD")
+        (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
+        _git(seed, "add", "tracked.txt")
+        _git(seed, "commit", "-m", "upstream")
+        _git(seed, "push")
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+        _patch_real_pull(monkeypatch, local)
+
+        result = _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30)
+
+        recovery_refs = _git(local, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads").splitlines()
+        recovery = next(line.split()[1] for line in recovery_refs if "refs/heads/update-dotfiles-recovery-" in line)
+        assert result == 0
+        assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
+        assert recovery == original_head
+        assert (local / "tracked.txt").read_text(encoding="utf-8") == "upstream\n"
+
+    def test_dirty_restore_conflict_keeps_recoverable_ref_and_clean_upstream(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        local, seed, _remote = _create_git_pair(tmp_path)
+        (local / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+        (local / "staged.txt").write_text("staged\n", encoding="utf-8")
+        (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+        _git(local, "add", "staged.txt")
+        (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
+        _git(seed, "add", "tracked.txt")
+        _git(seed, "commit", "-m", "upstream")
+        _git(seed, "push")
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+        _patch_real_pull(monkeypatch, local)
+
+        result = _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30)
+
+        worktree_refs = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()
+        stash_ref = next(ref for ref in worktree_refs if ref.startswith("refs/worktree/update-dotfiles-"))
+        saved_paths = _git(local, "stash", "show", "--include-untracked", "--name-only", stash_ref).splitlines()
+        assert result == 0
+        assert _git(local, "status", "--porcelain=v1") == ""
+        assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
+        assert {"tracked.txt", "staged.txt", "untracked.txt"} <= set(saved_paths)
 
 
 class TestFilterApplyPending:

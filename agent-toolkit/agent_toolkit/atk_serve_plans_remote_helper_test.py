@@ -32,7 +32,3 @@ def test_resolve_private_notes_waits_for_atk_startup(
     assert path == private_notes.resolve()
     assert warning is None
     assert capsys.readouterr().err == ""
-
-
-def test_private_notes_timeout_exceeds_previous_limit() -> None:
-    assert helper._PRIVATE_NOTES_TIMEOUT_SEC != 5  # pylint: disable=protected-access

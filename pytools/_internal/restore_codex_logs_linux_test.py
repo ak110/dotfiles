@@ -483,7 +483,7 @@ def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakePr
                     {
                         "name": "textlint",
                         "exe": "/usr/bin/node",
-                        "cmdline": ["node", "scripts/codex-agents-base.md"],
+                        "cmdline": ["node", "scripts/rules-main.codex.md"],
                         "uids": _uids(_OWN_UID),
                     }
                 )

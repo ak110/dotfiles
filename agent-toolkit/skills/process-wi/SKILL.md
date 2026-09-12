@@ -87,7 +87,7 @@ AWIとUWIの共通概念、由来、状態及び投入は`../wi-standards/SKILL.
 
 - 選定工程では`agent-toolkit:session-review`と自動コードレビュー監査を起動し、返却の受領と指摘ごとの処置の確定を保持する。
   公開工程では統合後検証、push、CI、検証失敗時の修正、固有の終端工程及び延期`adopt`を1回だけ終端担当へ委譲し、
-  メインは`agent-toolkit:completion-report`と`agent-toolkit:exit-session`の起動を保持する
+  メインは`agent-toolkit:completion-report`の起動と`atk agents-exit-session`の実行を保持する
 - 公開工程のpush、CI、固有の終端工程及び延期`adopt`の対象が1件も無い処理回の扱いは`references/finish-session.md`「公開対象が無い処理回の短絡」が定める
 
 公開工程の終端担当以外の委譲の要否は`agent-toolkit/rules/01-agent.md`「委譲の要否判定」節に従って判定し、

@@ -18,12 +18,12 @@ atk wi process-loop
 ```
 
 開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
-ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む固定報告を完了し、続いて`agent-toolkit:exit-session`が`/goal`で登録した目的とセッションを終了する。
+ready項目がなくなると、`agent-toolkit:completion-report`が選定工程で完了した振り返りの結果を含む固定報告を完了し、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
 `agent-toolkit:process-wi`は起動時に副作用のない終了能力probeを実行して分岐値を確定する。
 probe未実行、読取失敗又は値の不一致は停止不能として扱う。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、利用者が`/exit`を入力すると親の監視ループへ戻る。
-終了時の`agent-toolkit:exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了能力probeを新規実行する。
+終了時の`atk agents-exit-session`は起動時の分岐値を再利用せず、停止要求直前に終了対象を新規識別する。
 表示済みPIDの開始時刻と実行ファイルのデバイス・inodeが再照合で一致した場合だけCodexを停止する。
 
 初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
@@ -89,6 +89,9 @@ backendから承認・入力・認証・attestationなどの非対話要求を�
 ### フックの信頼確認
 
 Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。
+Codexプラグインの導入又は更新でHook定義が変わった場合は、`/hooks`で定義を確認して信頼する。
+信頼後に新しいセッションを開始し、SessionStartの規範注入を確認する。
+再信頼の操作だけではSessionStartの規範注入を検収できない。
 プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、agent-toolkitについて
 次の7イベントが含まれることを確認する。他の有効pluginは、独自のイベントを追加する場合がある。
 

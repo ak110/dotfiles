@@ -49,4 +49,4 @@
 - `deferred_adopted`が挙げるファイル名の集合が、起動時に完全OIDを対応付けて渡した延期`adopt`対象AWIファイル名の集合と過不足なく一致する。一致を確認した後、全ファイル名を引数として`atk wi show <ファイル名>... --target-repo=<対象リポジトリの絶対パス> --skip-pull`を1回実行する。終了コード0と、出力の`### <ファイル名> [<状態>]`の見出し行の状態が全件`adopted`であることを確認する。状態フォルダーの全件を返す起動形は、当該フォルダーが終端した項目を累積し続けるため用いない。出力量を抑える場合は`--output-file`へ当該工程が所有する管理対象一時領域の絶対パスを渡し、保存したファイルの見出し行を読む
 
 全ての照合が成立した後は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節へ戻る。
-同節が定めるベースbranchの公開状態の再観測、`agent-toolkit:completion-report`による報告及び`agent-toolkit:exit-session`の起動を実施する。
+同節が定めるベースbranchの公開状態の再観測、`agent-toolkit:completion-report`による報告及び`atk agents-exit-session`の実行を実施する。

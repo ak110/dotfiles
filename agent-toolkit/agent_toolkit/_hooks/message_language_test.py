@@ -330,12 +330,12 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "autonomous_exit.py:108 解消手段",
-        "列挙した前提工程をすべて完了してから、`/agent-toolkit:exit-session`を起動する。",
+        "列挙した前提工程をすべて完了してから、`atk agents-exit-session`を単独で実行する。",
     ),
     (
         "autonomous_exit.py:_REASON_BODY",
         "このセッションには常駐ループの終了保証が適用される。`agent-toolkit:process-wi`の全工程を完了し、"
-        "`agent-toolkit:completion-report`で完了報告した後に、`agent-toolkit:exit-session`を起動する。"
+        "`agent-toolkit:completion-report`で完了報告した後に、`atk agents-exit-session`を実行する。"
         "未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。",
     ),
     (

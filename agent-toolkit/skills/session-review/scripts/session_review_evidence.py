@@ -2025,6 +2025,35 @@ def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
     return events
 
 
+def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """通知の集計前の位置を、一次選別候補として重複なく返す。"""
+    events: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None, _HookNoticeKey]] = set()
+    for item in collected:
+        for record in item.records:
+            for hook_record in _hook_records(record.entry):
+                tool_use_id = hook_record.get("toolUseID")
+                normalized_id = tool_use_id if isinstance(tool_use_id, str) else None
+                hook_name = hook_record.get("hookName")
+                for body in _hook_notice_bodies(hook_record):
+                    key = _hook_notice_key(body, hook_name if isinstance(hook_name, str) else None)
+                    if key is None:
+                        continue
+                    identity = (item.record_id, normalized_id, key)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    events.append(
+                        {
+                            "kind": "hook-notice",
+                            "record": item.record_id,
+                            "line": record.line,
+                            "text": key.kind_text,
+                        }
+                    )
+    return events
+
+
 def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     """エントリを再帰的にたどり、hook実行の記録を出現順に集める。
 
@@ -2528,7 +2557,7 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
     return events, 0
 
 
-_BUNDLE_SCAN_FILENAMES = ("timeline.jsonl", "warnings.jsonl", "stats.jsonl", "hook-notices.jsonl")
+_BUNDLE_SCAN_FILENAMES = ("timeline.jsonl", "warnings.jsonl", "stats.jsonl", "hook-notices.jsonl", "candidates.jsonl")
 _BUNDLE_BODY_KINDS = frozenset({"failed-tool", "agent-completion", "final-result"})
 _BUNDLE_LOCATOR_ONLY_KINDS = frozenset({"user"})
 _BUNDLE_BODY_LENGTH = 200
@@ -2559,9 +2588,11 @@ def _bundle_events(
     warnings = _warning_collection_events(collected, [])
     stats = _stats_events(collected, compaction_record_dir)
     hook_notices = _hook_notice_events([record for item in collected for record in item.records])
+    candidates = _candidate_events(timeline, warnings, _hook_notice_candidate_events(collected))
 
     events: list[dict[str, Any]] = []
-    for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, (timeline, warnings, stats, hook_notices), strict=True):
+    scans = (timeline, warnings, stats, hook_notices, candidates)
+    for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
         path = resolved / filename
         path.write_text(
             "".join(f"{json.dumps(event, ensure_ascii=False)}\n" for event in scan_events),
@@ -2572,6 +2603,38 @@ def _bundle_events(
     events.extend(_bundle_warning_events(warnings))
     events.extend(_unresolved_events(unresolved))
     return events, 0
+
+
+def _candidate_events(
+    timeline: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    hook_notices: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """一次選別へ渡す全候補をイベント位置ごとに1件へ正規化する。"""
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    sources = (
+        ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
+        ("escalation", (event for event in timeline if event.get("kind") == "failed-tool")),
+        ("warning", (event for event in warnings if event.get("kind") == "warning")),
+        ("hook-notice", (event for event in hook_notices if event.get("kind") == "hook-notice")),
+    )
+    for candidate_kind, events in sources:
+        for event in events:
+            record = event.get("record")
+            line = event.get("line")
+            if not isinstance(record, str) or not isinstance(line, int):
+                continue
+            locator = (record, line)
+            if locator in seen:
+                continue
+            seen.add(locator)
+            candidate = {"kind": "candidate", "candidate_kind": candidate_kind, "record": record, "line": line}
+            text = event.get("text")
+            if isinstance(text, str):
+                candidate["text"] = text
+            candidates.append(candidate)
+    return candidates
 
 
 def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:

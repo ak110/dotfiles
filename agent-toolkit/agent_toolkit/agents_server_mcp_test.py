@@ -1576,7 +1576,6 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     wait_task = asyncio.create_task(
         asyncio.to_thread(
             agents_wait.wait_for_result,
-            1,
             environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
         )
@@ -2187,7 +2186,6 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     wait_task = asyncio.create_task(
         asyncio.to_thread(
             agents_wait.wait_for_result,
-            1,
             environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
         )
@@ -4252,7 +4250,6 @@ async def test_recovered_session_restores_persisted_result_once(
 
     assert (
         agents_wait.wait_for_result(
-            0,
             environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
         )
@@ -4890,7 +4887,6 @@ async def test_kill_stop_retains_result_for_agents_wait(
     assert result_path.exists()
     assert (
         agents_wait.wait_for_result(
-            0,
             environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
             state_root=tmp_path,
         )

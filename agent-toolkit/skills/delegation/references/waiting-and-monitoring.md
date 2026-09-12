@@ -60,7 +60,7 @@
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月7日」にある
 - `wait`の当該上限より短い上限を1回のMCPツール呼び出しへ課す実行主体では、`atk agents-wait`を既定の待機手段とする。
   `atk agents-wait`はシェルの外部プロセスであり当該上限の対象にならず、`wait`と同じ条件で通知を回収して同じ`status`を返す。
-  待機上限は`--timeout`の既定である3600秒のまま用い、所要時間の見込みから値を渡さない。
+  待機上限を引数で指定せず、サーバーと待機CLIが導出する値を用いる。
   当該上限へ達すると終了コード3で終わるため、この場合も`status`が`running`の応答と同じく同じコマンドを再発行して待機を継続する。
   終端の`status`が返った場合は、`wait`を1回発行して結果本文の配送を確定させる。
   `atk agents-wait`は終端結果のファイルを削除するだけで`agents_server`の配送済み状態を更新しないためである
@@ -231,7 +231,7 @@ Git差分、HEAD、成果物の更新時刻・行数、無応答、経過時間�
   完了報告を取得できた場合は再実装せず、当該報告を検収して、実行時に公開され呼び出しが成功した`SendMessage`と保持済みIDで再開する。
   完了報告を取得できない場合は未完了の工程だけを巻き取り、担当範囲又は権限の外にある場合は`needs_escalation`で返す
   Codexで未完了工程を巻き取るか新規起動する場合は、`references/runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う
-- Codexの二層待機では、外側の実行セルのyieldを停滞の判定材料に用いない。内側の`agents_server.wait`が継続している間は、巻き取り、代替起動及び新規起動へ進まず、`${CLAUDE_PLUGIN_ROOT}/share/codex-agents-base.md`「agents_serverの二層待機」節が定める手順で外側の実行セルを再開する
+- Codexの二層待機では、外側の実行セルのyieldを停滞の判定材料に用いない。内側の`agents_server.wait`が継続している間は、巻き取り、代替起動及び新規起動へ進まず、`${CLAUDE_PLUGIN_ROOT}/share/rules-main.codex.md`「agents_serverの二層待機」節が定める手順で外側の実行セルを再開する
 
 ## 成果物側の観測
 

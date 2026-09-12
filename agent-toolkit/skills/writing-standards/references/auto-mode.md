@@ -63,7 +63,7 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
 | 拒否される操作 | 分類名 | 対応 |
 | --- | --- | --- |
 | 自身が作成したHEADへの`git commit --amend` | Git Destructive | 該当範囲を狭く許容するルールを追加する |
-| `agent-toolkit:exit-session`からの`kill -TERM $PPID` | Interfere With Workloads | transcriptの直前のツール呼び出しを条件とするルールを追加する |
+| `atk agents-exit-session`による本人確認済みPIDの停止 | Interfere With Workloads | CLIがプロセス開始情報と実行ファイルを再照合し、単一PIDだけを停止する |
 | リリースワークフローの起動 | `Production Deploy`が有力候補（拒否本文では未取得） | 設定に`Release Workflow Dispatch`が存在する場合、個人リポジトリの`release.yaml`起動に限定して同ルールを使う |
 | 承認ゲート緩和・規範改訂・設定原本変更を含むコミット | Self Modification | AWI処理由来に限定するルールを追加する |
 | MR/PRのマージ（`glab mr merge`・`gh pr merge`等） | Merge Without Review | マージ操作を無条件に許可するルールを追加する（必須レビュー・チェックの迂回形態とhard_deny領域は対象外のまま） |
@@ -84,7 +84,7 @@ auto modeの拒否ではなくpermissions設定による確認ダイアログが
 - 分類名を取得できない場合は、拒否メッセージ本文を根拠として後掲のユーザー確認へ進む。
   `claude auto-mode defaults`自体が拒否されて分類名を確認できない場合も同じ扱いとする
 - `kill -TERM $PPID`のルールは、transcriptの直前のツール呼び出しがこのエージェントによる
-  `agent-toolkit:exit-session`のSkill呼び出しである場合だけ適用する。
+  `atk agents-exit-session`の実行である場合だけ適用する。
   チェーン演算子や他の対象を含まない単独実行に限定し、他プロセスへのシグナル送出には適用しない
 - `Reconsidered Retry Approval`による1回の再発行後も拒否が続く場合は`AskUserQuestion`で当該判定が偽陽性かを明示的に問い、
   偽陽性である旨の回答を得てから再試行する（進行への同意のみでは`clears`されない）

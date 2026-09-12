@@ -37,6 +37,16 @@ def _claude_tool_result_record(content: str) -> dict[str, object]:
     }
 
 
+def _claude_bash_record(command: str) -> dict[str, object]:
+    return {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": command}}],
+        },
+    }
+
+
 def _codex_message_record(*, role: str, item_type: str, text: str) -> dict[str, object]:
     return {
         "type": "response_item",
@@ -153,7 +163,46 @@ class TestExitSessionReached:
 
         assert session_records.exit_session_reached(path, "claude") is False
 
-    def test_codex_always_none(self, tmp_path: pathlib.Path) -> None:
+    def test_claude_cli_response_is_detected(self, tmp_path: pathlib.Path) -> None:
+        path = tmp_path / "records.jsonl"
+        _write_record(
+            path,
+            [
+                _claude_bash_record("atk agents-exit-session"),
+                _claude_tool_result_record('{"exit_session_invoked":true,"status":"unsupported"}'),
+            ],
+        )
+
+        assert session_records.exit_session_reached(path, "claude") is True
+
+    def test_codex_cli_response_is_detected(self, tmp_path: pathlib.Path) -> None:
+        path = tmp_path / "records.jsonl"
+        _write_record(
+            path,
+            [
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call",
+                        "name": "exec_command",
+                        "call_id": "call-x",
+                        "arguments": json.dumps({"cmd": "atk agents-exit-session"}),
+                    },
+                },
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call_output",
+                        "call_id": "call-x",
+                        "output": '{"exit_session_invoked":true,"status":"unsupported"}',
+                    },
+                },
+            ],
+        )
+
+        assert session_records.exit_session_reached(path, "codex") is True
+
+    def test_codex_unknown_record_shape_is_none(self, tmp_path: pathlib.Path) -> None:
         path = tmp_path / "records.jsonl"
         _write_record(path, [_claude_tool_result_record("Launching skill: agent-toolkit:exit-session")])
 

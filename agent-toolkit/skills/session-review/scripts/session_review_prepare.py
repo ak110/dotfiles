@@ -65,6 +65,9 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
     if not evidence_script.is_file():
         return _missing("evidence_script")
+    report_script = pathlib.Path(__file__).resolve().with_name("session_review_report.py")
+    if not report_script.is_file():
+        return _missing("report_script")
 
     transcript_path = pathlib.Path(args.transcript).expanduser().resolve() if args.transcript is not None else None
     if args.claude_session_id is not None:
@@ -89,6 +92,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
 
     record = {
         "evidence_script": str(evidence_script),
+        "report_script": str(report_script),
         "transcript_path": str(transcript_path) if transcript_path is not None else None,
         "codex_thread_id": args.codex_thread_id,
         "managed_temp": str(managed_temp),

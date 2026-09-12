@@ -257,9 +257,6 @@ _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 # process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
 _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 
-# exit-sessionスキル呼び出し検出。process-wiのフラグリセット経路に使う
-# （`agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端する）。
-_EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
@@ -604,6 +601,83 @@ def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
     return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1] == "agents-wait"
 
 
+_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
+
+
+def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
+    """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
+    if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
+        return None
+    from agent_toolkit._atk.help_text import HELP  # pylint: disable=import-outside-toplevel
+
+    arguments = tuple("wi" if index == 0 and value == "mq" else value for index, value in enumerate(tokens[1:]))
+    paths = (tuple(key.split()[1:]) for key in HELP if key.startswith("atk "))
+    return next(
+        (path for path in sorted(paths, key=len, reverse=True) if arguments[: len(path)] == path),
+        None,
+    )
+
+
+def _response_texts(value: object) -> list[str]:
+    """Bash応答から標準出力相当の文字列を再帰的に抽出する。"""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for nested in value.values() for text in _response_texts(nested)]
+    if isinstance(value, list):
+        return [text for nested in value for text in _response_texts(nested)]
+    return []
+
+
+def _response_has_exit_invocation(value: object) -> bool:
+    """応答中の単独JSON行に終了CLIの実行証跡がある場合に真を返す。"""
+    if isinstance(value, dict) and value.get("exit_session_invoked") is True:
+        return True
+    for text in _response_texts(value):
+        for line in text.splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict) and record.get("exit_session_invoked") is True:
+                return True
+    return False
+
+
+def _record_bash_response_state(session_id: str, command: str, tool_response: object) -> None:
+    """成功したBash応答を使い、ヘルプ観測と終了CLI起動を記録する。"""
+    segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
+    help_paths: list[str] = []
+    for segment in segments:
+        path = _recognized_atk_command_path(segment.tokens)
+        arguments = segment.tokens[1:]
+        if path is None or "--help" not in arguments:
+            continue
+        if arguments != (*path, "--help"):
+            continue
+        normalized = " ".join(path)
+        if normalized not in help_paths:
+            help_paths.append(normalized)
+    if help_paths and any(text.strip() for text in _response_texts(tool_response)):
+
+        def _record_help(state: dict) -> dict | None:
+            current = state.get(_ATK_HELP_OBSERVED_KEY)
+            observed = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
+            additions = [value for value in help_paths if value not in observed]
+            if not additions:
+                return None
+            state[_ATK_HELP_OBSERVED_KEY] = [*observed, *additions]
+            return state
+
+        update_state(session_id, _record_help)
+    exit_invoked = any(
+        pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
+        for segment in segments
+    )
+    if exit_invoked and _response_has_exit_invocation(tool_response):
+        update_state(session_id, _record_exit_session_invoked)
+
+
 def _record_agents_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
     """成功したBash入力内の`atk agents-wait`を観測の試みとして記録する。"""
     if not any(
@@ -703,8 +777,6 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, _set_invoked)
     if skill_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
-    if skill_name in _EXIT_SESSION_SKILL_NAMES:
-        update_state(session_id, _record_exit_session_invoked)
 
 
 def _record_edited_file(session_id: str, file_path: str) -> None:
@@ -1003,6 +1075,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         owner_agent_id=resolve_hook_agent_id(payload),
         record_success_dependent_state=not (isinstance(turn_id, str) and bool(turn_id)),
     )
+    _record_bash_response_state(session_id, command, payload.get("tool_response"))
     return 0
 
 

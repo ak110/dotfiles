@@ -1,11 +1,10 @@
 r"""多段終了手順の起動順をStopフックで検査する。
 
 `agent-toolkit:process-wi`・`agent-toolkit:add-awi`・`agent-toolkit:plan-and-add-awi`は、
-本体の作業を終える際に固定の終了スキル列（`agent-toolkit:completion-report`、
-`agent-toolkit:process-wi`だけはこれに続けて`agent-toolkit:exit-session`）を順に起動する契約を持つ。
-本フックは対象スキルの最新の起動以後に、要求される終了スキルが要求順で起動されたかを
-transcriptのSkillツール起動記録（`tool_use`ブロック）から判定する。判定の正本は
-`agent-toolkit:completion-report`が禁じる新規の起動追跡フラグではなく、当該`tool_use`ブロックそのものとする。
+本体の作業を終える際に固定の終了工程列（`agent-toolkit:completion-report`、
+`agent-toolkit:process-wi`だけはこれに続けて`atk agents-exit-session`）を順に実行する契約を持つ。
+本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
+transcriptのSkill及びBashツール起動記録（`tool_use`ブロック）から判定する。
 
 対象スキルの起動が無いセッションは検査対象外として常時approveする。
 最新の対象スキル起動より前の終了スキル起動は充足の判定へ流用しない。
@@ -26,6 +25,7 @@ import json
 import os
 import pathlib
 
+from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_gate import (
     _iter_assistant_blocks,  # noqa: E402  # pylint: disable=protected-access
@@ -53,7 +53,7 @@ _COMPLETION_REPORT = (
     "agent-toolkit:completion-report",
     frozenset({"agent-toolkit:completion-report", "completion-report"}),
 )
-_EXIT_SESSION = ("agent-toolkit:exit-session", frozenset({"agent-toolkit:exit-session", "exit-session"}))
+_EXIT_SESSION = ("atk agents-exit-session", frozenset({"atk agents-exit-session"}))
 
 # 検査対象スキルの(代表名, 名前集合)と、その最新起動以後に要求順で起動される必要がある終了スキル列。
 _TERMINATION_SEQUENCES: tuple[tuple[tuple[str, frozenset[str]], tuple[tuple[str, frozenset[str]], ...]], ...] = (
@@ -73,15 +73,32 @@ def _approve() -> None:
 
 
 def _skill_invocations(entries: list[dict]) -> list[str]:
-    """非sidechainのassistantエントリから、Skillツール起動のスキル名を時系列順で返す。"""
+    """非sidechainのassistantエントリから終了工程の起動を時系列順で返す。"""
     invocations: list[str] = []
     for block in _iter_assistant_blocks(entries):
-        if block.get("type") != "tool_use" or block.get("name") != "Skill":
+        if block.get("type") != "tool_use":
             continue
         tool_input = block.get("input")
-        skill_name = tool_input.get("skill") if isinstance(tool_input, dict) else None
-        if isinstance(skill_name, str) and skill_name:
-            invocations.append(skill_name)
+        if not isinstance(tool_input, dict):
+            continue
+        if block.get("name") == "Skill":
+            skill_name = tool_input.get("skill")
+            if isinstance(skill_name, str) and skill_name:
+                invocations.append(skill_name)
+            continue
+        if block.get("name") != "Bash":
+            continue
+        command = tool_input.get("command")
+        if not isinstance(command, str):
+            continue
+        if any(
+            segment.resolved
+            and segment.tokens
+            and pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"}
+            and segment.tokens[1:] == ("agents-exit-session",)
+            for segment in extract_execution_segments(command)
+        ):
+            invocations.append("atk agents-exit-session")
     return invocations
 
 
@@ -162,7 +179,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_termination_order", {"count": len(missing_bodies)})
     reason = _block_notice(
         "\n\n".join(missing_bodies),
-        fix="列挙した終了スキルを指定順で起動してから終了する。",
+        fix="列挙した終了工程を指定順で実行してから終了する。",
     )
     return "block", reason
 

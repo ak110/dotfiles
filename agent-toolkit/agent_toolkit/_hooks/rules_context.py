@@ -38,10 +38,14 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     parts: list[str] = []
     if source == "compact":
         parts.append(QUALITY_CHECKPOINT_NOTICE)
+    normative_parts: list[str] = []
     if not delegated:
-        parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
+        normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
         if host == "claude":
-            parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
+            normative_parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
+    if normative_parts:
+        normative_body = "\n\n".join(normative_parts)
+        parts.append(f'<normative-context source="agent-toolkit">\n{normative_body}\n</normative-context>')
     return "\n\n".join(parts) or None
 
 

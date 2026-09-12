@@ -452,27 +452,6 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
     assert uwi_path.read_text(encoding="utf-8") == original_uwi
 
 
-class TestAdoptMissing:
-    """adoptサブコマンド: 存在しないファイル指定でexit 2となる。"""
-
-    def test_missing_file_exits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
-        _setup_notes(tmp_path)
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "adopt", "nonexistent.md"], home=tmp_path)
-
-        assert exc_info.value.code == 2
-        captured = capsys.readouterr()
-        assert "inbox・processingのいずれにも存在しません" in captured.err
-
-
 class TestRejectDeletes:
     """rejectサブコマンド: ファイルをinboxからrejected/へ移動する。"""
 

@@ -23,6 +23,10 @@ _PYTHON_PATH_PATTERN = re.compile(
 )
 _SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
 _INCIDENTS = pathlib.Path("docs/development/incidents.md")
+_AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
+_SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
+_SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
+_PROCESS_LOOP_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py")
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS): 1,
     (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS): 1,
@@ -30,6 +34,11 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS): 1,
     (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS): 1,
     (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS): 1,
+    (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS): 5,
+    (f"{_PLUGIN_PREFIX}:exit-session", _AUDIT_RECORDS): 1,
+    (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
+    (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
+    (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_TEST): 1,
 }
 
 
@@ -141,6 +150,7 @@ def _known_legacy_references() -> list[str]:
         f"{_PLUGIN_PREFIX}:reviewee-standards",
         f"{_PLUGIN_PREFIX}:shell-exec",
         f"{_PLUGIN_PREFIX}/scripts/hook.py",
+        *[f"{_PLUGIN_PREFIX}:exit-session"] * 5,
     ]
 
 

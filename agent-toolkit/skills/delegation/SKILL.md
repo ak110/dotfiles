@@ -257,7 +257,7 @@ response: <受信者の最小完了報告>
 
 Codexが遅延実行されるツールを介して`agents_server`の`wait`を呼ぶ二層待機では、
 内側の`wait`へタスク固有のtimeoutを指定せず、外側の実行セルの再開で応答性を制御する。
-写像の詳細は`${CLAUDE_PLUGIN_ROOT}/share/codex-agents-base.md`「agents_serverの二層待機」節を正本とする。
+写像の詳細は`${CLAUDE_PLUGIN_ROOT}/share/rules-main.codex.md`「agents_serverの二層待機」節を正本とする。
 
 - 委譲機能が返す状態・識別子を優先して停滞を検知し、状態を取得できない経路だけ
   `git log`と`git status`を補助的に用いる

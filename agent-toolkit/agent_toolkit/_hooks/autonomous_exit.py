@@ -2,10 +2,10 @@ r"""agent-toolkit pluginの自律終了Stopフック。
 
 環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`または移行互換名
 `DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`が設定されたセッションを対象とする。
-本フックは環境変数印を検出したセッションに限り、`agent-toolkit:exit-session`スキルの
-呼び出し漏れを検知して当該ターンの継続をblockし再促する。
+本フックは環境変数印を検出したセッションに限り、`atk agents-exit-session`の
+起動漏れを検知して当該ターンの継続をblockし再促する。
 
-`agent-toolkit:exit-session`呼び出しの記録はpluginのPostToolUse
+`atk agents-exit-session`起動の記録はpluginのPostToolUse
 （`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
 反映する。本フックは同フラグをセッション状態ファイル経由で読み取るのみで、記録は行わない。
 
@@ -48,7 +48,7 @@ _LEGACY_ENV_REQUIRED = "DOTFILES_AUTONOMOUS_EXIT_REQUIRED"
 # agents_serverから起動された委譲先セッションであることを示す環境変数名。
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
-# PostToolUse（`posttooluse.py`）が`agent-toolkit:exit-session`呼び出し検出時に
+# PostToolUse（`posttooluse.py`）が`atk agents-exit-session`の応答検出時に
 # セッション状態へ記録するフラグ名。
 _STATE_KEY = "autonomous_exit_invoked"
 
@@ -56,7 +56,8 @@ _STATE_KEY = "autonomous_exit_invoked"
 # 起動元のCLIや起動時のスキル名は判定していないため、本文では例示として扱わない。
 _REASON_BODY = """\
 このセッションには常駐ループの終了保証が適用される。
-`agent-toolkit:process-wi`の全工程を完了し、`agent-toolkit:completion-report`で完了報告した後に、`agent-toolkit:exit-session`を起動する。
+`agent-toolkit:process-wi`の全工程を完了し、`agent-toolkit:completion-report`で完了報告した後に、
+`atk agents-exit-session`を実行する。
 未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。"""
 
 
@@ -102,13 +103,13 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
         _REASON_BODY,
-        fix="列挙した前提工程をすべて完了してから、/agent-toolkit:exit-sessionを起動する。",
+        fix="列挙した前提工程をすべて完了してから、`atk agents-exit-session`を単独で実行する。",
     )
     return "block", reason
 
 
 def main(payload_text: str) -> int:
-    """`agent-toolkit:exit-session`呼び忘れを検知し再促するエントリポイント。"""
+    """`atk agents-exit-session`の起動漏れを検知し再促するエントリポイント。"""
     decision, body = evaluate(payload_text)
     if decision == "block":
         print(json.dumps({"decision": "block", "reason": body}, ensure_ascii=False))

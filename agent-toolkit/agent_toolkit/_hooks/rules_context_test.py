@@ -30,6 +30,8 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
+    assert output.count('<normative-context source="agent-toolkit">') == 1
+    assert output.count("</normative-context>") == 1
 
 
 @pytest.mark.parametrize(

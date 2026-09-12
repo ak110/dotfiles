@@ -124,7 +124,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == ["codex app-server daemon restart"]
+    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
@@ -156,7 +156,20 @@ def test_reinstalls_when_state_requires_it(
     assert outcome.changed is True
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
-    assert len(outcome.notices) == 1
+    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
+
+
+def test_plugin_update_keeps_hook_notice_when_daemon_is_stopped(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """daemon再起動が不要でもHook再信頼と新規SessionStartの検収を案内する。"""
+    calls: list[list[str]] = []
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
+    assert "SessionStart" in outcome.notices[0].message
 
 
 def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

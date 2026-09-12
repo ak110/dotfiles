@@ -7,6 +7,7 @@ import datetime
 import io
 import json
 import pathlib
+import shlex
 from collections.abc import Iterator
 from typing import Any
 
@@ -138,31 +139,84 @@ def invoked_process_wi(path: pathlib.Path, engine: str) -> bool:
 
 
 def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
-    """`agent-toolkit:exit-session`の起動標識の有無を返す。
+    """終了CLIの応答又は過去のClaudeスキル起動標識の有無を返す。"""
 
-    Claude Codeは`tool_result`の起動確認文言で判定する。Codexのセッション記録には
-    スキル起動を一意に示すレコードが無いため、常に`None`（判定不能）を返す。
-    """
-    if engine != "claude":
+    def _is_exit_command(command: object) -> bool:
+        if not isinstance(command, str):
+            return False
+        try:
+            tokens = shlex.split(command, posix=True)
+        except ValueError:
+            return False
+        return len(tokens) == 2 and pathlib.PurePath(tokens[0]).name in {"atk", "atk.py"} and tokens[1] == "agents-exit-session"
+
+    def _has_invocation_record(value: object) -> bool:
+        if isinstance(value, dict):
+            if value.get("exit_session_invoked") is True:
+                return True
+            return any(_has_invocation_record(nested) for nested in value.values())
+        if isinstance(value, list):
+            return any(_has_invocation_record(nested) for nested in value)
+        if not isinstance(value, str):
+            return False
+        for line in value.splitlines():
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and parsed.get("exit_session_invoked") is True:
+                return True
+        return False
+
+    if engine not in {"claude", "codex"}:
         return None
     try:
+        pending: set[str] = set()
+        observed_shape = engine == "claude"
         for record in parsed_records(path):
+            if engine == "codex":
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                if record.get("type") == "response_item" and payload.get("type") == "function_call":
+                    observed_shape = True
+                    arguments = payload.get("arguments")
+                    try:
+                        arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+                    except json.JSONDecodeError:
+                        arguments = None
+                    command = arguments.get("cmd") if isinstance(arguments, dict) else None
+                    call_id = payload.get("call_id")
+                    if _is_exit_command(command) and isinstance(call_id, str):
+                        pending.add(call_id)
+                elif record.get("type") == "response_item" and payload.get("type") == "function_call_output":
+                    call_id = payload.get("call_id")
+                    if call_id in pending and _has_invocation_record(payload.get("output")):
+                        return True
+                continue
             message = record.get("message")
-            if record.get("type") != "user" or not isinstance(message, dict):
+            if not isinstance(message, dict):
                 continue
             content = message.get("content")
             if not isinstance(content, list):
                 continue
-            if any(
-                isinstance(item, dict)
-                and item.get("type") == "tool_result"
-                and item.get("content") == _CLAUDE_EXIT_SESSION_MARKER
-                for item in content
-            ):
-                return True
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "tool_use" and item.get("name") == "Bash":
+                    tool_input = item.get("input")
+                    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+                    tool_id = item.get("id")
+                    if _is_exit_command(command) and isinstance(tool_id, str):
+                        pending.add(tool_id)
+                elif item.get("type") == "tool_result":
+                    if item.get("content") == _CLAUDE_EXIT_SESSION_MARKER:
+                        return True
+                    if item.get("tool_use_id") in pending and _has_invocation_record(item.get("content")):
+                        return True
     except OSError:
         return False
-    return False
+    return False if observed_shape else None
 
 
 def _excerpt(text: str) -> str:

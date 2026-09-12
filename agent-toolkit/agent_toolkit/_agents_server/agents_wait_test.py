@@ -11,6 +11,12 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 
+@pytest.fixture(autouse=True)
+def _short_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
+    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 0)
+
+
 @pytest.fixture(name="wait_environment")
 def _wait_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
     """状態ファイルの解決先をテスト用ディレクトリへ隔離する。"""
@@ -43,7 +49,7 @@ def test_agents_wait_outputs_matching_result(
     other_result.write_text(json.dumps({"session_id": "session-2", "status": "failed"}), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == payload
@@ -67,7 +73,6 @@ def _wait_while_session_1_is_locked(tmp_path: pathlib.Path, own_session_id: str)
         acquire_lock(lock_file, blocking=False)
         try:
             return agents_wait.wait_for_result(
-                0,
                 environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
                 state_root=tmp_path,
             )
@@ -104,7 +109,7 @@ def test_agents_wait_resolves_changed_conversation_session(
     status_file.write_root_alias("current-session", "root-session", tmp_path)
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     assert json.loads(capsys.readouterr().out) == payload
     assert not (results / "session-1.json").exists()
@@ -118,7 +123,7 @@ def test_agents_wait_times_out_without_result(
     assert not wait_environment.exists()
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"status": "running"}
@@ -133,7 +138,7 @@ def test_agents_wait_returns_expired_when_session_is_absent_from_root(
     _write_own_status(wait_environment, [])
 
     with pytest.raises(SystemExit, match="7"):
-        atk.main(["agents-wait", "--timeout=3600"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"status": "expired"}
@@ -149,7 +154,7 @@ def test_agents_wait_keeps_waiting_for_retained_session(
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
@@ -169,7 +174,7 @@ def test_agents_wait_does_not_expire_without_own_status_file(
     )
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"status": "running"}
@@ -188,7 +193,7 @@ def test_agents_wait_ignores_unreadable_root_status(
     root_status.write_text(root_body, encoding="utf-8")
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert json.loads(captured.out) == {"status": "running"}
@@ -206,7 +211,7 @@ def test_agents_wait_rejects_corrupted_result(
     (wait_environment / "session-1.json").write_text(result_body, encoding="utf-8")
 
     with pytest.raises(SystemExit, match="6"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -223,7 +228,7 @@ def test_agents_wait_rejects_invalid_session_in_status_file(
     _write_own_status(wait_environment, [{"session_id": session_id}])
 
     with pytest.raises(SystemExit, match="5"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -255,7 +260,7 @@ def test_missing_state_dir_reports_alternative(
     environment: dict[str, str],
 ) -> None:
     """状態ファイルの書込主体を解決できない場合は終了コード4を返す。"""
-    assert agents_wait.wait_for_result(0, environment=environment, state_root=tmp_path) == 4
+    assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 4
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -279,7 +284,7 @@ def test_agents_wait_returns_notices_while_running(
         (notices / f"session-1.{sequence}.json").write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     response = json.loads(capsys.readouterr().out)
     assert response == {
@@ -302,7 +307,7 @@ def test_agents_wait_reports_seconds_since_update_on_timeout(
     _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": updated_at}])
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     response = json.loads(capsys.readouterr().out)
     assert response["updated_at"] == updated_at
@@ -330,7 +335,7 @@ def test_agents_wait_omits_unreadable_session_updated_at_on_timeout(
     _write_own_status(wait_environment, sessions)
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     assert json.loads(capsys.readouterr().out) == expected
 
@@ -343,7 +348,7 @@ def test_agents_wait_returns_stall_notice_after_threshold(
     _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": "2000-01-01T00:00:00+00:00"}])
 
     with pytest.raises(SystemExit, match="3"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     assert json.loads(capsys.readouterr().out)["stalled"] is True
 
@@ -363,7 +368,7 @@ def test_agents_wait_notices_response_reports_seconds_since_update(
     )
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     response = json.loads(capsys.readouterr().out)
     assert response["updated_at"] == updated_at
@@ -389,7 +394,7 @@ def test_agents_wait_adds_notices_to_terminal_result(
     (notices / "session-1.1.json").write_text(json.dumps(notice), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-wait", "--timeout=0"])
+        atk.main(["agents-wait"])
 
     payload["notices"] = [{"sent_at": notice["sent_at"], "body": notice["body"]}]
     assert json.loads(capsys.readouterr().out) == payload

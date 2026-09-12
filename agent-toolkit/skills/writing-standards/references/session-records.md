@@ -49,6 +49,7 @@ Codexでスキルの起動を判定する場合は、当該スキルの起動を
 
 セッション記録から集計したトークン量、リクエスト数又は所要時間を成果物へ書く場合と利用者へ提示する場合は、抽出器の出力を典拠とする。
 抽出器は`agent-toolkit:session-review`の`session-review/scripts/session_review_evidence.py`とする。
+振り返りの全候補は同抽出器の`--bundle`が生成する`candidates.jsonl`を正本とし、一次選別結果からの報告生成と構造検査には`session-review/scripts/session_review_report.py`を用いる。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付けて実行する。
 自作の集計を典拠にしない。
 Claude Codeの記録では1回のAPI応答が複数のレコードへ分かれて同じ`usage`を持つため、同一`message.id`の重複を除かずに合算した値は実際の消費量より大きくなる。抽出器は当該重複を最後の`usage`だけへ畳み込んだ値を返す。

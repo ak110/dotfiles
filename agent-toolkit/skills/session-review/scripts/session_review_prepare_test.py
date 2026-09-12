@@ -92,6 +92,7 @@ def test_prepare_does_not_read_queue(
     assert len(captured.out.splitlines()) == 1
     assert json.loads(captured.out) == {
         "evidence_script": str(pathlib.Path(prepare.__file__).resolve().with_name("session_review_evidence.py")),
+        "report_script": str(pathlib.Path(prepare.__file__).resolve().with_name("session_review_report.py")),
         "transcript_path": str(transcript.resolve()),
         "codex_thread_id": None,
         "managed_temp": str(managed_temp),

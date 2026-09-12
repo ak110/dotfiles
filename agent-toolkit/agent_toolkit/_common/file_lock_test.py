@@ -6,7 +6,6 @@ OS別ロック実装は`_session_state_test.py`の先例に倣い、実行環境
 """
 
 import multiprocessing
-import os
 import pathlib
 import subprocess
 
@@ -212,47 +211,21 @@ class TestRotateIfNeeded:
             _file_lock.rotate_if_needed(path, max_bytes=0, generations=2)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX固有のロック実装")
-class TestLockPosix:
-    """POSIX (`fcntl.flock`) のロック取得・解放を確認する。"""
-
-    def test_acquire_and_release_blocking(self, tmp_path: pathlib.Path) -> None:
-        """ブロッキング取得・解放が例外なく完了する。"""
-        path = tmp_path / "lock"
-        with open(path, "a+", encoding="utf-8") as fh:
-            _file_lock.acquire_lock(fh)
-            _file_lock.release_lock(fh)
-
-    def test_nonblocking_raises_when_already_locked(self, tmp_path: pathlib.Path) -> None:
-        """既に排他ロック済みのファイルへ`blocking=False`で取得すると`OSError`を送出する。"""
-        path = tmp_path / "lock"
-        with open(path, "a+", encoding="utf-8") as fh1, open(path, "a+", encoding="utf-8") as fh2:
-            _file_lock.acquire_lock(fh1)
-            try:
-                with pytest.raises(OSError):
-                    _file_lock.acquire_lock(fh2, blocking=False)
-            finally:
-                _file_lock.release_lock(fh1)
+def test_acquire_and_release_blocking(tmp_path: pathlib.Path) -> None:
+    """選択されたOS別実装でブロッキング取得・解放が完了する。"""
+    path = tmp_path / "lock"
+    with open(path, "a+", encoding="utf-8") as fh:
+        _file_lock.acquire_lock(fh)
+        _file_lock.release_lock(fh)
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows固有のロック実装")
-class TestLockNt:
-    """Windows (`msvcrt.locking`) のロック取得・解放を確認する。"""
-
-    def test_acquire_and_release_blocking(self, tmp_path: pathlib.Path) -> None:
-        """ブロッキング取得・解放が例外なく完了する。"""
-        path = tmp_path / "lock"
-        with open(path, "a+", encoding="utf-8") as fh:
-            _file_lock.acquire_lock(fh)
-            _file_lock.release_lock(fh)
-
-    def test_nonblocking_raises_when_already_locked(self, tmp_path: pathlib.Path) -> None:
-        """既に排他ロック済みのファイルへ`blocking=False`で取得すると`OSError`を送出する。"""
-        path = tmp_path / "lock"
-        with open(path, "a+", encoding="utf-8") as fh1, open(path, "a+", encoding="utf-8") as fh2:
-            _file_lock.acquire_lock(fh1)
-            try:
-                with pytest.raises(OSError):
-                    _file_lock.acquire_lock(fh2, blocking=False)
-            finally:
-                _file_lock.release_lock(fh1)
+def test_nonblocking_raises_when_already_locked(tmp_path: pathlib.Path) -> None:
+    """選択されたOS別実装が既存ロックへの非ブロッキング取得を拒否する。"""
+    path = tmp_path / "lock"
+    with open(path, "a+", encoding="utf-8") as fh1, open(path, "a+", encoding="utf-8") as fh2:
+        _file_lock.acquire_lock(fh1)
+        try:
+            with pytest.raises(OSError):
+                _file_lock.acquire_lock(fh2, blocking=False)
+        finally:
+            _file_lock.release_lock(fh1)
