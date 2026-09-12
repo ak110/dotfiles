@@ -620,3 +620,99 @@ class TestClaudePlanSessionTitle:
         assert result.returncode == 0
         assert result.stdout == ""
         assert not self._title_state_path(tmp_path, sid).exists()
+
+
+class TestFixedSessionTitle:
+    """process-loop起動・process-wi手動起動セッションの固定sessionTitleを検証する。"""
+
+    def test_process_wi_slash_command_emits_fixed_title_in_same_call(self, tmp_path: pathlib.Path) -> None:
+        """`/agent-toolkit:process-wi`起動と同じ呼び出しで固定値`process-wi`を出力する。"""
+        sid = "fixed-title-process-wi"
+
+        result = _run({"session_id": sid, "prompt": "/agent-toolkit:process-wi"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-wi"
+        assert _read_state(tmp_path, sid)["process_wi_skill_invoked"] is True
+
+    def test_process_wi_short_slash_command_emits_fixed_title(self, tmp_path: pathlib.Path) -> None:
+        """短縮形`/process-wi`でも固定値`process-wi`を出力する。"""
+        sid = "fixed-title-process-wi-short"
+
+        result = _run({"session_id": sid, "prompt": "/process-wi"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-wi"
+
+    def test_process_wi_fixed_title_repeats_every_call(self, tmp_path: pathlib.Path) -> None:
+        """計画名と異なり、固定値は呼び出しごとに毎回出力する。"""
+        sid = "fixed-title-process-wi-repeat"
+        _run({"session_id": sid, "prompt": "/agent-toolkit:process-wi"}, state_dir=tmp_path)
+
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-wi"
+
+    def test_process_loop_env_emits_fixed_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションは固定値`process-loop`を出力する。"""
+        sid = "fixed-title-process-loop"
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
+
+    def test_legacy_process_loop_env_emits_fixed_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """移行互換名`DOTFILES_AUTONOMOUS_EXIT_REQUIRED=1`でも固定値`process-loop`を出力する。"""
+        sid = "fixed-title-process-loop-legacy"
+        monkeypatch.setenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", "1")
+
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
+
+    def test_process_loop_env_takes_priority_over_process_wi_flag(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """両条件が真の場合はprocess-loopを優先する。"""
+        sid = "fixed-title-priority"
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        state_path.write_text(json.dumps({"process_wi_skill_invoked": True}), encoding="utf-8")
+
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
+
+    def test_codex_process_loop_session_does_not_emit_title(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Codexセッションでは固定値の対象であってもsessionTitleを出力しない。"""
+        sid = "fixed-title-codex"
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+
+        result = _run({"session_id": sid, "prompt": "通常の入力", "model": "gpt-5"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+
+    def test_neither_condition_falls_back_to_plan_stem(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """いずれの固定条件も満たさないセッションは従来どおり計画ファイルのstemを反映する。"""
+        sid = "fixed-title-fallback"
+        home = tmp_path / "home"
+        plans = home / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(home))
+        plan = plans / "fallback-plan.md"
+        plan.write_text("# 計画\n", encoding="utf-8")
+        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        state_path.write_text(json.dumps({"current_plan_file_path": str(plan)}), encoding="utf-8")
+
+        result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
+
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "fallback-plan"

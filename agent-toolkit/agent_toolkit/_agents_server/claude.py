@@ -26,6 +26,7 @@ from agent_toolkit._agents_server.state import (
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
+    SessionInitializationTimeoutError,
     SessionOwnerGoneError,
     SessionState,
     _begin_reply,
@@ -197,6 +198,7 @@ class ClaudeServerManager:
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
+        self._disconnects: set[asyncio.Task[None]] = set()
 
     def _expire_local_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -305,13 +307,44 @@ class ClaudeServerManager:
         self._tasks.add(task)
         task.add_done_callback(self._forget_task)
         try:
-            return await initialized
+            return await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+        except TimeoutError as exc:
+            # SDKがinitを届けないまま接続を保つ場合、当該待機は所有タスクの失敗経路では解消しない。
+            await self._release_unstarted_task(task)
+            raise SessionInitializationTimeoutError(
+                f"Claude session did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
+                f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
+            ) from exc
         except BaseException:
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-            self._forget_task(task)
+            await self._release_unstarted_task(task)
             raise
+
+    async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
+        """初期化を完了していない所有タスクを終了し、SDKクライアントの接続を解放する。"""
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self._forget_task(task)
+
+    async def _disconnect_client(self, client: Any) -> None:
+        """SDKクライアントの切断を、所有タスクの取り消しから切り離して完走させる。
+
+        切断はCLIの子プロセスへ終了を送る唯一の経路である。
+        取り消された実行では、SDKの切断処理が内部のcheckpointで例外を送出し、
+        当該子プロセスの終了処理へ到達しないまま接続だけを閉じる。
+        このため切断は別taskで実行し、待機の側が取り消されても当該taskの実行を継続させる。
+        """
+        task: asyncio.Task[None] = asyncio.create_task(self._close_client(client))
+        self._disconnects.add(task)
+        task.add_done_callback(self._disconnects.discard)
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.shield(task)
+
+    @staticmethod
+    async def _close_client(client: Any) -> None:
+        """SDKクライアントを切断し、切断処理自体の失敗は無視する。"""
+        with contextlib.suppress(Exception):
+            await client.disconnect()
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         channel = self._channels.get(session.session_id)
@@ -489,8 +522,9 @@ class ClaudeServerManager:
                         elif name == "AssistantMessage" and session is not None:
                             shared_state.consume_claude_agents_server_message(session, message)
                             text = _assistant_text(message)
-                            session.agent_message = text
-                            session.set_progress(text)
+                            if text.strip():
+                                session.agent_message = text
+                                session.set_progress(text)
                             await self._notify_waiters()
                         elif name == "UserMessage" and session is not None:
                             shared_state.consume_claude_agents_server_message(session, message)
@@ -553,8 +587,7 @@ class ClaudeServerManager:
             if active_future is not None and not active_future.done():
                 active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
             if client is not None:
-                with contextlib.suppress(Exception):
-                    await client.disconnect()
+                await self._disconnect_client(client)
             if session is not None:
                 self._channels.pop(session.session_id, None)
             channel.close()
@@ -627,11 +660,16 @@ class ClaudeServerManager:
         else:
             status = "failed" if bool(getattr(message, "is_error", False)) else "completed"
         result = getattr(message, "result", None)
-        agent_message = result if isinstance(result, str) else session.agent_message
+        agent_message = result if isinstance(result, str) and result.strip() else session.agent_message
         error: dict[str, Any] | None = None
         errors = getattr(message, "errors", None)
+        if status == "completed" and not agent_message.strip():
+            status = "failed"
+            error = {"message": "Claude Agent SDK returned no assistant output"}
         if status == "failed":
-            if isinstance(errors, list) and errors:
+            if error is not None:
+                pass
+            elif isinstance(errors, list) and errors:
                 error = {"message": "; ".join(str(item) for item in errors)}
             elif isinstance(result, str) and result:
                 error = {"message": result}
@@ -695,3 +733,7 @@ class ClaudeServerManager:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        # 切断taskは所有タスクの終了処理が登録するため、待機の対象は当該終了の後に集める。
+        disconnects = tuple(self._disconnects)
+        if disconnects:
+            await asyncio.gather(*disconnects, return_exceptions=True)

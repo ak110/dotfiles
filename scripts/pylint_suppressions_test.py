@@ -28,7 +28,7 @@ def _tracked_python_files() -> list[Path]:
         check=True,
         capture_output=True,
     )
-    return [REPO_ROOT / path for path in result.stdout.decode().split("\0") if path]
+    return [REPO_ROOT / path for path in result.stdout.decode().split("\0") if path and (REPO_ROOT / path).is_file()]
 
 
 def test_forbidden_suppression_is_detected_at_each_list_position() -> None:

@@ -40,10 +40,10 @@ def _configure_standard_output() -> None:
 def main(argv: list[str] | None = None) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。
 
-    標準入力は生バイト列として本入口で1回だけ読み、UTF-8で厳密に復号して各モジュールへ渡す。
+    標準入力は生バイト列として本入口で1回だけ読み、UTF-8で厳密にデコードして各モジュールへ渡す。
     プロセスの既定符号化に委ねると、UTF-8で送られたpayload内の非ASCII文字が
-    別の符号化で復号され、判定対象の文字列が一致しなくなる。
-    復号できない入力は判定処理へ渡さず通過扱いで終端する。
+    別の符号化でデコードされ、判定対象の文字列が一致しなくなる。
+    デコードできない入力は判定処理へ渡さず通過扱いで終端する。
     """
     arguments = sys.argv[1:] if argv is None else argv
     if not arguments or arguments[0] not in _SUBCOMMANDS:
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         payload_text = sys.stdin.buffer.read().decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         print(
-            f"[claude_hook] stdinのUTF-8復号に失敗したためフック処理を通過させる: {exc}",
+            f"[claude_hook] stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
             file=sys.stderr,
         )
         return 0

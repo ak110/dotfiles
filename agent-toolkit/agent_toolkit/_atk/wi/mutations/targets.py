@@ -397,14 +397,17 @@ def _resolve_conversion_targets(
     return next(iter(states)), resolved
 
 
-def _resolve_removable_targets(
+def _resolve_active_targets(
     filenames: list[str],
     inbox_dir: pathlib.Path,
     processing_dir: pathlib.Path,
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """rmの対象をprocessing、inbox、holdの優先順で解決する。"""
+    """未終端の対象をprocessing、inbox、holdの優先順で解決する。
+
+    `rm`と`set-dependencies`のように、保存状態を変えずに未終端の項目へ作用する操作が使う。
+    """
     resolved: list[pathlib.Path] = []
     missing: list[str] = []
     for name in filenames:

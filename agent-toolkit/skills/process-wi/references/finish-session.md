@@ -18,12 +18,12 @@
 
 ## セッション終了
 
-メインは公開工程の工程のうち、版数更新、生成物同期、統合後検証、push、CI確認、検証失敗時の主作業ツリーでの修正、固有の終端工程及び延期`adopt`を1件の終端担当へ1回だけ委譲する。起動、渡す入力、受領と検収は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`が定める。同書を全文読んでから起動する。終端担当の稼働中、メインは対象リポジトリの主作業ツリーへ書き込まない。
+メインは公開工程の工程のうち、版数更新、生成物同期、全体検証の要否判定、push、CI確認、検証失敗時の主作業ツリーでの修正、固有の終端工程及び延期`adopt`を1件の終端担当へ1回だけ委譲する。起動、渡す入力、受領と検収は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`が定める。同書を全文読んでから起動する。終端担当は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`「生成物とpush」に従い、対象リポジトリのタスクランナーが定める全体検査とCIの同値性から全体検証の要否を決める。終端担当の稼働中、メインは対象リポジトリの主作業ツリーへ書き込まない。
 
 completion-reportが報告する前に、メインがベースbranchの公開状態を1回観測する。
 観測前に`${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md`の「受領と検収」節を全文読み、同節が参照する4つの観測項目を現在のGit状態から再取得する。
 終端担当が返した`base_branch_state`を再観測に代用しない。
 終端担当の終端後に是正commitが生じた場合は再起動せず、ローカルのベースbranchへ保持し、次のセッションの公開工程で公開する。その他の理由で成立しない項目がある場合は、`agent-toolkit:wi-standards`をSkill機能で起動してUWIを登録し、観測結果を報告へ含める。
-completion-reportは確定した固有成果と振り返り結果を1回だけ報告する。報告本文と`agent-toolkit:exit-session`の起動を同じ応答へ含める順序は`agent-toolkit:completion-report`の手順8を正本とし、本書へ重ねて定めない。
+completion-reportは確定した固有成果と振り返り結果を1回だけ報告する。報告本文と`atk agents-exit-session`の実行を同じ応答へ含める順序は`agent-toolkit:completion-report`の手順8を正本とし、本書へ重ねて定めない。
 
 active一覧を再取得して追加分を同じセッションへ混ぜず、追加分は次回セッションで扱う。

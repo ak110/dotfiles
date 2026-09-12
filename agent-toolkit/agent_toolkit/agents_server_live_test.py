@@ -51,17 +51,17 @@ async def test_live_launch_waits_for_automatic_resume(
     )
     try:
         if launch_kind == "start":
-            started = await manager.start("explore_fast", _PROMPT, cwd)
+            await manager.start("explore_fast", _PROMPT, cwd)
         elif launch_kind == "start_explore":
-            started = await manager.start_explore(True, _PROMPT, cwd)
+            await manager.start_explore(True, _PROMPT, cwd)
         else:
-            started = await manager.start_shell(
+            await manager.start_shell(
                 "sleep 2",
                 cwd,
                 "Bashツールを背景実行し、完了通知で再開した後に`AUTO_RESUME_COMPLETED`だけを返す。",
             )
 
-        result = await manager.wait(started["session_id"], timeout=180)
+        result = await manager.wait()
 
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED"

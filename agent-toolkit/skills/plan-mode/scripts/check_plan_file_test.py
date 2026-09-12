@@ -15,6 +15,7 @@ from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylin
 _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab5132.md")
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+_TWO_FILE_MIGRATION = "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"
 
 type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str, str]]
 
@@ -543,15 +544,50 @@ def test_new_format_accepts_legacy_bug_file_reference_with_warning(
     assert "バグ調査ファイル参照が旧形式である。新規作成・改訂では`- 計画ファイル（バグ）:`へ移行する" in warnings
 
 
-def test_accepts_human_readable_new_format_plan_without_migration_warning(
+def test_accepts_human_readable_two_file_plan_with_migration_warning(
     repo: tuple[pathlib.Path, str],
 ) -> None:
-    """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）をwarningなしで受理する。"""
+    """旧二ファイル計画を受理し、現行書式への移行を警告する。"""
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     errors, warnings = _check_new(work_dir, main_content, detail_content, plan_name="human.md")
     assert not errors, errors
+    assert warnings == [_TWO_FILE_MIGRATION]
+
+
+def test_accepts_current_single_file_plan(repo: tuple[pathlib.Path, str]) -> None:
+    """現行の8節1ファイル計画を移行警告なしで受理する。"""
+    work_dir, _base = repo
+
+    errors, warnings = _check(work_dir, _plan_fixture.current_plan(repo=work_dir.resolve()))
+
+    assert not errors, errors
     assert not warnings, warnings
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "## 要件・外部仕様\n\n公開契約の判定を更新し、対象の検査で結果を確認する。",
+            "## 要件・外部仕様",
+            "`## 要件・外部仕様`を空にしない",
+        ),
+        ("| 近接検証 |", "| レーン内検証 |", "固定2行"),
+        ("### リファクタリング", "### 自由見出し", "固定見出し"),
+        ("対象の公開契約を更新する。", "#### 深い見出し", "H4以深"),
+    ],
+)
+def test_rejects_current_single_file_structure_violations(
+    repo: tuple[pathlib.Path, str], old: str, new: str, message: str
+) -> None:
+    """現行書式の固定節、固定表、見出し深度の違反を拒否する。"""
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(old, new, 1)
+
+    errors, _warnings = _check(work_dir, content)
+
+    assert any(message in error for error in errors), errors
 
 
 @pytest.mark.parametrize(
@@ -647,7 +683,8 @@ def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Pat
     )
 
     assert not read_errors, read_errors
-    assert not read_warnings, read_warnings
+    assert read_warnings == [_TWO_FILE_MIGRATION]
+    assert _TWO_FILE_MIGRATION in create_errors
     assert any("起草時に内容行を置かない" in error for error in create_errors), create_errors
 
 
@@ -667,7 +704,7 @@ def test_keeps_plan_size_advisory_when_rejecting_migration_warnings(repo: tuple[
         reject_migration_warnings=True,
     )
 
-    assert not errors, errors
+    assert errors == [_TWO_FILE_MIGRATION]
     assert len(warnings) == 1
     assert warnings[0].startswith("計画の行数が閾値を超えている")
 
@@ -715,7 +752,7 @@ def test_accepts_direct_and_date_hierarchy_working_paths(
     errors, warnings = check_plan_file.check(main_path, work_dir, home=home)
 
     assert not errors, errors
-    assert not warnings, warnings
+    assert warnings == [_TWO_FILE_MIGRATION]
 
 
 def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
@@ -1031,7 +1068,7 @@ def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, st
 def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
     """改訂用CLI入力は移行警告を拒否しても実装工程の進捗行を保持する。"""
     work_dir, _base = repo
-    main_content, detail_content = human_new_format_plan(work_dir)
+    main_content = _plan_fixture.current_plan(repo=work_dir.resolve())
     main_content = main_content.replace(
         _plan_fixture.PROGRESS_TABLE,
         _plan_fixture.PROGRESS_TABLE + _plan_fixture.PROGRESS_ROW,
@@ -1039,7 +1076,6 @@ def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[
     )
     path = work_dir / "progress-revision.md"
     path.write_text(main_content, encoding="utf-8")
-    (work_dir / "progress-revision.detail.md").write_text(detail_content, encoding="utf-8")
 
     result = subprocess.run(
         [
@@ -1163,21 +1199,15 @@ def test_origin_mismatch_is_error_on_creation(repo: tuple[pathlib.Path, str], tm
 def test_agent_wi_adopted_action_without_reason_is_error_on_creation(repo: tuple[pathlib.Path, str]) -> None:
     """エージェント由来のWIの旧採用行は新規作成でエラーに移す。"""
     work_dir, _base = repo
-    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
-    detail_content = _plan_fixture.human_detail()
+    main_content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
     row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | - |"
     main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
-    read_errors, read_warnings = _check_new(
+    path = work_dir / "agent-wi.md"
+    path.write_text(main_content, encoding="utf-8")
+    read_errors, read_warnings = check_plan_file.check(path, work_dir)
+    errors, warnings = check_plan_file.check(
+        path,
         work_dir,
-        main_content,
-        detail_content,
-        plan_name="agent-wi-read.md",
-    )
-    errors, warnings = _check_new(
-        work_dir,
-        main_content,
-        detail_content,
-        plan_name="agent-wi.md",
         reject_migration_warnings=True,
     )
     assert not read_errors, read_errors
@@ -1190,10 +1220,9 @@ def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], 
     """照合を省略した事実は助言に留め、新規作成を遮断しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "absent"
-    main_content = _plan_fixture.human_main(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
+    main_content = _plan_fixture.current_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = work_dir / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
-    (work_dir / "plan.detail.md").write_text(_plan_fixture.human_detail(), encoding="utf-8")
     errors, warnings = check_plan_file.check(
         main_path,
         work_dir,

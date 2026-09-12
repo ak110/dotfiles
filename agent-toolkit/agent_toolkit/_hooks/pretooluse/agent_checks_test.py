@@ -10,7 +10,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -40,49 +39,28 @@ def _write_agents_server_wait_state(tmp_path: pathlib.Path, session_id: str, rec
     )
 
 
-def test_wait_is_blocked_when_owner_has_multiple_unfinished_sessions(tmp_path: pathlib.Path) -> None:
-    """同じ呼出主体の未終端2件ではblocking waitを遮断する。"""
-    session_id = "wait-mode-block"
-    _write_agents_server_wait_state(
-        tmp_path,
-        session_id,
+@pytest.mark.parametrize(
+    "records",
+    [
         {name: {"owner_agent_id": "main", "status": "running"} for name in ("remote-a", "remote-b")},
-    )
-    result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "remote-a"}},
-        env_overrides=_plan_file_state_env(tmp_path),
-    )
-    assert result.returncode == 2
-    assert "wait_any" in result.stderr
-
-    probe = _run(
-        {
-            "session_id": session_id,
-            "tool_name": "mcp__agents_server__wait",
-            "tool_input": {"session_id": "remote-a", "timeout": 0},
-        },
-        env_overrides=_plan_file_state_env(tmp_path),
-    )
-    assert probe.returncode == 0
-
-
-def test_wait_is_allowed_when_other_owner_holds_unfinished_sessions(tmp_path: pathlib.Path) -> None:
-    """別所有と所有者不明のsessionは単一所有のwaitを遮断しない。"""
-    session_id = "wait-mode-allow"
-    _write_agents_server_wait_state(
-        tmp_path,
-        session_id,
         {
             "own": {"owner_agent_id": "main", "status": "running"},
             "other": {"owner_agent_id": "agent-2", "status": "running"},
             "legacy": {"status": "running"},
         },
-    )
+    ],
+    ids=["same-owner", "mixed-owner"],
+)
+def test_wait_is_allowed_regardless_of_unfinished_session_count(tmp_path: pathlib.Path, records: dict[str, dict]) -> None:
+    """未終端sessionの件数と所有主体によらず待機の発行を遮断しない。"""
+    session_id = "wait-mode-allow"
+    _write_agents_server_wait_state(tmp_path, session_id, records)
     result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "own"}},
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {}},
         env_overrides=_plan_file_state_env(tmp_path),
     )
     assert result.returncode == 0
+    assert "blocked" not in result.stderr
 
 
 class TestBashCommandContractWarnings:
@@ -90,13 +68,70 @@ class TestBashCommandContractWarnings:
 
     @pytest.mark.parametrize(
         "command",
-        ["grep -rn foo docs/", "grep -rn foo", "grep -rn -e foo docs/", "grep -rn -- foo", "grep -rn -e foo -- docs/"],
+        [
+            "grep -rn foo",
+            "grep -rni foo docs/",
+            "grep -rn a+b docs/",
+            "grep -Rn needle docs/",
+            "grep -rn -e foo docs/",
+            "grep -rn --color=never foo docs/",
+            'grep -rn "$PATTERN" docs/',
+            "grep -rn -- foo",
+            "grep -rn -e foo -- docs/",
+        ],
     )
-    def test_recursive_grep_warns(self, command: str, tmp_path: pathlib.Path) -> None:
+    def test_unfixable_recursive_grep_blocks_first_attempt(self, command: str, tmp_path: pathlib.Path) -> None:
         (tmp_path / "docs").mkdir()
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
-        assert result.returncode == 0
-        assert "除外設定を反映しない再帰`grep`" in _additional_context(result)
+        env = _plan_file_state_env(tmp_path)
+        session_id = "recursive-grep-first-block"
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "session_id": session_id},
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)).exists()
+
+    def test_recursive_grep_binary_input_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """入力時に判別できないバイナリ内容がある再帰grepは補正しない。"""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "binary.dat").write_bytes(b"needle\x00rest\n")
+        original = subprocess.run(["grep", "-rn", "needle", "docs/"], cwd=tmp_path, check=False, capture_output=True, text=True)
+
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "grep -rn needle docs/"}, "cwd": str(tmp_path)})
+
+        assert original.returncode == 0
+        assert "binary file matches" in original.stderr
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
+
+    def test_recursive_grep_regex_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """基本正規表現のメタ文字を含むpatternは意味を維持できないため補正しない。"""
+        (tmp_path / "docs").mkdir()
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "grep -rn a.b docs/"}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
+
+    def test_recursive_grep_following_symlinks_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """シンボリックリンクをたどる`grep -R`は意味を維持できないため補正しない。"""
+        docs = tmp_path / "docs"
+        external = tmp_path / "external"
+        docs.mkdir()
+        external.mkdir()
+        (external / "match.txt").write_text("needle\n", encoding="utf-8")
+        (docs / "link").symlink_to(external, target_is_directory=True)
+        original = subprocess.run(["grep", "-Rn", "needle", "docs/"], cwd=tmp_path, check=False, capture_output=True, text=True)
+
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "grep -Rn needle docs/"}, "cwd": str(tmp_path)})
+
+        assert original.returncode == 0
+        assert "docs/link/match.txt:1:needle" in original.stdout
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
 
     @pytest.mark.parametrize(
         "command",
@@ -115,6 +150,23 @@ class TestBashCommandContractWarnings:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
         assert result.returncode == 0
         assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        ["grep -rn --include=*.md foo docs/", "rg -n foo docs/"],
+    )
+    def test_recursive_grep_safe_forms_do_not_block_on_repeat(self, command: str, tmp_path: pathlib.Path) -> None:
+        """除外指定を持つ形は、同一セッションで反復しても遮断しない。"""
+        (tmp_path / "docs").mkdir()
+        env = _plan_file_state_env(tmp_path)
+        session_id = f"recursive-grep-safe-repeat-{command.split()[0]}"
+        for _ in range(2):
+            result = _run(
+                {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "session_id": session_id},
+                env_overrides=env,
+            )
+            assert result.returncode == 0
+            assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -156,10 +208,10 @@ class TestBashCommandContractWarnings:
 
 
 class TestBashOutputTruncationWarning:
-    """`Bash`経由の検証コマンド出力`tail`・`head`切り詰めを初回から遮断する。"""
+    """`Bash`経由の検証コマンド出力切り詰めを補正又は遮断する。"""
 
-    def test_output_truncation_blocks_on_first_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの初回検出で解消手段を添えて遮断する。"""
+    def test_simple_output_truncation_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """単純な1段切り詰めは除去し、セッション管理領域への保存へ補正する。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -168,12 +220,60 @@ class TestBashOutputTruncationWarning:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
-        assert "`start_shell`" in result.stderr
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"].startswith("pytest -q > ")
+        log_path = pathlib.Path(output["updatedInput"]["command"].removeprefix("pytest -q > "))
+        assert log_path.parent.is_dir()
+        assert "標準出力全量の保存先" in output["additionalContext"]
 
-    def test_output_truncation_remains_blocked_on_second_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの2回目も状態に依存せず遮断する。"""
+    def test_nonconflicting_uv_and_truncation_fixes_are_combined(self, tmp_path: pathlib.Path) -> None:
+        """スクリプト起動と切り詰めの補正を1つの入力へ合成する。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "uv run python /tmp/script.py | tail -5"},
+                "session_id": "combined-uv-truncation",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        command = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert command.startswith("uv run --script /tmp/script.py > ")
+
+    def test_unfixable_recursive_grep_is_not_masked_by_other_fix(self, tmp_path: pathlib.Path) -> None:
+        """別区間が補正可能でも、補正不能な再帰grepを初回から遮断する。"""
+        (tmp_path / "docs").mkdir()
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep -rn foo docs/; uv run python /tmp/script.py"},
+                "session_id": "combined-serial-fixes",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
+
+    def test_unfixable_uv_input_with_truncation_remains_blocked(self, tmp_path: pathlib.Path) -> None:
+        """スクリプト形へ一意変換できない入力は切り詰めだけを補正して通さない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "uv run python -c 'print(1)' | tail -5"},
+                "session_id": "conflicting-uv-truncation",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
+
+    def test_output_truncation_is_auto_fixed_on_each_detection(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションで反復しても単純な切り詰めを毎回補正する。"""
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -184,7 +284,7 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert first.returncode == 2
+        assert first.returncode == 0
         second = _run(
             {
                 "tool_name": "Bash",
@@ -193,25 +293,16 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 2
-        assert "実行出力を`tail`・`head`で切り詰めている" in second.stderr
-        assert "全出力を保存" in second.stderr
-        assert "`start_shell`" in second.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+        assert second.returncode == 0
+        output = json.loads(second.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"].startswith("uvx pyfltr run-for-agent > ")
+        assert "標準出力全量の保存先" in output["additionalContext"]
 
-    def test_output_truncation_block_suppresses_status_diagnosis(self, tmp_path: pathlib.Path) -> None:
-        """遮断した呼び出しでは終了状態の診断本文を返さない。"""
+    def test_status_reference_after_truncation_is_safely_fixed(self, tmp_path: pathlib.Path) -> None:
+        """切り詰め除去後の終了状態参照がproducerを指す入力へ補正する。"""
         session_id = "output-truncation-status"
         env = _plan_file_state_env(tmp_path)
-        _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "pytest -q | tail -5"},
-                "session_id": session_id,
-            },
-            env,
-        )
-        second = _run(
+        result = _run(
             {
                 "tool_name": "Bash",
                 "tool_input": {"command": 'pytest -q | tail -5; echo "$?"'},
@@ -219,11 +310,13 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 2
-        assert "終了状態を示す" not in second.stderr
+        assert result.returncode == 0
+        command = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert command.startswith("pytest -q > ")
+        assert command.endswith('; echo "$?"')
 
     def test_output_truncation_does_not_depend_on_sleep_state(self, tmp_path: pathlib.Path) -> None:
-        """前景待機の記録にかかわらず初回から遮断する。"""
+        """前景待機の記録にかかわらず単純な切り詰めを補正する。"""
         session_id = "output-truncation-independent"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -243,8 +336,8 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 2
-        assert "実行出力を`tail`・`head`で切り詰めている" in second.stderr
+        assert second.returncode == 0
+        assert json.loads(second.stdout)["hookSpecificOutput"]["updatedInput"]["command"].startswith("pytest -q > ")
 
     def test_output_truncation_without_session_id_blocks(self, tmp_path: pathlib.Path) -> None:
         """`session_id`が空の場合も遮断する。"""
@@ -268,8 +361,8 @@ class TestBashOutputTruncationWarning:
         ids=["wi-add", "wi-edit", "wi-show", "review-table-show"],
     )
     def test_saved_body_command_truncation_blocks(self, command: str) -> None:
-        """保存本文の照合に使うコマンド出力の切り詰めを遮断する。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        """複雑な保存本文コマンドの切り詰めは安全に補正せず遮断する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"{command} | cat"}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
@@ -298,7 +391,7 @@ class TestBashOutputTruncationWarning:
         ],
     )
     def test_extended_complete_output_commands_block(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"{command} | cat"}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`・`grep`などで限定している" in result.stderr
 
@@ -811,14 +904,15 @@ class TestTaskStopBlock:
         blocked_at = _read_session_state(tmp_path, "task-stop-first")["task_stop_blocked_at"]
         assert before <= blocked_at <= time.time()
 
-    def test_block_message_states_the_four_conditions(self, state_dir: dict[str, str]) -> None:
-        """遮断文面が停止の根拠、不十分な理由、確認手段、再実行方法を示す。"""
+    def test_block_message_states_the_stop_conditions(self, state_dir: dict[str, str]) -> None:
+        """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
         stderr = self._invoke("task-stop-message", state_dir).stderr
         assert "明示的な即時停止要求" in stderr
         assert "停滞検知の手順" in stderr
         assert "進行が遅い" in stderr
         assert "AskUserQuestionで確認" in stderr
         assert "5分以内にTaskStopを再実行" in stderr
+        assert "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節" in stderr
 
     def test_block_message_defaults_to_additional_instructions_and_limits_stopping(self, state_dir: dict[str, str]) -> None:
         """遮断文面が利用者介入時の追加指示既定と停止限定条件を示す。"""
@@ -906,6 +1000,36 @@ class TestTaskStopBlock:
         session_id = "task-stop-other-target"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+
+    def test_recent_stall_detection_allows_only_matching_task(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """5分以内の停滞検知完了記録は一致する対象だけを初回から通す。"""
+        session_id = "task-stop-stall-match"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"stall_detection_completed_at_by_task": {"bg-task-1": time.time()}},
+        )
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+
+    def test_stale_stall_detection_does_not_allow_task(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """5分を超えた停滞検知完了記録は停止根拠として使わない。"""
+        session_id = "task-stop-stall-stale"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"stall_detection_completed_at_by_task": {"bg-task-1": time.time() - 600}},
+        )
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 2
+        assert "stall_detection_completed_at_by_task" not in _read_session_state(tmp_path, session_id)
 
 
 class TestExecuteReviewAlternateRouteAllowed:
@@ -1570,6 +1694,40 @@ class TestBodySectionReferenceExists:
         assert result.returncode == 0
         # 警告が出ること
         assert "section name does not exist" in _additional_context(result)
+
+    @staticmethod
+    def _write_plugin_tree(tmp_path: pathlib.Path, section: str) -> pathlib.Path:
+        """plugin manifestを持つ配布物の構成を配置し、参照元ファイルのパスを返す。"""
+        plugin_root = tmp_path / "agent-toolkit"
+        (plugin_root / ".claude-plugin").mkdir(parents=True)
+        (plugin_root / ".claude-plugin" / "plugin.json").write_text("{}\n", encoding="utf-8")
+        referenced = plugin_root / "share" / "referenced.md"
+        referenced.parent.mkdir()
+        referenced.write_text(f"# {section}\n\n本文です。", encoding="utf-8")
+        target_file = plugin_root / "skills" / "sample" / "SKILL.md"
+        target_file.parent.mkdir(parents=True)
+        return target_file
+
+    @pytest.mark.parametrize(
+        ("section", "expected"),
+        [("存在する節", ""), ("存在しない節", "section name does not exist")],
+        ids=["existing", "missing"],
+    )
+    def test_plugin_root_reference_resolves_to_plugin_root(self, tmp_path: pathlib.Path, section: str, expected: str) -> None:
+        """実行時パスの参照書式はplugin rootへ展開して節名を照合する。"""
+        target_file = self._write_plugin_tree(tmp_path, "存在する節")
+        prefix = "${CLAUDE_PLUGIN_" + "ROOT}/"
+        content = f"本文\n\n`{prefix}share/referenced.md`「{section}」節を参照。"
+
+        result = _run({"tool_name": "Write", "tool_input": {"file_path": str(target_file), "content": content}})
+
+        assert result.returncode == 0
+        context = _additional_context(result)
+        assert "referenced file path does not exist" not in context
+        if expected:
+            assert expected in context
+        else:
+            assert "does not exist" not in context
 
 
 class TestAgentTaskLaunchIndependence:

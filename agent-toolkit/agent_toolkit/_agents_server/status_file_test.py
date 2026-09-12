@@ -8,12 +8,19 @@ import datetime
 import json
 import os
 import pathlib
+import typing
 
 import pytest
 
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server import state
 from agent_toolkit._agents_server import status_file as subject
+
+
+async def _wait_now(manager: agents_server_mcp.AgentsServerManager) -> dict[str, typing.Any]:
+    """待機せずに現在の終端状態を返すwaitを発行する。"""
+    manager._wait_timeouts["main"] = 0.0  # pylint: disable=protected-access
+    return await manager.wait()
 
 
 def test_serialize_session_includes_updated_at(tmp_path: pathlib.Path) -> None:
@@ -382,7 +389,7 @@ async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: path
     writer.activate()
 
     result_path = subject.results_directory("root", tmp_path) / "waited.json"
-    assert (await manager.wait(session.session_id, timeout=0))["agent_message"] == "完了"
+    assert (await _wait_now(manager))["agent_message"] == "完了"
     writer.flush()
     assert not result_path.exists()
     await manager.close()
@@ -587,7 +594,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     session.agent_message = "完了"
     session.turn_completed = True
     session.touch()
-    await manager.wait(session.session_id, timeout=0)
+    await _wait_now(manager)
     writer.flush()
     result_path = subject.results_directory("root", tmp_path) / f"{session.session_id}.json"
     assert not result_path.exists()

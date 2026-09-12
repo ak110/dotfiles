@@ -312,7 +312,7 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
 
 
 def _run_forge_json_command(command: list[str], subprocess_timeout: float, description: str) -> Any:
-    """外部CLIのJSON応答をUTF-8で厳格復号し、取得エラーを`RunListError`へ統合する。"""
+    """外部CLIのJSON応答をUTF-8で厳格にデコードし、取得エラーを`RunListError`へ統合する。"""
 
     def error_factory(failure: _json_command.Failure) -> Exception:
         if failure.kind == "timeout":

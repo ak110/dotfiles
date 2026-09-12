@@ -14,7 +14,7 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 任意ツール:
 
 - メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
+- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
 - plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
 
@@ -41,12 +41,13 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
-- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
+- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の補正又は遮断 (auto-fix/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
+- 除外設定を持たない単純な再帰`grep`の`rg`への補正 (auto-fix)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
@@ -59,7 +60,7 @@ Skill:
 
 TaskStop:
 
-- 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
+- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の初回遮断 (block)
 
 Write / Edit / MultiEdit / apply_patch:
 
@@ -160,12 +161,10 @@ if TYPE_CHECKING:
         _AGENTS_SERVER_SEND_TOOLS,
         _AGENTS_SERVER_START_TOOLS,
         _AGENTS_SERVER_TOOL_NAMES,
-        _AGENTS_SERVER_WAIT_TOOLS,
         _PLAN_MODE_SKILL_NAMES,
         _check_agents_server_continuation_input,
         _check_agents_server_cwd,
         _check_agents_server_list_repeat,
-        _check_agents_server_wait_mode,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
@@ -175,7 +174,6 @@ if TYPE_CHECKING:
         _reset_plan_mode_state,
     )
     from agent_toolkit._hooks.pretooluse.content_checks import (
-        _check_colloquial,
         _check_direct_agent_toolkit_edits_after_plan_mode,
         _check_edit_boundary_resolution,
         _check_edit_operation_blocks,
@@ -183,6 +181,7 @@ if TYPE_CHECKING:
         _check_mojibake,
         _check_plan_mode_skill_first,
         _collect_edit_operation_warnings,
+        check_user_facing_typo,
     )
     from agent_toolkit._hooks.pretooluse.git_checks import (
         _check_bash_agent_toolkit_version_bump,
@@ -194,7 +193,9 @@ if TYPE_CHECKING:
     )
     from agent_toolkit._hooks.pretooluse.notices import _llm_notice
     from agent_toolkit._hooks.pretooluse.shell_checks import (
+        _autofix_bash_command,
         _check_bash_codex_exec,
+        _check_bash_atk_help_observation,
         _check_bash_help_with_execution,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
@@ -218,7 +219,7 @@ _REPLACEMENT_CHAR = "\ufffd"
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
-    """計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）の場合に真を返す。"""
+    """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
     return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
 
 
@@ -397,11 +398,8 @@ def _handle_agents_server_tool(
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         if _check_agents_server_cwd(tool_input):
             return 2
-    elif (
-        tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
-        and _check_agents_server_continuation_input(session_id, tool_input, tool_name)
-        or tool_name in _AGENTS_SERVER_WAIT_TOOLS
-        and _check_agents_server_wait_mode(payload, session_id, tool_input)
+    elif tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS and _check_agents_server_continuation_input(
+        session_id, tool_input, tool_name
     ):
         return 2
     emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}})
@@ -436,6 +434,12 @@ def _handle_bash_tool(
         return 2
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
+    auto_fix = _autofix_bash_command(command, cwd, session_id)
+    if auto_fix is not None:
+        command, auto_fix_notice = auto_fix
+        tool_input = dict(tool_input)
+        tool_input["command"] = command
+        warnings.append(auto_fix_notice)
     if (
         (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
         or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
@@ -448,13 +452,20 @@ def _handle_bash_tool(
         return 2
     if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
         return 2
+    recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
+    if recursive_grep_result == "block":
+        return 2
+    atk_help_result = _check_bash_atk_help_observation(command, session_id)
+    if atk_help_result == "block":
+        return 2
     for warning in (
         _check_bash_bulk_stage_with_unedited_files(command, session_id, cwd),
         truncation_result,
         _check_bash_output_status_after_truncation(command),
         _check_bash_recursive_home_search(command),
         _check_bash_unbounded_home_traversal(command),
-        _check_bash_recursive_grep_without_exclusion(command, cwd),
+        recursive_grep_result,
+        atk_help_result,
         None if is_codex else _check_bash_git_commit(command, session_id, cwd),
         _check_bash_agent_toolkit_version_bump(command, cwd),
         _check_bash_codex_exec(command),
@@ -466,6 +477,18 @@ def _handle_bash_tool(
         if warnings:
             _append_additional_context(result, "\n".join(warnings))
         emit_json(result)
+        return 0
+    if auto_fix is not None:
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": tool_input,
+                    "additionalContext": "\n".join(warnings),
+                }
+            }
+        )
         return 0
     if warnings:
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
@@ -510,21 +533,28 @@ def _handle_user_facing_text_tool(
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
-    """質問・計画本文へ編集入力と同じ言語品質検査を適用する。"""
-    if tool_name == "AskUserQuestion" and check_required_read_before_ask_user_question(session_id) == "block":
-        flush_warning()
-        return 2
+    """質問・計画本文へ言語品質検査及び誤字検査を適用する。
+
+    ユーザーへ直接到達する本文を対象とする検査の応答水準は、到達後に是正できるかで決める。
+    本関数が扱う文字化け及び日本語以外の文字の混入は、いずれも当該本文が
+    ユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、同じ遮断経路へそろえる。
+    誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
+    """
+    warnings: list[str] = []
+    if tool_name == "AskUserQuestion":
+        required_read_warning = check_required_read_before_ask_user_question(session_id)
+        if required_read_warning is not None:
+            warnings.append(required_read_warning)
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2
-    warning = next(
-        (warning for _, value in fields if (warning := _check_colloquial(tool_name, None, value, "")) is not None),
-        None,
-    )
-    if warning is None:
+    typo_warning = check_user_facing_typo(tool_name, fields)
+    if typo_warning is not None:
+        warnings.append(typo_warning)
+    if not warnings:
         flush_warning()
     else:
-        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": warning}})
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
     return 0
 
 

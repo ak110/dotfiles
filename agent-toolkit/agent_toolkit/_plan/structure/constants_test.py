@@ -314,8 +314,7 @@ def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
 @pytest.mark.parametrize(
     "expected",
     [
-        *(f"`## {name}`" for name in _plan_format.PLAN_MAIN_H2_ORDER),
-        *(f"`## {name}`" for name in _plan_format.PLAN_DETAIL_H2_ORDER),
+        *(f"`## {name}`" for name in _plan_format.PLAN_SINGLE_FILE_H2_ORDER),
         *(f"`### {name}`" for name in _plan_format.PLAN_PERMANENCE_H3),
         f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}<1から始まる連番>`",
     ],

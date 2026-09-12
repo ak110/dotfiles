@@ -201,7 +201,7 @@ def test_add_rereads_decoded_cells_after_storage_write(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """追加は保存層を経た復号済みセルを一致判定へ渡す。"""
+    """追加は保存層を経たデコード済みセルを一致判定へ渡す。"""
     path = tmp_path / "review.tsv"
     original_atomic_write = table.atomic_write
 
@@ -228,7 +228,7 @@ def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応要では復号済み本文を照合し、一致判定だけを出力する。"""
+    """対応要ではデコード済み本文を照合し、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     response = '応答本文へ"二重引用符"と\\逆斜線を含める。\nタブ\tも含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -399,6 +399,30 @@ def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pa
     assert table.validate(appended, require_responses=False) == 0
 
 
+@pytest.mark.parametrize("name", ("legacy.plan-review.tsv", f"dlg-{'a' * 40}.exec-review.tsv"))
+def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, name: str) -> None:
+    """保存済み旧表と廃止した対話是正表は公開作成経路で更新しない。"""
+    args = argparse.Namespace(review_table_subcommand="init", path=str(tmp_path / name))
+
+    with pytest.raises(ValueError, match="旧レビュー表は読み取り専用"):
+        table.dispatch(args)
+
+
+@pytest.mark.parametrize("track", ("plan-review", "implementation-review", "plan-conformance", "independent"))
+def test_dispatch_rejects_writing_table_with_legacy_track(tmp_path: pathlib.Path, track: str) -> None:
+    """現行拡張子の表でも旧trackを含む場合は書き換えない。"""
+    path = tmp_path / "sample.exec-review.tsv"
+    row = ["1", track, "場所", "指摘", "詳細", "", "", ""]
+    path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in row) + "\n", encoding="utf-8")
+    original = path.read_bytes()
+    args = argparse.Namespace(review_table_subcommand="respond", path=str(path))
+
+    with pytest.raises(ValueError, match="旧review typeは読み取り専用"):
+        table.dispatch(args)
+
+    assert path.read_bytes() == original
+
+
 def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
@@ -493,7 +517,7 @@ def test_show_jsonl_decodes_control_characters_and_quotes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """jsonl出力は制御文字と引用符を含むセルを保存前の本文へ復号する。"""
+    """jsonl出力は制御文字と引用符を含むセルを保存前の本文へデコードする。"""
     path = tmp_path / "review.tsv"
     issue = '改行\nタブ\t二重引用符"と`backtick`'
     table.init(path)
@@ -525,7 +549,7 @@ def test_show_jsonl_filters_decoded_rows_by_track(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """jsonl出力でも指定したtrackの復号済み行だけを表示する。"""
+    """jsonl出力でも指定したtrackのデコード済み行だけを表示する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "統合後指摘")
@@ -1032,7 +1056,7 @@ def test_cell_file_options_are_shown_in_help(
             "show",
             (
                 "表示対象を指定したレビュー区分の行だけに限定する",
-                "出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する",
+                "出力形式。tsvは保存済みのraw TSV、jsonlはデコード済みのJSON Linesを表示する",
             ),
         ),
         ("validate", ("未応答行を許容し、8列と複合キーなどの構造だけを検証する",)),
@@ -1065,7 +1089,7 @@ def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.Capture
         "列は`round`、`track`、`location`、`issue`、`level`、`response-needed`、`response`、`no-response-reason`の順"
         in help_text
     )
-    assert "保存済みの7列形式は`level`を空として読み込み" in help_text
+    assert "保存済みの7列形式は`level`を空として読み込む" in help_text
 
 
 def test_cell_files_preserve_issue_and_supply_responses(
@@ -1206,7 +1230,7 @@ def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pa
 
 
 def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path: pathlib.Path) -> None:
-    """一致しない部分キーへ、復号済み候補行を示して再指定を可能にする。"""
+    """一致しない部分キーへ、デコード済み候補行を示して再指定を可能にする。"""
     path = tmp_path / "review.tsv"
     issue = '本文に"引用"を含む指摘'
     table.init(path)
@@ -1220,7 +1244,7 @@ def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path
     assert "一意に解決できない: 0件" in message
     assert "指定された部分キー:" in message
     assert f"issue={issue}" in message
-    candidate_section = message.split("候補行（復号済み）:\n", maxsplit=1)[1]
+    candidate_section = message.split("候補行（デコード済み）:\n", maxsplit=1)[1]
     assert encoded_issue not in candidate_section
 
     assert table.respond(path, "1", _TRACK, "module.py:10", issue, "yes", "対応した", "") == 0

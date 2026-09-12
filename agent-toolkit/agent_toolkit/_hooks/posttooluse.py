@@ -17,7 +17,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
-6. agents_server MCP呼び出しと`atk agents-wait`実行後のsession状態記録
+6. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)
 8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
@@ -80,6 +80,7 @@ from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disabl
     read_state,
     update_state,
 )
+from agent_toolkit._hooks.task_stop_state import consume_completion, target_ids  # noqa: E402
 
 # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks.tracked_model_types import TRACKED_MODEL_TYPES as _TRACKED_MODEL_TYPES  # noqa: E402
@@ -112,9 +113,10 @@ _COMMAND_PREFIX_PATTERN = re.compile(r"(\A|[;&|])(\s*)(?:[A-Za-z_]\w*=\S*\s+|tim
 def _strip_command_prefixes(command: str) -> str:
     """コマンド先頭・セグメント区切り直後の環境変数代入と時間制限の接頭辞を除去する。
 
-    用途: テスト実行検出やgit操作検出の正規表現が、`LOCALAPPDATA=/tmp/dummy uvx pyfltr ...`や
-    `timeout 600 uvx pyfltr run ...`のような接頭辞付きコマンドにマッチせず、
-    検証済みでも未検証として警告される問題に追従する。
+    用途: git操作検出が`timeout 600 git log ...`のような接頭辞付きコマンドのサブコマンドを取得できず、
+    確認済みでも未確認として警告される問題に追従する。
+    実行位置のトークン列を入力とする検査（検証コマンドの検出など）は同じ接頭辞を自ら解決するため、
+    本関数の適用結果に依存しない。
     適用範囲: Bashコマンド文字列。`KEY=VALUE`と`timeout <時間>`の単純形式のみを対象とし、
     クォート内に空白を含む値・`env`コマンド経由・行継続バックスラッシュ・
     `timeout`のオプション付き形式（`-k 10s 600`等、引数の境界を字句だけで確定できない）は対象外とする。
@@ -122,22 +124,91 @@ def _strip_command_prefixes(command: str) -> str:
     return _COMMAND_PREFIX_PATTERN.sub(r"\1\2", command)
 
 
-# --- テスト実行検出パターン ---
+# --- テスト実行検出 ---
 
-_TEST_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # 直接実行系
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*)?(?:python\s+-m\s+)?pytest\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?pyfltr\s+(?:run|ci|fast|agent)\b"),
-    re.compile(r"(?:^|[;&|]\s*)(?:uv\s+run\s+(?:--frozen\s+)*|uvx\s+)?(?:pre-commit|prek)\s+run\b"),
-    re.compile(r"(?:^|[;&|]\s*)cargo\s+test\b"),
-    # タスクランナー経由（make / mise run / npm | pnpm | yarn（run省略可）/ just / task）で
-    # test / check / validateアクション
-    re.compile(
-        r"(?:^|[;&|]\s*)"
-        r"(?:make\s+|(?:npm|pnpm|yarn)\s+(?:run\s+)?|mise\s+run\s+|just\s+|task\s+)"
-        r"(?:test|check|validate)\b"
-    ),
-)
+_PYFLTR_VERIFY_SUBCOMMAND_HEADS: frozenset[str] = frozenset({"run", "ci", "fast", "agent"})
+"""検証を実行する`pyfltr`のサブコマンドの先頭語。
+
+`run-for-agent`のようなハイフン区切りのサブコマンドを含めるため、先頭語で照合する。
+`list-runs`・`show-run`のように実行済みrunを参照するだけのサブコマンドは先頭語が一致せず対象外となる。
+"""
+
+_PRECOMMIT_EXECUTABLES: frozenset[str] = frozenset({"pre-commit", "prek"})
+
+_TASK_RUNNERS_WITHOUT_SUBCOMMAND: frozenset[str] = frozenset({"make", "just", "task"})
+"""実行ファイル名の直後にアクション名を取るタスクランナー。"""
+
+_TASK_RUNNERS_WITH_OPTIONAL_RUN: frozenset[str] = frozenset({"npm", "pnpm", "yarn"})
+"""アクション名の前の`run`を省略できるタスクランナー。"""
+
+_TASK_RUNNER_VERIFY_KEYWORDS: tuple[str, ...] = ("test", "check", "validate")
+"""タスクランナーのアクション名を検証の実行と判定する語。
+
+`ci-local-check`・`test-browser`・`e2etest`のような複合名を検出するため、アクション名との完全一致ではなく
+部分一致で照合する。検出漏れは検証済みのcommitへ誤った警告を返す側の誤りであり、
+本判定では当該方向の誤りを優先して避ける。
+"""
+
+
+def _executable_name(token: str) -> str:
+    """実行トークンからディレクトリ部分を除いた実行ファイル名を返す。"""
+    return token.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _operand_index(tokens: tuple[str, ...], start: int) -> int | None:
+    """`start`以降で最初にオプションでないトークンの添字を返す。無い場合はNoneを返す。"""
+    for index in range(start, len(tokens)):
+        if not tokens[index].startswith("-"):
+            return index
+    return None
+
+
+def _is_verification_invocation(tokens: tuple[str, ...]) -> bool:
+    """実行位置のトークン列が検証コマンドの起動であるかを返す。
+
+    入力は`resolve_execution_segment`が`uv run`・`uvx`・`timeout`・環境変数代入などの実行前置語を
+    解決した後のトークン列とする。前置語のオプションの部分集合を列挙した文字列一致で判定しないため、
+    `uv run --no-sync pyfltr run-for-agent`のように列挙外のオプションを伴う正規の起動も検出する。
+    `uv run --with pytest python -c ...`のようにオプションの値へ検証コマンド名が現れる形は、
+    実行位置が`python`に解決されるため検出しない。
+    """
+    if not tokens:
+        return False
+    executable = _executable_name(tokens[0])
+    if executable == "pytest":
+        return True
+    operand = _operand_index(tokens, 1)
+    if executable == "pyfltr":
+        return operand is not None and tokens[operand].split("-", 1)[0] in _PYFLTR_VERIFY_SUBCOMMAND_HEADS
+    if executable in _PRECOMMIT_EXECUTABLES:
+        return operand is not None and tokens[operand] == "run"
+    if executable == "cargo":
+        return operand is not None and tokens[operand] == "test"
+    return _is_task_runner_verification(executable, tokens, operand)
+
+
+def _is_task_runner_verification(executable: str, tokens: tuple[str, ...], operand: int | None) -> bool:
+    """タスクランナー経由の検証アクションの起動であるかを返す。"""
+    if executable in _TASK_RUNNERS_WITH_OPTIONAL_RUN:
+        if operand is not None and tokens[operand] == "run":
+            operand = _operand_index(tokens, operand + 1)
+    elif executable == "mise":
+        if operand is None or tokens[operand] != "run":
+            return False
+        operand = _operand_index(tokens, operand + 1)
+    elif executable not in _TASK_RUNNERS_WITHOUT_SUBCOMMAND:
+        return False
+    if operand is None:
+        return False
+    return any(keyword in tokens[operand] for keyword in _TASK_RUNNER_VERIFY_KEYWORDS)
+
+
+def _has_verification_invocation(command: str) -> bool:
+    """Bashコマンドの実行位置のいずれかが検証コマンドの起動であるかを返す。"""
+    return any(
+        segment.resolved and _is_verification_invocation(segment.tokens) for segment in extract_execution_segments(command)
+    )
+
 
 # --- git関連サブコマンドの分類 ---
 
@@ -187,9 +258,6 @@ _PLAN_MODE_SKILL_NAMES = frozenset({"agent-toolkit:plan-mode", "plan-mode"})
 # process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
 _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 
-# exit-sessionスキル呼び出し検出。process-wiのフラグリセット経路に使う
-# （`agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端する）。
-_EXIT_SESSION_SKILL_NAMES = frozenset({"agent-toolkit:exit-session", "exit-session"})
 _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
@@ -198,22 +266,26 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__agents_server__",
 )
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
+    f"{namespace}{tool}"
+    for namespace in _AGENTS_SERVER_NAMESPACES
+    for tool in ("start", "start_custom", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
-_AGENTS_SERVER_WAIT_ANY_TOOLS = frozenset(f"{namespace}wait_any" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_STOP_TOOLS = frozenset(f"{namespace}stop" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
     _AGENTS_SERVER_START_TOOLS
     | _AGENTS_SERVER_WAIT_TOOLS
-    | _AGENTS_SERVER_WAIT_ANY_TOOLS
     | _AGENTS_SERVER_SEND_TOOLS
     | _AGENTS_SERVER_KILL_TOOLS
     | _AGENTS_SERVER_STOP_TOOLS
 )
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
+
+# hooks.json・hooks.codex.jsonのPostToolUse matcherが被覆すべきagents_serverツール名の全体。
+# 一致検査（posttooluse_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
+AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
@@ -306,7 +378,7 @@ def _is_nonempty_absolute_cwd(value: object) -> bool:
 
 def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
     """操作ごとの正本から委譲先session識別子を返す。"""
-    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_ANY_TOOLS else tool_input
+    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS else tool_input
     value = source.get("session_id") if isinstance(source, dict) else None
     return value if isinstance(value, str) and value else None
 
@@ -323,6 +395,23 @@ def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict
     return cwd_map.get(remote_session_id) if isinstance(cwd_map, dict) else None
 
 
+def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
+    """開始操作の入力から工程別モデル設定の種別を返す。"""
+    if operation == "start":
+        task_path = tool_input.get("subagent_md_path")
+        return (
+            _agents_server_state.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
+        )
+    if operation == "start_custom":
+        model_type = tool_input.get("model_type")
+        return model_type if isinstance(model_type, str) else None
+    if operation == "start_explore":
+        return "explore_fast" if tool_input.get("fast", True) else "explore"
+    if operation == "start_shell":
+        return "explore_fast"
+    return None
+
+
 def _agents_server_missing_response_fields(session_id: str, payload: dict, structured: dict, tool_name: str) -> list[str]:
     """成功した応答から状態記録に必要な欠落項目を列挙する。"""
     operation = tool_name.rsplit("__", 1)[-1]
@@ -334,7 +423,7 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
     required_fields: tuple[str, ...]
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         required_fields = ("session_id", "status")
-    elif operation in {"wait", "wait_any", "kill"}:
+    elif operation in {"wait", "kill"}:
         required_fields = ("status",)
     elif operation == "send_message":
         required_fields = ("delivery",)
@@ -376,8 +465,6 @@ def _record_agents_server_session_state(
         if operation == "send_message":
             delivery = structured.get("delivery")
             status = "running" if delivery in {"reply_started", "reply_ambiguous"} else previous.get("status")
-        elif operation == "stop":
-            status = previous.get("status")
         if not isinstance(status, str):
             return None
         record = dict(previous)
@@ -386,7 +473,7 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if model_type is not None:
             record["model_type"] = model_type
-        if operation in {"start", "start_explore", "start_shell"}:
+        if operation in {"start", "start_custom", "start_explore", "start_shell"}:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
@@ -395,7 +482,7 @@ def _record_agents_server_session_state(
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
-        elif operation in {"wait", "wait_any", "kill", "stop"}:
+        elif operation in {"wait", "kill"}:
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
@@ -420,10 +507,31 @@ def _record_agents_server_session_state(
         return state if changed else None
 
     update_state(session_id, _mutator)
-    if operation in {"start", "start_explore", "start_shell"} and not os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
-        root_session_id = structured.get("root_session_id")
-        if isinstance(root_session_id, str) and root_session_id:
+    if operation in {"start", "start_custom", "start_explore", "start_shell"} and not os.environ.get(
+        "AGENT_TOOLKIT_OWNER_SESSION"
+    ):
+        root_session_id = _agents_server_status_file.find_root_session_id_for_session(remote_session_id)
+        if root_session_id is not None:
             _agents_server_status_file.write_root_alias(session_id, root_session_id)
+
+
+def _remove_agents_server_session_record(session_id: str, remote_session_id: str | None) -> None:
+    """破棄したsessionの記録を状態キーから除去する。
+
+    `stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、その成功応答は
+    当該sessionが終端済み、期限切れ又は既破棄のいずれかであることを含意する。
+    """
+    if remote_session_id is None:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict) or remote_session_id not in sessions:
+            return None
+        del sessions[remote_session_id]
+        return state
+
+    update_state(session_id, _mutator)
 
 
 def _log_tracked_session_end(session_id: str, structured: dict, remote_session_id: str | None = None) -> None:
@@ -443,92 +551,162 @@ def _log_tracked_session_end(session_id: str, structured: dict, remote_session_i
         _process_loop_log.append("subagent_end", type=model_type)
 
 
-def _record_agents_server_observation_attempt(session_id: str, tool_input: dict, *, operation: str) -> None:
+def _clear_agents_server_pending_observation(session_id: str, owner_agent_id: str) -> None:
+    """呼出主体が所有する全sessionの観測待ちを解消する。
+
+    待機は対象sessionを入力に持たず、呼出主体が保持するsession全体を観測するため、
+    所有者が一致する既存記録の全件を対象とする。記録が無いsessionへ新規の記録は作成しない。
+    """
+
+    def _mutator(state: dict) -> dict | None:
+        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
+        if not isinstance(sessions, dict):
+            return None
+        changed = False
+        for record in sessions.values():
+            if (
+                isinstance(record, dict)
+                and record.get("owner_agent_id") == owner_agent_id
+                and record.get("pending_observation") is not False
+            ):
+                record["pending_observation"] = False
+                changed = True
+        return state if changed else None
+
+    update_state(session_id, _mutator)
+
+
+def _record_agents_server_observation_attempt(
+    session_id: str,
+    tool_input: dict,
+    *,
+    operation: str,
+    owner_agent_id: str,
+) -> None:
     """背景タスクへ移った`wait`・`kill`の移行通知から観測の試みだけを記録する。
 
     実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
     呼び出しの受理をもって観測を試みたものとして扱い、応答境界へ到達しない経路でも
-    `pending_observation`を偽にする。対象は`tool_input`の`session_id`で解決した既存記録に限り、
-    記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
+    `pending_observation`を偽にする。`wait`は対象sessionを入力に持たないため呼出主体が所有する
+    記録の全件を対象とし、`kill`は`tool_input`の`session_id`で解決した既存記録に限る。
+    いずれも記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
     公開状態は移行通知から確定できないため更新しない。
     """
-    if operation not in {"wait", "wait_any", "kill"}:
+    if operation == "wait":
+        _clear_agents_server_pending_observation(session_id, owner_agent_id)
         return
-    raw_session_ids = tool_input.get("session_ids") if operation == "wait_any" else [tool_input.get("session_id")]
-    if not isinstance(raw_session_ids, list):
+    if operation != "kill":
         return
-    remote_session_ids = {value for value in raw_session_ids if isinstance(value, str) and value}
+    remote_session_id = tool_input.get("session_id")
+    if not isinstance(remote_session_id, str) or not remote_session_id:
+        return
 
     def _mutator(state: dict) -> dict | None:
         sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
         if not isinstance(sessions, dict):
             return None
-        changed = False
-        for remote_session_id in remote_session_ids:
-            record = sessions.get(remote_session_id)
-            if isinstance(record, dict) and record.get("pending_observation") is not False:
-                record["pending_observation"] = False
-                changed = True
-        return state if changed else None
+        record = sessions.get(remote_session_id)
+        if not isinstance(record, dict) or record.get("pending_observation") is False:
+            return None
+        record["pending_observation"] = False
+        return state
 
     update_state(session_id, _mutator)
 
 
-def _agents_wait_session_ids(tokens: tuple[str, ...]) -> tuple[str, ...]:
-    """`atk agents-wait`系の実行トークン列からsession識別子を返す。"""
+def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
+    """実行トークン列が`atk agents wait`の起動であるかを返す。"""
     if len(tokens) < 3:
-        return ()
+        return False
     executable = tokens[0].replace("\\", "/")
-    if executable.rsplit("/", 1)[-1] not in {"atk", "atk.py"} or tokens[1] not in {"agents-wait", "agents-wait-any"}:
-        return ()
-    multiple = tokens[1] == "agents-wait-any"
-    session_ids: list[str] = []
-    index = 2
-    while index < len(tokens):
-        token = tokens[index]
-        if token == "--timeout":
-            index += 2
-            continue
-        if token.startswith("--timeout="):
-            index += 1
-            continue
-        if token == "--":
-            session_ids.extend(tokens[index + 1 :])
-            break
-        if token.startswith("-"):
-            return ()
-        session_ids.append(token)
-        index += 1
-        if not multiple:
-            break
-    return tuple(session_ids)
+    return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1:3] == ("agents", "wait")
 
 
-def _record_agents_wait_observation_attempt(session_id: str, command: str) -> None:
-    """成功したBash入力内の`atk agents-wait`を観測の試みとして記録する。"""
-    remote_session_ids = {
-        remote_session_id
-        for segment in extract_execution_segments(command)
-        if segment.resolved
-        for remote_session_id in _agents_wait_session_ids(segment.tokens)
-    }
-    if not remote_session_ids:
+_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
+
+
+def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
+    """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
+    if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
+        return None
+    from agent_toolkit._atk.help_text import HELP  # pylint: disable=import-outside-toplevel
+
+    arguments = tuple("wi" if index == 0 and value == "mq" else value for index, value in enumerate(tokens[1:]))
+    paths = (tuple(key.split()[1:]) for key in HELP if key.startswith("atk "))
+    return next(
+        (path for path in sorted(paths, key=len, reverse=True) if arguments[: len(path)] == path),
+        None,
+    )
+
+
+def _response_texts(value: object) -> list[str]:
+    """Bash応答から標準出力相当の文字列を再帰的に抽出する。"""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for nested in value.values() for text in _response_texts(nested)]
+    if isinstance(value, list):
+        return [text for nested in value for text in _response_texts(nested)]
+    return []
+
+
+def _response_has_exit_invocation(value: object) -> bool:
+    """応答中の単独JSON行に終了CLIの実行証跡がある場合に真を返す。"""
+    if isinstance(value, dict) and value.get("exit_session_invoked") is True:
+        return True
+    for text in _response_texts(value):
+        for line in text.splitlines():
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict) and record.get("exit_session_invoked") is True:
+                return True
+    return False
+
+
+def _record_bash_response_state(session_id: str, command: str, tool_response: object) -> None:
+    """成功したBash応答を使い、ヘルプ観測と終了CLI起動を記録する。"""
+    segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
+    help_paths: list[str] = []
+    for segment in segments:
+        path = _recognized_atk_command_path(segment.tokens)
+        arguments = segment.tokens[1:]
+        if path is None or "--help" not in arguments:
+            continue
+        if arguments != (*path, "--help"):
+            continue
+        normalized = " ".join(path)
+        if normalized not in help_paths:
+            help_paths.append(normalized)
+    if help_paths and any(text.strip() for text in _response_texts(tool_response)):
+
+        def _record_help(state: dict) -> dict | None:
+            current = state.get(_ATK_HELP_OBSERVED_KEY)
+            observed = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
+            additions = [value for value in help_paths if value not in observed]
+            if not additions:
+                return None
+            state[_ATK_HELP_OBSERVED_KEY] = [*observed, *additions]
+            return state
+
+        update_state(session_id, _record_help)
+    exit_invoked = any(
+        pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
+        for segment in segments
+    )
+    if exit_invoked and _response_has_exit_invocation(tool_response):
+        update_state(session_id, _record_exit_session_invoked)
+
+
+def _record_agents_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
+    """成功したBash入力内の`atk agents wait`を観測の試みとして記録する。"""
+    if not any(
+        segment.resolved and _is_agents_wait_invocation(segment.tokens) for segment in extract_execution_segments(command)
+    ):
         return
-
-    def _mutator(state: dict) -> dict | None:
-        sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
-        if not isinstance(sessions, dict):
-            return None
-        changed = False
-        for remote_session_id in remote_session_ids:
-            record = sessions.get(remote_session_id)
-            if isinstance(record, dict) and record.get("pending_observation") is True:
-                record["pending_observation"] = False
-                changed = True
-        return state if changed else None
-
-    update_state(session_id, _mutator)
+    _clear_agents_server_pending_observation(session_id, owner_agent_id)
 
 
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
@@ -621,8 +799,6 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, _set_invoked)
     if skill_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
-    if skill_name in _EXIT_SESSION_SKILL_NAMES:
-        update_state(session_id, _record_exit_session_invoked)
 
 
 def _record_edited_file(session_id: str, file_path: str) -> None:
@@ -698,15 +874,7 @@ def _append_conditional_prohibition_notice(read_path: str, display_path: str, no
 
 
 def _plan_main_path_for(display_path: str) -> str:
-    """計画構成要素のパスから対応する計画ファイル（メイン）の絶対パスを返す。
-
-    計画ファイル（詳細）`<stem>.detail.md`はstem導出で計画ファイル（メイン）`<stem>.md`へ変換する。
-    計画ファイル（メイン）の節構成検査が計画ファイル（詳細）の実在・節構成も検査するため、
-    計画ファイル（詳細）書込み時も計画ファイル（メイン）パスを検査案内の対象とする。
-    計画ファイル（メイン）パスはそのまま返す。
-    """
-    if display_path.endswith(".detail.md"):
-        return display_path[: -len(".detail.md")] + ".md"
+    """現行計画の構成要素から計画ファイル（メイン）の絶対パスを返す。"""
     return display_path
 
 
@@ -731,18 +899,19 @@ def _handle_bash_tool(
     command: str,
     cwd: str,
     *,
+    owner_agent_id: str,
     record_success_dependent_state: bool,
 ) -> None:
     """成功したBashコマンドから検証・git状態を更新する。"""
     command = _strip_command_prefixes(command)
-    _record_agents_wait_observation_attempt(session_id, command)
+    _record_agents_wait_observation_attempt(session_id, command, owner_agent_id)
     if not record_success_dependent_state:
         return
     git_events = extract_git_events(command, cwd)
 
     def _apply_bash_updates(state: dict) -> dict | None:
         changed = False
-        if not state.get("test_executed", False) and any(pattern.search(command) for pattern in _TEST_PATTERNS):
+        if not state.get("test_executed", False) and _has_verification_invocation(command):
             state["test_executed"] = True
             changed = True
         log_state = state.get("git_log_checked")
@@ -839,8 +1008,14 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         structured = _extract_agents_server_structured_response(tool_response)
         moved_to_background = _stop_gate.background_task_id_from_notice(tool_response) is not None
         operation = tool_name.rsplit("__", 1)[-1]
-        if operation == "wait_any":
-            _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
+        owner_agent_id = resolve_hook_agent_id(payload)
+        if operation == "wait":
+            _record_agents_server_observation_attempt(
+                session_id,
+                tool_input,
+                operation=operation,
+                owner_agent_id=owner_agent_id,
+            )
         if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and not moved_to_background:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
@@ -848,13 +1023,16 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 notices.append(_llm_notice(f"warn: {display_name}の応答で{', '.join(missing)}が欠落しているか不正である。"))
         remote_session_id = _agents_server_remote_session_id(tool_input, structured, tool_name)
         if moved_to_background:
-            _record_agents_server_observation_attempt(session_id, tool_input, operation=operation)
+            _record_agents_server_observation_attempt(
+                session_id,
+                tool_input,
+                operation=operation,
+                owner_agent_id=owner_agent_id,
+            )
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
-        owner_agent_id = resolve_hook_agent_id(payload)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
-            model_type = structured.get("model_type")
-            model_type = model_type if isinstance(model_type, str) else None
+            model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
                 _process_loop_log.append("subagent_start", type=model_type)
             _record_agents_server_session_state(
@@ -866,8 +1044,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 model_type=model_type,
                 remote_session_id=remote_session_id,
             )
+        elif operation == "stop":
+            _remove_agents_server_session_record(session_id, remote_session_id)
         else:
-            if operation in {"wait", "wait_any", "kill"}:
+            if operation in {"wait", "kill"}:
                 _log_tracked_session_end(session_id, structured, remote_session_id)
             _record_agents_server_session_state(
                 session_id,
@@ -881,6 +1061,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # Readは対象文書の全文読取だけを状態へ記録する。
     if tool_name == "Read":
         _record_required_read_observation(session_id, tool_input)
+        return 0
+
+    if tool_name == "TaskStop":
+        consume_completion(session_id, target_ids(tool_input))
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
@@ -905,8 +1089,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         session_id,
         command,
         cwd,
+        owner_agent_id=resolve_hook_agent_id(payload),
         record_success_dependent_state=not (isinstance(turn_id, str) and bool(turn_id)),
     )
+    _record_bash_response_state(session_id, command, payload.get("tool_response"))
     return 0
 
 

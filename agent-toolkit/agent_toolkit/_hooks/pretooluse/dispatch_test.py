@@ -23,11 +23,26 @@ from pyfltr.colloquial import check as _colloquial_check
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._hooks import required_reads
+from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+
+_HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
+_HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+
+
+def _matcher_covers(matcher: str, tool_name: str) -> bool:
+    """matcherがtool_nameへ一致するかを判定する。
+
+    `re.fullmatch`は`*`だけのパターンへ`re.error: nothing to repeat`を送出するため、
+    matcherが`*`である場合は正規表現として評価せず全一致として扱う。
+    """
+    if matcher == "*":
+        return True
+    return re.fullmatch(matcher, tool_name) is not None
 
 
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
@@ -76,8 +91,8 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
-def test_wait_dispatch_invokes_multiple_session_guard(tmp_path: pathlib.Path) -> None:
-    """agents_serverのwait分岐は複数sessionの遮断検査へ到達する。"""
+def test_wait_dispatch_approves_without_session_guard(tmp_path: pathlib.Path) -> None:
+    """agents_serverのwait分岐は検査を経ずに承認へ到達する。"""
     session_id = "dispatch-wait-mode"
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
     state_path.write_text(
@@ -92,12 +107,30 @@ def test_wait_dispatch_invokes_multiple_session_guard(tmp_path: pathlib.Path) ->
         encoding="utf-8",
     )
     result = _run(
-        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {"session_id": "remote-a"}},
+        {"session_id": session_id, "tool_name": "mcp__agents_server__wait", "tool_input": {}},
         env_overrides=_plan_file_state_env(tmp_path),
     )
 
-    assert result.returncode == 2
-    assert "wait_any" in result.stderr
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert not result.stderr
+
+
+def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
+    """PreToolUse matcherが実装側のagents_serverツール名集合全体を被覆する。
+
+    実装側の`agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES`を入力として反復し、
+    hooks.json（Claude Code、matcherは`*`）とhooks.codex.json（Codex）の双方が
+    全要素を被覆することを検査する。実装側の集合へ要素を追加してもmatcherへ
+    追加し忘れると、Codex側の当該要素だけが検査から漏れて本検査が失敗する。
+    """
+    claude_matcher = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
+    codex_matcher = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["matcher"]
+    assert claude_matcher == "*"
+    for tool_name in agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES:
+        assert _matcher_covers(claude_matcher, tool_name)
+        if tool_name.startswith("mcp__agents_server__"):
+            assert _matcher_covers(codex_matcher, tool_name), tool_name
 
 
 def test_bash_atk_subcommand_without_help_is_not_blocked(tmp_path: pathlib.Path) -> None:
@@ -1005,9 +1038,9 @@ class TestColloquialCheck:
         assert result.returncode == 0
         assert "colloquial" not in _agent_messages(result)
 
-    @pytest.mark.parametrize("name", ["colloquial.detail.md", "colloquial.bugs.md"])
+    @pytest.mark.parametrize("name", ["colloquial.bugs.md"])
     def test_detail_file_skips_colloquial_warning(self, tmp_path: pathlib.Path, deny_substring: str, name: str) -> None:
-        """計画ファイル（詳細）と計画ファイル（バグ）は口語警告を出力しない。"""
+        """計画ファイル（バグ）は口語警告を出力しない。"""
         detail = _make_plan_file(tmp_path / "home", name)
         content = f"概要は{deny_substring}該当する。\n"
         result = _run(
@@ -1022,24 +1055,25 @@ class TestUserFacingTextChecks:
     """ユーザーが直接読む質問・計画本文へ共通本文検査を適用する。"""
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
-    @pytest.mark.parametrize("check", ["mojibake", "foreign", "colloquial"])
-    def test_checks_each_user_facing_field(self, field: str, check: str, deny_substring: str) -> None:
+    @pytest.mark.parametrize("check", ["mojibake", "foreign"])
+    def test_checks_each_user_facing_field(self, field: str, check: str) -> None:
         values = {
             "mojibake": "日本語の�本文",
             "foreign": "日本語に가が混入した本文",
-            "colloquial": f"概要は{deny_substring}該当する。",
         }
         result = _run(_user_facing_payload(field, values[check]))
 
-        if check == "colloquial":
-            assert result.returncode == 0
-            assert "口語的な日本語表現" in _additional_context(result)
-            assert "Target:" not in _additional_context(result)
-            assert content_checks.colloquial_detected_terms_text([deny_substring]) in _agent_messages(result)
-        else:
-            assert result.returncode == 2
-            expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
-            assert expected in result.stderr
+        assert result.returncode == 2
+        expected = "U+FFFD" if check == "mojibake" else "日本語以外の文字"
+        assert expected in result.stderr
+
+    @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])
+    def test_colloquial_text_is_not_blocked(self, field: str, deny_substring: str) -> None:
+        result = _run(_user_facing_payload(field, f"概要は{deny_substring}該当する。"))
+
+        assert result.returncode == 0
+        assert result.stdout == ""
+        assert result.stderr == ""
 
     @pytest.mark.parametrize(
         "payload",
@@ -1071,32 +1105,59 @@ class TestUserFacingTextChecks:
         result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
 
         assert result.returncode == 0
-        assert "口語的な日本語表現" in _additional_context(result)
+        assert result.stdout == ""
+        assert result.stderr == ""
 
-    def test_empty_file_path_uses_ask_user_question_as_target(self, deny_substring: str) -> None:
-        """質問入力の口語警告は空のパスではなくツール名を対象として示す。"""
-        result = _run(_user_facing_payload("question", f"概要は{deny_substring}該当する。"))
+    def test_exit_plan_mode_colloquial_text_is_not_blocked(self, deny_substring: str) -> None:
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": f"概要は{deny_substring}該当する。"}})
 
         assert result.returncode == 0
-        assert "対象: AskUserQuestion" in _additional_context(result)
+        assert result.stdout == ""
+        assert result.stderr == ""
+
+
+class TestUserFacingTypoCheck:
+    """ユーザーが直接読む本文への誤字検査（warn のみ、exit code は 0）。"""
+
+    @pytest.mark.parametrize(
+        ("detected", "replacement"),
+        [("番面", "画面"), ("迲回", "迂回"), ("模型定義", "モデル定義")],
+    )
+    def test_typo_in_user_facing_text_warns(self, detected: str, replacement: str) -> None:
+        result = _run(_user_facing_payload("question", f"{detected}の説明を確認してください。"))
+        assert result.returncode == 0
+        assert "誤字候補" in _additional_context(result)
+        assert content_checks.typo_detected_terms_text([(detected, replacement)]) in _agent_messages(result)
+
+    def test_typo_in_exit_plan_mode_warns(self) -> None:
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "番面遷移を実装する。"}})
+        assert result.returncode == 0
+        assert "誤字候補" in _additional_context(result)
+
+    def test_typo_warning_remains_when_colloquial_text_is_present(self, deny_substring: str) -> None:
+        """口語表現と誤字を同時に含む本文でも誤字警告を返す。"""
+        result = _run(_user_facing_payload("question", f"番面は{deny_substring}該当する。"))
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert "誤字候補" in _additional_context(result)
 
 
 class TestAskUserQuestionRequiredRead:
-    """判断基準文書の全文読解を観測するまで質問を遮断する。"""
+    """判断基準文書の全文読解が未観測なら質問時に警告する。"""
 
-    def test_unread_is_blocked_and_exit_plan_mode_passes(self, tmp_path: pathlib.Path) -> None:
+    def test_unread_warns_and_exit_plan_mode_passes(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = "required-unread"
 
-        blocked = _run(question, env_overrides=env)
+        warned = _run(question, env_overrides=env)
         exit_plan = _run(
             {"session_id": "required-unread", "tool_name": "ExitPlanMode", "tool_input": {"plan": "実装する。"}},
             env_overrides=env,
         )
 
-        assert blocked.returncode == 2
-        assert required_reads.document_path() in blocked.stderr
+        assert warned.returncode == 0
+        assert required_reads.document_path() in _additional_context(warned)
         assert exit_plan.returncode == 0
 
     def test_full_read_allows_question(self, tmp_path: pathlib.Path) -> None:
@@ -1123,14 +1184,16 @@ class TestAskUserQuestionRequiredRead:
             {"file_path": "/tmp/copy/skills/review-standards/references/judgment-details.md"},
         ],
     )
-    def test_partial_or_other_copy_does_not_allow_question(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
+    def test_partial_or_other_copy_still_warns(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
         env = _plan_file_state_env(tmp_path)
         sid = f"required-partial-{len(str(tool_input))}"
         _run_posttooluse({"session_id": sid, "tool_name": "Read", "tool_input": tool_input}, env)
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = sid
 
-        assert _run(question, env_overrides=env).returncode == 2
+        result = _run(question, env_overrides=env)
+        assert result.returncode == 0
+        assert required_reads.document_path() in _additional_context(result)
 
     def test_bash_path_mention_does_not_allow_question(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
@@ -1142,7 +1205,9 @@ class TestAskUserQuestionRequiredRead:
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = sid
 
-        assert _run(question, env_overrides=env).returncode == 2
+        result = _run(question, env_overrides=env)
+        assert result.returncode == 0
+        assert required_reads.document_path() in _additional_context(result)
 
 
 class TestPlanModeSkillFirstCheck:

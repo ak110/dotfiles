@@ -1,7 +1,7 @@
 """計画の成立に必要な情報契約と実体だけを検査する。
 
-計画メタ情報、見出し構造、`関連WI`と提示素材の新旧形式、スキル・サブエージェント参照を共有parserで検査する。
-旧形式は読み取り互換で受理するが、新形式への移行をwarningで案内する。
+計画メタ情報、見出し構造、`関連WI`、スキル・サブエージェント参照を共有parserで検査する。
+旧単一ファイル形式と旧二ファイル形式は読み取り互換で受理し、現行形式への移行をwarningで案内する。
 """
 
 from __future__ import annotations
@@ -13,8 +13,24 @@ import subprocess
 import sys
 import typing
 
-from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+try:
+    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        locations as _plan_file,
+    )
+    from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+        structure as _plan_format,
+    )
+except ImportError as _import_error:
+    _SELF = pathlib.Path(__file__).resolve()
+    print(
+        f"agent_toolkitパッケージを解決できません: {_import_error}。"
+        f"本スクリプトはplugin同梱パッケージへ依存するため、"
+        f"`uv run --project {_SELF.parents[3]} --locked --no-default-groups {_SELF} <計画ファイルの絶対パス>`"
+        f"又は`PYTHONPATH={_SELF.parents[3]} python {_SELF} <計画ファイルの絶対パス>`の形で起動する。"
+        f"`uvx --from agent-toolkit python {_SELF}`は当該パッケージを解決しない。",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 _PLUGIN_DIR = pathlib.Path(_plan_file.__file__).resolve().parents[2]
 
@@ -401,6 +417,36 @@ def _check_new_format(
     return errors, warnings
 
 
+def _check_single_file_format(
+    plan_path: pathlib.Path,
+    text: str,
+    work_dir: pathlib.Path,
+    private_notes: pathlib.Path | str | None = None,
+    home: pathlib.Path | str | None = None,
+) -> tuple[list[str], list[_ClassifiedWarning]]:
+    """現行の1ファイル計画を検査してエラーと警告を返す。"""
+    origin_notices: list[str] = []
+    origin_skips: list[str] = []
+    work_type, errors = _plan_format.check_plan_single_file_structure(
+        text,
+        origin_notices=origin_notices,
+        origin_skips=origin_skips,
+        private_notes=private_notes,
+        home=home,
+    )
+    warnings: list[_ClassifiedWarning] = [("migration", notice) for notice in origin_notices]
+    warnings.extend(("advisory", skip) for skip in origin_skips)
+    metadata, _metadata_errors = _plan_format.parse_plan_metadata(text)
+    values = metadata.values if metadata is not None else {}
+    errors.extend(_check_target_repo(values.get("対象リポジトリ"), work_dir))
+    bug_errors, bug_warnings = _check_bug_file_reference(plan_path, text, work_type, private_notes, home)
+    errors.extend(bug_errors)
+    warnings.extend(bug_warnings)
+    errors.extend(_check_references(text, work_dir))
+    warnings.extend(_check_plan_size(text.splitlines()))
+    return errors, warnings
+
+
 def _check_legacy_format(
     plan_path: pathlib.Path,
     text: str,
@@ -441,8 +487,8 @@ def check(
     """計画ファイルを検査し、エラーと警告を返す。
 
     計画作業root直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
-    対応する`<stem>.detail.md`の実在により二ファイル形式と旧単一ファイル形式を分ける。
-    二ファイル形式ではメインのcanonical固定H2により新規書式と旧二ファイル形式を分ける。
+    対応する`<stem>.detail.md`があれば旧二ファイル形式として扱う。
+    detailが無く、現行H2集合を持つ場合は現行の1ファイル形式、それ以外は旧単一ファイル形式として扱う。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
     種類を分けずに新規作成を失敗させると、行数の助言だけを伴う現行形式の計画まで遮断する。
     移行警告の拒否と、起草時の`## 進捗ログ`内容行の拒否は呼び出し側が独立に指定する。
@@ -455,13 +501,25 @@ def check(
     _outside, errors = _outside_fences(structure_lines)
 
     detail_path = _detail_path_for(plan_path)
+    progress_heading = _plan_format.PLAN_H2_PROGRESS
     if detail_path.is_file():
         format_errors, classified_warnings = _check_new_format(detail_path, text, work_dir, private_notes, home)
+        if not any(kind == "migration" for kind, _message in classified_warnings):
+            classified_warnings.append(("migration", "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"))
     else:
-        format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
+        h2_names = {heading.text for heading in _plan_format.extract_headings(text) if heading.level == 2}
+        current_markers = {
+            _plan_format.PLAN_H2_REQUIREMENTS,
+            _plan_format.PLAN_H2_CURRENT_PERMANENCE,
+        }
+        if current_markers <= h2_names:
+            progress_heading = _plan_format.PLAN_H2_CURRENT_PROGRESS
+            format_errors, classified_warnings = _check_single_file_format(plan_path, text, work_dir, private_notes, home)
+        else:
+            format_errors, classified_warnings = _check_legacy_format(plan_path, text, work_dir, private_notes, home)
     errors.extend(format_errors)
     if reject_progress_log_rows and _plan_format.has_progress_log_rows(text):
-        errors.append(f"`## {_plan_format.PLAN_H2_PROGRESS}`は起草時に内容行を置かない")
+        errors.append(f"`## {progress_heading}`は起草時に内容行を置かない")
     warnings: list[str] = []
     for kind, message in classified_warnings:
         if reject_migration_warnings and kind == "migration":
@@ -481,12 +539,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="旧形式からの移行警告をエラーとして扱う",
     )
+    parser.add_argument(
+        "--reject-progress-log-rows",
+        action="store_true",
+        help="起草時の進捗ログに内容行がある場合はエラーとして扱う",
+    )
     try:
         args = parser.parse_args(argv)
         errors, warnings = check(
             args.plan_file,
             args.work_dir,
             reject_migration_warnings=args.reject_migration_warnings,
+            reject_progress_log_rows=args.reject_progress_log_rows,
         )
     except (OSError, UnicodeDecodeError) as error:
         print(f"計画ファイルを読み込めない: {error}", file=sys.stderr)

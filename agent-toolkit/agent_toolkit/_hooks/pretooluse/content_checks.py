@@ -571,7 +571,10 @@ _COLLOQUIAL_DENY_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.DE
 _COLLOQUIAL_ALLOW_PATTERNS = _colloquial_check.load_patterns(_colloquial_check.ALLOW_PATH)
 
 _COLLOQUIAL_MAX_LISTED_MATCHES = 5
-"""口語表現検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+"""口語表現検査及び誤字検査の通知へ列挙する一致位置の上限。超過分は総件数だけを示す。"""
+
+_ColloquialHit = tuple[int, int, str, str, str | None]
+"""口語表現検査の一致1件（行番号、列、検出文字列、行抜粋、置換候補）。"""
 _MANAGED_TEMP_MARKER = ".agent-toolkit-managed-temp.json"
 
 COLLOQUIAL_DETECTED_TERMS_LABEL = "検出語"
@@ -584,6 +587,62 @@ def colloquial_detected_terms_text(detected_terms: Iterable[str]) -> str:
     """
     joined = "、".join(dict.fromkeys(detected_terms))
     return f"{COLLOQUIAL_DETECTED_TERMS_LABEL}: {joined}。"
+
+
+def _colloquial_hit_summary(hits: list[_ColloquialHit]) -> str:
+    """口語表現検査の通知本文が一致件数、位置及び検出語を示す部分を返す。
+
+    警告と遮断のどちらの応答水準でも同じ形式を示すため、両経路はこの1箇所だけを参照する。
+    """
+    listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
+    return f"一致: {len(hits)}件（{listed}）。{colloquial_detected_terms_text(hit[2] for hit in hits)}"
+
+
+# --- ユーザーが直接読む本文への誤字検査 (warn) ---
+
+_TYPO_DICT_PATH = pathlib.Path(__file__).parent / "typo_words.txt"
+# モジュールロード時に1回だけコンパイルする。実際に観測した誤字だけを登録した辞書のため、
+# 口語表現検査と異なりallowlistは持たない。
+_TYPO_PATTERNS = _colloquial_check.load_patterns(_TYPO_DICT_PATH)
+
+TYPO_DETECTED_TERMS_LABEL = "誤字候補"
+
+
+def typo_detected_terms_text(detected_pairs: Iterable[tuple[str, str | None]]) -> str:
+    """誤字検査の通知本文が誤字候補を示す部分を返す。
+
+    同じ仕様を複数の検体が別方向に固定して一致しなくなることを防ぐため、実装と検体はこの1箇所だけを参照する。
+    """
+    joined = "、".join(
+        f"{detected}→{replacement}" if replacement is not None else detected
+        for detected, replacement in dict.fromkeys(detected_pairs)
+    )
+    return f"{TYPO_DETECTED_TERMS_LABEL}: {joined}。"
+
+
+def check_user_facing_typo(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
+    """ユーザーが直接読む本文への日本語の変換誤りを検出して警告本文を返す（warn）。
+
+    総件数、欄名及び先頭`_COLLOQUIAL_MAX_LISTED_MATCHES`件までの位置（行・列）を示す。
+    上限を超える一致の位置は総件数だけで示す。誤字候補と置換候補は`typo_detected_terms_text`経由で示す。
+    """
+    matches: list[tuple[str, int, int, str, str | None]] = []
+    for field, value in fields:
+        for line_no, column, detected, _snippet, replacement in _colloquial_check.scan_text(value, _TYPO_PATTERNS, []):
+            matches.append((field, line_no, column, detected, replacement))
+    if not matches:
+        return None
+    listed = "; ".join(
+        f"{field}の行{line_no}、列{column}" for field, line_no, column, *_ in matches[:_COLLOQUIAL_MAX_LISTED_MATCHES]
+    )
+    terms = typo_detected_terms_text((detected, replacement) for _, _, _, detected, replacement in matches)
+    return _llm_notice(
+        f"`{tool_name}`が渡すユーザー向け本文に誤字候補を検出した。一致: {len(matches)}件（{listed}）。{terms}"
+        "変換誤りかどうかを本文の文脈で判定し、誤りである場合は当該箇所を修正してから同じ呼び出しを再発行する。"
+        f" 対象: {tool_name}",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
 
 
 def _is_in_managed_temp(file_path: str) -> bool:
@@ -634,11 +693,10 @@ def _check_colloquial(
         hits = [hit for hit in hits if hit[0] in changed_lines]
     if not hits:
         return None
-    listed = "; ".join(f"行{line_no}、列{column}" for line_no, column, *_ in hits[:_COLLOQUIAL_MAX_LISTED_MATCHES])
     target = file_path or tool_name
     return _llm_notice(
         f"`{tool_name}`が書き込む変更行に口語的な日本語表現を検出した。"
-        f"一致: {len(hits)}件（{listed}）。{colloquial_detected_terms_text(hit[2] for hit in hits)}"
+        f"{_colloquial_hit_summary(hits)}"
         "ユーザーへ向けた発話は`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」、"
         "それ以外の成果物は`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」に従う。"
         "検出箇所を含む文全体を書き換える。単語だけを同義語へ置き換えず、文全体を組み直す。"
@@ -699,6 +757,19 @@ def _check_style_negation(tool_name: str, operation: _hook_tool_input.EditOperat
 # frontmatter区間（`^---$`〜`^---$`）の抽出用。
 _FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|\Z)", re.DOTALL)
 
+# 実行時パスの参照書式が用いるplugin root相対の接頭辞。
+# 本ファイル自身も配布物の参照実在検査の走査対象となるため、接頭辞は分割して組み立てる。
+_PLUGIN_ROOT_REFERENCE_PREFIX = "${CLAUDE_PLUGIN_" + "ROOT}/"
+
+
+def _resolve_plugin_root_reference(ancestors: tuple[pathlib.Path, ...], relative: str) -> pathlib.Path | None:
+    """Plugin manifestを持つ祖先を起点に、plugin root相対の参照を解決する。"""
+    for candidate in ancestors:
+        if (candidate / ".claude-plugin" / "plugin.json").exists():
+            resolved = candidate / relative
+            return resolved if resolved.exists() else None
+    return None
+
 
 def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | None:
     """`file_path`の祖先ディレクトリを起点に`referenced`（相対パス）の実ファイルを探索する。
@@ -711,10 +782,16 @@ def _resolve_referenced_path(file_path: str, referenced: str) -> pathlib.Path | 
     2. リポジトリルート配下の`agent-toolkit/rules/`・`agent-toolkit/skills/`
        （近隣ディレクトリの参照に対応。`.git`祖先が見つかった場合のみ）
 
+    実行時パスの参照書式（plugin root相対の接頭辞付き）で書かれた参照は、
+    plugin manifestを持つ祖先ディレクトリを起点として1経路だけで解決する。
+    当該書式は解決の起点が一意であり、祖先と近隣の探索で別の同名ファイルへ一致させないためである。
+
     いずれの経路でも実在しない場合は`None`を返す。
     """
     start = pathlib.Path(file_path).resolve().parent
     ancestors = (start, *start.parents)
+    if referenced.startswith(_PLUGIN_ROOT_REFERENCE_PREFIX):
+        return _resolve_plugin_root_reference(ancestors, referenced.removeprefix(_PLUGIN_ROOT_REFERENCE_PREFIX))
     search_roots: list[pathlib.Path] = list(ancestors)
 
     repo_root: pathlib.Path | None = None

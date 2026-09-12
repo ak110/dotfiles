@@ -216,24 +216,24 @@ def test_managed_temp_cleanup_help_explains_force_remove_boundary() -> None:
     assert "後始末する領域を、作成時に指定したセッションの識別子で指定する。--pathとは同時に指定できない。" in help_text
 
 
-def test_review_table_init_help_describes_dialogue_review_table() -> None:
+def test_review_table_init_help_describes_current_review_tables() -> None:
     commands = {command: parser for command, parser, _summary in _walk_commands()}
     parser = commands["atk review-table init"]
     help_text = parser.format_help()
 
-    assert "対話由来の小規模是正の実行レビュー表" in help_text
-    assert "dlg-<実装着手前の完全OID>.exec-review.tsv" in help_text
-    assert "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`" in help_text
+    assert "<計画stem>.exec-review.tsv" in help_text
+    assert "ci-<起点OID>.exec-review.tsv" in help_text
+    assert "dlg-" not in help_text
+    assert ".plan-review.tsv" not in help_text
 
 
-def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
-    commands = {command: parser for command, parser, _summary in _walk_commands()}
-    description = commands["atk plans checkout"].description
+def test_removed_plan_commands_are_absent_from_help() -> None:
+    commands = {command for command, _parser, _summary in _walk_commands()}
 
-    assert description is not None
-    assert "未送信commitをremoteへpush" in description
-    assert "remoteの変更をprivate-notesへpull" in description
-    assert "private-notesの内容は変更しない" not in description
+    assert "atk wi convert-to-plan" not in commands
+    assert "atk plans checkout" not in commands
+    assert "atk plans progress" not in commands
+    assert "atk plans migrate" not in commands
 
 
 @pytest.mark.parametrize(
@@ -241,8 +241,7 @@ def test_plans_checkout_help_describes_remote_sync_side_effects() -> None:
     [
         ("atk wi list", "JSON Lines"),
         ("atk plans list", "TSV"),
-        ("atk agents-wait", "単一のJSON文書"),
-        ("atk agents-wait-any", "単一のJSON文書"),
+        ("atk agents wait", "単一のJSON文書"),
         ("atk managed-temp list", "JSON Lines"),
         ("atk review-table show", "raw TSV"),
     ],

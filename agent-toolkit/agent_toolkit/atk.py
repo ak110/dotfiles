@@ -1,8 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・`atk agents-wait-any`・
-`atk agents-notify`・`atk wait-schedule`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents <sub>`・
+`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
 `atk review-audit <sub>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
@@ -11,7 +11,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   `mq add --batch`は`mq show --all`の出力形式を原文保持で一括取り込みする（移行・復元用途）
 - mq grep: 本文全体を正規表現で検索し`<ファイル名>:<行番号>:<該当行>`形式で列挙する
 - mq start-processing/return-to-inbox/adopt/reject/rm/commit: エントリの状態遷移・削除・コミット
-- mq convert-to-plan/set-dependencies: 既存AWIの計画実装型への変換・明示依存の更新
+- mq set-dependencies: 既存AWIの明示依存の更新
 - mq edit: `--body-file`による非対話編集又は$EDITORによる保存ファイル全体の編集
 - mq answer: UWIへの回答
 - mq process-loop: `orchestrate_model`設定に従いClaude Code又はCodexの新規セッションへ`/goal`で完遂条件を設定して常駐実行する。
@@ -19,13 +19,11 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   待機中は既定でCI失敗・Dependabotアラートを自動検出しAWI投入する（`--no-alerts`で無効化）
 - mq process-loop-abort/process-loop-abort-cancel/process-loop-status: 常駐処理への中断要求を設定・解除・参照する
 - config show/get/set: XDG関連パス・工程別モデル設定の確認・変更
-- plans checkout/commit/migrate: 保存済み計画又は独立CI実行レビュー表の取得・対象限定commit・push、旧保存先からの一括移行
+- plans commit/list: 現行計画又は独立CI実行レビュー表の保存と作業中計画の一覧
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
-- agents-wait: agents_serverが保存した終端結果又は通知を1行で出力する
-- agents-wait-any: 複数sessionの最初の終端結果又は通知を1行で出力する
-- agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
+- agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -44,7 +42,8 @@ import sys
 from typing import Any
 
 # pylint: disable=wrong-import-position,protected-access
-from agent_toolkit._agents_server import agents_wait as _atk_agents_wait  # noqa: E402
+from agent_toolkit import _atk_agents as _agents  # noqa: E402
+from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
 from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
@@ -65,7 +64,6 @@ from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402
 from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
-from agent_toolkit._atk_agents_notify import send_notification as _send_agents_notification  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
@@ -90,7 +88,6 @@ _WI_SYNC_MUTATIONS = frozenset(
         "reject",
         "rm",
         "edit",
-        "convert-to-plan",
         "set-dependencies",
         "answer",
         "commit",
@@ -140,7 +137,6 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
         "--question-type",
         "--choices",
         "--target-repo",
-        "--plan-file",
         "--depends-on",
         "--body-file",
         "--origin-locator",
@@ -283,7 +279,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "（target_commitの再取得・UWI見出しの再生成を行わない）、"
             "ファイル名は取り込み先と衝突しない限り元名を維持する。"
             "対象リポジトリは各エントリのfrontmatterのtarget_repoだけを用いる。"
-            "--type・--scope・--question-type・--choices・--plan-file・--depends-on・"
+            "--type・--scope・--question-type・--choices・--depends-on・"
             "--target-repo・--source・--origin-locatorとは併用できない。"
             "show形式は可逆な直列化ではないため、本文が完全なshow形式エントリの引用を含む場合に"
             "エントリ境界を誤って分割し得る点と、元ファイル末尾の改行の有無・連続空行・"
@@ -324,18 +320,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         default=None,
         help="UWIの選択肢をASCIIカンマ区切りで指定する。`--question-type=choice`で必要となる。",
     )
-    add.add_argument(
-        "--plan-file",
-        metavar="PATH",
-        default=None,
-        help=(
-            "計画ファイルの絶対パス。指定するとAWIを計画実装型として確定記録する。"
-            "--type=awi（既定）でのみ指定でき、frontmatterへ記録する値へ正規化したうえで保存先の実体の実在を検証する。"
-            "計画作業rootにだけ実体がある計画は、先に`atk plans commit`で保存する。"
-            "本文frontmatterが対象リポジトリを別の値へ上書きする入力とは併用できない。"
-            "計画ファイルのベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない。"
-        ),
-    )
+    add.set_defaults(plan_file=None)
     add.add_argument(
         "--depends-on",
         metavar="FILENAME",
@@ -625,59 +610,10 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         action="store_true",
         help="FILENAMEの元のraw bytesを保ち、--body-fileの本文をUTF-8で末尾へ追記する。UWIは対象外。",
     )
-    edit.add_argument(
-        "--plan-file",
-        metavar="ABS_PATH",
-        default=None,
-        help="hold項目を計画型awiへ編集しinboxへ移す計画ファイルの絶対パス。保存先に実体を持つ計画だけを受理する。",
-    )
-    edit.add_argument(
-        "--depends-on",
-        metavar="FILENAME",
-        action="append",
-        default=None,
-        help="計画型awiへ統合する外部依存先。複数回指定できる。",
-    )
+    edit.set_defaults(plan_file=None)
+    edit.set_defaults(depends_on=None)
     _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
-
-    convert_to_plan = _atk_help.add_command(sub, "convert-to-plan", **_atk_help.HELP["atk wi convert-to-plan"])
-    convert_to_plan.add_argument(
-        "filename",
-        metavar="FILENAME",
-        nargs="+",
-        help="変換する同一状態のAWIファイル名（1個以上）。holdでは--body-fileを指定する。",
-    ).completer = _editable_filename_completer  # type: ignore[attr-defined]
-    convert_to_plan.add_argument(
-        "--body-file",
-        metavar="PATH",
-        default=None,
-        help="hold項目を統合する計画型AWI本文を記載したUTF-8ファイル。inbox・processingでは指定しない。",
-    )
-    convert_to_plan.add_argument(
-        "--plan-file",
-        metavar="PLAN_FILE",
-        required=True,
-        help=(
-            "新規計画は移動後の$(atk config get private_notes)/plans/から始まるportable値を指定する。"
-            "既存の絶対パスも読み取り互換として受理する。"
-            "frontmatterへ記録する値へ正規化したうえで保存先の実体の実在を検証するため、"
-            "計画作業rootにだけ実体がある計画は先に`atk plans commit`で保存する。"
-        ),
-    )
-    convert_to_plan.add_argument(
-        "--depends-on",
-        metavar="FILENAME",
-        action="append",
-        default=None,
-        help="処理完了を待つキュー項目。複数回指定でき、重複は初出順で除去する。",
-    )
-    convert_to_plan.add_argument(
-        "--skip-push",
-        action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う。",
-    )
-    _add_target_repo_arg(convert_to_plan, help_extra="省略時は現在の作業リポジトリと照合する。")
 
     set_dependencies = _atk_help.add_command(sub, "set-dependencies", **_atk_help.HELP["atk wi set-dependencies"])
     set_dependencies.add_argument(
@@ -783,7 +719,8 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         default="auto",
         help="アラート検出対象のホスティング種別（既定auto。repo_idのhostから自動判定）。",
     )
-    loop.add_argument(
+    resume_group = loop.add_mutually_exclusive_group()
+    resume_group.add_argument(
         "--resume",
         nargs="?",
         const="",
@@ -793,6 +730,14 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
             "初回にorchestrate_model設定で決まったオーケストレーターの過去セッションを再開する。"
             "SESSION_ID省略時はセッション選択画面を開き、指定時は該当セッションを直接再開する。"
             "2回目以降は新規セッションとして起動する。"
+        ),
+    )
+    resume_group.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help=(
+            "対象リポジトリでagent-toolkit:process-wiを起動した直近の中断セッションを自動特定し、"
+            "候補情報を表示して確認のうえ再開する。--resumeとは同時指定できない。初回のみ有効。"
         ),
     )
     _atk_help.add_command(
@@ -869,31 +814,9 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="判定対象のrequest bucket（mainまたはsubagent）。",
     )
-    agents_wait = _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
-    agents_wait.add_argument("session_id", help="待機対象のsession識別子。")
-    agents_wait.add_argument(
-        "--timeout",
-        type=_nonnegative_finite_float,
-        default=3600.0,
-        help="待機上限秒数。到達した場合は終了コード3で終わる。",
-    )
-    agents_wait_any = _atk_help.add_command(top, "agents-wait-any", **_atk_help.HELP["atk agents-wait-any"])
-    agents_wait_any.add_argument("session_id", nargs="+", help="待機対象のsession識別子。")
-    agents_wait_any.add_argument(
-        "--timeout",
-        type=_nonnegative_finite_float,
-        default=3600.0,
-        help="待機上限秒数。到達した場合は終了コード3で終わる。",
-    )
-    agents_notify = _atk_help.add_command(top, "agents-notify", **_atk_help.HELP["atk agents-notify"])
-    agents_notify.set_defaults(subparser=agents_notify)
-    notification_body = agents_notify.add_mutually_exclusive_group(required=True)
-    notification_body.add_argument("--body", help="委譲元へ送る本文。")
-    notification_body.add_argument(
-        "--body-file",
-        type=pathlib.Path,
-        help="委譲元へ送る本文を保持するUTF-8ファイルの絶対パス。",
-    )
+    agents = _atk_help.add_command(top, "agents", **_atk_help.HELP["atk agents"])
+    _agents.build_parser(agents)
+    _atk_help.add_command(top, "agents-exit-session", **_atk_help.HELP["atk agents-exit-session"])
     managed_temp = _atk_help.add_command(top, "managed-temp", **_atk_help.HELP["atk managed-temp"])
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     worktree_stash = _atk_help.add_command(top, "worktree-stash", **_atk_help.HELP["atk worktree-stash"])
@@ -904,6 +827,20 @@ def _build_parser() -> argparse.ArgumentParser:
     _review_audit.build_parser(top)
     _session_review_target.build_parser(top)
     return parser
+
+
+def format_command_help(command_path: tuple[str, ...]) -> str | None:
+    """公開サブコマンドの経路に対応するヘルプをCLI定義から生成する。"""
+    parser = _build_parser()
+    for name in command_path:
+        choices = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            None,
+        )
+        if choices is None or name not in choices:
+            return None
+        parser = choices[name]
+    return parser.format_help()
 
 
 def _validate_rm_args(args: argparse.Namespace) -> None:
@@ -940,7 +877,6 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--scope", args.scope),
                 ("--question-type", args.question_type),
                 ("--choices", args.choices),
-                ("--plan-file", args.plan_file),
                 ("--depends-on", args.depends_on),
                 ("--target-repo", args.target_repo),
                 ("--source", args.source),
@@ -1045,22 +981,10 @@ def main(
     if args.command == "wait-schedule":
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
-    if args.command == "agents-wait":
-        sys.exit(_atk_agents_wait.wait_for_result(args.session_id, args.timeout))
-    if args.command == "agents-wait-any":
-        sys.exit(_atk_agents_wait.wait_for_any_result(args.session_id, args.timeout))
-    if args.command == "agents-notify":
-        body = args.body
-        if args.body_file is not None:
-            if not args.body_file.is_absolute():
-                args.subparser.error("--body-fileには絶対パスを指定してください。")
-            try:
-                with args.body_file.open(encoding="utf-8", newline="") as stream:
-                    body = stream.read()
-            except (OSError, UnicodeError) as error:
-                args.subparser.error(f"--body-fileをUTF-8で読めません: {error}")
-        assert body is not None
-        sys.exit(_send_agents_notification(body))
+    if args.command == "agents":
+        sys.exit(_agents.dispatch(args))
+    if args.command == "agents-exit-session":
+        sys.exit(_agents_exit_session.main())
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":
@@ -1151,7 +1075,6 @@ def main(
         "reject": lambda: _mutations._cmd_reject(args, private_notes, now),
         "rm": lambda: _mutations._cmd_rm(args, private_notes),
         "edit": lambda: _mutations._cmd_edit(args, private_notes),
-        "convert-to-plan": lambda: _mutations._cmd_convert_to_plan(args, private_notes),
         "set-dependencies": lambda: _mutations._cmd_set_dependencies(args, private_notes),
         "grep": lambda: _grep._cmd_grep(args, private_notes),
         "answer": lambda: _uwi._cmd_answer(args, private_notes),

@@ -74,7 +74,6 @@ if TYPE_CHECKING:
         is_target_path,
         list_files,
         local_host_info,
-        read_mermaid_bundle,
         read_pygments_css,
         resolve_under_root,
         root_info,
@@ -158,6 +157,10 @@ _PLAN_SUFFIX_LABELS = (
     (_DETAIL_SUFFIX, "詳細"),
     (_BUGS_SUFFIX, "バグ"),
     (_TARGET_TSV_SUFFIXES[0], "計画レビュー指摘管理表"),
+    (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
+)
+_CURRENT_PLAN_SUFFIX_LABELS = (
+    (_BUGS_SUFFIX, "バグ"),
     (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
 )
 _REVIEW_TABLE_HEADERS = (

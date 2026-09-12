@@ -71,12 +71,12 @@ def test_text_assets_are_bundled_as_plugin_files() -> None:
         "plans.js": assets.PLANS_JS,
         "sessions.js": assets.SESSIONS_JS,
     }
-    # Mermaidは容量が大きく要求時に読むため、内容の一致検査ではなく実在だけを確認する。
-    assert {path.name for path in static_dir.iterdir()} == {*expected, "vendor"}
-    assert (static_dir / "vendor" / "mermaid.min.js").is_file()
+    assert {path.name for path in static_dir.iterdir()} == set(expected)
     for filename, content in expected.items():
         bundled = (static_dir / filename).read_text(encoding="utf-8")
         assert (bundled if filename == "app.js" else bundled.removesuffix("\n")) == content
+    assert 'const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@latest/dist/mermaid.min.js";' in assets.PLANS_JS
+    assert "script.src = MERMAID_CDN_URL;" in assets.PLANS_JS
 
 
 def test_assets_define_all_operation_lifecycles_and_message_regions() -> None:
@@ -457,7 +457,6 @@ def test_plan_and_session_api_routes_are_registered(tmp_path: pathlib.Path) -> N
         "/api/sessions/events",
         "/static/plans.js",
         "/static/sessions.js",
-        "/static/vendor/mermaid.min.js",
     }
     assert expected <= rules
     # SSEは画面ごとに分ける。単一経路へまとめると別画面の更新でも再読込することになる。

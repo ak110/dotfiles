@@ -5,6 +5,7 @@
 {{-   $config = fromToml .chezmoi.stdin -}}
 {{- end -}}
 {{- $config = setValueAtPath "project_doc_max_bytes" $codexConfig.project_doc_max_bytes $config -}}
+{{- $config = setValueAtPath "tool_output_token_limit" $codexConfig.tool_output_token_limit $config -}}
 {{- $config = setValueAtPath "approvals_reviewer" "auto_review" $config -}}
 {{- $config = setValueAtPath "sandbox_mode" "danger-full-access" $config -}}
 {{- $config = setValueAtPath "model_reasoning_summary" "auto" $config -}}

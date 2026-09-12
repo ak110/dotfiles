@@ -74,7 +74,6 @@ if TYPE_CHECKING:
         is_target_path,
         list_files,
         local_host_info,
-        read_mermaid_bundle,
         read_pygments_css,
         resolve_under_root,
         root_info,
@@ -118,6 +117,7 @@ if TYPE_CHECKING:
         _BROADCAST_DEBOUNCE_SEC,
         _BUGS_SUFFIX,
         _CREATION_TIME_INDEX_PATH,
+        _CURRENT_PLAN_SUFFIX_LABELS,
         _DETAIL_SUFFIX,
         _LEGACY_CACHE_NAME_RE,
         _LEGACY_TEMPORARY_NAME_RE,
@@ -323,7 +323,9 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
     entries = await all_entries(context)
     if not query:
         return entries
-    local_results = await asyncio.gather(*(asyncio.to_thread(search_files, spec.path, query) for spec in context.roots))
+    local_results = await asyncio.gather(
+        *(asyncio.to_thread(search_files, spec.path, query, spec.source_id) for spec in context.roots)
+    )
     local_matches = {
         candidate
         for spec, paths in zip(context.roots, local_results, strict=True)
@@ -390,7 +392,9 @@ def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str
         known = {spec.source_id for spec in context.roots}
         if source_id:
             return source_id if source_id in known else None
-        candidates = [spec.source_id for spec in context.roots if resolve_under_root(spec.path, rel) is not None]
+        candidates = [
+            spec.source_id for spec in context.roots if resolve_under_root(spec.path, rel, spec.source_id) is not None
+        ]
     else:
         known = set(context.state.root_info.get(host, {}))
         if source_id:
@@ -434,9 +438,10 @@ def is_review_table_path(rel: str) -> bool:
     return rel.endswith(_TARGET_TSV_SUFFIXES)
 
 
-def _plan_paths(rel: str) -> tuple[tuple[str, str], ...]:
+def _plan_paths(rel: str, source_id: str = "") -> tuple[tuple[str, str], ...]:
     """同じstemに属する計画ファイルの相対パスと表示名を返す。"""
-    suffix = next((suffix for suffix, _ in _PLAN_SUFFIX_LABELS if rel.endswith(suffix)), None)
+    suffix_labels = _CURRENT_PLAN_SUFFIX_LABELS if source_id == LEGACY_SOURCE_ID else _PLAN_SUFFIX_LABELS
+    suffix = next((suffix for suffix, _ in suffix_labels if rel.endswith(suffix)), None)
     if suffix is None:
         if not rel.endswith(".md"):
             return ()
@@ -445,13 +450,13 @@ def _plan_paths(rel: str) -> tuple[tuple[str, str], ...]:
         stem = rel[: -len(suffix)]
     return (
         (f"{stem}.md", "メイン"),
-        *((f"{stem}{attached_suffix}", label) for attached_suffix, label in _PLAN_SUFFIX_LABELS),
+        *((f"{stem}{attached_suffix}", label) for attached_suffix, label in suffix_labels),
     )
 
 
 async def plan_links_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
     """同じstemで実在する他の計画だけを、表示応答の先頭へリンクとして付ける。"""
-    plan_paths = _plan_paths(rel)
+    plan_paths = _plan_paths(rel, source_id)
     if not plan_paths:
         return ""
     existing: list[tuple[str, str]] = []
@@ -478,7 +483,7 @@ async def _plan_exists(context: PlansContext, host: str, source_id: str, plan_re
     """
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
-        return spec is not None and resolve_under_root(spec.path, plan_rel) is not None
+        return spec is not None and resolve_under_root(spec.path, plan_rel, spec.source_id) is not None
     if not is_safe_remote_relpath(plan_rel):
         return False
     watcher = context.state.remote_watchers.get(host)
@@ -509,7 +514,7 @@ async def resolve_text_and_mtime(
     """ファイル本文と`mtime_epoch`を取得する。取得できない場合は`PlanFileError`を送出する。"""
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
-        target = resolve_under_root(spec.path, rel) if spec is not None else None
+        target = resolve_under_root(spec.path, rel, spec.source_id) if spec is not None else None
         if target is None:
             raise PlanFileError(404, "not found")
         return await asyncio.to_thread(_read_with_mtime, target)

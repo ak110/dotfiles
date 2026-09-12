@@ -136,23 +136,27 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
         assert result.returncode == 2
 
-    @pytest.mark.parametrize(
-        "command",
-        ["uv run python /tmp/foo.py", "uv run python -c 'print(1)'"],
-        ids=["path", "inline_code"],
-    )
-    def test_non_python_project_forms_are_blocked(self, tmp_path: pathlib.Path, command: str) -> None:
-        """パス引数形とインラインコード形の双方を公開インターフェースでブロックする。"""
+    def test_non_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """単純なスクリプトパス形を`uv run --script`へ補正する。"""
         cwd = self._make_non_python_project(tmp_path)
-        result = self._invoke(command, cwd)
+        result = self._invoke("uv run python /tmp/foo.py --flag 'two words'", cwd)
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"] == "uv run --script /tmp/foo.py --flag 'two words'"
+
+    def test_non_python_project_inline_code_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """安全にスクリプト形へ直せないインラインコード形は遮断する。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 2
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
         assert "uv run python" in result.stderr
 
-    def test_no_pyproject_blocked(self, tmp_path: pathlib.Path):
-        """pyproject.tomlが無いcwdでもblockする（Pythonプロジェクトと認識できないため）。"""
+    def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
+        """pyproject.tomlが無いcwdでも単純なスクリプトパス形を補正する。"""
         result = self._invoke("uv run python /tmp/foo.py", str(tmp_path))
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script /tmp/foo.py"
 
     def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
         """`uv run python --script s.py`は`--script`がpythonの引数となるため例外扱いしない。"""
@@ -176,25 +180,31 @@ class TestBashUvRunPythonBlock:
         result = self._invoke(f"cd {target} && uv run python /tmp/foo.py", str(payload_cwd))
         assert result.returncode == 0
 
-    def test_quoted_cd_to_python_project_blocks_for_safety(self, tmp_path: pathlib.Path) -> None:
-        """引用符で保護した`cd`先でもglob文字を含むcwdは安全側で遮断する。"""
+    def test_quoted_cd_to_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """引用符で保護した`cd`先でも単純なスクリプトパス形を補正する。"""
         payload_cwd = tmp_path / "payload"
         payload_cwd.mkdir()
         target = tmp_path / "python-target[1]"
         target.mkdir()
         self._make_python_project(target)
         result = self._invoke(f"cd '{target}' && uv run python /tmp/foo.py", str(payload_cwd))
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == (
+            f"cd '{target}' && uv run --script /tmp/foo.py"
+        )
 
-    def test_cd_to_non_python_project_blocks(self, tmp_path: pathlib.Path) -> None:
-        """静的に解決できる`cd`先がPythonプロジェクトでなければ遮断する。"""
+    def test_cd_to_non_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """静的に解決できる`cd`先が非Pythonプロジェクトでも単純なスクリプトパス形を補正する。"""
         payload_cwd = tmp_path / "payload"
         payload_cwd.mkdir()
         target = tmp_path / "non-python-target"
         target.mkdir()
         self._make_non_python_project(target)
         result = self._invoke(f"cd {target} && uv run python /tmp/foo.py", str(payload_cwd))
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == (
+            f"cd {target} && uv run --script /tmp/foo.py"
+        )
 
     def test_unresolved_cd_blocks(self, tmp_path: pathlib.Path) -> None:
         """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも遮断する。"""
@@ -565,6 +575,8 @@ class TestAgentsServerListRepeat:
         assert not first.stdout
         assert blocked.returncode == 2
         assert "前回の`list`から`agents_server`の状態が変化していない" in blocked.stderr
+        assert "`stop(session_id)`" in blocked.stderr
+        assert "引数を取らない`wait`" in blocked.stderr
         assert not blocked.stdout
 
     def test_agents_server_list_passes_on_retry_and_state_change(
@@ -1117,9 +1129,8 @@ class TestBashBlockBeforeAccumulatedWarnings:
         ("blocking_command", "expected_message"),
         [
             ('pkill -f "worker"', "パターン一致によるプロセス終了"),
-            ("uv run python script.py", "`uv run python`呼び出し"),
         ],
-        ids=["process-kill", "uv-run-python"],
+        ids=["process-kill"],
     )
     def test_bulk_stage_warning_cannot_bypass_block(
         self,
@@ -1271,8 +1282,8 @@ class TestBashHeredocLiteralExclusion:
         assert result.returncode == 2
         assert "状態を変更するコマンドを他のコマンド" in result.stderr
 
-    def test_recursive_grep_after_heredoc_is_warned(self, tmp_path: pathlib.Path) -> None:
-        """heredoc終端後の再帰grepを通常の入力と同じく警告する。"""
+    def test_recursive_grep_after_heredoc_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """heredoc終端後の再帰grepを通常の入力と同じく遮断する。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -1283,5 +1294,5 @@ class TestBashHeredocLiteralExclusion:
             _plan_file_state_env(tmp_path),
         )
 
-        assert result.returncode == 0
-        assert "除外設定を反映しない再帰`grep`" in _additional_context(result)
+        assert result.returncode == 2
+        assert "除外設定を反映しない再帰`grep`" in result.stderr

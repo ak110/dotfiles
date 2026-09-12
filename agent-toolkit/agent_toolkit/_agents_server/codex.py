@@ -33,6 +33,7 @@ from agent_toolkit._agents_server.state import (  # pylint: disable=wrong-import
     LaunchKind,
     ModelCandidate,
     ResumePrompt,
+    SessionInitializationTimeoutError,
     SessionState,
     _append_bounded,
     _begin_reply,
@@ -155,14 +156,22 @@ class JsonRpcProcess:
         self._reader_task = asyncio.create_task(self._read_stdout())
         self._stderr_task = asyncio.create_task(self._read_stderr())
         try:
-            await self.request(
-                "initialize",
-                {
-                    "clientInfo": {"name": "agent-toolkit-codex-app-server", "version": "1.0"},
-                    "capabilities": {},
-                },
-            )
-            await self.notify("initialized", {})
+            # 子プロセスが応答を返さないまま生存する場合、要求の応答futureは読取taskの失敗経路では解消しない。
+            async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                await self.request(
+                    "initialize",
+                    {
+                        "clientInfo": {"name": "agent-toolkit-codex-app-server", "version": "1.0"},
+                        "capabilities": {},
+                    },
+                )
+                await self.notify("initialized", {})
+        except TimeoutError as exc:
+            await self.close()
+            raise SessionInitializationTimeoutError(
+                f"Codex App Server did not complete initialize within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
+                f"command={' '.join(APP_SERVER_COMMAND)}"
+            ) from exc
         except Exception:
             await self.close()
             raise
@@ -461,7 +470,14 @@ class AppServerManager:
         if config:
             params["config"] = config
         params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
-        thread_response = await client.request("thread/start", params)
+        try:
+            async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                thread_response = await client.request("thread/start", params)
+        except TimeoutError as exc:
+            raise SessionInitializationTimeoutError(
+                f"Codex thread/start did not return within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
+                f"cwd={cwd}, launch_kind={launch_kind}"
+            ) from exc
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
             raise AppServerError("thread/start returned no thread.id")

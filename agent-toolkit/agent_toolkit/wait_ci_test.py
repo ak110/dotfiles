@@ -1591,7 +1591,7 @@ class TestNormalizeGitlabPipeline:
 
 
 class TestRunJsonCommand:
-    """forge CLIのJSON出力をbytes境界でUTF-8厳格復号する。"""
+    """forge CLIのJSON出力をbytes境界でUTF-8として厳格にデコードする。"""
 
     def test_decodes_utf8_from_binary_subprocess(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """CP932ロケールでもbytes境界からUTF-8の非ASCII JSONを取得する。"""

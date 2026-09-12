@@ -9,7 +9,9 @@
 
 ## 起動経路
 
-`upstream_submission`が`なし`以外の全項目をまとめて1件の委譲先へ渡す。`agents_server`の`start`へ`model_type="execute"`を渡して起動し、新しい設定キーを追加しない。
+`upstream_submission`が`なし`以外の全項目をまとめ、`agents_server`の`start`で1件の委譲先を起動する。
+`subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/upstream-submission.subagent.md`を解決した絶対パスを渡す。
+`extra_params`には`## 渡す入力`の名前付き入力、`cwd`には対象リポジトリの絶対パスを渡す。新しい設定キーを追加しない。
 
 ## 起動前の前提
 
@@ -17,9 +19,8 @@ pickerが項目ごとの`upstream_target_repo`と`upstream_request`を確定し�
 
 ## 渡す入力
 
-- `${CLAUDE_PLUGIN_ROOT}/share/upstream-submission.subagent.md`の絶対パス
-- 元項目を保持する対象リポジトリの絶対パス
-- 元項目と投入先の組ごとの、元項目のAWIファイル名、1件の`upstream_target_repo`及びpickerが返した`upstream_request`
+- `対象リポジトリ`: 元項目を保持する対象リポジトリの絶対パス
+- `元項目と投入先の組`: 元項目と投入先の組ごとの、元項目のAWIファイル名、1件の`upstream_target_repo`及びpickerが返した`upstream_request`
 - `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 - 投入先を受領した値へ固定し、自ら決定しないこと
 - 完了報告と成果物を日本語で書くこと

@@ -452,27 +452,6 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
     assert uwi_path.read_text(encoding="utf-8") == original_uwi
 
 
-class TestAdoptMissing:
-    """adoptサブコマンド: 存在しないファイル指定でexit 2となる。"""
-
-    def test_missing_file_exits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
-        _setup_notes(tmp_path)
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "adopt", "nonexistent.md"], home=tmp_path)
-
-        assert exc_info.value.code == 2
-        captured = capsys.readouterr()
-        assert "inbox・processingのいずれにも存在しません" in captured.err
-
-
 class TestRejectDeletes:
     """rejectサブコマンド: ファイルをinboxからrejected/へ移動する。"""
 
@@ -785,24 +764,23 @@ class TestEditBodyFile:
         assert parsed is not None
         assert parsed[1] == expected_body.format(message_file=message_file)
 
-    def test_plan_body_file_accepts_existing_file_path_as_content(
+    def test_hold_body_file_accepts_existing_file_path_as_content(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """計画型編集も本文ファイル内の既存ファイルパスを本文として保存する。"""
+        """本文ファイル内の既存ファイルパスを本文として保存する。"""
         notes = _setup_notes(tmp_path)
         filename = "20260907-000000-001.md"
         _write_convert_awi(notes, filename, state="hold")
-        plan = _write_integration_plan(notes / "plans", "a" * 40, (filename,))
         target_worktree = tmp_path / "target-worktree"
         target_worktree.mkdir()
         message_file = tmp_path / "message.txt"
         message_file.write_text("本文ファイルが参照する既存ファイル", encoding="utf-8")
         body_path = tmp_path / "body.md"
         body_path.write_text(str(message_file), encoding="utf-8")
-        _disable_convert_git(monkeypatch)
-        _patch_integration_target_resolution(monkeypatch)
+        _disable_transition_git(monkeypatch)
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         monkeypatch.setattr(
             mutations._add,  # pylint: disable=protected-access
             "resolve_add_target",
@@ -817,8 +795,6 @@ class TestEditBodyFile:
                     filename,
                     "--body-file",
                     str(body_path),
-                    "--plan-file",
-                    str(plan),
                     "--target-repo",
                     "github.com/example/foo",
                 ],
@@ -826,7 +802,7 @@ class TestEditBodyFile:
             )
 
         assert exc_info.value.code == 0
-        parsed = frontmatter_parser.parse_frontmatter((notes / "inbox" / filename).read_text(encoding="utf-8"))
+        parsed = frontmatter_parser.parse_frontmatter((notes / "hold" / filename).read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[1] == f"\n{message_file}\n"
 

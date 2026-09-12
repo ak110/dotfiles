@@ -103,10 +103,10 @@ def test_window_formats_share_pane_aggregate_condition() -> None:
     values = _read_window_formats()
     current_value = values["@catppuccin_window_current_text"]
 
-    assert current_value == values["@catppuccin_window_text"]
-    assert "#{m:*1*," in current_value
-    assert "#{P:#{@cmd_running}}" in current_value
-    assert "#W" in current_value
+    for value in (current_value, values["@catppuccin_window_text"]):
+        assert "#{m:*1*," in value
+        assert "#{P:#{@cmd_running}}" in value
+        assert "#W" in value
 
 
 @pytest.mark.parametrize("format_name", WINDOW_FORMAT_NAMES)
@@ -118,6 +118,7 @@ def test_window_format_evaluates_running_panes(
     socket_name, session_name = tmux_server
     format_value = _read_window_formats()[format_name]
     _run_tmux(socket_name, "set-option", "-g", "@thm_peach", "colour123")
+    _run_tmux(socket_name, "set-option", "-g", "@thm_fg", "colour250")
     _run_tmux(socket_name, "set-option", "-g", "automatic-rename", "off")
 
     first_window = _run_tmux(
@@ -168,23 +169,24 @@ def test_window_format_evaluates_running_panes(
         "#{pane_id}",
     ).splitlines()[0]
 
-    assert _render_window(socket_name, first_window, format_value) == " first"
-    assert _render_window(socket_name, second_window, format_value) == " second"
+    idle_prefix = " #[fg=colour250]#[bold]" if format_name.endswith("current_text") else " "
+    assert _render_window(socket_name, first_window, format_value) == f"{idle_prefix}first"
+    assert _render_window(socket_name, second_window, format_value) == f"{idle_prefix}second"
 
     _set_cmd_running(socket_name, first_pane, "0")
-    assert _render_window(socket_name, first_window, format_value) == " first"
+    assert _render_window(socket_name, first_window, format_value) == f"{idle_prefix}first"
 
     _set_cmd_running(socket_name, first_pane, "1")
     assert _render_window(socket_name, first_window, format_value) == " #[fg=colour123]#[bold]first"
-    assert _render_window(socket_name, second_window, format_value) == " second"
+    assert _render_window(socket_name, second_window, format_value) == f"{idle_prefix}second"
 
     _set_cmd_running(socket_name, running_pane, "1")
     _unset_cmd_running(socket_name, first_pane)
     assert _render_window(socket_name, first_window, format_value) == " #[fg=colour123]#[bold]first"
 
     _run_tmux(socket_name, "kill-pane", "-t", running_pane)
-    assert _render_window(socket_name, first_window, format_value) == " first"
+    assert _render_window(socket_name, first_window, format_value) == f"{idle_prefix}first"
 
     _set_cmd_running(socket_name, other_pane, "1")
-    assert _render_window(socket_name, first_window, format_value) == " first"
+    assert _render_window(socket_name, first_window, format_value) == f"{idle_prefix}first"
     assert _render_window(socket_name, second_window, format_value) == " #[fg=colour123]#[bold]second"

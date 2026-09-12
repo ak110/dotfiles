@@ -83,6 +83,8 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     (
         "pretooluse.py:1588 本文",
         "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、停滞検知の手順を完了した場合に限る。"
+        "当該手順の完了条件は`agent-toolkit:delegation`の"
+        "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
         "進行が遅いことや非効率に見"
         "えることだけでは停止の指示にならない。"
         "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
@@ -328,23 +330,25 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ),
     (
         "autonomous_exit.py:108 解消手段",
-        "列挙した前提工程をすべて完了してから、`/agent-toolkit:exit-session`を起動する。",
+        "列挙した前提工程をすべて完了してから、`atk agents-exit-session`を単独で実行する。",
     ),
     (
         "autonomous_exit.py:_REASON_BODY",
         "このセッションには常駐ループの終了保証が適用される。`agent-toolkit:process-wi`の全工程を完了し、"
-        "`agent-toolkit:completion-report`で完了報告した後に、`agent-toolkit:exit-session`を起動する。"
+        "`agent-toolkit:completion-report`で完了報告した後に、`atk agents-exit-session`を実行する。"
         "未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。",
     ),
     (
         "plan_save_advisor.py:101 本文",
         "当該セッションが所有する計画バンドルが計画作業`root`に残っている: {path_list}\\n"
-        "実行レビューが収束した計画バンドルだけを`private-notes`へ移す。残りはそのまま置いてターンを終える。",
+        "保存の契機に達した計画バンドルだけを`private-notes`へ移す。"
+        "契機は当該セッションの起動経路ごとに`agent-toolkit:plan-mode`の計画ファイル基準が定める。"
+        "残りはそのまま置いてターンを終える。",
     ),
     (
         "plan_save_advisor.py:101 解消手段",
-        "収束した計画ごとに`atk plans commit <計画作業rootにある計画ファイル（メイン）のファイル名>`を実行する。"
-        "収束したものが無い場合はターンを終える。",
+        "保存の契機に達した計画ごとに`atk plans commit <計画作業rootにある計画ファイル（メイン）のファイル名>`を実行する。"
+        "契機に達したものが無い場合はターンを終える。",
     ),
     (
         "subagent_stop_advisor.py:47 本文",
@@ -378,7 +382,7 @@ _CONFIRMED_NOTICE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("pending_question_advisor.py:_BLOCK_FIX", "AskUserQuestionで確認するか、当該問いかけを本文から除いて応答を書き直す。"),
     (
         "agents_server_session_advisor.py:_WARNING_BODY",
-        "`agents_server`の`session`に、観測を試みていない作業が残っている。`wait(session_id)`で観測するか、"
+        "`agents_server`の`session`に、観測を試みていない作業が残っている。`wait`で観測するか、"
         "結果が不要なら`kill(session_id)`で破棄してから終了する。`send_message`は新しい作業を配送するだけで観測しないため、"
         "この警告は解消しない。観測しないまま終了すると、当該作業の成果を回収する主体が残らない。",
     ),

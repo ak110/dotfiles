@@ -165,19 +165,15 @@ def test_convert_to_plan_replaces_legacy_schedule_with_top_level_metadata(
 
 
 @pytest.mark.parametrize(
-    ("dependency_args", "expected_dependencies"),
-    [
-        ((), ["predecessor.md"]),
-        (("--depends-on", "replacement", "--depends-on", "replacement.md"), ["replacement.md"]),
-    ],
+    "dependency_args",
+    [(), ("--depends-on", "replacement", "--depends-on", "replacement.md")],
 )
-def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
+def test_convert_to_plan_cli_rejects_removed_command_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     dependency_args: tuple[str, ...],
-    expected_dependencies: list[str],
 ) -> None:
-    """変換CLIは依存の省略時に既存値を保持し、明示時だけ置換する。"""
+    """削除済み変換CLIを依存引数の有無にかかわらず拒否する。"""
     notes = _setup_notes(tmp_path)
     path = _write_convert_awi(
         notes,
@@ -209,11 +205,11 @@ def test_convert_to_plan_cli_distinguishes_omitted_and_explicit_dependencies(
             now=_FIXED_DT,
         )
 
-    assert captured.value.code == 0
+    assert captured.value.code == 2
     parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None
-    assert parsed[0]["depends_on"] == expected_dependencies
-    assert "queue_schedule" not in parsed[0]
+    assert parsed[0]["depends_on"] == ["predecessor.md"]
+    assert "queue_schedule" in parsed[0]
 
 
 @pytest.mark.parametrize(
@@ -601,11 +597,11 @@ class TestRejectIfInbox:
         assert not any("commit" in call["cmd"] for call in git_calls)
 
 
-def test_agent_environment_plan_edit_preserves_saved_user_comment(
+def test_agent_environment_rejects_removed_plan_edit_without_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """計画型編集でも保存済みユーザーコメント節を保持する。"""
+    """削除済み計画型編集を拒否し、ユーザーコメント節を含む項目を保持する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="編集前\n\n## ユーザーコメント\n\n保持する")
@@ -627,9 +623,9 @@ def test_agent_environment_plan_edit_preserves_saved_user_comment(
     with pytest.raises(SystemExit) as exc_info:
         atk.main(_edit_plan_args(tmp_path, filename, "編集後", plan), home=tmp_path)
 
-    assert exc_info.value.code == 0
-    saved = notes / "inbox" / filename
-    assert saved.read_text(encoding="utf-8").endswith("編集後\n\n## ユーザーコメント\n\n保持する\n")
+    assert exc_info.value.code == 2
+    assert held_path.read_text(encoding="utf-8").endswith("編集前\n\n## ユーザーコメント\n\n保持する\n")
+    assert not (notes / "inbox" / filename).exists()
 
 
 class TestEditNoChanges:

@@ -7,6 +7,8 @@ import re
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
 _NAME_CONTINUATION = r"0-9A-Za-z_\u30a0-\u30ff\u3400-\u9fff"
+_BULLET_PREFIX = "- "
+_LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
 
 
 def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
@@ -63,6 +65,39 @@ def _contains_exact_name(content: str, name: str) -> bool:
     return re.search(pattern, content) is not None
 
 
+def _bullet_label(line: str) -> str | None:
+    """箇条書きの本文の先頭から最初の区切り文字の直前までをラベルとして返す。"""
+    stripped = line.lstrip()
+    if not stripped.startswith(_BULLET_PREFIX):
+        return None
+    body = stripped[len(_BULLET_PREFIX) :]
+    match = _LABEL_DELIMITER_PATTERN.search(body)
+    label = (body[: match.start()] if match else body).strip().strip("`")
+    return label or None
+
+
+def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]) -> list[str]:
+    """必須入力名へ語を足した表記で始まる箇条書きを別名として報告する。
+
+    ラベルを本文の先頭から最初の区切り文字までとする。区切り文字集合から全角丸括弧の開きを外すと、
+    `統合区分`のラベルの直後へ全角丸括弧で候補値を添えた箇条書きについて、ラベルが項目名より長くなり違反として報告される。
+    必須入力名と完全一致するラベルを違反から除く。当該除外を外すと、`必須入力名:`が`対象`と`対象リポジトリ`の双方を持つ
+    受信者について、`対象リポジトリ`の箇条書きが`対象`の別名として報告される。
+    `` - `<項目名>`: ``の形を機械的に強制しない。強制すると、項目を定義しない条件記述の箇条書きが違反となる。
+    """
+    errors: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for line in parent.read_text(encoding="utf-8").splitlines():
+        label = _bullet_label(line)
+        if label is None or label in required_names:
+            continue
+        for name in sorted(required_names):
+            if name in label and (label, name) not in seen:
+                seen.add((label, name))
+                errors.append(f"項目名の別名を列挙している: {parent.name}: {label} ({name})")
+    return errors
+
+
 def _contract_errors(share: pathlib.Path) -> list[str]:
     """share直下の委譲起動契約に反する箇所を返す。"""
     parents = sorted(share.glob("*.parent.md"))
@@ -107,6 +142,18 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
         for name in required_names:
             if not _contains_exact_name(parent_content, name):
                 errors.append(f"必須入力名が欠けている: {parent.name} -> {target}: {name}")
+
+    parent_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
+    for parent, target in pairs:
+        recipient = recipients.get(target)
+        if recipient is None:
+            continue
+        required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
+        if not valid_structure or not required_names:
+            continue
+        parent_populations[parent].update(required_names)
+    for parent, population in parent_populations.items():
+        errors.extend(_extended_bullet_label_errors(parent, population))
     return errors
 
 
@@ -224,6 +271,34 @@ def test_partial_required_input_name_does_not_match(tmp_path: pathlib.Path) -> N
     )
 
     assert "必須入力名が欠けている: task.parent.md -> task.subagent.md: 対象リポジトリ" in _contract_errors(tmp_path)
+
+
+def test_extended_bullet_label_is_reported(tmp_path: pathlib.Path) -> None:
+    """必須入力名へ語を足した表記で始まる箇条書きを別名として報告する。"""
+    _write_pair(
+        tmp_path,
+        parent_body=("# 呼び元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 起動\n\n- 対象リポジトリの絶対パス\n"),
+    )
+
+    assert "項目名の別名を列挙している: task.parent.md: 対象リポジトリの絶対パス (対象リポジトリ)" in _contract_errors(tmp_path)
+
+
+def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path) -> None:
+    """必須入力名と完全一致するラベルと、他の必須入力名の部分文字列となる必須入力名は別名として報告しない。"""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "task.parent.md").write_text(
+        "# 呼び元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 起動\n\n- `対象`: 値\n- `対象リポジトリ`: 値\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "task.subagent.md").write_text(
+        f"# 受信者\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 対象,対象リポジトリ\n```\n",
+        encoding="utf-8",
+    )
+
+    errors = _contract_errors(tmp_path)
+
+    assert not any(error.startswith("項目名の別名を列挙している") for error in errors)
+    assert not any(error.startswith("必須入力名が欠けている") for error in errors)
 
 
 def test_launch_target_after_h2_is_rejected(tmp_path: pathlib.Path) -> None:

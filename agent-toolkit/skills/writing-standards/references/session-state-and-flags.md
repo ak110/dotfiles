@@ -1,12 +1,50 @@
-# セッション状態フラグ
+# セッション状態ファイルとフラグ
 
-配布物のhook間で共有する状態の記録元、利用先、寿命を定める。
+配布物のhook間で共有する状態ファイルの設計、寿命、排他制御及び個別フラグの記録元と利用先を定める。
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
 計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
 フックがセッション状態の不足を理由にブロックした場合は、状態ファイルを`Read`して
 当該状態と他の記録済み状態を実測する。
 記録契機が発生していない場合は、同じ委譲の再実行以外の対処を選ぶ（努力目標）。
+
+## 状態ファイルの設計
+
+Claude CodeまたはCodexのhook間で情報を共有する場合、セッション単位の状態ファイルを使う。
+hookは1呼び出しごとに独立プロセスとして起動するため、メモリー上の変数では情報の引き継ぎができない。
+
+- パス規則: 本書冒頭が定めるパスを`tempfile.gettempdir()`と`payload["session_id"]`から組み立てる
+- 形式: 単一のJSONオブジェクト。フラグ名はsnake_caseで統一する
+- 書き込み: PostToolUseで観測したイベント（テスト実行・スキル呼び出しなど）をフラグとして記録する
+- 読み取り: PreToolUseで判定材料として参照する（例: テスト未実行警告・スキル先行呼び出し催促）
+- 破損・不在時: 空辞書として扱い、安全側の判定にフォールバックする
+- `session_id`の切替え: 現行状態が無い場合だけtranscriptを先頭から走査し、状態ファイルを持つ別の`session_id`が一意なら全キーを継承する。継承元を状態へ記録し、現行状態がある通常経路では状態ファイルの存在確認だけで終える
+- 設計原則: フックイベント間の多段同期（コマンド文字列の完全一致検出とハッシュ照合の組合せ等）を状態ファイルへ持ち込まない。
+  検査は対象ファイル実体への直接実行・直接読み取りで代替し、フラグは実施済み・読了済みの単純な記録に限定する
+- フラグの用途・書き込み元・読み取り元の対応表をプラグインごとにドキュメント化する。
+  `agent-toolkit`自身の一覧は本書の後掲の各節を正本とする
+- 通常状態の期限より長く保持する記録は通常状態JSONへ混在させず、用途別の保存先と排他ロックへ分離する。
+  `agent-toolkit`の計画名再出力抑止記録は本書冒頭が定める分離先を使う
+
+### 完了報告からの状態読み取り
+
+完了報告本文から機械的に状態を読み取る場合、本文中の引用と区別できる位置へ
+記録行を置く（厳守規定。検出位置を限定しないと自由記述本文中の引用が状態フラグを
+誤って真化させ、完遂ゲート判定が機能不全に陥る）。完了報告末尾の連続した記録行ブロック、
+または最終行へ検出対象を限定する。
+自由記述の本文全体を検出対象に含めない。記録行の判定パターンは既知のキー
+（例: `invoked_subagents`・`codex_unavailable`）へ限定する許可リスト方式とし、
+英字キー全般に一致する汎用パターンは使わない。汎用パターンは、末尾付近に
+他の`キー:`形式の散文が続く場合に引用ごと記録行と誤認する
+
+### 並行書き込みの排他制御
+
+Claude Codeは並列ツール呼び出しでhookを同時発火するため、複数プロセスから同一の状態ファイルへ書き込みが競合する。
+
+- 通常状態の更新は排他ロック付きの`update_state`、計画名の記録は専用の`claim_session_title`を経由し、直接書き込むAPIを公開しない
+- 前身状態の継承は現行セッションの排他ロック下で不在を再確認し、並行するhookが同時に継承しないようにする
+- ロックファイルはどの経路でも削除しない。内容を持たない空ファイルであり、一時ディレクトリの通常の回収に委ねる
+- 並行書き込みの回帰テストを維持する
 
 ## 検証・git状態系
 
@@ -55,8 +93,8 @@
   個人PreToolUseフックが同じチェックアウト内のコーディングエージェント向け文書の編集警告を抑制する。
   セッション終了まで保持し、リセット経路は設けない
 - `process_wi_skill_invoked`: process-wiスキルの起動を記録する。
-  PostToolUse(Skill)とUserPromptSubmitが記録し、`agent-toolkit:exit-session`起動時に偽へ戻す。セッション終了まで保持する
-- `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`agent-toolkit:exit-session`の成功したSkill呼び出しを記録し、
+  PostToolUse(Skill)とUserPromptSubmitが記録し、`atk agents-exit-session`の機械可読な応答を受領した時点で偽へ戻す。セッション終了まで保持する
+- `autonomous_exit_invoked`: `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が`atk agents-exit-session`の実行と機械可読な応答を記録し、
   `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照する。セッション状態の有効期間中だけ保持し、通常のスキル完了処理で再利用しない
 - `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話を受領した時刻をPOSIX秒で記録する。
   同フックが、直前の通常発話からの経過時間で照合指示の注入要否を判定する入力として読む。
@@ -72,11 +110,11 @@
 ## agents_server連携系
 
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の検査及び各ツールのPostToolUse状態更新に使う
-- `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態は当該sessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`は当該作業を発生させた主体を示す。`model_type`は起動時の応答から得た値とし、`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`・`start_explore`・`start_shell`の成功応答で生成し、`wait`・`send_message`・`kill`の応答境界と、Bash経由の`atk agents-wait`実行時に更新する。`pending_observation`は`start`・`start_explore`・`start_shell`の成功応答で真になる。`send_message`の応答では、`delivery`が`reply_started`又は`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、当該turnの終端は当該turnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。`transcript_path`はサブエージェント内で発火したフックでもセッション本体の記録を指すため、呼出主体の判別に使わない。`wait`の応答、`kill`の成功応答及びBash経由の`atk agents-wait`実行では`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。`wait`は`status`を問わず偽にする。委譲先が稼働中のまま待機表明でターンを終える正常終端を警告しないためである。`wait`又は`kill`の呼び出しが実行環境により背景タスクへ移り、構造化応答を伴わない移行通知だけが返った場合も、当該通知の受領時に`pending_observation`を偽にする。対象sessionはMCP呼び出しでは入力の`session_id`、CLIでは`atk agents-wait`の位置引数から解決し、既存の記録が無い場合は新規に作成しない。呼び出しの受理をもって観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。責任主体を記録していない旧形式の記録は警告対象にしない。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
+- `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態は当該sessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`は当該作業を発生させた主体を示す。`model_type`は専用`start`ではタスク文書名、`start_custom`では起動入力から解決し、`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`・`start_custom`・`start_explore`・`start_shell`の成功応答で生成し、`wait`・`send_message`・`kill`の応答境界と、Bash経由の`atk agents wait`実行時に更新する。`pending_observation`は各開始操作の成功応答で真になる。`send_message`の応答では、`delivery`が`reply_started`又は`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、当該turnの終端は当該turnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。`transcript_path`はサブエージェント内で発火したフックでもセッション本体の記録を指すため、呼出主体の判別に使わない。`wait`の応答、`kill`の成功応答及びBash経由の`atk agents wait`実行では`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。`wait`は`status`を問わず偽にする。委譲先が稼働中のまま待機表明でターンを終える正常終端を警告しないためである。`wait`又は`kill`の呼び出しが実行環境により背景タスクへ移り、構造化応答を伴わない移行通知だけが返った場合も、当該通知の受領時に`pending_observation`を偽にする。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する全sessionを観測済みにする。既存の記録が無いsessionは新規に作成しない。呼び出しの受理をもって観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。責任主体を記録していない旧形式の記録は警告対象にしない。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
 - `agents_server_list_fingerprint`・`agents_server_list_blocked_at`: PreToolUseが`agents_server`の`list`直前に、`agents_server_sessions`をキー順JSONへ正規化した指紋と直近の遮断時刻を記録する。同じ指紋での2回目の`list`を遮断し、遮断から5分以内の再実行では時刻を削除して通過させる。記録元と利用先は`agent_checks._check_agents_server_list_repeat`だけとし、寿命はセッション状態ファイルと同じとする。リセットは遮断直後の再実行だけで行う
-- `observed_required_reads`: 規範が全文読解を要求する文書のうち、同一セッションで全文読取を観測した文書の論理名を文字列の配列として保持する。記録はPostToolUseが行い、`Read`の`file_path`を実行ホストのパス規則で正規化した絶対パスが、稼働中のplugin rootから組み立てた当該文書の絶対パスと一致し、かつ`offset`と`limit`のいずれも指定されていない呼び出しだけを観測とする。別の作業ツリー又は別の複製にある同名の文書、部分読取及びシェル経由の読取は観測としない。利用先はPreToolUseの`AskUserQuestion`検査であり、当該配列に無い文書がある場合に当該ツール呼び出しを遮断する。寿命はセッション状態ファイルと同じとする
+- `observed_required_reads`: 規範が全文読解を要求する文書のうち、同一セッションで全文読取を観測した文書の論理名を文字列の配列として保持する。記録はPostToolUseが行い、`Read`の`file_path`を実行ホストのパス規則で正規化した絶対パスが、稼働中のplugin rootから組み立てた当該文書の絶対パスと一致し、かつ`offset`と`limit`のいずれも指定されていない呼び出しだけを観測とする。別の作業ツリー又は別の複製にある同名の文書、部分読取及びシェル経由の読取は観測としない。利用先はPreToolUseの`AskUserQuestion`検査であり、当該配列に無い文書がある場合に警告する。寿命はセッション状態ファイルと同じとする
 
-`wait_any`の応答境界とBash経由の`atk agents-wait-any`では、入力で指定した全sessionの`pending_observation`を偽にする。`wait_any`が返した選択済みsessionの公開状態は応答の`session_id`と`status`から更新する。呼出主体が所有し`status`が`running`である記録が2件以上ある間は、PreToolUseフックが`timeout`非0の単一`wait`を遮断し、`wait_any`へ全対象を渡すよう要求する。`owner_agent_id`を持たない記録と別の所有主体の記録はこの件数へ含めない。
+`wait`の応答境界とBash経由の`atk agents wait`では、呼出主体が所有する全sessionの`pending_observation`を偽にする。`wait`が返した選択済みsessionの公開状態は応答の`session_id`と`status`から更新する。`status`が`running`である記録の件数を根拠として待機を遮断する検査は持たない。`stop`の成功応答を受領した場合は、当該`session_id`のエントリーを本キーから除去する。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、当該応答は当該sessionが終端済み、期限切れ又は既破棄のいずれかであることを含意し、除去により未終端のsessionの記録が失われることはない。
 
 ## 背景タスク系
 
@@ -85,6 +123,9 @@
   セッション終了まで保持し、リセット経路は設けない
 - `task_stop_blocked_at`: PreToolUse(TaskStop)が遮断した時刻のPOSIX秒を記録し、同フックが再実行許可窓の判定に読む。
   セッション終了まで保持し、リセット経路は設けない
+- `stall_detection_completed_at_by_task`: `record_stall_detection.py`が停滞検知を完了した停止対象の完全なタスクIDをキー、完了時刻のPOSIX秒を値として記録する。
+  PreToolUse(TaskStop)は5分以内の一致する対象だけを停止可能と判定し、期限切れ要素を除去する。
+  成功したPostToolUse(TaskStop)が一致要素を消費する。停止の失敗時は同じ5分窓で再試行できるよう保持する
 
 ## UWI系
 

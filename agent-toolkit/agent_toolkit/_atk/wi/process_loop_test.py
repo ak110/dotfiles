@@ -1380,6 +1380,86 @@ class TestProcessLoopPromptAndEnv:
         assert "--continue" not in claude_calls[0]["cmd"]
         assert "--resume" not in claude_calls[0]["cmd"]
 
+    def test_auto_resume_and_resume_are_mutually_exclusive(self, tmp_path: pathlib.Path) -> None:
+        """`--auto-resume`と`--resume`は同時指定できない。"""
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(["wi", "process-loop", "--resume", "--auto-resume"], home=tmp_path)
+
+        assert exc_info.value.code == 2
+
+    def test_auto_resume_selects_session_and_resumes_first_session_only(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--auto-resume`は自動選択したsession_idで初回だけ再開し、2回目以降は新規起動する。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter([1, 1, 0])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+        select_calls: list[tuple[str, pathlib.Path]] = []
+
+        def fake_select_session(target_repo_id: str, target_repo_path: pathlib.Path) -> str:
+            select_calls.append((target_repo_id, target_repo_path))
+            return "auto-selected-id"
+
+        monkeypatch.setattr(_process_loop._auto_resume, "select_session", fake_select_session)  # pylint: disable=protected-access
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--auto-resume"],
+                home=tmp_path,
+            )
+
+        assert len(select_calls) == 1
+        assert len(claude_calls) == 2
+        first_command = claude_calls[0]["cmd"]
+        second_command = claude_calls[1]["cmd"]
+        assert first_command[-1] == "--resume=auto-selected-id"
+        assert "--auto-resume" not in second_command
+        assert "--resume" not in second_command
+        assert not any(arg.startswith("--resume") for arg in second_command)
+
+    def test_auto_resume_absent_without_option_does_not_call_select_session(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--auto-resume`未指定時は自動選択処理を呼び出さない。"""
+        _setup_notes(tmp_path)
+        myrepo = tmp_path / "myrepo"
+        myrepo.mkdir()
+        claude_calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run_with_remote_url(myrepo, claude_calls, 0))
+        counts = iter([1, 0])
+        monkeypatch.setattr(_process_loop, "_count_pending_entries", lambda *_a, **_kw: next(counts))
+
+        def fail_if_called(*_args: object, **_kwargs: object) -> str:
+            raise AssertionError("--auto-resume未指定では呼び出さないこと")
+
+        monkeypatch.setattr(_process_loop._auto_resume, "select_session", fail_if_called)  # pylint: disable=protected-access
+
+        def fake_wait_for_changes(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(_process_loop, "_wait_for_changes", fake_wait_for_changes)
+
+        with pytest.raises(SystemExit):
+            atk.main(
+                ["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"],
+                home=tmp_path,
+            )
+
+        assert len(claude_calls) == 1
+
     @pytest.mark.parametrize(
         ("config_value", "expected_model", "expected_effort"),
         [("codex:gpt-5.6-sol/medium", "gpt-5.6-sol", "medium"), ("codex:gpt-5.6-sol/high", "gpt-5.6-sol", "high")],

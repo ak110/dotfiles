@@ -24,9 +24,6 @@ _MODEL_SETTING_CATEGORIES = {
     "explore_model": "探索上位",
     "explore_fast_model": "探索軽量",
     "pick_wi_model": "軽量",
-    "plan_model": "計画",
-    "plan_review_model": "軽量",
-    "execute_fast_model": "軽量",
     "execute_model": "上位",
     "execute_review_model": "軽量",
     "session_review_model": "上位",
@@ -43,10 +40,6 @@ _CATEGORY_ENGINE_MODELS = {
         "codex": "codex:gpt-5.6-terra/medium",
         "claude": "claude:sonnet[1m]/medium",
     },
-    "計画": {
-        "codex": "codex:gpt-6-astra/medium",
-        "claude": "claude:opus[1m]/medium",
-    },
     "探索上位": {
         "codex": "codex:gpt-5.6-terra/medium",
         "claude": "claude:opus[1m]/medium",
@@ -57,9 +50,9 @@ _CATEGORY_ENGINE_MODELS = {
     },
 }
 _PRESET_ENGINE_ORDERS = {
-    "codex-balanced": ("codex", frozenset({"plan_model", "orchestrate_model"})),
+    "codex-balanced": ("codex", frozenset({"orchestrate_model"})),
     "codex-primary": ("codex", frozenset()),
-    "claude-balanced": ("claude", frozenset({"explore_model", "explore_fast_model", "execute_fast_model"})),
+    "claude-balanced": ("claude", frozenset({"explore_model", "explore_fast_model"})),
     "claude-primary": ("claude", frozenset()),
 }
 
@@ -252,7 +245,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
-    """apply-presetサブコマンド: 工程別モデル設定10キーを一括保存する。"""
+    """apply-presetサブコマンド: 現行の工程別モデル設定を一括保存する。"""
     settings = _preset_settings(args.preset)
     config = _load_config()
     config.update(settings)

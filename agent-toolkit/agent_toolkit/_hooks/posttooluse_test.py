@@ -29,6 +29,7 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _rea
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _POSTTOOLUSE_MODULE_PATH = pathlib.Path(__file__).resolve().parent / "posttooluse.py"
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
+_HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.codex.json"
 _PYFLTR_RUN_FOR_AGENT_TOOL_NAME = "mcp__plugin_agent-toolkit_pyfltr__run_for_agent"
 
 
@@ -51,13 +52,34 @@ def _load_posttooluse_module() -> types.ModuleType:
 _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
-def test_wait_any_observation_attempt_clears_all_targets(monkeypatch: pytest.MonkeyPatch) -> None:
-    """wait_anyの観測試行は入力集合の全sessionを解消する。"""
+def test_wait_observation_attempt_clears_sessions_of_the_caller(monkeypatch: pytest.MonkeyPatch) -> None:
+    """待機の観測試行は呼出主体が所有する全sessionを解消する。"""
     state = {
         "agents_server_sessions": {
-            "remote-a": {"pending_observation": True},
-            "remote-b": {"pending_observation": True},
-            "other": {"pending_observation": True},
+            "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
+            "remote-b": {"pending_observation": True, "owner_agent_id": "main"},
+            "other": {"pending_observation": True, "owner_agent_id": "child-1"},
+        }
+    }
+
+    def apply(_session_id: str, mutator: object) -> None:
+        assert callable(mutator)
+        mutator(state)
+
+    monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
+    _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt("local", {}, operation="wait", owner_agent_id="main")
+
+    assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
+    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is False
+    assert state["agents_server_sessions"]["other"]["pending_observation"] is True
+
+
+def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """中断の観測試行は入力のsessionだけを解消する。"""
+    state = {
+        "agents_server_sessions": {
+            "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
+            "remote-b": {"pending_observation": True, "owner_agent_id": "main"},
         }
     }
 
@@ -67,25 +89,28 @@ def test_wait_any_observation_attempt_clears_all_targets(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", apply)
     _POSTTOOLUSE_MODULE._record_agents_server_observation_attempt(
-        "local", {"session_ids": ["remote-a", "remote-b"]}, operation="wait_any"
+        "local", {"session_id": "remote-a"}, operation="kill", owner_agent_id="main"
     )
 
     assert state["agents_server_sessions"]["remote-a"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is False
-    assert state["agents_server_sessions"]["other"]["pending_observation"] is True
+    assert state["agents_server_sessions"]["remote-b"]["pending_observation"] is True
 
 
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """状態ファイルの反映前でもstart応答のルート識別子から索引を書く。"""
+    """startが同期反映した共有状態からルート識別子の索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
     root = tmp_path / "agents-server" / "root-session"
-    assert not root.exists()
+    root.mkdir(parents=True)
+    (root / "root.json").write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
+        encoding="utf-8",
+    )
 
     _POSTTOOLUSE_MODULE._record_agents_server_session_state(
         "current-session",
-        {"session_id": "remote-session", "status": "running", "root_session_id": "root-session"},
+        {"session_id": "remote-session", "status": "running"},
         operation="start",
         owner_agent_id="main",
     )
@@ -94,11 +119,11 @@ def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.M
     assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "root-session"}
 
 
-def test_start_state_record_without_root_session_id_does_not_write_alias(
+def test_start_state_record_without_shared_status_does_not_write_alias(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """start応答にルート識別子が無い場合は索引を書かない。"""
+    """共有状態からルート識別子を一意に解決できない場合は索引を書かない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
@@ -176,10 +201,29 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:
+    """成功したTaskStopの対象記録だけを消費する。"""
+    session_id = "task-stop-consume"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    state_path.write_text(
+        json.dumps(
+            {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    result = _run(
+        {"session_id": session_id, "tool_name": "TaskStop", "tool_input": {"task_id": "task-1"}},
+        state_dir=tmp_path,
+    )
+    assert result.returncode == 0
+    assert _read_state(tmp_path, session_id)["stall_detection_completed_at_by_task"] == {"task-2": 2.0}
+
+
 class TestCodexBashStateRecording:
     """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
 
-    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents-wait remote-session"
+    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents wait"
 
     def test_codex_bash_does_not_record_success_dependent_state(self, tmp_path: pathlib.Path) -> None:
         session_id = "codex-success-dependent-state"
@@ -209,6 +253,7 @@ class TestCodexBashStateRecording:
                     "session_id": remote_session_id,
                     "status": "running",
                     "pending_observation": True,
+                    "owner_agent_id": "main",
                 }
             }
         }
@@ -232,6 +277,60 @@ class TestCodexBashStateRecording:
         assert "test_executed" not in current
         assert "git_log_checked" not in current
         assert "amend_pending_status_check" not in current
+
+
+class TestAtkHelpObservation:
+    """実行済みヘルプの応答だけを同一セッションの案内抑止へ使う。"""
+
+    @staticmethod
+    def _pre_payload(session_id: str) -> dict:
+        return {
+            "session_id": session_id,
+            "tool_name": "Bash",
+            "tool_input": {"command": "atk wi list"},
+            "cwd": "/repo",
+        }
+
+    def test_successful_help_suppresses_next_notice(self, tmp_path: pathlib.Path) -> None:
+        session_id = "atk-help-success"
+        before = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+        before_output = json.loads(before.stdout)
+        assert before.returncode == 0
+        assert "使い方: atk wi list" in before_output["hookSpecificOutput"]["additionalContext"]
+        assert "permissionDecision" not in before_output["hookSpecificOutput"]
+
+        observed = _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi list --help"},
+                "tool_response": {"stdout": "使い方: atk wi list [options]"},
+                "cwd": "/repo",
+            },
+            state_dir=tmp_path,
+        )
+        after = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+
+        assert observed.returncode == 0
+        assert after.returncode == 0
+        assert after.stdout == ""
+
+    def test_missing_help_response_keeps_notice(self, tmp_path: pathlib.Path) -> None:
+        session_id = "atk-help-failed"
+        _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk wi list --help"},
+                "cwd": "/repo",
+            },
+            state_dir=tmp_path,
+        )
+
+        result = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+
+        assert result.returncode == 0
+        assert "additionalContext" in json.loads(result.stdout)["hookSpecificOutput"]
 
 
 class TestTestExecution:
@@ -260,6 +359,15 @@ class TestTestExecution:
             "uv run --frozen pyfltr run",
             "uv run --frozen pytest",
             "uv run --frozen prek run",
+            # `uv run`の列挙外オプション（値を取らない形・値を取る形・複数併用）
+            "uv run --no-sync pyfltr run-for-agent",
+            "uv run --python 3.12 pytest",
+            "uv run --with pyfltr-plugin pyfltr run .",
+            "uv run --locked --no-default-groups pyfltr ci",
+            # タスクランナー自身のオプションと複合アクション名
+            "make -j4 test",
+            "make ci-local-check",
+            "npm run test:unit",
             # タスクランナー経由（test / check / validateアクションを各ランナーで網羅）
             "make test",
             "make check",
@@ -301,12 +409,25 @@ class TestTestExecution:
         state = _read_state(tmp_path, sid)
         assert state.get("test_executed") is not True
 
-    @pytest.mark.parametrize("command", ["uv run --with pyfltr-plugin pyfltr run .", "uv run --python 3.12 pytest"])
-    def test_uv_run_with_value_option_is_not_detected(self, tmp_path: pathlib.Path, command: str) -> None:
-        """値を伴うuv runのオプションをテスト実行として誤認しない。"""
-        sid = "test-uv-run-value-option"
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # 検証コマンド名が`uv run`のオプションの値として現れる形（実行位置は`python`）
+            "uv run --with pytest python -c 'print(1)'",
+            "uv run --with pyfltr python script.py",
+            # 実行済みrunを参照するだけの`pyfltr`サブコマンド
+            "uv run --frozen pyfltr list-runs",
+            "uv run --frozen pyfltr show-run 01ABC",
+            # アクション名を取らないタスクランナーの起動
+            "mise exec -- node index.js",
+            "npm run",
+        ],
+    )
+    def test_non_verification_command_is_not_detected(self, tmp_path: pathlib.Path, command: str) -> None:
+        """検証の実行に当たらないコマンドを`test_executed`の対象にしない。"""
+        sid = "test-non-verification"
         _run({"session_id": sid, "tool_input": {"command": command}}, state_dir=tmp_path)
-        assert _read_state(tmp_path, sid).get("test_executed") is not True
+        assert _read_state(tmp_path, sid).get("test_executed") is not True, f"command={command!r} detected"
 
     @pytest.mark.parametrize(
         "tool_response",
@@ -400,20 +521,34 @@ class TestTestExecution:
         assert _read_state(tmp_path, sid).get("test_executed") is not True
 
     def test_posttooluse_matcher_routes_pyfltr_mcp_run_for_agent(self):
-        """MCP成功イベントがPostToolUse実装へ配送されるmatcherを維持する。"""
+        """MCP成功イベントがPostToolUse実装へ配送されるmatcherを維持する。
+
+        実装側の`AGENTS_SERVER_HOOK_TOOL_NAMES`（Claude Code名前空間分）を入力として反復し、
+        hooks.jsonのPostToolUse matcherが全要素へ一致することを検査する。
+        実装側の集合へ要素を追加しても本検査を反復せず追加し忘れると、当該要素だけ検査から漏れる。
+        """
+        module = _load_posttooluse_module()
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
         assert re.fullmatch(matcher, _PYFLTR_RUN_FOR_AGENT_TOOL_NAME) is not None
-        assert (
-            re.fullmatch(
-                matcher,
-                "mcp__plugin_agent-toolkit_agents_server__send_message",
-            )
-            is not None
-        )
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__start_explore") is not None
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__kill") is not None
-        assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__stop") is not None
+        claude_tool_names = {
+            name
+            for name in module.AGENTS_SERVER_HOOK_TOOL_NAMES
+            if name.startswith("mcp__plugin_agent-toolkit_agents_server__")
+        }
+        assert claude_tool_names
+        for tool_name in claude_tool_names:
+            assert re.fullmatch(matcher, tool_name) is not None, tool_name
+
+    def test_posttooluse_codex_matcher_covers_agents_server_tool_names(self):
+        """Codex向けhooks.codex.jsonのPostToolUse matcherが実装側のCodex名前空間ツール名を被覆する。"""
+        module = _load_posttooluse_module()
+        hooks = json.loads(_HOOKS_CODEX_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUse"][0]["matcher"]
+        codex_tool_names = {name for name in module.AGENTS_SERVER_HOOK_TOOL_NAMES if name.startswith("mcp__agents_server__")}
+        assert codex_tool_names
+        for tool_name in codex_tool_names:
+            assert re.fullmatch(matcher, tool_name) is not None, tool_name
 
     @pytest.mark.parametrize(
         "tool_name",
@@ -1003,8 +1138,8 @@ class TestPlanFilePostWriteNotice:
         # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 
-    def test_notice_on_detail_file_write_targets_main_path(self, tmp_path: pathlib.Path) -> None:
-        """計画ファイル（詳細）`.detail.md`書込み時も検査案内は対応する計画ファイル（メイン）パスを対象にする。"""
+    def test_notice_on_removed_detail_file_write_is_skipped(self, tmp_path: pathlib.Path) -> None:
+        """廃止した`.detail.md`への書込みを現行計画の検査対象にしない。"""
         plan_path = self._make_plan_path(tmp_path)
         detail_path = plan_path.with_name("sample.detail.md")
         sid = "post-write-notice-detail"
@@ -1019,9 +1154,7 @@ class TestPlanFilePostWriteNotice:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        message = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert str(plan_path) in message
-        assert str(detail_path) not in message
+        assert result.stdout == ""
 
     def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
         plan_path = self._make_plan_path(tmp_path)
@@ -1103,19 +1236,22 @@ class TestAwiSkillFlags:
 
 
 class TestExitSessionResetsProcessAwisFlag:
-    """exit-sessionスキル起動検知時の自動振り返り起点フラグリセット。
+    """終了CLIの機械可読な応答で自動振り返り起点フラグをリセットする。"""
 
-    `agent-toolkit:process-wi`の`references/finish-session.md`がexit-sessionで終端するため、
-    exit-session起動を完了シグナルとする。
-    """
+    @staticmethod
+    def _invoke(session_id: str, state_dir: pathlib.Path) -> None:
+        _run(
+            {
+                "session_id": session_id,
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk agents-exit-session"},
+                "tool_response": {"stdout": '{"exit_session_invoked":true,"status":"unsupported"}'},
+            },
+            state_dir=state_dir,
+        )
 
-    @pytest.mark.parametrize(
-        "skill",
-        ["agent-toolkit:exit-session", "exit-session"],
-    )
-    def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path, skill: str) -> None:
-        """exit-session起動でprocess_wi_skill_invokedが偽になる。"""
-        sid = f"exit-{skill.replace(':', '-')}"
+    def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
+        sid = "exit-cli"
         # 事前に自動振り返り起点フラグを立てる。
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(
@@ -1126,32 +1262,25 @@ class TestExitSessionResetsProcessAwisFlag:
             ),
             encoding="utf-8",
         )
-        _run({"session_id": sid, "tool_name": "Skill", "tool_input": {"skill": skill}}, state_dir=tmp_path)
+        self._invoke(sid, tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_wi_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
-        """既に偽の状態でもexit-sessionの記録だけを追加する。"""
+        """既に偽の状態でも終了CLIの記録だけを追加する。"""
         sid = "exit-idem"
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
         )
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:exit-session"},
-            },
-            state_dir=tmp_path,
-        )
+        self._invoke(sid, tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_wi_skill_invoked") is False
         assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
-        """exit-session記録とリセット済み状態がそろう場合は再書き込みしない。"""
+        """終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
         path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
         path.write_text(
@@ -1166,14 +1295,7 @@ class TestExitSessionResetsProcessAwisFlag:
             encoding="utf-8",
         )
         mtime_before = path.stat().st_mtime_ns
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:exit-session"},
-            },
-            state_dir=tmp_path,
-        )
+        self._invoke(sid, tmp_path)
         assert _read_state(tmp_path, sid)["marker"] == "keep"
         assert path.stat().st_mtime_ns == mtime_before
 
@@ -1182,7 +1304,7 @@ class TestProcessAwisInvokedNonIdempotent:
     """process-wiスキル再起動時のフラグ強制上書き。"""
 
     def test_reset_and_reinvoke_sets_flag_true(self, tmp_path: pathlib.Path) -> None:
-        """exit-session後の再起動でフラグが確実にTrueへ戻る。"""
+        """終了CLI起動後の再起動でフラグが確実にTrueへ戻る。"""
         sid = "reinvoke"
         # 事前にフラグを立てる。
         _run(
@@ -1194,12 +1316,13 @@ class TestProcessAwisInvokedNonIdempotent:
             state_dir=tmp_path,
         )
         assert _read_state(tmp_path, sid).get("process_wi_skill_invoked") is True
-        # exit-session起動でリセット。
+        # 終了CLI起動でリセット。
         _run(
             {
                 "session_id": sid,
-                "tool_name": "Skill",
-                "tool_input": {"skill": "agent-toolkit:exit-session"},
+                "tool_name": "Bash",
+                "tool_input": {"command": "atk agents-exit-session"},
+                "tool_response": {"stdout": '{"exit_session_invoked":true,"status":"unsupported"}'},
             },
             state_dir=tmp_path,
         )
@@ -1418,7 +1541,7 @@ class TestAgentsServerSessionState:
             ("start", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
             ("start_explore", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
             ("start_shell", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}),
-            ("wait", {"session_id": "remote"}, {"status": "completed", "agent_message": "完了"}),
+            ("wait", {}, {"session_id": "remote", "status": "completed", "agent_message": "完了"}),
             ("send_message", {"session_id": "remote"}, {"delivery": "reply_started"}),
             ("kill", {"session_id": "remote"}, {"status": "interrupted", "kill_requested": True}),
             ("stop", {"session_id": "remote"}, {}),
@@ -1464,20 +1587,22 @@ class TestAgentsServerSessionState:
         record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
         assert record["status"] == "failed"
 
-    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill", "stop"))
+    @pytest.mark.parametrize("tool_name", ("start", "start_explore", "send_message", "wait", "kill"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
         remote_session_id = "thread-json"
         start_tools = ("start", "start_explore")
-        status = "running" if tool_name in (*start_tools, "send_message", "stop") else "interrupted"
+        status = "running" if tool_name in (*start_tools, "send_message") else "interrupted"
         tool_input = {"cwd": str(tmp_path)} if tool_name in start_tools else {"session_id": remote_session_id}
+        if tool_name == "wait":
+            tool_input = {}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {}
-        if tool_name in start_tools:
+        if tool_name in start_tools or tool_name == "wait":
             response.update({"session_id": remote_session_id, "status": status})
-        elif tool_name in {"wait", "kill"}:
+        elif tool_name == "kill":
             response["status"] = status
         elif tool_name == "send_message":
             response["delivery"] = "reply_started"
@@ -1543,19 +1668,22 @@ class TestAgentsServerSessionState:
 
     @pytest.mark.parametrize("tool_name", ("wait", "send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """継続・観測・中断・破棄ツールはcwd mapを参照し、session記録へcwdを保存しない。"""
+        """継続・観測・中断ツールはcwd mapを参照し、session記録へcwdを保存しない。
+
+        破棄ツールはsession記録を除去し、cwd mapは変更しない。
+        """
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
         state: dict[str, object] = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
         (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
             json.dumps(state, ensure_ascii=False), encoding="utf-8"
         )
-        tool_input = {"session_id": remote_session_id}
+        tool_input: dict[str, object] = {} if tool_name == "wait" else {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
         response: dict[str, object] = {}
         if tool_name == "wait":
-            response["status"] = "running"
+            response.update({"session_id": remote_session_id, "status": "running"})
         elif tool_name == "send_message":
             response["delivery"] = "reply_started"
         if tool_name == "kill":
@@ -1583,10 +1711,13 @@ class TestAgentsServerSessionState:
         assert result.returncode == 0
         current = _read_state(tmp_path, sid)
         assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
-        assert "cwd" not in current["agents_server_sessions"][remote_session_id]
+        if tool_name == "stop":
+            assert remote_session_id not in current.get("agents_server_sessions", {})
+        else:
+            assert "cwd" not in current["agents_server_sessions"][remote_session_id]
 
-    def test_stop_clears_pending_observation_without_replacing_status(self, tmp_path: pathlib.Path) -> None:
-        """stop成功応答で既存statusを保ち、未観測作業を解消する。"""
+    def test_stop_removes_session_record(self, tmp_path: pathlib.Path) -> None:
+        """stop成功応答で当該sessionのエントリーを状態キーから除去する。"""
         sid = "pending-stop"
         remote_session_id = "remote-stop"
         state = {
@@ -1614,9 +1745,9 @@ class TestAgentsServerSessionState:
         )
 
         assert result.returncode == 0
-        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
-        assert record["status"] == "completed"
-        assert record["pending_observation"] is False
+        current = _read_state(tmp_path, sid)
+        assert remote_session_id not in current["agents_server_sessions"]
+        assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
 
     def test_missing_cwd_map_does_not_fallback_to_session_record(self, tmp_path: pathlib.Path) -> None:
         """cwd map欠落時も古いsession記録のcwdへフォールバックしない。"""
@@ -1638,7 +1769,7 @@ class TestAgentsServerSessionState:
             {
                 "session_id": sid,
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {"session_id": remote_session_id},
+                "tool_input": {},
                 "tool_response": {
                     "structuredContent": {
                         "session_id": remote_session_id,
@@ -1668,12 +1799,14 @@ class TestAgentsServerSessionState:
             tool_input: dict[str, object] = {"session_id": remote_session_id}
             if operation in {"start", "start_explore"}:
                 tool_input = {"cwd": str(tmp_path), "prompt": "委譲する"}
+            elif operation == "wait":
+                tool_input = {}
             elif operation == "send_message":
                 tool_input["prompt"] = "続行する"
             response: dict[str, object]
-            if operation in {"start", "start_explore"}:
+            if operation in {"start", "start_explore", "wait"}:
                 response = {"session_id": remote_session_id, "status": status}
-            elif operation in {"wait", "kill"}:
+            elif operation == "kill":
                 response = {"status": status}
             elif operation == "send_message":
                 response = {"delivery": delivery}
@@ -1847,7 +1980,7 @@ class TestAgentsServerSessionState:
             {
                 "session_id": sid,
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
-                "tool_input": {"session_id": remote_session_id},
+                "tool_input": {},
                 "tool_response": {"structuredContent": {"session_id": remote_session_id, "status": "completed"}},
             },
             state_dir=tmp_path,
@@ -1916,7 +2049,7 @@ class TestAgentsServerSessionState:
             {
                 "session_id": sid,
                 "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{operation}",
-                "tool_input": {"session_id": remote_session_id},
+                "tool_input": {} if operation == "wait" else {"session_id": remote_session_id},
                 "tool_response": self._background_notice_response(operation),
             },
             state_dir=tmp_path,
@@ -1970,9 +2103,9 @@ class TestAgentsServerSessionState:
         result = _run(
             {
                 "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__wait",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
                 "tool_input": {"session_id": "remote-unknown"},
-                "tool_response": self._background_notice_response("wait"),
+                "tool_response": self._background_notice_response("kill"),
             },
             state_dir=tmp_path,
         )
@@ -1985,7 +2118,7 @@ class TestAgentsServerSessionState:
 class TestAgentsServerProcessLoopLog:
     """計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の記録。
 
-    `model_type`は`start`応答にだけ現れるため、起動と終端を同じsessionへ通して記録の対応を確認する。
+    `model_type`は開始入力から解決するため、起動と終端を同じsessionへ通して記録の対応を確認する。
     """
 
     def _run_session(
@@ -2007,13 +2140,12 @@ class TestAgentsServerProcessLoopLog:
         _run(
             {
                 "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "実装する", "cwd": str(tmp_path)},
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_custom",
+                "tool_input": {"prompt": "実装する", "model_type": model_type, "cwd": str(tmp_path)},
                 "tool_response": {
                     "structuredContent": {
                         "session_id": remote_session_id,
                         "status": "running",
-                        "model_type": model_type,
                     }
                 },
             },
@@ -2047,7 +2179,7 @@ class TestAgentsServerProcessLoopLog:
 
     def test_running_status_does_not_log_end(self, tmp_path: pathlib.Path) -> None:
         """終端していない観測では終了時刻を記録しない。"""
-        text = self._run_session(tmp_path, model_type="plan", final_status="running")
+        text = self._run_session(tmp_path, model_type="execute", final_status="running")
         assert "event=subagent_start" in text
         assert "event=subagent_end" not in text
 

@@ -1,13 +1,46 @@
 """Claude backendと共有する自動再開状態の契約を検証する。"""
 
 import asyncio
+import pathlib
 import sys
 import types
+from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 
 from agent_toolkit._agents_server import claude
 from agent_toolkit._agents_server import state as shared_state
+
+
+class _SilentClient:
+    """接続を保ったままinitメッセージを送らないSDKクライアントの検体。
+
+    切断でCLIの子プロセスを終了する実クライアントの契約を模す。
+    実クライアントは取り消された実行での切断で当該終了処理へ到達しないため、
+    取り消し要求が残るtaskからの切断では、終了を記録せず例外を送出する。
+    """
+
+    def __init__(self) -> None:
+        self.terminated = False
+
+    async def connect(self) -> None:
+        return None
+
+    async def query(self, prompt: str) -> None:
+        del prompt  # noqa
+
+    async def receive_messages(self) -> AsyncIterator[Any]:
+        await asyncio.Event().wait()
+        yield None  # pragma: no cover - 待機が解けないことを表す到達不能の分岐
+
+    async def disconnect(self) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        if task.cancelling() > 0:
+            raise asyncio.CancelledError
+        await asyncio.sleep(0)
+        self.terminated = True
 
 
 @pytest.mark.parametrize(
@@ -48,6 +81,25 @@ def test_build_options_inherits_parent_settings(
 
     assert captured.get("settings") == settings
     assert ("settings" in captured) is (settings is not None)
+
+
+@pytest.mark.asyncio
+async def test_start_aborts_when_init_message_never_arrives(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """initへ到達しないsessionを上限で打ち切り、子プロセスを終了させて例外で返す。"""
+    monkeypatch.setattr(shared_state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
+    monkeypatch.setattr(claude._plan_file, "resolve_owner_session_id", lambda: None)  # pylint: disable=protected-access
+    client = _SilentClient()
+    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
+
+    with pytest.raises(shared_state.SessionInitializationTimeoutError):
+        await manager.start("調査する", str(tmp_path))
+
+    assert not manager.sessions
+    await manager.close()
+    assert client.terminated is True
 
 
 @pytest.mark.asyncio

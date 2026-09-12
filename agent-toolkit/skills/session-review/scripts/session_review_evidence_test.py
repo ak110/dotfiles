@@ -5087,7 +5087,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """集約実行が4走査の全量をファイルへ書き、標準出力へは要約と未解決記録だけを返す。"""
+    """集約実行が全走査と一次選別候補を保存し、標準出力へ要約だけを返す。"""
     missing_thread = "99999999-9999-4999-8999-999999999999"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -5154,6 +5154,15 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         single = [event for event in _read_jsonl(capsys, raw=True) if event["kind"] != "unresolved-record"]
         assert stored[filename] == single
         assert {"kind": "bundle-file", "path": str(path.resolve()), "count": len(single)} in bundle_events
+
+    candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(item["record"], item["line"], item["candidate_kind"]) for item in candidates] == [
+        ("main", 1, "user-intervention"),
+        ("main", 4, "escalation"),
+        ("main", 5, "warning"),
+        ("main", 6, "hook-notice"),
+    ]
+    assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 4} in bundle_events
 
     assert {event["event_kind"]: event["count"] for event in bundle_events if event["kind"] == "bundle-kind-count"} == {
         "user": 1,

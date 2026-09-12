@@ -1,4 +1,4 @@
-"""atk agents-notifyの公開CLI契約を検証する。"""
+"""atk agents notifyの公開CLI契約を検証する。"""
 
 import json
 import pathlib
@@ -29,7 +29,7 @@ def test_agents_notify_preserves_body_exactly(
     body = "  先頭\r\n末尾\n"
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-notify", "--body", body])
+        atk.main(["agents", "notify", "--body", body])
 
     paths = list(notify_environment.glob("child-session.*.json"))
     assert len(paths) == 1
@@ -55,7 +55,7 @@ def test_agents_notify_reads_body_file(
     body_path.write_bytes("本文\r\n".encode())
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-notify", "--body-file", str(body_path)])
+        atk.main(["agents", "notify", "--body-file", str(body_path)])
 
     payload = json.loads(next(notify_environment.glob("child-session.*.json")).read_text(encoding="utf-8"))
     assert payload["body"] == "本文\r\n"
@@ -71,7 +71,7 @@ def test_agents_notify_reads_shell_metacharacters_from_body_file(
     body_path.write_bytes(body.encode())
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents-notify", "--body-file", str(body_path)])
+        atk.main(["agents", "notify", "--body-file", str(body_path)])
 
     payload = json.loads(next(notify_environment.glob("child-session.*.json")).read_text(encoding="utf-8"))
     assert payload["body"] == body
@@ -89,7 +89,7 @@ def test_agents_notify_rejects_missing_delegated_identity(
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="4"):
-        atk.main(["agents-notify", "--body", "通知"])
+        atk.main(["agents", "notify", "--body", "通知"])
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -110,7 +110,7 @@ def test_agents_notify_rejects_root_identity(
     monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
 
     with pytest.raises(SystemExit, match="4"):
-        atk.main(["agents-notify", "--body", "通知"])
+        atk.main(["agents", "notify", "--body", "通知"])
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -124,7 +124,7 @@ def test_agents_notify_rejects_blank_body(
 ) -> None:
     """空白だけの本文は終了コード5で拒否し、ファイルを作成しない。"""
     with pytest.raises(SystemExit, match="5"):
-        atk.main(["agents-notify", "--body", " \n\t"])
+        atk.main(["agents", "notify", "--body", " \n\t"])
 
     captured = capsys.readouterr()
     assert not captured.out
@@ -136,7 +136,7 @@ def test_agents_notify_uses_unique_name(notify_environment: pathlib.Path) -> Non
     """同じsessionの複数通知を上書きせず保存する。"""
     for body in ("1件目", "2件目"):
         with pytest.raises(SystemExit, match="0"):
-            atk.main(["agents-notify", "--body", body])
+            atk.main(["agents", "notify", "--body", body])
 
     assert len(list(notify_environment.iterdir())) == 2
 
@@ -144,5 +144,5 @@ def test_agents_notify_uses_unique_name(notify_environment: pathlib.Path) -> Non
 def test_agents_notify_rejects_relative_body_file(capsys: pytest.CaptureFixture[str]) -> None:
     """相対本文ファイルはargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit, match="2"):
-        atk.main(["agents-notify", "--body-file", "body.txt"])
+        atk.main(["agents", "notify", "--body-file", "body.txt"])
     assert "絶対パス" in capsys.readouterr().err

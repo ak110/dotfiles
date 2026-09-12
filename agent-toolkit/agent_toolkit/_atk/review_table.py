@@ -40,7 +40,8 @@ _COLUMN_COUNT = len(COLUMNS)
 _KEY_COLUMN_COUNT = 4
 TRACK_VALUES = ("plan-review", "exec-review", "plan-conformance", "independent")
 _TRACK_ALIASES = {"implementation-review": "exec-review"}
-_TRACK_INPUT_VALUES = (*TRACK_VALUES, *_TRACK_ALIASES)
+_TRACK_READ_VALUES = (*TRACK_VALUES, *_TRACK_ALIASES)
+_TRACK_INPUT_VALUES = ("exec-review",)
 LEVEL_VALUES = ("要件", "仕様", "詳細", "実装")
 _RECOVERY_GUIDANCE = (
     f"期待列数は{_COLUMN_COUNT}、trackの位置はroundの直後、"
@@ -50,8 +51,8 @@ _RECOVERY_GUIDANCE = (
     "保存済み7列形式はlevelを空として読み込み、更新時に8列形式へ書き戻す"
 )
 _INPUT_GUIDANCE = (
-    "計画ファイルと同じstemの`.plan-review.tsv`か`.exec-review.tsv`、または原因commit完全OID由来の"
-    "`ci-<OID>.exec-review.tsv`、実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を"
+    "計画ファイルと同じstemの`.exec-review.tsv`、または原因commit完全OID由来の"
+    "`ci-<OID>.exec-review.tsv`を"
     "通常ファイルの絶対パスで指定する。"
     "標準入力、パイプ及びプロセス置換は受理しない"
 )
@@ -72,7 +73,7 @@ def _cell(value: str) -> str:
 
 
 def _decode_cell(value: str, *, line: int, column: int) -> str:
-    """JSON文字列セルを復号し、形式不正をエラーにする。"""
+    """JSON文字列セルをデコードし、形式不正をエラーにする。"""
     try:
         decoded = json.loads(value)
     except (json.JSONDecodeError, TypeError) as error:
@@ -88,7 +89,7 @@ def _normalize_track(value: str) -> str:
 
 
 def _parse_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行とtrack正規化済みの復号行を対応づけて返す。"""
+    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
     rows: list[tuple[str, list[str]]] = []
     for line_number, raw_line in enumerate(text.splitlines(keepends=True), start=1):
         line = raw_line.rstrip("\r\n")
@@ -124,7 +125,7 @@ def _read_table_text(path: Path) -> str:
 
 
 def _read(path: Path) -> list[list[str]]:
-    """TSVを読み、JSON復号済みの行一覧を返す。"""
+    """TSVを読み、JSONデコード済みの行一覧を返す。"""
     return [row for _, row in _parse_text(_read_table_text(path))]
 
 
@@ -287,7 +288,7 @@ def _response_value(raw: str) -> str:
 
 
 def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], matches: list[int]) -> str:
-    """一意に解決できない部分キーと復号済み候補行を整形する。"""
+    """一意に解決できない部分キーとデコード済み候補行を整形する。"""
     requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
     candidate_rows = [rows[index] for index in matches] if matches else rows
     candidate_lines = [
@@ -298,8 +299,8 @@ def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], 
     candidates = "\n".join(candidate_lines) or "  - 候補行なし"
     return (
         f"指定された部分キー: {requested}\n"
-        f"候補行（復号済み）:\n{candidates}\n"
-        "レビュー表のセルはJSON文字列として保存されるため、キーには復号後の値を指定する。"
+        f"候補行（デコード済み）:\n{candidates}\n"
+        "レビュー表のセルはJSON文字列として保存されるため、キーにはデコード後の値を指定する。"
     )
 
 
@@ -380,7 +381,7 @@ def show(
     target = _path(str(path))
     text = _read_table_text(target)
     rows = _parse_text(text)
-    if track is not None and track not in _TRACK_INPUT_VALUES:
+    if track is not None and track not in _TRACK_READ_VALUES:
         raise ValueError(f"trackが正規値ではない。{_RECOVERY_GUIDANCE}")
     track = _normalize_track(track) if track is not None else None
     selected = [
@@ -446,9 +447,8 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     init_parser = _atk_help.add_command(sub, "init", **_atk_help.HELP["atk review-table init"])
     path_help = (
-        "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.plan-review.tsv`か"
-        "`.exec-review.tsv`、または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`、"
-        "実装着手前の完全OID由来の`dlg-<OID>.exec-review.tsv`を指定する。"
+        "操作するレビュー指摘管理表のパス。計画ファイルと同じstemの`.exec-review.tsv`、"
+        "または原因commit完全OID由来の`ci-<OID>.exec-review.tsv`を指定する。"
     )
     init_parser.add_argument("path", help=path_help)
     add_command_parser = _atk_help.add_command(
@@ -513,7 +513,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     show_parser.add_argument("path", help=path_help)
     show_parser.add_argument(
         "--track",
-        choices=_TRACK_INPUT_VALUES,
+        choices=_TRACK_READ_VALUES,
         help="表示対象を指定したレビュー区分の行だけに限定する。省略すると全行を表示する。",
     )
     show_parser.add_argument(
@@ -525,7 +525,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "--format",
         choices=("tsv", "jsonl"),
         default="tsv",
-        help="出力形式。tsvは保存済みのraw TSV、jsonlは復号済みのJSON Linesを表示する。",
+        help="出力形式。tsvは保存済みのraw TSV、jsonlはデコード済みのJSON Linesを表示する。",
     )
     _output_file.add_output_file_arg(show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
@@ -541,16 +541,19 @@ def dispatch(args: argparse.Namespace) -> int:
     """argparse結果をレビュー表操作へ振り分ける。"""
     command = args.review_table_subcommand
     if command == "init":
+        _require_writable_exec_review(args.path)
         return init(args.path)
     if command == "show":
         return show(args.path, args.track, args.format, args.round)
     if command == "validate":
         return validate(args.path, require_responses=not args.allow_unanswered)
     if command == "add":
+        _require_writable_exec_review(args.path)
         location = _required_value(args, "location")
         issue = _required_value(args, "issue")
         return add(args.path, args.round, args.track, location, issue, args.level)
     if command == "respond":
+        _require_writable_exec_review(args.path)
         round_value = args.round or ""
         track = args.track or ""
         location = _cell_value(args, "location")
@@ -568,3 +571,17 @@ def dispatch(args: argparse.Namespace) -> int:
             _cell_value(args, "no_response_reason"),
         )
     raise ValueError(f"未知のreview-tableサブコマンド: {command}")
+
+
+def _require_writable_exec_review(raw_path: str) -> None:
+    """保存済みの旧計画レビュー表を更新対象から除外する。"""
+    target = _path(raw_path)
+    name = target.name
+    if name.endswith(".plan-review.tsv") or (name.startswith("dlg-") and name.endswith(".exec-review.tsv")):
+        raise ValueError("保存済みの旧レビュー表は読み取り専用です。更新には.exec-review.tsvを指定する")
+    if not target.exists():
+        return
+    for line_number, (raw_line, _row) in enumerate(_parse_text(_read_table_text(target)), start=1):
+        raw_track = _decode_cell(raw_line.rstrip("\r\n").split("\t")[1], line=line_number, column=2)
+        if raw_track != "exec-review":
+            raise ValueError(f"{line_number}行の旧review typeは読み取り専用です: {raw_track}")

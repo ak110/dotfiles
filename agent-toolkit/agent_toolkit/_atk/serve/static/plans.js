@@ -29,6 +29,7 @@ let rootStatus = {};
 // DOM化対象は先頭から`visibleLimit`件のみで、超過分は番兵IntersectionObserverで段階拡張する。
 let visibleFiles = [];
 let mermaidLoadPromise = null;
+const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@latest/dist/mermaid.min.js";
 let previewGeneration = 0;
 // 画面内の描画順序の逆転は`previewGeneration`で判定する。
 let previewObjectUrls = new Set();
@@ -414,7 +415,7 @@ function loadMermaid() {
   if (mermaidLoadPromise) return mermaidLoadPromise;
   mermaidLoadPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = BASE_PATH + "/static/vendor/mermaid.min.js";
+    script.src = MERMAID_CDN_URL;
     script.onload = () => {
       window.mermaid.initialize({
         startOnLoad: false,

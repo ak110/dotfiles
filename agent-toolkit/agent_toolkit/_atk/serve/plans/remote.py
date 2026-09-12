@@ -74,7 +74,6 @@ if TYPE_CHECKING:
         is_target_path,
         list_files,
         local_host_info,
-        read_mermaid_bundle,
         read_pygments_css,
         resolve_under_root,
         root_info,
@@ -230,7 +229,7 @@ class RemoteHelperError(Exception):
 def _stderr_excerpt(stderr: bytes) -> str:
     """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
 
-    復号できない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    デコードできない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
     """
     text = " ".join(stderr.decode("utf-8", errors="replace").split())
     if not text:

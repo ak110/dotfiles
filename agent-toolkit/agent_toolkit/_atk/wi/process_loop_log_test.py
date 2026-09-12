@@ -3,7 +3,6 @@
 排他ロック分岐・ローテーション動作・環境変数が無効な状態でのno-opを検証する。
 """
 
-import os
 import pathlib
 
 import pytest
@@ -80,21 +79,8 @@ class TestRotation:
         assert "event=second" in _process_loop_log.log_path().read_text(encoding="utf-8")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX固有のロック実装")
-class TestLockPosix:
-    """POSIX環境でロックファイル経由の排他制御が働くことを確認する。"""
-
-    def test_lock_file_created(self) -> None:
-        _process_loop_log.append("session_start")
-        lock_path = _process_loop_log.log_path().parent / (_process_loop_log.log_path().name + ".lock")
-        assert lock_path.exists()
-
-
-@pytest.mark.skipif(os.name != "nt", reason="Windows固有のロック実装")
-class TestLockNt:
-    """Windows環境でロックファイル経由の排他制御が働くことを確認する。"""
-
-    def test_lock_file_created(self) -> None:
-        _process_loop_log.append("session_start")
-        lock_path = _process_loop_log.log_path().parent / (_process_loop_log.log_path().name + ".lock")
-        assert lock_path.exists()
+def test_lock_file_created() -> None:
+    """選択されたOS別実装がロックファイルを作成する。"""
+    _process_loop_log.append("session_start")
+    lock_path = _process_loop_log.log_path().parent / (_process_loop_log.log_path().name + ".lock")
+    assert lock_path.exists()

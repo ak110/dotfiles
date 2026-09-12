@@ -189,18 +189,20 @@ REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_he
 # --------------------------------------------------------------------------------------
 
 
-def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
     """`path`が対象接尾辞・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3経路が同一の対象集合を返すよう、当該判定を1箇所へ集約する。
-    メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
-    （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める）。
+    作業rootではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
+    保存rootと明示rootでは旧付属ファイルも読取・検索・監視の対象に含める。
     リモート側`atk_serve_plans_remote_helper.py`の`_is_target_path`と同一基準を保つ
     （同ファイルはSSH越しに単独実行されるためモジュールを共有できず、意図的に重複させている）。
     `root`自身がドット配下（`~/.claude/plans`など）でも通るよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
     """
     if path.suffix != ".md" and not path.name.endswith(_TARGET_TSV_SUFFIXES):
+        return False
+    if source_id == LEGACY_SOURCE_ID and path.name.endswith((_DETAIL_SUFFIX, _TARGET_TSV_SUFFIXES[0])):
         return False
     try:
         rel = path.resolve().relative_to(root.resolve())
@@ -209,13 +211,13 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path) -> bool:
     return not any(part.startswith(".") for part in rel.parts)
 
 
-def is_listed_path(path: pathlib.Path, root: pathlib.Path) -> bool:
+def is_listed_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
     """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
     メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
     メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
     """
-    if not is_target_path(path, root):
+    if not is_target_path(path, root, source_id):
         return False
     review_suffix = next((suffix for suffix in _TARGET_TSV_SUFFIXES if path.name.endswith(suffix)), None)
     if review_suffix is not None:
@@ -255,9 +257,9 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
         # src_pathとdest_pathの両方を確認する。
         if isinstance(event, watchdog.events.FileMovedEvent):
             dest = pathlib.Path(str(event.dest_path))
-            if not (is_target_path(src, self.root) or is_target_path(dest, self.root)):
+            if not (is_target_path(src, self.root, self.source_id) or is_target_path(dest, self.root, self.source_id)):
                 return
-        elif not is_target_path(src, self.root):
+        elif not is_target_path(src, self.root, self.source_id):
             return
         loop = self.state.loop
         if loop is None:
@@ -349,7 +351,7 @@ def scan_files(
     try:
         for path in root.rglob("*"):
             try:
-                if not path.is_file() or not is_listed_path(path, root):
+                if not path.is_file() or not is_listed_path(path, root, source_id):
                     continue
                 st = path.stat()
             except OSError as error:
@@ -381,7 +383,7 @@ def list_files(root: pathlib.Path, host: str, source_id: str = "") -> list[FileE
     return entries
 
 
-def search_files(root: pathlib.Path, query: str) -> set[str]:
+def search_files(root: pathlib.Path, query: str, source_id: str = "") -> set[str]:
     """本文へ検索語が部分一致する計画ファイルの相対パス集合を返す。"""
     needle = query.casefold()
     if not root.is_dir():
@@ -389,14 +391,16 @@ def search_files(root: pathlib.Path, query: str) -> set[str]:
     if not needle:
         try:
             return {
-                path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file() and is_target_path(path, root)
+                path.relative_to(root).as_posix()
+                for path in root.rglob("*")
+                if path.is_file() and is_target_path(path, root, source_id)
             }
         except OSError:
             return set()
     matched: set[str] = set()
     try:
         for path in root.rglob("*"):
-            if not path.is_file() or not is_target_path(path, root):
+            if not path.is_file() or not is_target_path(path, root, source_id):
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
@@ -409,7 +413,7 @@ def search_files(root: pathlib.Path, query: str) -> set[str]:
     return matched
 
 
-def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
+def resolve_under_root(root: pathlib.Path, rel: str, source_id: str = "") -> pathlib.Path | None:
     """`rel`が`root`配下の対象ファイルを指す場合のみ絶対パスを返す。存在しない場合はNone。"""
     # シンボリックリンクを辿ってroot外へ出ないよう、resolve後のパスで範囲検査する。
     target = (root / rel).resolve()
@@ -417,14 +421,9 @@ def resolve_under_root(root: pathlib.Path, rel: str) -> pathlib.Path | None:
         target.relative_to(root.resolve())
     except ValueError:
         return None
-    if not target.is_file() or not is_target_path(target, root):
+    if not target.is_file() or not is_target_path(target, root, source_id):
         return None
     return target
-
-
-def read_mermaid_bundle() -> str:
-    """同梱したMermaidの単一ファイルbundleを読み込む。"""
-    return (_STATIC_DIR / "vendor" / "mermaid.min.js").read_text(encoding="utf-8")
 
 
 def read_pygments_css() -> str:

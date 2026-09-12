@@ -17,6 +17,19 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
   `TaskStop`がツール一覧へ遅延提示される環境では、ツールスキーマの検索手段で定義を取得してから呼び出す。
   シェルの`kill`等でPIDを推測して停止しない
   （タスクIDとPIDの対応を取得できないため、推測は無関係なプロセスの終了を招き得る）
+- 100行を超える連続したブロックを置換する場合は、`Edit`の`old_string`へ当該ブロック全体を含めるか、行範囲を指定した取得で対象範囲を確定してから置換する
+
+## plugin資源のroot再解決
+
+plugin資源のrootが失効したことを観測した場合、以後は保持済みのrootを再確認なしで再利用せず、
+実行環境が提供するplugin導入情報から現行の導入版とrootを再解決し、
+利用する資源の実在を確認してから後続処理へ渡す。
+
+Claude Codeでは、導入版とrootは`~/.claude/plugins/installed_plugins.json`の`installPath`から取得する。
+`~/.claude/plugins/data/`配下はplugin本体の展開先ではない。
+
+Codexでは、実行中スキルのSKILL.md絶対パスから末尾成分（`skills/<skill-name>/SKILL.md`）を除いた
+接頭部をrootとして導出する。導出したrootは配下資源の実在確認を経てから用いる。
 
 ## 役割上の区分と実行環境上の区分
 

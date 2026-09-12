@@ -26,9 +26,11 @@
 
 起動の前に`atk managed-temp create --prefix session-review-output`を1回実行し、終了コード0と単一行の絶対パスを確認する。当該ディレクトリ直下の`<対象セッションの識別子>.md`を出力先ファイルとし、メインが所有する。
 
-メインは`agent-toolkit:delegation`をSkill機能で起動し、`agents_server`の`start`へ`model_type="session_review"`と対象リポジトリの絶対パスを渡して通常のサブエージェントを1つ起動する。
+メインは`agent-toolkit:delegation`をSkill機能で起動し、`agents_server`の`start`で通常のサブエージェントを1つ起動する。
+`subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`を解決した絶対パスを渡す。
+`cwd`には対象リポジトリの絶対パスを渡す。
 
-起動文の1行目で`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`を指す。起動経路、対象セッションの実行系、対象セッションの識別子、抽出器、管理対象一時領域、観測境界、対象リポジトリ、プロジェクト規範、出力先ファイルだけを名前付き必須入力として渡す。`target_repo`が`null`の場合は対象リポジトリを`なし`とする。
+起動経路、対象セッションの実行系、対象セッションの識別子、抽出器、管理対象一時領域、観測境界、対象リポジトリ、プロジェクト規範、出力先ファイルだけを`extra_params`の名前付き必須入力として渡す。`target_repo`が`null`の場合は対象リポジトリを`なし`とする。
 
 メインは2つの領域の絶対パスを保持し、保持、進捗記録及び回収のいずれもメインが担う。
 

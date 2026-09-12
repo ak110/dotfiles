@@ -100,6 +100,33 @@ def list_status_files(root_session_id: str, state_root: pathlib.Path | None = No
     return sorted(paths)
 
 
+def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path | None = None) -> str | None:
+    """共有状態から指定sessionを保持する一意なルートsession識別子を返す。"""
+    if not valid_session_id(session_id):
+        return None
+    root = _atk_config.state_dir() if state_root is None else state_root
+    base = root / "agents-server"
+    try:
+        root_directories = tuple(path for path in base.iterdir() if path.is_dir() and valid_session_id(path.name))
+    except OSError:
+        return None
+    matches: list[str] = []
+    for directory in root_directories:
+        for path in list_status_files(directory.name, state_root):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            sessions = payload.get("sessions") if isinstance(payload, dict) else None
+            if isinstance(sessions, list) and any(
+                isinstance(session, dict) and session.get("session_id") == session_id for session in sessions
+            ):
+                matches.append(directory.name)
+                break
+    unique = set(matches)
+    return matches[0] if len(unique) == 1 else None
+
+
 def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """現行session識別子からルートsession識別子を引く索引ディレクトリを返す。"""
     root = _atk_config.state_dir() if state_root is None else state_root
@@ -407,6 +434,7 @@ class StatusFileWriter:
         assert session.finalized_at is not None
         assert session.retention_deadline is not None
         payload = terminal_result_payload(session)
+        payload["owner_status_file"] = self._identity.file_name
         directory = results_directory(self._identity.root_session_id, self._state_root)
         atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
         self._published_results.add(session.session_id)
@@ -487,11 +515,13 @@ class StatusFileWriter:
 def _serialize_session(session: SessionState) -> dict[str, Any]:
     return {
         "session_id": session.session_id,
+        "cwd": session.cwd,
         "engine": session.engine,
         "model": session.model,
         "effort": session.effort,
         "model_type": session.model_type,
         "launch_kind": session.launch_kind,
+        "prompt": session.prompt,
         "status": session.status,
         "progress": session.progress,
         "label": session.label,

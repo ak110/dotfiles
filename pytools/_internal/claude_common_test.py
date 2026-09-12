@@ -14,14 +14,6 @@ import pytest
 from pytools._internal import claude_common
 
 
-class TestTargetHosts:
-    """``TARGET_HOSTS``定数の内容検証。"""
-
-    def test_contains_expected_hostnames(self):
-        """バランスモード・AWI蓄積が対象とする5ホストを含む。"""
-        assert claude_common.TARGET_HOSTS == ("stheno", "circe", "circe-container", "euryale", "euryale-container")
-
-
 class TestIsTargetHost:
     """``is_target_host``の大文字小文字・FQDN接尾辞の扱いを検証する。"""
 
@@ -31,6 +23,9 @@ class TestIsTargetHost:
             pytest.param("stheno", True, id="exact-match"),
             pytest.param("STHENO", True, id="uppercase"),
             pytest.param("Circe", True, id="mixed-case"),
+            pytest.param("circe-container", True, id="circe-container"),
+            pytest.param("euryale", True, id="euryale"),
+            pytest.param("euryale-container", True, id="euryale-container"),
             pytest.param("circe.local", True, id="fqdn-suffix-stripped"),
             pytest.param("other-host", False, id="non-target-host"),
         ],

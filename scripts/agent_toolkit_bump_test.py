@@ -99,11 +99,31 @@ class TestInferBumpKind:
             bump.infer_bump_kind(base, current)
 
 
-class TestBumpRanks:
-    """bump 種別の順序: patch < minor < major。"""
+@pytest.mark.parametrize(
+    ("current", "requested", "expected"),
+    [
+        ("0.40.1", "patch", "0.40.2"),
+        ("0.40.2", "patch", None),
+        ("0.40.2", "minor", "0.41.0"),
+        ("0.41.0", "patch", None),
+        ("0.41.0", "major", "1.0.0"),
+        ("1.0.0", "minor", None),
+    ],
+)
+def test_main_upgrades_bump_without_downgrade(
+    monkeypatch: pytest.MonkeyPatch,
+    current: str,
+    requested: str,
+    expected: str | None,
+) -> None:
+    """公開済み基準からbumpを格上げし、同等以下の要求では据え置く。"""
+    written: list[str] = []
+    monkeypatch.setattr(bump, "_read_current_version", lambda: current)
+    monkeypatch.setattr(bump, "resolve_base_version", lambda: ("0.40.1", "@{u}"))
+    monkeypatch.setattr(bump, "_write_version", written.append)
 
-    def test_ordering(self) -> None:
-        assert bump.BUMP_RANKS["patch"] < bump.BUMP_RANKS["minor"] < bump.BUMP_RANKS["major"]
+    assert bump.main([requested]) == 0
+    assert written == ([] if expected is None else [expected])
 
 
 class TestWriteVersion:

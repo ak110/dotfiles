@@ -419,11 +419,9 @@ def test_cli_convert_to_plan_reads_body_file_for_single_hold_input(
             home=tmp_path,
         )
 
-    assert exc_info.value.code == 0
-    assert captured["message"] == "統合本文"
-    output = capsys.readouterr().out
-    assert "変換commit: " + "c" * 40 in output
-    assert "push: 完了" in output
+    assert exc_info.value.code == 2
+    assert not captured
+    assert "convert-to-plan" in capsys.readouterr().err
 
 
 def test_cli_convert_to_plan_rejects_message_option_without_changes(
@@ -441,17 +439,15 @@ def test_cli_convert_to_plan_rejects_message_option_without_changes(
     assert path.read_text(encoding="utf-8") == original
 
 
-def test_convert_to_plan_reports_body_mismatch_and_omits_body_on_success(
+def test_convert_to_plan_cli_is_removed_without_modifying_input(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """計画型変換は正常出力へ本文を含めず、保存後の本文改変を診断して失敗する。"""
+    """削除済み変換CLIを拒否し、入力項目を変更しない。"""
     notes = _setup_notes(tmp_path)
     success_entry = _write_convert_awi(notes, "success.md")
-    target = _write_convert_awi(notes, "target.md")
     success_plan = _write_integration_plan(tmp_path / "success", "a" * 40, (success_entry.name,))
-    target_plan = _write_integration_plan(tmp_path / "target", "a" * 40, (target.name,))
     _disable_convert_git(monkeypatch)
     monkeypatch.setattr(
         mutations._add,  # pylint: disable=protected-access
@@ -473,42 +469,9 @@ def test_convert_to_plan_reports_body_mismatch_and_omits_body_on_success(
             home=tmp_path,
         )
 
-    assert success.value.code == 0
-    assert "本文" not in capsys.readouterr().out
-    original_read = mutations._add._read_saved_entry_details  # pylint: disable=protected-access  # noqa: SLF001
-    captured: dict[str, str] = {}
-
-    def read_after_alteration(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
-        captured["expected"] = expected_body
-        path.write_text(expected_body.replace("本文", "改文", 1), encoding="utf-8")
-        return original_read(path, expected_body=expected_body)
-
-    monkeypatch.setattr(
-        mutations._add,  # pylint: disable=protected-access
-        "_read_saved_entry_details",
-        read_after_alteration,
-    )
-
-    with pytest.raises(SystemExit) as mismatch:
-        atk.main(
-            [
-                "wi",
-                "convert-to-plan",
-                target.name,
-                "--plan-file",
-                str(target_plan),
-                "--target-repo",
-                "github.com/example/foo",
-            ],
-            home=tmp_path,
-        )
-
-    assert mismatch.value.code == 1
-    position = captured["expected"].index("本文") + 1
-    error = capsys.readouterr().err
-    assert f"最初の差異: {position}文字目" in error
-    assert "送信元本文:" in error
-    assert "保存本文:" in error
+    assert success.value.code == 2
+    assert success_entry.is_file()
+    assert "convert-to-plan" in capsys.readouterr().err
 
 
 def test_plain_return_clears_existing_cooldown(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1043,9 +1006,9 @@ def test_edit_entry_to_plan_push_failure_leaves_local_inbox_commit_without_proce
 @pytest.mark.parametrize(
     ("metadata", "commit_resolves", "expected_exit"),
     [
-        ("", True, 1),
-        (f"- ベースコミット: `{'a' * 40}`\n- ベースコミット: `{'b' * 40}`\n", True, 1),
-        ("- ベースコミット: `abc123`\n", True, 1),
+        ("", True, 2),
+        (f"- ベースコミット: `{'a' * 40}`\n- ベースコミット: `{'b' * 40}`\n", True, 2),
+        ("- ベースコミット: `abc123`\n", True, 2),
         (f"- ベースコミット: `{'a' * 40}`\n", False, 2),
     ],
 )
@@ -1056,7 +1019,7 @@ def test_edit_plan_cli_rejects_invalid_or_unresolvable_plan_base(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """計画baseの欠落・曖昧・短縮・解決不能を現在HEADへ置換しない。"""
+    """削除済み`--plan-file`を計画baseの内容にかかわらず拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_awi_file(notes, filename)

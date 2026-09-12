@@ -36,12 +36,12 @@ _FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<marker>`{3,}|~{3,})(?P<info>[^\r\n]
 _HEADING_RE = re.compile(r"^\s*(?P<marks>#{1,6})\s+(?P<title>.*?)\s*#*\s*$")
 _PATH_TOKEN_CHARACTER_CLASS = r"[A-Za-z0-9_./\\~+%@-]"
 _MAIN_ATTACHMENT_SUFFIXES = (".detail.md", ".bugs.md", ".review.md", "-workaround-check.md", ".codex.log")
+_CURRENT_ATTACHMENT_SUFFIXES = (".bugs.md", ".exec-review.tsv")
 _CI_REVIEW_DIRECTORY = pathlib.Path("ci")
 _CI_REVIEW_NAME_RE = re.compile(r"^ci-[0-9a-f]{40}\.exec-review\.tsv$")
 _SAVED_BUNDLE_CONFLICT_MESSAGE = (
     "保存先に内容の異なる計画ファイルがあります: {destination}。"
-    "保存済みの計画を更新する場合は、作業側のファイルを作業root外へ退避し、"
-    "`atk plans checkout`で取得してから退避した内容へ置き換えて再実行してください"
+    "保存済み計画を正とする場合は作業側を退避し、作業側を残す場合は別名の新しい計画として保存してください"
 )
 
 
@@ -68,15 +68,8 @@ def build_parser(parser) -> None:
         action="store_true",
         help="保存rootへ対象限定commitを作成し、pushは行わない",
     )
-    checkout_parser = _atk_help.add_command(sub, "checkout", **_atk_help.HELP["atk plans checkout"])
-    checkout_parser.add_argument(
-        "plan_file",
-        metavar="PLAN_FILE",
-        help=("plans rootからの相対メイン計画パス、またはci/ci-{原因commit完全OID}.exec-review.tsv。"),
-    )
     list_parser = _atk_help.add_command(sub, "list", **_atk_help.HELP["atk plans list"])
     _output_file.add_output_file_arg(list_parser)
-    _atk_help.add_command(sub, "migrate", **_atk_help.HELP["atk plans migrate"])
     _atk_help.add_command(sub, "rewrite-references", **_atk_help.HELP["atk plans rewrite-references"])
 
 
@@ -159,7 +152,7 @@ def _plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tu
 
 
 def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """作業rootにある指定stemの通常ファイルを返す。"""
+    """作業rootにある現行形式の計画バンドルを返す。"""
     root = _plan_file.working_plans_root(home).resolve(strict=False)
     parent = (root / relative_main.parent).resolve(strict=False)
     if not parent.is_relative_to(root):
@@ -172,13 +165,20 @@ def _working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib
         sorted(
             path
             for path in parent.iterdir()
-            if (path == main or path.name.startswith(f"{stem}."))
+            if (path == main or path.name in {f"{stem}{suffix}" for suffix in _CURRENT_ATTACHMENT_SUFFIXES})
             and path.is_file()
             and not path.is_symlink()
             and not _excluded_path(path)
         )
     )
     return candidates
+
+
+def _current_bundle_contents(contents: dict[str, bytes], main_name: str) -> dict[str, bytes]:
+    """保存済みbundleから現行形式の構成要素だけを返す。"""
+    stem = pathlib.Path(main_name).stem
+    names = {main_name, *(f"{stem}{suffix}" for suffix in _CURRENT_ATTACHMENT_SUFFIXES)}
+    return {name: content for name, content in contents.items() if name in names}
 
 
 def _saved_plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
@@ -377,8 +377,7 @@ def checkout_plan(
     duplicate_message = (
         f"同じ計画を取得済みです: {relative_main}。作業root直下に当該計画バンドルがある場合は、"
         "それが取得結果のため再取得は不要です。作業root直下に当該計画バンドルが無い場合は、"
-        f"`atk plans commit {working_main.name}`で取得記録を回収してから"
-        f"`atk plans checkout {relative_main}`を実行してください。"
+        f"`atk plans commit {working_main.name}`で取得記録を回収してください。"
     )
     with _atk_git_sync.repo_lock(private_notes):
         if _checkout_record_root(relative_main).exists():
@@ -423,8 +422,7 @@ def checkout_ci_review(
     duplicate_message = (
         f"同じ独立CI実行レビュー表を取得済みです: {relative}。作業root直下に当該表がある場合は、"
         "それが取得結果のため再取得は不要です。作業root直下に当該表が無い場合は、"
-        f"`atk plans commit {working.name}`で取得記録を回収してから"
-        f"`atk plans checkout {relative}`を実行してください。"
+        f"`atk plans commit {working.name}`で取得記録を回収してください。"
     )
     with _atk_git_sync.repo_lock(private_notes):
         if _checkout_record_root(relative).exists():
@@ -728,10 +726,8 @@ def commit_plan(
             raise _common.WebInputError(
                 f"作業root直下に保存済み計画バンドルと同じstemのファイルが残っています: {names}。"
                 "保存先へ反映していないため、この状態では保存を完了できません。次の順に実行してください。"
-                f"作業root直下の{names}を作業root外へ退避します。"
-                f"`atk plans checkout {relative_main}`で保存元を取得し直します。"
-                "退避した内容を取得した内容へ反映します。"
-                f"`atk plans commit {relative_main.name}`で保存します。"
+                f"作業root直下の{names}を作業root外へ退避し、保存済み計画を正とするか、"
+                "退避した内容を別名の新しい計画として保存してください。"
             )
     if checkout_record is not None:
         if not working_bundle:
@@ -765,15 +761,18 @@ def commit_plan(
                 if _atk_git_sync.has_remote(private_notes)
                 else saved_contents
             )
-            if saved_contents not in (recorded_contents, working_contents) or remote_contents not in (
-                recorded_contents,
+            recorded_current = _current_bundle_contents(recorded_contents, relative_main.name)
+            saved_current = _current_bundle_contents(saved_contents, relative_main.name)
+            remote_current = _current_bundle_contents(remote_contents, relative_main.name)
+            if saved_current not in (recorded_current, working_contents) or remote_current not in (
+                recorded_current,
                 working_contents,
             ):
                 differences = _checkout_conflict_differences(
-                    recorded_contents,
+                    recorded_current,
                     working_contents,
-                    saved_contents,
-                    remote_contents,
+                    saved_current,
+                    remote_current,
                 )
                 bundle_names = "、".join(sorted(working_contents))
                 raise _common.WebInputError(
@@ -782,13 +781,12 @@ def commit_plan(
                     f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
                     f"作業root直下の{bundle_names}を作業root外へ退避します。"
                     f"`atk plans commit {working_main.name}`を実行すると、作業バンドルが不在のため取得記録だけを回収します。"
-                    f"`atk plans checkout {relative_main}`でremoteと同期した保存元を取得し直します。"
-                    "退避した内容と取得した内容のどちらを正とするかを決めて作業root直下へ反映します。"
-                    f"`atk plans commit {working_main.name}`で保存します。"
+                    "保存済み計画を確認し、退避した内容を残す場合は別名の新しい計画として保存します。"
                 )
             snapshots = _working_snapshots(working_bundle)
-            if saved_contents == recorded_contents:
-                _update_saved_bundle(saved_main.parent, saved_bundle, working_contents)
+            if saved_current == recorded_current:
+                legacy_contents = {name: content for name, content in saved_contents.items() if name not in saved_current}
+                _update_saved_bundle(saved_main.parent, saved_bundle, legacy_contents | working_contents)
             bundle = _plan_bundle(private_notes, relative_main)
         elif working_bundle:
             bundle, snapshots = _copy_working_bundle(private_notes, relative_main, working_bundle)
@@ -874,9 +872,7 @@ def commit_ci_review(
                     f"保存も取得もできません。相違した対象は{differences}です。次の順に実行してください。"
                     f"作業root直下の{working.name}を作業root外へ退避します。"
                     f"`atk plans commit {working.name}`を実行すると、作業側が不在のため取得記録だけを回収します。"
-                    f"`atk plans checkout {relative}`でremoteと同期した保存元を取得し直します。"
-                    "退避した内容と取得した内容のどちらを正とするかを決めて作業root直下へ反映します。"
-                    f"`atk plans commit {working.name}`で保存します。"
+                    "保存済みの表を確認し、退避した内容を残す場合は別の完全OIDに対応する表として保存します。"
                 )
         elif saved_contents and saved_contents != working_contents:
             raise _common.WebInputError(_SAVED_BUNDLE_CONFLICT_MESSAGE.format(destination=saved))
@@ -899,6 +895,56 @@ def commit_ci_review(
         if checkout_record is not None:
             _remove_checkout_record(requested_relative)
     return {"plan_file": relative.as_posix(), "paths": (relative_path,), "message": message, "kind": "ci-review"}
+
+
+def _resolve_progress_source(
+    private_notes: pathlib.Path,
+    plan_file: str,
+    *,
+    home: pathlib.Path | str | None,
+) -> pathlib.Path:
+    """進捗ログを読む計画ファイル（メイン）の実体を返す。
+
+    保存root相対で指定した場合は保存rootの実体を先に探し、無い場合だけ同名の作業側の実体を返す。
+    保存済み計画参照の既存の解決規則と同じ順序にそろえる。
+    """
+    working_root = _plan_file.working_plans_root(home)
+    try:
+        working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
+    except ValueError as working_error:
+        try:
+            relative_main = _validate_saved_plan_relative_path(plan_file)
+        except _common.WebInputError as saved_error:
+            raise _common.WebInputError(str(working_error)) from saved_error
+        candidates = (_plan_file.new_plans_root(private_notes) / relative_main, working_root / relative_main.name)
+    else:
+        candidates = (working_root / working_relative,)
+    for candidate in candidates:
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate
+    raise _common.WebInputError(f"指定したメイン計画が見つかりません: {plan_file}")
+
+
+def plan_progress(
+    private_notes: pathlib.Path,
+    plan_file: str,
+    *,
+    home: pathlib.Path | str | None = None,
+) -> tuple[dict[str, str], ...]:
+    """指定した計画ファイル（メイン）の進捗ログの行を出現順に返す。
+
+    対象ファイルを読み取りだけで解析する。進捗行が1件も無い計画では空のtupleを返す。
+    再開位置を確定する消費側が同じ入力から同じ値を得るため、行の並びを本文の出現順で保つ。
+    """
+    main = _resolve_progress_source(private_notes, plan_file, home=home)
+    try:
+        rows = _plan_format.progress_log_rows(main.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise _common.WebInputError(f"進捗ログを読み取れません: {main}: {error}") from error
+    return tuple(
+        {"datetime": recorded_at, "completed_step": completed_step, "notes": notes}
+        for recorded_at, completed_step, notes in rows
+    )
 
 
 def list_working_plans(home: pathlib.Path | str | None = None) -> tuple[dict[str, object], ...]:
@@ -1462,10 +1508,6 @@ def _git_head(private_notes: pathlib.Path) -> str:
 
 def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     """`atk plans`のサブコマンドを実行する。"""
-    if args.plans_subcommand == "checkout":
-        for path in checkout_plan(private_notes, args.plan_file, home=home):
-            print(path.resolve(strict=False))
-        return 0
     if args.plans_subcommand == "commit":
         result = commit_plan(private_notes, args.plan_file, home=home, skip_push=args.skip_push)
         action = "commitしました" if args.skip_push else "commit・pushしました"
@@ -1477,10 +1519,6 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
             owner = entry["owner_session"] or "なし"
             print(f"{entry['path']}\t{owner}\t{entry['updated_at']}")
         return 0
-    if args.plans_subcommand == "migrate":
-        result = migrate_plans(private_notes, home)
-        print(f"計画ファイルを移行しました: {result['migrated']}件（旧ファイル削除: {result['deleted']}件）")
-        return 0
     if args.plans_subcommand == "rewrite-references":
         result = rewrite_plan_references(private_notes)
         print(f"付属ファイル参照を書き換えました: {result['plans']}件（参照: {result['references']}件）")
@@ -1491,6 +1529,7 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
 # テスト・既存呼び出し向けの短い別名。
 commit = commit_plan
 checkout = checkout_plan
+progress = plan_progress
 checkout_review = checkout_ci_review
 migrate = migrate_plans
 rewrite_references = rewrite_plan_references

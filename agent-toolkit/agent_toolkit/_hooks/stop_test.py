@@ -211,6 +211,7 @@ def test_stop_evaluations_scan_transcript_once(
     monkeypatch.setattr(_stop_gate, "_wait_for_end_turn", finish_transcript)
     monkeypatch.setattr(_stop_gate, "_read_transcript_entries", count_reads)
     _stop_gate._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
+    _stop_gate._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
     assert stop.evaluate(payload)["decision"] == "block"
     assert waits == 1

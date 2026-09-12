@@ -10,6 +10,16 @@ H2見出しは索引元の条文が指す文字列と一致させる。索引元
 
 2026年9月10日、Codex CLI 0.153.4の`codex app-server generate-json-schema --out <管理対象一時領域の絶対パス>`が終了コード0で生成したJSON Schemaを実測した。`v2/ItemStartedNotification.json`は`item`・`startedAtMs`・`threadId`・`turnId`を必須とし、`startedAtMs`をitem lifecycle開始時のUnix時刻（ミリ秒）と定める。`v2/ItemCompletedNotification.json`は`completedAtMs`・`item`・`threadId`・`turnId`を必須とし、`completedAtMs`をitem lifecycle完了時のUnix時刻（ミリ秒）と定める。`ThreadItem`は、`id`と`type`を必須とし、`type`が`contextCompaction`である`ContextCompactionThreadItem`を変種に持つ。再検証は、同じコマンドで現行版のJSON Schemaを生成し、当該2通知の必須項目と時刻の説明及び`ContextCompactionThreadItem`の必須項目を確認する。
 
+## agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日
+
+2026年9月11日、`~/.claude/projects`配下の記録（Claude Code 2.1.239から2.1.268）で、`agents_server`のstart系ツールの呼び出し489件を集計した。
+このうち起動された子sessionの記録を突き合わせられた233件について、呼び出しのtool_useの時刻と当該子sessionの記録の先頭エントリの時刻の差を求めた。
+中位値は1.34秒、90%点は7.12秒、99%点は36.76秒であり、232件が47.65秒以内に収まった。残る1件は604.22秒であった。
+同じ489件のうち7件は、tool_useから応答までの経過が1800.4秒から1800.5秒であり、ホストがMCPツール呼び出しを打ち切った回であった。
+ホスト側の上限は、Claude Codeが`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`の既定として1800秒を課し、
+Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_sec`の既定として60秒を課す。
+再検証は、同じ記録へ同じ集計を適用し、tool_useの時刻と子sessionの記録の先頭エントリの時刻の差の分布と、応答の打ち切りに達した件数を対比する。
+
 ## agent-toolkit/rules/01-agent.md：行動指針：2026年9月8日
 
 2026年9月8日、Codexのrollout記録`01a07e75-0c9a-7263-a52e-0e24c6aacc62`を実測した。生存14,745秒に対し`custom_tool_call`が445回であり、当該呼び出しから出力までの間隔の中央値は0.1秒であった。`reasoning`と`token_count`を起点とする間隔の合計は約10,186秒であり、ツール呼び出し1サイクルあたり約23秒に当たる。再検証は、同じ集計を任意のrollout記録へ適用し、`custom_tool_call`の件数と間隔の合計を対比する。
@@ -145,3 +155,18 @@ H2見出しは索引元の条文が指す文字列と一致させる。索引元
 ## agent-toolkit/skills/writing-standards/references/session-records.md：集計値の典拠：2026年9月3日
 
 本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
+
+## agent-toolkit/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
+
+2026年9月10日、pyfltr 3.17.9のtextlintと本リポジトリの`.textlintrc.yaml`（`preset-jtf-style`の`1.1.3.箇条書き`を`shouldUsePoint: false`で運用する設定）で実測した。
+全ての項目が句点で終わる順序付きリストは同ルールへ一致0件であった。
+同じリストの1項目へ空行で区切った入れ子の箇条書きと段落を追加すると、句点で終わる他の4項目へ箇条書きの文末から句点を外す指摘が返った。
+入れ子を独立した節へ移して各項目を1行に戻すと、再び一致0件であった。
+再検証は、同じ順序付きリストについて入れ子を含む写しと含まない写しを作成し、`--commands=textlint`を指定した同じコマンドで一致件数を比べる。
+
+## agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日
+
+2026年9月10日に実測した。`~/.claude/projects`配下でClaude Code 2.1.252と2.1.267の記録を読んだ。`Skill`ツールの`tool_use`要素が`input.skill`にスキル名を持つことを確認した。対応する`tool_result`要素の`content`は`Launching skill: <スキル名>`と一致した。
+同日、`~/.codex/sessions`配下のrollout記録2169件のうち`agent-toolkit:exit-session`を含む1527件を対象に、先頭120件のレコード種別を集計した。当該文字列は`world_state`、`developer`ロールの`message`、`compacted`、`function_call_output`及び`custom_tool_call_output`だけへ現れた。
+同日、codex-cli 0.154.0の同じ2169件に対し、`atk wi process-loop`がCodexへ渡す起動プロンプトの完全一致を数えた。一致は0件であった。いずれの記録も、最初のuser役レコードの本文は実行環境が挿入する前置きであった。前置きは``# AGENTS.md instructions``又は``<recommended_plugins>``で始まる。`agent-toolkit:process-wi`をuser役の本文へ含む記録は304件であった。当該304件の`session_meta`の`originator`は、`agent-toolkit-codex-app-server`が303件、`codex-tui`が1件であった。
+再検証は、Claude Codeの記録から`Launching skill:`を含む行を1件取得して`tool_result`の構造を確認し、Codexの記録から同じスキル名を含む行を取得してレコード種別を確認する。あわせてCodexの記録から当該起動プロンプトの完全一致と包含の件数を数え、user役レコードの`text`の先頭が前置きであることを確認する。

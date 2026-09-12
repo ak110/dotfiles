@@ -821,11 +821,11 @@ def test_edit_entry_to_plan_rejects_inbox_name_conflict_without_changes(
     assert not commit_calls
 
 
-def test_edit_plan_cli_uses_plan_base_commit_instead_of_current_head(
+def test_edit_cli_rejects_removed_plan_file_option_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """計画後にHEADが進んでも計画メタ情報のベースコミットを保存する。"""
+    """削除済み`--plan-file`を拒否し、保留中の項目を変更しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_awi_file(notes, filename)
@@ -857,13 +857,10 @@ def test_edit_plan_cli_uses_plan_base_commit_instead_of_current_head(
     with pytest.raises(SystemExit) as captured:
         atk.main(_edit_plan_args(tmp_path, filename, "統合本文", plan), home=tmp_path, now=_FIXED_DT)
 
-    assert captured.value.code == 0
-    output = notes / "inbox" / filename
-    parsed = frontmatter_parser.parse_frontmatter(output.read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert parsed[0]["target_commit"] == plan_base
-    assert parsed[0]["target_commit"] != current_head
-    assert resolved == [(worktree, plan_base)]
+    assert captured.value.code == 2
+    assert (notes / "hold" / filename).is_file()
+    assert not (notes / "inbox" / filename).exists()
+    assert not resolved
     assert not (notes / "processing" / filename).exists()
 
 

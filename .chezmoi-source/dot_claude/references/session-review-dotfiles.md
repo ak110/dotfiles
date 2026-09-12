@@ -11,7 +11,7 @@
 他のリポジトリの作業と、本リポジトリでの他の起動経路による作業へは適用しない。
 
 - 1セッションの所要時間は、セッションの最初の記録から、当該セッションが終了する時点までとする。
-  振り返り、公開工程の終端工程、`agent-toolkit:completion-report`及び`agent-toolkit:exit-session`に要する時間を計測範囲から除かない
+  振り返り、公開工程の終端工程、`agent-toolkit:completion-report`及び`atk agents-exit-session`に要する時間を計測範囲から除かない
 - 処理したAWIの件数によらず3時間以内を目標とする
 - 目標は振り返り対象セッションの当該区間へ適用する。
   別セッション経路では、証拠抽出器の`--stats`が返す`elapsed_seconds`が当該区間の値となる

@@ -108,7 +108,7 @@ if TYPE_CHECKING:
         _resolve_commit,
         _resolve_conversion_targets,
         _resolve_processable_targets,
-        _resolve_removable_targets,
+        _resolve_active_targets,
         commit_entries,
     )
     from agent_toolkit._atk.wi.mutations.transitions import (
@@ -164,16 +164,22 @@ def set_entry_dependencies(
     target_repo: str | None = None,
     lock_timeout: float = -1,
 ) -> dict[str, object | None]:
-    """既存AWIの明示依存だけを更新し、保存済みメタデータを返す。"""
+    """既存AWIの明示依存だけを更新し、保存済みメタデータを返す。
+
+    対象は未終端の`inbox`、`processing`及び`hold`とする。`hold`を含めるのは、投入済み項目の修正手順が
+    `hold`の区間で本文と依存の双方を確定するため、当該区間で依存を更新できる必要があるからである。
+    依存の更新は保存状態を変えないため、`hold`の項目は更新後も`hold`のまま残る。
+    """
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    hold_dir = private_notes / WI_STATE_HOLD
     _validate_filenames_only([filename, *depends_on], inbox_dir)
     normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
 
     with _repo_lock(private_notes, timeout=lock_timeout):
         _push_pending_commits(private_notes)
         _pull(private_notes)
-        path = _resolve_processable_targets([filename], inbox_dir, processing_dir)[0]
+        path = _resolve_active_targets([filename], inbox_dir, processing_dir)[0]
         text = path.read_text(encoding="utf-8")
         parsed = _frontmatter.parse_frontmatter(text)
         if parsed is None:
@@ -191,7 +197,7 @@ def set_entry_dependencies(
         canonical_dependencies = tuple(dict.fromkeys(_validate_filename(value, inbox_dir).name for value in depends_on))
         if path.name in canonical_dependencies:
             raise WebInputError(f"自分自身を依存先へ指定できません: {path.name}")
-        dependency_graph = _active_dependency_graph(inbox_dir, processing_dir)
+        dependency_graph = _active_dependency_graph(inbox_dir, processing_dir, hold_dir)
         dependency_graph[path.name] = set(canonical_dependencies)
         if any(_dependency_reaches(dependency_graph, dependency, path.name) for dependency in canonical_dependencies):
             raise WebInputError(f"循環する依存を指定できません: {path.name}")

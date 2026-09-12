@@ -5,9 +5,9 @@
 epilogueを個別に持っていた。本スクリプトへ集約し、各モジュールは`main()`関数の定義のみを
 担うライブラリへ縮小する。第1引数でサブコマンド（対象モジュール名）を指定する。
 
-標準入力は共通入口で生バイト列として一度だけ読み、UTF-8で厳密に復号して各モジュールへ渡す。
+標準入力は共通入口で生バイト列として一度だけ読み、UTF-8で厳密にデコードして各モジュールへ渡す。
 標準出力と標準エラーもUTF-8へ統一する。`AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`が非空の場合は、
-環境依存の入力変換をバイト単位で調査できるよう、復号前の入力を指定ディレクトリへ保存する。
+環境依存の入力変換をバイト単位で調査できるよう、デコード前の入力を指定ディレクトリへ保存する。
 
 依存パッケージはplugin rootのuvプロジェクトへ集約する。全サブコマンドが同じvenvを共有し、
 サブコマンド切替時の再解決コストを生じさせない。
@@ -71,7 +71,7 @@ def _configure_standard_output() -> None:
 
 
 def _dump_payload(subcommand: str, payload_bytes: bytes) -> None:
-    """デバッグ指定時に復号前のpayloadを保存し、失敗時は処理を継続する。"""
+    """デバッグ指定時にデコード前のpayloadを保存し、失敗時は処理を継続する。"""
     dump_directory = os.environ.get("AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP", "")
     if not dump_directory:
         return
@@ -104,7 +104,7 @@ def main(argv: list[str]) -> int:
         payload_text = payload_bytes.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         print(
-            f"{_MESSAGE_PREFIX} stdinのUTF-8復号に失敗したためフック処理を通過させる: {exc}",
+            f"{_MESSAGE_PREFIX} stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
             file=sys.stderr,
         )
         return 0
