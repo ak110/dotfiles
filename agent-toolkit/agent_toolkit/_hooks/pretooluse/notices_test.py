@@ -226,11 +226,12 @@ class TestCodexBashCheckSelection:
         assert "一括`stage`" in _additional_context(result)
 
     def test_input_only_checks_are_shared(self, tmp_path: pathlib.Path) -> None:
-        """現在入力だけで判定する遮断と入力補正は両ホストで動作する。"""
-        blocked = _run(self._payload("uv run python script.py", tmp_path, "codex-uv", codex=True))
+        """現在入力だけで判定する入力補正は両ホストで動作する。"""
+        rewritten = _run(self._payload("uv run python script.py", tmp_path, "codex-uv", codex=True))
         decorated = _run(self._payload("git log --oneline", tmp_path, "codex-log", codex=True))
 
-        assert blocked.returncode == 2
+        assert rewritten.returncode == 0
+        assert json.loads(rewritten.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script script.py"
         assert decorated.returncode == 0
         assert "--decorate" in json.loads(decorated.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
 
