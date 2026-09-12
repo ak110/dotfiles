@@ -197,6 +197,25 @@ def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.Comple
     )
 
 
+def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.Path) -> None:
+    """成功したTaskStopの対象記録だけを消費する。"""
+    session_id = "task-stop-consume"
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    state_path.write_text(
+        json.dumps(
+            {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    result = _run(
+        {"session_id": session_id, "tool_name": "TaskStop", "tool_input": {"task_id": "task-1"}},
+        state_dir=tmp_path,
+    )
+    assert result.returncode == 0
+    assert _read_state(tmp_path, session_id)["stall_detection_completed_at_by_task"] == {"task-2": 2.0}
+
+
 class TestCodexBashStateRecording:
     """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
 

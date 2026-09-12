@@ -103,6 +103,8 @@ from typing import TYPE_CHECKING
 
 from pyfltr.colloquial import check as _colloquial_check  # noqa: E402  # pylint: disable=wrong-import-position
 
+from agent_toolkit._atk import managed_temp  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
 from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -200,6 +202,103 @@ _UV_RUN_PYTHON_FIX = (
     "`[project]`節を持つディレクトリで実行する。静的に解決できる`cd`の遷移先は実効作業ディレクトリとして評価する。"
     "作業ディレクトリの変更に未解決のシェル展開があると、プロジェクト種別を確認できないため遮断する。"
 )
+
+_SIMPLE_SCRIPT_SUFFIXES = frozenset({".py", ".pyw"})
+
+
+def _rewrite_simple_uv_script(command: str, cwd: str) -> str | None:
+    """安全に一意変換できる単純な`uv run python <script>`を`--script`形へ直す。"""
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    if any(token in {"|", "|&", ";", "&&", "||", "&"} or _SHELL_REDIRECTION_PATTERN.match(token) for token in tokens):
+        return None
+    info = _parse_uv_run_python(tokens)
+    if info is None or info[0] or info[1]:
+        return None
+    python_index = next((index for index, token in enumerate(tokens) if _is_python_token(token)), None)
+    if python_index is None or python_index + 1 >= len(tokens):
+        return None
+    script = tokens[python_index + 1]
+    if script.startswith("-") or pathlib.PurePath(script).suffix.lower() not in _SIMPLE_SCRIPT_SUFFIXES:
+        return None
+    if cwd and _cwd_in_python_project(cwd):
+        return None
+    return shlex.join([*tokens[:python_index], "--script", script, *tokens[python_index + 2 :]])
+
+
+def _split_simple_truncation(command: str) -> tuple[str, str] | None:
+    """単純な1段パイプのうち後段が切り詰めコマンドである場合だけ分割する。"""
+    masked = _bash_command_parser.mask_heredoc_bodies(command)
+    if any(operator in masked for operator in ("|&", "||", ";", "&&", "\n")) or masked.count("|") != 1:
+        return None
+    producer, consumer = (part.strip() for part in command.split("|", 1))
+    try:
+        consumer_tokens = shlex.split(consumer, posix=True)
+    except ValueError:
+        return None
+    if not producer or not consumer_tokens:
+        return None
+    name = pathlib.PurePosixPath(consumer_tokens[0]).name
+    if name in {"head", "tail"}:
+        return producer, name
+    if name in _GREP_COMMANDS and any(
+        token == "-m" or token.startswith("-m") or token == "--max-count" or token.startswith("--max-count=")
+        for token in consumer_tokens[1:]
+    ):
+        return producer, name
+    return None
+
+
+def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str]] | None:
+    """1つの直列区間にある競合しない補正を適用する。"""
+    truncation = _split_simple_truncation(command)
+    producer = truncation[0] if truncation is not None else command
+    rewritten = _rewrite_simple_uv_script(producer, cwd) or producer
+    notices: list[str] = []
+    if rewritten != producer:
+        notices.append("安全に一意変換できるコマンド入力を推奨形へ補正した。")
+    if truncation is not None:
+        if not session_id:
+            return None
+        try:
+            session_temp = managed_temp.create_managed_temp("session", session_id=session_id)
+        except (managed_temp.ManagedTempError, OSError):
+            return None
+        log_path = session_temp / f"bash-output-{time.time_ns()}.log"
+        rewritten = f"{rewritten} > {shlex.quote(str(log_path))}"
+        notices.append(f"切り詰め処理を除去し、標準出力全量の保存先を`{log_path}`へ補正した。")
+    if rewritten == command:
+        return None
+    return rewritten, notices
+
+
+def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str, str] | None:
+    """安全に一意変換できるBash入力を補正し、補正後入力と通知を返す。"""
+    segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
+    replacements: list[tuple[int, int, str]] = []
+    notices: list[str] = []
+    position = 0
+    for segment in segments:
+        start = command.find(segment, position)
+        if start < 0:
+            return None
+        position = start + len(segment)
+        fixed = _autofix_bash_segment(segment, cwd, session_id)
+        if fixed is None:
+            continue
+        rewritten, segment_notices = fixed
+        replacements.append((start, position, rewritten))
+        notices.extend(segment_notices)
+    if not replacements:
+        return None
+    rewritten_command = command
+    for start, end, replacement in reversed(replacements):
+        rewritten_command = rewritten_command[:start] + replacement + rewritten_command[end:]
+    unique_notices = list(dict.fromkeys(notices))
+    return rewritten_command, _llm_notice(" ".join(unique_notices), tag=_WARN_TAG, removable_cause=True)
+
 
 _ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
 _PYPROJECT_PROJECT_SECTION_PATTERN = re.compile(r"(?m)^\[project(?:\.[\w\-]+)?\]\s*$")
@@ -1252,10 +1351,11 @@ _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
 )
 
 
-def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str, session_id: str) -> str | None:
-    """除外指定の無い再帰`grep`がディレクトリを読む場合に、同一セッションの1件目を警告、2件目以降を遮断する。
+def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str | None:
+    """除外指定の無い再帰`grep`を、補正せず初回から遮断する。
 
-    反復が母集団の欠落を招く警告のため、代替手段が複数あっても2件目以降は遮断へ昇格する。
+    検索対象の内容、ファイル種別及びリンク構造はBash入力に現れないため、`rg`と出力及び終了状態が
+    同値になる入力集合を構文だけから確定できない。
     """
     base = pathlib.Path(cwd) if cwd else pathlib.Path.cwd()
     detected = False
@@ -1265,6 +1365,25 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str, session
                 continue
             parsed = _grep_file_operands(segment)
             if parsed is None:
+                raw_options = segment.tokens[1:]
+                has_recursive_option = any(
+                    token in {"-r", "-R", "--recursive"}
+                    or (
+                        token.startswith("-")
+                        and not token.startswith("--")
+                        and token[1:2] not in {"e", "f"}
+                        and any(letter in "rR" for letter in token[1:])
+                    )
+                    for token in raw_options
+                )
+                has_exclusion = any(
+                    token in {"--include", "--exclude", "--exclude-dir"}
+                    or token.startswith(("--include=", "--exclude=", "--exclude-dir="))
+                    for token in raw_options
+                )
+                if has_recursive_option and not has_exclusion:
+                    detected = True
+                    break
                 continue
             files, options = parsed
             if not options & {"-r", "-R", "--recursive"}:
@@ -1278,21 +1397,14 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str, session
             break
     if not detected:
         return None
-    already_detected = _record_repeat_detection(session_id, "recursive_grep_detected")
-    if already_detected:
-        print(
-            _block_notice(
-                "block: 除外設定を反映しない再帰`grep`のディレクトリ実行を、当該セッションで再び検出した。",
-                fix=_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX,
-            ),
-            file=sys.stderr,
-        )
-        return "block"
-    return _llm_notice(
-        f"warn: 除外設定を反映しない再帰`grep`をディレクトリへ実行している。{_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX}",
-        tag=_WARN_TAG,
-        removable_cause=True,
+    print(
+        _block_notice(
+            "block: 除外設定を反映しない再帰`grep`を、安全に`rg`へ補正できない形でディレクトリへ実行している。",
+            fix=_RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX,
+        ),
+        file=sys.stderr,
     )
+    return "block"
 
 
 def _check_bash_state_change_command_chaining(command: str) -> str | None:

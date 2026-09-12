@@ -143,6 +143,7 @@ from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disabl
     read_state,
     update_state,
 )
+from agent_toolkit._hooks.task_stop_state import has_recent_completion, target_ids  # noqa: E402
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan.locations import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     is_plan_adjunct_file,
@@ -367,26 +368,16 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
 _TASK_STOP_RETRY_WINDOW_SECONDS = 300
 
 
-def _task_stop_target_ids(tool_input: dict) -> set[str]:
-    """`TaskStop`の入力から停止対象の識別子を取り出す。
-
-    `task_id`と非推奨の`shell_id`の双方を対象とする。
-    """
-    ids: set[str] = set()
-    for key in ("task_id", "shell_id"):
-        value = tool_input.get(key)
-        if isinstance(value, str) and value:
-            ids.add(value)
-    return ids
-
-
 def _check_task_stop(session_id: str, tool_input: dict) -> bool:
-    """`TaskStop`呼び出しを初回遮断し、再実行窓内なら通過させる。
+    """根拠記録の無い`TaskStop`を初回遮断し、再実行窓内なら通過させる。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
     当該キーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
     記録したものであり、自セッションが起動して停止用の識別子を保持している対象を表す。
     起動主体の確認を要する遮断の対象は、自セッションの起動記録が無い停止に限る。
+
+    `stall_detection_completed_at_by_task`に5分以内の一致記録がある場合も遮断しない。
+    当該記録は待機手順を完了した主体が対象別に作成し、成功したPostToolUse(TaskStop)が消費する。
 
     それ以外は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
     直近の遮断時刻のPOSIX秒）で判定する。値が存在し現在時刻との差が
@@ -401,7 +392,8 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     state = read_state(session_id)
     recorded = state.get("background_task_ids")
     recorded_ids = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
-    if _task_stop_target_ids(tool_input) & recorded_ids:
+    targets = target_ids(tool_input)
+    if targets & recorded_ids or has_recent_completion(session_id, targets, now=now):
         return False
     blocked_at = state.get("task_stop_blocked_at")
     if isinstance(blocked_at, (int, float)) and now - blocked_at <= _TASK_STOP_RETRY_WINDOW_SECONDS:
@@ -431,22 +423,19 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
 
 
 def check_required_read_before_ask_user_question(session_id: str) -> str | None:
-    """質問前に判断基準文書の全文読解を観測済みか検査する。"""
+    """質問前に判断基準文書の全文読解が未観測なら警告する。"""
     if not session_id:
         return None
     recorded = read_state(session_id).get("observed_required_reads")
     names = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
     if _required_reads.DOCUMENT_NAME in names:
         return None
-    path = _required_reads.document_path()
-    print(
-        _block_notice(
-            f"blocked: AskUserQuestionの発行前に全文読解が必要な文書を読んでいない: {path}",
-            fix=f"{path}を全文読解してから同じAskUserQuestionを再発行する。",
-        ),
-        file=sys.stderr,
+    return _llm_notice(
+        "warn: AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。"
+        f"複雑な判断を伴う場合は{_required_reads.document_path()}を全文読解する。",
+        tag=_WARN_TAG,
+        removable_cause=True,
     )
-    return "block"
 
 
 def _reset_plan_mode_state(session_id: str) -> None:

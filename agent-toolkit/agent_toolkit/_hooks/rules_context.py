@@ -24,6 +24,10 @@ QUALITY_CHECKPOINT_NOTICE = (
     "目的・利用場面を明示し、最小設計を選ぶ。会話限定指示を成果物へ混入させない。"
     "要件未達と無根拠な代替・旧・互換経路を拒み、規範を正本とする。"
 )
+ASK_USER_QUESTION_CHECKLIST = (
+    "確認質問は本文だけで判断材料を完結させる。未確定な対象・範囲・時点・区分を分け、"
+    "選択肢ごとの外部可視の結果と副作用を示す。独立した事項を束ねず、推奨案と根拠、回答単位を明記する。"
+)
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
@@ -40,6 +44,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
         parts.append(QUALITY_CHECKPOINT_NOTICE)
     normative_parts: list[str] = []
     if not delegated:
+        parts.append(ASK_USER_QUESTION_CHECKLIST)
         normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
         if host == "claude":
             normative_parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))

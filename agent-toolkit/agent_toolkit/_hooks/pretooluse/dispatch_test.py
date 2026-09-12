@@ -1143,21 +1143,21 @@ class TestUserFacingTypoCheck:
 
 
 class TestAskUserQuestionRequiredRead:
-    """判断基準文書の全文読解を観測するまで質問を遮断する。"""
+    """判断基準文書の全文読解が未観測なら質問時に警告する。"""
 
-    def test_unread_is_blocked_and_exit_plan_mode_passes(self, tmp_path: pathlib.Path) -> None:
+    def test_unread_warns_and_exit_plan_mode_passes(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = "required-unread"
 
-        blocked = _run(question, env_overrides=env)
+        warned = _run(question, env_overrides=env)
         exit_plan = _run(
             {"session_id": "required-unread", "tool_name": "ExitPlanMode", "tool_input": {"plan": "実装する。"}},
             env_overrides=env,
         )
 
-        assert blocked.returncode == 2
-        assert required_reads.document_path() in blocked.stderr
+        assert warned.returncode == 0
+        assert required_reads.document_path() in _additional_context(warned)
         assert exit_plan.returncode == 0
 
     def test_full_read_allows_question(self, tmp_path: pathlib.Path) -> None:
@@ -1184,14 +1184,16 @@ class TestAskUserQuestionRequiredRead:
             {"file_path": "/tmp/copy/skills/review-standards/references/judgment-details.md"},
         ],
     )
-    def test_partial_or_other_copy_does_not_allow_question(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
+    def test_partial_or_other_copy_still_warns(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
         env = _plan_file_state_env(tmp_path)
         sid = f"required-partial-{len(str(tool_input))}"
         _run_posttooluse({"session_id": sid, "tool_name": "Read", "tool_input": tool_input}, env)
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = sid
 
-        assert _run(question, env_overrides=env).returncode == 2
+        result = _run(question, env_overrides=env)
+        assert result.returncode == 0
+        assert required_reads.document_path() in _additional_context(result)
 
     def test_bash_path_mention_does_not_allow_question(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
@@ -1203,7 +1205,9 @@ class TestAskUserQuestionRequiredRead:
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = sid
 
-        assert _run(question, env_overrides=env).returncode == 2
+        result = _run(question, env_overrides=env)
+        assert result.returncode == 0
+        assert required_reads.document_path() in _additional_context(result)
 
 
 class TestPlanModeSkillFirstCheck:

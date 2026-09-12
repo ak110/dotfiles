@@ -10,7 +10,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 import tempfile
 import textwrap
@@ -69,13 +68,70 @@ class TestBashCommandContractWarnings:
 
     @pytest.mark.parametrize(
         "command",
-        ["grep -rn foo docs/", "grep -rn foo", "grep -rn -e foo docs/", "grep -rn -- foo", "grep -rn -e foo -- docs/"],
+        [
+            "grep -rn foo",
+            "grep -rni foo docs/",
+            "grep -rn a+b docs/",
+            "grep -Rn needle docs/",
+            "grep -rn -e foo docs/",
+            "grep -rn --color=never foo docs/",
+            'grep -rn "$PATTERN" docs/',
+            "grep -rn -- foo",
+            "grep -rn -e foo -- docs/",
+        ],
     )
-    def test_recursive_grep_warns(self, command: str, tmp_path: pathlib.Path) -> None:
+    def test_unfixable_recursive_grep_blocks_first_attempt(self, command: str, tmp_path: pathlib.Path) -> None:
         (tmp_path / "docs").mkdir()
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
-        assert result.returncode == 0
-        assert "除外設定を反映しない再帰`grep`" in _additional_context(result)
+        env = _plan_file_state_env(tmp_path)
+        session_id = "recursive-grep-first-block"
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "session_id": session_id},
+            env_overrides=env,
+        )
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)).exists()
+
+    def test_recursive_grep_binary_input_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """入力時に判別できないバイナリ内容がある再帰grepは補正しない。"""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "binary.dat").write_bytes(b"needle\x00rest\n")
+        original = subprocess.run(["grep", "-rn", "needle", "docs/"], cwd=tmp_path, check=False, capture_output=True, text=True)
+
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "grep -rn needle docs/"}, "cwd": str(tmp_path)})
+
+        assert original.returncode == 0
+        assert "binary file matches" in original.stderr
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
+
+    def test_recursive_grep_regex_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """基本正規表現のメタ文字を含むpatternは意味を維持できないため補正しない。"""
+        (tmp_path / "docs").mkdir()
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "grep -rn a.b docs/"}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
+
+    def test_recursive_grep_following_symlinks_is_not_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """シンボリックリンクをたどる`grep -R`は意味を維持できないため補正しない。"""
+        docs = tmp_path / "docs"
+        external = tmp_path / "external"
+        docs.mkdir()
+        external.mkdir()
+        (external / "match.txt").write_text("needle\n", encoding="utf-8")
+        (docs / "link").symlink_to(external, target_is_directory=True)
+        original = subprocess.run(["grep", "-Rn", "needle", "docs/"], cwd=tmp_path, check=False, capture_output=True, text=True)
+
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "grep -Rn needle docs/"}, "cwd": str(tmp_path)})
+
+        assert original.returncode == 0
+        assert "docs/link/match.txt:1:needle" in original.stdout
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
 
     @pytest.mark.parametrize(
         "command",
@@ -94,34 +150,6 @@ class TestBashCommandContractWarnings:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path)})
         assert result.returncode == 0
         assert "除外設定を反映しない再帰`grep`" not in _agent_messages(result)
-
-    def test_recursive_grep_repeat_blocks(self, tmp_path: pathlib.Path) -> None:
-        """除外設定の無い再帰`grep`は、同一セッションの2件目から遮断する。"""
-        (tmp_path / "docs").mkdir()
-        env = _plan_file_state_env(tmp_path)
-        session_id = "recursive-grep-repeat"
-        first = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "grep -rn foo docs/"},
-                "cwd": str(tmp_path),
-                "session_id": session_id,
-            },
-            env_overrides=env,
-        )
-        assert first.returncode == 0
-        assert "除外設定を反映しない再帰`grep`" in _additional_context(first)
-        second = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "grep -rn bar docs/"},
-                "cwd": str(tmp_path),
-                "session_id": session_id,
-            },
-            env_overrides=env,
-        )
-        assert second.returncode == 2
-        assert "当該セッションで再び検出した" in second.stderr
 
     @pytest.mark.parametrize(
         "command",
@@ -180,10 +208,10 @@ class TestBashCommandContractWarnings:
 
 
 class TestBashOutputTruncationWarning:
-    """`Bash`経由の検証コマンド出力`tail`・`head`切り詰めを初回から遮断する。"""
+    """`Bash`経由の検証コマンド出力切り詰めを補正又は遮断する。"""
 
-    def test_output_truncation_blocks_on_first_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの初回検出で解消手段を添えて遮断する。"""
+    def test_simple_output_truncation_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """単純な1段切り詰めは除去し、セッション管理領域への保存へ補正する。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -192,12 +220,60 @@ class TestBashOutputTruncationWarning:
             },
             _plan_file_state_env(tmp_path),
         )
-        assert result.returncode == 2
-        assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
-        assert "`start_shell`" in result.stderr
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"].startswith("pytest -q > ")
+        log_path = pathlib.Path(output["updatedInput"]["command"].removeprefix("pytest -q > "))
+        assert log_path.parent.is_dir()
+        assert "標準出力全量の保存先" in output["additionalContext"]
 
-    def test_output_truncation_remains_blocked_on_second_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションの2回目も状態に依存せず遮断する。"""
+    def test_nonconflicting_uv_and_truncation_fixes_are_combined(self, tmp_path: pathlib.Path) -> None:
+        """スクリプト起動と切り詰めの補正を1つの入力へ合成する。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "uv run python /tmp/script.py | tail -5"},
+                "session_id": "combined-uv-truncation",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        command = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert command.startswith("uv run --script /tmp/script.py > ")
+
+    def test_unfixable_recursive_grep_is_not_masked_by_other_fix(self, tmp_path: pathlib.Path) -> None:
+        """別区間が補正可能でも、補正不能な再帰grepを初回から遮断する。"""
+        (tmp_path / "docs").mkdir()
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "grep -rn foo docs/; uv run python /tmp/script.py"},
+                "session_id": "combined-serial-fixes",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "安全に`rg`へ補正できない形" in result.stderr
+        assert result.stdout == ""
+
+    def test_unfixable_uv_input_with_truncation_remains_blocked(self, tmp_path: pathlib.Path) -> None:
+        """スクリプト形へ一意変換できない入力は切り詰めだけを補正して通さない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "uv run python -c 'print(1)' | tail -5"},
+                "session_id": "conflicting-uv-truncation",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        assert "uv run python" in result.stderr
+
+    def test_output_truncation_is_auto_fixed_on_each_detection(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションで反復しても単純な切り詰めを毎回補正する。"""
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -208,7 +284,7 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert first.returncode == 2
+        assert first.returncode == 0
         second = _run(
             {
                 "tool_name": "Bash",
@@ -217,25 +293,16 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 2
-        assert "実行出力を`tail`・`head`で切り詰めている" in second.stderr
-        assert "全出力を保存" in second.stderr
-        assert "`start_shell`" in second.stderr
-        assert "[auto-generated: agent-toolkit/pretooluse]" in second.stderr
+        assert second.returncode == 0
+        output = json.loads(second.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"].startswith("uvx pyfltr run-for-agent > ")
+        assert "標準出力全量の保存先" in output["additionalContext"]
 
-    def test_output_truncation_block_suppresses_status_diagnosis(self, tmp_path: pathlib.Path) -> None:
-        """遮断した呼び出しでは終了状態の診断本文を返さない。"""
+    def test_status_reference_after_truncation_is_safely_fixed(self, tmp_path: pathlib.Path) -> None:
+        """切り詰め除去後の終了状態参照がproducerを指す入力へ補正する。"""
         session_id = "output-truncation-status"
         env = _plan_file_state_env(tmp_path)
-        _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "pytest -q | tail -5"},
-                "session_id": session_id,
-            },
-            env,
-        )
-        second = _run(
+        result = _run(
             {
                 "tool_name": "Bash",
                 "tool_input": {"command": 'pytest -q | tail -5; echo "$?"'},
@@ -243,11 +310,13 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 2
-        assert "終了状態を示す" not in second.stderr
+        assert result.returncode == 0
+        command = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        assert command.startswith("pytest -q > ")
+        assert command.endswith('; echo "$?"')
 
     def test_output_truncation_does_not_depend_on_sleep_state(self, tmp_path: pathlib.Path) -> None:
-        """前景待機の記録にかかわらず初回から遮断する。"""
+        """前景待機の記録にかかわらず単純な切り詰めを補正する。"""
         session_id = "output-truncation-independent"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -267,8 +336,8 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 2
-        assert "実行出力を`tail`・`head`で切り詰めている" in second.stderr
+        assert second.returncode == 0
+        assert json.loads(second.stdout)["hookSpecificOutput"]["updatedInput"]["command"].startswith("pytest -q > ")
 
     def test_output_truncation_without_session_id_blocks(self, tmp_path: pathlib.Path) -> None:
         """`session_id`が空の場合も遮断する。"""
@@ -292,8 +361,8 @@ class TestBashOutputTruncationWarning:
         ids=["wi-add", "wi-edit", "wi-show", "review-table-show"],
     )
     def test_saved_body_command_truncation_blocks(self, command: str) -> None:
-        """保存本文の照合に使うコマンド出力の切り詰めを遮断する。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        """複雑な保存本文コマンドの切り詰めは安全に補正せず遮断する。"""
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"{command} | cat"}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`で切り詰めている" in result.stderr
 
@@ -322,7 +391,7 @@ class TestBashOutputTruncationWarning:
         ],
     )
     def test_extended_complete_output_commands_block(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        result = _run({"tool_name": "Bash", "tool_input": {"command": f"{command} | cat"}})
         assert result.returncode == 2
         assert "実行出力を`tail`・`head`・`grep`などで限定している" in result.stderr
 
@@ -931,6 +1000,36 @@ class TestTaskStopBlock:
         session_id = "task-stop-other-target"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+
+    def test_recent_stall_detection_allows_only_matching_task(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """5分以内の停滞検知完了記録は一致する対象だけを初回から通す。"""
+        session_id = "task-stop-stall-match"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"stall_detection_completed_at_by_task": {"bg-task-1": time.time()}},
+        )
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 0
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}).returncode == 2
+
+    def test_stale_stall_detection_does_not_allow_task(
+        self,
+        state_dir: dict[str, str],
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """5分を超えた停滞検知完了記録は停止根拠として使わない。"""
+        session_id = "task-stop-stall-stale"
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"stall_detection_completed_at_by_task": {"bg-task-1": time.time() - 600}},
+        )
+        assert self._invoke(session_id, state_dir, {"task_id": "bg-task-1"}).returncode == 2
+        assert "stall_detection_completed_at_by_task" not in _read_session_state(tmp_path, session_id)
 
 
 class TestExecuteReviewAlternateRouteAllowed:

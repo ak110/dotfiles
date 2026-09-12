@@ -41,12 +41,13 @@ Bash:
 
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
-- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の検出 (warn/block)
+- 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の補正又は遮断 (auto-fix/block)
 - 切り詰め直後の`$?`が検証コマンドの終了状態を隠す指定の検出 (warn)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は遮断 (auto-fix/block)
+- 除外設定を持たない単純な再帰`grep`の`rg`への補正 (auto-fix)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
@@ -59,7 +60,7 @@ Skill:
 
 TaskStop:
 
-- 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
+- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の初回遮断 (block)
 
 Write / Edit / MultiEdit / apply_patch:
 
@@ -192,6 +193,7 @@ if TYPE_CHECKING:
     )
     from agent_toolkit._hooks.pretooluse.notices import _llm_notice
     from agent_toolkit._hooks.pretooluse.shell_checks import (
+        _autofix_bash_command,
         _check_bash_codex_exec,
         _check_bash_atk_help_observation,
         _check_bash_help_with_execution,
@@ -432,6 +434,12 @@ def _handle_bash_tool(
         return 2
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
+    auto_fix = _autofix_bash_command(command, cwd, session_id)
+    if auto_fix is not None:
+        command, auto_fix_notice = auto_fix
+        tool_input = dict(tool_input)
+        tool_input["command"] = command
+        warnings.append(auto_fix_notice)
     if (
         (not is_codex and _check_bash_amend_rebase_without_log(command, session_id, cwd))
         or (not is_codex and _check_bash_git_push_after_amend_with_dirty_status(command, session_id, cwd))
@@ -444,7 +452,7 @@ def _handle_bash_tool(
         return 2
     if _check_bash_state_change_command_chaining(command) == "block" or _check_bash_help_with_execution(command) == "block":
         return 2
-    recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd, session_id)
+    recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":
         return 2
     atk_help_result = _check_bash_atk_help_observation(command, session_id)
@@ -469,6 +477,18 @@ def _handle_bash_tool(
         if warnings:
             _append_additional_context(result, "\n".join(warnings))
         emit_json(result)
+        return 0
+    if auto_fix is not None:
+        emit_json(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": tool_input,
+                    "additionalContext": "\n".join(warnings),
+                }
+            }
+        )
         return 0
     if warnings:
         emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
@@ -520,17 +540,21 @@ def _handle_user_facing_text_tool(
     ユーザーへ届いた後の書き換えが当該回の提示へ及ばないため、同じ遮断経路へそろえる。
     誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
     """
-    if tool_name == "AskUserQuestion" and check_required_read_before_ask_user_question(session_id) == "block":
-        flush_warning()
-        return 2
+    warnings: list[str] = []
+    if tool_name == "AskUserQuestion":
+        required_read_warning = check_required_read_before_ask_user_question(session_id)
+        if required_read_warning is not None:
+            warnings.append(required_read_warning)
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2
     typo_warning = check_user_facing_typo(tool_name, fields)
-    if typo_warning is None:
+    if typo_warning is not None:
+        warnings.append(typo_warning)
+    if not warnings:
         flush_warning()
     else:
-        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": typo_warning}})
+        emit_json({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "\n".join(warnings)}})
     return 0
 
 

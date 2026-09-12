@@ -58,7 +58,6 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `amend_pending_status_check`: cwd別辞書としてamendまたはfixup成功時に記録し、push前のdirty検査に使う。
   Bash経由の記録元は`test_executed`と同じくClaude Codeに限る
 - `sleep_poll_detected`: PreToolUse(Bash)が入れ子でなく早期離脱のない`for`・`while true`・`while :`本体のsleepポーリング、又は対象外のsleep直後の状態確認連結を検出した場合に記録する。入れ子ループは判定対象外とする
-- `recursive_grep_detected`: PreToolUse(Bash)が除外設定を反映しない再帰`grep`のディレクトリ実行を検出した場合に記録する。1件目は警告に留め、同一セッションの2件目から当該呼び出しを遮断する
 - `session_edited_files`: PostToolUseが成功した編集の対象パスを重複なく記録し、
   PreToolUse(Bash)の一括stage警告が自セッション編集済み集合として読む。セッション終了まで保持し、
   リセット経路は設けない。Claude CodeではWrite・Edit・MultiEditが、Codexでは成功した`apply_patch`が
@@ -113,7 +112,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`を記録し、`send_message`と`kill`の検査及び各ツールのPostToolUse状態更新に使う
 - `agents_server_sessions`: `session_id`ごとに公開状態と内部状態を記録する。公開状態は当該sessionの`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`とする。`pending_observation`は観測を試みていない作業の有無を示し、`owner_agent_id`は当該作業を発生させた主体を示す。`model_type`は起動時の応答から得た値とし、`error`と`agent_message`は終端時の値とする。内部状態は`turn_id`とする。記録は`start`・`start_explore`・`start_shell`の成功応答で生成し、`wait`・`send_message`・`kill`の応答境界と、Bash経由の`atk agents-wait`実行時に更新する。`pending_observation`は`start`・`start_explore`・`start_shell`の成功応答で真になる。`send_message`の応答では、`delivery`が`reply_started`又は`reply_ambiguous`である場合だけ真にする。真にした呼出主体はhook payloadの`agent_id`から`owner_agent_id`へ記録する。`delivery`が`steered`である応答では真にしない。steerは実行中のturnへ追加指示を配送するだけで`turn_seq`を変えず、当該turnの終端は当該turnに対する既存の観測が待つためである。`agent_id`を持たないメイン会話は`main`とする。`transcript_path`はサブエージェント内で発火したフックでもセッション本体の記録を指すため、呼出主体の判別に使わない。`wait`の応答、`kill`の成功応答及びBash経由の`atk agents-wait`実行では`pending_observation`を偽にし、`owner_agent_id`は次の作業発生まで保持する。`wait`は`status`を問わず偽にする。委譲先が稼働中のまま待機表明でターンを終える正常終端を警告しないためである。`wait`又は`kill`の呼び出しが実行環境により背景タスクへ移り、構造化応答を伴わない移行通知だけが返った場合も、当該通知の受領時に`pending_observation`を偽にする。対象sessionはMCP呼び出しでは入力の`session_id`、CLIでは`atk agents-wait`の位置引数から解決し、既存の記録が無い場合は新規に作成しない。呼び出しの受理をもって観測を試みたものとして扱うためである。sessionを一度でも観測したかという履歴ではないため、偽になった後に新しい作業を配送すれば再び真になる。寿命はセッション状態ファイルと同じとする。利用先はStop判定であり、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。責任主体を記録していない旧形式の記録は警告対象にしない。結果を回収済みであることを示す状態は持たない。thread IDをハッシュ化した状態ファイルは作成しない
 - `agents_server_list_fingerprint`・`agents_server_list_blocked_at`: PreToolUseが`agents_server`の`list`直前に、`agents_server_sessions`をキー順JSONへ正規化した指紋と直近の遮断時刻を記録する。同じ指紋での2回目の`list`を遮断し、遮断から5分以内の再実行では時刻を削除して通過させる。記録元と利用先は`agent_checks._check_agents_server_list_repeat`だけとし、寿命はセッション状態ファイルと同じとする。リセットは遮断直後の再実行だけで行う
-- `observed_required_reads`: 規範が全文読解を要求する文書のうち、同一セッションで全文読取を観測した文書の論理名を文字列の配列として保持する。記録はPostToolUseが行い、`Read`の`file_path`を実行ホストのパス規則で正規化した絶対パスが、稼働中のplugin rootから組み立てた当該文書の絶対パスと一致し、かつ`offset`と`limit`のいずれも指定されていない呼び出しだけを観測とする。別の作業ツリー又は別の複製にある同名の文書、部分読取及びシェル経由の読取は観測としない。利用先はPreToolUseの`AskUserQuestion`検査であり、当該配列に無い文書がある場合に当該ツール呼び出しを遮断する。寿命はセッション状態ファイルと同じとする
+- `observed_required_reads`: 規範が全文読解を要求する文書のうち、同一セッションで全文読取を観測した文書の論理名を文字列の配列として保持する。記録はPostToolUseが行い、`Read`の`file_path`を実行ホストのパス規則で正規化した絶対パスが、稼働中のplugin rootから組み立てた当該文書の絶対パスと一致し、かつ`offset`と`limit`のいずれも指定されていない呼び出しだけを観測とする。別の作業ツリー又は別の複製にある同名の文書、部分読取及びシェル経由の読取は観測としない。利用先はPreToolUseの`AskUserQuestion`検査であり、当該配列に無い文書がある場合に警告する。寿命はセッション状態ファイルと同じとする
 
 `wait`の応答境界とBash経由の`atk agents-wait`では、呼出主体が所有する全sessionの`pending_observation`を偽にする。`wait`が返した選択済みsessionの公開状態は応答の`session_id`と`status`から更新する。`status`が`running`である記録の件数を根拠として待機を遮断する検査は持たない。`stop`の成功応答を受領した場合は、当該`session_id`のエントリーを本キーから除去する。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、当該応答は当該sessionが終端済み、期限切れ又は既破棄のいずれかであることを含意し、除去により未終端のsessionの記録が失われることはない。
 
@@ -124,6 +123,9 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
   セッション終了まで保持し、リセット経路は設けない
 - `task_stop_blocked_at`: PreToolUse(TaskStop)が遮断した時刻のPOSIX秒を記録し、同フックが再実行許可窓の判定に読む。
   セッション終了まで保持し、リセット経路は設けない
+- `stall_detection_completed_at_by_task`: `record_stall_detection.py`が停滞検知を完了した停止対象の完全なタスクIDをキー、完了時刻のPOSIX秒を値として記録する。
+  PreToolUse(TaskStop)は5分以内の一致する対象だけを停止可能と判定し、期限切れ要素を除去する。
+  成功したPostToolUse(TaskStop)が一致要素を消費する。停止の失敗時は同じ5分窓で再試行できるよう保持する
 
 ## UWI系
 

@@ -231,6 +231,11 @@ Git差分、HEAD、成果物の更新時刻・行数、無応答、経過時間�
   完了報告を取得できた場合は再実装せず、当該報告を検収して、実行時に公開され呼び出しが成功した`SendMessage`と保持済みIDで再開する。
   完了報告を取得できない場合は未完了の工程だけを巻き取り、担当範囲又は権限の外にある場合は`needs_escalation`で返す
   Codexで未完了工程を巻き取るか新規起動する場合は、`references/runtime-routing.md`「Codex後続操作の共通先行条件」を適用してから行う
+- Claude Codeで前項の停滞検知を完了し`TaskStop`を実行する場合は、停止対象ごとに直前の完了記録を作成する。
+  `${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py`を、
+  `uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups`で起動し、
+  `--session-id`へ現在の`CLAUDE_CODE_SESSION_ID`、`--task-id`へ停止対象の完全なタスクIDを渡す。
+  同スクリプトが終了コード0を返した対象だけを5分以内に停止する。別対象の記録は停止根拠へ流用しない
 - Codexの二層待機では、外側の実行セルのyieldを停滞の判定材料に用いない。内側の`agents_server.wait`が継続している間は、巻き取り、代替起動及び新規起動へ進まず、`${CLAUDE_PLUGIN_ROOT}/share/rules-main.codex.md`「agents_serverの二層待機」節が定める手順で外側の実行セルを再開する
 
 ## 成果物側の観測

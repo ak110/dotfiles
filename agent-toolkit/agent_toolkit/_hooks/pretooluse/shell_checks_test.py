@@ -136,23 +136,27 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
         assert result.returncode == 2
 
-    @pytest.mark.parametrize(
-        "command",
-        ["uv run python /tmp/foo.py", "uv run python -c 'print(1)'"],
-        ids=["path", "inline_code"],
-    )
-    def test_non_python_project_forms_are_blocked(self, tmp_path: pathlib.Path, command: str) -> None:
-        """パス引数形とインラインコード形の双方を公開インターフェースでブロックする。"""
+    def test_non_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
+        """単純なスクリプトパス形を`uv run --script`へ補正する。"""
         cwd = self._make_non_python_project(tmp_path)
-        result = self._invoke(command, cwd)
+        result = self._invoke("uv run python /tmp/foo.py --flag 'two words'", cwd)
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert output["updatedInput"]["command"] == "uv run --script /tmp/foo.py --flag 'two words'"
+
+    def test_non_python_project_inline_code_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """安全にスクリプト形へ直せないインラインコード形は遮断する。"""
+        cwd = self._make_non_python_project(tmp_path)
+        result = self._invoke("uv run python -c 'print(1)'", cwd)
         assert result.returncode == 2
         assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
         assert "uv run python" in result.stderr
 
-    def test_no_pyproject_blocked(self, tmp_path: pathlib.Path):
-        """pyproject.tomlが無いcwdでもblockする（Pythonプロジェクトと認識できないため）。"""
+    def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
+        """pyproject.tomlが無いcwdでも単純なスクリプトパス形を補正する。"""
         result = self._invoke("uv run python /tmp/foo.py", str(tmp_path))
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script /tmp/foo.py"
 
     def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
         """`uv run python --script s.py`は`--script`がpythonの引数となるため例外扱いしない。"""

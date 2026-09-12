@@ -80,6 +80,7 @@ from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disabl
     read_state,
     update_state,
 )
+from agent_toolkit._hooks.task_stop_state import consume_completion, target_ids  # noqa: E402
 
 # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks.tracked_model_types import TRACKED_MODEL_TYPES as _TRACKED_MODEL_TYPES  # noqa: E402
@@ -1048,6 +1049,10 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     # Readは対象文書の全文読取だけを状態へ記録する。
     if tool_name == "Read":
         _record_required_read_observation(session_id, tool_input)
+        return 0
+
+    if tool_name == "TaskStop":
+        consume_completion(session_id, target_ids(tool_input))
         return 0
 
     # Write / Edit / MultiEdit: ファイル編集は対象コミットの親子関係を変えないため
