@@ -24,6 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
+_REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "bin"
 
 
 @pytest.fixture(autouse=True)
@@ -786,6 +787,8 @@ def _create_git_pair(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path
 
 def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> None:
     """競合回復テストのpullだけを一時Gitリポジトリへ向ける。"""
+
+    monkeypatch.setenv("PATH", os.pathsep.join((str(_REPOSITORY_ATK_BIN), os.environ.get("PATH", ""))))
 
     def _pull(_step_no: int, _total: int, *, timeout: int | None) -> int:
         del timeout

@@ -3108,9 +3108,11 @@ async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_har
     await page.locator("#preview h1").wait_for(state="visible")
     await page.evaluate(
         """() => {
+          const nativeSetTimeout = window.setTimeout.bind(window);
           window.copyLabelTimers = [];
-          window.setTimeout = callback => {
-            window.copyLabelTimers.push(callback);
+          window.setTimeout = (callback, delay, ...args) => {
+            if (delay !== 2000) return nativeSetTimeout(callback, delay, ...args);
+            window.copyLabelTimers.push(() => callback(...args));
             return window.copyLabelTimers.length;
           };
         }"""
@@ -3123,8 +3125,9 @@ async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_har
         button = page.locator(selector)
         await button.click()
         await playwright.async_api.expect(button.locator(".short-label")).to_have_text("完了")
+        await page.wait_for_function("window.copyLabelTimers.length === 1")
         await button.click()
-        await page.wait_for_function("window.copyLabelTimers.length >= 2")
+        await page.wait_for_function("window.copyLabelTimers.length === 2")
         await page.evaluate("() => window.copyLabelTimers.splice(0).forEach(callback => callback())")
         assert await button.locator(".wide-label").inner_text() == wide
         assert await button.locator(".short-label").inner_text() == short
