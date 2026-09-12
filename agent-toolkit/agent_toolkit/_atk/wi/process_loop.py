@@ -905,7 +905,7 @@ def _check_and_restart_on_update(
     if _has_upstream_diff(dotfiles_root):
         executable = _resolve_executable("update-dotfiles")
         if executable is not None:
-            result = subprocess.run([executable, "--force"], check=False, env=_child_env())
+            result = subprocess.run([executable], check=False, env=_child_env())
             _console_title.set_console_title("atk wi process-loop")
             update_succeeded = result.returncode == 0
             if not update_succeeded:
@@ -944,7 +944,7 @@ def _update_before_session(
     if executable is None:
         print("update-dotfilesを利用できないため、子セッションを起動せず待機します。", file=sys.stderr)
         return False, False
-    result = subprocess.run([executable, "--force"], check=False, env=env)
+    result = subprocess.run([executable], check=False, env=env)
     _console_title.set_console_title("atk wi process-loop")
     if result.returncode != 0:
         print(
