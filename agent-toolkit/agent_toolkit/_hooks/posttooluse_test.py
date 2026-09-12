@@ -97,16 +97,20 @@ def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch:
 
 
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """状態ファイルの反映前でもstart応答のルート識別子から索引を書く。"""
+    """startが同期反映した共有状態からルート識別子の索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
     root = tmp_path / "agents-server" / "root-session"
-    assert not root.exists()
+    root.mkdir(parents=True)
+    (root / "root.json").write_text(
+        json.dumps({"version": 1, "sessions": [{"session_id": "remote-session"}]}),
+        encoding="utf-8",
+    )
 
     _POSTTOOLUSE_MODULE._record_agents_server_session_state(
         "current-session",
-        {"session_id": "remote-session", "status": "running", "root_session_id": "root-session"},
+        {"session_id": "remote-session", "status": "running"},
         operation="start",
         owner_agent_id="main",
     )
@@ -115,11 +119,11 @@ def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.M
     assert json.loads(alias.read_text(encoding="utf-8")) == {"version": 1, "root_session_id": "root-session"}
 
 
-def test_start_state_record_without_root_session_id_does_not_write_alias(
+def test_start_state_record_without_shared_status_does_not_write_alias(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """start応答にルート識別子が無い場合は索引を書かない。"""
+    """共有状態からルート識別子を一意に解決できない場合は索引を書かない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE, "update_state", lambda *_args: None)
     monkeypatch.setattr(_POSTTOOLUSE_MODULE._agents_server_status_file._atk_config, "state_dir", lambda: tmp_path)
@@ -219,7 +223,7 @@ def test_successful_task_stop_consumes_stall_detection_record(tmp_path: pathlib.
 class TestCodexBashStateRecording:
     """終了コードを持たないCodexのBash入力では成否依存の状態を記録しない。"""
 
-    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents-wait --timeout=1"
+    _COMMAND = "make test && git log --oneline -1 && git commit --amend --no-edit && atk agents wait"
 
     def test_codex_bash_does_not_record_success_dependent_state(self, tmp_path: pathlib.Path) -> None:
         session_id = "codex-success-dependent-state"
@@ -2116,7 +2120,7 @@ class TestAgentsServerSessionState:
 class TestAgentsServerProcessLoopLog:
     """計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の記録。
 
-    `model_type`は`start`応答にだけ現れるため、起動と終端を同じsessionへ通して記録の対応を確認する。
+    `model_type`は開始入力から解決するため、起動と終端を同じsessionへ通して記録の対応を確認する。
     """
 
     def _run_session(
@@ -2138,13 +2142,12 @@ class TestAgentsServerProcessLoopLog:
         _run(
             {
                 "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
-                "tool_input": {"prompt": "実装する", "cwd": str(tmp_path)},
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_custom",
+                "tool_input": {"prompt": "実装する", "model_type": model_type, "cwd": str(tmp_path)},
                 "tool_response": {
                     "structuredContent": {
                         "session_id": remote_session_id,
                         "status": "running",
-                        "model_type": model_type,
                     }
                 },
             },

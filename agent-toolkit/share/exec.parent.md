@@ -10,8 +10,8 @@
 
 ## 入力
 
-起動文の1行目で`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を指し、`agents_server`の`start`へ`model_type="execute"`を渡して起動する。
-必須入力の項目名は、本書冒頭の`起動対象:`が挙げる受信者の`必須入力名:`が並べるものとし、起動文の構成と列挙形式は`agent-toolkit:delegation`のSKILL.mdの`## 送信`が定める。
+`agents_server`の`start`へ`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`を解決した絶対パスを`subagent_md_path`、次の名前付き入力を`extra_params`、対象worktreeの絶対パスを`cwd`として渡す。
+必須入力の項目名は、本書冒頭の`起動対象:`が挙げる受信者の`必須入力名:`が並べるものとする。
 各項目の値は次のとおり確定する。
 
 - `担当種別`: `レーン担当`。公開工程のCI失敗修正では`CI修正担当`

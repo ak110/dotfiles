@@ -214,22 +214,23 @@ class TestWorktreeStashDispatch:
 
 
 class TestAgentsWaitParser:
-    """`agents-wait`の公開parserを検証する。"""
+    """`agents wait`の公開parserを検証する。"""
 
     def test_accepts_no_arguments(self) -> None:
         """待機対象と待機上限の入力を持たない。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-        args = parser.parse_args(["agents-wait"])
-        assert args.command == "agents-wait"
+        args = parser.parse_args(["agents", "wait"])
+        assert args.command == "agents"
+        assert args.agents_subcommand == "wait"
         assert not hasattr(args, "timeout")
         assert not hasattr(args, "session_id")
 
     @pytest.mark.parametrize(
         "argv",
         [
-            ["agents-wait", "session-1"],
-            ["agents-wait", "session-1", "--timeout=0"],
-            ["agents-wait", "--timeout=12"],
+            ["agents", "wait", "session-1"],
+            ["agents", "wait", "session-1", "--timeout=0"],
+            ["agents", "wait", "--timeout=12"],
         ],
     )
     def test_rejects_wait_target_arguments(self, argv: list[str]) -> None:
@@ -240,7 +241,7 @@ class TestAgentsWaitParser:
         assert exc_info.value.code == 2
 
     def test_publishes_only_one_wait_subcommand(self) -> None:
-        """待機のサブコマンドを`agents-wait`1つだけ公開する。"""
+        """待機を`agents wait`だけで公開する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         command_action = next(
             action
@@ -248,8 +249,16 @@ class TestAgentsWaitParser:
             if action.dest == "command"
         )
         assert command_action.choices is not None
-        waits = [name for name in command_action.choices if str(name).startswith("agents-wait")]
-        assert waits == ["agents-wait"]
+        command_choices = dict(command_action.choices)
+        assert "agents-wait" not in command_choices
+        agents_parser = command_choices["agents"]
+        agents_action = next(
+            action
+            for action in agents_parser._actions  # pylint: disable=protected-access  # noqa: SLF001
+            if action.dest == "agents_subcommand"
+        )
+        assert agents_action.choices is not None
+        assert "wait" in agents_action.choices
 
 
 class TestAgentsExitSessionParser:

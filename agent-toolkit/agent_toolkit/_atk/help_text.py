@@ -195,31 +195,35 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: 指定したrequest bucketのプロンプトキャッシュTTLを公開情報から判定し、対応する壁時計のcron式を1行で出力する。\n利用場面: 委譲先や背景処理の完了を定期的に再確認するタスクを登録するとき。\n対象と出力: `--request-bucket`で指定した呼び出し主体のbucketを待機TTLとcron式の解決へ入力し、環境変数と`claude auth status`の出力を読み取って、標準出力へ`*/3 * * * *`か`*/30 * * * *`を書く。ファイルは変更しない。\n前提: ツール側では呼び出し主体のbucketを自動解決できないため、`--request-bucket`へmain又はsubagentを明示する。\n復元・後始末: 読み取りだけを行うため不要。出力したcron式は変更せずそのまま登録する。",
         "epilog": "実行例:\n\n  atk wait-schedule --request-bucket=main",
     },
-    "atk agents-wait": {
+    "atk agents": {
+        "summary": "委譲sessionの待機・通知・一覧・詳細表示を行う",
+        "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知又は診断する。\n利用場面: 背景ジョブでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`と`notify`はMCPの補助経路、`list`と`show`は共有状態ファイルの診断経路として動作する。\n前提: 対象sessionと同じルートセッションで実行する。\n復元・後始末: `wait`が回収した通知ファイルは削除される。結果本文の配送記録は更新しないため、受領後にMCPの`wait`を1回発行する。",
+        "epilog": "実行例:\n\n  atk agents wait\n  atk agents list\n  atk agents show <session_id>",
+    },
+    "atk agents wait": {
         "summary": "委譲先sessionの終端結果を待って1行で出力する",
-        "description": "目的: `agents_server`が出力する終端結果ファイルを待ち、その内容を標準出力へ1行で書く。\n利用場面: 委譲先の完了を背景ジョブとして待ち、目標評価の発動を延期するとき。\n対象と出力: 状態ディレクトリ配下の結果ファイルと通知ファイルを読み取り、標準出力へ単一のJSON文書を1行で書く。対象は自身の書込主体の状態ファイルへ載る起動中のsession全体とし、最初に終端した1件を選ぶ。通知は`notices`として返し、終端結果が未到達で通知だけを回収した場合は`status`を`running`とする。JSON Linesではないため、1回の解析で全体を読み取れる。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。待機対象、待機上限及びturnの指定を受け取らない。対象sessionごとに待機所有権を取得し、重複する集合の後発起動を終了コード8で拒否する。\n復元・後始末: 回収した通知ファイルは削除される。結果本文の配送記録は更新しないため、受領後に`wait`を1回発行する。",
-        "epilog": "実行例:\n\n  atk agents-wait",
+        "description": "目的: `agents_server`が出力する終端結果ファイルを待ち、その内容を標準出力へ1行で書く。\n利用場面: 委譲先の完了を背景ジョブとして待ち、目標評価の発動を延期するとき。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、単一のJSON文書を1行で書く。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。\n復元・後始末: 回収した通知ファイルは削除される。結果本文の配送記録は更新しないため、受領後にMCPの`wait`を1回発行する。",
+        "epilog": "実行例:\n\n  atk agents wait",
+    },
+    "atk agents notify": {
+        "summary": "委譲先から委譲元のルートセッションへ本文を1件送る",
+        "description": "目的: 委譲先が自身のturnを終端せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーション又は阻害要因を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。標準出力へは何も書かない。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
+        "epilog": "実行例:\n\n  atk agents notify --body='検査コマンドが未導入で実行できない'",
+    },
+    "atk agents list": {
+        "summary": "保持中の委譲sessionを詳しい状態とともに一覧表示する",
+        "description": "目的: 同じルートセッション配下の委譲sessionを診断できる形で一覧表示する。\n利用場面: 識別子を失ったsessionの回復又は残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読み、session一覧を単一のJSON文書として標準出力へ書く。\n前提: 対象と同じルートセッションで実行する。既定では未回収結果を持たない終端済みsessionを除く。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated",
+    },
+    "atk agents show": {
+        "summary": "指定した委譲sessionの詳しい状態を表示する",
+        "description": "目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデル又は停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "epilog": "実行例:\n\n  atk agents show <session_id>",
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
         "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude Code又はCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイル及び開始情報を再照合し、一意に識別できる単一PIDだけへ終了を要求する。標準出力へ機械可読な実行記録を返す。\n前提: 利用者入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
-    },
-    "atk agents-notify": {
-        "summary": "委譲先から委譲元のルートセッションへ本文を1件送る",
-        "description": (
-            "目的: `agents_server`で起動した委譲先が、自身のturnを終端"
-            "させずに委譲元へ本文を1件届ける。\n"
-            "利用場面: 想定外事象、エスカレーション又は阻害要因を、完了報告を待たずに委譲元へ知ら"
-            "せるとき。\n"
-            "対象と出力: 環境変数からルートセッションの状態ディレクトリと自身のsession識別子を解決し、"
-            "当該ディレクトリ配下へ通知ファイルを1件作成する。標準出力へは何も書かない。\n"
-            "前提: 環境変数`AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行する。"
-            "本文は`--body`か`--body-file`のいずれか一方で渡す。\n"
-            "復元・後始末: 委譲元が`wait`で受け取った時点で通知ファイルは削除される。"
-            "非0で終了した場合は同じ事象を完了報告へ含める。"
-        ),
-        "epilog": "実行例:\n\n  atk agents-notify --body='検査コマンドが未導入で実行できない'",
     },
     "atk managed-temp": {
         "summary": "管理対象一時領域を作成・列挙・後始末する",

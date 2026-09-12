@@ -9,7 +9,9 @@
 
 ## 起動経路
 
-`agents_server`の`start`へ`model_type="execute"`を渡して終端担当を1件起動する。新しい設定キーを追加しない。
+`agents_server`の`start`で終端担当を1件起動する。
+`subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`を解決した絶対パスを渡す。
+`extra_params`には`## 渡す入力`の名前付き入力、`cwd`には対象リポジトリの絶対パスを渡す。新しい設定キーを追加しない。
 同じセッションでは再度起動しない。
 
 ## 起動前の前提
@@ -19,7 +21,6 @@
 
 ## 渡す入力
 
-- `${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の絶対パス
 - `対象リポジトリ`: 対象リポジトリの絶対パス
 - `ベースbranch名`: ベースbranchの名前
 - `プロジェクト規範`: プロジェクト規範の絶対パス

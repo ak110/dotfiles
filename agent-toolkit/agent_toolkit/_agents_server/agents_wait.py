@@ -54,7 +54,10 @@ def wait_for_result(
     invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
     if invalid:
         return _fail(f"session_idの形式が不正です: {invalid[0]}", 5)
-    ordered_ids = sorted({session["session_id"] for session in listed or ()} | _retained_result_session_ids(result_directory))
+    ordered_ids = sorted(
+        {session["session_id"] for session in listed or ()}
+        | _retained_result_session_ids(result_directory, owner_status_file=identity.file_name)
+    )
     if not ordered_ids and listed is not None:
         print(json.dumps({"status": "expired"}, separators=(",", ":")))
         return 7
@@ -105,9 +108,6 @@ def wait_for_result(
             if remaining <= 0:
                 print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
                 return 3
-            if response.get("stalled") and time.monotonic() - started_at >= state.STALL_NOTICE_SECONDS:
-                print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
-                return 3
             time.sleep(min(1.0, remaining))
     finally:
         for lock_file in reversed(lock_files):
@@ -115,15 +115,27 @@ def wait_for_result(
             lock_file.close()
 
 
-def _retained_result_session_ids(result_directory: pathlib.Path) -> set[str]:
-    """終端結果ファイルが残るsession識別子を返す。"""
+def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status_file: str) -> set[str]:
+    """自身の書込主体が公開した終端結果のsession識別子を返す。"""
     try:
         paths = tuple(result_directory.iterdir())
     except OSError:
         return set()
-    return {
-        path.stem for path in paths if path.suffix == ".json" and path.is_file() and status_file.valid_session_id(path.stem)
-    }
+    retained: set[str] = set()
+    for path in paths:
+        if path.suffix != ".json" or not path.is_file() or not status_file.valid_session_id(path.stem):
+            continue
+        result, error = _read_result(path)
+        if error is not None:
+            if owner_status_file == "root.json":
+                retained.add(path.stem)
+            continue
+        if result is None:
+            continue
+        recorded_owner = result.get("owner_status_file")
+        if recorded_owner == owner_status_file or recorded_owner is None and owner_status_file == "root.json":
+            retained.add(path.stem)
+    return retained
 
 
 def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -136,6 +148,7 @@ def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]
         return None, str(exc)
     if not isinstance(value, dict):
         return None, "最上位が辞書ではありません"
+    value.pop("owner_status_file", None)
     return value, None
 
 

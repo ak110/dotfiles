@@ -32,6 +32,16 @@ STALL_NOTICE_SECONDS = 300.0
 SESSION_INITIALIZATION_TIMEOUT = 90.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+TASK_MODEL_TYPES = {
+    "exec-review.subagent.md": "execute_review",
+    "exec.subagent.md": "execute",
+    "lane-integration.subagent.md": "execute",
+    "pick-wi.subagent.md": "pick_wi",
+    "session-review-delegate.subagent.md": "session_review",
+    "session-termination.subagent.md": "execute",
+    "upstream-submission.subagent.md": "execute",
+}
+"""専用タスク文書名と工程別モデル設定の対応。"""
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
 SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules-subagent.md"
 SUBAGENT_RULES = SUBAGENT_RULES_PATH.read_text(encoding="utf-8")
@@ -248,6 +258,7 @@ class SessionState:
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
+    prompt: str = ""
     announced: bool = False
     started_at: str = dataclasses.field(default_factory=_utc_now)
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
@@ -405,6 +416,7 @@ class SessionResumeState:
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
+    prompt: str = ""
     started_at: str = dataclasses.field(default_factory=_utc_now)
     updated_at: str = dataclasses.field(default_factory=_utc_now)
     turn_seq: int = 0
@@ -425,6 +437,7 @@ class SessionResumeState:
             model_type=session.model_type,
             launch_kind=session.launch_kind,
             label=session.label,
+            prompt=session.prompt,
             started_at=session.started_at,
             updated_at=session.updated_at,
             turn_seq=session.turn_seq,

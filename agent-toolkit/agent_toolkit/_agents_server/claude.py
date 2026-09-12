@@ -522,8 +522,9 @@ class ClaudeServerManager:
                         elif name == "AssistantMessage" and session is not None:
                             shared_state.consume_claude_agents_server_message(session, message)
                             text = _assistant_text(message)
-                            session.agent_message = text
-                            session.set_progress(text)
+                            if text.strip():
+                                session.agent_message = text
+                                session.set_progress(text)
                             await self._notify_waiters()
                         elif name == "UserMessage" and session is not None:
                             shared_state.consume_claude_agents_server_message(session, message)
@@ -659,11 +660,16 @@ class ClaudeServerManager:
         else:
             status = "failed" if bool(getattr(message, "is_error", False)) else "completed"
         result = getattr(message, "result", None)
-        agent_message = result if isinstance(result, str) else session.agent_message
+        agent_message = result if isinstance(result, str) and result.strip() else session.agent_message
         error: dict[str, Any] | None = None
         errors = getattr(message, "errors", None)
+        if status == "completed" and not agent_message.strip():
+            status = "failed"
+            error = {"message": "Claude Agent SDK returned no assistant output"}
         if status == "failed":
-            if isinstance(errors, list) and errors:
+            if error is not None:
+                pass
+            elif isinstance(errors, list) and errors:
                 error = {"message": "; ".join(str(item) for item in errors)}
             elif isinstance(result, str) and result:
                 error = {"message": result}

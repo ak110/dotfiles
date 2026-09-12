@@ -17,7 +17,7 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
    保存済み計画root `$(atk config get private_notes)/plans/` 配下）形式検査 (Write / Edit / MultiEdit / apply_patch)
 4. plan-modeスキル呼び出し検出 (Skill)
 5. 計画実行系`model_type`の`agents_server` sessionの起動時刻と終了時刻の`_process_loop_log`記録
-6. agents_server MCP呼び出しと`atk agents-wait`実行後のsession状態記録
+6. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録
 7. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)
 8. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit、plan file判定時)
@@ -266,7 +266,9 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__agents_server__",
 )
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
+    f"{namespace}{tool}"
+    for namespace in _AGENTS_SERVER_NAMESPACES
+    for tool in ("start", "start_custom", "start_explore", "start_shell")
 )
 _AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
@@ -393,6 +395,23 @@ def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict
     return cwd_map.get(remote_session_id) if isinstance(cwd_map, dict) else None
 
 
+def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
+    """開始操作の入力から工程別モデル設定の種別を返す。"""
+    if operation == "start":
+        task_path = tool_input.get("subagent_md_path")
+        return (
+            _agents_server_state.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
+        )
+    if operation == "start_custom":
+        model_type = tool_input.get("model_type")
+        return model_type if isinstance(model_type, str) else None
+    if operation == "start_explore":
+        return "explore_fast" if tool_input.get("fast", True) else "explore"
+    if operation == "start_shell":
+        return "explore_fast"
+    return None
+
+
 def _agents_server_missing_response_fields(session_id: str, payload: dict, structured: dict, tool_name: str) -> list[str]:
     """成功した応答から状態記録に必要な欠落項目を列挙する。"""
     operation = tool_name.rsplit("__", 1)[-1]
@@ -454,7 +473,7 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if model_type is not None:
             record["model_type"] = model_type
-        if operation in {"start", "start_explore", "start_shell"}:
+        if operation in {"start", "start_custom", "start_explore", "start_shell"}:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
@@ -488,9 +507,11 @@ def _record_agents_server_session_state(
         return state if changed else None
 
     update_state(session_id, _mutator)
-    if operation in {"start", "start_explore", "start_shell"} and not os.environ.get("AGENT_TOOLKIT_OWNER_SESSION"):
-        root_session_id = structured.get("root_session_id")
-        if isinstance(root_session_id, str) and root_session_id:
+    if operation in {"start", "start_custom", "start_explore", "start_shell"} and not os.environ.get(
+        "AGENT_TOOLKIT_OWNER_SESSION"
+    ):
+        root_session_id = _agents_server_status_file.find_root_session_id_for_session(remote_session_id)
+        if root_session_id is not None:
             _agents_server_status_file.write_root_alias(session_id, root_session_id)
 
 
@@ -595,11 +616,11 @@ def _record_agents_server_observation_attempt(
 
 
 def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
-    """実行トークン列が`atk agents-wait`の起動であるかを返す。"""
-    if len(tokens) < 2:
+    """実行トークン列が`atk agents wait`の起動であるかを返す。"""
+    if len(tokens) < 3:
         return False
     executable = tokens[0].replace("\\", "/")
-    return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1] == "agents-wait"
+    return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1:3] == ("agents", "wait")
 
 
 _ATK_HELP_OBSERVED_KEY = "atk_help_observed"
@@ -680,7 +701,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
 
 
 def _record_agents_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
-    """成功したBash入力内の`atk agents-wait`を観測の試みとして記録する。"""
+    """成功したBash入力内の`atk agents wait`を観測の試みとして記録する。"""
     if not any(
         segment.resolved and _is_agents_wait_invocation(segment.tokens) for segment in extract_execution_segments(command)
     ):
@@ -1019,8 +1040,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
         if tool_name in _AGENTS_SERVER_START_TOOLS:
-            model_type = structured.get("model_type")
-            model_type = model_type if isinstance(model_type, str) else None
+            model_type = _agents_server_model_type(tool_input, operation)
             if model_type in _TRACKED_MODEL_TYPES:
                 _process_loop_log.append("subagent_start", type=model_type)
             _record_agents_server_session_state(

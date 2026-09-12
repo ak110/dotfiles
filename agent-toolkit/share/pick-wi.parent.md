@@ -12,9 +12,11 @@ pickerと並行して`agent-toolkit:session-review`の別セッション経路�
 
 ## 起動
 
-メインはキュー一覧とAWI本文を自ら取得せず、`agents_server`の`start`へ`model_type="pick_wi"`を渡してpickerを1件起動する。`atk managed-temp create --prefix pick-wi`で作成した領域の`pick-wi.txt`を出力先とし、次を渡す。
+メインはキュー一覧とAWI本文を自ら取得せず、`agents_server`の`start`でpickerを1件起動する。
+`subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`を解決した絶対パスを渡す。
+`extra_params`には次の名前付き入力、`cwd`には対象リポジトリの絶対パスを渡す。
+`atk managed-temp create --prefix pick-wi`で作成した領域の`pick-wi.txt`を出力先とする。
 
-- `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`の絶対パス
 - `対象リポジトリ`: 絶対パス
 - `プロジェクト規範`: 絶対パス
 - `選定結果の出力先ファイル`: 絶対パス

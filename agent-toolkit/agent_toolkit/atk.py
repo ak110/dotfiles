@@ -1,8 +1,8 @@
 # PYTHON_ARGCOMPLETE_OK
 """agent-toolkitプラグイン提供CLI`atk`のPEP 723 entrypoint。
 
-サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents-wait`・
-`atk agents-notify`・`atk wait-schedule`・
+サブコマンド構成は`atk wi <sub>`・`atk plans <sub>`・`atk serve`・`atk config <sub>`・`atk agents <sub>`・
+`atk wait-schedule`・
 `atk managed-temp <sub>`・`atk worktree-stash <sub>`・`atk watch`・`atk review-table <sub>`・
 `atk review-audit <sub>`形式とする。
 AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmatterの`type`で識別する。
@@ -23,8 +23,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 - managed-temp create/cleanup: 管理対象一時領域の作成・後始末
 - watch: 作業ツリーの差分件数・HEADと成果物ファイルの行数・最終更新からの経過秒を1行で出力する
 - wait-schedule: request bucketと公開情報から委譲待機用のcron式を1行で出力する
-- agents-wait: agents_serverが保存した終端結果又は通知を1行で出力する
-- agents-notify: 委譲先から委譲元のルートセッションへ本文を1件送る
+- agents wait/notify/list/show: 委譲sessionの待機・通知・一覧・詳細表示
 
 ハンドラ実装は`_atk_wi_add`・`_atk_wi_batch`・`_atk_wi_list`・`_atk_wi_show`・`_atk_wi_mutations`・
 `_atk_wi_process_loop`・`_atk_wi_uwi`の各補助モジュールに分割し、
@@ -43,7 +42,7 @@ import sys
 from typing import Any
 
 # pylint: disable=wrong-import-position,protected-access
-from agent_toolkit._agents_server import agents_wait as _atk_agents_wait  # noqa: E402
+from agent_toolkit import _atk_agents as _agents  # noqa: E402
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 from agent_toolkit._atk import config as _config_cmd  # noqa: E402
 from agent_toolkit._atk import git_sync as _atk_git_sync  # noqa: E402
@@ -65,7 +64,6 @@ from agent_toolkit._atk.wi import mutations as _mutations  # noqa: E402
 from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402
 from agent_toolkit._atk.wi import show as _show  # noqa: E402
 from agent_toolkit._atk.wi import uwi as _uwi  # noqa: E402
-from agent_toolkit._atk_agents_notify import send_notification as _send_agents_notification  # noqa: E402
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
 
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
@@ -878,17 +876,9 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="判定対象のrequest bucket（mainまたはsubagent）。",
     )
-    _atk_help.add_command(top, "agents-wait", **_atk_help.HELP["atk agents-wait"])
+    agents = _atk_help.add_command(top, "agents", **_atk_help.HELP["atk agents"])
+    _agents.build_parser(agents)
     _atk_help.add_command(top, "agents-exit-session", **_atk_help.HELP["atk agents-exit-session"])
-    agents_notify = _atk_help.add_command(top, "agents-notify", **_atk_help.HELP["atk agents-notify"])
-    agents_notify.set_defaults(subparser=agents_notify)
-    notification_body = agents_notify.add_mutually_exclusive_group(required=True)
-    notification_body.add_argument("--body", help="委譲元へ送る本文。")
-    notification_body.add_argument(
-        "--body-file",
-        type=pathlib.Path,
-        help="委譲元へ送る本文を保持するUTF-8ファイルの絶対パス。",
-    )
     managed_temp = _atk_help.add_command(top, "managed-temp", **_atk_help.HELP["atk managed-temp"])
     _managed_temp.build_parser(managed_temp, command_dest="managed_temp_subcommand")
     worktree_stash = _atk_help.add_command(top, "worktree-stash", **_atk_help.HELP["atk worktree-stash"])
@@ -1054,22 +1044,10 @@ def main(
     if args.command == "wait-schedule":
         print(_wait_schedule.get_schedule(args.request_bucket))
         sys.exit(0)
-    if args.command == "agents-wait":
-        sys.exit(_atk_agents_wait.wait_for_result())
+    if args.command == "agents":
+        sys.exit(_agents.dispatch(args))
     if args.command == "agents-exit-session":
         sys.exit(_agents_exit_session.main())
-    if args.command == "agents-notify":
-        body = args.body
-        if args.body_file is not None:
-            if not args.body_file.is_absolute():
-                args.subparser.error("--body-fileには絶対パスを指定してください。")
-            try:
-                with args.body_file.open(encoding="utf-8", newline="") as stream:
-                    body = stream.read()
-            except (OSError, UnicodeError) as error:
-                args.subparser.error(f"--body-fileをUTF-8で読めません: {error}")
-        assert body is not None
-        sys.exit(_send_agents_notification(body))
     if home is None:
         home = pathlib.Path.home()
     if args.command == "serve":

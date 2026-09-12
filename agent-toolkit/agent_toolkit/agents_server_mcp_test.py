@@ -15,6 +15,7 @@ import sys
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -364,23 +365,28 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
     assert check.returncode == 0, check.stderr
 
 
-def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
-    """公開ツール集合とstartの入力境界が工程別モデル設定へ密結合している。"""
+def test_public_tools_separate_task_document_and_custom_start() -> None:
+    """専用タスク文書と自由本文の公開入力を別ツールへ分離する。"""
     assert set(subject.mcp._tool_manager._tools) == {
         "start",
+        "start_custom",
         "start_explore",
         "start_shell",
         "wait",
         "send_message",
         "kill",
         "list",
+        "show",
         "stop",
     }
     start_tool = subject.mcp._tool_manager.get_tool("start")
     assert start_tool is not None
     properties = start_tool.parameters["properties"]
-    assert {"model_type", "prompt", "cwd"} == properties.keys()
+    assert {"subagent_md_path", "extra_params", "cwd"} == properties.keys()
     assert {"engine", "model", "effort"}.isdisjoint(properties)
+    custom_tool = subject.mcp._tool_manager.get_tool("start_custom")
+    assert custom_tool is not None
+    assert {"prompt", "model_type", "cwd"} == custom_tool.parameters["properties"].keys()
     explore_tool = subject.mcp._tool_manager.get_tool("start_explore")
     assert explore_tool is not None
     assert {"prompt", "cwd", "fast"} == explore_tool.parameters["properties"].keys()
@@ -388,7 +394,7 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
     shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
     assert shell_tool is not None
     assert {"command", "cwd", "summary_policy"} == shell_tool.parameters["properties"].keys()
-    for tool in (start_tool, explore_tool):
+    for tool in (start_tool, custom_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
     assert kill_tool is not None
@@ -400,7 +406,7 @@ def test_public_tools_and_start_schema_expose_model_type_routes() -> None:
 
 def test_start_tool_descriptions_require_same_turn_observation() -> None:
     """開始ツールの公開説明が返却sessionを同じ応答内で観測させる。"""
-    for tool_name in ("start", "start_explore", "start_shell"):
+    for tool_name in ("start", "start_custom", "start_explore", "start_shell"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         assert "返した`session_id`" in tool.description
@@ -499,25 +505,10 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
         await asyncio.gather(task, return_exceptions=True)
 
     assert [session["session_id"] for session in response["sessions"]] == ["expired", "duplicate", "pending"]
-    expected_keys = {
-        "session_id",
-        "model_type",
-        "launch_kind",
-        "status",
-        "progress",
-        "label",
-        "result_available",
-        "updated_at",
-        "seconds_since_update",
-    }
-    # 停滞の印は最終活動時刻からの経過が閾値を超えたsessionだけへ付くため、鍵集合の比較から除く。
-    assert all(set(session) - {"stalled"} == expected_keys for session in response["sessions"])
+    assert all(set(session) == {"session_id", "status"} for session in response["sessions"])
     assert response["sessions"][0]["status"] == "expired"
-    assert response["sessions"][0]["progress"] == ""
     assert response["sessions"][1]["status"] == "running"
-    assert response["sessions"][1]["progress"] == "実行中"
     assert response["sessions"][2]["status"] == "running"
-    assert response["sessions"][2]["progress"] == ""
     assert response["omitted"] == 0
 
 
@@ -559,16 +550,17 @@ async def test_list_sessions_omits_terminated_sessions_without_pending_result(
 
 
 @pytest.mark.asyncio
-async def test_list_sessions_truncates_label_to_identifiable_length(tmp_path: pathlib.Path) -> None:
-    """一覧のlabelだけを100文字境界で切り詰める。"""
+async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
+    """一覧は識別子と状態以外の詳細を返さない。"""
     manager = subject.AgentsServerManager(status_writer=None)
     long_label = subject.SessionState("long", str(tmp_path), label="a" * 101)
     exact_label = subject.SessionState("exact", str(tmp_path), label="b" * 100)
     manager.sessions = {long_label.session_id: long_label, exact_label.session_id: exact_label}
 
-    labels = {session["session_id"]: session["label"] for session in manager.list_sessions()["sessions"]}
-    assert labels["long"] == f"{'a' * 100}…"
-    assert labels["exact"] == "b" * 100
+    assert manager.list_sessions()["sessions"] == [
+        {"session_id": "long", "status": "running"},
+        {"session_id": "exact", "status": "running"},
+    ]
 
 
 def test_delegation_break_even_guidance_is_available_before_calling() -> None:
@@ -600,7 +592,7 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "委譲先として起動されたセッションでは240秒を上限とする" in wait_tool.description
     assert "`status`と`elapsed_seconds`を返す" in wait_tool.description
     assert "最初に終端した1件の結果を返す" in wait_tool.description
-    assert "待機せずに現状態を確認する場合は`list`を発行する" in wait_tool.description
+    assert "最終活動時刻と停滞の印は`show`が返す" in wait_tool.description
     assert "本ツールを前景で発行する" in wait_tool.description
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
@@ -633,13 +625,13 @@ def test_public_descriptions_expose_agents_wait_handoff() -> None:
     assert wait_tool is not None
     assert send_tool is not None
 
-    assert "`session_id`、`status`" in start_tool.description
+    assert "`session_id`と`status`" in start_tool.description
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
     assert "`/goal`が設定され" in wait_tool.description
-    assert "`atk agents-wait`を実行ホストの背景ジョブとして起動" in wait_tool.description
+    assert "`atk agents wait`を実行ホストの背景ジョブとして起動" in wait_tool.description
     assert "完了通知を受領した後に本ツールを1回発行" in wait_tool.description
     assert "`delivery`" in send_tool.description
-    assert "`previous_result`" in send_tool.description
+    assert "`previous_result`" not in send_tool.description
     assert "`--" + "turn`へそのまま渡す" not in send_tool.description
 
 
@@ -662,12 +654,13 @@ async def test_start_rejects_prompt_missing_required_input(
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         nonlocal called
         called = True
-        return {"status": "running"}
+        return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
 
     with pytest.raises(ValueError, match=rf"目的.*{re.escape(str(task_document))}"):
-        await subject.start("execute", f"{task_document}の手順を実行せよ。\n対象: 値", str(tmp_path))
+        await subject.start(str(task_document), {"対象": "値"}, str(tmp_path))
 
     assert called is False
 
@@ -684,15 +677,50 @@ async def test_start_accepts_exec_review_prompt_with_documented_input_names(
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         nonlocal called
         called = True
-        return {"status": "running"}
+        return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
-    prompt = "\n".join([f"{task_document} の手順を実行せよ。", *_observed_input_lines(task_document.name, tmp_path)])
+    extra_params = _observed_input_params(task_document.name, tmp_path)
 
-    response = await subject.start("execute_review", prompt, str(tmp_path))
+    response = await subject.start(str(task_document), extra_params, str(tmp_path))
 
-    assert response == {"status": "running"}
+    assert response == {"session_id": "session", "status": "running"}
     assert called is True
+
+
+@pytest.mark.asyncio
+async def test_public_start_variants_and_send_message_return_minimal_responses(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """公開ラッパーは後続操作に必要な最小項目だけを返す。"""
+    response = {
+        "session_id": "session",
+        "status": "running",
+        "engine": "codex",
+        "model": "model",
+        "effort": "medium",
+        "model_type": "execute",
+        "root_session_id": "root",
+    }
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value=response),
+        start_explore=AsyncMock(return_value=response),
+        start_shell=AsyncMock(return_value=response),
+        send_message=AsyncMock(return_value={"delivery": "replied", "previous_result": {"status": "completed"}}),
+    )
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+
+    assert await subject.start_custom("本文", "execute", str(tmp_path)) == {
+        "session_id": "session",
+        "status": "running",
+    }
+    assert await subject.start_explore("探索", str(tmp_path)) == {"session_id": "session", "status": "running"}
+    assert await subject.start_shell("make test", str(tmp_path), "終了状態") == {
+        "session_id": "session",
+        "status": "running",
+    }
+    assert await subject.send_message("session", "続行") == {"delivery": "replied"}
 
 
 def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
@@ -742,6 +770,11 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     raise ValueError(f"未対応のタスク文書: {task_name}")
 
 
+def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]:
+    """実運用の入力行を専用startの名前付きパラメータへ変換する。"""
+    return dict(line.split(": ", 1) for line in _observed_input_lines(task_name, root))
+
+
 @pytest.mark.parametrize("task_name", ["exec-review.subagent.md", "exec.subagent.md", "pick-wi.subagent.md"])
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
     """実運用で観測した3種類の起動文が必須入力検査を通過する。"""
@@ -758,28 +791,28 @@ async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytes
     input_lines = [
         line for line in _observed_input_lines(task_document.name, tmp_path) if not line.startswith("引き継ぎ記録先:")
     ]
-    prompt = "\n".join([f"{task_document}の手順を実行せよ。", *input_lines])
+    extra_params = dict(line.split(": ", 1) for line in input_lines)
     called = False
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         nonlocal called
         called = True
-        return {"status": "running"}
+        return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
 
     with pytest.raises(ValueError, match=rf"引き継ぎ記録先.*{re.escape(str(task_document))}"):
-        await subject.start("execute", prompt, str(tmp_path))
+        await subject.start(str(task_document), extra_params, str(tmp_path))
 
     assert called is False
 
 
 @pytest.mark.asyncio
-async def test_start_warns_and_continues_without_required_input_marker(
+async def test_start_rejects_task_document_without_required_input_marker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """必須入力名を取得できないタスク文書では警告を応答へ添えて起動する。"""
+    """必須入力名を取得できないタスク文書はbackend起動前に拒否する。"""
     task_document = tmp_path / "share" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -790,12 +823,10 @@ async def test_start_warns_and_continues_without_required_input_marker(
         return {"status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
 
-    response = await subject.start("execute", f"{task_document} の手順を実行せよ。", str(tmp_path))
-
-    assert response["status"] == "running"
-    assert "必須入力検査を実施できません" in response["input_validation_warning"]
-    assert str(task_document) in response["input_validation_warning"]
+    with pytest.raises(ValueError, match="必須入力検査を実施できません"):
+        await subject.start(str(task_document), {}, str(tmp_path))
 
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
@@ -877,21 +908,7 @@ async def test_success_response_key_sets_for_all_tools(
 
     listed = manager.list_sessions(include_terminated=True)
     assert listed.keys() == {"sessions", "omitted"}
-    assert all(
-        item.keys()
-        == {
-            "session_id",
-            "status",
-            "progress",
-            "model_type",
-            "launch_kind",
-            "label",
-            "result_available",
-            "updated_at",
-            "seconds_since_update",
-        }
-        for item in listed["sessions"]
-    )
+    assert all(item.keys() == {"session_id", "status"} for item in listed["sessions"])
 
 
 @pytest.mark.asyncio
@@ -1103,14 +1120,7 @@ async def test_abandoned_candidate_is_released(
 
     assert response["session_id"] == "claude-session"
     assert set(manager.sessions) == {"claude-session"}
-    assert manager.list_sessions(include_terminated=True)["sessions"] == [
-        manager._listed_session(
-            manager.sessions["claude-session"],
-            status="running",
-            progress="",
-            result_available=False,
-        )
-    ]
+    assert manager.list_sessions(include_terminated=True)["sessions"] == [{"session_id": "claude-session", "status": "running"}]
     assert not abandoned_result.exists()
     assert codex.release_calls == ["codex-session"]
     await manager.close()
@@ -1711,21 +1721,22 @@ async def test_wait_does_not_return_unfinished_result(tmp_path: pathlib.Path) ->
 
 
 @pytest.mark.asyncio
-async def test_list_reports_seconds_since_update_and_stall(tmp_path: pathlib.Path) -> None:
-    """listは保持中sessionの最終活動時刻と経過秒数を返し、閾値超過へ停滞の印を付ける。"""
+async def test_show_reports_seconds_since_update_and_stall(tmp_path: pathlib.Path) -> None:
+    """showは最終活動時刻と経過秒数を返し、閾値超過へ停滞の印を付ける。"""
     manager, _ = _manager_with_fake("codex")
     fresh = subject.SessionState("thread-fresh", str(tmp_path), engine="codex")
     stalled = subject.SessionState("thread-stalled", str(tmp_path), engine="codex")
     stalled.updated_at = "2000-01-01T00:00:00+00:00"
     manager.sessions.update({fresh.session_id: fresh, stalled.session_id: stalled})
 
-    listed = {entry["session_id"]: entry for entry in manager.list_sessions()["sessions"]}
+    fresh_detail = manager.show_session(fresh.session_id)
+    stalled_detail = manager.show_session(stalled.session_id)
 
-    assert listed[fresh.session_id]["updated_at"] == fresh.updated_at
-    assert isinstance(listed[fresh.session_id]["seconds_since_update"], int)
-    assert "stalled" not in listed[fresh.session_id]
-    assert listed[stalled.session_id]["updated_at"] == stalled.updated_at
-    assert listed[stalled.session_id]["stalled"] is True
+    assert fresh_detail["updated_at"] == fresh.updated_at
+    assert isinstance(fresh_detail["seconds_since_update"], int)
+    assert "stalled" not in fresh_detail
+    assert stalled_detail["updated_at"] == stalled.updated_at
+    assert stalled_detail["stalled"] is True
 
     response = await manager.wait()
 
@@ -4033,6 +4044,51 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
 
 
 @pytest.mark.asyncio
+async def test_claude_failure_keeps_last_nonempty_assistant_message(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """空の後続本文と失敗結果は最後の非空assistant本文を失わない。"""
+    result = ResultMessage("")
+    result.is_error = True
+    client = FakeClaudeClient([[SystemMessage("claude-failed"), AssistantMessage("途中経過"), AssistantMessage(""), result]])
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    try:
+        session = await manager.start("調査", str(tmp_path))
+        for _ in range(20):
+            if session.result_available:
+                break
+            await asyncio.sleep(0.01)
+        assert session.status == "failed"
+        assert session.agent_message == "途中経過"
+        assert session.progress == "途中経過"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_empty_result_is_not_completed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """非空assistant本文を伴わないResultMessageは正常完了にしない。"""
+    client = FakeClaudeClient([[SystemMessage("claude-empty"), AssistantMessage(""), ResultMessage("")]])
+    manager = claude_backend.ClaudeServerManager(client_factory=lambda _options: client)
+    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    try:
+        session = await manager.start("調査", str(tmp_path))
+        for _ in range(20):
+            if session.result_available:
+                break
+            await asyncio.sleep(0.01)
+        assert session.status == "failed"
+        assert session.error == {"message": "Claude Agent SDK returned no assistant output"}
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_claude_retention_expiry_disconnects_and_retains_result_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -4199,10 +4255,10 @@ async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: path
     _complete(session, message="退避結果")
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
-    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is True
+    assert manager.show_session(session.session_id)["result_available"] is True
     response = await manager.wait()
     assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "退避結果"}
-    assert manager.list_sessions(include_terminated=True)["sessions"][0]["result_available"] is False
+    assert manager.show_session(session.session_id)["result_available"] is False
 
 
 def _publish_recovered_session(
@@ -4989,9 +5045,10 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
         return {"status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
 
     with pytest.raises(ValueError) as exc_info:
-        await subject.start("execute", f"{task_document} の手順を実行せよ。", str(tmp_path))
+        await subject.start(str(task_document), {}, str(tmp_path))
     message = str(exc_info.value)
     assert "必須入力が欠けています: 対象" in message
     assert str(task_document) in message
