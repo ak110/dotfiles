@@ -155,6 +155,18 @@ def _clear_delegated_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _clear_process_loop_session_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """process-loop起動セッションの標識を各テストの実行環境から除去する。
+
+    当該標識はUserPromptSubmitの固定sessionTitleを決める入力であり、
+    子プロセスへ継承されると出力を伴わないことを検証するテストが失敗する。
+    標識の有無で分岐する動作を検証するテストは自身で`setenv`する。
+    """
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
+    monkeypatch.delenv("DOTFILES_AUTONOMOUS_EXIT_REQUIRED", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """エージェント環境の判定変数を各テストの実行環境から除去する。
 
