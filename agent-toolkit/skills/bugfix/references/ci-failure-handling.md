@@ -52,8 +52,8 @@ formatter未適用・単純なテスト期待値の未追随など）と確定�
 
 対処選択肢を決める前に、CI失敗の性質を実測で分類する。
 
-- 監視で取得したrun IDまたはpipeline ID・job IDを引き継ぎ、失敗ジョブのログを取得する
-  - GitHubでは`gh run view <run-id> --log-failed`を使用する
+- 監視で取得したrun IDまたはpipeline ID・job IDを引き継ぎ、全体の実行状態を確認してから失敗ジョブのログを取得する
+  - GitHubではrunが終端する前は`gh run view <run-id> --log-failed`を実行せず、job IDを使うAPI、annotation又は失敗テスト名から取得できる証拠を暫定保存する。run終端後に同コマンドでrun単位の失敗ログを取得し、暫定保存した証拠と失敗job集合の完全性を照合する
   - GitLabでは`glab ci list --sha=<sha> -F json`でpipeline IDを取得する。
     取得したIDを`glab ci get -p <pipeline-id> --with-job-details`へ渡し、
     失敗したjobを`glab ci trace <job>`へ渡す
@@ -171,11 +171,10 @@ CI設定側の抑制に関する具体的な禁止条件へ該当する。
 
 ## 選択の流れ
 
-1. plan mode開始前に、失敗jobを1件でも検出した時点でjob ID、annotation、取得可能なjob単位ログとartifactを所有者限定の一時領域へ暫定保存する
+1. plan mode開始前に、失敗jobを1件でも検出した時点で、前節のrun状態別の取得手順に従ってjob ID、annotation、取得可能なjob単位ログとartifactを所有者限定の一時領域へ暫定保存する
    - 同一SHAのローカル再現、帰属判定、原因仮説、対策検討を直ちに開始する
-   - run全体ログが進行中を理由に拒否しても、job単位API、annotation、失敗テスト名などの取得可能な証拠を使う
    - 残りのjob監視を継続する
-   - 全対象の終端後に追加の失敗jobを列挙し、各失敗ログとartifactの完全性を再照合して先行分析へ統合する
+   - 全対象の終端後にrun単位の失敗ログを取得し、追加の失敗job、各失敗ログ及びartifactの完全性を再照合して先行分析へ統合する
 2. 初回ログと同一SHAのローカル再現結果から再現性を暫定分類する。
    再実行の可否、回数及び終端後の資料確認は「再現性」節に従う
 3. 先行した調査を止めず、全失敗集合の照合後に修正範囲を確定してplan modeを開始し、新しいバグ計画の調査工程で

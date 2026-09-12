@@ -1,7 +1,6 @@
 """`atk plans checkout`・`commit`と旧計画root移行の実Git検証。"""
 
 import datetime
-import json
 import os
 import pathlib
 import subprocess
@@ -209,7 +208,7 @@ def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) ->
 
     message = str(exc_info.value)
     assert f"atk plans commit {main.name}" in message
-    assert f"atk plans checkout {relative}" in message
+    assert "取得記録を回収" in message
 
 
 def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.Path) -> None:
@@ -372,7 +371,7 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
     if saved_change == "changed-main":
         main.write_text("# concurrent\n", encoding="utf-8")
     else:
-        main.with_name(main.stem + ".new.md").write_text("# concurrent\n", encoding="utf-8")
+        main.with_name(main.stem + ".bugs.md").write_text("# concurrent\n", encoding="utf-8")
     saved_before = _atk_plans._bundle_contents(  # pylint: disable=protected-access
         _atk_plans._saved_plan_bundle(notes, relative)  # pylint: disable=protected-access
     )
@@ -382,7 +381,7 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
 
     assert "相違した対象" in str(exc_info.value)
     assert "作業root外へ退避" in str(exc_info.value)
-    assert f"atk plans checkout {relative}" in str(exc_info.value)
+    assert "別名の新しい計画" in str(exc_info.value)
 
     assert (
         _atk_plans._bundle_contents(  # pylint: disable=protected-access
@@ -415,7 +414,7 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
     if remote_change == "changed-main":
         other_main.write_text("# concurrent\n", encoding="utf-8")
     else:
-        other_main.with_name(other_main.stem + ".supplement.md").write_text(
+        other_main.with_name(other_main.stem + ".exec-review.tsv").write_text(
             "# concurrent\n",
             encoding="utf-8",
         )
@@ -462,9 +461,9 @@ def test_commit_updates_checked_out_plan_and_preserves_saved_creation_time(tmp_p
     assert saved_main.stat().st_ino == saved_inode
     _assert_preserved_birth(saved_main, saved_birth)
     assert not working_main.exists()
-    assert not saved_detail.exists()
-    assert (saved_main.parent / working_attachment.name).read_text(encoding="utf-8") == "# supplement\n"
-    assert not working_attachment.exists()
+    assert saved_detail.read_text(encoding="utf-8") == "# saved detail\n"
+    assert not (saved_main.parent / working_attachment.name).exists()
+    assert working_attachment.read_text(encoding="utf-8") == "# supplement\n"
 
 
 def test_commit_uses_recorded_relative_main_instead_of_birth_month(
@@ -626,7 +625,7 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
 
 
 def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_path: pathlib.Path) -> None:
-    """作業バンドル全体を保存rootへ移し、commit成功後だけ作業側を回収する。"""
+    """現行作業バンドルを保存rootへ移し、旧添付は作業側へ残す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -643,13 +642,12 @@ def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_pa
 
     saved_main = notes / "plans" / relative
     assert result["paths"] == (
-        "plans/2026/08/30-計画保存先移行-d4f9.detail.md",
         "plans/2026/08/30-計画保存先移行-d4f9.exec-review.tsv",
         "plans/2026/08/30-計画保存先移行-d4f9.md",
     )
     assert saved_main.read_text(encoding="utf-8") == "# main\n"
     assert not main.exists()
-    assert not detail.exists()
+    assert detail.read_text(encoding="utf-8") == "# detail\n"
     assert not review.exists()
 
 
@@ -705,13 +703,13 @@ def test_commit_resumes_after_partial_bundle_move_failure(
     _init_local_notes(notes)
     relative = pathlib.Path("2026/08/30-部分確定-d4f9.md")
     main = _plan_file.working_plans_root(home) / relative
-    detail = main.with_name(main.stem + ".detail.md")
-    review = main.with_name(main.stem + ".plan-review.tsv")
+    bugs = main.with_name(main.stem + ".bugs.md")
+    review = main.with_name(main.stem + ".exec-review.tsv")
     main.parent.mkdir(parents=True)
     main.write_text("# main\n", encoding="utf-8")
-    detail.write_text("# detail\n", encoding="utf-8")
-    review.write_text('1\t"plan-review"\n', encoding="utf-8")
-    expected_times = {path.name: _set_stable_mtime(path) for path in (main, detail, review)}
+    bugs.write_text("# bugs\n", encoding="utf-8")
+    review.write_text('1\t"implementation-review"\n', encoding="utf-8")
+    expected_times = {path.name: _set_stable_mtime(path) for path in (main, bugs, review)}
     original_replace = _atk_plans.os.replace
 
     def fail_review_replace(source: pathlib.Path, destination: pathlib.Path) -> None:
@@ -725,18 +723,18 @@ def test_commit_resumes_after_partial_bundle_move_failure(
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
     assert main.is_file()
-    assert any(path.is_file() for path in (detail, review))
+    assert any(path.is_file() for path in (bugs, review))
     monkeypatch.setattr(_atk_plans.os, "replace", original_replace)
 
     _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
-    for source in (main, detail, review):
+    for source in (main, bugs, review):
         assert not source.exists()
         _assert_preserved_times(notes / "plans" / relative.parent / source.name, expected_times[source.name])
 
 
 def test_commit_plan_moves_direct_working_bundle_to_birth_month(tmp_path: pathlib.Path) -> None:
-    """直下の全付属ファイルを作成月の保存先へ移し、stemと内容を維持する。"""
+    """直下の現行添付を作成月の保存先へ移し、旧添付を作業側へ残す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -760,10 +758,15 @@ def test_commit_plan_moves_direct_working_bundle_to_birth_month(tmp_path: pathli
     saved_relative = pathlib.Path(year, month, relative.name)
     assert result["plan_file"] == saved_relative.as_posix()
     assert result["message"] == "chore: update plan 計画保存先移行"
+    current_sources = {main, main.with_name(main.stem + ".bugs.md"), main.with_name(main.stem + ".exec-review.tsv")}
     for source, content in contents.items():
         destination = notes / "plans" / year / month / source.name
-        assert destination.read_text(encoding="utf-8") == content
-        assert not source.exists()
+        if source in current_sources:
+            assert destination.read_text(encoding="utf-8") == content
+            assert not source.exists()
+        else:
+            assert not destination.exists()
+            assert source.read_text(encoding="utf-8") == content
 
 
 def test_commit_plan_succeeds_without_creation_time(
@@ -915,8 +918,8 @@ def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp
     with pytest.raises(_common.WebInputError, match="内容の異なる") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
-    assert "作業root外へ退避" in str(error_info.value)
-    assert "atk plans checkout" in str(error_info.value)
+    assert "作業側を退避" in str(error_info.value)
+    assert "別名の新しい計画" in str(error_info.value)
     assert working.read_text(encoding="utf-8") == "working\n"
     assert saved.read_text(encoding="utf-8") == "saved\n"
 
@@ -935,7 +938,7 @@ def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path
     with pytest.raises(_common.WebInputError, match="同じstemのファイルが残っています") as error_info:
         _atk_plans.commit_plan(notes, relative.as_posix(), home=home)
 
-    assert "atk plans checkout" in str(error_info.value)
+    assert "別名の新しい計画" in str(error_info.value)
     assert residue.read_text(encoding="utf-8") == "# unsaved residue\n"
     assert saved.read_text(encoding="utf-8") == "# saved main\n"
 
@@ -1470,7 +1473,8 @@ def test_commit_excludes_owner_record_and_removes_it_after_collection(tmp_path: 
     result = _atk_plans.commit_plan(notes, main.name, home=home)
 
     assert not _plan_file.owner_record_path(working_main).exists()
-    assert all(not path.exists() for path in copied)
+    assert not working_main.exists()
+    assert [path for path in copied if path != working_main and path.exists()]
     committed_paths = result["paths"]
     assert isinstance(committed_paths, tuple)
     assert not any(str(path).endswith(_plan_file.OWNER_RECORD_SUFFIX) for path in committed_paths)
@@ -1561,7 +1565,8 @@ def test_commit_removes_working_residue_of_checked_out_plan(tmp_path: pathlib.Pa
 
     _atk_plans.commit_plan(notes, main.name, home=home)
 
-    assert all(not path.exists() for path in copied)
+    assert not working_main.exists()
+    assert [path for path in copied if path != working_main and path.exists()]
     assert not lock.exists()
 
 
@@ -1586,7 +1591,7 @@ def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pa
     owner_by_path = {entry["path"]: entry["owner_session"] for entry in entries}
     assert owner_by_path == {str(owned): _OWNER_SESSION, str(unowned): None}
     updated_by_path = {entry["path"]: entry["updated_at"] for entry in entries}
-    assert updated_by_path[str(owned)] == datetime.datetime.fromtimestamp(1_700_000_500).astimezone().isoformat()
+    assert updated_by_path[str(owned)] == datetime.datetime.fromtimestamp(1_700_000_000).astimezone().isoformat()
 
 
 def test_list_removes_legacy_sidecar_lock_even_when_table_exists(tmp_path: pathlib.Path) -> None:
@@ -1676,11 +1681,11 @@ def _write_saved_progress_plan(notes: pathlib.Path, relative: pathlib.Path, rows
     return main
 
 
-def test_dispatch_progress_prints_one_json_document_per_row(
+def test_dispatch_rejects_removed_progress_subcommand(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """進捗ログの各行を3つのキーを持つJSON文書として1行ずつ書く。"""
+    """公開parserを迂回した旧progress指定もdispatchで拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -1692,21 +1697,16 @@ def test_dispatch_progress_prints_one_json_document_per_row(
     )
     args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
 
-    result = _atk_plans.dispatch(args, notes, home)
-
-    assert result == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert [json.loads(line) for line in lines] == [
-        {"datetime": "2026-09-09 10:00", "completed_step": "統合順1の実装", "notes": "近接検証が終了コード0"},
-        {"datetime": "2026-09-09 11:00", "completed_step": "統合順2の実装", "notes": "警告0件"},
-    ]
+    with pytest.raises(_common.WebInputError, match="未知のplansサブコマンド: progress"):
+        _atk_plans.dispatch(args, notes, home)
+    assert capsys.readouterr().out == ""
 
 
-def test_dispatch_progress_writes_nothing_for_empty_progress_table(
+def test_dispatch_rejects_removed_progress_subcommand_for_empty_plan(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """進捗行が1件も無い計画では何も書かず終了コード0で終わる。"""
+    """進捗行が無い場合も旧progressのdispatchを復活させない。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -1714,9 +1714,8 @@ def test_dispatch_progress_writes_nothing_for_empty_progress_table(
     _write_saved_progress_plan(notes, relative, "")
     args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
 
-    result = _atk_plans.dispatch(args, notes, home)
-
-    assert result == 0
+    with pytest.raises(_common.WebInputError, match="未知のplansサブコマンド: progress"):
+        _atk_plans.dispatch(args, notes, home)
     assert capsys.readouterr().out == ""
 
 

@@ -266,17 +266,20 @@ _TARGET_TSV_SUFFIXES = (".plan-review.tsv", ".exec-review.tsv")
 _LISTED_EXCLUDED_SUFFIXES = (".detail.md", ".bugs.md", *_TARGET_TSV_SUFFIXES)
 
 
-def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None) -> bool:
+def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None, source_id: str = "") -> bool:
     """`path`が指定root配下の対象計画ファイルか判定する。
 
     `_atk/serve/plans/`の`is_target_path`と同一基準を保つ（両者はSSH越し実行のため実装を共有できない）。
-    メイン`<stem>.md`と付属ファイル`<stem>.detail.md`・`<stem>.bugs.md`・レビュー指摘管理表を真とする
-    （付属ファイルは一覧だけから除外し、読取・検索・監視の対象には含める。`_is_listed_path`が一覧専用の判定を持つ）。
+    作業rootではメイン`<stem>.md`と付属ファイル`<stem>.bugs.md`・`<stem>.exec-review.tsv`を真とする。
+    保存rootと明示rootでは旧付属ファイルも読取・検索・監視の対象に含める。
+    付属ファイルは一覧だけから除外し、`_is_listed_path`が一覧専用の判定を持つ。
     `ROOT`自身がドット配下でも通るよう、判定は`ROOT`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`ROOT`外を指すリンクは対象外となる
     （`_resolve_target`が単一ファイル取得へ課す範囲と一致させる）。
     """
     if path.suffix != ".md" and not path.name.endswith(_TARGET_TSV_SUFFIXES):
+        return False
+    if source_id == LEGACY_SOURCE_ID and path.name.endswith((".detail.md", ".plan-review.tsv")):
         return False
     roots = [_canonical(root)] if root is not None else [spec.path for spec in _root_specs()]
     for candidate in roots:
@@ -289,13 +292,13 @@ def _is_target_path(path: pathlib.Path, root: pathlib.Path | None = None) -> boo
     return False
 
 
-def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None) -> bool:
+def _is_listed_path(path: pathlib.Path, root: pathlib.Path | None = None, source_id: str = "") -> bool:
     """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
     メイン計画は常に一覧へ載せ、付属の詳細・バグ計画は除外する。レビュー指摘管理表は対応する
     メイン計画が存在する場合だけ付属ファイルとして除外し、存在しない場合は自身を一覧へ載せる。
     """
-    if not _is_target_path(path, root):
+    if not _is_target_path(path, root, source_id):
         return False
     review_suffix = next((suffix for suffix in _TARGET_TSV_SUFFIXES if path.name.endswith(suffix)), None)
     if review_suffix is not None:
@@ -556,7 +559,7 @@ def _scan_snapshot() -> tuple[list[dict[str, typing.Any]], dict[str, dict[str, t
                 paths = spec.path.rglob("*")
                 for path in paths:
                     try:
-                        if not path.is_file() or not _is_listed_path(path, spec.path):
+                        if not path.is_file() or not _is_listed_path(path, spec.path, spec.source_id):
                             continue
                         st = path.stat()
                     except OSError as error:
@@ -614,7 +617,7 @@ def _resolve_target(source_or_rel_b64: str, rel_b64: str | None = None) -> pathl
             target.relative_to(spec.path.resolve())
         except ValueError:
             continue
-        if _is_target_path(target, spec.path) and target.is_file():
+        if _is_target_path(target, spec.path, spec.source_id) and target.is_file():
             matches.append(target)
     if len(matches) != 1:
         if len(matches) > 1:
@@ -651,7 +654,7 @@ def _search_payload(query_b64: str, source_id: str | None = None) -> dict[str, t
         try:
             paths = spec.path.rglob("*")
             for path in paths:
-                if not path.is_file() or not _is_target_path(path, spec.path):
+                if not path.is_file() or not _is_target_path(path, spec.path, spec.source_id):
                     continue
                 try:
                     text = path.read_text(encoding="utf-8", errors="replace")
@@ -730,8 +733,8 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
             src = pathlib.Path(str(event.src_path))
             if isinstance(event, watchdog.events.FileMovedEvent):
                 dest = pathlib.Path(str(event.dest_path))
-                src_ok = _is_target_path(src, self.spec.path)
-                dest_ok = _is_target_path(dest, self.spec.path)
+                src_ok = _is_target_path(src, self.spec.path, self.spec.source_id)
+                dest_ok = _is_target_path(dest, self.spec.path, self.spec.source_id)
                 if not (src_ok or dest_ok):
                     return
                 # rename経路でsrcのみ`.md`の場合は元パス側を削除扱い、
@@ -748,7 +751,7 @@ def _start_observer(stop_event: threading.Event) -> typing.Any:
                 target = dest if dest_ok else src
                 self._emit_upsert(target)
                 return
-            if not _is_target_path(src, self.spec.path):
+            if not _is_target_path(src, self.spec.path, self.spec.source_id):
                 return
             if isinstance(event, watchdog.events.FileDeletedEvent):
                 payload = {"type": "deleted", "path": src.relative_to(self.spec.path).as_posix()}

@@ -545,9 +545,11 @@ def _plan_file_name(file_path: str) -> str | None:
 
 
 def _is_component_name(name: str) -> bool:
-    """旧rootの計画構成要素名を判定する。"""
+    """作業rootの現行計画ファイル名を判定する。"""
     if (
-        name.endswith(".review.md")
+        name.endswith(".detail.md")
+        or name.endswith(".plan-review.tsv")
+        or name.endswith(".review.md")
         or name.endswith(".codex.log")
         or name.endswith("-workaround-check.md")
         or name.endswith(".bugs.md")
@@ -557,7 +559,7 @@ def _is_component_name(name: str) -> bool:
 
 
 def is_plan_component_file(file_path: str) -> bool:
-    """計画ファイル（メイン）または計画ファイル（詳細）か判定する。"""
+    """現行の計画ファイル（メイン）か判定する。"""
     name = _plan_file_name(file_path)
     if name is not None:
         return _is_component_name(name)
@@ -565,14 +567,14 @@ def is_plan_component_file(file_path: str) -> bool:
         path = resolve_plan_file(file_path)
     except (OSError, ValueError):
         return False
-    return _new_plan_kind(path) in {"main", "detail"}
+    return _new_plan_kind(path) == "main"
 
 
 def is_plan_main_file(file_path: str) -> bool:
     """計画ファイル（メイン）か判定する。"""
     name = _plan_file_name(file_path)
     if name is not None:
-        return _is_component_name(name) and not name.endswith(".detail.md")
+        return _is_component_name(name)
     try:
         path = resolve_plan_file(file_path)
     except (OSError, ValueError):

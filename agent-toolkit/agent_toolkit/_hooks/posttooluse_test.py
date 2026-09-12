@@ -1138,8 +1138,8 @@ class TestPlanFilePostWriteNotice:
         # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 
-    def test_notice_on_detail_file_write_targets_main_path(self, tmp_path: pathlib.Path) -> None:
-        """計画ファイル（詳細）`.detail.md`書込み時も検査案内は対応する計画ファイル（メイン）パスを対象にする。"""
+    def test_notice_on_removed_detail_file_write_is_skipped(self, tmp_path: pathlib.Path) -> None:
+        """廃止した`.detail.md`への書込みを現行計画の検査対象にしない。"""
         plan_path = self._make_plan_path(tmp_path)
         detail_path = plan_path.with_name("sample.detail.md")
         sid = "post-write-notice-detail"
@@ -1154,9 +1154,7 @@ class TestPlanFilePostWriteNotice:
             plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        message = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert str(plan_path) in message
-        assert str(detail_path) not in message
+        assert result.stdout == ""
 
     def test_notice_skipped_when_plan_mode_not_invoked(self, tmp_path: pathlib.Path) -> None:
         plan_path = self._make_plan_path(tmp_path)

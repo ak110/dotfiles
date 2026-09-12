@@ -694,7 +694,6 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     monkeypatch.setattr(common_module, "notify_unanswered_uwis_if_any", lambda *_args: None)
     monkeypatch.setattr(mutations_module, "_cmd_start_processing", lambda *_args: None)
     monkeypatch.setattr(list_module, "_cmd_list", lambda *_args: None)
-    monkeypatch.setattr(mutations_module, "_cmd_convert_to_plan", lambda *_args: None)
     monkeypatch.setattr(plans_module, "dispatch", lambda *_args: 0)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -709,19 +708,6 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
         atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
     assert exc_info.value.code == 0
     assert "未pushのcommit" not in capsys.readouterr().err
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(
-            ["wi", "convert-to-plan", "awi.md", "--plan-file", str(tmp_path / "plan.md"), "--skip-push"],
-            home=tmp_path,
-        )
-    assert exc_info.value.code == 0
-    assert "未pushのcommit" not in capsys.readouterr().err
-
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["plans", "migrate"], home=tmp_path)
-    assert exc_info.value.code == 3
-    assert "private-notesに未pushのcommitが1件残っています" in capsys.readouterr().err
 
 
 class TestMutationTargetRepoParserOption:
@@ -820,28 +806,21 @@ class TestMutationTargetRepoParserOption:
         assert exc_info.value.code == 2
 
 
-def test_convert_to_plan_parser_accepts_repeated_dependencies() -> None:
-    """convert-to-planが必須計画と複数の依存先を保持する。"""
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["wi", "convert-to-plan", "awi.md", "--plan-file", "/tmp/plan.md"],
+        ["plans", "checkout", "2026/09/09-example-1a2b.md"],
+        ["plans", "progress", "2026/09/09-example-1a2b.md"],
+        ["plans", "migrate"],
+    ],
+)
+def test_removed_plan_mutation_commands_are_rejected(argv: list[str]) -> None:
+    """旧計画を変換・再開・更新する公開サブコマンドを受理しない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    args = parser.parse_args(
-        [
-            "wi",
-            "convert-to-plan",
-            "awi.md",
-            "--plan-file",
-            "/tmp/plan.md",
-            "--body-file",
-            "/tmp/body.md",
-            "--depends-on",
-            "first.md",
-            "--depends-on",
-            "second.md",
-        ]
-    )
-    assert args.filename == ["awi.md"]
-    assert args.plan_file == "/tmp/plan.md"
-    assert args.body_file == "/tmp/body.md"
-    assert args.depends_on == ["first.md", "second.md"]
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(argv)
+    assert exc_info.value.code == 2
 
 
 class TestLegacyTopLevelCommandAlias:
@@ -905,24 +884,7 @@ class TestLegacyTopLevelCommandAlias:
         assert "mq" not in list(command_action.choices)
 
 
-def test_convert_to_plan_help_describes_portable_and_legacy_paths(capsys: pytest.CaptureFixture[str]) -> None:
-    """convert-to-planの公開helpが新規portable値と既存絶対パス互換を案内する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["wi", "convert-to-plan", "--help"])
-
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    normalized_output = " ".join(output.split())
-    assert "--plan-file PLAN_FILE" in output
-    assert "$(atk config get private_notes)/plans/から始まるportable値" in output
-    assert "既存の絶対パスも読み取り互換として受理する" in output
-    assert "保存先の実体の実在を検証する" in output
-    assert "atk plans commit" in normalized_output
-
-
-@pytest.mark.parametrize("command", ["add", "edit", "convert-to-plan"])
+@pytest.mark.parametrize("command", ["add", "edit"])
 def test_body_text_arguments_are_absent_from_wi_help(
     command: str,
     capsys: pytest.CaptureFixture[str],
@@ -939,19 +901,9 @@ def test_body_text_arguments_are_absent_from_wi_help(
     assert "--message" not in output
 
 
-@pytest.mark.parametrize(
-    ("command", "expected"),
-    [
-        ("add", "保存先の実体の実在を検証する"),
-        ("edit", "保存先に実体を持つ計画だけを受理する"),
-    ],
-)
-def test_plan_file_help_describes_saved_copy_requirement(
-    capsys: pytest.CaptureFixture[str],
-    command: str,
-    expected: str,
-) -> None:
-    """plan_fileを記録する公開helpが保存先の受理条件を案内する。"""
+@pytest.mark.parametrize("command", ("add", "edit"))
+def test_plan_file_option_is_absent_from_wi_help(command: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """計画型AWIを生成する旧plan-fileオプションを公開helpへ表示しない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
 
     with pytest.raises(SystemExit) as exc_info:
@@ -959,19 +911,7 @@ def test_plan_file_help_describes_saved_copy_requirement(
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    normalized_output = " ".join(output.split())
-    assert "--plan-file" in output
-    assert expected in output
-    if command == "add":
-        assert "atk plans commit" in normalized_output
-
-
-def test_convert_to_plan_parser_accepts_multiple_filenames_and_skip_push() -> None:
-    """convert-to-planが複数入力とpush省略を1つの操作として保持する。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
-    args = parser.parse_args(["wi", "convert-to-plan", "first.md", "second.md", "--plan-file", "/tmp/plan.md", "--skip-push"])
-    assert args.filename == ["first.md", "second.md"]
-    assert args.skip_push is True
+    assert "--plan-file" not in output
 
 
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
@@ -1063,7 +1003,6 @@ class TestAddTargetRepoOptionParser:
         normalized_output = "".join(output.split())
         assert "ローカルパス指定時は指定worktree" in normalized_output
         assert "正規化リモートURL指定時はローカルHEADを持たない" in normalized_output
-        assert "ベースコミットは作成時点の参照値として保持し、投入先の`target_commit`とは照合しない" in output
 
 
 @pytest.mark.parametrize("subcommand", ["adopt", "reject"])
@@ -1270,11 +1209,11 @@ def test_public_review_table_add_requires_track_and_shows_choices(
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
     assert "--track" in error
-    assert "plan-review" in error
     assert "exec-review" in error
-    assert "implementation-review" in error
-    assert "plan-conformance" in error
-    assert "independent" in error
+    assert "plan-review" not in error
+    assert "implementation-review" not in error
+    assert "plan-conformance" not in error
+    assert "independent" not in error
 
 
 def test_public_review_table_invalid_column_count_error_explains_recovery(
@@ -1328,7 +1267,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
     if subcommand == "respond":
         argv.extend(
             [
-                "--track=plan-conformance",
+                "--track=exec-review",
                 f"--location-file={location_file}",
                 f"--issue-file={issue_file}",
                 "--response-needed=yes",
@@ -1339,7 +1278,7 @@ def test_public_review_table_mutations_reject_old_column_count_with_recovery(
         argv.extend(
             [
                 "--round=2",
-                "--track=independent",
+                "--track=exec-review",
                 "--level=詳細",
                 f"--location-file={location_file}",
                 f"--issue-file={issue_file}",
@@ -2095,7 +2034,6 @@ class TestAddBatchOption:
             ["--scope=name"],
             ["--question-type=free-form"],
             ["--choices=A,B"],
-            ["--plan-file=/tmp/plan.md"],
             ["--depends-on=other.md"],
             ["--origin-locator=rollout-123:1"],
         ],
@@ -2220,13 +2158,3 @@ class TestAddBatchOption:
         assert exc_info.value.code == 1
         assert "投入を拒否しました" in capsys.readouterr().err
         assert not list((notes / "inbox").iterdir())
-
-
-def test_plans_progress_resolves_subcommand_and_plan_file() -> None:
-    """最上位のコマンドラインから進捗取得のサブコマンドと計画ファイルの指定を解決する。"""
-    args = atk._build_parser().parse_args(  # pylint: disable=protected-access  # noqa: SLF001
-        ["plans", "progress", "2026/09/09-example-1a2b.md"]
-    )
-
-    assert args.plans_subcommand == "progress"
-    assert args.plan_file == "2026/09/09-example-1a2b.md"

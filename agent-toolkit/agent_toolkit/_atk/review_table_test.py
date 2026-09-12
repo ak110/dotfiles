@@ -399,6 +399,30 @@ def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pa
     assert table.validate(appended, require_responses=False) == 0
 
 
+@pytest.mark.parametrize("name", ("legacy.plan-review.tsv", f"dlg-{'a' * 40}.exec-review.tsv"))
+def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, name: str) -> None:
+    """保存済み旧表と廃止した対話是正表は公開作成経路で更新しない。"""
+    args = argparse.Namespace(review_table_subcommand="init", path=str(tmp_path / name))
+
+    with pytest.raises(ValueError, match="旧レビュー表は読み取り専用"):
+        table.dispatch(args)
+
+
+@pytest.mark.parametrize("track", ("plan-review", "implementation-review", "plan-conformance", "independent"))
+def test_dispatch_rejects_writing_table_with_legacy_track(tmp_path: pathlib.Path, track: str) -> None:
+    """現行拡張子の表でも旧trackを含む場合は書き換えない。"""
+    path = tmp_path / "sample.exec-review.tsv"
+    row = ["1", track, "場所", "指摘", "詳細", "", "", ""]
+    path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in row) + "\n", encoding="utf-8")
+    original = path.read_bytes()
+    args = argparse.Namespace(review_table_subcommand="respond", path=str(path))
+
+    with pytest.raises(ValueError, match="旧review typeは読み取り専用"):
+        table.dispatch(args)
+
+    assert path.read_bytes() == original
+
+
 def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "review.tsv"
     table.init(path)
@@ -1065,7 +1089,7 @@ def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.Capture
         "列は`round`、`track`、`location`、`issue`、`level`、`response-needed`、`response`、`no-response-reason`の順"
         in help_text
     )
-    assert "保存済みの7列形式は`level`を空として読み込み" in help_text
+    assert "保存済みの7列形式は`level`を空として読み込む" in help_text
 
 
 def test_cell_files_preserve_issue_and_supply_responses(

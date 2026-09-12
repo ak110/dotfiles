@@ -82,11 +82,11 @@ def test_is_plan_component_file_normal_md_returns_true(_plans_home: pathlib.Path
     assert _plan_file.is_plan_component_file(str(plan)) is True
 
 
-def test_is_plan_component_file_detail_md_returns_true(_plans_home: pathlib.Path) -> None:
-    """計画ファイル（詳細）は計画構成要素述語では真になる。"""
+def test_is_plan_component_file_detail_md_returns_false(_plans_home: pathlib.Path) -> None:
+    """廃止した計画ファイル（詳細）は現行計画の構成要素にしない。"""
     plan = _plans_home / "sample.detail.md"
     plan.write_text("# t\n", encoding="utf-8")
-    assert _plan_file.is_plan_component_file(str(plan)) is True
+    assert _plan_file.is_plan_component_file(str(plan)) is False
 
 
 def test_is_plan_component_file_bugs_md_returns_false(_plans_home: pathlib.Path) -> None:
@@ -368,8 +368,8 @@ def test_absolute_plan_file_rejects_symlink_escape(tmp_path: pathlib.Path) -> No
         _plan_file.resolve_plan_file(link, private_notes=private_notes)
 
 
-def test_new_plan_predicates_recognize_main_detail_and_bugs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """新plans rootのmain・detail・bugsを既存hook向け述語で分類する。"""
+def test_new_plan_predicates_recognize_main_and_bugs_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """新plans rootではmain・bugsだけを現行hook向け述語で分類する。"""
     private_notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
     main = private_notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
@@ -380,7 +380,7 @@ def test_new_plan_predicates_recognize_main_detail_and_bugs(tmp_path: pathlib.Pa
         path.write_text("# 計画\n", encoding="utf-8")
 
     assert _plan_file.is_plan_main_file(str(main)) is True
-    assert _plan_file.is_plan_component_file(str(detail)) is True
+    assert _plan_file.is_plan_component_file(str(detail)) is False
     assert _plan_file.is_plan_adjunct_file(str(bugs)) is True
     assert _plan_file.is_plan_component_file(str(bugs)) is False
 

@@ -219,7 +219,7 @@ _REPLACEMENT_CHAR = "\ufffd"
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
-    """計画ファイル（メイン）・計画ファイル（詳細）・計画ファイル（バグ）の場合に真を返す。"""
+    """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
     return is_plan_component_file(file_path) or is_plan_adjunct_file(file_path)
 
 

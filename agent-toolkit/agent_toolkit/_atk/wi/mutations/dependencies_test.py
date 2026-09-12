@@ -166,51 +166,6 @@ def test_convert_to_plan_rejects_plan_file_only_in_working_root_without_changes(
     assert entry.read_text(encoding="utf-8") == original
 
 
-@pytest.mark.parametrize("resolved_worktree", [pathlib.Path("/worktree"), None])
-def test_convert_to_plan_cli_ignores_mismatched_plan_base(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    resolved_worktree: pathlib.Path | None,
-) -> None:
-    """計画作成時点の参照値と`target_commit`を比較せず変換を成立させる。"""
-    notes = _setup_notes(tmp_path)
-    path = _write_convert_awi(notes, "awi.md", target_commit="a" * 40)
-    plan = _write_convert_plan(tmp_path, "b" * 40)
-    _disable_convert_git(monkeypatch)
-    resolved_targets: list[str | None] = []
-
-    def resolve_target(value: str | None) -> tuple[str, pathlib.Path | None]:
-        resolved_targets.append(value)
-        return "github.com/example/foo", resolved_worktree
-
-    monkeypatch.setattr(
-        mutations._add,  # pylint: disable=protected-access
-        "resolve_add_target",
-        resolve_target,
-    )
-
-    with pytest.raises(SystemExit) as captured:
-        atk.main(
-            [
-                "wi",
-                "convert-to-plan",
-                "awi.md",
-                "--plan-file",
-                str(plan),
-                "--target-repo",
-                "github.com/example/foo",
-            ],
-            home=tmp_path,
-            now=_FIXED_DT,
-        )
-
-    assert captured.value.code == 0
-    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
-    assert parsed is not None
-    assert parsed[0]["plan_file"] == str(plan)
-    assert resolved_targets == ["github.com/example/foo"]
-
-
 def test_convert_to_plan_rejects_explicit_dependency_cycle(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -541,7 +496,7 @@ class TestRejectMultiple:
 
 
 @pytest.mark.parametrize("environment_name", _AGENT_ENVIRONMENT_VARIABLES)
-@pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
+@pytest.mark.parametrize("route", ("message", "editor", "append"))
 def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     route: str,
     environment_name: str,
@@ -580,23 +535,6 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     if route == "append":
         argv = ["wi", "edit", "--append", filename, "--body-file", str(body_file)]
-    elif route == "plan":
-        held_path = notes / "hold" / filename
-        path.replace(held_path)
-        path = held_path
-        plan = tmp_path / "plan.md"
-        plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        monkeypatch.setattr(
-            mutations._add,  # pylint: disable=protected-access
-            "resolve_add_target",
-            lambda _value: ("github.com/example/foo", worktree),
-        )
-        monkeypatch.setattr(mutations, "_local_worktree_repo_id", lambda _path: "github.com/example/foo")
-        monkeypatch.setattr(mutations, "_resolve_plan_base_commit", lambda *_args: "a" * 40)
-        argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
-
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=tmp_path)
 
@@ -634,7 +572,7 @@ def test_agent_environment_rejects_add_with_user_comment(
     assert not list((notes / "inbox").glob("*.md"))
 
 
-@pytest.mark.parametrize("route", ("message", "editor", "plan", "append"))
+@pytest.mark.parametrize("route", ("message", "editor", "append"))
 def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
     route: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -644,7 +582,7 @@ def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
     """各編集経路が一致判定だけを出力し、保存本文を再掲しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
-    path = _write_awi_file(notes, filename, body="編集前")
+    _write_awi_file(notes, filename, body="編集前")
     message = '編集後。"引用"を含む。\n\n## 見出し\n\n複数行。'
     body_file = tmp_path / "body.md"
     body_file.write_text(message, encoding="utf-8")
@@ -664,21 +602,6 @@ def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
         argv = ["wi", "edit", filename]
     elif route == "append":
         argv = ["wi", "edit", "--append", filename, "--body-file", str(body_file)]
-    elif route == "plan":
-        held_path = notes / "hold" / filename
-        path.replace(held_path)
-        plan = _write_integration_plan(tmp_path, "a" * 40, (filename,))
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        monkeypatch.setattr(
-            mutations._add,  # pylint: disable=protected-access
-            "resolve_add_target",
-            lambda _value: ("github.com/example/foo", worktree),
-        )
-        _patch_integration_target_resolution(monkeypatch, "a" * 40)
-        argv.extend(("--plan-file", str(plan), "--target-repo", "github.com/example/foo"))
-        path = notes / "inbox" / filename
-
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=tmp_path)
 

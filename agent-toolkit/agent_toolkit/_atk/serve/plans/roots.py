@@ -159,6 +159,10 @@ _PLAN_SUFFIX_LABELS = (
     (_TARGET_TSV_SUFFIXES[0], "計画レビュー指摘管理表"),
     (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
 )
+_CURRENT_PLAN_SUFFIX_LABELS = (
+    (_BUGS_SUFFIX, "バグ"),
+    (_TARGET_TSV_SUFFIXES[1], "実行レビュー指摘管理表"),
+)
 _REVIEW_TABLE_HEADERS = (
     "ラウンド",
     "系統",
