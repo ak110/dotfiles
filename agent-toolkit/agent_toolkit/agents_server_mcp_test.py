@@ -761,7 +761,13 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
             handoff,
         ]
     if task_name == "session-termination.subagent.md":
-        return ["bump種別: bump不要", handoff]
+        return [
+            "bump種別: bump不要",
+            "検証・CI方針: 通常",
+            "近接検証結果: なし",
+            "正式対応AWI: なし",
+            handoff,
+        ]
     if task_name == "upstream-submission.subagent.md":
         return ["元項目と投入先の組: 20260101-000000-001.md=/upstream", handoff]
     raise ValueError(f"未対応のタスク文書: {task_name}")
