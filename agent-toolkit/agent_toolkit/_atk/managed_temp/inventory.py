@@ -75,6 +75,8 @@ if TYPE_CHECKING:
         MAX_AGE_DAYS,
         ManagedTempError,
         _awis_are_valid,
+        _session_owner_is_valid,
+        _session_owner_status,
         _is_utc_iso8601,
         _load_marker,
         _load_private_json,
@@ -432,17 +434,19 @@ def list_managed_temp(
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
             schema_version = record.get("schema_version")
-            item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5) else None
-            created_at = record.get("created_at") if schema_version in (2, 3, 4, 5) else None
-            awis = record.get("awis") if schema_version in (4, 5) else record.get("feedbacks") if schema_version == 3 else []
-            item_session_id = record.get("session_id") if schema_version == 5 else None
+            item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5, 6) else None
+            created_at = record.get("created_at") if schema_version in (2, 3, 4, 5, 6) else None
+            awis = record.get("awis") if schema_version in (4, 5, 6) else record.get("feedbacks") if schema_version == 3 else []
+            item_session_id = record.get("session_id") if schema_version in (5, 6) else None
+            session_owner = record.get("session_owner") if schema_version == 6 else None
             if (
                 not (item_prefix is None or isinstance(item_prefix, str))
                 or not (created_at is None or isinstance(created_at, str))
                 or not _awis_are_valid(awis)
                 or not (item_session_id is None or isinstance(item_session_id, str))
+                or not _session_owner_is_valid(session_owner)
             ):
-                raise ManagedTempError("管理情報のprefix、created_at、awis又はsession_idが不正")
+                raise ManagedTempError("管理情報のprefix、created_at、awis、session_id又はsession_ownerが不正")
             if prefix is not None and item_prefix != prefix:
                 continue
             if session_id is not None and item_session_id != session_id:
@@ -466,6 +470,7 @@ def list_managed_temp(
                     "created_at": created_at,
                     "awis": typing.cast(list[str], awis),
                     "session_id": item_session_id,
+                    "session_owner": typing.cast(dict[str, int | str] | None, session_owner),
                 }
             )
         except (KeyError, OSError, ValueError, ManagedTempError) as error:
@@ -500,7 +505,15 @@ def sweep_expired_managed_temp(
     deleted: list[pathlib.Path] = []
     for entry in list_managed_temp():
         path = pathlib.Path(entry["path"])
+        owner_status = _session_owner_status(entry["session_owner"])
         try:
+            if owner_status == "dead":
+                cleanup_managed_temp(path)
+                deleted.append(path)
+                print(f"note: 終了したセッションの管理対象一時領域を削除しました: {path}", file=sys.stderr)
+                continue
+            if owner_status == "alive":
+                continue
             latest_mtime_ns = path.stat().st_mtime_ns
             if latest_mtime_ns >= cutoff_ns:
                 continue

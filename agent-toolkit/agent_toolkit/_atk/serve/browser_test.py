@@ -2314,6 +2314,42 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
 
 
 @pytest.mark.asyncio
+async def test_initial_screen_request_does_not_block_other_screen_prefetch(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """初期画面の応答待ち中にも他画面の初回要求を開始する。"""
+    harness = screen_harness
+    sessions_release = asyncio.Event()
+    sessions_handled = asyncio.Event()
+    sync_requested = asyncio.Event()
+    plans_requested = asyncio.Event()
+
+    async def delay_sessions(route: playwright.async_api.Route) -> None:
+        try:
+            await sessions_release.wait()
+            await route.continue_()
+        finally:
+            sessions_handled.set()
+
+    def record_requests(request: playwright.async_api.Request) -> None:
+        if request.url.endswith("/api/sync"):
+            sync_requested.set()
+        if request.url.endswith("/api/plans/files"):
+            plans_requested.set()
+
+    harness.page.on("request", record_requests)
+    await harness.page.route("**/api/sessions/list", delay_sessions)
+    try:
+        await harness.page.goto(harness.base_url + "/sessions")
+        await playwright.async_api.expect(harness.page.locator("#screen-sessions")).to_be_visible()
+        await asyncio.wait_for(asyncio.gather(sync_requested.wait(), plans_requested.wait()), timeout=5)
+    finally:
+        sessions_release.set()
+        await asyncio.wait_for(sessions_handled.wait(), timeout=5)
+        await harness.page.unroute("**/api/sessions/list", delay_sessions)
+
+
+@pytest.mark.asyncio
 async def test_three_screen_bodies_use_matching_typography(screen_harness: _ScreenHarness) -> None:
     """3画面の本文コンテナーで書体、文字サイズ、行高、字間及び文字色をそろえる。"""
     harness = screen_harness
@@ -2700,12 +2736,18 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     await page.set_viewport_size({"width": 1280, "height": 800})
     await page.goto(screen_harness.base_url + "/plans")
     plan_width = await page.locator("#screen-plans aside").evaluate("element => element.getBoundingClientRect().width")
+    plan_link = page.locator("#files .file").first
+    plan_link_width = await plan_link.evaluate("element => element.getBoundingClientRect().width")
+    await plan_link.hover(position={"x": plan_link_width - 2, "y": 2})
+    plan_link_background = await plan_link.evaluate("element => getComputedStyle(element).backgroundColor")
 
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#detail .event").first.wait_for(state="visible")
     session_width = await page.locator("#screen-sessions aside").evaluate("element => element.getBoundingClientRect().width")
 
     assert plan_width == session_width == 320
+    assert plan_link_width <= plan_width
+    assert plan_link_background == "rgb(238, 242, 255)"
     assert await page.locator('#sessions .session-item[aria-current="true"]').count() == 1
 
 

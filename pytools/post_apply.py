@@ -49,6 +49,7 @@ from pytools._internal import (
     warm_agents_server,
     warmup_hook_scripts,
 )
+from scripts import sync_codex_plugin_manifests
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("Codex 診断ログの通常ストレージ復元 (Linux)", restore_codex_logs_linux.run),
     _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run),
     _StepSpec("Claude Code plugin のインストール", install_claude_plugins.run),
+    _StepSpec("Codex plugin snapshot の生成", sync_codex_plugin_manifests.sync),
     _StepSpec("Codex plugin のインストール", install_codex_plugins.run),
     _StepSpec("agents_serverのuv環境ウォームアップ", warm_agents_server.run, background=True),
     # hookが参照するインストール先を対象にするため、両プラグインの導入・更新の後に実行する。

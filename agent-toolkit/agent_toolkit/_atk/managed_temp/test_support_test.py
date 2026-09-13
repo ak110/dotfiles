@@ -108,7 +108,10 @@ def _install_windows_security_doubles(
 @pytest.fixture(autouse=True)
 def isolated_state_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部真正性状態を各テストの専用領域へ分離する。"""
+    cache_root = tmp_path / "managed-temp"
+    cache_root.mkdir(mode=0o700)
     monkeypatch.setattr(subject, "_state_root_path", lambda: tmp_path / "external-state")
+    monkeypatch.setattr(subject, "_temp_root", lambda: cache_root)
 
 
 def _path_state(path: pathlib.Path) -> tuple[object, ...]:
@@ -195,6 +198,7 @@ def _isolated_cli_environment(tmp_path: pathlib.Path) -> tuple[dict[str, str], p
         env["LOCALAPPDATA"] = str(tmp_path / "local-app-data")
         state_root = tmp_path / "local-app-data" / "agent-toolkit" / "managed-temp"
     else:
+        env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
         env["XDG_STATE_HOME"] = str(tmp_path / "state")
         state_root = tmp_path / "state" / "agent-toolkit" / "managed-temp"
     return env, state_root

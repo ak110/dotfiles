@@ -236,6 +236,28 @@ def test_process_wi_postapproval_handoff_is_complete() -> None:
     assert "事後承認型UWIへ記録" in contents["runner"]
 
 
+def test_human_decision_persistence_reaches_completion_gate() -> None:
+    """人間が確定した再利用可能な判断を通常完了経路でも恒久化する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    rules = (plugin_root / "rules" / "01-agent.md").read_text(encoding="utf-8")
+    completion = (plugin_root / "skills" / "completion-report" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "AskUserQuestionの回答又はUWIの`## 回答`" in rules
+    assert "後続のエージェント由来の判断だけを根拠として変更しない" in rules
+    assert "計画を作成していない作業も本項の対象" in completion
+    assert "後続のエージェント由来の判断だけでは変更できない状態" in completion
+
+
+def test_completion_report_always_runs_session_review() -> None:
+    """完了報告はprocess-loop例外以外でsession reviewを起動する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    completion = (plugin_root / "skills" / "completion-report" / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "4. `agent-toolkit:session-review`を起動する。" in completion
+    assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1" in completion
+    assert "条件非該当のため省略" not in completion
+
+
 def test_plan_refactoring_example_and_large_output_examples_are_explicit() -> None:
     """固定表と大量出力類型を実行主体が推測せず再現できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]

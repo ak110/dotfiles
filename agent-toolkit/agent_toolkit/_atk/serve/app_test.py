@@ -8,6 +8,7 @@
 import asyncio
 import binascii
 import contextlib
+import datetime
 import json
 import logging
 import math
@@ -956,19 +957,25 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
     assert "source:" not in content
 
 
-def test_target_repos_collects_distinct_values_from_active_states(tmp_path: pathlib.Path) -> None:
-    """未処理・処理中のエントリから対象リポジトリを重複なく昇順で集める。
-
-    処理済みにしか現れないリポジトリは、一覧の初期フィルター`active`で0件になるため含めない。
-    """
+def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> None:
+    """activeと直近7日以内に処理したエントリから候補を集める。"""
+    now = datetime.datetime(2026, 9, 13, 12, tzinfo=datetime.UTC)
     _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/beta")
     _write_repo_entry(tmp_path, "processing", "b.md", "github.com/x/alpha")
     _write_repo_entry(tmp_path, "processing", "c.md", "github.com/x/beta")
     _write_repo_entry(tmp_path, "adopted", "d.md", "github.com/x/adopted-only")
     _write_repo_entry(tmp_path, "rejected", "e.md", "github.com/x/rejected-only")
+    recent = tmp_path / "adopted" / "d.md"
+    recent.write_text(
+        recent.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 処理日時: 2026-09-06T12:00:00+00:00\n", encoding="utf-8"
+    )
+    old = tmp_path / "rejected" / "e.md"
+    old.write_text(
+        old.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 処理日時: 2026-09-06T11:59:59+00:00\n", encoding="utf-8"
+    )
     (tmp_path / "inbox" / "broken.md").write_text("frontmatterなし\n", encoding="utf-8")
     operations = serve_app.Operations(tmp_path)
-    assert operations.target_repos() == ["github.com/x/alpha", "github.com/x/beta"]
+    assert operations.target_repos(now=now) == ["github.com/x/adopted-only", "github.com/x/alpha", "github.com/x/beta"]
     assert operations.target_repos("adopted") == ["github.com/x/adopted-only"]
 
 

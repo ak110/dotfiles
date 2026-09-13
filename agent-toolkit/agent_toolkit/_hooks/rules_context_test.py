@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import sys
 
 import pytest
 
@@ -125,7 +126,7 @@ def test_session_start_context_fits_claude_code_cap(
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
     output = _output(capsys)
@@ -185,7 +186,7 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     tmp_path: pathlib.Path,
 ) -> None:
     """同じsession_idの全SessionStartで1件の領域と同じ絶対パスを渡す。"""
-    monkeypatch.setattr(managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
     payload = json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": "session-1"})
 
@@ -198,6 +199,8 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     assert len(entries) == 1
     assert entries[0]["path"] in first_output
     assert entries[0]["path"] in second_output
+    if sys.platform.startswith("linux"):
+        assert entries[0]["session_owner"] is not None
 
 
 def test_rules_files_do_not_contain_role_specific_sections() -> None:

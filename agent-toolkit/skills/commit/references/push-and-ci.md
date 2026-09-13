@@ -40,8 +40,10 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 
    明示経路ではremote、source、完全なdestination refを省略しない。
    いずれの経路でも拒否または失敗予定のrefがある場合はpushしない
-4. `atk managed-temp create --prefix ci-evidence`を単独で実行する。
-   標準出力の絶対パスを保持し、pushごとに別の領域を使う
+4. SessionStartが管理対象一時領域を通知している場合は、
+   `atk managed-temp create --prefix ci-evidence --session-root <通知された絶対パス>`を単独で実行する。
+   通知が無い場合は`atk managed-temp create --prefix ci-evidence`を単独で実行する。
+   標準出力の絶対パスと独立登録の有無を保持し、pushごとに別の領域を使う
 5. 削除refを除き、更新refごとにsource refを1件確定する。
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
    refspecの右辺`<destination>`、destination ref、remote-tracking refを代用しない。
@@ -111,8 +113,9 @@ baseline作成、push、監視の順で実行する。
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
-保持した各領域に対し、plan mode外で次を単独実行し、終了コード0を確認する。
+独立登録した各領域に対し、plan mode外で次を単独実行し、終了コード0を確認する。
 終了コード0は対象パスの除去完了を含意するため、別コマンドによる不在確認を追加しない。
+セッションrootの子領域は個別にcleanupせず、セッション終了時の回収へ委ねる。
 
 ```text
 atk managed-temp cleanup --path <保持した絶対パス>

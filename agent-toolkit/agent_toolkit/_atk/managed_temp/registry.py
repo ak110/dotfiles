@@ -26,6 +26,8 @@ import unicodedata
 from ctypes import wintypes
 from typing import TYPE_CHECKING
 
+import platformdirs
+
 from agent_toolkit._atk import help_text as _atk_help
 
 if TYPE_CHECKING:
@@ -103,7 +105,7 @@ if TYPE_CHECKING:
     )
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _PREFIX_RULES = (
     ("空にできない", lambda value: value != ""),
@@ -156,6 +158,7 @@ class _ManagedTempEntry(typing.TypedDict):
     created_at: str | None
     awis: list[str]
     session_id: str | None
+    session_owner: dict[str, int | str] | None
 
 
 class _WindowsApiError(ManagedTempError):
@@ -193,16 +196,128 @@ class _ValidatedRoot(typing.NamedTuple):
     security: typing.Any = None
 
 
+def _temp_root_path() -> pathlib.Path:
+    """OS別のユーザーキャッシュ領域に置く既定rootを返す。"""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        if not base:
+            raise ManagedTempError("LOCALAPPDATAが設定されていない")
+        return pathlib.Path(base) / "agent-toolkit" / "managed-temp"
+    return pathlib.Path(platformdirs.user_cache_dir("agent-toolkit", appauthor=False)) / "managed-temp"
+
+
 def _temp_root() -> pathlib.Path:
+    root = _temp_root_path()
     try:
-        root = pathlib.Path(tempfile.gettempdir()).resolve(strict=True)
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name == "posix":
+            metadata = root.lstat()
+            if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+                raise ManagedTempError(f"一時ディレクトリのルートの所有者または種別が不正: {root}")
+            root.chmod(0o700)
+            if stat.S_IMODE(root.stat().st_mode) != 0o700:
+                raise ManagedTempError(f"一時ディレクトリのルートの権限が不正: {root}")
+        elif os.name == "nt":
+            _windows_secure_path(root, directory=True)
+            _validate_windows_security(root)
+        else:
+            raise ManagedTempError(f"未対応platform: {os.name}")
     except OSError as error:
-        raise ManagedTempError(f"一時ディレクトリのルートを解決できない: {error}") from error
-    if not root.is_dir():
-        raise ManagedTempError(f"一時ディレクトリのルートがディレクトリではない: {root}")
-    if os.name == "nt" and getattr(root.lstat(), "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-        raise ManagedTempError(f"一時ディレクトリのルートがreparse pointである: {root}")
+        raise ManagedTempError(f"一時ディレクトリのルートを準備できない: {root}: {error}") from error
     return root
+
+
+def _process_start_token(pid: int) -> str | None:
+    """PIDが指すプロセスの開始時点を再利用判別用の文字列で返す。"""
+    if pid <= 0:
+        raise ProcessLookupError(pid)
+    if os.name == "posix":
+        if not sys.platform.startswith("linux"):
+            return None
+        try:
+            stat_text = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+        except FileNotFoundError as error:
+            raise ProcessLookupError(pid) from error
+        fields = stat_text.rsplit(")", 1)
+        if len(fields) != 2:
+            raise OSError(f"/proc/{pid}/statの形式が不正")
+        tail = fields[1].split()
+        if len(tail) <= 19:
+            raise OSError(f"/proc/{pid}/statの項目数が不足")
+        return tail[19]
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        open_process.restype = wintypes.HANDLE
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+        handle = open_process(0x1000, False, pid)
+        if not handle:
+            error_code = ctypes.get_last_error()  # type: ignore[attr-defined]
+            if error_code == 87:
+                raise ProcessLookupError(pid)
+            raise OSError(error_code, "OpenProcessに失敗した")
+        creation = wintypes.FILETIME()
+        exit_time = wintypes.FILETIME()
+        kernel = wintypes.FILETIME()
+        user = wintypes.FILETIME()
+        try:
+            get_process_times = kernel32.GetProcessTimes
+            get_process_times.argtypes = [
+                wintypes.HANDLE,
+                ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME),
+            ]
+            get_process_times.restype = wintypes.BOOL
+            if not get_process_times(handle, creation, exit_time, kernel, user):
+                error_code = ctypes.get_last_error()  # type: ignore[attr-defined]
+                raise OSError(error_code, "GetProcessTimesに失敗した")
+        finally:
+            close_handle(handle)
+        return str((creation.dwHighDateTime << 32) | creation.dwLowDateTime)
+    return None
+
+
+def _capture_process_identity(pid: int) -> dict[str, int | str] | None:
+    """観測できる場合に限り、PIDと開始トークンを組にして返す。"""
+    try:
+        start_token = _process_start_token(pid)
+    except (OSError, ProcessLookupError):
+        return None
+    if start_token is None:
+        return None
+    return {"pid": pid, "start_token": start_token}
+
+
+def _session_owner_is_valid(value: object) -> bool:
+    """セッション所有者がPID再利用を判別できる記録形式か返す。"""
+    if value is None:
+        return True
+    if not isinstance(value, dict) or set(value) != {"pid", "start_token"}:
+        return False
+    pid = value.get("pid")
+    start_token = value.get("start_token")
+    return isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 and isinstance(start_token, str) and bool(start_token)
+
+
+def _session_owner_status(owner: dict[str, int | str] | None) -> typing.Literal["alive", "dead", "unknown"]:
+    """記録したセッション所有者の現在状態を返す。"""
+    if owner is None or not _session_owner_is_valid(owner):
+        return "unknown"
+    pid = typing.cast(int, owner["pid"])
+    try:
+        current_token = _process_start_token(pid)
+    except ProcessLookupError:
+        return "dead"
+    except OSError:
+        return "unknown"
+    if current_token is None:
+        return "unknown"
+    return "alive" if current_token == owner["start_token"] else "dead"
 
 
 def _validate_root(
@@ -395,6 +510,7 @@ def _record(
     created_at: str,
     awis: tuple[str, ...],
     session_id: str | None = None,
+    session_owner: dict[str, int | str] | None = None,
     identity: tuple[int, int] | None = None,
 ) -> dict[str, typing.Any]:
     record = _record_base(path, nonce, identity=identity)
@@ -405,6 +521,7 @@ def _record(
             "created_at": created_at,
             "awis": list(awis),
             "session_id": session_id,
+            "session_owner": session_owner,
         }
     )
     return record
@@ -487,20 +604,24 @@ def _records_match(
             identity=identity,
         )
         expected.pop("session_id")
+        expected.pop("session_owner")
         expected["schema_version"] = schema_version
         if schema_version == 3:
             expected["feedbacks"] = expected.pop("awis")
-    elif schema_version == 5:
+    elif schema_version in (5, 6):
         prefix = registry.get("prefix")
         created_at = registry.get("created_at")
         awis = registry.get("awis")
         session_id = registry.get("session_id")
+        session_owner = registry.get("session_owner") if schema_version == 6 else None
         if (
             not isinstance(prefix, str)
             or not is_valid_prefix(prefix)
             or not _is_utc_iso8601(created_at)
             or not _awis_are_valid(awis)
             or not (session_id is None or isinstance(session_id, str))
+            or not _session_owner_is_valid(session_owner)
+            or (session_owner is not None and session_id is None)
         ):
             return False
         expected = _record(
@@ -510,8 +631,12 @@ def _records_match(
             created_at=typing.cast(str, created_at),
             awis=tuple(typing.cast(list[str], awis)),
             session_id=session_id,
+            session_owner=session_owner,
             identity=identity,
         )
+        if schema_version == 5:
+            expected.pop("session_owner")
+            expected["schema_version"] = 5
     else:
         return False
     return (

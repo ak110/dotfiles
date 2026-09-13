@@ -47,6 +47,7 @@ _ENTRY_PAGE_SIZE = 100
 _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 _WEB_LOCK_TIMEOUT = 2.0
 _BACKGROUND_SYNC_INTERVAL_SECONDS = 60.0
+_RECENT_REPO_RETENTION = datetime.timedelta(days=7)
 """定期バックグラウンド更新の間隔。
 
 `atk wi process-loop`が10分間隔で更新する先例に対し、
@@ -91,6 +92,30 @@ def _resolve_states(status: str) -> tuple[str, ...]:
     if status == "all":
         return common.WI_STATES
     return (status,)
+
+
+def _terminal_processing_time(text: str) -> datetime.datetime | None:
+    """最後の処理結果に保存された処理日時をUTCで返す。"""
+    lines = text.splitlines()
+    headings = [index for index, line in enumerate(lines) if line == "## 処理結果"]
+    if not headings:
+        return None
+    prefix = "- 処理日時: "
+    section: list[str] = []
+    for line in lines[headings[-1] + 1 :]:
+        if line.startswith("## "):
+            break
+        section.append(line)
+    timestamps = [line.removeprefix(prefix) for line in section if line.startswith(prefix)]
+    if len(timestamps) != 1:
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(timestamps[0])
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(datetime.UTC)
 
 
 async def _request_json() -> typing.Any:
@@ -515,17 +540,24 @@ class Operations:
         except filelock.Timeout:
             return False
 
-    def target_repos(self, status: str = "active") -> list[str]:
+    def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
         """指定状態のエントリに現れる対象リポジトリを昇順で返す。
 
         新規登録フォームの補完候補とフィルターの選択肢に用いる。
-        既定値は一覧の状態フィルターの初期値と同じ`active`とする。
+        既定の`active`ではactiveエントリに加え、直近7日以内に処理した終端エントリを含める。
+        他の状態を明示した場合は当該状態の全エントリを返す。
         `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
         """
         found: set[str] = set()
         resolver_cache: dict[str, str | None] = {}
-        indexed_entries, _warnings = self._entry_index.scan(_resolve_states(status))
+        indexed_entries, _warnings = self._entry_index.scan(common.WI_STATES if status == "active" else _resolve_states(status))
+        current_time = (now or datetime.datetime.now(datetime.UTC)).astimezone(datetime.UTC)
+        cutoff = current_time - _RECENT_REPO_RETENTION
         for indexed in indexed_entries:
+            if status == "active" and indexed.state not in common.WI_ACTIVE_STATES:
+                processed_at = _terminal_processing_time(indexed.text)
+                if processed_at is None or not cutoff <= processed_at <= current_time:
+                    continue
             target_repo = indexed.metadata.get("target_repo")
             if isinstance(target_repo, str) and target_repo:
                 canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)

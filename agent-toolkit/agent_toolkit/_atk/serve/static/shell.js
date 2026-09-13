@@ -50,12 +50,9 @@ window.__atkScreens = window.__atkScreens || {};
 
   window.addEventListener("popstate", () => showScreen(screenNameFromUrl(location.href)));
 
-  document.addEventListener("DOMContentLoaded", async () => {
+  document.addEventListener("DOMContentLoaded", () => {
     const initialName = document.body.dataset.screen;
     showScreen(initialName);
-    await window.__atkScreens[initialName].init();
-    for (const [name, screen] of Object.entries(window.__atkScreens)) {
-      if (name !== initialName) void screen.init();
-    }
+    for (const screen of Object.values(window.__atkScreens)) void screen.init();
   });
 })();

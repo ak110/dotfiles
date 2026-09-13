@@ -12,7 +12,7 @@ commitとpushを伴う状態遷移系は同期を省略せず、変更直前の�
 remote同期はfetch後の統合対象を現在のブランチの`@{u}`へ明示し、fast-forward更新とpush再試行時のrebaseを
 共有状態の`FETCH_HEAD`と利用者の`pull.rebase`設定から独立させる。
 
-同じ対象リポジトリの複数項目を同一工程で読む場合は、管理対象一時領域を作成し、`atk wi show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存ファイルへ書き込んでから全文を読み、ファイル名見出しから本文を対応付ける。保存内容の構造成立・不成立・コマンド失敗を確定した後にcleanupを完了し、保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も、ファイル名昇順の
+同じ対象リポジトリの複数項目を同一工程で読む場合は、管理対象一時領域を作成し、`atk wi show <filename>... --target-repo=<repo> --skip-pull`の標準出力を保存ファイルへ書き込んでから全文を読み、ファイル名見出しから本文を対応付ける。保存内容の構造成立・不成立・コマンド失敗を確定した後、独立登録した領域だけcleanupを完了する。セッションrootの子領域は同セッションの終了時に回収し、保存不能時だけ分割取得へ代替する。readyなinbox集合の処理開始も、ファイル名昇順の
 `atk wi start-processing <filename>... --target-repo=<repo>`を1回実行する。
 処理開始コマンドは全対象の存在、状態及び`target_repo`を移動前に検証するため、一部不適合で集合全体を拒否できる。
 移動開始後にI/O、commit又はpushが失敗した場合は、指定集合のprocessing配置、管理リポジトリの未コミット差分、
@@ -517,10 +517,12 @@ Codex基礎指示の上書きは、確認・待機・並列化・ツール利用
 生成物は手編集せず、正本と正式生成器を更新して同期する。
 公開動作を追加又は変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数正本とし、`agent_toolkit_bump.py minor`などの正式経路で版数を更新する。
 `.claude-plugin/marketplace.json`のplugin記述は正本の版数と一致させる。
-`agent-toolkit/plugin.json`、`agent-toolkit/.codex-plugin/plugin.json`、`agent-toolkit-codex/`は`sync_generated_files.py`で生成する。
-`agent-toolkit-codex/`は`agent-toolkit/`を正本とする自己完結型の通常ディレクトリであり、Agent Plugins用の直下`plugin.json`と`mcp.json`を除外する。
+`agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
+`agent-toolkit-codex/`はGitで追跡せず、post-applyがCodex plugin導入の直前に`sync_codex_plugin_manifests.py`で生成する。
+同ディレクトリは`agent-toolkit/`を正本とする自己完結型の通常ディレクトリであり、Agent Plugins用の直下`plugin.json`と`mcp.json`を除外する。
 `.agents/plugins/marketplace.json`のCodex local sourceだけを`./agent-toolkit-codex`へ向け、Claude CodeとAgent Pluginsのsourceは`agent-toolkit/`のまま維持する。
-生成後は`sync_codex_plugin_manifests.py --check`でClaude Code向け正本、marketplace記述、Codex向け派生manifest、専用root全体の一致を確認する。
+手動生成には`scripts/sync_codex_plugin_manifests.py`を実行する。
+生成後は同scriptの`--check`でClaude Code向け正本、marketplace記述、Codex向け派生manifest、専用root全体の一致を確認する。
 プラグインマニフェストの検証は、Claude Code向けとCodex向けで到達できる保証の水準が異なるため経路を分ける。
 Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムlinter`claude-plugin-validate`から実行し、未知フィールドとメタデータ欠落を失敗として扱う。
 Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`scripts/sync_codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを検査する。
@@ -529,7 +531,8 @@ Codexの検証器を無条件の合格条件にしないのは、同梱資料が
 そこで検証器の指摘を削除するのではなく既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。
 知識境界として、期待する逸脱の集合と許容根拠はテスト側が持ち、マニフェストの生成規則は`scripts/sync_codex_plugin_manifests.py`が持つ。
 却下した代替案は、`hooks`を除去し`mcpServers`を`.mcp.json`へ解決させて検証器を無条件に合格させる案である。Codexのプラグインフック機能を失い、`agent-toolkit/.mcp.json`との名前衝突を解消する追加設計を要する一方、得られるのは資料上の保証が無い体裁上の適合だけであるため採用しない。
-dotfilesの`post_apply`によるローカルagent-toolkit導入は、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
+dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に専用rootを生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
+専用rootの生成に失敗した場合は、post-applyのstep失敗として永続logへ記録し、全体を非0で終了する。
 `install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のadd又はupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
@@ -1247,10 +1250,17 @@ PreToolUseはdotfiles本体又はそのworktreeでコーディングエージェ
 CLIは内容が不要になったかを推測せず、呼び出し元もパスの形だけから管理対象であると判断しない。
 管理対象一時領域は判断材料と中間成果物だけを所有し、利用者の認証情報ファイルを所有しない。
 認証を要する検証では`CLAUDE_CONFIG_DIR`を変更せず、既定の認証解決経路を維持する。
-`atk managed-temp create`は未指定時にプラットフォームの既定一時rootを使い、実装worktreeを別のファイルシステム名前空間へ渡す場合だけ、既存の安全な共有ディレクトリを`--root <絶対パス>`で指定する。
+`atk managed-temp create`は未指定時にプラットフォームのユーザーキャッシュを使う。
+POSIXではXDGのユーザーキャッシュ、Windowsでは`LOCALAPPDATA`を基点とする。
+実装worktreeを別のファイルシステム名前空間へ渡す場合だけ、既存の安全な共有ディレクトリを`--root <絶対パス>`で指定する。
 明示rootは通常ディレクトリ・非リンク・現在の利用者が所有する安全な権限を満たす場合だけ受け入れ、作成したmanaged-tempはその直下へ置く。
-登録済み領域の検証・列挙・回収は登録簿の`path`の親をroot境界として使い、現在の`tempfile.gettempdir()`へ再束縛しない。
+登録済み領域の検証・列挙・回収は登録簿の`path`の親をroot境界として使い、現在のユーザーキャッシュ設定へ再束縛しない。
 各操作はrootの非リンク・所有者・権限又はACLとidentityを、rootを開く直前及び子を操作する直前に再検証し、置換中の対象・rootを処理しない。
+SessionStartが作成した登録済みrootの配下には、`--session-root`で用途別の無登録子領域を作成できる。
+子領域は個別の登録とcleanupを持たず、セッションrootの回収単位へ含める。
+セッションrootは所有プロセスのPIDと開始トークンを組にして記録する。
+定期掃引は同じプロセスの生存を直接観測できる間は保持する。プロセス不在を観測した場合とPID再利用を観測した場合は、
+SessionEndを受け取っていないrootも期限を待たずに回収する。状態を観測できない環境では最終更新時刻による期限回収を維持する。
 実装worktreeを別namespaceへ渡す呼び出し元は、全消費主体から同一絶対パスへ到達できることを読み取り専用で確認する。
 MQ、CI及びpublishの補助領域は同一namespaceの既定rootを使い、暗黙の共有rootへ切り替えない。
 汎用の一時ディレクトリを直接作成して再帰削除する案は、所有対象を証明できないため採用しない。

@@ -12,6 +12,7 @@
 /.claude/settings.local.json
 /.textlintcache
 /.codex/
+/agent-toolkit-codex/
 /.config/
 /.ipython/
 /.ssh/

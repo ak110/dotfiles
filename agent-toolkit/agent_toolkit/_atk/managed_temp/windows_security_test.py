@@ -63,7 +63,7 @@ class TestManagedTempPosix:
             awis=("20260830-061344-001.md", "20260830-143611-001.md"),
         )
 
-        assert target.parent == tmp_path
+        assert target.parent == tmp_path / "managed-temp"
         assert stat.S_IMODE(target.stat().st_mode) == 0o700
         assert subject.validate_managed_temp(target) == target
         assert subject._load_private_json(subject._registry_path(target))["awis"] == [
@@ -73,18 +73,16 @@ class TestManagedTempPosix:
         subject.cleanup_managed_temp(target)
         assert not target.exists()
 
-    def test_default_sticky_world_writable_root_remains_supported(
+    def test_default_root_is_private_user_cache(
         self,
-        monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """POSIXの既定rootであるstickyかつworld-writableな権限を維持する。"""
-        tmp_path.chmod(0o1777)
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        """POSIXの既定rootはユーザーキャッシュ配下へ0700で作成する。"""
 
         target = subject.create_managed_temp("default-sticky-root")
 
-        assert target.parent == tmp_path
+        assert target.parent == tmp_path / "managed-temp"
+        assert stat.S_IMODE(target.parent.stat().st_mode) == 0o700
         subject.cleanup_managed_temp(target)
 
     def test_explicit_root_round_trip_survives_temp_root_change(
@@ -212,6 +210,7 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
 
         _replace_records(target, convert_to_v1)
 
@@ -230,6 +229,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 2
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
 
         _replace_records(target, convert_to_v2)
 
@@ -279,6 +279,7 @@ class TestManagedTempPosix:
             record["schema_version"] = 2
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
             if value is None:
                 del record[field]
             else:
@@ -331,6 +332,7 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
         else:
             del record["created_at"]
         changed.write_text(json.dumps(record), encoding="utf-8")
@@ -357,11 +359,13 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
 
         def convert_to_v2(record: dict[str, object]) -> None:
             record["schema_version"] = 2
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
 
         _replace_records(v1_target, convert_to_v1)
         _replace_records(v2_target, convert_to_v2)
@@ -374,13 +378,21 @@ class TestManagedTempPosix:
         assert subject.dispatch(parser.parse_args(["list"])) == 0
         lines = capsys.readouterr()
         assert [json.loads(line) for line in lines.out.splitlines()] == [
-            {"created_at": None, "awis": [], "path": str(v1_target), "prefix": None, "session_id": None},
+            {
+                "created_at": None,
+                "awis": [],
+                "path": str(v1_target),
+                "prefix": None,
+                "session_id": None,
+                "session_owner": None,
+            },
             {
                 "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
                 "awis": [],
                 "path": str(v2_target),
                 "prefix": "publish-group",
                 "session_id": None,
+                "session_owner": None,
             },
             {
                 "created_at": subject._load_private_json(subject._registry_path(v3_target))["created_at"],
@@ -388,6 +400,7 @@ class TestManagedTempPosix:
                 "path": str(v3_target),
                 "prefix": "implementation",
                 "session_id": None,
+                "session_owner": None,
             },
         ]
         assert "warning: 管理対象を列挙できない" in lines.err
@@ -413,6 +426,7 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
+            del record["session_owner"]
 
         _replace_records(first, set_created_at)
         _replace_records(second, set_created_at)
@@ -450,6 +464,20 @@ class TestManagedTempPosix:
         assert subject.sweep_expired_managed_temp(now=now) == [target]
         assert not target.exists()
         assert f"note: 最終更新から7日を超えた管理対象一時領域を削除しました: {target}" in capsys.readouterr().err
+
+    def test_sweep_deletes_a_recent_root_owned_by_a_dead_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """SessionEndを失った領域は経過日数を待たずに次回掃引で回収する。"""
+        monkeypatch.setattr(subject, "_process_start_token", lambda pid: "original" if pid == 321 else "replacement")
+        target = subject.create_managed_temp("session", session_id="session-1", owner_pid=321)
+        monkeypatch.setattr(subject, "_process_start_token", lambda _pid: "replacement")
+
+        assert subject.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == [target]
+        assert not target.exists()
+        assert f"note: 終了したセッションの管理対象一時領域を削除しました: {target}" in capsys.readouterr().err
 
     def test_sweep_continues_after_one_cleanup_failure(
         self,
@@ -620,6 +648,7 @@ class TestManagedTempPosix:
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
                 "awis": [],
                 "session_id": None,
+                "session_owner": None,
             }
         ]
         assert capsys.readouterr().err == ""
@@ -646,6 +675,7 @@ class TestManagedTempPosix:
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
                 "awis": [],
                 "session_id": None,
+                "session_owner": None,
             }
         ]
         assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err
@@ -1255,8 +1285,8 @@ class TestManagedTempPosix:
     ) -> None:
         root_file = tmp_path / "temp-root-file"
         root_file.write_text("not a directory", encoding="utf-8")
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(root_file))
-        with pytest.raises(subject.ManagedTempError, match="ディレクトリではない"):
+        monkeypatch.setattr(subject, "_temp_root", lambda: root_file)
+        with pytest.raises(subject.ManagedTempError, match="通常ディレクトリではない"):
             subject.create_managed_temp("invalid-root")
 
     def test_validate_rejects_symlink(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

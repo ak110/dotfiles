@@ -42,6 +42,9 @@ dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を正本とし�
 Codex専用rootは、Agent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
 Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専用rootは相対シンボリックリンクを含めない。
 `.agents/plugins/marketplace.json`だけが`./agent-toolkit-codex`を参照し、Claude CodeとAgent Pluginsは引き続き`agent-toolkit/`を参照する。
+`agent-toolkit-codex/`はGitで追跡せず、`update-dotfiles`のpost-applyがCodex plugin導入の直前に生成する。
+手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で正本との一致を確認する。
+生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
 
 `update-dotfiles`は未導入、disabled又はversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再検査する。
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
