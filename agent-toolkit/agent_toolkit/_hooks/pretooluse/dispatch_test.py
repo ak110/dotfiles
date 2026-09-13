@@ -1143,21 +1143,23 @@ class TestUserFacingTypoCheck:
 
 
 class TestAskUserQuestionRequiredRead:
-    """判断基準文書の全文読解が未観測なら質問時に警告する。"""
+    """判断基準文書の全文読解が未観測なら質問を遮断する。"""
 
     def test_unread_warns_and_exit_plan_mode_passes(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
         question = _user_facing_payload("question", "確認する対象を選択してください。")
         question["session_id"] = "required-unread"
 
-        warned = _run(question, env_overrides=env)
+        blocked = _run(question, env_overrides=env)
         exit_plan = _run(
             {"session_id": "required-unread", "tool_name": "ExitPlanMode", "tool_input": {"plan": "実装する。"}},
             env_overrides=env,
         )
 
-        assert warned.returncode == 0
-        assert required_reads.document_path() in _additional_context(warned)
+        assert blocked.returncode == 2
+        assert blocked.stdout == ""
+        assert required_reads.document_path() in blocked.stderr
+        assert "同じAskUserQuestionを再実行" in blocked.stderr
         assert exit_plan.returncode == 0
 
     def test_full_read_allows_question(self, tmp_path: pathlib.Path) -> None:
@@ -1184,7 +1186,7 @@ class TestAskUserQuestionRequiredRead:
             {"file_path": "/tmp/copy/skills/review-standards/references/judgment-details.md"},
         ],
     )
-    def test_partial_or_other_copy_still_warns(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
+    def test_partial_or_other_copy_still_blocks(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
         env = _plan_file_state_env(tmp_path)
         sid = f"required-partial-{len(str(tool_input))}"
         _run_posttooluse({"session_id": sid, "tool_name": "Read", "tool_input": tool_input}, env)
@@ -1192,8 +1194,8 @@ class TestAskUserQuestionRequiredRead:
         question["session_id"] = sid
 
         result = _run(question, env_overrides=env)
-        assert result.returncode == 0
-        assert required_reads.document_path() in _additional_context(result)
+        assert result.returncode == 2
+        assert required_reads.document_path() in result.stderr
 
     def test_bash_path_mention_does_not_allow_question(self, tmp_path: pathlib.Path) -> None:
         env = _plan_file_state_env(tmp_path)
@@ -1206,8 +1208,120 @@ class TestAskUserQuestionRequiredRead:
         question["session_id"] = sid
 
         result = _run(question, env_overrides=env)
-        assert result.returncode == 0
-        assert required_reads.document_path() in _additional_context(result)
+        assert result.returncode == 2
+        assert required_reads.document_path() in result.stderr
+
+
+class TestConsecutiveBashFailureGate:
+    """同一終了コードの連続失敗後はstart_shell成功まで直接Bashを遮断する。"""
+
+    @staticmethod
+    def _failure(session_id: str, exit_code: int, env: dict[str, str], *, is_interrupt: bool = False):
+        return _run_posttooluse(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_input": {"command": "false"},
+                "error": f"Exit code {exit_code}\ncommand failed",
+                "is_interrupt": is_interrupt,
+            },
+            env,
+        )
+
+    def test_second_same_exit_code_blocks_next_direct_bash(self, tmp_path: pathlib.Path) -> None:
+        env = _plan_file_state_env(tmp_path)
+        sid = "bash-failure-gate"
+        first = self._failure(sid, 7, env)
+        allowed_after_first = _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo retry"}},
+            env,
+        )
+        second = self._failure(sid, 7, env)
+
+        assert first.stdout == ""
+        assert allowed_after_first.returncode == 0
+        assert "2回連続" in _additional_context(second)
+        blocked = _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo retry"}},
+            env,
+        )
+        assert blocked.returncode == 2
+        assert "start_shell" in blocked.stderr
+
+    def test_different_code_success_interrupt_and_unclassified_break_sequence(self, tmp_path: pathlib.Path) -> None:
+        env = _plan_file_state_env(tmp_path)
+        for suffix, kind, code, interrupted in (
+            ("different", "failure", 8, False),
+            ("success", "success", 0, False),
+            ("interrupt", "failure", 7, True),
+            ("unknown", "unknown", 0, False),
+        ):
+            sid = f"bash-failure-break-{suffix}"
+            self._failure(sid, 7, env)
+            if kind == "success":
+                _run_posttooluse(
+                    {
+                        "session_id": sid,
+                        "hook_event_name": "PostToolUse",
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "true"},
+                    },
+                    env,
+                )
+            elif kind == "unknown":
+                payload = {
+                    "session_id": sid,
+                    "hook_event_name": "PostToolUseFailure",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "false"},
+                    "error": "Command failed",
+                }
+                _run_posttooluse(payload, env)
+            else:
+                self._failure(sid, code, env, is_interrupt=interrupted)
+            repeated = self._failure(sid, 7, env)
+            assert repeated.stdout == ""
+
+    def test_other_tool_success_does_not_break_sequence(self, tmp_path: pathlib.Path) -> None:
+        env = _plan_file_state_env(tmp_path)
+        sid = "bash-failure-other-tool"
+        self._failure(sid, 11, env)
+        _run_posttooluse(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Read",
+                "tool_input": {"file_path": "/repo/README.md"},
+            },
+            env,
+        )
+
+        second = self._failure(sid, 11, env)
+
+        assert "2回連続" in _additional_context(second)
+
+    def test_successful_start_shell_clears_gate(self, tmp_path: pathlib.Path) -> None:
+        env = _plan_file_state_env(tmp_path)
+        sid = "bash-failure-start-shell"
+        self._failure(sid, 9, env)
+        self._failure(sid, 9, env)
+        _run_posttooluse(
+            {
+                "session_id": sid,
+                "hook_event_name": "PostToolUse",
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start_shell",
+                "tool_input": {"command": "false", "cwd": "/repo"},
+                "tool_response": {"session_id": "remote-shell", "status": "completed"},
+            },
+            env,
+        )
+
+        allowed = _run(
+            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "echo recovered"}},
+            env,
+        )
+        assert allowed.returncode == 0
 
 
 class TestPlanModeSkillFirstCheck:

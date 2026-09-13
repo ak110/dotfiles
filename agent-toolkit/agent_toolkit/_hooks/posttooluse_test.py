@@ -506,6 +506,12 @@ class TestTestExecution:
         )
         assert _read_state(tmp_path, sid).get("test_executed") is not True
 
+    def test_posttooluse_failure_matcher_routes_bash(self):
+        """Bash失敗イベントが連続失敗記録へ配送されるmatcherを維持する。"""
+        hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
+        matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
+        assert re.fullmatch(matcher, "Bash") is not None
+
     def test_other_pyfltr_mcp_tool_not_detected(self, tmp_path: pathlib.Path):
         """検索など検証以外のpyfltr MCPツールでは状態を変更しない。"""
         sid = "test-mcp-grep"
@@ -573,12 +579,12 @@ class TestTestExecution:
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         assert re.fullmatch(matcher, "mcp__plugin_agent-toolkit_agents_server__wait") is None
 
-    def test_posttooluse_failure_matcher_keeps_agent_task(self):
-        """agents_server撤去後もAgent・Taskの失敗イベントmatcherを維持する。"""
+    def test_posttooluse_failure_matcher_keeps_agent_task_and_bash(self):
+        """Agent・Taskに加えてBashの失敗イベントmatcherを維持する。"""
         hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))
         matcher = hooks["hooks"]["PostToolUseFailure"][0]["matcher"]
         matcher_tools = set(matcher.split("|"))
-        assert matcher_tools == {"Agent", "Task"}
+        assert matcher_tools == {"Agent", "Task", "Bash"}
 
 
 class TestPlanModeSkillInvocation:

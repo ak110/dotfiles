@@ -423,18 +423,17 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
 
 
 def check_required_read_before_ask_user_question(session_id: str) -> str | None:
-    """質問前に判断基準文書の全文読解が未観測なら警告する。"""
+    """質問前に判断基準文書の全文読解が未観測なら遮断理由を返す。"""
     if not session_id:
         return None
     recorded = read_state(session_id).get("observed_required_reads")
     names = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
     if _required_reads.DOCUMENT_NAME in names:
         return None
-    return _llm_notice(
-        "warn: AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。"
-        f"複雑な判断を伴う場合は{_required_reads.document_path()}を全文読解する。",
-        tag=_WARN_TAG,
-        removable_cause=True,
+    path = _required_reads.document_path()
+    return _block_notice(
+        "AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。",
+        fix=f"Readで{path}を全文読解し、同じAskUserQuestionを再実行する。",
     )
 
 

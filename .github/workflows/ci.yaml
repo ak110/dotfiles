@@ -58,6 +58,10 @@ jobs:
           }
           install_chezmoi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: 約3日前からの update-dotfiles 更新検証
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR"
       - name: install.sh 実行
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         run: ~/dotfiles/install.sh
@@ -132,6 +136,12 @@ jobs:
             done
           }
           install_chezmoi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: 約3日前からの update-dotfiles 更新検証
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
+        shell: pwsh
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR"
       - name: chezmoi 適用
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository || github.head_ref != 'develop' || github.base_ref != 'master'
         shell: bash

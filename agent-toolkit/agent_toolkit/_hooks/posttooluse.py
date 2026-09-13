@@ -27,11 +27,12 @@ Codexでは成功した`apply_patch`だけが本フックへ届く。Bashは終�
 10. `git commit --amend` / `git commit --fixup` 成功時のcwd別
     `amend_pending_status_check`フラグ設定（pretooluse.py側の`git push`前dirty検査で参照）
 11. `git push`（`--dry-run` / `-n`以外）成功時の該当cwd`amend_pending_status_check`フラグ解除
-12. PostToolUseFailure・PermissionDenied: 原則状態を変更せず終了
-13. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
+12. PostToolUseFailure: Bashの同一終了コードの連続失敗だけを記録。その他は状態を変更せず終了
+13. PermissionDenied: 状態を変更せず終了
+14. 条件付き禁止形（「〜した状態で…しない/禁止」）の警告検出 (Write / Edit / MultiEdit、
     `is_agent_facing_md`が対象と判定するコーディングエージェント向け`.md`編集時)
-14. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
-15. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
+15. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
+16. 当該セッションで作成又は編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`のBash標準出力）
 """
 
@@ -78,6 +79,8 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
+    record_bash_failure,
+    reset_bash_failure_sequence,
     update_state,
 )
 from agent_toolkit._hooks.task_stop_state import consume_completion, target_ids  # noqa: E402
@@ -709,7 +712,7 @@ def _record_agents_wait_observation_attempt(session_id: str, command: str, owner
     _clear_agents_server_pending_observation(session_id, owner_agent_id)
 
 
-def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] | None:
+def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, str] | None:
     """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
         payload = json.loads(payload_text)
@@ -723,11 +726,27 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str] |
     if not isinstance(tool_input, dict):
         return None
     event_name = payload.get("hook_event_name", "")
-    if event_name in {"PostToolUseFailure", "PermissionDenied"}:
+    if event_name == "PermissionDenied" or (event_name == "PostToolUseFailure" and tool_name != "Bash"):
         return None
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    return payload, session_id, tool_name, tool_input, cwd
+    return payload, session_id, tool_name, tool_input, cwd, event_name
+
+
+_BASH_FAILURE_EXIT_CODE_PATTERN = re.compile(r"^Exit code ([0-9]+)$")
+
+
+def _bash_failure_exit_code(payload: dict) -> int | None:
+    """公式の失敗payloadから分類可能なBash終了コードを返す。"""
+    if payload.get("is_interrupt") is True:
+        return None
+    error = payload.get("error")
+    if not isinstance(error, str):
+        return None
+    lines = error.splitlines()
+    first_line = lines[0] if lines else ""
+    match = _BASH_FAILURE_EXIT_CODE_PATTERN.fullmatch(first_line)
+    return int(match.group(1)) if match is not None else None
 
 
 def _record_test_executed(session_id: str) -> None:
@@ -977,8 +996,23 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     parsed = _parse_hook_payload(payload_text)
     if parsed is None:
         return 0
-    payload, session_id, tool_name, tool_input, cwd = parsed
+    payload, session_id, tool_name, tool_input, cwd, event_name = parsed
     set_warning_session_id(session_id)
+
+    if event_name == "PostToolUseFailure":
+        exit_code = _bash_failure_exit_code(payload)
+        if exit_code is None:
+            reset_bash_failure_sequence(session_id)
+        elif record_bash_failure(session_id, exit_code):
+            notices.append(
+                _llm_notice(
+                    f"同じ終了コード{exit_code}でBashが2回連続して失敗した。"
+                    "次の直接Bash実行を遮断する。原因調査とコマンド実行はagents_serverのstart_shellへ分離する。",
+                    tag=_WARN_TAG,
+                    removable_cause=False,
+                )
+            )
+        return 0
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
@@ -1044,6 +1078,8 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 model_type=model_type,
                 remote_session_id=remote_session_id,
             )
+            if operation == "start_shell":
+                reset_bash_failure_sequence(session_id, clear_gate=True)
         elif operation == "stop":
             _remove_agents_server_session_record(session_id, remote_session_id)
         else:
@@ -1078,6 +1114,7 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return 0
+    reset_bash_failure_sequence(session_id)
 
     if tool_input.get("run_in_background"):
         task_id = _background_task_id_from_response(payload.get("tool_response"))
@@ -1105,11 +1142,17 @@ def main(payload_text: str) -> int:
     notices: list[str] = []
     exit_code = _dispatch(payload_text, notices)
     if notices:
+        try:
+            event_name = json.loads(payload_text).get("hook_event_name", "PostToolUse")
+        except (json.JSONDecodeError, ValueError, AttributeError):
+            event_name = "PostToolUse"
+        if event_name not in {"PostToolUse", "PostToolUseFailure"}:
+            event_name = "PostToolUse"
         print(
             json.dumps(
                 {
                     "hookSpecificOutput": {
-                        "hookEventName": "PostToolUse",
+                        "hookEventName": event_name,
                         "additionalContext": "\n".join(notices),
                     }
                 },

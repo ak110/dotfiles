@@ -196,8 +196,10 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
 PreToolUseは開始ツール（`start`・`start_explore`）の絶対`cwd`と`send_message`・`kill`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseの検査対象へ含めず通過させる。
-PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。失敗時は状態を変更せず、既存の開始点用
-`PostToolUseFailure` matcherを拡張しない。
+PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
+PostToolUseFailureはBashだけを追加対象とする。`is_interrupt`が偽で、`error`の先頭行が`Exit code N`と一致する失敗を終了コードで分類する。
+同じ終了コードの2回連続を検出した場合は次の直接Bash実行を遮断し、成功した`start_shell`まで遮断を維持する。
+成功したBash、異なる終了コード、中断、分類不能なエラーのいずれかを観測した時点で連続性を解除する。他ツールの成否はBashの連続性へ影響させない。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` は移行説明と保護対象の識別にだけ残し、新経路へ渡さない。
 
 エージェントへ特定の行動・引数を要求するblockを新設する場合は、要求する要件を実行主体が事前に読み得る規範文書（常時ロードのルール、または当該作業で起動されるスキルの本文・参照文書）へ明示する。遮断メッセージだけを要件の初出にしない。
