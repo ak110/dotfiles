@@ -805,7 +805,7 @@ def test_edit_accepts_crlf_entry_with_and_without_target_repo(
     assert exc_info.value.code == 0
     assert b"\r" not in path.read_bytes()
     assert "新本文" in path.read_text(encoding="utf-8")
-    assert "    body_match: 一致\n" in capsys.readouterr().out
+    assert "body_match" not in capsys.readouterr().out
 
 
 class TestEditWithChanges:

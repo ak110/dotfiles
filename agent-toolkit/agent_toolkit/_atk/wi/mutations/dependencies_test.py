@@ -572,13 +572,13 @@ def test_agent_environment_rejects_add_with_user_comment(
 
 
 @pytest.mark.parametrize("route", ("message", "editor", "append"))
-def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
+def test_cli_edit_omits_body_verification_details_for_each_write_route(
     route: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各編集経路が一致判定だけを出力し、保存本文を再掲しない。"""
+    """各編集経路が一致判定と保存本文を再掲しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
@@ -606,7 +606,7 @@ def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    assert output.count("    body_match: 一致\n") == 1
+    assert "body_match" not in output
     assert "saved_body" not in output
     assert message not in output
 
