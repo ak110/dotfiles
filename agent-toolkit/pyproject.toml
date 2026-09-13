@@ -45,6 +45,18 @@ override-dependencies = ["mcp>=1.28.1,<2"]
 preset = "latest"
 python = true
 lychee-exclude = ["agent_toolkit/_atk/serve/static/index.html"]
+# pyfltrは`agent-toolkit/`をsubprojectとして分離し、本ファイルの`[tool.pyfltr]`を用いてtextlintを起動する。
+# リポジトリ直下の`.textlintrc.yaml`が参照するruleのうち、利用中のpyfltrの既定の
+# `textlint-packages`に含まれないものがあるため、既定のままではruleを解決できず
+# "No rules found"で終了コード1となる。
+# リポジトリ直下の`pyproject.toml`の同キーと同じ内容をここでも指定して解決する。
+textlint-packages = [
+    "textlint-rule-preset-ja-technical-writing",
+    "textlint-rule-preset-jtf-style",
+    "textlint-rule-ja-no-abusage",
+    # コーディングエージェントのコンテキスト汚染対策として独自強化する辞書を追加する
+    "textlint-rule-prh",
+]
 
 [tool.pylint."messages control"]
 disable = [
