@@ -156,9 +156,13 @@ def _run(
     db_id=1,
     head_sha="sha1",
     created_at="2026-07-22T00:00:00Z",
+    event="push",
+    workflow_name: str | None = None,
 ):
     return {
         "name": name,
+        "workflowName": workflow_name or name,
+        "event": event,
         "status": status,
         "conclusion": conclusion,
         "url": "u",
@@ -489,6 +493,29 @@ class TestPushIdentityDifferential:
     def test_old_failure_does_not_fail_new_success(self):
         runs = [_run(name="old", db_id=1, conclusion="failure"), _run(name="new", db_id=2)]
         assert _run_wait(lambda _sha: runs, registration_grace=0.0, baseline_ids=frozenset({1})) == wait_ci.EXIT_SUCCESS
+
+    def test_dynamic_dependabot_failure_does_not_fail_push_success(self):
+        runs = [
+            _run(name="dependabot", workflow_name="Dependabot Updates", event="dynamic", conclusion="failure"),
+            _run(name="ci", db_id=2),
+        ]
+        assert _run_wait(lambda _sha: runs, registration_grace=0.0) == wait_ci.EXIT_SUCCESS
+
+    def test_manual_dependabot_failure_is_not_excluded(self):
+        runs = [
+            _run(
+                name="dependabot",
+                workflow_name="Dependabot Updates",
+                event="workflow_dispatch",
+                conclusion="failure",
+            ),
+            _run(name="ci", db_id=2),
+        ]
+        assert _run_wait(lambda _sha: runs, registration_grace=0.0) == wait_ci.EXIT_CI_FAILED
+
+    def test_other_dynamic_workflow_failure_is_not_excluded(self):
+        runs = [_run(name="dynamic-ci", workflow_name="CI", event="dynamic", conclusion="failure")]
+        assert _run_wait(lambda _sha: runs, registration_grace=0.0) == wait_ci.EXIT_CI_FAILED
 
     def test_baseline_only_returns_no_runs_without_fetching_old_jobs(self):
         def unexpected_job_fetch(_run_record):
