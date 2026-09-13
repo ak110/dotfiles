@@ -16,6 +16,7 @@ _REAL_LEGACY_TWO_FILE_PLAN = pathlib.Path("/home/aki/.claude/plans/fb-hooks-45ab
 _REAL_LEGACY_TWO_FILE_DETAIL = _REAL_LEGACY_TWO_FILE_PLAN.with_name(f"{_REAL_LEGACY_TWO_FILE_PLAN.stem}.detail.md")
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 _TWO_FILE_MIGRATION = "旧二ファイル書式である。新規作成・改訂では現行の1ファイル書式へ移行する"
+_FILENAME_ERROR_MARKER = "計画作業root直下の計画ファイル名が保存工程の受理条件を満たさない"
 
 type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str, str]]
 
@@ -753,6 +754,51 @@ def test_accepts_direct_and_date_hierarchy_working_paths(
 
     assert not errors, errors
     assert warnings == [_TWO_FILE_MIGRATION]
+
+
+@pytest.mark.parametrize(
+    ("filename", "rejected"),
+    [
+        ("example-plan.md", True),
+        ("13-計画名検査-a1b2.md", False),
+        ("13-legacy.md", False),
+    ],
+)
+def test_working_plan_filename_follows_save_stage_condition(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+    filename: str,
+    rejected: bool,
+) -> None:
+    """計画作業root直下の計画ファイル名を保存工程と同じ受理条件で検査する。"""
+    work_dir, base = repo
+    home = tmp_path / "home"
+    plan_path = home / ".claude/plans" / filename
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(_plan(work_dir, base), encoding="utf-8")
+
+    errors, _warnings = check_plan_file.check(plan_path, work_dir, home=home)
+
+    filename_errors = [error for error in errors if _FILENAME_ERROR_MARKER in error]
+    assert bool(filename_errors) is rejected, errors
+    if rejected:
+        assert "dd-{名称}-{小文字16進数4桁}.md" in filename_errors[0]
+
+
+def test_working_plan_filename_is_not_checked_outside_working_root(
+    repo: tuple[pathlib.Path, str],
+    tmp_path: pathlib.Path,
+) -> None:
+    """計画作業root直下に無い計画ファイルの名前は検査しない。"""
+    work_dir, base = repo
+    home = tmp_path / "home"
+    plan_path = home / ".claude/plans/2026/08/example-plan.md"
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(_plan(work_dir, base), encoding="utf-8")
+
+    errors, _warnings = check_plan_file.check(plan_path, work_dir, home=home)
+
+    assert not [error for error in errors if _FILENAME_ERROR_MARKER in error], errors
 
 
 def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(

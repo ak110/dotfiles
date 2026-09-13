@@ -477,6 +477,24 @@ def _check_legacy_format(
     return errors, warnings
 
 
+def _check_working_plan_filename(plan_path: pathlib.Path, home: pathlib.Path | str | None) -> list[str]:
+    """計画作業root直下の計画ファイル名を保存工程と同じ受理条件で検査する。
+
+    保存工程は計画作業root直下のファイル名へ`validate_working_plan_relative_path()`の条件を課す。
+    起草時の本検査が同じ関数を呼ばないと、合格した計画が保存で初めて拒否され、
+    計画バンドルの改名と内部参照の修正という手戻りが生じる。判定規則を本スクリプトへ書き写さない。
+    計画作業root直下に無い対象は保存rootの日付階層などを含むため、ファイル名を検査しない。
+    """
+    working_root = _plan_file.working_plans_root(home).resolve(strict=False)
+    if plan_path.parent.resolve(strict=False) != working_root:
+        return []
+    try:
+        _plan_file.validate_working_plan_relative_path(plan_path.name)
+    except ValueError as error:
+        return [f"計画作業root直下の計画ファイル名が保存工程の受理条件を満たさない: {plan_path.name}: {error}"]
+    return []
+
+
 def check(
     plan_path: pathlib.Path,
     work_dir: pathlib.Path,
@@ -489,6 +507,7 @@ def check(
     """計画ファイルを検査し、エラーと警告を返す。
 
     計画作業root直下の新形式と、既存の日付階層形式を同じ構造契約で受理する。
+    計画作業root直下の対象では、保存工程と同じ条件でファイル名の形式も検査する。
     対応する`<stem>.detail.md`があれば旧二ファイル形式として扱う。
     detailが無く、現行H2集合を持つ場合は現行の1ファイル形式、それ以外は旧単一ファイル形式として扱う。
     警告は、旧形式からの移行を促す`migration`と、現行形式でも成立する`advisory`に分類する。
@@ -501,6 +520,7 @@ def check(
     body_start = _plan_format.markdown_body_start_index(text)
     structure_lines = ["" if index < body_start else line for index, line in enumerate(lines)]
     _outside, errors = _outside_fences(structure_lines)
+    errors.extend(_check_working_plan_filename(plan_path, home))
 
     detail_path = _detail_path_for(plan_path)
     progress_heading = _plan_format.PLAN_H2_PROGRESS
