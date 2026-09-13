@@ -107,14 +107,16 @@ def _set_process_wi_invoked(state: dict) -> dict | None:
 def _fixed_session_title(session_id: str) -> str | None:
     """process-loop起動またはprocess-wi手動起動セッションの固定sessionTitleを返す。
 
-    両条件が真の場合はprocess-loopを優先する。計画ファイルstemの反映（`claim_session_title`
-    経由で一度だけ確定する）とは異なり、対象セッションである間は呼び出しごとに同じ固定値を返す。
+    両条件が真の場合はprocess-loopを優先する。計画ファイルstemと同じく、
+    `claim_session_title`を介してセッションごとに一度だけ確定する。
     """
     if os.environ.get(_ENV_PROCESS_LOOP_SESSION) == "1" or os.environ.get(_LEGACY_ENV_PROCESS_LOOP_SESSION) == "1":
-        return "process-loop"
-    if read_state(session_id).get("process_wi_skill_invoked") is True:
-        return "process-wi"
-    return None
+        title = "process-loop"
+    elif read_state(session_id).get("process_wi_skill_invoked") is True:
+        title = "process-wi"
+    else:
+        return None
+    return title if claim_session_title(session_id, title) else None
 
 
 def _plan_session_title(session_id: str) -> str | None:

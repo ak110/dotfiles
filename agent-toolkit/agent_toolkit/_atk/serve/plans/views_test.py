@@ -17,6 +17,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk.serve import plans
+from agent_toolkit._atk.serve.plans import views
 from agent_toolkit._atk.serve.plans.test_support_test import *  # noqa: F403
 
 
@@ -78,6 +79,40 @@ def test_saved_plan_links_keep_legacy_attachments_readable() -> None:
     paths = dict(plans._plan_paths("a.md", plans.NEW_SOURCE_ID))
     assert paths["a.detail.md"] == "詳細"
     assert paths["a.plan-review.tsv"] == "計画レビュー指摘管理表"
+
+
+@pytest.mark.asyncio
+async def test_plan_links_checks_independent_attachments_concurrently(
+    tmp_path: pathlib.Path,
+    index_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """付属計画候補は一つずつ待たず、同時に存在確認を開始する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    context = _context(root)
+    started: list[str] = []
+    all_started = asyncio.Event()
+
+    async def wait_for_other_candidates(
+        _context_value: plans.PlansContext,
+        _host: str,
+        _source_id: str,
+        plan_rel: str,
+    ) -> bool:
+        started.append(plan_rel)
+        if len(started) == 4:
+            all_started.set()
+        await all_started.wait()
+        return True
+
+    monkeypatch.setattr(views, "_plan_exists", wait_for_other_candidates)
+
+    html = await asyncio.wait_for(views.plan_links_html(context, "local-host", plans.NEW_SOURCE_ID, "a.md"), 1)
+
+    assert len(started) == 4
+    assert html.count("data-plan-path") == 4
 
 
 def test_absent_root_is_listed_without_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:

@@ -17,6 +17,7 @@ const SEARCH_FALLBACK_NOTICE =
   '状態などの条件では一致しなかったため、検索欄の条件だけで見つかった項目を表示しています。' +
   'フィルターの選択値は変更していません。';
 const ENTRY_PAGE_SIZE = 100;
+const LIST_LOADING_DELAY_MS = 500;
 const TARGET_REPO_DISPLAY_LENGTH = 20;
 const METADATA_FIELDS = [
   ['kind', '種別'],
@@ -38,7 +39,9 @@ let detailSessionGeneration = 0;
 let listRequestGeneration = 0;
 let targetRepoRequestGeneration = 0;
 let knownUwiRequestGeneration = 0;
-let pendingListRequests = 0;
+let listLoadingTimer = null;
+let listLoadingVisible = false;
+let listRequestPending = false;
 let pendingListAnnouncement = false;
 let detailRefreshRequired = false;
 let deleteDialogEntrySnapshot = '';
@@ -54,6 +57,8 @@ let refreshFocusRequested = false;
 
 const byId = id => document.getElementById(id);
 const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
+const isPlainPrimaryClick = event =>
+  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 const deleteEntrySnapshot = entry => entry ? JSON.stringify([
   entryKey(entry), entry.content, entry.target_repo || '', entry.summary || ''
 ]) : '';
@@ -241,11 +246,25 @@ function targetRepoDisplay(value) {
   return `${value.slice(0, prefixLength)}…${value.slice(-suffixLength)}`;
 }
 
+function entryPageUrl(entry) {
+  const query = new URLSearchParams({state: entry.state, filename: entry.filename});
+  return `${BASE_PATH}/?${query.toString()}`;
+}
+
+function entrySelectionFromUrl() {
+  const currentLocation = globalThis.location;
+  if (!currentLocation || currentLocation.pathname !== `${BASE_PATH}/`) return null;
+  const query = new URLSearchParams(currentLocation.search);
+  const state = query.get('state');
+  const filename = query.get('filename');
+  return state && filename ? {state, filename} : null;
+}
+
 function renderEntry(entry) {
   const item = document.createElement('li');
   item.className = 'entry-row';
-  const button = document.createElement('button');
-  button.type = 'button';
+  const button = document.createElement('a');
+  button.href = entryPageUrl(entry);
   button.className = 'entry-select';
   button.dataset.key = entryKey(entry);
   button.dataset.kind = entry.kind || 'unknown';
@@ -288,7 +307,12 @@ function renderEntry(entry) {
       entry.plan ? 'plan' : '',
       unanswered ? '未回答' : '', entry.summary || '要約なし'].filter(Boolean).join('、')
   );
-  button.addEventListener('click', () => selectEntry(entry, button));
+  button.addEventListener('click', event => {
+    if (!isPlainPrimaryClick(event) || button.target) return;
+    event.preventDefault();
+    history.pushState({atkEntry: true}, '', button.href);
+    void selectEntry(entry, button);
+  });
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'entry-copy button-secondary';
@@ -392,19 +416,30 @@ function captureListLoadingView() {
 }
 
 function renderListLoading(view = captureListLoadingView()) {
-  const loading = pendingListRequests > 0;
-  view.indicator.hidden = !loading || entries.length > 0;
-  view.list.setAttribute('aria-busy', String(loading));
+  view.indicator.hidden = !listLoadingVisible;
+  view.list.setAttribute('aria-busy', String(listRequestPending));
   renderPagination(view);
 }
 
-function beginListRequest(view) {
-  pendingListRequests += 1;
+function beginListRequest(view, generation) {
+  if (listLoadingTimer !== null) clearTimeout(listLoadingTimer);
+  listRequestPending = true;
+  listLoadingVisible = false;
+  listLoadingTimer = setTimeout(() => {
+    if (generation !== listRequestGeneration) return;
+    listLoadingTimer = null;
+    listLoadingVisible = true;
+    renderListLoading(view);
+  }, LIST_LOADING_DELAY_MS);
   renderListLoading(view);
 }
 
-function endListRequest(view) {
-  pendingListRequests = Math.max(0, pendingListRequests - 1);
+function endListRequest(view, generation) {
+  if (generation !== listRequestGeneration) return;
+  if (listLoadingTimer !== null) clearTimeout(listLoadingTimer);
+  listLoadingTimer = null;
+  listLoadingVisible = false;
+  listRequestPending = false;
   renderListLoading(view);
 }
 
@@ -414,8 +449,8 @@ function renderPagination(view = captureListLoadingView()) {
   const page = pagination.page || currentPage;
   const pageCount = pagination.page_count || 1;
   status.textContent = `ページ ${page} / ${pageCount}（全${pagination.total_count}件）`;
-  previous.disabled = pendingListRequests > 0 || page <= 1;
-  next.disabled = pendingListRequests > 0 || page >= pageCount;
+  previous.disabled = listRequestPending || page <= 1;
+  next.disabled = listRequestPending || page >= pageCount;
   previous.setAttribute('aria-label', `前のページ（現在${page}ページ）`);
   next.setAttribute('aria-label', `次のページ（現在${page}ページ）`);
 }
@@ -461,7 +496,7 @@ async function loadEntries({announce = false} = {}) {
   const canSearchFallback = searchTerm !== '' && hasSearchFallbackFilters(query);
   const generation = ++listRequestGeneration;
   const loadingView = captureListLoadingView();
-  beginListRequest(loadingView);
+  beginListRequest(loadingView, generation);
   const pending = (async () => {
     try {
       const payload = await api(`/api/entries?${query.toString()}`);
@@ -506,7 +541,7 @@ async function loadEntries({announce = false} = {}) {
       return entries;
     }
   })();
-  return pending.finally(() => endListRequest(loadingView));
+  return pending.finally(() => endListRequest(loadingView, generation));
 }
 
 function syncNotificationButton() {
@@ -765,9 +800,10 @@ function displayEntry(entry) {
   byId('readonly-notice').hidden = MUTABLE_STATES.has(entry.state) || entry.state === 'rejected';
   setDetailMode('view');
   updateCurrentRowSelection();
+  if (entrySelectionFromUrl()) history.replaceState({atkEntry: true}, '', entryPageUrl(entry));
 }
 
-async function selectEntry(entry, origin = null) {
+async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) {
   const requestGeneration = ++detailRequestGeneration;
   const sessionGeneration = ++detailSessionGeneration;
   const requestIsCurrent = () => requestGeneration === detailRequestGeneration &&
@@ -781,7 +817,7 @@ async function selectEntry(entry, origin = null) {
     displayEntry(payload.entry);
     openDialog(byId('detail-dialog'), detailOrigin, byId('detail-dialog-body'));
   } catch (error) {
-    if (requestIsCurrent()) setGlobalError(error.message);
+    if (requestIsCurrent() && !(ignoreNotFound && error.status === 404)) setGlobalError(error.message);
   }
 }
 
@@ -808,7 +844,7 @@ function reportExternalDetailFailure(error, deleteConfirmationInvalidated) {
   setTextMessage('detail-alert', `${error.message}${recovery}`);
 }
 
-function closeDetailDialog() {
+function closeDetailDialog({updateUrl = true} = {}) {
   const detailDialog = byId('detail-dialog');
   const deleteDialog = byId('delete-dialog');
   const hadOpenDialog = detailDialog.open || deleteDialog.open;
@@ -824,7 +860,20 @@ function closeDetailDialog() {
   setTextMessage('detail-alert', '');
   setDetailMode('view');
   updateCurrentRowSelection();
+  if (updateUrl && globalThis.location?.pathname === `${BASE_PATH}/` && entrySelectionFromUrl()) {
+    history.replaceState({atkEntry: false}, '', `${BASE_PATH}/`);
+  }
   if (hadOpenDialog && returnTarget && typeof returnTarget.focus === 'function') returnTarget.focus();
+}
+
+async function restoreEntryFromUrl() {
+  const selection = entrySelectionFromUrl();
+  if (!selection) {
+    if (byId('detail-dialog').open || currentEntry) closeDetailDialog({updateUrl: false});
+    return;
+  }
+  const origin = document.querySelector(`.entry-select[data-key="${CSS.escape(entryKey(selection))}"]`);
+  await selectEntry(selection, origin, {ignoreNotFound: true});
 }
 
 function currentDetailMode() {
@@ -1270,8 +1319,15 @@ async function handleFilterChange({reloadRepos = false} = {}) {
   syncFilterDependencies();
   const requestedState = byId('state-filter').value;
   if (reloadRepos) {
+    const requestedTarget = byId('target-filter').value;
+    const entriesRequest = loadEntries({announce: true});
     const loaded = await (loadTargetRepos());
+    await entriesRequest;
     if ((!loaded && byId('state-filter').value !== requestedState)) return;
+    if (loaded && requestedTarget && byId('target-filter').value !== requestedTarget) {
+      await (loadEntries({announce: true}));
+    }
+    return;
   }
   await (loadEntries({announce: true}));
 }
@@ -1301,6 +1357,7 @@ function handleFocusIn() {
 
 function bindEvents() {
   document.addEventListener('focusin', handleFocusIn);
+  globalThis.addEventListener?.('popstate', () => { void restoreEntryFromUrl(); });
   byId('global-error-close-button').addEventListener('click', () => {
     setGlobalError('');
     focusRefreshButton();
@@ -1381,6 +1438,7 @@ async function init() {
   document.addEventListener('focusin', handleFocusIn);
   initializeApp();
   await initialization;
+  await restoreEntryFromUrl();
 }
 
 window.__atkScreens = window.__atkScreens || {};

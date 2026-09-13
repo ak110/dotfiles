@@ -93,7 +93,7 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # プロジェクトローカルに存在し、.chezmoi-source/dot_claude/ の配布対象外とする。
         Path("skills/sync-platform-pair"),
         Path("skills/sync-rule-ssot"),
-        # dotfiles ローカルの sync-cross-project skill が当該機能を担う (15ca58b)。
+        # dotfiles ローカルの ak110-projects-operations skill が当該機能を担う (15ca58b)。
         Path("agents/cross-project-sync-checker.md"),
         # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
@@ -118,6 +118,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         # 旧配布先 (dotfiles-fb 系スキル) の配布先ディレクトリを削除する。
         Path("skills/add-feedback"),
         Path("skills/process-feedbacks"),
+        # 現在のスキル名は ak110-projects-operations。旧名の配布先を削除する。
+        Path("skills/sync-cross-project"),
         # 02-claude-code.md / 03-styles.md / 04-terminology.md →
         # 03-claude-code.md / 04-styles.md / 05-terminology.md リネームに伴い旧ファイルを削除する。
         Path("rules/agent-toolkit/02-claude-code.md"),
@@ -162,6 +164,8 @@ _REMOVED_PATHS: dict[Path, list[Path]] = {
         Path("skills/feedback-add"),
         # 現在のスキル名は process-wi。旧名 process-feedback の配布先リンクを除去する。
         Path("skills/process-feedback"),
+        # 現在のスキル名は ak110-projects-operations。旧名の配布先リンクを削除する。
+        Path("skills/sync-cross-project"),
     ],
     Path.home() / ".config": [
         # pyfltr v3.14.1で口語表現チェッカーが内蔵化されたため

@@ -1031,7 +1031,10 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "state": "active",
         "candidates": ["", "active/repo"],
-        "listUrls": ["/atk/api/entries?type=all&status=active&answered=all&page=1"],
+        "listUrls": [
+            "/atk/api/entries?type=all&status=adopted&answered=all&page=1",
+            "/atk/api/entries?type=all&status=active&answered=all&page=1",
+        ],
         "rows": ["active.md"],
     }
 

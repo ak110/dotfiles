@@ -644,15 +644,29 @@ class TestFixedSessionTitle:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-wi"
 
-    def test_process_wi_fixed_title_repeats_every_call(self, tmp_path: pathlib.Path) -> None:
-        """計画名と異なり、固定値は呼び出しごとに毎回出力する。"""
+    def test_process_wi_fixed_title_is_emitted_only_once(self, tmp_path: pathlib.Path) -> None:
+        """固定値も同一セッションでは初回だけ出力する。"""
         sid = "fixed-title-process-wi-repeat"
         _run({"session_id": sid, "prompt": "/agent-toolkit:process-wi"}, state_dir=tmp_path)
 
         result = _run({"session_id": sid, "prompt": "通常の入力"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-wi"
+        assert result.stdout == ""
+
+    def test_process_loop_fixed_title_is_emitted_only_once(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """process-loop固定値も同一セッションでは初回だけ出力する。"""
+        sid = "fixed-title-process-loop-repeat"
+        monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+        first = _run({"session_id": sid, "prompt": "最初の入力"}, state_dir=tmp_path)
+
+        result = _run({"session_id": sid, "prompt": "次の入力"}, state_dir=tmp_path)
+
+        assert json.loads(first.stdout)["hookSpecificOutput"]["sessionTitle"] == "process-loop"
+        assert result.returncode == 0
+        assert result.stdout == ""
 
     def test_process_loop_env_emits_fixed_title(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`のセッションは固定値`process-loop`を出力する。"""

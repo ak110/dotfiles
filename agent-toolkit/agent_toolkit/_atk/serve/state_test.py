@@ -1106,8 +1106,8 @@ process.stdout.write(JSON.stringify({
     )
     assert result == {
         "listUrls": [
-            "/atk/api/entries?type=uwi&status=all&answered=all",
             "/atk/api/entries?type=awi&status=active&answered=all&page=1",
+            "/atk/api/entries?type=uwi&status=all&answered=all",
             "/atk/api/entries?type=awi&status=active&answered=all&page=1",
         ],
         "status": "1件を表示",

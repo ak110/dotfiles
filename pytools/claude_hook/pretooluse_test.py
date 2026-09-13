@@ -612,7 +612,7 @@ class TestAgentToolkitDotfilesNamesCheck:
     @pytest.mark.parametrize(
         "name",
         [
-            "sync-cross-project",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
+            "ak110-projects-operations",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
             "claude-session-export",  # pytools コマンド名 (project.scripts)
             "psgrep",  # pytools コマンド名

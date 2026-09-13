@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_atk/session_records.py のテスト。
 
-保存済みセッション記録の走査・復号・マーカー判定・本文抽出の各公開関数を検証する。
+保存済みセッション記録の走査・デコード・マーカー判定・本文抽出の各公開関数を検証する。
 """
 
 from __future__ import annotations

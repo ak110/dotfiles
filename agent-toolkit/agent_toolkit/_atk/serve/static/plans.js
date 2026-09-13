@@ -30,7 +30,9 @@ let rootStatus = {};
 let visibleFiles = [];
 let mermaidLoadPromise = null;
 const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@latest/dist/mermaid.min.js";
+const PREVIEW_LOADING_DELAY_MS = 500;
 let previewGeneration = 0;
+let previewLoadingTimer = null;
 // 画面内の描画順序の逆転は`previewGeneration`で判定する。
 let previewObjectUrls = new Set();
 let searchGeneration = 0;
@@ -66,6 +68,24 @@ function fileKey(file) {
 function fileQuery(host, path, source) {
   const sourceQuery = source ? "&source=" + encodeURIComponent(source) : "";
   return "host=" + encodeURIComponent(host) + "&path=" + encodeURIComponent(path) + sourceQuery;
+}
+
+function filePageUrl(host, path, source) {
+  return `${BASE_PATH}/plans?${fileQuery(host, path, source)}`;
+}
+
+function fileSelectionFromUrl() {
+  const currentLocation = globalThis.location;
+  if (!currentLocation || currentLocation.pathname !== `${BASE_PATH}/plans`) return null;
+  const query = new URLSearchParams(currentLocation.search);
+  const host = query.get("host");
+  const path = query.get("path");
+  if (!host || !path) return null;
+  return {host, path, source: query.get("source") || ""};
+}
+
+function isPlainPrimaryClick(event) {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
 function rootEntries(host) {
@@ -173,7 +193,7 @@ function navigateRelative(delta) {
 
 function createFileItem(file) {
   // 1ファイルエントリのDOMノードを生成する。差分更新時の追加経路から呼ぶ。
-  const item = document.createElement("div");
+  const item = document.createElement("a");
   item.dataset.key = fileKey(file);
   const name = document.createElement("div");
   name.className = "name";
@@ -187,13 +207,19 @@ function createFileItem(file) {
   meta.appendChild(ctimeSpan);
   item.appendChild(name);
   item.appendChild(meta);
-  item.addEventListener("click", () => openFile(file.host, file.path, fileSource(file)));
+  item.addEventListener("click", event => {
+    if (!isPlainPrimaryClick(event) || item.target) return;
+    event.preventDefault();
+    history.pushState({atkPlan: true}, "", item.href);
+    void openFile(file.host, file.path, fileSource(file));
+  });
   return item;
 }
 
 function updateFileItem(item, file) {
   // 既存ノードのテキスト・クラス・バッジを最新値で上書きする。
   item.className = "file" + (isSelected(file) ? " active" : "");
+  item.href = filePageUrl(file.host, file.path, fileSource(file));
   const name = item.querySelector(".name");
   if (name) name.textContent = file.path;
   const hostSpan = item.querySelector(".host");
@@ -400,6 +426,9 @@ async function applyPreviewHtml(html, scrollTop, generation) {
   revokePreviewObjectUrls();
   const preview = document.getElementById("preview");
   preview.innerHTML = html;
+  for (const link of preview.querySelectorAll("a[data-plan-path]")) {
+    link.href = filePageUrl(selectedHost, link.dataset.planPath, selectedSource);
+  }
   await (renderDiagrams(preview, generation));
   if (generation !== previewGeneration) return;
   const main = document.querySelector("#screen-plans main");
@@ -496,21 +525,46 @@ function showDiagramError(figure, message) {
   error.hidden = false;
 }
 
+function beginPreviewLoading(generation) {
+  if (previewLoadingTimer !== null) clearTimeout(previewLoadingTimer);
+  const indicator = document.getElementById("plans-loading-indicator");
+  const preview = document.getElementById("preview");
+  indicator.hidden = true;
+  preview.setAttribute("aria-busy", "true");
+  previewLoadingTimer = setTimeout(() => {
+    if (generation !== previewGeneration) return;
+    previewLoadingTimer = null;
+    indicator.hidden = false;
+  }, PREVIEW_LOADING_DELAY_MS);
+}
+
+function endPreviewLoading(generation) {
+  if (generation !== previewGeneration) return;
+  if (previewLoadingTimer !== null) clearTimeout(previewLoadingTimer);
+  previewLoadingTimer = null;
+  document.getElementById("plans-loading-indicator").hidden = true;
+  document.getElementById("preview").setAttribute("aria-busy", "false");
+}
+
 async function updatePreview() {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("#screen-plans main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
-  if (generation !== previewGeneration) return;
-  if (!res.ok) {
-    document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
-    return;
+  beginPreviewLoading(generation);
+  try {
+    const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    if (generation !== previewGeneration) return;
+    if (!res.ok) {
+      document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
+      return;
+    }
+    const html = await (res.text());
+    if (generation !== previewGeneration) return;
+    await (applyPreviewHtml(html, scrollTop, generation));
+  } finally {
+    endPreviewLoading(generation);
   }
-  const html = await (res.text());
-  if (generation !== previewGeneration) return;
-  await (applyPreviewHtml(html, scrollTop, generation));
-  if (generation !== previewGeneration) return;
 }
 
 async function openFile(host, path, source) {
@@ -524,6 +578,9 @@ async function openFile(host, path, source) {
     ? files.find(f => f.host === host && fileSource(f) === selectedSource && f.path === path)
     : files.find(f => f.host === host && f.path === path);
   if (selected) selectedSource = fileSource(selected);
+  if (fileSelectionFromUrl()) {
+    history.replaceState({atkPlan: true}, "", filePageUrl(host, path, selectedSource));
+  }
   selectedMtime = selected ? selected.mtime_epoch : null;
   document.getElementById("copy-btn").disabled = false;
   // 選択rootの情報未取得（リモート接続確立前）はdisabled維持する。
@@ -533,16 +590,21 @@ async function openFile(host, path, source) {
   if (isMobileViewport()) setDrawerOpen(false);
   const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
-  const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
-  if (generation !== previewGeneration) return;
-  if (!res.ok) {
-    document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
-    if (main) main.scrollTop = 0;
-    return;
+  beginPreviewLoading(generation);
+  try {
+    const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
+    if (generation !== previewGeneration) return;
+    if (!res.ok) {
+      document.getElementById("preview").textContent = "読み込みに失敗しました: " + res.status;
+      if (main) main.scrollTop = 0;
+      return;
+    }
+    const html = await (res.text());
+    if (generation !== previewGeneration) return;
+    await (applyPreviewHtml(html, 0, generation));
+  } finally {
+    endPreviewLoading(generation);
   }
-  const html = await (res.text());
-  if (generation !== previewGeneration) return;
-  await (applyPreviewHtml(html, 0, generation));
 }
 
 async function resyncFromServer() {
@@ -739,10 +801,25 @@ function bindScreenEvents() {
     // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけが選択経路になる。
     // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
     const link = event.target.closest("a[data-plan-path]");
-    if (!link) return;
+    if (!link || !isPlainPrimaryClick(event) || link.target) return;
     event.preventDefault();
-    openFile(selectedHost, link.dataset.planPath, selectedSource);
+    history.pushState({atkPlan: true}, "", link.href);
+    void openFile(selectedHost, link.dataset.planPath, selectedSource);
   });
+}
+
+async function restoreFileFromUrl() {
+  if (location.pathname !== `${BASE_PATH}/plans`) return;
+  const selection = fileSelectionFromUrl();
+  const target = selection && files.find(file =>
+    file.host === selection.host && file.path === selection.path &&
+    (!selection.source || fileSource(file) === selection.source)
+  );
+  if (target) {
+    await openFile(target.host, target.path, fileSource(target));
+  } else if (files.length > 0 && !isMobileViewport()) {
+    await openFile(files[0].host, files[0].path, fileSource(files[0]));
+  }
 }
 
 async function init() {
@@ -753,14 +830,17 @@ async function init() {
   window.addEventListener("pagehide", handlePageHide);
   window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("focus", handleWindowFocus);
+  globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
   document.addEventListener("visibilitychange", handleVisibilityChange);
 
   await (refreshHostStatus());
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
-  if (!selectedPath && files.length > 0 && !isMobileViewport()) {
-    await (openFile(files[0].host, files[0].path, fileSource(files[0])));
+  if (location.pathname === `${BASE_PATH}/plans`) {
+    await restoreFileFromUrl();
+  } else if (files.length > 0 && !isMobileViewport()) {
+    await openFile(files[0].host, files[0].path, fileSource(files[0]));
   }
   setDrawerOpen(isMobileViewport());
   setupSentinelObserver();

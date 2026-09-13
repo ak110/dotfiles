@@ -54,6 +54,13 @@ def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
     assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
 
 
+def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
+    """改名前の個人プロジェクト運用スキルを両配布先からcleanupする。"""
+    relative = Path("skills/sync-cross-project")
+    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".claude"]  # noqa: SLF001
+    assert relative in post_apply._REMOVED_PATHS[Path.home() / ".codex"]  # noqa: SLF001
+
+
 def test_session_review_reference_is_not_cleanup_target() -> None:
     """新しい参照文書を旧資産の後始末対象へ含めない。"""
     for paths in post_apply._REMOVED_PATHS.values():  # noqa: SLF001

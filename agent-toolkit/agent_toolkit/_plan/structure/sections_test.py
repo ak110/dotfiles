@@ -137,6 +137,20 @@ def test_bug_file_structure_rejects_mixed_new_and_legacy_tables() -> None:
     assert _plan_format.check_bug_file_structure(f"{_BUG_FILE_CONTENT}\n\n{legacy_table}")
 
 
+def test_bug_file_structure_reports_literal_pipe_for_column_mismatch() -> None:
+    """セル内の未エスケープ半角縦線には原因と修正方法を示す。"""
+    content = _BUG_FILE_CONTENT.replace(
+        _plan_fixture.BUG_FILLER,
+        f"{_plan_fixture.BUG_FILLER} | 追加列",
+        1,
+    )
+
+    errors = _plan_format.check_bug_file_structure(content)
+
+    assert any("列数が一致しない" in error and "`\\|`へエスケープ" in error for error in errors), errors
+    assert not any("空の`内容`" in error for error in errors), errors
+
+
 def test_canonical_fixture_accepts_mixed_agreements_and_numeric_target() -> None:
     """実施・除外・保持の条項分解と数値目標を含む正規fixtureを受理する。"""
     assert "診断件数を2件から1件へ減らす" in _VALID_CONTENT
@@ -177,18 +191,31 @@ def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
 
 
 @pytest.mark.parametrize(
-    "row",
+    ("row", "expected", "unexpected"),
     [
-        "| 更新経路を恒久化する | エージェント提案詳細 |  | 後続の更新でも参照するため。 |",
-        "| 更新経路を恒久化する | エージェント提案詳細 | 対象ファイル |",
+        (
+            "| 更新経路を恒久化する | エージェント提案詳細 |  | 後続の更新でも参照するため。 |",
+            "空cell",
+            "`\\|`へエスケープ",
+        ),
+        (
+            "| 更新経路を恒久化する | エージェント提案詳細 | 対象ファイル |",
+            "列数が一致しない",
+            "空cell",
+        ),
     ],
 )
-def test_permanence_table_rejects_empty_cells_and_column_mismatch(row: str) -> None:
+def test_permanence_table_rejects_empty_cells_and_column_mismatch(
+    row: str,
+    expected: str,
+    unexpected: str,
+) -> None:
     """恒久化表の空セルと列数不一致を拒否する。"""
     original = _plan_fixture.PERMANENCE_ROW
     content = _VALID_CONTENT.replace(original, row)
     errors = _plan_format.check_plan_structure(content)
-    assert any("空cellまたは列数不一致" in error for error in errors), errors
+    assert any(expected in error for error in errors), errors
+    assert not any(unexpected in error for error in errors), errors
     lineno = content.splitlines().index(row) + 1
     assert any(f"{lineno}行目: {row}" in error for error in errors), errors
 

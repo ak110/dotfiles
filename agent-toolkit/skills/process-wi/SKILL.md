@@ -30,7 +30,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`を正本とする。本ス
 
 ## 実行順
 
-1. 個人プロジェクトでは`sync-cross-project`を起動し、同期と依存更新の要否を確定する。
+1. 個人プロジェクトでは`ak110-projects-operations`を起動し、同期と依存更新の要否を確定する。
 2. `${CLAUDE_PLUGIN_ROOT}/share/pick-wi.parent.md`を全文読み、pickerによる対象選定、処理開始、前セッションの振り返り及び監査を開始する。
 3. `references/run-lanes.md`を全文読み、選定結果から専用worktreeとレーンを作成し、レーン担当を起動する。
 4. 各レーンから`計画作成完了`を受領し、計画の`## 概要`と`## 実施内容`だけから由来、不採用範囲及び実装有無を確認して、`実装開始`又は`実装なし`を返す。
