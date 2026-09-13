@@ -41,6 +41,7 @@ def test_plugin_install_and_update_use_extended_timeout(monkeypatch) -> None:
     assert install_claude_plugins._disable_plugin("example@marketplace")
 
     assert [kwargs for _, kwargs in observed] == [{"timeout": 300}, {"timeout": 300}, {}]
+    assert observed[0][0][-1] == "-y"
 
 
 def test_marketplace_write_operations_use_extended_timeout(monkeypatch, tmp_path) -> None:
@@ -55,6 +56,8 @@ def test_marketplace_write_operations_use_extended_timeout(monkeypatch, tmp_path
     checks = iter((None, False, True))
     monkeypatch.setattr(claude_common, "run_claude", fake_run_claude)
     monkeypatch.setattr(claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(claude_marketplace, "_KNOWN_MARKETPLACES_PATH", tmp_path / "known_marketplaces.json")
+    monkeypatch.setattr(claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
     monkeypatch.setattr(claude_marketplace, "_check_marketplace_from_file", lambda: next(checks))
 
     assert claude_marketplace.ensure_marketplace()

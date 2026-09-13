@@ -340,7 +340,19 @@ dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開�
 
 実施する場合は次の順で進める。
 
-1. 管理対象一時領域へPR本文のファイルを作成し、`gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>`でPRを作成する。タイトルには当該セッションで反映した変更の主題を1文で書き、本文には反映したAWIの正本ファイル名と1行要約を列挙する
-2. `.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
+1. 同じheadとbaseのopen PRを次のコマンドで最大2件取得する。
+
+   ```sh
+   gh pr list --repo ak110/dotfiles --base master --head develop --state open --limit 2 --json number,url,title,headRefName,baseRefName,state
+   ```
+
+   1件ならそのPRを再利用して次へ進む。0件なら管理対象一時領域へPR本文のファイルを作成し、次のコマンドでPRを作成する。
+
+   ```sh
+   gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>
+   ```
+
+   タイトルには当該セッションで反映した変更の主題を1文で書く。本文には反映したAWIの正本ファイル名と1行要約を列挙する。2件取得した場合は対象を推測せず、両PRの番号とURLを報告して停止する
+2. 既存又は新規PRの完全なURLを指定して`.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
 
 PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する。

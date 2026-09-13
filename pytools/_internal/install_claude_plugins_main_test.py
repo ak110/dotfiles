@@ -73,12 +73,32 @@ class TestPrerequisites:
 
 @pytest.fixture(name="disable_file_reads")
 def _disable_file_reads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ファイル直接読み取りを無効化し、CLIフォールバックパスを通す。
+    """初回はCLIフォールバックを通し、最終検証では導入後の状態を返す。
 
     ``is_directory_type_registered`` は既定で False (= 旧 GitHub 型残存環境の挙動)。
     directory 型経路を検証したい個別テストが必要に応じて上書きする。
     """
-    monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
+    read_count = 0
+
+    def read_installed_plugins() -> list[dict[str, object]] | None:
+        nonlocal read_count
+        read_count += 1
+        if read_count == 1:
+            return None
+        return [
+            {"id": "agent-toolkit@ak110-dotfiles", "scope": "user", "version": "0.2.0"},
+            {"id": "sample-plugin@ak110-dotfiles", "scope": "user", "version": "1.0.0"},
+        ]
+
+    monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", read_installed_plugins)
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_enabled_plugins_from_file",
+        lambda: {
+            "agent-toolkit@ak110-dotfiles": True,
+            "sample-plugin@ak110-dotfiles": True,
+        },
+    )
     monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
     monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
 
@@ -274,11 +294,12 @@ class TestRunFlow:
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
 
         assert _install_claude_plugins.run()[0] is False
-        # list 以外は呼ばれていないこと (失敗で早期 return)
-        assert all(command_matches(c, ["claude", "plugin", "list"]) for c in seen)
+        plugin_list_index = next(i for i, command in enumerate(seen) if command_matches(command, ["claude", "plugin", "list"]))
+        # marketplace確認後のplugin list失敗により、後続plugin処理を実行しないこと。
+        assert not seen[plugin_list_index + 1 :]
 
-    def test_install_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        """install が失敗しても例外は出ず False を返す。"""
+    def test_install_failure_raises_after_verification(self, monkeypatch: pytest.MonkeyPatch):
+        """install が失敗し管理対象が未導入なら最終検証で例外を送出する。"""
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             if command_matches(cmd, ["claude", "plugin", "list"]):
@@ -292,8 +313,10 @@ class TestRunFlow:
             return _FakeResult(returncode=1)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
 
-        assert _install_claude_plugins.run()[0] is False
+        with pytest.raises(RuntimeError, match="未インストール"):
+            _install_claude_plugins.run()
 
     def test_claude_timeout_is_swallowed(self, monkeypatch: pytest.MonkeyPatch):
         """claude CLI のタイムアウトはスキップとして扱う (post-apply を中断させない)。"""

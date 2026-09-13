@@ -56,6 +56,20 @@ def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
 
 
+@pytest.fixture(name="enabled_target_plugins")
+def _enabled_target_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """管理対象pluginがsettingsで有効な状態を返す。"""
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_enabled_plugins_from_file",
+        lambda: {
+            "agent-toolkit@ak110-dotfiles": True,
+            "sample-plugin@ak110-dotfiles": True,
+        },
+    )
+
+
+@pytest.mark.usefixtures("enabled_target_plugins")
 class TestReadInstalledFromFile:
     """installed_plugins.json の直接読み取りが run() のインストール判定に反映されること。"""
 
@@ -272,7 +286,12 @@ class TestCheckMarketplaceFromFile:
         assert _claude_marketplace.is_directory_type_registered() is False
 
 
-@pytest.mark.usefixtures("fake_which_present", "fake_target_info", "disable_auto_managed_plugins")
+@pytest.mark.usefixtures(
+    "fake_which_present",
+    "fake_target_info",
+    "disable_auto_managed_plugins",
+    "enabled_target_plugins",
+)
 class TestHappyPathDirectoryType:
     """directory 型登録が健全かつ全プラグイン最新の環境での挙動を検証する統合テスト。
 

@@ -41,6 +41,8 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 
 指摘への修正は同じレーン担当threadへ`レビュー修正担当`として返す。`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って収束させ、別の修正主体を同じworktreeへ起動しない。収束後、レーン担当がレビュー修正の履歴を統合する。
 
+レビュー収束後、メインは計画の`## 実施内容`を再読する。対象は、計画起草時、実装時又はレビュー修正時に追加された全ての行とする。`根拠`が`事後承認対象:`から始まる行がある場合は、`agent-toolkit:confirmation-and-uwi`と`agent-toolkit:wi-standards`を起動する。当該行が保持するユーザーが観測する結果、採用理由及びトレードオフを事後承認型UWIへ記録する。複数行は、ユーザーが1件の判断で回答できる同じ変更だけを1件へまとめる。投入の成功と正本ファイル名を確認してから統合へ進み、回答は待たず元の作業を続ける。該当行が無い場合はUWIを投入しない。レーン担当はこのUWI投入を担わない。
+
 ## 統合とAWI終端
 
 `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.parent.md`を全文読み、同じレーン担当threadへ統合指示を送る。マージありでは専用branchをベースbranchへfast-forwardし、マージなしではベースbranchを変更しない。計画最終化とAWI終端も同じthreadが行う。
