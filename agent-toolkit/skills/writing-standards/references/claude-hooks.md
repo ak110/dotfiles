@@ -94,7 +94,7 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 したがって`SubagentStop`の判別へ当該環境変数を用いない。
 実行できない処置を求める判定は、`Stop`では当該環境変数、`SubagentStop`では`agent_id`を条件として対象から除く。
 最上位セッションだけが実行できる処置は`SubagentStop`へ登録しない。
-区分の詳細は`agent-toolkit/rules/99-claude-code.md`の「役割上の区分と実行環境上の区分」を正本とする。
+区分の詳細は`agent-toolkit:delegation`の`references/claude-code-runtime.md`「実行時能力と通信scope」を正本とする。
 
 実行を遮断しない`warn`区分の通知は、同一セッション内で同じ`hook_id`と同じ原因の通知が3件目に達した時点から、反復している旨と当該セッションの累積件数を本文へ含める。
 原因は通知を生成する検査ごとに一意な識別子で区別し、累積件数はセッション状態ファイルの`warn_notice_counts`が保持する。

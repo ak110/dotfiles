@@ -2642,11 +2642,11 @@ def test_explore_system_prompt_contains_delegate_notice() -> None:
     assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
 
 
-def test_delegate_system_prompt_appends_subagent_rules() -> None:
-    rules = state.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip()
-    assert state.DELEGATE_SYSTEM_PROMPT.endswith(rules)
-    assert rules not in state.EXPLORE_SYSTEM_PROMPT
-    assert rules not in state.SHELL_SYSTEM_PROMPT
+def test_subagent_rules_reach_only_normal_delegation() -> None:
+    """委譲先規範は通常起動の指示だけへ連結し、軽量起動の指示へは入らない。"""
+    assert state.DELEGATE_SYSTEM_PROMPT.endswith(state.SUBAGENT_RULES)
+    assert state.SUBAGENT_RULES not in state.EXPLORE_SYSTEM_PROMPT
+    assert state.SUBAGENT_RULES not in state.SHELL_SYSTEM_PROMPT
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
     assert "あなたはメインエージェントでも最上位セッションでもない。" in state.DELEGATE_NOTICE
     assert "呼び出し元エージェントの配送" in state.DELEGATE_NOTICE
@@ -3696,7 +3696,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.system_prompt == {
         "type": "preset",
         "preset": "claude_code",
-        "append": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
+        "append": f"{state.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
     }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"

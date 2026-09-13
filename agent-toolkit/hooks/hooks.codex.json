@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py rules_context",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py rules_context_codex",
             "additionalContextLimit": 0
           }
         ]

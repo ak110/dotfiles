@@ -58,19 +58,15 @@ def test_render_preserves_rules_in_sorted_order(tmp_path: Path) -> None:
     assert content.endswith("<!-- END: agent-toolkit/rules/02-b.md -->\n")
 
 
-def test_render_excludes_claude_code_specific_rule(tmp_path: Path) -> None:
+def test_render_includes_all_common_rules(tmp_path: Path) -> None:
     root = _root(tmp_path)
     (root / "agent-toolkit/rules/01-agent.md").write_text("first\n", encoding="utf-8")
     (root / "agent-toolkit/rules/02-agent-operations.md").write_text("second\n", encoding="utf-8")
-    (root / "agent-toolkit/rules/99-claude-code.md").write_text("claude only\n", encoding="utf-8")
 
     content = subject.render(root)
 
     assert "BEGIN: agent-toolkit/rules/01-agent.md" in content
     assert "BEGIN: agent-toolkit/rules/02-agent-operations.md" in content
-    assert "BEGIN: agent-toolkit/rules/99-claude-code.md" not in content
-    assert "END: agent-toolkit/rules/99-claude-code.md" not in content
-    assert "claude only" not in content
 
 
 def test_render_embeds_personal_project_rule(tmp_path: Path) -> None:

@@ -11,14 +11,10 @@ import codex_shared_rules  # noqa: E402  # pylint: disable=wrong-import-position
 class TestIsCodexSharedRule:
     """共有規範の判定を検査する。"""
 
-    def test_excluded_rule_is_not_shared(self):
-        """除外対象のルールファイルはFalseを返す。"""
-        assert not codex_shared_rules.is_codex_shared_rule("agent-toolkit/rules/99-claude-code.md")
-
-    def test_other_rule_is_shared(self):
-        """除外対象以外のルールファイルはTrueを返す。"""
+    def test_rule_is_shared(self):
+        """共有ルールファイルはTrueを返す。"""
         assert codex_shared_rules.is_codex_shared_rule("agent-toolkit/rules/01-agent.md")
 
     def test_accepts_path_object(self):
         """`pathlib.Path`も受理する。"""
-        assert not codex_shared_rules.is_codex_shared_rule(pathlib.Path("99-claude-code.md"))
+        assert codex_shared_rules.is_codex_shared_rule(pathlib.Path("02-agent-operations.md"))

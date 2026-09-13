@@ -82,7 +82,7 @@ def test_session_start_codex_excludes_claude_code_rules(
 
 @pytest.mark.parametrize("agent_type", ["Explore", "Plan", "general-purpose", "plan-reviewer"])
 @pytest.mark.parametrize("environment", [None, "delegated", "owner"])
-def test_subagent_start_includes_subagent_rules_only(
+def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
     agent_type: str, environment: str | None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -94,7 +94,16 @@ def test_subagent_start_includes_subagent_rules_only(
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": agent_type}))
     output = _output(capsys)
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
+
+
+def test_subagent_start_codex_excludes_claude_code_rules(capsys: pytest.CaptureFixture[str]) -> None:
+    """CodexのSubagentStartへClaude固有規範を追加しない。"""
+    rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
+    output = _output(capsys)
+    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
 
 
 def test_hooks_json_registers_rules_context_without_matcher() -> None:
@@ -131,6 +140,12 @@ def test_session_start_context_fits_claude_code_cap(
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
     output = _output(capsys)
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
+
+
+def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixture[str]) -> None:
+    """Claude固有規範を含むSubagentStart本文がhook上限へ収まる。"""
+    rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))
+    assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
 
 def test_session_start_length_report_shows_overage_and_breakdown() -> None:

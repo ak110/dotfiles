@@ -12,13 +12,14 @@ description: >
 ## ファイル構成と参照方向
 
 - `agent-toolkit/`配下: Agent Plugins・Claude Code・Codexが共有するプラグインルート
-- `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用、`99-claude-code.md`はClaude Code固有事項を担う）
+- `agent-toolkit/rules/`配下: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用を担う）
 - `~/.claude/rules/agent-toolkit/`: ルールファイルの配布先（直接編集不可）
 - `agent-toolkit/rules/`配下はサブディレクトリを設けずフラット構造を保ち、メインエージェント、サブエージェント及び委譲先の全てへ適用する条文だけを置く
   （`scripts/gen-install-files.py`がrules直下の`*.md`だけを配布一覧へ列挙するため）
   - サブディレクトリへ置いたルールファイルは配布一覧に入らず、配布先へ届かない
   - スキルの`references/`と同じ構成とみなす誤認も同じ規定で防ぐ
-- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`: 順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけに適用する規範。
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`・`rules-subagent.claude-code.md`: 実行主体別の規範。
+  順にメインエージェントだけ、Claude Codeのメインエージェントだけ、サブエージェントと委譲先だけ、Claude Codeのサブエージェントと委譲先だけに適用する。
   振り分けの判定は`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`形式とする
   （代表例は`AGENT_TOOLKIT_PRIVATE_NOTES`。`atk wi`管理repoのroot、既定`~/private-notes/`）。
@@ -171,12 +172,13 @@ Agent Plugins・Codex向け生成物を手動編集してはならない。
   計画の`## 要件・外部仕様`へ編集する正本だけを変更説明として記載する。
   `uv run python scripts/sync_generated_files.py`と生成器出力との一致確認は`## 検証`へ記載し、
   自動生成先は変更対象の説明へ重複して記載しない
-- `99-claude-code.md`の編集はCodex向けAGENTS.mdの生成差分を生じさせないが、Claude配布一覧とバージョン更新の規定は適用する
-- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`の編集は、生成差分もClaude配布一覧の変更も生じさせないが、バージョン更新の規定は適用する
-- 計画ファイルの見出し、固定H3及び表の行名のうち、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`が構造定数として名称を持つものは、同ファイルを正本とする。
-  改訂するときは同ファイルの構造定数を変更し、`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、
-  `agent-toolkit/share/`配下の担当タスク文書、`docs/development/design.md`、`docs/development/concepts.md`及び
-  `docs/guide/claude-code-guide.md`のうち当該名称を持つ記述を同じ変更単位でそろえる。
+- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-subagent.md`・`rules-subagent.claude-code.md`の編集は、生成差分もClaude配布一覧の変更も生じさせない。
+  バージョン更新の規定は適用する
+- 計画ファイルの見出し、固定H3及び表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`を正本とする。
+  対象は、同ファイルが構造定数として名称を持つものとする。
+  改訂時は同ファイルの構造定数を変更する。
+  `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`、`agent-toolkit/share/`配下の担当タスク文書、
+  `docs/development/design.md`、`docs/development/concepts.md`及び`docs/guide/claude-code-guide.md`のうち、当該名称を持つ記述も同じ変更単位でそろえる。
   改訂前の名称は読み取り互換用の構造定数として残し、新規作成・改訂の経路でだけ拒否する
 - 構造定数を持たず`agent-toolkit/skills/plan-mode/references/plan-file-standards.md`だけが必須とする見出しは、同ファイルを正本とする。
   稼働中の計画を検査で不合格にする変更を避ける必要がある場合に選び、選んだ理由を計画へ記録する
@@ -211,6 +213,8 @@ SKILL.mdを`Read`で読むだけではPreToolUseフックの`agent_toolkit_edit_
 作業用の複製（git worktree等）で配布物（`agent-toolkit/`配下等）を改訂しても、
 実行中のhook・検査には当該セッションでは反映されない。稼働中の版は
 `~/.claude/plugins/installed_plugins.json`の`installPath`で確認する。
+保持済みのplugin rootが失効した場合は同ファイルから現行の導入版と`installPath`を再解決し、利用する資源の実在を確認する。
+`~/.claude/plugins/data/`配下をplugin本体の展開先として用いない。
 hookに新規にブロックされた場合は、まず作業ツリーと稼働中の版との差を疑い、
 当該hookが参照する配布先のファイルを`diff`等で比較してから対応する。
 

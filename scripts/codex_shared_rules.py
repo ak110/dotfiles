@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 
 # Codexへ埋め込む共有規範から除外するルールファイルの名前。
-CODEX_EXCLUDED_RULE_NAMES = frozenset({"99-claude-code.md"})
+CODEX_EXCLUDED_RULE_NAMES: frozenset[str] = frozenset()
 
 
 def is_codex_shared_rule(path: pathlib.Path | str) -> bool:

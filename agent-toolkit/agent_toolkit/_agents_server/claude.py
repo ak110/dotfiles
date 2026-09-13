@@ -20,7 +20,7 @@ from typing import Any, Literal, cast
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
-    DELEGATE_SYSTEM_PROMPT,
+    CLAUDE_DELEGATE_SYSTEM_PROMPT,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
     LaunchKind,
@@ -150,7 +150,7 @@ def _build_options(
             else {
                 "type": "preset",
                 "preset": "claude_code",
-                "append": f"{DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}",
+                "append": f"{CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}",
             }
         ),
     }
