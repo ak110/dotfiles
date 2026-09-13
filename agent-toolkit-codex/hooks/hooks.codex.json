@@ -1,0 +1,90 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py rules_context_codex",
+            "additionalContextLimit": 0
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py rules_context",
+            "additionalContextLimit": 0
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py pretooluse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py posttooluse"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py permissionrequest_codex"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py user_prompt_submit"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py subagent_stop_advisor"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project ${CLAUDE_PLUGIN_ROOT} --locked --no-default-groups ${CLAUDE_PLUGIN_ROOT}/agent_toolkit/hook.py session_end_cleanup",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

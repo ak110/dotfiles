@@ -23,17 +23,17 @@ Anthropic公式のsuperpowersスキルと重複する内容は多いが、
 日本語環境での確実なトリガーと大規模開発向けの細かな制御のために独自に作成している。
 性質上、頻繁な改訂が発生する。
 
-agent-toolkitはルールファイルと3形式で共有するプラグインルートで構成される。
+agent-toolkitはルールファイル、共有正本、Codex専用生成rootで構成される。
 
 - ルールファイル: `~/.claude/rules/agent-toolkit/`に配置されるルールファイル。
   自動読み込みされ、行動原則・運用方針・言語表現などの共通指示を提供する
 - Agent Plugins: `agent-toolkit/`をパッケージルートとして扱う。
   Agent Plugins仕様の範囲で利用できるスキルとpyfltr MCPを提供する
-- Claude Code・Codex: 同じ`skills/`を利用し、形式固有のmanifest、ルール、フック、実行資源を追加する。
-  固有のフィールドを受理するクライアントでは、`skills/`のすべてのスキルを共有できる
+- Claude Code: `agent-toolkit/`を参照し、Claude固有のmanifest、ルール、フック、実行資源を利用する
+- Codex: `agent-toolkit/`を正本として生成した`agent-toolkit-codex/`を参照する。
+  Agent Plugins用のroot manifestを除外し、Codex固有manifestから同じskill、ルール、フック、実行資源へ到達する
 
-Agent Pluginsが定義しないClaude Code・Codex固有のディレクトリも同じルートに存在する。
-Agent Plugins互換クライアントは、それらの未対応の資源を読み込まない。
+Codex専用rootはCodex 0.154.0のsnapshotへ全資源を含めるため、相対シンボリックリンクを使わない。
 
 両者は相互依存しており、基本的に同時に導入することを前提とする。
 
@@ -87,8 +87,8 @@ agent-toolkitプラグイン、共有`agents_server` MCP、`atk`ラッパーが�
 
 両インストーラーは再実行時にCodexプラグインも更新する。
 更新でCodexプラグインの状態が変化し、app-server daemonの稼働を確認できた場合は、daemonの再起動コマンドが案内される。
-実行中のセッションは互換リンクにより更新前の実行先を保つため、案内されたコマンドはセッションの完了後に実行する。
-互換リンクの仕組みと再起動案内の条件は[Codex利用ガイド](codex-guide.md)の「プラグイン更新の反映」を参照。
+実行中のセッションは導入時のsnapshotを参照するため、案内されたコマンドはセッションの完了後に実行する。
+専用生成rootと再起動案内の条件は[Codex利用ガイド](codex-guide.md)の「プラグイン更新の反映」を参照。
 
 インストール後、非公式のプラグインマーケットプレイスはデフォルトで自動更新が無効のため、初回のみ手動で有効化する。
 
@@ -333,7 +333,7 @@ agent-toolkitプラグインはpyfltrのMCPサーバーを同梱する。
 agent-toolkitは以下のフックを常時有効化する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
 `個人設定`はdotfiles利用者の`~/.claude/settings.json`へ配布される分を指す。
-Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の公式契約で確認した範囲を示す。
+Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の実機検査で確認した範囲を示す。
 
 | フック識別子 | 処理概要 | Claude対応状況 | Codex対応状況 |
 | --- | --- | --- | --- |
@@ -354,9 +354,9 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.147.0の�
 | 個人設定 `PostToolUse/posttooluse` | 参照文書へのReadとスキル起動をセッション状態へ記録する | 対応 | 非対応。同上 |
 
 Codexの`SessionStart`は`startup`・`resume`・`clear`・`compact`の全てで条文を追加し、`compact`では品質想起通知も追加する。
-pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする2件の定義を確認して信頼する。
-対象は`SessionStart`定義の`rules_context_codex` commandと、`SubagentStart`定義の`rules_context` commandである。
-信頼前は変更済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
+pluginをインストールまたは更新した後は、Codexの`/hooks`で、導入済みagent-toolkit pluginをsourceとする8イベントの定義を確認して信頼する。
+登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`SubagentStop`、`SessionEnd`である。
+登録が0件の場合は信頼操作へ進まず、Codex専用rootのmanifest選択を検査する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
 信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
 
 ### 計画ファイルの作業領域と実行レビュー後の保存

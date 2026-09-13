@@ -140,6 +140,8 @@ lychee-exclude = [
 # tone-examples.md・tone-examples-llm-tone.mdは意図的な違反例を収録するため検査対象外とする。
 extend-exclude = [
     "*/profile_ipy/*",
+    # agent-toolkit-codex/はagent-toolkit/から生成する配布snapshotであり、生成元と重複検査しない。
+    "agent-toolkit-codex/**",
     "agent-toolkit/skills/writing-standards/references/tone-examples.md",
     "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
 ]

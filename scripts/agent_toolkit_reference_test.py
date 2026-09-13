@@ -45,6 +45,27 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
 }
 
 
+def _codex_snapshot_path(source: pathlib.Path) -> pathlib.Path | None:
+    """agent-toolkit配下の原本に対応するCodex生成snapshotのパスを返す。"""
+    if not source.parts or source.parts[0] != _PLUGIN_PREFIX:
+        return None
+    return pathlib.Path(f"{_PLUGIN_PREFIX}-codex", *source.parts[1:])
+
+
+def _allowed_unresolved_reference_counts(
+    sources: list[pathlib.Path],
+) -> dict[tuple[str, pathlib.Path], int]:
+    """検査対象に実在する原本とCodex生成snapshotの既知参照数を返す。"""
+    source_set = set(sources)
+    allowed_counts: dict[tuple[str, pathlib.Path], int] = {}
+    for (reference, source), count in _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.items():
+        candidates = (source, _codex_snapshot_path(source))
+        for candidate in candidates:
+            if candidate is not None and candidate in source_set:
+                allowed_counts[(reference, candidate)] = count
+    return allowed_counts
+
+
 def _tracked_source_paths(root: pathlib.Path) -> list[pathlib.Path]:
     """Git追跡ファイルのうち検査対象の拡張子を持つ相対パスを返す。"""
     result = subprocess.run(
@@ -84,7 +105,7 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
     """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
-    allowed_counts = {key: count for key, count in _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.items() if key[1] in sources}
+    allowed_counts = _allowed_unresolved_reference_counts(sources)
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
@@ -125,6 +146,21 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
     )
 
     assert not _unresolved_references(tmp_path, [source])
+
+
+def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
+    """Codex生成snapshotでも原本と同数の既知の失効参照だけを受理する。"""
+    source = _codex_snapshot_path(_SESSION_RECORDS)
+    assert source is not None
+    target = tmp_path / source
+    target.parent.mkdir(parents=True)
+    legacy = f"{_PLUGIN_PREFIX}:exit-session"
+    target.write_text(legacy, encoding="utf-8")
+
+    assert not _unresolved_references(tmp_path, [source])
+
+    target.write_text(f"{legacy}\n{legacy}\n", encoding="utf-8")
+    assert _unresolved_references(tmp_path, [source]) == [(legacy, source)]
 
 
 def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path) -> None:

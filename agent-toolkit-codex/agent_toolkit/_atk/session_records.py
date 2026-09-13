@@ -1,0 +1,296 @@
+"""保存済みセッション記録（Claude Code・Codex）の走査・デコード・判定を提供する共通モジュール。"""
+
+from __future__ import annotations
+
+import contextlib
+import datetime
+import io
+import json
+import pathlib
+import shlex
+from collections.abc import Iterator
+from typing import Any
+
+from agent_toolkit._atk.serve.sessions import (
+    CODEX_ROLLOUT_PREFIX,
+    RECORD_SUFFIX,
+    codex_session_id,
+    default_claude_home,
+    default_codex_home,
+)
+from agent_toolkit._atk.wi.repo import resolve_repo_id
+
+# Claude Codeのハーネスが、Skillツール起動の`tool_result`として記録する起動確認文言。
+_CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
+_CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
+
+# `atk wi process-loop`が`_build_process_loop_prompt`でCodexへ渡す起動プロンプト本文。
+#
+# 完全一致ではなく包含で判定する。2026年9月10日の実測（監査記録参照）で、当該プロンプト本文の
+# 完全一致は実記録2169件に対して0件だった。記録される`text`は実行環境が挿入する前置き
+# （``# AGENTS.md instructions``又は``<recommended_plugins>``で始まる）を含むため、完全一致では
+# 成立しない。期待する契約は、`atk wi process-loop`がCodexへ渡す起動プロンプトを含むuser役
+# レコードを持つセッションを候補とすることであり、包含判定で当該契約を満たす。
+# 監査記録は`docs/development/audit-records.md`の
+# 「agent-toolkit/skills/writing-standards/references/session-records.md：スキル起動の判定：2026年9月10日」にある。
+_CODEX_PROCESS_WI_PROMPT = "/goal `agent-toolkit:process-wi`を完遂してください。"
+
+_TEXT_EXCERPT_LIMIT = 200
+
+
+def candidate_paths() -> Iterator[tuple[pathlib.Path, str, str]]:
+    """Claude CodeとCodexの本体セッション候補を列挙する。"""
+    projects = default_claude_home() / "projects"
+    if projects.is_dir():
+        for project_dir in projects.iterdir():
+            if project_dir.is_dir():
+                for path in project_dir.glob(f"*{RECORD_SUFFIX}"):
+                    if path.is_file():
+                        yield path, "claude", path.stem
+
+    sessions = default_codex_home() / "sessions"
+    if sessions.is_dir():
+        for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
+            if path.is_file():
+                yield path, "codex", codex_session_id(path)
+
+
+def parsed_records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
+    """JSON Linesから解釈できる辞書レコードだけを返す。"""
+    with path.open(encoding="utf-8") as record_file:
+        for line in record_file:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                yield record
+
+
+def session_cwd(path: pathlib.Path, engine: str) -> str | None:
+    """本体セッションなら判定に用いるcwdを返す。"""
+    try:
+        for record in parsed_records(path):
+            if engine == "claude" and record.get("type") == "user":
+                cwd = record.get("cwd")
+                return cwd if record.get("entrypoint") == "cli" and isinstance(cwd, str) else None
+            if engine == "codex" and record.get("type") == "session_meta":
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    return None
+                cwd = payload.get("cwd")
+                return cwd if payload.get("originator") == "codex-tui" and isinstance(cwd, str) else None
+    except OSError:
+        return None
+    return None
+
+
+def resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
+    """cwdごとにリポジトリ識別子を1回だけ解決する。"""
+    if cwd not in cache:
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                cache[cwd] = resolve_repo_id(None, cwd=pathlib.Path(cwd))
+            except (OSError, SystemExit, ValueError):
+                cache[cwd] = None
+    return cache[cwd]
+
+
+def _contains_process_wi_marker(record: dict[str, Any], engine: str) -> bool:
+    """実行系固有の保存形式にprocess-wiの起動標識があれば真を返す。
+
+    Codexでは`_CODEX_PROCESS_WI_PROMPT`の包含で判定する。当該定数のdocstringが持つ
+    確定した現象・期待する契約・直接的原因を根拠とする。
+    """
+    if engine == "claude":
+        message = record.get("message")
+        if record.get("type") != "user" or not isinstance(message, dict):
+            return False
+        content = message.get("content")
+        return isinstance(content, list) and any(
+            isinstance(item, dict) and item.get("type") == "tool_result" and item.get("content") == _CLAUDE_PROCESS_WI_MARKER
+            for item in content
+        )
+
+    payload = record.get("payload")
+    if record.get("type") != "response_item" or not isinstance(payload, dict):
+        return False
+    content = payload.get("content")
+    return (
+        payload.get("type") == "message"
+        and payload.get("role") == "user"
+        and isinstance(content, list)
+        and any(
+            isinstance(item, dict)
+            and item.get("type") == "input_text"
+            and isinstance(item.get("text"), str)
+            and _CODEX_PROCESS_WI_PROMPT in item["text"]
+            for item in content
+        )
+    )
+
+
+def invoked_process_wi(path: pathlib.Path, engine: str) -> bool:
+    """保存済み記録にprocess-wiの起動標識があれば真を返す。"""
+    try:
+        return any(_contains_process_wi_marker(record, engine) for record in parsed_records(path))
+    except OSError:
+        return False
+
+
+def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
+    """終了CLIの応答又は過去のClaudeスキル起動標識の有無を返す。"""
+
+    def _is_exit_command(command: object) -> bool:
+        if not isinstance(command, str):
+            return False
+        try:
+            tokens = shlex.split(command, posix=True)
+        except ValueError:
+            return False
+        return len(tokens) == 2 and pathlib.PurePath(tokens[0]).name in {"atk", "atk.py"} and tokens[1] == "agents-exit-session"
+
+    def _has_invocation_record(value: object) -> bool:
+        if isinstance(value, dict):
+            if value.get("exit_session_invoked") is True:
+                return True
+            return any(_has_invocation_record(nested) for nested in value.values())
+        if isinstance(value, list):
+            return any(_has_invocation_record(nested) for nested in value)
+        if not isinstance(value, str):
+            return False
+        for line in value.splitlines():
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and parsed.get("exit_session_invoked") is True:
+                return True
+        return False
+
+    if engine not in {"claude", "codex"}:
+        return None
+    try:
+        pending: set[str] = set()
+        observed_shape = engine == "claude"
+        for record in parsed_records(path):
+            if engine == "codex":
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                if record.get("type") == "response_item" and payload.get("type") == "function_call":
+                    observed_shape = True
+                    arguments = payload.get("arguments")
+                    try:
+                        arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+                    except json.JSONDecodeError:
+                        arguments = None
+                    command = arguments.get("cmd") if isinstance(arguments, dict) else None
+                    call_id = payload.get("call_id")
+                    if _is_exit_command(command) and isinstance(call_id, str):
+                        pending.add(call_id)
+                elif record.get("type") == "response_item" and payload.get("type") == "function_call_output":
+                    call_id = payload.get("call_id")
+                    if call_id in pending and _has_invocation_record(payload.get("output")):
+                        return True
+                continue
+            message = record.get("message")
+            if not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") == "tool_use" and item.get("name") == "Bash":
+                    tool_input = item.get("input")
+                    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+                    tool_id = item.get("id")
+                    if _is_exit_command(command) and isinstance(tool_id, str):
+                        pending.add(tool_id)
+                elif item.get("type") == "tool_result":
+                    if item.get("content") == _CLAUDE_EXIT_SESSION_MARKER:
+                        return True
+                    if item.get("tool_use_id") in pending and _has_invocation_record(item.get("content")):
+                        return True
+    except OSError:
+        return False
+    return False if observed_shape else None
+
+
+def _excerpt(text: str) -> str:
+    """改行を半角空白へ置換し、先頭200文字までへ切り詰める。"""
+    return text.replace("\n", " ")[:_TEXT_EXCERPT_LIMIT]
+
+
+def _claude_text(record: dict[str, Any], *, role_type: str) -> str | None:
+    """Claude Codeのuser・assistantレコードからテキスト本文を抽出する。"""
+    if record.get("type") != role_type:
+        return None
+    message = record.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        return content or None
+    if not isinstance(content, list):
+        return None
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str) and block["text"]:
+            return block["text"]
+    return None
+
+
+def _codex_text(record: dict[str, Any], *, role: str, item_type: str) -> str | None:
+    """Codexの`response_item`レコードからテキスト本文を抽出する。"""
+    if record.get("type") != "response_item":
+        return None
+    payload = record.get("payload")
+    if not isinstance(payload, dict) or payload.get("type") != "message" or payload.get("role") != role:
+        return None
+    content = payload.get("content")
+    if not isinstance(content, list):
+        return None
+    for item in content:
+        if isinstance(item, dict) and item.get("type") == item_type and isinstance(item.get("text"), str) and item["text"]:
+            return item["text"]
+    return None
+
+
+def first_user_input(path: pathlib.Path, engine: str) -> str:
+    """最初のユーザー入力テキストの抜粋を返す。取得できない場合は空文字列。"""
+    try:
+        for record in parsed_records(path):
+            text = (
+                _claude_text(record, role_type="user")
+                if engine == "claude"
+                else _codex_text(record, role="user", item_type="input_text")
+            )
+            if text:
+                return _excerpt(text)
+    except OSError:
+        return ""
+    return ""
+
+
+def last_agent_message(path: pathlib.Path, engine: str) -> str:
+    """最後のエージェント発言テキストの抜粋を返す。取得できない場合は空文字列。"""
+    result = ""
+    try:
+        for record in parsed_records(path):
+            text = (
+                _claude_text(record, role_type="assistant")
+                if engine == "claude"
+                else _codex_text(record, role="assistant", item_type="output_text")
+            )
+            if text:
+                result = _excerpt(text)
+    except OSError:
+        return ""
+    return result
+
+
+def format_modified_at(path: pathlib.Path) -> str:
+    """`path`のmtimeをローカル時刻のISO 8601表記へ整形する。"""
+    return datetime.datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")

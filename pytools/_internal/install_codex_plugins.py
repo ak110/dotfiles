@@ -1,10 +1,15 @@
 """dotfiles同梱のCodex pluginを自動導入・更新する。"""
 
+import contextlib
 import contextvars
 import json
 import logging
 import os
+import queue
 import re
+import subprocess
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +38,16 @@ _CODEX_EXECUTABLE: contextvars.ContextVar[Path] = contextvars.ContextVar("codex_
 
 # Codexでは使用しないため、導入済みなら除去するプラグイン。
 _UNUSED_PLUGINS: tuple[str, ...] = ("compact-plus@compact-plus",)
+_EXPECTED_HOOK_EVENTS = {
+    "sessionStart",
+    "subagentStart",
+    "preToolUse",
+    "postToolUse",
+    "permissionRequest",
+    "userPromptSubmit",
+    "subagentStop",
+    "sessionEnd",
+}
 
 
 def _codex_json(args: list[str]) -> dict[str, Any] | None:
@@ -51,22 +66,125 @@ def _command(args: list[str]) -> bool:
     return result is not None and result.returncode == 0
 
 
+def _hooks_list() -> dict[str, Any] | None:
+    """短命app-serverから現在の作業ディレクトリに対するhook登録を取得する。"""
+    try:
+        process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
+            [str(_CODEX_EXECUTABLE.get()), "app-server", "--stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError:
+        return None
+    assert process.stdin is not None
+    assert process.stdout is not None
+    process_stdin = process.stdin
+    process_stdout = process.stdout
+    messages: queue.Queue[str | None] = queue.Queue()
+
+    def read_messages() -> None:
+        for line in process_stdout:
+            messages.put(line)
+        messages.put(None)
+
+    reader = threading.Thread(target=read_messages, daemon=True)
+    reader.start()
+
+    def send(message: dict[str, Any]) -> None:
+        process_stdin.write(json.dumps(message) + "\n")
+        process_stdin.flush()
+
+    def response(request_id: int) -> dict[str, Any] | None:
+        deadline = time.monotonic() + _TIMEOUT
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            try:
+                line = messages.get(timeout=remaining)
+            except queue.Empty:
+                return None
+            if line is None:
+                return None
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(message, dict) and message.get("id") == request_id:
+                result = message.get("result")
+                return result if isinstance(result, dict) else None
+
+    try:
+        send(
+            {
+                "id": 1,
+                "method": "initialize",
+                "params": {"clientInfo": {"name": "dotfiles-post-apply", "version": "1"}, "capabilities": {}},
+            }
+        )
+        if response(1) is None:
+            return None
+        send({"method": "initialized", "params": {}})
+        send({"id": 2, "method": "hooks/list", "params": {}})
+        return response(2)
+    finally:
+        with contextlib.suppress(OSError):
+            process_stdin.close()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        reader.join(timeout=2)
+
+
+def _hook_trust_notice_required(result: dict[str, Any] | None) -> bool:
+    """期待する8イベントが登録済みで、hook信頼だけが未完了の場合に真を返す。"""
+    data = result.get("data") if isinstance(result, dict) else None
+    if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+        return False
+    item = data[0]
+    hooks = item.get("hooks")
+    if item.get("warnings") != [] or item.get("errors") != [] or not isinstance(hooks, list):
+        return False
+    if not all(isinstance(hook, dict) for hook in hooks):
+        return False
+    return (
+        {hook.get("eventName") for hook in hooks} == _EXPECTED_HOOK_EVENTS
+        and all(hook.get("enabled") is True for hook in hooks)
+        and all(hook.get("trustStatus") == "untrusted" for hook in hooks)
+    )
+
+
 def _target(root: Path) -> tuple[str, str, str] | None:
     try:
         marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
-        plugin = json.loads((root / "agent-toolkit/.codex-plugin/plugin.json").read_text(encoding="utf-8"))
-        if not isinstance(marketplace, dict) or not isinstance(plugin, dict):
+        if not isinstance(marketplace, dict):
             return None
         marketplace_name = marketplace["name"]
-        plugin_name = plugin["name"]
-        version = plugin["version"]
         entries = marketplace["plugins"]
         if not isinstance(entries, list):
             return None
         entry = next(
-            (item for item in entries if isinstance(item, dict) and item.get("name") == plugin_name),
+            (item for item in entries if isinstance(item, dict) and item.get("name") == "agent-toolkit"),
             None,
         )
+        source = entry.get("source") if isinstance(entry, dict) else None
+        if not isinstance(source, dict) or source.get("source") != "local" or not isinstance(source.get("path"), str):
+            return None
+        plugin_root = (root / source["path"]).resolve()
+        plugin_root.relative_to(root.resolve())
+        plugin = json.loads((plugin_root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        if not isinstance(plugin, dict):
+            return None
+        plugin_name = plugin["name"]
+        version = plugin["version"]
         if not all(isinstance(value, str) for value in (marketplace_name, plugin_name, version)):
             return None
         if not isinstance(entry, dict) or entry.get("name") != plugin_name or not _valid_version_name(version):
@@ -194,9 +312,10 @@ def _sync_local_plugin(
     if needs_plugin_add:
         if not _command(["plugin", "add", plugin_id]):
             raise RuntimeError("Codex plugin addに失敗")
-        notices.append(_CODEX_HOOK_TRUST_NOTICE)
         _append_restart_notice_if_daemon_running(notices)
         _verify_expected_state(plugin_id, version)
+        if _hook_trust_notice_required(_hooks_list()):
+            notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
     removed_legacy_links = _remove_legacy_links(root)
     return needs_plugin_add or removed_legacy_links
 

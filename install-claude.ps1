@@ -121,8 +121,19 @@ function Get-CodexExpectedPluginVersion {
     }
     foreach ($marketplace in @($data.marketplaces)) {
         if ($marketplace.name -ne 'ak110-dotfiles' -or $marketplace.root -isnot [string]) { continue }
-        $manifestPath = Join-Path $marketplace.root 'agent-toolkit/.codex-plugin/plugin.json'
+        $manifestPath = '<未解決>'
         try {
+            $rootPath = (Resolve-Path -LiteralPath $marketplace.root -ErrorAction Stop).Path
+            $marketplacePath = Join-Path $rootPath '.agents/plugins/marketplace.json'
+            $localMarketplace = Get-Content -LiteralPath $marketplacePath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+            $entry = @($localMarketplace.plugins) | Where-Object { $_.name -eq 'agent-toolkit' } | Select-Object -First 1
+            if ($null -eq $entry -or $entry.source.source -ne 'local' -or $entry.source.path -isnot [string]) { throw 'invalid source' }
+            $pluginRoot = (Resolve-Path -LiteralPath (Join-Path $rootPath $entry.source.path) -ErrorAction Stop).Path
+            $relativePluginRoot = [IO.Path]::GetRelativePath($rootPath, $pluginRoot)
+            if ($relativePluginRoot -eq '..' -or $relativePluginRoot.StartsWith("..$([IO.Path]::DirectorySeparatorChar)")) {
+                throw 'source outside marketplace root'
+            }
+            $manifestPath = Join-Path $pluginRoot '.codex-plugin/plugin.json'
             $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
         } catch {
             throw "$manifestPath からCodex pluginのversionを取得できません。"

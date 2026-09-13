@@ -8,7 +8,7 @@
       "name": "agent-toolkit",
       "source": {
         "source": "local",
-        "path": "./agent-toolkit"
+        "path": "./agent-toolkit-codex"
       },
       "policy": {
         "installation": "AVAILABLE",

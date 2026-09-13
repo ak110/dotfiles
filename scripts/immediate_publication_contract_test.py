@@ -70,7 +70,7 @@ _REQUIRED_CLAUSES = (
     ),
     (
         "subagent",
-        "検証・CI方針,近接検証結果,正式対応AWI,権限,引き継ぎ記録先",
+        "必須入力名: bump種別,検証・CI方針,近接検証結果,正式対応AWI,引き継ぎ記録先",
     ),
     (
         "subagent",

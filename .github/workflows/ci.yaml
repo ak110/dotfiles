@@ -122,7 +122,7 @@ jobs:
           install_chezmoi() {
             local attempt=1
             local installer
-            until installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
+            until installer=$(curl -fsSL --ssl-revoke-best-effort --connect-timeout 10 --max-time 30 get.chezmoi.io) &&
               sh -c "$installer" -- -b "$HOME/.local/bin"; do
               if [ "$attempt" -ge 3 ]; then
                 return 1

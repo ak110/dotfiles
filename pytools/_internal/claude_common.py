@@ -32,6 +32,7 @@ INSTALLED_PLUGINS_PATH = CLAUDE_HOME / "plugins" / "installed_plugins.json"
 MARKETPLACE_NAME = "ak110-dotfiles"
 
 CLAUDE_TIMEOUT = 30
+PLUGIN_OPERATION_TIMEOUT = 300
 
 # バランスモード・AWI蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
 TARGET_HOSTS: tuple[str, ...] = ("stheno", "circe", "circe-container", "euryale", "euryale-container")

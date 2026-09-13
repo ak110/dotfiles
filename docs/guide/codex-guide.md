@@ -38,13 +38,12 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 
 ## プラグイン更新の反映
 
-dotfilesの`post_apply`が導入するagent-toolkitは、Codexが要求するversion付きの通常ディレクトリを維持し、その配下のplugin資源をdotfilesの`agent-toolkit/`原本へ接続する。
-LinuxとmacOSでは、通常versionディレクトリ直下のファイルとディレクトリを原本への相対シンボリックリンクにする。
-Windowsでは、直下のディレクトリをジャンクションにし、直下の通常ファイルを`update-dotfiles`のたびに原本と同じ内容へ同期する。
-単体インストーラーで導入するagent-toolkitと外部プラグインは、Codexが管理するsnapshotを引き続き使用する。
+dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を正本とし、Codex向けには`agent-toolkit-codex/`を生成する。
+Codex専用rootは、Agent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
+Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専用rootは相対シンボリックリンクを含めない。
+`.agents/plugins/marketplace.json`だけが`./agent-toolkit-codex`を参照し、Claude CodeとAgent Pluginsは引き続き`agent-toolkit/`を参照する。
 
-`update-dotfiles`はローカルagent-toolkitが導入済みで有効な場合、versionが変化していても`codex plugin add`を省略し、現versionの通常ディレクトリを追加して原本接続を検査・修復する。
-未導入時とdisabled時だけ`codex plugin add`を実行する。どちらも既存cacheがあればCLI実行前に全エントリを退避する。
+`update-dotfiles`は未導入、disabled又はversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再検査する。
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
 `codex app-server daemon version`が成功した場合に限り、次の再起動コマンドを案内する。
 
@@ -89,17 +88,19 @@ backendから承認・入力・認証・attestationなどの非対話要求を�
 ### フックの信頼確認
 
 Codexはplugin同梱フックの定義が変わると、利用者が再び信頼するまで当該フックをスキップする。
-Codexプラグインの導入又は更新でHook定義が変わった場合は、`/hooks`で定義を確認して信頼する。
+更新処理は先にapp-serverの`hooks/list`で登録状態を検査する。次の8イベントがすべて登録済みかつ有効で、`trustStatus`だけが`untrusted`の場合に限り、`/hooks`で定義を確認して信頼する案内を表示する。
+登録が0件又は不足している場合はmanifest・配布rootの問題であり、信頼不足として案内しない。
 信頼後に新しいセッションを開始し、SessionStartの規範注入を確認する。
 再信頼の操作だけではSessionStartの規範注入を検収できない。
 プラグイン更新後は新しいCodexセッションで`/hooks`を実行し、agent-toolkitについて
-次の7イベントが含まれることを確認する。他の有効pluginは、独自のイベントを追加する場合がある。
+次の8イベントが含まれることを確認する。他の有効pluginは、独自のイベントを追加する場合がある。
 
+- `SessionStart`
+- `SubagentStart`
 - `PreToolUse`
 - `PostToolUse`
 - `PermissionRequest`
 - `UserPromptSubmit`
-- `Stop`
 - `SubagentStop`
 - `SessionEnd`
 
