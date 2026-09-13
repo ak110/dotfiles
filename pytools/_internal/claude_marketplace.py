@@ -72,6 +72,7 @@ def ensure_marketplace() -> bool:
         return False
     add_result = claude_common.run_claude(
         ["plugin", "marketplace", "add", str(dotfiles_root), "--scope=user"],
+        timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
     )
     if add_result is None or add_result.returncode != 0:
         stderr = add_result.stderr.strip() if add_result else ""
@@ -110,6 +111,7 @@ def repair_marketplace() -> bool:
     claude_common.run_claude(["plugin", "marketplace", "remove", claude_common.MARKETPLACE_NAME])
     add_result = claude_common.run_claude(
         ["plugin", "marketplace", "add", str(dotfiles_root), "--scope=user"],
+        timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
     )
     add_ok = add_result is not None and add_result.returncode == 0
 
@@ -144,7 +146,10 @@ def refresh_marketplace() -> bool:
     通常フローのキャッシュ同期は `install_claude_plugins._install_plugin` で行う。
     失敗してもbest-effort扱いで続行する。
     """
-    result = claude_common.run_claude(["plugin", "marketplace", "update", claude_common.MARKETPLACE_NAME])
+    result = claude_common.run_claude(
+        ["plugin", "marketplace", "update", claude_common.MARKETPLACE_NAME],
+        timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
+    )
     if result is None or result.returncode != 0:
         logger.info(
             log_format.format_status(

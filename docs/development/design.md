@@ -500,8 +500,11 @@ Codex基礎指示の上書きは、確認・待機・並列化・ツール利用
 `scripts/sync_codex_agents_test.py`は共有原本と生成物の同期、共有契約の保持及びCodex固有上書きの配置を検査する。
 生成物は手編集せず、正本と正式生成器を更新して同期する。
 公開動作を追加又は変更するpluginは、`agent-toolkit/.claude-plugin/plugin.json`を版数正本とし、`agent_toolkit_bump.py minor`などの正式経路で版数を更新する。
-`.claude-plugin/marketplace.json`のplugin記述は正本の版数と一致させ、`agent-toolkit/plugin.json`と`agent-toolkit/.codex-plugin/plugin.json`は`sync_generated_files.py`で生成する。
-生成後は`sync_codex_plugin_manifests.py --check`でClaude Code向け正本、marketplace記述及びCodex向け派生manifestの一致を確認する。
+`.claude-plugin/marketplace.json`のplugin記述は正本の版数と一致させる。
+`agent-toolkit/plugin.json`、`agent-toolkit/.codex-plugin/plugin.json`、`agent-toolkit-codex/`は`sync_generated_files.py`で生成する。
+`agent-toolkit-codex/`は`agent-toolkit/`を正本とする自己完結型の通常ディレクトリであり、Agent Plugins用の直下`plugin.json`と`mcp.json`を除外する。
+`.agents/plugins/marketplace.json`のCodex local sourceだけを`./agent-toolkit-codex`へ向け、Claude CodeとAgent Pluginsのsourceは`agent-toolkit/`のまま維持する。
+生成後は`sync_codex_plugin_manifests.py --check`でClaude Code向け正本、marketplace記述、Codex向け派生manifest、専用root全体の一致を確認する。
 プラグインマニフェストの検証は、Claude Code向けとCodex向けで到達できる保証の水準が異なるため経路を分ける。
 Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムlinter`claude-plugin-validate`から実行し、未知フィールドとメタデータ欠落を失敗として扱う。
 Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`scripts/sync_codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを検査する。
@@ -525,8 +528,10 @@ post-apply案内とWindowsのjunction除去経路は維持する。
 cache version台帳、全過去versionの保持、POSIXの原本接続、Windowsの原本接続とファイル同期、cache退避・置換・復元は、Codex CLIが実体導入を担当するため削除する。
 
 シンボリックリンク方式は代替案として却下する。
-version directoryを原本へ接続し、`plugin list`の導入済み判定だけを満たす構成では、Codexの実測で`codex debug prompt-input`のskill一覧へ`agent-toolkit:*`が1件も公開されなかった。
-公式CLIで実体導入した構成では同一覧へskillが現れたため、スキル公開を成立させる導入責務をCodex公式CLIへ戻す。
+Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
+また、相対シンボリックリンクを含むCodex専用wrapperを公式CLIで導入すると、snapshotには`.codex-plugin`だけが残り、リンク先のhook・skill・実行資源が含まれない。
+そのため、Codex専用rootは全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
+実測条件と再検証手順は`docs/development/audit-records.md`「docs/development/design.md：Claude CodeとCodexの規範配置：2026年9月13日」を参照する。
 共有ルールをCodex固有条件で分岐する案は、Claude Codeへ不要な差分を配布して共通契約を曖昧にするため採用しない。
 共有文書をCodex用に複製する案は、正本・生成器・検査の同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。

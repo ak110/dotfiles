@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # claude_common から再エクスポート (後方互換・テストのpatch先として維持)
 _MARKETPLACE_NAME = claude_common.MARKETPLACE_NAME
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
-_PLUGIN_INSTALL_TIMEOUT_SEC = 300
+_PLUGIN_OPERATION_TIMEOUT_SEC = claude_common.PLUGIN_OPERATION_TIMEOUT
 
 # インストール済みかつ既定で有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
@@ -191,6 +191,7 @@ def _install_external_marketplaces() -> bool:
         if marketplace is None:
             result = claude_common.run_claude(
                 ["plugin", "marketplace", "add", source, "--scope=user"],
+                timeout=_PLUGIN_OPERATION_TIMEOUT_SEC,
             )
             if result is None or result.returncode != 0:
                 logger.warning(
@@ -220,7 +221,7 @@ def _install_external_marketplaces() -> bool:
             continue
         result = claude_common.run_claude(
             ["plugin", "install", plugin_id, "--scope=user"],
-            timeout=_PLUGIN_INSTALL_TIMEOUT_SEC,
+            timeout=_PLUGIN_OPERATION_TIMEOUT_SEC,
         )
         if result is None or result.returncode != 0:
             logger.warning(
@@ -236,7 +237,7 @@ def _install_external_marketplaces() -> bool:
 
 def _get_marketplaces_raw() -> object | None:
     """`claude plugin marketplace list --json`の生パース結果を返す。"""
-    result = claude_common.run_claude(["plugin", "marketplace", "list", "--json"])
+    result = claude_common.run_claude(["plugin", "marketplace", "list", "--json"], timeout=_PLUGIN_OPERATION_TIMEOUT_SEC)
     if result is None or result.returncode != 0:
         return None
     try:
@@ -574,7 +575,7 @@ def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
     result = claude_common.run_claude(
         ["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope=user"],
-        timeout=_PLUGIN_INSTALL_TIMEOUT_SEC,
+        timeout=_PLUGIN_OPERATION_TIMEOUT_SEC,
     )
     if result is None or result.returncode != 0:
         logger.info(log_format.format_status(name, f"install に失敗: {claude_common.format_cli_error(result)}"))
@@ -587,7 +588,7 @@ def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
     result = claude_common.run_claude(
         ["plugin", "update", f"{name}@{_MARKETPLACE_NAME}", "--scope=user"],
-        timeout=_PLUGIN_INSTALL_TIMEOUT_SEC,
+        timeout=_PLUGIN_OPERATION_TIMEOUT_SEC,
     )
     if result is None or result.returncode != 0:
         logger.info(log_format.format_status(name, f"update に失敗: {claude_common.format_cli_error(result)}"))

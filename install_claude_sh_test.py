@@ -186,7 +186,22 @@ def _run(
     )
     effective_codex_home = codex_home or home / ".codex"
     marketplace_root = home / "codex-marketplace"
-    manifest = marketplace_root / "agent-toolkit" / ".codex-plugin" / "plugin.json"
+    marketplace_manifest = marketplace_root / ".agents" / "plugins" / "marketplace.json"
+    marketplace_manifest.parent.mkdir(parents=True, exist_ok=True)
+    marketplace_manifest.write_text(
+        json.dumps(
+            {
+                "plugins": [
+                    {
+                        "name": "agent-toolkit",
+                        "source": {"source": "local", "path": "./agent-toolkit-codex"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = marketplace_root / "agent-toolkit-codex" / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps({"version": after_version}), encoding="utf-8")
     claude_plugin_root = home / "claude-plugin"

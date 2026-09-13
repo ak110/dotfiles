@@ -168,10 +168,18 @@ except (json.JSONDecodeError, KeyError, TypeError):
     raise SystemExit(1)
 for item in marketplaces:
     if isinstance(item, dict) and item.get("name") == "ak110-dotfiles" and isinstance(item.get("root"), str):
-        manifest = pathlib.Path(item["root"]) / "agent-toolkit/.codex-plugin/plugin.json"
         try:
+            root = pathlib.Path(item["root"]).resolve()
+            marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
+            entry = next(plugin for plugin in marketplace["plugins"] if plugin.get("name") == "agent-toolkit")
+            source = entry["source"]
+            if source.get("source") != "local" or not isinstance(source.get("path"), str):
+                raise ValueError
+            plugin_root = (root / source["path"]).resolve()
+            plugin_root.relative_to(root)
+            manifest = plugin_root / ".codex-plugin/plugin.json"
             version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
-        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
+        except (OSError, UnicodeError, json.JSONDecodeError, KeyError, StopIteration, TypeError, ValueError):
             raise SystemExit(1)
         if not isinstance(version, str):
             raise SystemExit(1)

@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from typing import Any
 import pytest
 import sync_codex_plugin_manifests as subject
 import yaml
+from agent_toolkit._agents_server import codex as codex_backend
 
 from pytools._internal import claude_common
 
@@ -114,6 +116,11 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(value), encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("agent-toolkit/.ruff_cache/\n", encoding="utf-8")
+    cache = tmp_path / "agent-toolkit/.ruff_cache/cache-entry"
+    cache.parent.mkdir(parents=True)
+    cache.write_text("ignored", encoding="utf-8")
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
     return tmp_path
 
 
@@ -124,6 +131,22 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     for key, value in _plugin_data().items():
         assert generated[key] == value
     assert generated["hooks"] == "./hooks/hooks.codex.json"
+    marketplace = json.loads((manifest_root / subject.MARKETPLACE_TARGET).read_text(encoding="utf-8"))
+    assert marketplace["plugins"][0]["source"] == {"source": "local", "path": "./agent-toolkit-codex"}
+    codex_root = manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET
+    assert (codex_root / "GENERATED.md").read_text(encoding="utf-8") == subject.CODEX_ROOT_NOTICE
+    assert not (codex_root / ".ruff_cache").exists()
+    assert not (codex_root / "plugin.json").exists()
+    assert not (codex_root / "mcp.json").exists()
+    for relative in (
+        Path(".codex-plugin/plugin.json"),
+        Path(".mcp.codex.json"),
+        Path("hooks/hooks.codex.json"),
+    ):
+        projected = codex_root / relative
+        assert projected.is_file()
+        assert not projected.is_symlink()
+        assert projected.read_text(encoding="utf-8") == (manifest_root / "agent-toolkit" / relative).read_text(encoding="utf-8")
     agent_plugin_text = (manifest_root / subject.AGENT_PLUGIN_TARGET).read_text(encoding="utf-8")
     agent_plugin = json.loads(agent_plugin_text)
     assert agent_plugin == {"$schema": subject.AGENT_PLUGIN_SCHEMA, **_plugin_data()}
@@ -236,6 +259,108 @@ def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:
     assert all(isinstance(prompt, str) and prompt and len(prompt) <= 128 for prompt in interface["defaultPrompt"])
 
 
+async def _codex_hooks(codex_home: Path, root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    async def ignore(_message: dict[str, Any]) -> None:
+        return None
+
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setattr(codex_backend, "APP_SERVER_WORKING_DIRECTORY", str(root))
+    client = codex_backend.JsonRpcProcess(ignore, ignore)
+    await client.start()
+    try:
+        return await client.request("hooks/list")
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(shutil.which("codex") is None, reason="Codex CLIが存在しない")
+async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex 0.154.0は専用rootから8イベントを登録し、project trustで集合を変えない。"""
+    version = subprocess.run(  # noqa: S603
+        ["codex", "--version"], capture_output=True, check=True, text=True
+    ).stdout.strip()
+    if version != "codex-cli 0.154.0":
+        pytest.skip(f"Codex 0.154.0専用検体: {version}")
+
+    expected = {event[0].lower() + event[1:] for event in subject.CODEX_HOOK_ALLOWLIST}
+    observed: list[set[str]] = []
+    for trust in (False, True):
+        codex_home = tmp_path / ("trusted" if trust else "default")
+        codex_home.mkdir()
+        if trust:
+            quoted_root = str(subject.REPO_ROOT).replace("\\", "\\\\").replace('"', '\\"')
+            (codex_home / "config.toml").write_text(f'[projects."{quoted_root}"]\ntrust_level = "trusted"\n', encoding="utf-8")
+        environment = {**os.environ, "CODEX_HOME": str(codex_home)}
+        subprocess.run(  # noqa: S603
+            ["codex", "plugin", "marketplace", "add", str(subject.REPO_ROOT)],
+            capture_output=True,
+            check=True,
+            env=environment,
+            text=True,
+        )
+        subprocess.run(  # noqa: S603
+            ["codex", "plugin", "add", "agent-toolkit@ak110-dotfiles"],
+            capture_output=True,
+            check=True,
+            env=environment,
+            text=True,
+        )
+        result = await _codex_hooks(codex_home, subject.REPO_ROOT, monkeypatch)
+        data = result.get("data")
+        assert isinstance(data, list) and len(data) == 1
+        hooks = data[0].get("hooks")
+        assert isinstance(hooks, list)
+        assert data[0].get("warnings") == []
+        assert data[0].get("errors") == []
+        observed.append({hook["eventName"] for hook in hooks})
+        if not trust:
+            hook_environment = {
+                **environment,
+                "TMPDIR": str(tmp_path / "hook-temp"),
+                "XDG_STATE_HOME": str(tmp_path / "hook-state"),
+            }
+            Path(hook_environment["TMPDIR"]).mkdir()
+            session_start = next(hook for hook in hooks if hook["eventName"] == "sessionStart")
+            start_command = shlex.split(session_start["command"])
+            uv = claude_common.resolve_uv_path()
+            assert uv is not None
+            start_command[0] = str(uv)
+            start_result = subprocess.run(  # noqa: S603
+                start_command,
+                input=json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "integration-session"}),
+                capture_output=True,
+                check=False,
+                env=hook_environment,
+                text=True,
+            )
+            assert start_result.returncode == 0, start_result.stderr
+            additional_context = json.loads(start_result.stdout)["hookSpecificOutput"]["additionalContext"]
+            state_files = list(Path(hook_environment["XDG_STATE_HOME"]).rglob("*.json"))
+            assert len(state_files) == 1
+            managed_path = Path(json.loads(state_files[0].read_text(encoding="utf-8"))["path"])
+            assert managed_path.is_dir()
+            assert str(managed_path) in additional_context
+
+            session_end = next(hook for hook in hooks if hook["eventName"] == "sessionEnd")
+            end_command = shlex.split(session_end["command"])
+            end_command[0] = str(uv)
+            subprocess.run(  # noqa: S603
+                end_command,
+                input=json.dumps({"hook_event_name": "SessionEnd", "session_id": "integration-session", "reason": "other"}),
+                capture_output=True,
+                check=True,
+                env=hook_environment,
+                text=True,
+            )
+            assert not managed_path.exists()
+
+    assert observed == [expected, expected]
+
+
 def test_openai_interface_display_name_matches_skill_directory() -> None:
     """Codexの入力補助へスキルのディレクトリ名を表示する。"""
     manifests = sorted((subject.REPO_ROOT / "agent-toolkit/skills").glob("*/agents/openai.yaml"))
@@ -255,7 +380,7 @@ def test_openai_interface_display_name_matches_skill_directory() -> None:
 def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     """Codex検証器の既知の指摘集合だけを許容する。
 
-    Codex 0.151.0同梱の`plugin-creator/references/plugin-json-spec.md`は、`hooks`を正規fieldとして
+    Codex 0.154.0同梱の`plugin-creator/references/plugin-json-spec.md`は、`hooks`を正規fieldとして
     定義しながら、検証の節では未対応fieldとして拒否すると述べており、同一資料内で矛盾する。
     `hooks`と`./.mcp.codex.json`を持つ現行manifestは`installed: true`かつ`enabled: true`である。
     Claude向けfrontmatterの`disable-model-invocation: true`は、Codex向けの
@@ -263,7 +388,7 @@ def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     資料上の保証がないまま動作中の構成を変えないため、この前提が変わるまで期待値を空にしない。
     """
     result = subprocess.run(  # noqa: S603
-        [sys.executable, str(_CODEX_PLUGIN_VALIDATOR), str(subject.REPO_ROOT / "agent-toolkit")],
+        [sys.executable, str(_CODEX_PLUGIN_VALIDATOR), str(subject.REPO_ROOT / subject.CODEX_PLUGIN_ROOT_TARGET)],
         capture_output=True,
         check=False,
         text=True,

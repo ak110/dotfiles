@@ -11,6 +11,7 @@ CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
 
 DOWNLOAD_COMMAND = "installer=$(curl -fsSL --connect-timeout 10 --max-time 30 get.chezmoi.io)"
+WINDOWS_DOWNLOAD_COMMAND = "installer=$(curl -fsSL --ssl-revoke-best-effort --connect-timeout 10 --max-time 30 get.chezmoi.io)"
 INSTALL_COMMAND = 'sh -c "$installer"'
 ATTEMPT_LIMIT = 'if [ "$attempt" -ge 3 ]; then'
 RETRY_DELAY = "sleep 2"
@@ -25,11 +26,14 @@ def test_all_chezmoi_install_paths_share_bounded_retry_contract() -> None:
 
     assert len(workflow_functions) == 3
     assert len(install_functions) == 1
-    for function in [*workflow_functions, *install_functions]:
-        assert function.count(DOWNLOAD_COMMAND) == 1
+    functions = [*workflow_functions, *install_functions]
+    for function in functions:
+        assert function.count(DOWNLOAD_COMMAND) + function.count(WINDOWS_DOWNLOAD_COMMAND) == 1
         assert function.count(INSTALL_COMMAND) == 1
         assert function.count(ATTEMPT_LIMIT) == 1
         assert function.count(RETRY_DELAY) == 1
+    assert sum(function.count(WINDOWS_DOWNLOAD_COMMAND) for function in workflow_functions) == 1
+    assert sum(function.count(DOWNLOAD_COMMAND) for function in functions) == 3
 
 
 @pytest.mark.parametrize(("first_script", "first_exit"), [("", 1), ("exit 1", 0)])

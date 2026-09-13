@@ -6,7 +6,10 @@
 """Claude Code向けmanifestからAgent Plugins・Codex向けJSONを生成する。"""
 
 import argparse
+import contextlib
 import json
+import stat
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -26,7 +29,14 @@ AGENT_MCP_TARGET = Path("agent-toolkit/mcp.json")
 PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
+CODEX_PLUGIN_ROOT_TARGET = Path("agent-toolkit-codex")
 OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
+CODEX_ROOT_EXCLUDED = frozenset((Path("plugin.json"), Path("mcp.json")))
+CODEX_ROOT_NOTICE = (
+    "# 自動生成ファイル\n\n"
+    "このディレクトリは`scripts/sync_codex_plugin_manifests.py`が`agent-toolkit/`から生成する。"
+    "手動編集しない。\n"
+)
 SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
@@ -266,7 +276,7 @@ def _outputs(root: Path) -> dict[Path, str]:
         "plugins": [
             {
                 "name": plugin["name"],
-                "source": {"source": "local", "path": "./agent-toolkit"},
+                "source": {"source": "local", "path": "./agent-toolkit-codex"},
                 "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
                 "category": "Developer Tools",
             }
@@ -307,6 +317,76 @@ def _differences(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[
     return tuple(sorted((path for path in paths if expected.get(path) != existing.get(path)), key=str))
 
 
+def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tuple[bytes, int]]:
+    """Codex専用rootへ通常ファイルとして投影する内容とmodeを返す。"""
+    source_root = root / "agent-toolkit"
+    outputs: dict[Path, tuple[bytes, int]] = {}
+    generated_by_relative = {
+        path.relative_to("agent-toolkit"): content
+        for path, content in generated.items()
+        if path.is_relative_to("agent-toolkit")
+    }
+    result = subprocess.run(  # noqa: S603
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "agent-toolkit"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    source_paths = (Path(item.decode()) for item in result.stdout.split(b"\0") if item)
+    for source_path in source_paths:
+        source = root / source_path
+        if not source.is_file():
+            raise ValueError(f"Codex plugin原本が通常ファイルではない: {source_path}")
+        relative = source.relative_to(source_root)
+        if relative in CODEX_ROOT_EXCLUDED:
+            continue
+        source_relative = Path("agent-toolkit") / relative
+        if source_relative in OPTIONAL_TARGETS and source_relative not in generated:
+            continue
+        generated_content = generated_by_relative.get(relative)
+        content = generated_content.encode() if generated_content is not None else source.read_bytes()
+        outputs[relative] = (content, stat.S_IMODE(source.stat().st_mode))
+    outputs[Path("GENERATED.md")] = (CODEX_ROOT_NOTICE.encode(), 0o644)
+    return outputs
+
+
+def _codex_root_differences(root: Path, expected: dict[Path, tuple[bytes, int]]) -> tuple[Path, ...]:
+    """Codex専用rootの欠落、余剰、内容差、symlink及びmode差を返す。"""
+    target_root = root / CODEX_PLUGIN_ROOT_TARGET
+    existing = {path.relative_to(target_root) for path in target_root.rglob("*") if path.is_file() or path.is_symlink()}
+    stale = existing ^ set(expected)
+    for relative in existing & set(expected):
+        path = target_root / relative
+        content, mode = expected[relative]
+        if path.is_symlink() or path.read_bytes() != content or stat.S_IMODE(path.stat().st_mode) != mode:
+            stale.add(relative)
+    return tuple(sorted(stale, key=str))
+
+
+def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> bool:
+    """Codex専用rootを期待集合へ同期する。"""
+    target_root = root / CODEX_PLUGIN_ROOT_TARGET
+    stale = set(_codex_root_differences(root, expected))
+    for relative in sorted(stale - set(expected), key=str, reverse=True):
+        (target_root / relative).unlink()
+    for relative in sorted(stale & set(expected), key=str):
+        content, mode = expected[relative]
+        target = target_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not claude_common.atomic_write_bytes(target, content, mode=mode, tag="Codex plugin root"):
+            raise OSError(f"Codex plugin rootの書き込みに失敗: {relative}")
+    if target_root.exists():
+        directories = sorted(
+            (path for path in target_root.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for directory in directories:
+            with contextlib.suppress(OSError):
+                directory.rmdir()
+    return bool(stale)
+
+
 def sync(root: Path = REPO_ROOT) -> bool:
     """派生JSONを同期し、差分があった場合は`True`を返す。"""
     expected = _outputs(root)
@@ -316,13 +396,16 @@ def sync(root: Path = REPO_ROOT) -> bool:
             raise OSError(f"派生JSONの書き込みに失敗: {path}")
     for path in OPTIONAL_TARGETS - set(expected):
         (root / path).unlink(missing_ok=True)
-    return bool(stale)
+    codex_changed = _sync_codex_root(root, _codex_root_outputs(root, expected))
+    return bool(stale) or codex_changed
 
 
 def check(root: Path = REPO_ROOT) -> bool:
     """派生JSONを変更せず、期待内容と一致する場合は`True`を返す。"""
     expected = _outputs(root)
-    return not _differences(expected, _existing_outputs(root, expected))
+    return not _differences(expected, _existing_outputs(root, expected)) and not _codex_root_differences(
+        root, _codex_root_outputs(root, expected)
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

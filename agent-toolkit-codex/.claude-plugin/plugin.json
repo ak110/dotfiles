@@ -1,0 +1,20 @@
+{
+  "name": "agent-toolkit",
+  "version": "2.114.2",
+  "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針と、フックによる機械検査を提供する。",
+  "author": {
+    "name": "aki",
+    "url": "https://github.com/ak110"
+  },
+  "homepage": "https://github.com/ak110/dotfiles",
+  "repository": "https://github.com/ak110/dotfiles",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "pretooluse",
+    "guardrails",
+    "safety",
+    "bash",
+    "agent-plugins"
+  ]
+}

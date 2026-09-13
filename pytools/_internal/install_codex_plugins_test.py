@@ -10,12 +10,37 @@ import pytest
 from pytools._internal import claude_common, install_codex_plugins
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+_EXPECTED_HOOK_EVENTS = {
+    "sessionStart",
+    "subagentStart",
+    "preToolUse",
+    "postToolUse",
+    "permissionRequest",
+    "userPromptSubmit",
+    "subagentStop",
+    "sessionEnd",
+}
 
 
 @pytest.fixture(autouse=True)
 def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     """ローカルpluginのテストでは不要pluginの除去を無効にする。"""
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_hooks_list",
+        lambda: {
+            "data": [
+                {
+                    "hooks": [
+                        {"eventName": event, "enabled": True, "trustStatus": "untrusted"} for event in _EXPECTED_HOOK_EVENTS
+                    ],
+                    "warnings": [],
+                    "errors": [],
+                }
+            ]
+        },
+    )
 
 
 @pytest.fixture(name="plugin_env")
@@ -23,7 +48,7 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Codexの設定とdotfilesを一時ディレクトリへ分離する。"""
     root = tmp_path / "dotfiles"
     (root / ".agents/plugins").mkdir(parents=True)
-    (root / "agent-toolkit/.codex-plugin").mkdir(parents=True)
+    (root / "agent-toolkit-codex/.codex-plugin").mkdir(parents=True)
     (root / ".agents/plugins/marketplace.json").write_text(
         json.dumps(
             {
@@ -31,18 +56,18 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "plugins": [
                     {
                         "name": "agent-toolkit",
-                        "source": {"source": "local", "path": "./agent-toolkit"},
+                        "source": {"source": "local", "path": "./agent-toolkit-codex"},
                     }
                 ],
             }
         ),
         encoding="utf-8",
     )
-    (root / "agent-toolkit/.codex-plugin/plugin.json").write_text(
-        json.dumps({"name": "agent-toolkit", "version": "1.2.3"}),
+    (root / "agent-toolkit-codex/.codex-plugin/plugin.json").write_text(
+        json.dumps({"name": "agent-toolkit", "version": "1.2.3", "hooks": "./hooks/hooks.codex.json"}),
         encoding="utf-8",
     )
-    (root / "agent-toolkit/agent_toolkit").mkdir()
+    (root / "agent-toolkit/agent_toolkit").mkdir(parents=True)
     (root / "agent-toolkit/agent_toolkit/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
@@ -170,6 +195,25 @@ def test_plugin_update_keeps_hook_notice_when_daemon_is_stopped(plugin_env: Path
     assert outcome.changed is True
     assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert "SessionStart" in outcome.notices[0].message
+
+
+def test_plugin_update_omits_trust_notice_when_hooks_are_not_registered(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """登録0件を信頼不足として案内しない。"""
+    calls: list[list[str]] = []
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
+    monkeypatch.setattr(
+        install_codex_plugins,
+        "_hooks_list",
+        lambda: {"data": [{"hooks": [], "warnings": [], "errors": []}]},
+    )
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed is True
+    assert not outcome.notices
 
 
 def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

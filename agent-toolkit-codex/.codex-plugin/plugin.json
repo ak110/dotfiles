@@ -1,0 +1,38 @@
+{
+  "name": "agent-toolkit",
+  "version": "2.114.2",
+  "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コード・文書・計画・バグ調査の作業指針と、フックによる機械検査を提供する。",
+  "author": {
+    "name": "aki",
+    "url": "https://github.com/ak110"
+  },
+  "homepage": "https://github.com/ak110/dotfiles",
+  "repository": "https://github.com/ak110/dotfiles",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "pretooluse",
+    "guardrails",
+    "safety",
+    "bash",
+    "agent-plugins"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.codex.json",
+  "mcpServers": "./.mcp.codex.json",
+  "interface": {
+    "displayName": "agent-toolkit",
+    "shortDescription": "コード、文書、計画、レビューの作業指針",
+    "longDescription": "コード、文書、計画、レビューの各工程に共通の作業指針を提供する。計画の起草から実装、レビュー、AWI処理までを一貫した手順として扱う。",
+    "developerName": "aki",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Skills"
+    ],
+    "defaultPrompt": [
+      "このリポジトリの変更を計画にまとめて",
+      "直前の変更をレビューして",
+      "溜まっているAWIを処理して"
+    ]
+  }
+}

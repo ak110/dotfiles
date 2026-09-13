@@ -1,0 +1,72 @@
+# 表記とMarkdownの検査
+
+## 日本語の表記ルール
+
+textlintの`preset-jtf-style`で検査される項目は同プリセットに従う。以下は補足規定。
+
+- 日本語と全角括弧の境界にスペースを挿入しない。英文脈の半角括弧は英数字との間にスペース1つ（例: `Python (CPython 3.12)`）
+- 全角丸括弧を入れ子にしない。内側の括弧は読点区切りや別文への分割で表現する
+- emダッシュ・horizontal bar・2倍ダッシュは日本語の地の文・見出しで使わない
+  （同格・補足は全角丸括弧、言い換え・敷衍は句点で2文に分けるか読点でつなぐ）
+- 技術用語・固有名詞・コード識別子は原典の表記を優先する
+- 暗号を解く処理以外に「復号」を使わない。バイト列から文字列への変換と、JSON文字列などの符号化表現から値を取り出す処理は「デコード」と書く
+- 地の文は日本語で書き、他言語の語句を混在させない。定着した技術用語・略語、外部技術に由来する語、識別子は原表記を維持する
+- 内部の役割・概念には自然な日本語の名前を優先し、カタカナ名を使う場合は初出で定義する
+- 恒久成果物の文面案を執筆する前に`textlint-violations.md`を確認する
+- 計画ファイルは文章lint、口語表現チェック、ダッシュチェックの必須対象から除外する
+- 計画から恒久成果物へ文面を転記する場合は、転記先の編集時に通常どおり文章を検査する
+  - 検査違反を検出した場合、実装担当は意味を変えない整形（文の分割、長い丸括弧書きの独立文化など）を適用して転記し、整形した事実と理由を報告する
+  - 意味が変わる修正を要する場合は転記せず、呼び出し元へ差し戻す
+
+## 口語表現チェック
+
+恒久成果物にはpyfltrの有効な検査定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。
+
+```sh
+uvx pyfltr run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
+```
+
+検査済みと判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、指定した検査コマンドのうち対象拡張子を`targets`へ持つものが1件以上あり、当該コマンドの対象ファイル数が1である場合だけとする。`missing_targets`、`fully_excluded_files`、skip、除外が現れる対象は未到達として扱う。終了コード0、診断0件、指摘0件の成功件数は到達後の結果であり、対象到達済みの根拠にしない。
+
+検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とする。Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
+
+辞書の実体は`pyfltr`パッケージの`pyfltr.colloquial.check`が保持する`DENY_PATH`と`ALLOW_PATH`が指す。対象リポジトリが`pyfltr`を依存に持つ場合は、`uv run --frozen python -c 'import pyfltr.colloquial.check as c; print(c.DENY_PATH, c.ALLOW_PATH)'`で解決する。依存に持たない場合は、同じPythonの式を`uvx --from pyfltr python -c`へ渡して解決する。環境ごとに変わる`site-packages`の絶対パスを規範へ固定しない。
+
+辞書ファイルの本文は、成果物と文書を書く主体による読込を当該ファイル自身が禁じる。検出語を文脈へ取り込むと当該語の生成確率が上がるためである。`agent-toolkit/rules/01-agent.md`「行動指針」が定めるとおり、当該主体は辞書を読む対象から外し、起草の後に前掲のCLI形式で検査して検出箇所を解消する。
+
+## ダッシュチェック
+
+日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`scripts/check_dash.py`で検査する。
+
+```sh
+uv run --project <plugin rootの絶対パス> --locked --no-default-groups path/to/writing-standards/scripts/check_dash.py path/to/file.md
+```
+
+コードブロック・インラインコード・URL内は対象外とし、検出対象の詳細は`check_dash.py`を正本とする。
+
+## 逐語引用の検出範囲
+
+原文の改変を許さない逐語引用の記法は`writing.md`の「ユーザー入力素材の取扱い」が定める。
+記法の根拠となる検査ごとの検出範囲を次に示す。
+
+| 検査 | 引用ブロックの内側 | フェンス付きコードブロックの内側 |
+| --- | --- | --- |
+| 口語表現チェック | 対象外 | 対象外 |
+| textlint | 対象 | 対象外 |
+| ダッシュチェック | 対象 | 対象外 |
+
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日」にある。
+
+## Markdown記述スタイル
+
+Markdown要素は意味的役割に沿って使う。句点位置などの細則はmarkdownlint・textlintで検証する。
+
+口調例は例示の内容を通常の成果物検査へ混入させないため、検査除外の対象として扱う。内容確認や修正は`tone-examples.md`と`tone-examples-llm-tone.md`へ委ね、禁止語は各ファイルの節名で間接参照する。
+
+- markdownlintが通るように書く
+- 図にはMermaid記法を推奨する
+- Markdownファイルへのリンクは用途に応じて相対リンク又は自然な表現を使い分ける
+- 相対パスは配置先基準で解決し、`test -e <解決後パス>`で存在を確認する
+
+強調記法、インラインコードの用途、1文ごとの改行、箇条書きの記述単位及び補足の書き方は`textlint-violations.md`の「文体と箇条書き」が定める。
+lint設定の緩和・無効化・除外指定の追加は`lint-relax-criteria.md`に従う。
