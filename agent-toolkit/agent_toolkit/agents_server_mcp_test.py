@@ -725,48 +725,45 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
 
 def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
     """実運用で観測した起動文の名前付き入力を組み立てる。"""
-    shared_worktree = [f"対象worktree: {root}", f"プロジェクト規範: {root / 'AGENTS.md'}"]
     handoff = f"引き継ぎ記録先: {root / 'handoff.md'}"
     if task_name == "exec-review.subagent.md":
         return [
             "レビュー基準: 計画",
-            f"対象リポジトリ: {root}",
-            *shared_worktree,
-            "適用する作成規範スキル: agent-toolkit:writing-standards",
-            "agent-toolkit:review-standardsのSKILL.md: /plugin/review-standards/SKILL.md",
-            "開始時点の完全OID: 0000000000000000000000000000000000000000",
-            "レビュー対象HEADの完全OID: 1111111111111111111111111111111111111111",
-            "変更ファイル一覧: note.md",
-            "検証結果: 成功",
             "review_contract: 契約",
-            "レビュー指摘管理表: /tmp/review.tsv",
-            "track: exec-review",
-            "round: 1",
-            "レビュー種別: 初回レビュー",
             handoff,
         ]
     if task_name == "exec.subagent.md":
         return [
             "担当種別: レーン担当",
-            "起動経路: agent-toolkit:process-wi",
-            *shared_worktree,
             "AWIファイル名一覧: 20260101-000000-001.md (origin: human)",
-            "固有指示: なし",
-            "再開位置: なし",
-            "作成規範: agent-toolkit:writing-standards",
-            f"複製元: {root.parent}",
-            f"対象外worktree: {root.parent / 'other'}",
-            f"git操作に用いるworktree: {root}",
             handoff,
-            "権限: commit可、ffマージ可、作業対象リポジトリへのpush不可",
         ]
     if task_name == "pick-wi.subagent.md":
         return [
-            f"対象リポジトリ: {root}",
-            f"プロジェクト規範: {root / 'AGENTS.md'}",
             f"選定結果の出力先ファイル: {root / 'selection.json'}",
             handoff,
         ]
+    if task_name == "lane-integration.subagent.md":
+        return [
+            "統合区分: マージあり",
+            f"統合先worktree: {root}",
+            "統合先branch: develop",
+            "メイン計画ファイル名: plan.md",
+            "AWI終端区分: 20260101-000000-001.md=adopt",
+        ]
+    if task_name == "session-review-delegate.subagent.md":
+        return [
+            "対象セッションの実行系: codex",
+            "対象セッションの識別子: 00000000-0000-0000-0000-000000000000",
+            f"管理対象一時領域: {root / 'managed-temp'}",
+            "観測境界: 2026-01-01T00:00:00Z",
+            f"出力先ファイル: {root / 'session-review.md'}",
+            handoff,
+        ]
+    if task_name == "session-termination.subagent.md":
+        return ["bump種別: bump不要", handoff]
+    if task_name == "upstream-submission.subagent.md":
+        return ["元項目と投入先の組: 20260101-000000-001.md=/upstream", handoff]
     raise ValueError(f"未対応のタスク文書: {task_name}")
 
 
@@ -775,9 +772,20 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     return dict(line.split(": ", 1) for line in _observed_input_lines(task_name, root))
 
 
-@pytest.mark.parametrize("task_name", ["exec-review.subagent.md", "exec.subagent.md", "pick-wi.subagent.md"])
+@pytest.mark.parametrize(
+    "task_name",
+    [
+        "exec-review.subagent.md",
+        "exec.subagent.md",
+        "lane-integration.subagent.md",
+        "pick-wi.subagent.md",
+        "session-review-delegate.subagent.md",
+        "session-termination.subagent.md",
+        "upstream-submission.subagent.md",
+    ],
+)
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
-    """実運用で観測した3種類の起動文が必須入力検査を通過する。"""
+    """実運用で観測した7種類の最小起動文が必須入力検査を通過する。"""
     task_document = subject._SHARE_DIRECTORY / task_name
     prompt = "\n".join([f"{task_document}の手順を実行せよ。", *_observed_input_lines(task_name, tmp_path)])
 

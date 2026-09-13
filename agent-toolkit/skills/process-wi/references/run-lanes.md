@@ -37,7 +37,7 @@ pickerが固定した集合を、選定結果のレーン割当と依存順に�
 
 ## 実装とレビュー
 
-レーン担当から`実装完了`と`検証結果`を受領し、欠落があれば同じthreadへ返却を求める。受領後に`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`へ従い、計画をレビュー基準として実行レビューを1件起動する。
+レーン担当から`実装完了`と`検証結果`を受領し、欠落があれば同じthreadへ返却を求める。受領後に`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`へ従い、指摘管理表を準備して計画をレビュー基準とする実行レビューを1件起動する。
 
 指摘への修正は同じレーン担当threadへ`レビュー修正担当`として返す。`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って収束させ、別の修正主体を同じworktreeへ起動しない。収束後、レーン担当がレビュー修正の履歴を統合する。
 

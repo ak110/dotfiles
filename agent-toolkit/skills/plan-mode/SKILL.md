@@ -41,7 +41,7 @@ description: >
 
 1. 計画ファイル、成立させる結果、ユーザー指示との差分を提示し、`AskUserQuestion`で承認を得る。承認までは計画ファイルを実装入力として確定しない
 2. `agent-toolkit:writing-standards`の該当資料を読み、計画の`## 要件・外部仕様`に従って実装する。`## 検証`の近接検証を実行し、commitする。実装単位ごとのcommitとcommitメッセージは`agent-toolkit:commit`に従う
-3. `atk review-table init ~/.claude/plans/<計画stem>.exec-review.tsv`で実行レビュー指摘管理表を作成する。`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビュー担当を起動し、収束まで反復する。指摘への修正はメインが実施し、修正commitの履歴統合は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」と同じ順序で行う
+3. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビュー指摘管理表を準備し、実行レビュー担当を起動して収束まで反復する。指摘への修正はメインが実施し、修正commitの履歴統合は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」と同じ順序で行う
 4. 実行レビューの収束後に`## 検証`の`全体検証`行のコマンドで検証する。`CIで代替`の計画ではpush後のCIの結果で判定する
 5. `## 進捗ログ`へ完了判定を記録し、`atk plans commit <計画ファイル名>`で保存する。`## 終端工程`が挙げる操作を実施し、`agent-toolkit:completion-report`で報告する
 
