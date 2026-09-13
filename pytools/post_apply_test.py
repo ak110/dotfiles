@@ -6,6 +6,7 @@
 
 import io
 import logging
+import logging.handlers
 import re
 import threading
 import time
@@ -20,6 +21,12 @@ from pytools._internal import post_apply_outcome
 # pylint: disable=protected-access
 
 
+@pytest.fixture(autouse=True)
+def _isolate_update_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """post-applyの永続ログを実利用者のstate directoryから隔離する。"""
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
+
+
 def test_configure_logging_preserves_cp932_record_with_unencodable_character(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31,20 +38,57 @@ def test_configure_logging_preserves_cp932_record_with_unencodable_character(
     monkeypatch.setattr(post_apply.sys, "stdout", stdout)
     monkeypatch.setattr(post_apply.sys, "stderr", stderr)
     root_logger = logging.getLogger()
-    previous_handlers, previous_level = post_apply._configure_logging()  # noqa: SLF001
+    previous_handlers, previous_level, persistent_log_ready = post_apply._configure_logging()  # noqa: SLF001
     try:
         logging.getLogger("cp932-test").info("符号化不能文字: ✓")
         stdout.flush()
         stderr.flush()
         output = stdout_buffer.getvalue().decode("cp932") + stderr_buffer.getvalue().decode("cp932")
     finally:
+        current_handlers = root_logger.handlers.copy()
         root_logger.handlers[:] = previous_handlers
         root_logger.setLevel(previous_level)
+        for handler in current_handlers:
+            handler.close()
 
     assert stdout.encoding == "cp932"
+    assert persistent_log_ready
     assert "符号化不能文字" in output
     assert r"\u2713" in output
     assert "--- Logging error ---" not in output
+
+
+def test_main_records_steps_and_failure_in_persistent_log() -> None:
+    """post-applyの各ステップと最終失敗を同じ永続ログへ記録する。"""
+    steps = [("success", lambda: False), ("failure", lambda: (_ for _ in ()).throw(RuntimeError("boom")))]
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(runner=lambda: post_apply.run(steps=steps))
+
+    assert exc_info.value.code == 1
+    log_text = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+    assert "post-apply開始" in log_text
+    assert "[1/2] success" in log_text
+    assert "[2/2] failure" in log_text
+    assert "post-apply終了: exit=1" in log_text
+
+
+def test_persistent_log_uses_size_limited_rotation() -> None:
+    """永続ログの総容量を固定世代数で制限する。"""
+    root_logger = logging.getLogger()
+    previous_handlers, previous_level, persistent_log_ready = post_apply._configure_logging()  # noqa: SLF001
+    current_handlers = root_logger.handlers.copy()
+    try:
+        file_handlers = [handler for handler in current_handlers if isinstance(handler, logging.handlers.RotatingFileHandler)]
+        assert persistent_log_ready
+        assert len(file_handlers) == 1
+        assert file_handlers[0].maxBytes == post_apply._UPDATE_LOG_MAX_BYTES  # noqa: SLF001
+        assert file_handlers[0].backupCount == post_apply._UPDATE_LOG_BACKUP_COUNT  # noqa: SLF001
+    finally:
+        root_logger.handlers[:] = previous_handlers
+        root_logger.setLevel(previous_level)
+        for handler in current_handlers:
+            handler.close()
 
 
 def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
@@ -693,14 +737,11 @@ class TestDefaultSteps:
         assert names.index(timer_name) == names.index(serve_name) + 1
         assert names.index(timer_name) < names.index("Windowsレジストリ設定")
 
-    def test_plan_migration_follows_autoupdate_before_windows_steps(self) -> None:
-        """atk計画移行をLinux自動更新タイマーの直後かつWindows処理前に登録する。"""
+    def test_removed_plan_migration_is_not_registered(self) -> None:
+        """廃止済みatk計画移行をpost-applyへ登録しない。"""
         steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
         names = [step.name for step in steps]
-        migration = "atk計画の移行"
-        assert names.count(migration) == 1
-        assert names.index(migration) == names.index("dotfiles自動更新タイマー セットアップ (Linux)") + 1
-        assert names.index(migration) < names.index("Windowsレジストリ設定")
+        assert names.index("Windowsレジストリ設定") == names.index("dotfiles自動更新タイマー セットアップ (Linux)") + 1
         assert [step.name for step in steps if step.background] == [
             "agents_serverのuv環境ウォームアップ",
             "hookスクリプトのuv環境ウォームアップ",

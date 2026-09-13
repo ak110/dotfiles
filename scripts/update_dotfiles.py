@@ -34,8 +34,12 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 `0`は上限なしとし、負数又は整数でない値は終了コード2で拒否する。
 """
 
+# pylint: disable=global-statement
+
 import argparse
 import contextlib
+import logging
+import logging.handlers
 import os
 import pathlib
 import subprocess
@@ -46,13 +50,53 @@ import filelock
 import platformdirs
 import psutil
 
-_DOTFILES_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_DOTFILES_ROOT = _SOURCE_ROOT
 _LOCK_PATH = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks" / "update-dotfiles.lock"
+_LOG_PATH = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "update-dotfiles.log"
+_LOG_MAX_BYTES = 2 * 1024 * 1024
+_LOG_BACKUP_COUNT = 3
+_RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
 _LOCK_TIMEOUT_SEC = 600.0
 _GIT_TIMEOUT_DEFAULT_SEC = 600
 _GIT_OUTPUT_RECOVERY_TIMEOUT_SEC = 30
 _PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
 _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
+
+logger = logging.getLogger(__name__)
+_current_run_id: str | None = None
+_persistent_log_ready = False
+
+
+def _configure_persistent_log(run_id: str) -> logging.Handler | None:
+    """更新診断用のサイズ制限付きログを構成し、構成不能でも更新処理は継続する。"""
+    global _persistent_log_ready  # noqa: PLW0603
+    try:
+        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(
+            _LOG_PATH,
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+    except OSError as error:
+        print(f"永続ログを開始できませんでした: {_LOG_PATH}: {error}", file=sys.stderr)
+        _persistent_log_ready = False
+        return None
+    handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    _persistent_log_ready = True
+    return handler
+
+
+def _finish(returncode: int) -> int:
+    """実行終了を記録し、失敗時は診断ログの位置を案内する。"""
+    logger.info("update-dotfiles終了: exit=%d", returncode)
+    if returncode != 0 and _persistent_log_ready:
+        print(f"永続ログ: {_LOG_PATH}", file=sys.stderr)
+    return returncode
 
 
 def _child_env() -> dict[str, str]:
@@ -68,19 +112,37 @@ def _child_env() -> dict[str, str]:
     env.pop("VIRTUAL_ENV", None)
     env.pop("VIRTUAL_ENV_PROMPT", None)
     env["MISE_AUTO_INSTALL"] = "0"
+    if _current_run_id is not None:
+        env[_RUN_ID_ENV] = _current_run_id
+    user_bin = str(pathlib.Path.home() / ".local" / "bin")
+    current_path = env.get("PATH", "")
+    path_entries = current_path.split(os.pathsep) if current_path else []
+    if user_bin not in path_entries:
+        path_entries.append(user_bin)
+    env["PATH"] = os.pathsep.join(path_entries)
     return env
 
 
 def _run_step(step_no: int, total: int, title: str, argv: list[str], *, capture: bool = False) -> tuple[int, str]:
     """1段を実行し見出しを表示する。`capture=True`時のみ標準出力を文字列で返す。"""
     print(f"=== [{step_no}/{total}] {title} ===")
-    result = subprocess.run(
-        argv,
-        cwd=_DOTFILES_ROOT,
-        check=False,
-        capture_output=capture,
-        encoding="utf-8" if capture else None,
-        env=_child_env(),
+    logger.info("stage開始: %d/%d %s", step_no, total, title)
+    started_at = time.monotonic()
+    try:
+        result = subprocess.run(
+            argv,
+            cwd=_DOTFILES_ROOT,
+            check=False,
+            capture_output=capture,
+            encoding="utf-8" if capture else None,
+            env=_child_env(),
+        )
+    except OSError as error:
+        logger.exception("stage起動失敗: %d/%d %s", step_no, total, title)
+        print(f"{title}を開始できませんでした: {error}", file=sys.stderr)
+        return 1, ""
+    logger.info(
+        "stage終了: %d/%d %s exit=%d duration=%.3f", step_no, total, title, result.returncode, time.monotonic() - started_at
     )
     if capture and result.stderr:
         sys.stderr.write(result.stderr)
@@ -134,15 +196,32 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     出力回収にも上限を設ける。
     """
     print(f"=== [{step_no}/{total}] git pull ===")
+    logger.info("stage開始: %d/%d git pull", step_no, total)
+    started_at = time.monotonic()
     # 上限超過時に子孫を列挙してから直接子を回収するため、プロセスを明示的に保持する。
-    process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
-        ["chezmoi", "git", f"--source={_DOTFILES_ROOT}", "--", "-c", "submodule.recurse=false", "pull", "--rebase", "--quiet"],
-        cwd=_DOTFILES_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        encoding="utf-8",
-        env=_child_env(),
-    )
+    try:
+        process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
+            [
+                "chezmoi",
+                "git",
+                f"--source={_DOTFILES_ROOT}",
+                "--",
+                "-c",
+                "submodule.recurse=false",
+                "pull",
+                "--rebase",
+                "--quiet",
+            ],
+            cwd=_DOTFILES_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            env=_child_env(),
+        )
+    except OSError as error:
+        logger.exception("stage起動失敗: %d/%d git pull", step_no, total)
+        print(f"git pullを開始できませんでした: {error}", file=sys.stderr)
+        return 1
     try:
         stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
     except subprocess.TimeoutExpired:
@@ -160,12 +239,18 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。",
             file=sys.stderr,
         )
+        logger.error(
+            "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f", step_no, total, timeout, time.monotonic() - started_at
+        )
         return 1
     if stdout:
         sys.stdout.write(stdout)
     if stderr:
         stream = sys.stdout if process.returncode == 0 else sys.stderr
         stream.write(stderr)
+    logger.info(
+        "stage終了: %d/%d git pull exit=%d duration=%.3f", step_no, total, process.returncode, time.monotonic() - started_at
+    )
     return process.returncode
 
 
@@ -227,14 +312,20 @@ def _run_git_change(*arguments: str) -> bool:
 
 def _save_worktree(label: str) -> str | None:
     """未コミット内容をworktree固有refへ退避し、ref名を返す。"""
-    result = subprocess.run(
-        ["atk", "worktree-stash", "save", f"--label={label}"],
-        cwd=_DOTFILES_ROOT,
-        check=False,
-        capture_output=True,
-        encoding="utf-8",
-        env=_child_env(),
-    )
+    launcher = _SOURCE_ROOT / "agent-toolkit" / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
+    try:
+        result = subprocess.run(
+            [str(launcher), "worktree-stash", "save", f"--label={label}"],
+            cwd=_DOTFILES_ROOT,
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            env=_child_env(),
+        )
+    except OSError as error:
+        logger.exception("worktree-stash saveの起動に失敗: worktree=%s launcher=%s", _DOTFILES_ROOT, launcher)
+        print(f"未コミット内容の退避を開始できませんでした ({_DOTFILES_ROOT}): {error}", file=sys.stderr)
+        return None
     if result.returncode != 0:
         if result.stderr:
             sys.stderr.write(result.stderr)
@@ -327,70 +418,83 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
+    global _current_run_id, _persistent_log_ready  # noqa: PLW0603
     _parse_args(argv)
+    _current_run_id = f"{time.time_ns()}-{os.getpid()}"
+    log_handler = _configure_persistent_log(_current_run_id)
+    logger.info("update-dotfiles開始: root=%s", _DOTFILES_ROOT)
     try:
-        git_timeout = _git_timeout()
-    except ValueError as error:
-        print(error, file=sys.stderr)
-        return 2
-    total = 5
-    lock_dir = _LOCK_PATH.parent
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
-            returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
-            if returncode != 0:
-                return returncode
+        try:
+            git_timeout = _git_timeout()
+        except ValueError as error:
+            logger.error("git timeout設定が不正: %s", error)
+            print(error, file=sys.stderr)
+            return _finish(2)
+        total = 5
+        lock_dir = _LOCK_PATH.parent
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
+                returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
+                if returncode != 0:
+                    return _finish(returncode)
 
-            returncode, _ = _run_step(
-                2,
-                total,
-                "chezmoi init (テンプレート再展開)",
-                ["chezmoi", "init", f"--source={_DOTFILES_ROOT}"],
-            )
-            if returncode != 0:
-                return returncode
+                returncode, _ = _run_step(
+                    2,
+                    total,
+                    "chezmoi init (テンプレート再展開)",
+                    ["chezmoi", "init", f"--source={_DOTFILES_ROOT}"],
+                )
+                if returncode != 0:
+                    return _finish(returncode)
 
-            returncode, status_output = _run_step(
-                3,
-                total,
-                "chezmoi status (apply予定のファイル)",
-                ["chezmoi", "status", "-x", "scripts"],
-                capture=True,
-            )
-            if returncode != 0:
-                return returncode
-            for line in _filter_apply_pending(status_output):
-                print(line)
+                returncode, status_output = _run_step(
+                    3,
+                    total,
+                    "chezmoi status (apply予定のファイル)",
+                    ["chezmoi", "status", "-x", "scripts"],
+                    capture=True,
+                )
+                if returncode != 0:
+                    return _finish(returncode)
+                for line in _filter_apply_pending(status_output):
+                    print(line)
 
-            returncode, diff_output = _run_step(
-                4,
-                total,
-                "chezmoi diff (上書き前の差分)",
-                ["chezmoi", "diff", "--no-pager"],
-                capture=True,
-            )
-            if diff_output:
-                sys.stdout.write(diff_output)
-            if returncode != 0:
-                return returncode
+                returncode, diff_output = _run_step(
+                    4,
+                    total,
+                    "chezmoi diff (上書き前の差分)",
+                    ["chezmoi", "diff", "--no-pager"],
+                    capture=True,
+                )
+                if diff_output:
+                    sys.stdout.write(diff_output)
+                if returncode != 0:
+                    return _finish(returncode)
 
-            returncode, _ = _run_step(
-                total,
-                total,
-                "chezmoi apply (post-apply実行)",
-                ["chezmoi", "apply", "--force"],
+                returncode, _ = _run_step(
+                    total,
+                    total,
+                    "chezmoi apply (post-apply実行)",
+                    ["chezmoi", "apply", "--force"],
+                )
+                if returncode != 0:
+                    return _finish(returncode)
+        except filelock.Timeout:
+            logger.exception("update-dotfilesロック取得失敗")
+            print(
+                f"ロック取得に失敗しました（{_LOCK_TIMEOUT_SEC:.0f}秒待機後もタイムアウト）。"
+                "他のupdate-dotfiles実行の完了を待って再実行してください。",
+                file=sys.stderr,
             )
-            if returncode != 0:
-                return returncode
-    except filelock.Timeout:
-        print(
-            f"ロック取得に失敗しました（{_LOCK_TIMEOUT_SEC:.0f}秒待機後もタイムアウト）。"
-            "他のupdate-dotfiles実行の完了を待って再実行してください。",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+            return _finish(1)
+        return _finish(0)
+    finally:
+        if log_handler is not None:
+            logger.removeHandler(log_handler)
+            log_handler.close()
+        _current_run_id = None
+        _persistent_log_ready = False
 
 
 if __name__ == "__main__":

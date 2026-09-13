@@ -276,3 +276,6 @@
 - 2026年9月10日: 呼び元用文書の箇条書きが必須入力名へ語を足した表記で始まり、`agents_server`の`start`が`必須入力が欠けています`を返して委譲先が起動しなかった。
   直接原因: `agent-toolkit:delegation`のSKILL.mdの`## 送信`が項目名の正本を`## 入力`の語と`必須入力名:`の行の2箇所へ置き、箇条書きのどの位置へ項目名を置くかを定めていなかった。契約テストは項目名の逐語出現だけを充足条件としていた。
   対策: 項目名の正本を`必須入力名:`の行へ集約し、箇条書きの先頭を項目名で始める書式規定を追記する。`delegation_contract_test.py`へ別名で始まる箇条書きの検出を追加する
+- 2026年9月13日: marketplaceのtimeout検体が実利用者の`known_marketplaces.json`へpytestの一時ディレクトリを保存した。
+  直接原因: 検体がdotfiles rootだけを差し替え、`claude_marketplace`がmodule定数で保持するmarketplace登録とsettingsの書込先を隔離しなかった。
+  対策: marketplace書込操作の検体では、同モジュールが保持する全永続パスを`tmp_path`へ差し替え、書込先を検体内へ閉じる

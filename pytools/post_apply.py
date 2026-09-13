@@ -5,6 +5,7 @@
 
 import io
 import logging
+import logging.handlers
 import os
 import sys
 import threading
@@ -14,6 +15,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+import platformdirs
+
 from pytools import update_ssh_config
 from pytools._internal import (
     cleanup_paths,
@@ -22,7 +25,6 @@ from pytools._internal import (
     install_codex_plugins,
     install_libarchive_windows,
     log_format,
-    migrate_atk_queue,
     post_apply_outcome,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
@@ -50,6 +52,11 @@ from pytools._internal import (
 
 logger = logging.getLogger(__name__)
 
+_UPDATE_LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "update-dotfiles.log"
+_UPDATE_RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
+_UPDATE_LOG_MAX_BYTES = 2 * 1024 * 1024
+_UPDATE_LOG_BACKUP_COUNT = 3
+
 
 class _BelowWarningFilter(logging.Filter):
     """WARNING未満のレコードだけを通す。"""
@@ -59,7 +66,7 @@ class _BelowWarningFilter(logging.Filter):
         return record.levelno < logging.WARNING
 
 
-def _configure_logging() -> tuple[list[logging.Handler], int]:
+def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
     """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
@@ -72,12 +79,30 @@ def _configure_logging() -> tuple[list[logging.Handler], int]:
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.WARNING)
     stderr_handler.setFormatter(formatter)
+    run_id = os.environ.get(_UPDATE_RUN_ID_ENV, f"post-apply-{os.getpid()}")
+    handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
+    persistent_log_ready = False
+    try:
+        _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            _UPDATE_LOG_PATH,
+            maxBytes=_UPDATE_LOG_MAX_BYTES,
+            backupCount=_UPDATE_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+    except OSError as error:
+        print(f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}", file=sys.stderr)
+    else:
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+        handlers.append(file_handler)
+        persistent_log_ready = True
     root_logger = logging.getLogger()
     previous_handlers = root_logger.handlers.copy()
     previous_level = root_logger.level
-    root_logger.handlers[:] = [stdout_handler, stderr_handler]
+    root_logger.handlers[:] = handlers
     root_logger.setLevel(logging.INFO)
-    return previous_handlers, previous_level
+    return previous_handlers, previous_level, persistent_log_ready
 
 
 # chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
@@ -319,7 +344,6 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run),
     _StepSpec("atk serve 自動起動セットアップ (Linux)", setup_atk_serve_linux.run),
     _StepSpec("dotfiles自動更新タイマー セットアップ (Linux)", setup_dotfiles_autoupdate_linux.run),
-    _StepSpec("atk計画の移行", migrate_atk_queue.run),
     _StepSpec("Windowsレジストリ設定", setup_registry.run),
     _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run),
     _StepSpec("メディアリモコン自動起動 (Windows/stheno)", setup_media_remote.run),
@@ -331,8 +355,9 @@ _DEFAULT_STEPS: list[_StepSpec] = [
 def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None) -> None:
     """エントリポイント。"""
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
-    previous_handlers, previous_level = _configure_logging()
+    previous_handlers, previous_level, persistent_log_ready = _configure_logging()
     try:
+        logger.info("post-apply開始")
         results, recommendations = (runner or run)()
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
@@ -344,12 +369,18 @@ def main(runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
+            if persistent_log_ready:
+                logger.error("永続ログ: %s", _UPDATE_LOG_PATH)
         _print_post_apply_notices(notices)
+        logger.info("post-apply終了: exit=%d", 1 if failed else 0)
         sys.exit(1 if failed else 0)
     finally:
         root_logger = logging.getLogger()
+        current_handlers = root_logger.handlers.copy()
         root_logger.handlers[:] = previous_handlers
         root_logger.setLevel(previous_level)
+        for handler in current_handlers:
+            handler.close()
 
 
 def _print_plugin_recommendations(recommendations: list[str]) -> None:

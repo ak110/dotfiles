@@ -84,16 +84,17 @@ def run() -> tuple[bool, list[str]]:
         logger.info(log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
         return external_changed, []
 
-    # ファイル直接読み取りを先に試み、失敗時のみCLIフォールバックする
+    if not claude_marketplace.ensure_marketplace():
+        return external_changed, []
+
+    # marketplace の修復は remove/add により導入済み登録を変更し得るため、
+    # 修復完了後の実体だけを導入判定へ用いる。
     raw_data: object = _read_installed_plugins_from_file()
     if raw_data is None:
         raw_data = _get_installed_plugins_raw()
         if raw_data is None:
             logger.info(log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
             return external_changed, []
-
-    if not claude_marketplace.ensure_marketplace():
-        return external_changed, []
 
     any_change = False
 
@@ -163,10 +164,8 @@ def run() -> tuple[bool, list[str]]:
         any_change = True
     recommendations = compute_recommended_commands(raw_data, enabled_map)
 
-    # install 試行後のポスト検証と最終サマリ。
-    # 再現性の怪しい未インストール事象を早期に検出できるよう、install 試行後に
-    # installed_plugins.json を再読み込みして欠落を警告する。
-    _warn_if_missing(target_versions)
+    # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
+    _verify_target_plugins(target_versions)
     logger.info(
         log_format.format_status(
             "plugins",
@@ -220,7 +219,7 @@ def _install_external_marketplaces() -> bool:
         if plugin_id in _user_scope_plugin_ids(installed_data):
             continue
         result = claude_common.run_claude(
-            ["plugin", "install", plugin_id, "--scope=user"],
+            ["plugin", "install", plugin_id, "--scope=user", "-y"],
             timeout=_PLUGIN_OPERATION_TIMEOUT_SEC,
         )
         if result is None or result.returncode != 0:
@@ -574,7 +573,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
 def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
     result = claude_common.run_claude(
-        ["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope=user"],
+        ["plugin", "install", f"{name}@{_MARKETPLACE_NAME}", "--scope=user", "-y"],
         timeout=_PLUGIN_OPERATION_TIMEOUT_SEC,
     )
     if result is None or result.returncode != 0:
@@ -629,26 +628,31 @@ def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
     return result
 
 
-def _warn_if_missing(target_versions: dict[str, str]) -> None:
-    """install試行後も `target_versions` の未インストールが残っていれば警告する。
-
-    再現性が不明瞭な未インストール事象の早期検出を目的とする。
-    最新情報を取得するため `installed_plugins.json` を再読み取りする。
-    """
+def _verify_target_plugins(target_versions: dict[str, str]) -> None:
+    """管理対象pluginがuser scopeへ導入され、有効であることを実体から検証する。"""
     raw_data: object = _read_installed_plugins_from_file()
     if raw_data is None:
         raw_data = _get_installed_plugins_raw()
     if raw_data is None:
-        return
+        raise RuntimeError("install後のplugin一覧を取得できませんでした")
     installed = _extract_plugin_version_map(raw_data)
     missing = sorted(name for name in target_versions if name not in installed)
+    enabled = _read_enabled_plugins_from_file()
+    disabled = sorted(
+        f"{name}@{_MARKETPLACE_NAME}"
+        for name in target_versions
+        if enabled is None or enabled.get(f"{name}@{_MARKETPLACE_NAME}") is not True
+    )
+    failures: list[str] = []
     if missing:
-        logger.warning(
-            log_format.format_status(
-                "plugins",
-                f"install 試行後も未インストールが残っています: {', '.join(missing)}",
-            )
-        )
+        failures.append(f"未インストール: {', '.join(missing)}")
+    if disabled:
+        failures.append(f"未有効化: {', '.join(disabled)}")
+    if failures:
+        message = " / ".join(failures)
+        logger.error(log_format.format_status("plugins", f"install後の状態検証に失敗: {message}"))
+        raise RuntimeError(f"Claude Code pluginのinstall後の状態検証に失敗しました: {message}")
+    logger.info(log_format.format_status("plugins", "install後の導入・有効化状態を確認しました"))
 
 
 if __name__ == "__main__":

@@ -214,6 +214,41 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     assert actual_names == expected_names
 
 
+def test_process_wi_postapproval_handoff_is_complete() -> None:
+    """事後承認対象をレーン判定からメインのUWI投入まで接続する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    documents = {
+        "plan": plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md",
+        "lane": plugin_root / "share" / "exec.subagent.md",
+        "parent": plugin_root / "share" / "exec.parent.md",
+        "runner": plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md",
+    }
+    contents = {name: path.read_text(encoding="utf-8") for name, path in documents.items()}
+
+    assert all("事後承認対象:" in content for content in contents.values())
+    assert "ユーザーが観測する結果、採用理由及びトレードオフ" in contents["plan"]
+    assert "実装とレビュー修正のいずれかで新たに確定した実装判断" in contents["plan"]
+    assert "`エージェント提案`の別行" in contents["plan"]
+    assert "レーン担当はUWIを投入せず" in contents["lane"]
+    assert "実装中に新たに確定した実装判断" in contents["lane"]
+    assert "現行計画から読み直し" in contents["parent"]
+    assert "計画起草時、実装時又はレビュー修正時" in contents["runner"]
+    assert "事後承認型UWIへ記録" in contents["runner"]
+
+
+def test_plan_refactoring_example_and_large_output_examples_are_explicit() -> None:
+    """固定表と大量出力類型を実行主体が推測せず再現できる。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    plan_standard = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
+    subagent_rules = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
+
+    assert "| 項目 | 内容 |" in plan_standard
+    assert all(f"| {name} |" in plan_standard for name in ("対象", "現状の問題", "対応", "本計画に含めるか"))
+    assert all(
+        example in subagent_rules for example in ("git status", "git diff", "git log", "git pull", "git merge", "gh ... --json")
+    )
+
+
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:
     """起動対象を持たない呼び元用文書をファイル名付きで報告する。"""
     _write_pair(tmp_path, parent_body="# 呼び元\n\n対象リポジトリ: 値\n")

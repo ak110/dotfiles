@@ -3,6 +3,8 @@
 通常5段の直列実行順序・fail-fast・排他ロック・標準ストリームを検証する。
 """
 
+# pylint: disable=protected-access
+
 import contextlib
 import importlib
 import os
@@ -28,8 +30,9 @@ _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolk
 
 
 @pytest.fixture(autouse=True)
-def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """段階順の単体テストでは、Git回復の統合挙動を低水準pullから分離する。"""
+    monkeypatch.setattr(update_dotfiles, "_LOG_PATH", tmp_path / "state" / "update-dotfiles.log")
     monkeypatch.setattr(
         update_dotfiles,
         "_update_git_with_recovery",
@@ -400,6 +403,30 @@ def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatc
 
     assert environment["UPDATE_DOTFILES_TEST_SENTINEL"] == "preserved"
     assert environment["MISE_AUTO_INSTALL"] == "0"
+    assert str(pathlib.Path.home() / ".local" / "bin") in environment["PATH"].split(os.pathsep)
+
+
+def test_save_worktree_uses_repository_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
+    """worktree退避はPATH上の裸のatkではなく作業コピーのランチャーを使う。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _fake_run({}, calls, stdout_by_command={str(_REPOSITORY_ATK_BIN / "atk"): "refs/worktree/test\n"}),
+    )
+
+    assert update_dotfiles._save_worktree("test") == "refs/worktree/test"  # pylint: disable=protected-access
+    assert pathlib.Path(calls[0][0]) == _REPOSITORY_ATK_BIN / "atk"
+
+
+def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """ランチャー起動不能はtracebackを抑止して文脈付き失敗にする。"""
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")))
+
+    assert update_dotfiles._save_worktree("test") is None  # pylint: disable=protected-access
+    captured = capsys.readouterr()
+    assert "未コミット内容の退避を開始できませんでした" in captured.err
+    assert "Traceback" not in captured.err
 
 
 class TestFiveStepsInOrder:
@@ -408,7 +435,18 @@ class TestFiveStepsInOrder:
     def test_all_steps_succeed(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
-        monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run(
+                {},
+                calls,
+                stdout_by_command={
+                    "status": " M private-status-value\n",
+                    "diff": "private-diff-value\n",
+                },
+            ),
+        )
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
         assert update_dotfiles.main() == 0
@@ -419,6 +457,12 @@ class TestFiveStepsInOrder:
         assert calls[4][:2] == ["chezmoi", "apply"]
         assert "--quiet" in calls[0]
         assert "--force" in calls[4]
+        log_text = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+        assert "update-dotfiles開始" in log_text
+        assert "stage開始: 5/5 chezmoi apply" in log_text
+        assert "update-dotfiles終了: exit=0" in log_text
+        assert "private-status-value" not in log_text
+        assert "private-diff-value" not in log_text
 
     def test_diff_precedes_forced_apply(
         self,
@@ -538,7 +582,7 @@ class TestCapturedStderr:
         assert update_dotfiles.main() == 2
         captured = capsys.readouterr()
         assert "fatal: pull failed" not in captured.out
-        assert captured.err == "fatal: pull failed\n"
+        assert captured.err == f"fatal: pull failed\n永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
         assert len(calls) == 1
 
     def test_successful_status_stderr_is_forwarded(

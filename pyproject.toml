@@ -173,6 +173,11 @@ targets = [
     "agent-toolkit/.mcp.json",
     "agent-toolkit/.mcp.codex.json",
     "agent-toolkit/mcp.json",
+    # Codex plugin manifest生成器が入力にするskillsとshareの全階層を同期契機へ含める。
+    # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
+    "agent-toolkit/skills/*/*",
+    "agent-toolkit/skills/*/*/*",
+    "agent-toolkit/share/*",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",
     "agent-toolkit/scripts/**/*.py",

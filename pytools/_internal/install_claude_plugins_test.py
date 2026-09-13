@@ -4,6 +4,8 @@
 旧 GitHub 型マイグレーション・marketplace.json 読み込みを検証する。
 """
 
+# pylint: disable=protected-access
+
 import json
 import pathlib
 
@@ -14,6 +16,8 @@ from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from ._test_helpers import _FakeResult, command_matches, make_fresh_install_fake
+
+_REAL_VERIFY_TARGET_PLUGINS = _install_claude_plugins._verify_target_plugins
 
 
 @pytest.fixture(name="fake_which_present")
@@ -41,6 +45,63 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
     """外部マーケットプレイスの専用テスト以外では対象を空にする。"""
     monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+    monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets: None)
+
+
+def test_verify_target_plugins_requires_installed_and_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """導入済み登録とenabled=trueの双方をinstall後の完了条件にする。"""
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_installed_plugins_from_file",
+        lambda: [{"id": "agent-toolkit@ak110-dotfiles", "version": "1.0.0", "scope": "user"}],
+    )
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_enabled_plugins_from_file",
+        lambda: {"agent-toolkit@ak110-dotfiles": True},
+    )
+
+    _REAL_VERIFY_TARGET_PLUGINS({"agent-toolkit": "1.0.0"})
+
+    monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
+    with pytest.raises(RuntimeError, match="未有効化"):
+        _REAL_VERIFY_TARGET_PLUGINS({"agent-toolkit": "1.0.0"})
+
+
+def test_installed_plugins_are_read_after_marketplace_is_ensured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """marketplace修復前の導入一覧を後続判定へ再利用しない。"""
+    events: list[str] = []
+    monkeypatch.setattr(_install_claude_plugins, "_prerequisites_ok", lambda: True)
+    monkeypatch.setattr(_install_claude_plugins, "_install_external_marketplaces", lambda: False)
+    monkeypatch.setattr(_claude_common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, {"legacy"}))
+
+    def ensure_marketplace() -> bool:
+        events.append("ensure")
+        return True
+
+    def read_installed_plugins() -> list[object]:
+        events.append("read")
+        return []
+
+    monkeypatch.setattr(_claude_marketplace, "ensure_marketplace", ensure_marketplace)
+    monkeypatch.setattr(
+        _install_claude_plugins,
+        "_read_installed_plugins_from_file",
+        read_installed_plugins,
+    )
+    monkeypatch.setattr(_install_claude_plugins, "_uninstall_deprecated", lambda _name, _raw: False)
+    monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
+    monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {})
+    monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
+    monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
+
+    _install_claude_plugins.run()
+
+    assert events == ["ensure", "read"]
 
 
 @pytest.fixture(name="disable_auto_managed_plugins")
