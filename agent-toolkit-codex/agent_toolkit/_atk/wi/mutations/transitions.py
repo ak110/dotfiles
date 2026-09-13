@@ -43,6 +43,7 @@ from agent_toolkit._atk.wi.common import (
     WI_TYPE_UWI,
     WI_USER_REMOVABLE_STATES,
     WebInputError,
+    _CommitMetadata,
     _commit_and_push,
     _copy_to_tempfile,
     _dedup_positional_filenames,
@@ -278,7 +279,7 @@ def _apply_transition(
     action: str,
     now: datetime.datetime,
     note: str | None,
-    commit_values: dict[pathlib.Path, str | None],
+    commit_values: dict[pathlib.Path, _CommitMetadata | None],
     cooldown_days: int | None,
 ) -> None:
     """検証済みエントリを削除又は目的状態へ移動する。"""
@@ -381,10 +382,10 @@ def transition_entries(
             cooldown_days=cooldown_days,
             force=force,
         )
-        commit_values = (
+        commit_values: dict[pathlib.Path, _CommitMetadata | None] = (
             _commit_values_by_path(paths, commit, local_worktree)
             if action in {"adopt", "reject"}
-            else {path: commit for path in paths}
+            else {path: None for path in paths}
         )
         _apply_transition(
             private_notes,
@@ -409,7 +410,8 @@ def transition_entries(
 def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """adoptサブコマンド: 採用としてinboxまたはprocessingからadopted/へ移動しcommit・push。
 
-    移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
+    移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
+    `--note`指定時はメモ、`--commit`指定時は対応commitの作成者日時と件名を含む。
     inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
@@ -434,7 +436,8 @@ def _cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
 def _cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """rejectサブコマンド: 不採用としてinboxまたはprocessingからrejected/へ移動しcommit・push。
 
-    移動前に対象ファイル末尾へ`## 処理結果`節を追記する（`--note`・`--commit`が指定された場合のみ該当項目を含む）。
+    移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
+    `--note`指定時はメモ、`--commit`指定時は対応commitの作成者日時と件名を含む。
     inbox・processingいずれの起点も許容し、両方に同名ファイルがある場合はprocessingを優先する。
     位置引数の重複は`_dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """

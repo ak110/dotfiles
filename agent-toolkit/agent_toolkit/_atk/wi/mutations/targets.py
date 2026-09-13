@@ -42,6 +42,7 @@ from agent_toolkit._atk.wi.common import (
     WI_TYPE_AWI,
     WI_TYPE_UWI,
     WebInputError,
+    _CommitMetadata,
     _commit_and_push,
     _copy_to_tempfile,
     _dedup_positional_filenames,
@@ -181,8 +182,8 @@ def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
         return None
 
 
-def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> str:
-    """作業ツリーでrevisionを完全なcommit OIDへ解決する。"""
+def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
+    """作業ツリーでrevisionをcommitの完全OIDへ解決する。"""
     try:
         result = subprocess.run(
             [
@@ -214,36 +215,56 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> str:
     return commit
 
 
+def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> _CommitMetadata:
+    """作業ツリーでrevisionを解決し、永続記録用のcommit情報を返す。"""
+    commit = _resolve_commit_oid(local_worktree, revision)
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(local_worktree), "show", "-s", "--format=%aI%x00%s", commit],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    output = result.stdout.rstrip("\n") if result is not None and result.returncode == 0 else ""
+    author_date, separator, subject = output.partition("\0")
+    try:
+        datetime.datetime.fromisoformat(author_date)
+    except ValueError:
+        author_date = ""
+    if separator != "\0" or not author_date or not subject or "\n" in subject:
+        print(
+            f"対応commitの作成者日時と件名を取得できませんでした: {local_worktree} ({revision})",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return _CommitMetadata(author_date=author_date, subject=subject)
+
+
 def _commit_values_by_path(
     paths: list[pathlib.Path],
     revision: str | None,
     local_worktree: pathlib.Path | None,
-) -> dict[pathlib.Path, str | None]:
-    """対象ごとに記録するcommitを解決し、対応不能な群は警告する。"""
+) -> dict[pathlib.Path, _CommitMetadata | None]:
+    """対象ごとに永続記録用のcommit情報を解決する。"""
     if revision is None:
         return {path: None for path in paths}
     target_repos = {path: _entry_target_repo(path, path.read_text(encoding="utf-8")) for path in paths}
     candidate_repo = _local_worktree_repo_id(local_worktree) if local_worktree is not None else None
-    resolved = (
-        _resolve_commit(local_worktree, revision)
-        if local_worktree is not None and candidate_repo in target_repos.values()
-        else None
-    )
-    values: dict[pathlib.Path, str | None] = {}
-    warned: set[str] = set()
-    for path, target_repo in target_repos.items():
-        if resolved is not None and target_repo == candidate_repo:
-            values[path] = resolved
-            continue
-        values[path] = revision
-        if target_repo not in warned:
-            print(
-                f"警告: 対象リポジトリに対応するローカル作業ツリーを特定できないため、"
-                f"対応commitを未検証のまま記録します: {target_repo}",
-                file=sys.stderr,
-            )
-            warned.add(target_repo)
-    return values
+    unmatched = sorted({target_repo for target_repo in target_repos.values() if target_repo != candidate_repo})
+    if local_worktree is None or candidate_repo is None or unmatched:
+        targets = ", ".join(unmatched or sorted(set(target_repos.values())))
+        print(
+            f"対応commitを検証できる対象リポジトリの作業ツリーを特定できませんでした: {targets}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    resolved = _resolve_commit(local_worktree, revision)
+    return dict.fromkeys(paths, resolved)
 
 
 def _invalidate_repo_bound_metadata(original: str, updated: str) -> str:

@@ -20,6 +20,7 @@ UWIの回答判定`_is_uwi_answered`は`_uwi_scan`が実体を持つ。PostToolU
 """
 
 import argparse
+import dataclasses
 import datetime
 import os
 import pathlib
@@ -105,6 +106,14 @@ _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "mq": frozenset(("adopt", "reject", "rm")),
 }
 _SPACE_SEPARATED_OPTIONS = frozenset(("--note", "--commit"))
+
+
+@dataclasses.dataclass(frozen=True)
+class _CommitMetadata:
+    """WIの処理結果へ保存する、履歴書換え後も維持されるcommit識別情報。"""
+
+    author_date: str
+    subject: str
 
 
 def is_agent_environment() -> bool:
@@ -535,7 +544,7 @@ def _stamp_result(
     *,
     outcome: str,
     now: datetime.datetime,
-    commit: str | None = None,
+    commit: _CommitMetadata | None = None,
     note: str | None = None,
 ) -> None:
     """対象ファイル末尾へ`## 処理結果`節を追記する。
@@ -554,7 +563,12 @@ def _stamp_result(
         f"- 処理日時: {now.isoformat(timespec='seconds')}",
     ]
     if commit:
-        lines.append(f"- 対応commit: {commit}")
+        lines.extend(
+            (
+                f"- 対応commit作成者日時: {commit.author_date}",
+                f"- 対応commit件名: {commit.subject}",
+            )
+        )
     if note:
         lines.append(f"- メモ: {note}")
     body += "\n".join(lines) + "\n"

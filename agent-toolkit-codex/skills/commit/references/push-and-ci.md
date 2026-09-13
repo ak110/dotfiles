@@ -52,7 +52,7 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 6. 読み込んだ本文書の絶対パスからplugin rootを確定する。
    確定した各`(destination ref, source ref)`について、push前に`uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py`を
    `--write-baseline <手順4で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
-   `wait_ci.py`は確定した`<plugin-root>/scripts/`にあり、
+   `wait_ci.py`は直前のコマンドで確定したパスにあり、
    `<plugin-root>/skills/commit/scripts/`には無い
 
 baseline作成、push、監視の順で実行する。

@@ -86,6 +86,9 @@ def test_transition_explicit_state_contract_matches_web_operations() -> None:
 class TestCommitResolution:
     """採否結果へ記録するrevisionの解決境界を検証する。"""
 
+    _AUTHOR_DATE = "2026-09-13T12:34:56+00:00"
+    _SUBJECT = "fix: WI終端記録を安定化する"
+
     @pytest.mark.parametrize(
         ("action", "destination"),
         [("adopt", "adopted"), ("reject", "rejected")],
@@ -97,7 +100,7 @@ class TestCommitResolution:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """URL形の対象指定でも現在位置の対応作業ツリーでrevisionを完全OIDへ解決する。"""
+        """URL形の対象指定でも現在位置の対応作業ツリーで永続記録用情報を解決する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "awi.md")
         worktree = tmp_path / "worktree"
@@ -113,6 +116,8 @@ class TestCommitResolution:
                 return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
             if "rev-parse" in cmd:
                 return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, f"{self._AUTHOR_DATE}\0{self._SUBJECT}\n", "")
             if cmd == ["git", "rev-list", "--count", "@{u}..HEAD"]:
                 return subprocess.CompletedProcess(cmd, 0, "0\n", "")
             raise AssertionError(cmd)
@@ -133,14 +138,16 @@ class TestCommitResolution:
         assert exc_info.value.code == 0
 
         result = (notes / destination / "awi.md").read_text(encoding="utf-8")
-        assert f"- 対応commit: {full_oid}" in result
+        assert f"- 対応commit作成者日時: {self._AUTHOR_DATE}" in result
+        assert f"- 対応commit件名: {self._SUBJECT}" in result
+        assert full_oid not in result
 
-    def test_matching_worktree_records_full_oid(
+    def test_matching_worktree_records_stable_metadata(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """対応作業ツリーでは短縮revisionを完全OIDへ解決する。"""
+        """対応作業ツリーでは短縮revisionから作成者日時と件名を記録する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "awi.md")
         worktree = tmp_path / "worktree"
@@ -153,6 +160,8 @@ class TestCommitResolution:
                 return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
             if "rev-parse" in cmd:
                 return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, f"{self._AUTHOR_DATE}\0{self._SUBJECT}\n", "")
             raise AssertionError(cmd)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
@@ -164,7 +173,10 @@ class TestCommitResolution:
             commit="abcdef1",
             local_worktree=worktree,
         )
-        assert f"- 対応commit: {full_oid}" in (notes / "adopted/awi.md").read_text(encoding="utf-8")
+        result = (notes / "adopted/awi.md").read_text(encoding="utf-8")
+        assert f"- 対応commit作成者日時: {self._AUTHOR_DATE}" in result
+        assert f"- 対応commit件名: {self._SUBJECT}" in result
+        assert full_oid not in result
 
     @pytest.mark.parametrize("revision", ["missing", "--not-an-option", "blob"])
     def test_invalid_revision_stops_before_mutation(
@@ -203,38 +215,130 @@ class TestCommitResolution:
         assert path.is_file()
         assert not (notes / "rejected/awi.md").exists()
 
-    def test_multiple_repositories_record_values_per_entry(
+    def test_multiple_repositories_stop_before_mutation(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """一致する群だけを完全OID化し、他群は警告後に指定値を保つ。"""
+        """単一作業ツリーで検証できない複数リポジトリは状態変更前に拒否する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "foo.md", target_repo="github.com/example/foo")
         _write_awi_file(notes, "bar.md", target_repo="github.com/example/bar")
         worktree = tmp_path / "worktree"
         worktree.mkdir()
         _disable_transition_git(monkeypatch)
-        full_oid = "b" * 40
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
             if cmd[-3:] == ["remote", "get-url", "origin"]:
                 return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
-            return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            raise AssertionError(cmd)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        mutations.transition_entries(
-            notes,
-            action="adopt",
-            filenames=["foo.md", "bar.md"],
-            now=_FIXED_DT,
-            commit="abcdef1",
-            local_worktree=worktree,
-        )
-        assert f"- 対応commit: {full_oid}" in (notes / "adopted/foo.md").read_text(encoding="utf-8")
-        assert "- 対応commit: abcdef1" in (notes / "adopted/bar.md").read_text(encoding="utf-8")
+        with pytest.raises(SystemExit) as exc_info:
+            mutations.transition_entries(
+                notes,
+                action="adopt",
+                filenames=["foo.md", "bar.md"],
+                now=_FIXED_DT,
+                commit="abcdef1",
+                local_worktree=worktree,
+            )
+        assert exc_info.value.code == 2
+        assert (notes / "inbox/foo.md").is_file()
+        assert (notes / "inbox/bar.md").is_file()
+        assert not (notes / "adopted/foo.md").exists()
+        assert not (notes / "adopted/bar.md").exists()
         assert "github.com/example/bar" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "show_output",
+        [
+            "invalid-date\0fix: subject\n",
+            "2026-09-13T12:34:56+00:00\0\n",
+            "2026-09-13T12:34:56+00:00\0first\nsecond\n",
+        ],
+    )
+    def test_invalid_commit_metadata_stops_before_mutation(
+        self,
+        show_output: str,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """作成者日時又は件名が永続記録に不適切なら状態変更前に拒否する。"""
+        notes = _setup_notes(tmp_path)
+        path = _write_awi_file(notes, "awi.md")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _disable_transition_git(monkeypatch)
+        full_oid = "a" * 40
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            if "rev-parse" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, full_oid + "\n", "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, show_output, "")
+            raise AssertionError(cmd)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(SystemExit) as exc_info:
+            mutations.transition_entries(
+                notes,
+                action="adopt",
+                filenames=["awi.md"],
+                now=_FIXED_DT,
+                commit="abcdef1",
+                local_worktree=worktree,
+            )
+        assert exc_info.value.code == 2
+        assert path.is_file()
+        assert not (notes / "adopted/awi.md").exists()
+
+    def test_rewritten_commits_resolve_to_same_stable_metadata(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """履歴書換えでOIDが変わっても同じ作成者日時と件名を安定識別情報として得る。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "before.md")
+        _write_awi_file(notes, "after.md")
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        _disable_transition_git(monkeypatch)
+        full_oids = {"before": "a" * 40, "after": "b" * 40}
+
+        def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[-3:] == ["remote", "get-url", "origin"]:
+                return subprocess.CompletedProcess(cmd, 0, "https://github.com/example/foo.git\n", "")
+            if "rev-parse" in cmd:
+                revision = cmd[-1].removesuffix("^{commit}")
+                return subprocess.CompletedProcess(cmd, 0, full_oids[revision] + "\n", "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, f"{self._AUTHOR_DATE}\0{self._SUBJECT}\n", "")
+            raise AssertionError(cmd)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        for revision in full_oids:
+            mutations.transition_entries(
+                notes,
+                action="adopt",
+                filenames=[f"{revision}.md"],
+                now=_FIXED_DT,
+                commit=revision,
+                local_worktree=worktree,
+            )
+
+        before = (notes / "adopted/before.md").read_text(encoding="utf-8")
+        after = (notes / "adopted/after.md").read_text(encoding="utf-8")
+
+        assert full_oids["before"] != full_oids["after"]
+        for content in (before, after):
+            assert f"- 対応commit作成者日時: {self._AUTHOR_DATE}" in content
+            assert f"- 対応commit件名: {self._SUBJECT}" in content
+            assert not any(oid in content for oid in full_oids.values())
 
 
 def test_set_dependencies_updates_normal_awi_without_converting_plan(

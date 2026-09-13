@@ -561,7 +561,8 @@ class TestAdoptStampWithoutOptional:
         assert "## 処理結果" in adopted_text
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
-        assert "- 対応commit: " not in adopted_text
+        assert "- 対応commit作成者日時: " not in adopted_text
+        assert "- 対応commit件名: " not in adopted_text
         assert "- メモ: " not in adopted_text
 
 

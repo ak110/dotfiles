@@ -45,12 +45,12 @@ _HOST_ENVIRON = dict(os.environ)
 from agent_toolkit._atk.serve.test_support_test import *  # noqa: F403
 
 
-def test_web_transition_warns_and_records_unverified_commit(
+def test_web_transition_rejects_commit_without_resolvable_worktree(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Web採否はcloneを探索せず、警告後に指定revisionを記録する。"""
+    """Web採否はcommitを検証できる作業ツリーが無ければ状態変更しない。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "awi.md").write_text(
@@ -63,10 +63,11 @@ def test_web_transition_warns_and_records_unverified_commit(
     monkeypatch.setattr(mutations, "_commit_and_push", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(mutations, "_push_pending_commits", lambda _path: None)
 
-    result = serve_app.Operations(tmp_path).transition("adopt", ["awi.md"], commit="abcdef1")
+    with pytest.raises(common.WebInputError, match="指定したエントリを操作できません"):
+        serve_app.Operations(tmp_path).transition("adopt", ["awi.md"], commit="abcdef1")
 
-    assert result == ["awi.md"]
-    assert "- 対応commit: abcdef1" in (tmp_path / "adopted/awi.md").read_text(encoding="utf-8")
+    assert (tmp_path / "inbox/awi.md").is_file()
+    assert not (tmp_path / "adopted/awi.md").exists()
     assert "github.com/example/foo" in capsys.readouterr().err
 
 

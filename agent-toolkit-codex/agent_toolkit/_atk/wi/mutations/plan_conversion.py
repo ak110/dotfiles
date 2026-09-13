@@ -95,7 +95,7 @@ if TYPE_CHECKING:
         _invalidate_repo_bound_metadata,
         _local_worktree_repo_id,
         _resolve_awi_targets,
-        _resolve_commit,
+        _resolve_commit_oid,
         _resolve_conversion_targets,
         _resolve_processable_targets,
         _resolve_active_targets,
@@ -220,7 +220,7 @@ def _resolve_plan_base_commit(plan_path: pathlib.Path, local_worktree: pathlib.P
     candidate = candidates[0].lower()
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", candidate) is None:
         raise WebInputError("計画メタ情報のベースコミットは完全OIDで指定してください")
-    return _resolve_commit(local_worktree, candidate)
+    return _resolve_commit_oid(local_worktree, candidate)
 
 
 _StoredPlanFile = typing.NewType("_StoredPlanFile", str)
