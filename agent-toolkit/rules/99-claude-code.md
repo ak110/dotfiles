@@ -58,7 +58,7 @@ Codexでは、実行中スキルのSKILL.md絶対パスから末尾成分（`ski
   `agent-toolkit:session-review`の起動と`SendMessage`の`to: "main"`による通知の宛先が該当する。
   判定には当該環境変数と自身の起動経路を用いる
 
-`agents_server`の通常起動と軽量起動、及びStop側とSubagentStop側のフックは異なる動作をする。監査記録は`docs/development/audit-records.md`の「agent-toolkit/rules/99-claude-code.md：役割上の区分と実行環境上の区分：2026年9月4日」にある。
+`agents_server`の通常起動と軽量起動、及びStop側とSubagentStop側のフックは異なる動作をする。
 
 配布後の条文配送は次の手順で再検証する。Claude Codeを再起動した後の最上位セッションで、当該セッションのシステム指示を確認する。`agent-toolkit/rules/`直下の3ファイルと`agent-toolkit/share/rules-main.md`及び`agent-toolkit/share/rules-main.claude-code.md`が現れることを、この確認の合格条件とする。続いて同じセッションから`agents_server`の`start_explore`で委譲先を1件起動する。当該委譲先へ配送された規範ファイルの一覧を返させ、前記の5ファイルと`agent-toolkit/share/rules-subagent.md`のいずれもが現れないことを確認する。軽量起動は`setting_sources`を空とし、システム指示へプリセットを用いず固定の起動文だけを渡す。このためフックが追加する条文も`agents_server`が連結する条文も届かない。観測が本項と異なる場合は、当該差分を事象として本節の記述を是正する。
 
