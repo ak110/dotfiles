@@ -13,8 +13,31 @@ def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
         "\n".join(
             json.dumps(value, ensure_ascii=False)
             for value in (
-                {"record": "main", "line": 2, "candidate_kind": "warning", "text": "明確な通知"},
-                {"record": "main", "line": 5, "candidate_kind": "escalation", "text": "失敗"},
+                {
+                    "kind": "candidate",
+                    "locators": [{"record": "main", "line": 2}, {"record": "main", "line": 3}],
+                    "count": 2,
+                    "candidate_kind": "warning",
+                    "text": "明確な通知",
+                },
+                {
+                    "kind": "candidate",
+                    "locators": [{"record": "main", "line": 5}],
+                    "count": 1,
+                    "candidate_kind": "escalation",
+                    "text": "失敗",
+                },
+                {
+                    "kind": "candidate-summary",
+                    "count": 2,
+                    "included_locator_count": 3,
+                    "included_locators": [
+                        {"record": "main", "line": 2},
+                        {"record": "main", "line": 3},
+                        {"record": "main", "line": 5},
+                    ],
+                    "excluded": {"initial-request": 1},
+                },
             )
         )
         + "\n",
@@ -24,8 +47,12 @@ def _inputs(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib
     decisions.write_text(
         json.dumps(
             [
-                {"record": "main", "line": 2, "disposition": "excluded", "reason": "期待された通知"},
-                {"record": "main", "line": 5, "disposition": "analyzed", "analysis_id": "a1"},
+                {
+                    "locators": [{"record": "main", "line": 2}, {"record": "main", "line": 3}],
+                    "disposition": "excluded",
+                    "reason": "期待された通知",
+                },
+                {"locators": [{"record": "main", "line": 5}], "disposition": "analyzed", "analysis_id": "a1"},
             ],
             ensure_ascii=False,
         ),
@@ -85,12 +112,49 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     content = paths[-1].read_text(encoding="utf-8")
     assert "main:2" in content and "一次選別で除外" in content
     assert "main:5" in content and "事前検査不足" in content
-    assert "候補2件、過不足0件、重複0件" in content
+    assert "候補2件、locator3件、過不足0件、重複0件" in content
 
 
 def test_missing_decision_is_rejected(tmp_path: pathlib.Path) -> None:
     paths = _inputs(tmp_path)
     paths[1].write_text("[]", encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2
+    assert not paths[-1].exists()
+
+
+def test_missing_aggregated_locator_is_rejected(tmp_path: pathlib.Path) -> None:
+    paths = _inputs(tmp_path)
+    candidates = paths[0].read_text(encoding="utf-8").splitlines()
+    summary = json.loads(candidates[-1])
+    summary["included_locators"].pop()
+    candidates[-1] = json.dumps(summary, ensure_ascii=False)
+    paths[0].write_text("\n".join(candidates) + "\n", encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2
+    assert not paths[-1].exists()
+
+
+@pytest.mark.parametrize("field", ("count", "included_locator_count"))
+def test_incorrect_summary_count_is_rejected(tmp_path: pathlib.Path, field: str) -> None:
+    paths = _inputs(tmp_path)
+    candidates = paths[0].read_text(encoding="utf-8").splitlines()
+    summary = json.loads(candidates[-1])
+    summary[field] += 1
+    candidates[-1] = json.dumps(summary, ensure_ascii=False)
+    paths[0].write_text("\n".join(candidates) + "\n", encoding="utf-8")
+
+    assert report.main(_argv(paths, "generate")) == 2
+    assert not paths[-1].exists()
+
+
+def test_incorrect_candidate_count_is_rejected(tmp_path: pathlib.Path) -> None:
+    paths = _inputs(tmp_path)
+    candidates = paths[0].read_text(encoding="utf-8").splitlines()
+    candidate = json.loads(candidates[0])
+    candidate["count"] += 1
+    candidates[0] = json.dumps(candidate, ensure_ascii=False)
+    paths[0].write_text("\n".join(candidates) + "\n", encoding="utf-8")
 
     assert report.main(_argv(paths, "generate")) == 2
     assert not paths[-1].exists()

@@ -76,8 +76,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
     "atk wi rm": {
-        "summary": "指定項目または未処理・処理中の項目を削除する",
-        "description": "目的: 指定した項目、又は対象リポジトリの未処理と処理中の項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。`--all`では削除の前に対象を一覧表示する。\n前提: 個別削除ではinbox・processing・holdのFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
+        "summary": "指定項目またはフィルターに一致する項目を削除する",
+        "description": "目的: 指定した項目、又は対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`及び`--source`で候補を限定し、削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
         "epilog": "実行例:\n\n  atk wi rm 20260901-072734-001.md",
     },
     "atk wi edit": {

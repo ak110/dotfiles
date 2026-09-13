@@ -683,6 +683,39 @@ async def test_uwi_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_remove_api_uses_user_permissions_for_terminal_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Web APIは実行環境変数にかかわらず人間主体として終端状態を削除する。"""
+
+    @contextlib.contextmanager
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Iterator[None]:
+        yield
+
+    for module in (common, serve_app.awi_mutations):
+        monkeypatch.setattr(module, "_repo_lock", lock, raising=False)
+        monkeypatch.setattr(module, "_pull", lambda _path: None, raising=False)
+        monkeypatch.setattr(module, "_commit_and_push", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(module, "_push_pending_commits", lambda _path: None, raising=False)
+    monkeypatch.setenv("AI_AGENT", "1")
+    adopted = tmp_path / "adopted"
+    adopted.mkdir()
+    content = "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n本文\n"
+    target = adopted / "entry.md"
+    target.write_text(content, encoding="utf-8")
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+
+    response = await app.test_client().post(
+        "/api/entries/remove",
+        json={"filenames": [target.name], "state": "adopted", "expected_content": content, "force": False},
+    )
+
+    assert response.status_code == 200
+    assert not target.exists()
+
+
+@pytest.mark.asyncio
 async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

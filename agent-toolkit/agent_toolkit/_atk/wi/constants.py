@@ -41,6 +41,18 @@ WI_EDITABLE_STATES = (WI_STATE_HOLD, WI_STATE_PROCESSING, WI_STATE_INBOX)
 WI_PROCESSABLE_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING)
 """自動処理へ渡せる一覧集合。着手可否は別途判定する。"""
 
+WI_AGENT_REMOVABLE_STATES = (WI_STATE_INBOX, WI_STATE_HOLD)
+"""エージェント環境から削除できる状態。"""
+
+WI_USER_REMOVABLE_STATES = (
+    WI_STATE_PROCESSING,
+    WI_STATE_INBOX,
+    WI_STATE_HOLD,
+    WI_STATE_ADOPTED,
+    WI_STATE_REJECTED,
+)
+"""ユーザー環境から暗黙解決する削除状態。先頭ほど同名項目の解決を優先する。"""
+
 TRANSITION_EXPLICIT_STATES = {
     "start-processing": (WI_STATE_HOLD,),
     "return-to-inbox": (WI_STATE_REJECTED,),

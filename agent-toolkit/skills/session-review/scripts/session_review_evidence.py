@@ -2049,6 +2049,9 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
                             "record": item.record_id,
                             "line": record.line,
                             "text": key.kind_text,
+                            "hook": key.hook,
+                            "hook_name": key.hook_name,
+                            "tag": key.tag,
                         }
                     )
     return events
@@ -2610,9 +2613,16 @@ def _candidate_events(
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """一次選別へ渡す全候補をイベント位置ごとに1件へ正規化する。"""
-    candidates: list[dict[str, Any]] = []
+    """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。"""
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     seen: set[tuple[str, int]] = set()
+    excluded: collections.Counter[str] = collections.Counter()
+    first_main_user: tuple[str, int] | None = None
+    for event in timeline:
+        line = event.get("line")
+        if event.get("kind") == "user" and event.get("record") == "main" and isinstance(line, int):
+            first_main_user = ("main", line)
+            break
     sources = (
         ("user-intervention", (event for event in timeline if event.get("kind") == "user")),
         ("escalation", (event for event in timeline if event.get("kind") == "failed-tool")),
@@ -2629,12 +2639,89 @@ def _candidate_events(
             if locator in seen:
                 continue
             seen.add(locator)
-            candidate = {"kind": "candidate", "candidate_kind": candidate_kind, "record": record, "line": line}
             text = event.get("text")
-            if isinstance(text, str):
-                candidate["text"] = text
-            candidates.append(candidate)
-    return candidates
+            normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
+            if candidate_kind == "user-intervention":
+                exclusion = _user_candidate_exclusion(record, line, normalized_text, first_main_user)
+                if exclusion is not None:
+                    excluded[exclusion] += 1
+                    continue
+            key = _candidate_key(candidate_kind, event, normalized_text)
+            groups.setdefault(key, []).append(event)
+
+    candidates: list[dict[str, Any]] = []
+    included_locators: list[dict[str, Any]] = []
+    for key, events in sorted(groups.items()):
+        locators = sorted(
+            ({"record": str(event["record"]), "line": int(event["line"])} for event in events),
+            key=lambda locator: (locator["record"], locator["line"]),
+        )
+        included_locators.extend(locators)
+        candidate: dict[str, Any] = {
+            "kind": "candidate",
+            "candidate_kind": key[0],
+            "event_key": list(key[1:]),
+            "count": len(locators),
+            "locators": locators,
+        }
+        text = events[0].get("text")
+        if isinstance(text, str):
+            candidate["text"] = text
+        candidates.append(candidate)
+    included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
+    return [
+        *candidates,
+        {
+            "kind": "candidate-summary",
+            "count": len(candidates),
+            "included_locator_count": len(included_locators),
+            "included_locators": included_locators,
+            "excluded": dict(sorted(excluded.items())),
+        },
+    ]
+
+
+def _user_candidate_exclusion(
+    record: str,
+    line: int,
+    text: str,
+    first_main_user: tuple[str, int] | None,
+) -> str | None:
+    """構造と固定接頭辞だけで利用者介入ではない入力を分類する。"""
+    if record != "main":
+        return "delegated-record"
+    if text.startswith(
+        (
+            "<system-reminder>",
+            "[COMPACTION RECOVERY]",
+            "This session is being continued",
+            "<normative-context",
+            "<task-notification>",
+        ),
+    ):
+        return "runtime-inserted"
+    if text.startswith("質問:") and "回答:" in text:
+        return "question-answer"
+    if first_main_user == (record, line):
+        return "initial-request"
+    return None
+
+
+def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
+    """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。"""
+    if candidate_kind == "hook-notice":
+        return (
+            candidate_kind,
+            str(event.get("hook", "")),
+            str(event.get("hook_name", "")),
+            str(event.get("tag", "")),
+            normalized_text,
+        )
+    if candidate_kind == "escalation":
+        raw_text = event.get("text")
+        first_line = " ".join(raw_text.splitlines()[0].split()) if isinstance(raw_text, str) and raw_text.splitlines() else ""
+        return candidate_kind, str(event.get("tool", "")), first_line
+    return candidate_kind, normalized_text
 
 
 def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:

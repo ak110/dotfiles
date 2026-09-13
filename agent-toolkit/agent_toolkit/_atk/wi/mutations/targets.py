@@ -411,19 +411,26 @@ def _resolve_active_targets(
     processing_dir: pathlib.Path,
     *,
     missing_is_conflict: bool = False,
+    states: tuple[str, ...] | None = None,
 ) -> list[pathlib.Path]:
-    """未終端の対象をprocessing、inbox、holdの優先順で解決する。
+    """対象を指定状態の優先順で解決する。
 
     `rm`と`set-dependencies`のように、保存状態を変えずに未終端の項目へ作用する操作が使う。
+    `states`省略時は従来どおりprocessing、inbox、holdの順で解決する。
     """
+    state_names = states or (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
     resolved: list[pathlib.Path] = []
     missing: list[str] = []
     for name in filenames:
         normalized = _validate_filename(name, inbox_dir).name
         candidates = (
-            processing_dir / normalized,
-            inbox_dir / normalized,
-            inbox_dir.parent / WI_STATE_HOLD / normalized,
+            tuple(inbox_dir.parent / state_name / normalized for state_name in states)
+            if states is not None
+            else (
+                processing_dir / normalized,
+                inbox_dir / normalized,
+                inbox_dir.parent / WI_STATE_HOLD / normalized,
+            )
         )
         path = next((candidate for candidate in candidates if candidate.exists()), None)
         if path is None:
@@ -434,7 +441,7 @@ def _resolve_active_targets(
         if missing_is_conflict:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
         for name in missing:
-            print(f"inbox・processing・holdのいずれにも存在しません: {name}", file=sys.stderr)
+            print(f"{'・'.join(state_names)}のいずれにも存在しません: {name}", file=sys.stderr)
         sys.exit(2)
     return resolved
 

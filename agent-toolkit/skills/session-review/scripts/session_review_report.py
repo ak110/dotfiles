@@ -39,11 +39,21 @@ def _load_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
     return values
 
 
-def _locator(value: dict[str, Any]) -> str:
-    record, line = value.get("record"), value.get("line")
-    if not isinstance(record, str) or not isinstance(line, int):
-        raise ReportError("候補又は判定にrecordとlineがない")
-    return f"{record}:{line}"
+def _locators(value: dict[str, Any]) -> tuple[str, ...]:
+    raw_locators = value.get("locators")
+    if not isinstance(raw_locators, list) or not raw_locators:
+        raise ReportError("候補又は判定にlocatorsがない")
+    locators: list[str] = []
+    for locator in raw_locators:
+        if not isinstance(locator, dict):
+            raise ReportError("locatorがJSON objectではない")
+        record, line = locator.get("record"), locator.get("line")
+        if not isinstance(record, str) or not isinstance(line, int):
+            raise ReportError("locatorにrecordとlineがない")
+        locators.append(f"{record}:{line}")
+    if locators != sorted(set(locators)):
+        raise ReportError("locatorsが安定順でないか重複している")
+    return tuple(locators)
 
 
 def _seconds(value: dict[str, Any], phase: str) -> float:
@@ -65,38 +75,54 @@ def render(
     timings: dict[str, dict[str, Any]],
 ) -> str:
     """全候補を過不足なく含むMarkdown報告を返す。"""
-    candidate_by_locator = {_locator(item): item for item in candidates}
-    if len(candidate_by_locator) != len(candidates):
-        raise ReportError("候補locatorが重複している")
-    decision_by_locator = {_locator(item): item for item in decisions}
-    if len(decision_by_locator) != len(decisions):
-        raise ReportError("判定locatorが重複している")
-    if decision_by_locator.keys() != candidate_by_locator.keys():
-        missing = sorted(candidate_by_locator.keys() - decision_by_locator.keys())
-        extra = sorted(decision_by_locator.keys() - candidate_by_locator.keys())
+    summaries = [item for item in candidates if item.get("kind") == "candidate-summary"]
+    candidate_items = [item for item in candidates if item.get("kind") == "candidate"]
+    if len(summaries) != 1 or len(candidate_items) + 1 != len(candidates):
+        raise ReportError("候補入力はcandidateと末尾のcandidate-summaryだけを含める")
+    candidate_by_locators = {_locators(item): item for item in candidate_items}
+    if len(candidate_by_locators) != len(candidate_items):
+        raise ReportError("候補locatorsが重複している")
+    for locators, candidate in candidate_by_locators.items():
+        if candidate.get("count") != len(locators):
+            raise ReportError("候補countがlocatorsの件数と一致しない")
+    decision_by_locators = {_locators(item): item for item in decisions}
+    if len(decision_by_locators) != len(decisions):
+        raise ReportError("判定locatorsが重複している")
+    if decision_by_locators.keys() != candidate_by_locators.keys():
+        missing = sorted(candidate_by_locators.keys() - decision_by_locators.keys())
+        extra = sorted(decision_by_locators.keys() - candidate_by_locators.keys())
         raise ReportError(f"候補と判定が一致しない: missing={missing}, extra={extra}")
+    flattened = sorted(locator for locators in candidate_by_locators for locator in locators)
+    summary_locators = _locators({"locators": summaries[0].get("included_locators")}) if flattened else ()
+    if tuple(flattened) != summary_locators:
+        raise ReportError("集約候補の全locatorが一次選別集合と一致しない")
+    if summaries[0].get("count") != len(candidate_items):
+        raise ReportError("candidate-summaryのcountが候補件数と一致しない")
+    if summaries[0].get("included_locator_count") != len(flattened):
+        raise ReportError("candidate-summaryのlocator件数が一致しない")
     if tuple(timings) != PHASES:
         raise ReportError("工程時刻は規定の6工程を順序どおり含める")
 
     rows: list[str] = []
-    for locator, candidate in candidate_by_locator.items():
-        decision = decision_by_locator[locator]
+    for locators, candidate in candidate_by_locators.items():
+        locator_text = ", ".join(locators)
+        decision = decision_by_locators[locators]
         disposition = decision.get("disposition")
         if disposition == "excluded":
             reason = decision.get("reason")
             if not isinstance(reason, str) or not reason.strip():
-                raise ReportError(f"{locator}: 一次選別の除外理由がない")
+                raise ReportError(f"{locator_text}: 一次選別の除外理由がない")
             cells = (reason, "一次選別で除外", "一次選別で除外", "一次選別で除外", "一次選別で除外")
         elif disposition == "analyzed":
             analysis_id = decision.get("analysis_id")
             analysis = analyses.get(analysis_id) if isinstance(analysis_id, str) else None
             if not isinstance(analysis, dict):
-                raise ReportError(f"{locator}: 完全分析が見つからない")
+                raise ReportError(f"{locator_text}: 完全分析が見つからない")
             missing_fields = [
                 field for field in ANALYSIS_FIELDS if not isinstance(analysis.get(field), str) or not analysis[field].strip()
             ]
             if missing_fields:
-                raise ReportError(f"{locator}: 完全分析の必須欄がない: {missing_fields}")
+                raise ReportError(f"{locator_text}: 完全分析の必須欄がない: {missing_fields}")
             cells = (
                 str(decision.get("defect", "要処置")),
                 analysis["direct_cause"],
@@ -105,9 +131,9 @@ def render(
                 analysis["action"],
             )
         else:
-            raise ReportError(f"{locator}: dispositionが不正である")
+            raise ReportError(f"{locator_text}: dispositionが不正である")
         summary = str(candidate.get("text", candidate.get("candidate_kind", "候補"))).replace("|", "\\|")
-        rows.append("| " + " | ".join((f"{locator} {summary}", *cells)) + " |")
+        rows.append("| " + " | ".join((f"{locator_text} {summary}", *cells)) + " |")
 
     timing_rows = [f"| {phase} | {_seconds(timings[phase], phase):.3f} |" for phase in PHASES]
     return "\n".join(
@@ -126,7 +152,7 @@ def render(
             "| --- | ---: |",
             *timing_rows,
             "",
-            f"構造検査: 候補{len(candidates)}件、過不足0件、重複0件",
+            f"構造検査: 候補{len(candidate_items)}件、locator{len(flattened)}件、過不足0件、重複0件",
             "",
         ]
     )

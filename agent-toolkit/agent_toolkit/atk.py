@@ -69,9 +69,7 @@ from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402
 _queue_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _processable_filename_completer = _common.make_filename_completer(_common.WI_PROCESSABLE_STATES)
 _editable_filename_completer = _common.make_filename_completer(_common.WI_EDITABLE_STATES)
-_removable_filename_completer = _common.make_filename_completer(
-    (_common.WI_STATE_INBOX, _common.WI_STATE_PROCESSING, _common.WI_STATE_HOLD)
-)
+_removable_filename_completer = _common.make_filename_completer(_common.WI_STATES)
 _hold_filename_completer = _common.make_filename_completer((_common.WI_STATE_HOLD,))
 _inbox_filename_completer = _common.make_filename_completer((_common.WI_STATE_INBOX,))
 _processing_filename_completer = _common.make_filename_completer((_common.WI_STATE_PROCESSING,))
@@ -552,7 +550,27 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     rm.add_argument(
         "--all",
         action="store_true",
-        help="--target-repoと完全一致するinbox・processingの全項目を一覧表示後に削除する。",
+        help="--target-repoとフィルターに一致する全項目を一覧表示後に削除する。",
+    )
+    rm.add_argument("--type", choices=("all", *_common.WI_TYPES), default="all", help="--allの対象種別（既定: all）。")
+    rm.add_argument(
+        "--status",
+        choices=("all", "active", "processable", *_common.WI_STATES),
+        default="active",
+        help="--allの対象状態（既定: active）。listと同じ集合名を受理する。",
+    )
+    rm.add_argument(
+        "--answered",
+        choices=("all", "yes", "no"),
+        default="all",
+        help="--allのUWI回答状況（既定: all）。",
+    )
+    _add_source_arg(rm)
+    rm.add_argument(
+        "--state",
+        choices=_common.WI_STATES,
+        default=None,
+        help="個別削除で探索する状態を明示する。--allとは併用できない。",
     )
     rm.add_argument(
         "--yes",
@@ -852,6 +870,8 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
             args.subparser.error("FILENAMEと--allは同時に指定できません。")
         if args.target_repo is None:
             args.subparser.error("--allには--target-repoが必要です。")
+        if args.state is not None:
+            args.subparser.error("--stateは--allと併用できません。")
         return
     if not args.filenames:
         args.subparser.error("削除するFILENAME、または--allを指定してください。")
@@ -859,6 +879,9 @@ def _validate_rm_args(args: argparse.Namespace) -> None:
         args.subparser.error("--yesは--allとともに指定してください。")
     if args.skip_pull:
         args.subparser.error("--skip-pullは--allとともに指定してください。")
+    non_all_filters = args.type != "all" or args.status != "active" or args.answered != "all" or args.source is not None
+    if non_all_filters:
+        args.subparser.error("--type・--status・--answered・--sourceは--allとともに指定してください。")
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:

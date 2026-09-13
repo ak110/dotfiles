@@ -5156,12 +5156,14 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         assert {"kind": "bundle-file", "path": str(path.resolve()), "count": len(single)} in bundle_events
 
     candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert [(item["record"], item["line"], item["candidate_kind"]) for item in candidates] == [
-        ("main", 1, "user-intervention"),
-        ("main", 4, "escalation"),
-        ("main", 5, "warning"),
-        ("main", 6, "hook-notice"),
+    candidate_items = [item for item in candidates if item["kind"] == "candidate"]
+    assert [(item["locators"], item["candidate_kind"]) for item in candidate_items] == [
+        ([{"record": "main", "line": 4}], "escalation"),
+        ([{"record": "main", "line": 6}], "hook-notice"),
+        ([{"record": "main", "line": 5}], "warning"),
     ]
+    assert candidates[-1]["excluded"] == {"initial-request": 1}
+    assert candidates[-1]["included_locator_count"] == 3
     assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 4} in bundle_events
 
     assert {event["event_kind"]: event["count"] for event in bundle_events if event["kind"] == "bundle-kind-count"} == {

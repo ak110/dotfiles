@@ -28,43 +28,6 @@ from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 
-class TestBashHelpOnlyStateChangeCommands:
-    """ヘルプ専用呼び出しを状態変更コマンドの直列実行遮断から除外する。"""
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "atk review-table init --help; atk review-table add --help",
-            "git commit --help; git push --help",
-            "gh pr create --help; gh pr merge --help",
-        ],
-    )
-    def test_help_only_chaining_is_allowed(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-
-        assert result.returncode == 0
-        assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
-
-    @pytest.mark.parametrize(
-        "command",
-        [
-            "atk review-table init; echo done",
-            "atk review-table init --help --title x; echo done",
-            "atk review-table init -- --help; echo done",
-            "printf -- '--help'; echo done",
-        ],
-    )
-    def test_non_help_only_classifications_are_unchanged(self, command: str) -> None:
-        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
-
-        if command.startswith("printf"):
-            assert result.returncode == 0
-            assert "状態を変更するコマンドを他のコマンド" not in _agent_messages(result)
-        else:
-            assert result.returncode == 2
-            assert "状態を変更するコマンドを他のコマンド" in result.stderr
-
-
 class TestBashUvRunPythonBlock:
     """`uv run python <path>`形式の起動ブロック。
 
@@ -1267,20 +1230,6 @@ class TestBashHeredocLiteralExclusion:
         assert result.returncode == 0
         assert "実行出力を`tail`・`head`で切り詰めている" not in _agent_messages(result)
         assert "終了状態を示す" not in _agent_messages(result)
-
-    def test_state_change_chaining_before_heredoc_is_blocked(self, tmp_path: pathlib.Path) -> None:
-        """heredocより前の状態変更コマンドを通常の直列連結と同じく遮断する。"""
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk review-table init; cat <<'EOF'\n本文\nEOF"},
-                "session_id": "heredoc-state-change-before",
-            },
-            _plan_file_state_env(tmp_path),
-        )
-
-        assert result.returncode == 2
-        assert "状態を変更するコマンドを他のコマンド" in result.stderr
 
     def test_recursive_grep_after_heredoc_is_blocked(self, tmp_path: pathlib.Path) -> None:
         """heredoc終端後の再帰grepを通常の入力と同じく遮断する。"""

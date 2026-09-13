@@ -39,6 +39,7 @@ from agent_toolkit._atk.wi import legacy as _atk_wi_legacy
 from agent_toolkit._atk.wi.constants import (
     TRANSITION_EXPLICIT_STATES,
     WI_ACTIVE_STATES,
+    WI_AGENT_REMOVABLE_STATES,
     WI_EDITABLE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
@@ -50,6 +51,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_TYPE_AWI,
     WI_TYPE_UWI,
     WI_TYPES,
+    WI_USER_REMOVABLE_STATES,
     normalized_wi_type,
 )
 from agent_toolkit._atk.wi.formatters import (
@@ -69,6 +71,7 @@ from agent_toolkit._git import remote as _git_remote
 __all__ = [
     "TRANSITION_EXPLICIT_STATES",
     "WI_ACTIVE_STATES",
+    "WI_AGENT_REMOVABLE_STATES",
     "WI_EDITABLE_STATES",
     "WI_PROCESSABLE_STATES",
     "WI_STATES",
@@ -78,6 +81,7 @@ __all__ = [
     "WI_STATE_PROCESSING",
     "WI_STATE_REJECTED",
     "WI_TYPES",
+    "WI_USER_REMOVABLE_STATES",
     "normalized_wi_type",
     "WI_TYPE_AWI",
     "WI_TYPE_UWI",
