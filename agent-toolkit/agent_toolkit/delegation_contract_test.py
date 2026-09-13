@@ -249,13 +249,14 @@ def test_human_decision_persistence_reaches_completion_gate() -> None:
 
 
 def test_completion_report_always_runs_session_review() -> None:
-    """完了報告はprocess-loop例外以外でsession reviewを起動する。"""
+    """完了報告は例外を設けずsession reviewを起動する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     completion = (plugin_root / "skills" / "completion-report" / "SKILL.md").read_text(encoding="utf-8")
 
     assert "4. `agent-toolkit:session-review`を起動する。" in completion
-    assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1" in completion
+    assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION" not in completion
     assert "条件非該当のため省略" not in completion
+    assert "- session-review: [実施結果 / 分析未完了とUWI]" in completion
 
 
 def test_plan_refactoring_example_and_large_output_examples_are_explicit() -> None:
