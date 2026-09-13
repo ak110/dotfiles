@@ -149,12 +149,17 @@ def _target(process: psutil.Process) -> Target | None:
         argv = process.cmdline()
         executable = pathlib.Path(process.exe()).resolve()
         stat = executable.stat()
-        basename = executable.name.lower()
-        if basename in {"codex", "codex.exe"}:
+        # 実体の名前は導入形態により対話CLIの名前と一致しない。
+        # Claude Codeのネイティブ導入では実体が版数名のファイルであり、
+        # npm導入ではNode.jsの実体となるため、argv[0]の名前も判定材料へ含める。
+        names = {executable.name.lower()}
+        if argv:
+            names.add(pathlib.Path(argv[0]).name.lower())
+        if names & {"codex", "codex.exe"}:
             if not sys.platform.startswith("linux") or process.terminal() in {None, "", "?"} or not is_interactive_codex(argv):
                 return None
             host = "codex"
-        elif basename in {"claude", "claude.exe", "claude-code", "claude-code.exe"}:
+        elif names & {"claude", "claude.exe", "claude-code", "claude-code.exe"}:
             host = "claude"
         else:
             return None
