@@ -608,7 +608,7 @@ def _windows_reparse_entry(
     try:
         stored_target = os.readlink(path)
         target = _windows_stored_path(stored_target)
-        root = _windows_stored_path(os.path.realpath(managed_root))
+        root = _windows_stored_path(str(managed_root))
     except (OSError, ValueError):
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}") from None
     if not target.is_absolute() or not target.is_relative_to(root):

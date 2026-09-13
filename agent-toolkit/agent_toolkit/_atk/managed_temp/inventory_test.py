@@ -214,7 +214,7 @@ class TestManagedTempWindows:
         directory: bool,
     ) -> None:
         """管理root内を指すfile・directory symlinkはリンク先を保持して回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(subject, "_temp_root_path", lambda: tmp_path)
         target = subject.create_managed_temp("windows-symlink")
         destination = tmp_path / "symlink-destination"
         if directory:
@@ -644,7 +644,7 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """管理root内を指すJunctionはリンク先を保持して回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(subject, "_temp_root_path", lambda: tmp_path)
         target = subject.create_managed_temp("windows-junction")
         destination = tmp_path / "junction-destination"
         destination.mkdir()
@@ -665,7 +665,7 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """多階層のJunctionを深い順に解除し、列挙順へ依存しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr(subject, "_temp_root_path", lambda: tmp_path)
         target = subject.create_managed_temp("windows-nested-junctions")
         first_destination = tmp_path / "z-destination"
         second_destination = tmp_path / "a-destination"
@@ -690,7 +690,7 @@ class TestManagedTempWindows:
         """格納値だけを検証し、到達不能なリンク先へ削除を波及させない。"""
         managed_root = tmp_path / "managed-root"
         managed_root.mkdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
+        monkeypatch.setattr(subject, "_temp_root_path", lambda: managed_root)
         target = subject.create_managed_temp("windows-broken-junction")
         destination = managed_root / "removed-destination"
         destination.mkdir()
