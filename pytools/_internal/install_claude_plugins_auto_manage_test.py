@@ -87,9 +87,8 @@ class TestAutoDisablePlugins:
 
     _DISABLE_TARGET = "serena@claude-plugins-official"
 
-    # インストールループを素通りさせるためのダミーエントリ名 (marketplace suffix なし)。
-    # target_versions に1件以上ないと run() が早期リターンするため必要。
-    _DUMMY_PLUGIN = "dummy"
+    # target_versions と deprecated_names がともに空だと run() が早期リターンするため必要。
+    _DEPRECATED_SENTINEL = "deprecated-sentinel"
 
     def _setup_run(
         self,
@@ -101,16 +100,14 @@ class TestAutoDisablePlugins:
     ) -> list[list[str]]:
         """``run()`` を最小限の前提で動かし、CLI 呼び出しリストを返す。
 
-        ``_read_target_info`` はダミー 1 件の targets を返す設定にして dotfiles
-        プラグインの install/update ループを「最新」スルーで無害化する。
+        ``_read_target_info`` は未導入のdeprecated対象だけを返し、管理対象pluginの
+        install/updateと完了検証をこのテストの責務から分離する。
         """
         monkeypatch.setattr(_claude_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-        # target_versions が空だと run() が早期リターンするため1件設定する。
-        # インストールループは CLI リストにダミーを含めることで「最新」スルーになる。
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
-            lambda _root: ({self._DUMMY_PLUGIN: None}, set()),
+            lambda _root: ({}, {self._DEPRECATED_SENTINEL}),
         )
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
@@ -129,10 +126,7 @@ class TestAutoDisablePlugins:
         )
 
         calls: list[list[str]] = []
-        # ダミープラグインをインストール済み扱いにして install ループを素通りさせる。
-        # id は `<name>@<marketplace>` 形式。_extract_plugin_version_map が @ 前を name として使う。
-        dummy_entry = {"id": f"{self._DUMMY_PLUGIN}@{_claude_common.MARKETPLACE_NAME}", "scope": "user", "version": "1.0.0"}
-        raw_list = [dummy_entry] + [{"id": pid, "scope": "user", "version": "1.0.0"} for pid in installed_ids]
+        raw_list = [{"id": pid, "scope": "user", "version": "1.0.0"} for pid in installed_ids]
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
@@ -207,9 +201,7 @@ class TestAutoDisablePlugins:
         )
 
         # _setup_run() の fake_run を上書きし、disable コマンドだけ失敗レスポンスを返す形に差し替える。
-        # ダミープラグインと disable 対象の両方をインストール済み扱いにする
         raw_list = [
-            {"id": f"{self._DUMMY_PLUGIN}@{_claude_common.MARKETPLACE_NAME}", "scope": "user", "version": "1.0.0"},
             {"id": self._DISABLE_TARGET, "scope": "user", "version": "1.0.0"},
         ]
 
@@ -248,8 +240,11 @@ class TestRunAutoDisable:
         )
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
-        # settings.json の読み取りは None (既定で有効扱い) で固定する
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_read_enabled_plugins_from_file",
+            lambda: {"agent-toolkit@ak110-dotfiles": True},
+        )
         # 有効化対象の自動 install/enable には立ち入らないよう空集合にする
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset()
@@ -299,8 +294,14 @@ class TestRunNoAutomaticStateChange:
         )
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
-        # settings.json の読み取りは None (未設定扱い) で固定してテスト環境差を排除する
-        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: None)
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_read_enabled_plugins_from_file",
+            lambda: {
+                "agent-toolkit@ak110-dotfiles": True,
+                "sample-plugin@ak110-dotfiles": True,
+            },
+        )
         # 有効化対象を全て未インストール状態に限定して検証する
         target_enable = "context7@claude-plugins-official"
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
@@ -346,6 +347,7 @@ class TestExternalMarketplaces:
         monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, set()))
         calls: list[list[str]] = []
         marketplace_added = False
+        installed_plugin_ids = {self._TARGET[2]} if installed else set()
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             nonlocal marketplace_added
@@ -357,11 +359,13 @@ class TestExternalMarketplaces:
                 )
                 return _FakeResult(returncode=0, stdout=json.dumps(marketplaces))
             if command_matches(cmd, ["claude", "plugin", "list"]):
-                plugins = [{"id": self._TARGET[2], "scope": "user"}] if installed else []
+                plugins = [{"id": plugin_id, "scope": "user"} for plugin_id in sorted(installed_plugin_ids)]
                 return _FakeResult(returncode=0, stdout=json.dumps(plugins))
             if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
                 marketplace_added = add_succeeds
                 return _FakeResult(returncode=0 if add_succeeds else 1, stderr="登録失敗")
+            if command_matches(cmd, ["claude", "plugin", "install"]):
+                installed_plugin_ids.add(cmd[3])
             return _FakeResult(returncode=0)
 
         monkeypatch.setattr(_claude_common.subprocess, "run", fake_run)
@@ -374,7 +378,7 @@ class TestExternalMarketplaces:
 
         assert changed is True
         assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls
-        assert ["claude", "plugin", "install", self._TARGET[2], "--scope=user"] in calls
+        assert ["claude", "plugin", "install", self._TARGET[2], "--scope=user", "-y"] in calls
         assert sum(command_matches(call, ["claude", "plugin", "marketplace", "list"]) for call in calls) == 2
 
     def test_skips_when_already_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -411,11 +415,15 @@ class TestExternalMarketplaces:
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        monkeypatch.setattr(_install_claude_plugins, "_warn_if_missing", lambda _targets: None)
+        monkeypatch.setattr(
+            _install_claude_plugins,
+            "_read_enabled_plugins_from_file",
+            lambda: {"dummy@ak110-dotfiles": True},
+        )
 
         changed, _ = _install_claude_plugins.run()
 
         assert changed is True
         assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls
-        assert ["claude", "plugin", "install", "dummy@ak110-dotfiles", "--scope=user"] in calls
+        assert ["claude", "plugin", "install", "dummy@ak110-dotfiles", "--scope=user", "-y"] in calls
         assert "marketplace登録に失敗したためスキップ" in caplog.text
