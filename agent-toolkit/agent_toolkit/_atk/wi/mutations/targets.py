@@ -148,6 +148,8 @@ def _candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
@@ -164,6 +166,8 @@ def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
             ["git", "-C", str(local_worktree), "remote", "get-url", "origin"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
@@ -192,6 +196,8 @@ def _resolve_commit(local_worktree: pathlib.Path, revision: str) -> str:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_GIT_TIMEOUT_SECONDS,
         )
@@ -268,6 +274,8 @@ def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> 
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if not status.stdout.strip():
             _push_pending_commits(private_notes)
@@ -458,6 +466,8 @@ def _git_head(private_notes: pathlib.Path) -> str:
         cwd=private_notes,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     commit = result.stdout.strip()

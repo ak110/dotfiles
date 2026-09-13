@@ -28,6 +28,9 @@
 - 直前にpushした完全OID。当該セッションで未pushの場合は`なし`
 - `固有の終端工程`: 選定工程で記録した固有の終端工程と依存順。無い場合は`なし`
 - `延期adopt`: 対象AWIファイル名、先行する終端工程及び`deferred_adopt_commits`で当該AWIに対応付けて検収した完全OID。無い場合は`なし`
+- `検証・CI方針`: 通常は`通常`。`agent-toolkit:process-wi`の「局所変更の即時公開」が成立する場合だけ`即時対応`
+- `近接検証結果`: `即時対応`では成功したコマンドと終了コード。`通常`では`なし`
+- `正式対応AWI`: `即時対応`では登録済みAWIのファイル名。`通常`では`なし`
 - `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 - `権限`: 作業対象リポジトリへの書込みと`git push`可、固有の終端工程が明示する範囲でのタグ作成とrelease作成可
 - 完了報告と成果物を日本語で書くこと
@@ -37,8 +40,9 @@
 `終端完了`に続く8行を受領し、次のとおり照合する。いずれかが一致しない場合は同じ終端担当へ差し戻し、成果物と実装差分の再読解をしない。
 
 - `git -C <対象リポジトリの絶対パス> rev-parse <ベースbranch名>`と`git -C <対象リポジトリの絶対パス> rev-parse <ベースbranchのリモート追跡ref>`の出力が、いずれも`final_branch_head`と一致する
-- `overall_verification`が`CI判定`又は`ローカル成功`である。`CI判定`では全体検査とCIの同値性が成立した根拠を`terminal_steps`が挙げ、`ローカル成功`では対象リポジトリのタスクランナーが定める全体検査を1回実行した結果を同じ行が挙げる
-- `ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
+- `検証・CI方針`が`通常`の場合、`overall_verification`が`CI判定`又は`ローカル成功`である。`CI判定`では全体検査とCIの同値性が成立した根拠を`terminal_steps`が挙げ、`ローカル成功`では対象リポジトリのタスクランナーが定める全体検査を1回実行した結果を同じ行が挙げる
+- `検証・CI方針`が`通常`の場合、`ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
+- `検証・CI方針`が`即時対応`の場合、`overall_verification`が起動時に渡した近接検証の成功を挙げ、`ci_result`が`待機省略`とCIのrun URLを挙げ、`terminal_steps`が省略した全体検査と正式対応AWIを挙げる
 - `ci_verified_head`と`final_branch_head`が異なる場合は、両OIDの差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head>`で取得する。当該完全OIDの集合が、`terminal_steps`が挙げる生成commitの完全OIDの集合と過不足なく一致することを確認する。この場合に`final_branch_head`のCIを照会せず、`final_branch_head`のCIが成功したものとして扱わない
 - `base_branch_state`が`公開済み`である
   - 続けて`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の「生成物とpush」節を全文読み、同節が定める4つの観測項目を現在のGit状態から再取得して、全て成立することを確認する

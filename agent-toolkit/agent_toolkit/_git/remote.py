@@ -67,6 +67,8 @@ def resolve_repo_identifier(value: str) -> str | None:
         ["git", "-C", str(local_path), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:

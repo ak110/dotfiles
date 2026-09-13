@@ -100,6 +100,8 @@ def _tracked_names(private_notes: pathlib.Path, names: Iterable[str]) -> list[st
         cwd=private_notes,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     assert isinstance(result.stdout, str)

@@ -97,12 +97,13 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
 # mise (https://mise.jdx.dev/)
-# 非対話シェル (IDE / スクリプト / ssh exec) では shims を PATH に追加する。
+# 非対話シェル (IDE / スクリプト / ssh exec) でも通常のactivateを使い、
+# 現在の設定から解決した実体だけをPATHへ追加する。
 case $- in
 *i*) ;;
 *)
     if command -v mise >/dev/null 2>&1; then
-        eval "$(mise activate bash --shims)"
+        eval "$(mise activate bash)"
     fi
     ;;
 esac
@@ -123,6 +124,11 @@ fi
 
 # SSH対話ログイン時にtmuxへ自動アタッチする
 # 有効化は ~/.config/dotfiles/tmux-auto-attach の存在で切り替える (autotmux on/off)
+_dotfiles_tmux_executable() {
+    hash -d tmux 2>/dev/null || true
+    command -v tmux
+}
+_dotfiles_tmux=$(_dotfiles_tmux_executable 2>/dev/null) || _dotfiles_tmux=
 if [ -z "$TMUX" ] &&
     [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ] &&
     [ -t 0 ] &&
@@ -130,13 +136,14 @@ if [ -z "$TMUX" ] &&
     [ "${TERM_PROGRAM:-}" != "vscode" ] &&
     [ -z "${TERMINAL_EMULATOR:-}" ] &&
     [ -e ~/.config/dotfiles/tmux-auto-attach ] &&
-    command -v tmux >/dev/null 2>&1; then
-    if tmux has-session -t main 2>/dev/null; then
-        exec tmux attach -t main
+    [ -n "$_dotfiles_tmux" ]; then
+    if "$_dotfiles_tmux" has-session -t main 2>/dev/null; then
+        exec "$_dotfiles_tmux" attach -t main
     else
-        exec tmux new -s main
+        exec "$_dotfiles_tmux" new -s main
     fi
 fi
+unset _dotfiles_tmux
 
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
@@ -316,17 +323,21 @@ PROMPT_COMMAND="history -a;_show_status;${PROMPT_COMMAND}"
 # PROMPT_COMMAND自身の実行によるDEBUGトラップの発火は、解除時に設定するフラグで抑止する。
 # mise activate bash は PROMPT_COMMAND の先頭へ自身のフックを挿入するため、
 # 解除要素を末尾へ置いて解除が最後に実行される順序を保つ。
-if [ -n "$TMUX" ] && [ -n "$TMUX_PANE" ] && command -v tmux >/dev/null 2>&1; then
+if [ -n "$TMUX" ] && [ -n "$TMUX_PANE" ] && _dotfiles_tmux_executable >/dev/null 2>&1; then
     _tmux_cmd_armed=1
     function _tmux_cmd_start() {
         if [ -n "$_tmux_cmd_armed" ]; then
+            local tmux_executable
             _tmux_cmd_armed=""
-            tmux set-option -p -t "$TMUX_PANE" -q @cmd_running 1
+            tmux_executable=$(_dotfiles_tmux_executable) || return 0
+            "$tmux_executable" set-option -p -t "$TMUX_PANE" -q @cmd_running 1
         fi
         return 0
     }
     function _tmux_cmd_idle() {
-        tmux set-option -p -t "$TMUX_PANE" -qu @cmd_running
+        local tmux_executable
+        tmux_executable=$(_dotfiles_tmux_executable) || return 0
+        "$tmux_executable" set-option -p -t "$TMUX_PANE" -qu @cmd_running
         _tmux_cmd_armed=1
     }
     trap '_tmux_cmd_start' DEBUG

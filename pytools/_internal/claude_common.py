@@ -31,7 +31,6 @@ INSTALLED_PLUGINS_PATH = CLAUDE_HOME / "plugins" / "installed_plugins.json"
 # marketplace.json の `name` と一致させる (.claude-plugin/marketplace.json を参照)
 MARKETPLACE_NAME = "ak110-dotfiles"
 
-# GitHub からの初回 clone や install 処理で時間がかかる場合があるため余裕を持たせる
 CLAUDE_TIMEOUT = 30
 
 # バランスモード・AWI蓄積等、特定ホストでのみ有効化する機能が共有する対象ホスト一覧。
@@ -184,11 +183,17 @@ def run_subprocess(
         return None
 
 
-def run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str] | None:
+def run_claude(
+    args: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout: float | None = CLAUDE_TIMEOUT,
+) -> subprocess.CompletedProcess[str] | None:
     """`claude` CLIを呼び出す共通ヘルパー。
 
     タイムアウト・例外・非ゼロ終了を全て吸収して呼び出し元に返す。
     `cwd` を指定すると project scope など cwd 依存のサブコマンドに対応できる。
+    `timeout`の既定は30秒とし、長時間を要する操作だけ呼び出し元が上書きする。
     原因追跡のため、実行コマンドと戻り値をログに残す。
     """
     claude = resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",))
@@ -201,7 +206,7 @@ def run_claude(args: list[str], *, cwd: Path | None = None) -> subprocess.Comple
             f"exec: {' '.join(args)}" + (f" (cwd={cwd})" if cwd is not None else ""),
         )
     )
-    result = run_subprocess([str(claude), *args], timeout=CLAUDE_TIMEOUT, cwd=cwd, tag="claude")
+    result = run_subprocess([str(claude), *args], timeout=timeout, cwd=cwd, tag="claude")
     if result is None:
         return None
     logger.info(log_format.format_status("claude", f"exit {result.returncode}: {' '.join(args)}"))

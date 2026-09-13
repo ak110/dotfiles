@@ -401,6 +401,8 @@ def _assert_conversion_targets_tracked(
         cwd=private_notes,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -428,6 +430,8 @@ def _restore_conversion_paths(
             cwd=private_notes,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         ).stdout.splitlines()
         if tracked:
@@ -444,6 +448,8 @@ def _restore_conversion_paths(
                 cwd=private_notes,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=True,
             )
             if status.stdout.strip():

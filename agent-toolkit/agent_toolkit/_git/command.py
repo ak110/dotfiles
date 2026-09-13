@@ -21,6 +21,8 @@ def run(
         check=check,
         capture_output=capture_output,
         text=text,
+        encoding="utf-8" if text else None,
+        errors="replace" if text else None,
         timeout=timeout,
     )
 

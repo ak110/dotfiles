@@ -443,6 +443,8 @@ def _check_bash_bulk_stage_with_unedited_files(
                 cwd=effective_cwd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
         except (OSError, FileNotFoundError):

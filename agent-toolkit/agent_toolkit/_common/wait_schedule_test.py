@@ -278,6 +278,8 @@ def test_valid_subscription_status_uses_one_hour_schedule(monkeypatch: pytest.Mo
                 "check": False,
                 "shell": False,
                 "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
                 "timeout": 5,
             },
         }
