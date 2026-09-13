@@ -19,10 +19,19 @@ PHASES = (
     "構造検査",
 )
 ANALYSIS_FIELDS = ("direct_cause", "root_cause", "rule_gap", "action")
+SUMMARY_MAX_CHARS = 200
 
 
 class ReportError(ValueError):
     """入力又は報告構造が契約を満たさない。"""
+
+
+def _cell_text(text: str) -> str:
+    """表のセルへ収まる1行の要約を返す。"""
+    collapsed = " ".join(text.split()).replace("|", "\\|")
+    if len(collapsed) > SUMMARY_MAX_CHARS:
+        collapsed = collapsed[:SUMMARY_MAX_CHARS] + "…"
+    return collapsed
 
 
 def _load_json(path: pathlib.Path) -> Any:
@@ -138,12 +147,7 @@ def render(
             )
         else:
             raise ReportError(f"{locator_text}: dispositionが不正である")
-        summary = (
-            str(candidate.get("text", candidate.get("candidate_kind", "候補")))
-            .replace("\r\n", "\n")
-            .replace("\r", "\n")
-            .replace("|", "\\|")
-        )
+        summary = _cell_text(str(candidate.get("text", candidate.get("candidate_kind", "候補"))))
         rows.append("| " + " | ".join((f"{locator_text} {summary}", *cells)) + " |")
 
     timing_rows = [f"| {phase} | {_seconds(timings[phase], phase):.3f} |" for phase in PHASES]
