@@ -9,6 +9,7 @@ import dataclasses
 import datetime
 import json
 import logging
+import logging.handlers
 import os
 import pathlib
 import re
@@ -19,6 +20,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from mcp.server.fastmcp import FastMCP
+from platformdirs import user_state_dir
 from pydantic import Field
 
 from agent_toolkit._agents_server import claude as claude_backend
@@ -75,18 +77,18 @@ ENGINE_UNAVAILABLE_ERROR_INFO = frozenset({"usageLimitExceeded", "rateLimitExcee
 # 529（overloaded_error）へ限定する。500（api_error）はサービス内部の失敗であり、
 # 候補の変更で解決するとは限らないため含めない。
 ENGINE_UNAVAILABLE_API_ERROR_STATUS = frozenset({429, 529})
-_TASK_DOCUMENT_PATTERN = re.compile(r"^(?P<path>/\S+\.subagent\.md)")
 _REQUIRED_INPUT_PREFIX = "必須入力名: "
 _REQUIRED_INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 _SHARE_DIRECTORY = pathlib.Path(__file__).resolve().parent.parent / "share"
 _TASK_MODEL_TYPES = state.TASK_MODEL_TYPES
+_LOG_MAX_BYTES = 2 * 1024 * 1024
+_LOG_BACKUP_COUNT = 3
 
 # 検査が受理する行の書式。拒否応答の本文へ添え、呼び出し元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
     "受理する書式: 必須入力の行は`<項目名>:`で始める。"
     "項目名へ別の語を連結した行は当該項目として解決しないため、補足する語は別の行へ書く。"
 )
-_TASK_DOCUMENT_LINE_FORMAT = "受理する書式: 起動文の1行目は`.subagent.md`で終わるタスク文書の絶対パスで始める。"
 
 
 def _is_agent_toolkit_task_document(path: pathlib.Path) -> bool:
@@ -170,15 +172,8 @@ def _wrap_delivery_body(body: str) -> str:
     return f'<cross-session-message from="{sender}" nonce="{nonce}">\n{body}\n</cross-session-message>'
 
 
-def _validate_required_prompt_inputs(prompt: str) -> str | None:
-    """通常委譲の起動文をタスク文書の必須入力名と照合する。"""
-    lines = prompt.splitlines()
-    match = _TASK_DOCUMENT_PATTERN.match(lines[0] if lines else "")
-    if match is None:
-        return (
-            f"必須入力検査を実施できません: 起動文の1行目からタスク文書の絶対パスを取得できません。{_TASK_DOCUMENT_LINE_FORMAT}"
-        )
-    task_document = pathlib.Path(match.group("path")).resolve()
+def _validate_required_prompt_inputs(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> str | None:
+    """タスク文書の必須入力名を名前付き追加入力と照合する。"""
     if not _is_agent_toolkit_task_document(task_document):
         return f"必須入力検査を実施できません: タスク文書がshare配下ではありません: {task_document}"
     try:
@@ -202,8 +197,7 @@ def _validate_required_prompt_inputs(prompt: str) -> str | None:
     required_names = marker.removeprefix(_REQUIRED_INPUT_PREFIX).split(",")
     if not required_names or any(not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name) for name in required_names):
         return f"必須入力検査を実施できません: 必須入力名の書式が不正です: {task_document}"
-    prompt_lines = lines[1:]
-    missing = [name for name in required_names if not any(line.startswith(f"{name}:") for line in prompt_lines)]
+    missing = [name for name in required_names if name not in extra_params]
     if missing:
         raise ValueError(
             f"必須入力が欠けています: {', '.join(missing)}; タスク文書: {task_document}; {_REQUIRED_INPUT_LINE_FORMAT}"
@@ -220,6 +214,8 @@ def _task_document_request(
     if not task_document.is_absolute():
         raise ValueError("subagent_md_path must be an absolute path")
     task_document = task_document.resolve()
+    if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
+        raise ValueError(f"subagent_md_path is not an existing .subagent.md file: {task_document}")
     if not _is_agent_toolkit_task_document(task_document):
         raise ValueError(f"subagent_md_path is not an agent-toolkit task document: {task_document}")
     model_type = _TASK_MODEL_TYPES.get(task_document.name)
@@ -232,9 +228,9 @@ def _task_document_request(
     prompt_lines = [f"{task_document} の手順を実行せよ。", "追加指示:"]
     prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
     prompt = "\n".join(prompt_lines)
-    warning = _validate_required_prompt_inputs(prompt)
+    warning = _validate_required_prompt_inputs(task_document, extra_params)
     if warning is not None:
-        raise ValueError(warning)
+        _LOG.warning("%s", warning)
     return model_type, prompt
 
 
@@ -1787,10 +1783,45 @@ def _prepare_child_environment() -> None:
     _inherited_venv.strip_inherited_venv(os.environ)
 
 
+def _configure_logging() -> pathlib.Path:
+    """標準エラーと永続ファイルへagents_serverの診断ログを出力する。"""
+    log_level = os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING")
+    server_logger = logging.getLogger("agent-toolkit.agents-server")
+    server_logger.setLevel(logging.INFO)
+    server_logger.propagate = False
+    if not any(getattr(handler, "agents_server_stderr", False) for handler in server_logger.handlers):
+        stderr_handler = logging.StreamHandler()
+        stderr_handler.setLevel(log_level)
+        stderr_handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        stderr_handler.agents_server_stderr = True  # type: ignore[attr-defined]
+        server_logger.addHandler(stderr_handler)
+
+    log_path = pathlib.Path(user_state_dir("agent-toolkit", appauthor=False)) / "agents-server.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    for handler in tuple(server_logger.handlers):
+        if not getattr(handler, "agents_server_file", False):
+            continue
+        if pathlib.Path(handler.baseFilename) == log_path:  # type: ignore[attr-defined]
+            break
+        server_logger.removeHandler(handler)
+        handler.close()
+    if not any(getattr(handler, "agents_server_file", False) for handler in server_logger.handlers):
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_path,
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        file_handler.agents_server_file = True  # type: ignore[attr-defined]
+        server_logger.addHandler(file_handler)
+    return log_path
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """引数に応じて依存検査またはMCP stdio transportを起動する。"""
     _prepare_child_environment()
-    logging.basicConfig(level=os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING"))
     parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
     parser.add_argument(
         "--check-dependencies",
@@ -1798,10 +1829,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Claude Agent SDKの依存を読み込み、options構築まで検査する。",
     )
     args = parser.parse_args(argv)
-    if args.check_dependencies:
-        claude_backend.check_dependencies()
-        return 0
-    mcp.run(transport="stdio")
+    log_path = _configure_logging()
+    mode = "check-dependencies" if args.check_dependencies else "stdio"
+    _LOG.info("agents_serverを起動します: mode=%s log=%s", mode, log_path)
+    try:
+        if args.check_dependencies:
+            claude_backend.check_dependencies()
+        else:
+            mcp.run(transport="stdio")
+    except BaseException:
+        _LOG.exception("agents_serverが異常終了しました: mode=%s", mode)
+        raise
+    _LOG.info("agents_serverが正常終了しました: mode=%s", mode)
     return 0
 
 

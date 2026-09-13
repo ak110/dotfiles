@@ -36,9 +36,8 @@ def wait_for_result(
     対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
     対象集合は待機の発行時点で確定し、待機中に開始したsessionを含めない。
-    終端結果と通知が無いまま状態ファイル全体から対象が消失した場合は、
-    MCPのwaitと同じ`status: expired`を終了コード7で返す。既存の成功と
-    エラーの終了コードから区別し、待機上限まで消失を見逃さないためである。
+    状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
+    終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     """
     env = os.environ if environment is None else environment
     root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
@@ -58,10 +57,6 @@ def wait_for_result(
         {session["session_id"] for session in listed or ()}
         | _retained_result_session_ids(result_directory, owner_status_file=identity.file_name)
     )
-    if not ordered_ids and listed is not None:
-        print(json.dumps({"status": "expired"}, separators=(",", ":")))
-        return 7
-
     lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_files: list[Any] = []
@@ -99,10 +94,9 @@ def wait_for_result(
                     return 0
 
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
-            if ordered_ids and all(value is False for value in retained.values()):
-                print(json.dumps({"session_id": ordered_ids[0], "status": "expired"}, separators=(",", ":")))
-                return 7
             selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
+            if selected is None and ordered_ids:
+                selected = ordered_ids[0]
             response = _running_response(selected, None if selected is None else _session_updated_at(status_paths, selected))
             remaining = deadline - time.monotonic()
             if remaining <= 0:

@@ -1,8 +1,12 @@
 """Codex backendのsession状態遷移を検証する。"""
 
+# テストではloggerを含む内部境界を直接検証する。
+# pylint: disable=protected-access
+
 import asyncio
 import pathlib
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -58,6 +62,7 @@ class _SilentProcess:
         self.stdout = _HangingStream()
         self.stderr = _HangingStream()
         self.returncode: int | None = None
+        self.pid = 123
 
     def terminate(self) -> None:
         self.returncode = -15
@@ -157,6 +162,33 @@ async def test_client_start_aborts_when_initialize_never_answers(monkeypatch: py
 
     assert client.closed is True
     assert process.returncode == -15
+
+
+@pytest.mark.asyncio
+async def test_client_logs_process_start_initialize_and_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex子プロセスの起動、initialize応答及び終了を親loggerへ記録する。"""
+    process = _SilentProcess()
+    messages: list[str] = []
+
+    async def _spawn(*args: Any, **kwargs: Any) -> _SilentProcess:
+        del args, kwargs  # noqa
+        return process
+
+    def record(message: str, *args: object) -> None:
+        messages.append(message % args)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _spawn)
+    monkeypatch.setattr(subject._LOG, "info", record)
+    client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
+    client.request = AsyncMock(return_value={"serverInfo": {"name": "codex"}})  # type: ignore[method-assign]
+    client.notify = AsyncMock()  # type: ignore[method-assign]
+
+    await client.start()
+    await client.close()
+
+    assert any("Codex App Serverを起動しました" in message for message in messages)
+    assert any("initialize応答を受信しました: keys=['serverInfo']" in message for message in messages)
+    assert any("Codex App Serverを終了しました: returncode=-15" in message for message in messages)
 
 
 @pytest.mark.asyncio

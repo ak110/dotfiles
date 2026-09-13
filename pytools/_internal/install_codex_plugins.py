@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
+_AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codex pluginを変更しました。実行中のCodexセッションを終了してから、"
@@ -261,6 +262,31 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
 
 
+def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
+    """稼働中daemonへ、設定に応じた自動再起動又は手動案内を適用する。"""
+    if not _command(["app-server", "daemon", "version"]):
+        return
+    if os.environ.get(_AUTO_RESTART_ENV) != "1":
+        notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+        return
+    result = claude_common.run_subprocess(
+        [str(_CODEX_EXECUTABLE.get()), "app-server", "daemon", "restart"],
+        timeout=_TIMEOUT,
+        tag="codex",
+    )
+    exit_code = None if result is None else result.returncode
+    if exit_code == 0:
+        logger.info(log_format.format_status("codex plugins", "app-server daemonを自動再起動 (exit 0)"))
+        return
+    logger.warning(
+        log_format.format_status(
+            "codex plugins",
+            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'})",
+        )
+    )
+    notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
+
+
 def _codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME", CODEX_HOME))
 
@@ -312,10 +338,10 @@ def _sync_local_plugin(
     if needs_plugin_add:
         if not _command(["plugin", "add", plugin_id]):
             raise RuntimeError("Codex plugin addに失敗")
-        _append_restart_notice_if_daemon_running(notices)
         _verify_expected_state(plugin_id, version)
         if _hook_trust_notice_required(_hooks_list()):
             notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
+        _restart_daemon_after_plugin_update(notices)
     removed_legacy_links = _remove_legacy_links(root)
     return needs_plugin_add or removed_legacy_links
 

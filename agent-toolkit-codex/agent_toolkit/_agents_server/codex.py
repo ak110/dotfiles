@@ -152,19 +152,27 @@ class JsonRpcProcess:
                 env=environment,
             )
         except OSError as exc:
+            _LOG.exception("Codex App Serverを起動できません: command=%s", " ".join(APP_SERVER_COMMAND))
             raise AppServerError(f"failed to start {' '.join(APP_SERVER_COMMAND)}: {exc}") from exc
+        _LOG.info(
+            "Codex App Serverを起動しました: command=%s cwd=%s pid=%s",
+            " ".join(APP_SERVER_COMMAND),
+            APP_SERVER_WORKING_DIRECTORY,
+            self.process.pid,
+        )
         self._reader_task = asyncio.create_task(self._read_stdout())
         self._stderr_task = asyncio.create_task(self._read_stderr())
         try:
             # 子プロセスが応答を返さないまま生存する場合、要求の応答futureは読取taskの失敗経路では解消しない。
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
-                await self.request(
+                initialize_result = await self.request(
                     "initialize",
                     {
                         "clientInfo": {"name": "agent-toolkit-codex-app-server", "version": "1.0"},
                         "capabilities": {},
                     },
                 )
+                _LOG.info("Codex App Serverのinitialize応答を受信しました: keys=%s", sorted(initialize_result))
                 await self.notify("initialized", {})
         except TimeoutError as exc:
             await self.close()
@@ -349,6 +357,8 @@ class JsonRpcProcess:
                     await asyncio.wait_for(process.wait(), timeout=5)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if process is not None:
+            _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
         self.process = None
         error = AppServerError("Codex App Server client closed")
         for future in tuple(self._pending.values()):

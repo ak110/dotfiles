@@ -119,7 +119,18 @@ plugin更新で当該ディレクトリが消えると、子App Serverは生存�
 ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
 この境界により、プラグイン配置が初回engine選択まで利用できない場合も、既に読込済みのclassからbackendを生成できる。
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用経路へSDK依存を持ち込まない。
-`--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの検査であり、外部sessionの起動及びMCP公開statusを生成しない。
+`--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの検査であり、外部sessionもMCP公開statusも生成しない。
+Claude CodeとCodexのplugin導入後は、各cacheにあるこの実入口を`uv run --locked --no-default-groups`で起動し、依存検査まで完了してからupdate-dotfilesを終える。
+agents_serverのウォームアップは初回MCP起動の成立条件であるため、起動不能、timeout及び非0終了を対象・終了コード・所要時間とともに記録して更新段階へ伝播する。
+hookスクリプトのウォームアップは更新後の実行を高速化するだけであり、個別失敗を段階失敗へ変えない既存契約を維持する。
+
+`start`が受け取るタスク文書は、起動入口で実在する`.subagent.md`として解決した`Path`を必須入力検証へ直接渡す。
+表示用プロンプトへ直列化したパスを再解析しないため、Windowsドライブパス、区切り文字、空白の差は検証契約へ影響しない。
+pluginの安全境界と読めた必須入力宣言に対する実際の値欠落は拒否する一方、宣言の不在又は読取不能は警告として委譲を継続する。
+
+MCPの処理開始前に`platformdirs.user_state_dir("agent-toolkit", appauthor=False)`配下の`agents-server.log`へUTF-8のサイズローテーションログを初期化する。
+親MCPの起動モードと正常・異常終了、Codex子App Serverの起動、initialize応答及び終了コードを同じlogger階層へ記録し、子の標準エラーは既存の有界な末尾だけを異常終了診断へ含める。
+標準エラーだけを診断経路とする案ではプロセス終了後に初回起動失敗を調査できず、別のラッパープロセスを置く案では同じライフサイクルを二重管理するため、いずれも採用しない。
 
 公開APIは`start`、`start_explore`、`start_shell`、`wait`、`send_message`、`kill`、`list`、`stop`の8つに固定する。`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。終端の観測と結果本文の配送を`wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。`start`は`model_type`、`prompt`、絶対`cwd`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。応答は採用した`model_type`、`engine`、`model`及び`effort`を含む。両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終端を確認し、engineの可用性で終端した候補を除外集合へ加えて次候補で起動する。全候補が起動不能な場合だけ失敗を返す。上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終端した実測（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。切替の対象を終端済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。候補を変えても結果が変わらない失敗では候補を進めない。Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。サーバーは可用性を理由として終端したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。このため呼び出し側へ除外対象のsession識別子を要求しない。`wait`は引数を受け取らず、呼び出し元のMCPサーバープロセスが保持する起動中のsession全体を対象として、最初に終端した1件の結果を返す。残るsessionの終端結果は次の呼び出しまで保持する。待機上限は`agent-toolkit/agent_toolkit/_common/wait_schedule.py`がプロンプトキャッシュの保持期間から導出する上限とする。保持期間が`5m`の場合は270秒、`1h`の場合は1740秒とする。
 `start`は、この可用性の確認より前に、backendがsessionの初期化を完了するまでの待機へ上限を課す。
@@ -223,6 +234,11 @@ Codex backendは子のApp Serverへ`AGENT_TOOLKIT_OWNER_SESSION`を渡し、継�
 読取側はLinuxで`XDG_STATE_HOME`又は`HOME/.local/state`、Windowsで`LOCALAPPDATA`から同じディレクトリを解決する。platformdirsの`user_state_dir`と同じ規則である。
 
 同じディレクトリ配下の`results/<session_id>.json`へ、終端したsessionの結果本文を原子的に書く。内容へsessionごとに1から始まり新しいturnの開始ごとに1増える`turn_seq`と、終端時刻の`finalized_at`を含める。終端結果を回収済みかどうかの正本は`results/<session_id>.json`の存在とする。`wait`と`kill`は結果本文を返した時点で当該ファイルを削除し、`atk agents-wait`は結果本文を標準出力へ書いた時点で同じファイルを削除する。MCPサーバーは、一度書いた結果ファイルが消えている場合に当該sessionを回収済みとして扱い、当該ファイルを再作成しない。終端結果を返す上限は保持期限（30分）とし、期限の経過後は`wait`が`status`を`expired`とする応答だけを返す。同じsessionの新しいturnを開始する時点でも、前のturnの結果ファイルを同期的に削除する。削除は`send_message`と再開の応答を返す前に完了させるため、応答を受け取った呼び出し側は`atk agents-wait`だけで当該turnの終端を待てる。待機対象のturnの番号を引数で受け取る案は、呼び出し側が`turn_seq`を転記する必要を残し、転記の誤りが別のturnの結果を当該turnの終端として受領させるため採用しない。`atk agents-wait`は結果ファイルの検査と同じ周回で未回収の通知を回収し、MCPの`wait`と同じ条件で当該ファイルを削除する。回収の条件と削除を共通の実装へ置き、両経路が同じ通知を二重に配送しない。終端結果が未到達で通知だけを回収した場合は`status`を`running`として1行で返し、呼び出し側は再待機の要否を`status`で判定する。Claude Codeの`/goal`は、ターンを終えた時点で当該セッションが起動した未完了のBash背景ジョブが1件も無い場合に目標評価を発動するため、MCPツールの背景移行だけで待つと待機のたびに評価が動いてトークンを消費する。`atk agents-wait`を背景ジョブとして起動すると当該評価が延期され、委譲先の終端でセッションが再開する。呼び出し元は完了通知の後に`wait`を1回発行し、結果本文の配送を確定させる。MCPサーバーへ待機専用のツールを足す案は、当該ツールの呼び出しも背景移行の対象となり目標評価の延期条件を満たさないため採用しない。
+
+`atk agents wait`が読む状態ファイルは表示と外部待機のための投影であり、session登録簿の代替ではない。
+待機開始時に投影から取得したsession識別子は投影の消失後も保持し、結果又は通知が無い間は`status: running`を返す。
+待機開始時から投影が空の場合も同じ非終端応答とする。投影の不在から`expired`を推論する案は、原子的な全置換、書込主体の終了及び失効投影の回収を、権威あるsession喪失と区別できないため採用しない。
+真の`expired`はsession登録簿を所有するMCPサーバーだけが判定する。
 
 表示対象は、終端結果を持たないsessionと、終端結果を持ち`results/<session_id>.json`が存在するsessionとする。statuslineは状態ファイルの各行について、終端状態であり当該結果ファイルが存在しない行を描画から外す。保持期限（30分）の到達で結果ファイルを削除するため、期限後の行も表示から外れる。
 実行中だけに限定しないのは、回収し忘れたsessionを可視化するためである。保持期限の到達後は結果本文を回収できないため、表示を続けても回収にはつながらない。
@@ -516,6 +532,11 @@ Codexの検証器を無条件の合格条件にしないのは、同梱資料が
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
 `install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
+実際のadd又はupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
+既定は手動再起動案内を維持し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。
+自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録し、失敗時はplugin導入を巻き戻さず手動案内へ戻す。
+無変更、marketplace登録だけの変更、daemon停止中及び不要pluginの除去は自動再起動の対象に含めない。
+`atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)は、ローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、マーケットプレイス登録元ではなく導入先の実体をCodexが読み込むと定める。
 そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
 CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。

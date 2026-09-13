@@ -54,11 +54,28 @@ codex app-server daemon restart
 公開インストーラーでは、プラグイン追加または`atk`配置が失敗した場合も、エラーの後の最終行へ
 必要な再起動コマンドを表示し、非0の終了状態を維持する。`agents_server` MCPの登録や
 `~/.claude.json`のUser scope設定は行わない。
-進行中のセッションを保護するため、app-server daemonは自動再起動しない。
+既定では進行中のセッションを保護するため、app-server daemonを自動再起動しない。
+`update-dotfiles`によるagent-toolkitの追加・更新後に稼働中daemonを自動再起動する場合は、実行環境へ次の設定を明示する。
+
+```bash
+DOTFILES_CODEX_DAEMON_AUTO_RESTART=1 update-dotfiles
+```
+
+PowerShellでは同じ実行に対して次のように設定する。
+
+```powershell
+$env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"
+update-dotfiles
+```
+
+自動再起動は、pluginの追加又は更新、導入済みversionと有効状態、hook状態の確認がすべて完了した後に1回だけ実行する。
+daemonが停止中の場合、pluginが無変更の場合及びmarketplace登録だけが変化した場合は実行しない。
+再起動に失敗した場合は終了コードをupdate-dotfilesログへ記録し、手動再起動の案内へ戻る。
+自動再起動により、Codex plugin又はremote-controlを利用する実行中セッションの接続が切断される可能性があるため、当該セッションを終了できる時点でだけ有効にする。
 
 プラグインの実体導入とversion別cacheの管理はCodex公式CLIへ委ねる。
 インストーラーは`codex plugin add`後に導入済みversionと有効状態を検証し、旧version名のリンクや互換台帳を独自に作成しない。
-更新中のセッションは作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
+既定動作では更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
 
 再起動案内は、ローカルと外部のいずれかのプラグインを実際に追加または更新し、daemonの稼働状態を確認できた場合だけ表示される。
 daemonの未起動、状態確認の失敗、マーケットプレイスの登録だけの変化、公開インストーラーでの導入前後の状態の一致、

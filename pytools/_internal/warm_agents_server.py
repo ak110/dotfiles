@@ -23,9 +23,14 @@ def main() -> None:
 def run() -> bool:
     """実際に参照される``agents_server_mcp.py``の環境を構築する。
 
-    ウォームアップはキャッシュ構築だけを行うため、個別の失敗を後処理全体の失敗にしない。
+    初回MCP起動の成立条件であるため、個別の失敗は後処理全体へ伝播する。
     """
-    return plugin_warmup.run(_targets, tag=_TAG, arguments=("--check-dependencies",))
+    return plugin_warmup.run(
+        _targets,
+        tag=_TAG,
+        arguments=("--check-dependencies",),
+        fail_on_error=True,
+    )
 
 
 def _targets() -> list[Path]:
