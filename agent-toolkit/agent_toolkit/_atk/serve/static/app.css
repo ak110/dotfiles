@@ -22,6 +22,7 @@
   --space-5: 2rem;
   --radius-small: 0.5rem;
   --radius-medium: 0.875rem;
+  --two-pane-sidebar-width: 320px;
   --shadow-card: 0 0.5rem 1.5rem rgb(30 45 75 / 0.09);
   --font-family-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-size-base: 1rem;
@@ -441,8 +442,14 @@ main > .toolbar {
   grid-template-columns: subgrid;
   width: 100%;
   padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text);
   text-align: left;
+  text-decoration: none;
   background: var(--color-surface);
+  font: inherit;
+  cursor: pointer;
 }
 #screen-wi .entry-copy {
   grid-column: 5;
@@ -528,6 +535,7 @@ main > .toolbar {
   background: #fff1f0;
 }
 #screen-wi .loading-state,
+#screen-plans .loading-state,
 #screen-wi .empty-state {
   margin-top: var(--space-4);
   padding: var(--space-5) var(--space-3);
@@ -549,7 +557,8 @@ main > .toolbar {
   color: var(--color-secondary-text);
   text-align: center;
 }
-#screen-wi .loading-state::before {
+#screen-wi .loading-state::before,
+#screen-plans .loading-state::before {
   display: inline-block;
   width: 0.9rem;
   height: 0.9rem;
@@ -1189,7 +1198,7 @@ main > .toolbar {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: var(--two-pane-sidebar-width) 1fr;
 }
 #screen-plans :is(aside) {
   border-right: 1px solid #e6e6e6;
@@ -1214,6 +1223,8 @@ main > .toolbar {
 #screen-plans .file {
   padding: 10px 12px;
   border-bottom: 1px solid #e6e6e6;
+  color: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 #screen-plans .file:hover,
@@ -1367,7 +1378,7 @@ main > .toolbar {
     position: fixed;
     top: 0;
     left: 0;
-    width: 280px;
+    width: var(--two-pane-sidebar-width);
     max-width: 85vw;
     height: 100svh;
     z-index: 20;
@@ -1440,7 +1451,7 @@ main > .toolbar {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: var(--two-pane-sidebar-width) 1fr;
 }
 #screen-sessions :is(aside) {
   border-right: 1px solid #e6e6e6;
@@ -1678,8 +1689,8 @@ main > .toolbar {
     top: 0;
     bottom: 0;
     left: 0;
-    width: 84vw;
-    max-width: 340px;
+    width: var(--two-pane-sidebar-width);
+    max-width: 85vw;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
   }

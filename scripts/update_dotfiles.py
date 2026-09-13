@@ -27,7 +27,8 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常終了した場合は
 `update-dotfiles`の標準出力へ転送する。失敗時はGitの標準エラー出力を維持する。
 各段のサブプロセスへ`MISE_AUTO_INSTALL=0`を渡し、miseのshimが呼び出したコマンドと
-無関係なツールを自動導入して更新処理を停止させる経路を抑止する。
+無関係なツールを自動導入して更新処理を停止させる経路を抑止する。親プロセスの
+仮想環境は子へ引き継がず、各工程が自身の設定から環境を解決する。
 取得したchezmoi出力は、プラットフォームの既定値に依存せずUTF-8として厳格にデコードする。
 git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
 `0`は上限なしとし、負数又は整数でない値は終了コード2で拒否する。
@@ -64,6 +65,8 @@ def _child_env() -> dict[str, str]:
     ツールの導入自体は従来どおり行われる。
     """
     env = os.environ.copy()
+    env.pop("VIRTUAL_ENV", None)
+    env.pop("VIRTUAL_ENV_PROMPT", None)
     env["MISE_AUTO_INSTALL"] = "0"
     return env
 

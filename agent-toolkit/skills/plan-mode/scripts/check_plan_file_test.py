@@ -909,7 +909,7 @@ def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pat
 
     errors, _warnings = _check_new(work_dir, main_content, detail_content)
 
-    assert any("実施内容`の表に空cellまたは列数不一致の行がある" in error for error in errors), errors
+    assert any("実施内容`の表の列数が一致しない" in error and "`\\|`へエスケープ" in error for error in errors), errors
 
 
 def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, str]) -> None:

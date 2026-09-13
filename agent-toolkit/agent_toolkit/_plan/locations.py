@@ -247,6 +247,8 @@ def _creation_epoch(path: pathlib.Path) -> float | None:
                 ["stat", "--format=%W", "--", str(path)],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
         except OSError:

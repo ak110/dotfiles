@@ -43,6 +43,8 @@ def get_status_porcelain(cwd: str) -> str | None:
             ["git", "-C", cwd, "status", "--porcelain"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_STATUS_TIMEOUT,
         )

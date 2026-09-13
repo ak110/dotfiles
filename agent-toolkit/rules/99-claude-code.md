@@ -6,7 +6,9 @@ Claude CodeのツールAPI、権限評価、環境依存の既知事象、委譲
 
 - Claude Codeは地の文の無い応答を可視出力の欠落として扱い、応答の再生成を要求する。
   `agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が定める待機表明の回など、
-  地の文で伝える内容が無い回は、記号1文字（`…`）だけを出力して当該要求を満たす
+  地の文で伝える内容が無い回は、記号1文字（`…`）だけを出力して当該要求を満たす。
+  当該記号は地の文を持たない回だけの補いであり、地の文を書く回へ付け足さない。
+  待機だけの回へ地の文で伝える内容を用意しないことは`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」が定める
   監査記録は`docs/development/audit-records.md`の「agent-toolkit/rules/99-claude-code.md：ツールAPIと権限：2026年9月1日」にある
 - auto modeまたは権限設定でツール呼び出しが拒否された場合、推測でフラグ追加・迂回を試みず
   `agent-toolkit:writing-standards`の`references/auto-mode.md`を参照して対応を判断する

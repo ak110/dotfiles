@@ -429,9 +429,16 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
     material_table = material_tables[0]
     if not material_table.rows:
         errors.append("提示素材の素材表に1行以上の内容が必要")
-    for row in material_table.rows:
-        if len(row) != len(PLAN_MATERIAL_TABLE_HEADER) or any(not cell for cell in row):
-            errors.append(f"提示素材の素材表に空cellまたは列数不一致の行がある: {list(row)}")
+    for index, row in enumerate(material_table.rows):
+        if len(row) != len(PLAN_MATERIAL_TABLE_HEADER):
+            errors.append(
+                _column_count_error(
+                    "提示素材の素材表", len(PLAN_MATERIAL_TABLE_HEADER), row, material_table.row_location(index)
+                )
+            )
+            continue
+        if any(not cell for cell in row):
+            errors.append(f"提示素材の素材表に空cellがある: {material_table.row_location(index)}")
             continue
         errors.extend(_validate_material_row(row, identifiers))
         if row[1] == "フィードバック" and PLAN_QUEUE_ID_PATTERN.fullmatch(row[2]):
@@ -450,9 +457,16 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
         requirement_id_values = [row[0] for row in requirements.rows if row]
         if requirement_id_values != sorted(requirement_id_values):
             errors.append("提示素材の要求表は要求ID昇順で並べる")
-        for row in requirements.rows:
-            if len(row) != len(PLAN_REQUIREMENT_TABLE_HEADER) or any(not cell for cell in row):
-                errors.append(f"提示素材の要求表に空cellまたは列数不一致の行がある: {list(row)}")
+        for index, row in enumerate(requirements.rows):
+            if len(row) != len(PLAN_REQUIREMENT_TABLE_HEADER):
+                errors.append(
+                    _column_count_error(
+                        "提示素材の要求表", len(PLAN_REQUIREMENT_TABLE_HEADER), row, requirements.row_location(index)
+                    )
+                )
+                continue
+            if any(not cell for cell in row):
+                errors.append(f"提示素材の要求表に空cellがある: {requirements.row_location(index)}")
                 continue
             requirement_id, references, _description, decision, adopted, excluded, _reason = row
             match = PLAN_REQUIREMENT_ID_PATTERN.fullmatch(requirement_id)
@@ -604,6 +618,14 @@ def _check_materials(
     return identifiers, errors
 
 
+def _column_count_error(label: str, expected: int, row: tuple[str, ...], location: str) -> str:
+    """固定表の列数不一致を、代表的な原因と修正方法を含めて返す。"""
+    return (
+        f"{label}の列数が一致しない（期待={expected}列、実際={len(row)}列）: {location}。"
+        "セル内のリテラルな半角縦線は`\\|`へエスケープするか、半角縦線を使わない"
+    )
+
+
 def _check_fixed_table(
     lines: list[tuple[int, str]],
     header: tuple[str, ...],
@@ -620,8 +642,10 @@ def _check_fixed_table(
     if len(table.rows) < minimum_rows:
         errors.append(f"{label}の表に1行以上の内容が必要")
     for index, row in enumerate(table.rows):
-        if len(row) != len(header) or any(not cell for cell in row):
-            errors.append(f"{label}の表に空cellまたは列数不一致の行がある: {table.row_location(index)}")
+        if len(row) != len(header):
+            errors.append(_column_count_error(f"{label}の表", len(header), row, table.row_location(index)))
+        elif any(not cell for cell in row):
+            errors.append(f"{label}の表に空cellがある: {table.row_location(index)}")
     return table, errors
 
 
@@ -667,7 +691,16 @@ def _check_bug_unit_sections(
                 continue
             standalone_table = standalone_tables[0]
             for index, row in enumerate(standalone_table.rows):
-                if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
+                if len(row) != len(PLAN_BUG_TABLE_HEADER):
+                    errors.append(
+                        _column_count_error(
+                            f"`### {heading.text}`の調査表",
+                            len(PLAN_BUG_TABLE_HEADER),
+                            row,
+                            standalone_table.row_location(index),
+                        )
+                    )
+                elif not row[1]:
                     errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {standalone_table.row_location(index)}")
             continue
 
@@ -694,10 +727,28 @@ def _check_bug_unit_sections(
             continue
         cause_table = cause_tables[0]
         for index, row in enumerate(cause_table.rows):
-            if len(row) != len(PLAN_BUG_CAUSE_TABLE_HEADER) or any(not cell for cell in row[1:]):
+            if len(row) != len(PLAN_BUG_CAUSE_TABLE_HEADER):
+                errors.append(
+                    _column_count_error(
+                        f"`### {heading.text}`の原因分析表",
+                        len(PLAN_BUG_CAUSE_TABLE_HEADER),
+                        row,
+                        cause_table.row_location(index),
+                    )
+                )
+            elif any(not cell for cell in row[1:]):
                 errors.append(f"`### {heading.text}`の原因分析表に空のセルがある: {cause_table.row_location(index)}")
         for index, row in enumerate(table.rows):
-            if len(row) != len(PLAN_BUG_TABLE_HEADER) or not row[1]:
+            if len(row) != len(PLAN_BUG_TABLE_HEADER):
+                errors.append(
+                    _column_count_error(
+                        f"`### {heading.text}`の調査表",
+                        len(PLAN_BUG_TABLE_HEADER),
+                        row,
+                        table.row_location(index),
+                    )
+                )
+            elif not row[1]:
                 errors.append(f"`### {heading.text}`の調査表に空の`内容`がある: {table.row_location(index)}")
     return errors
 
@@ -835,11 +886,18 @@ def _check_permanence_sections(
                 )
             elif current_format:
                 for table in matching:
-                    errors.extend(
-                        f"`### リファクタリング`の表に空cellまたは列数不一致の行がある: {table.row_location(row_index)}"
-                        for row_index, row in enumerate(table.rows)
-                        if len(row) != 2 or any(not cell for cell in row)
-                    )
+                    for row_index, row in enumerate(table.rows):
+                        if len(row) != len(PLAN_BUG_TABLE_HEADER):
+                            errors.append(
+                                _column_count_error(
+                                    "`### リファクタリング`の表",
+                                    len(PLAN_BUG_TABLE_HEADER),
+                                    row,
+                                    table.row_location(row_index),
+                                )
+                            )
+                        elif any(not cell for cell in row):
+                            errors.append(f"`### リファクタリング`の表に空cellがある: {table.row_location(row_index)}")
     return errors
 
 
@@ -901,8 +959,10 @@ def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | No
     if len(table.rows) < 1:
         errors.append(f"`## {PLAN_H2_ACTION}`の表に1行以上の内容が必要")
     for index, row in enumerate(table.rows):
-        if len(row) != len(table.header) or any(not cell for cell in row):
-            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}")
+        if len(row) != len(table.header):
+            errors.append(_column_count_error(f"`## {PLAN_H2_ACTION}`の表", len(table.header), row, table.row_location(index)))
+        elif any(not cell for cell in row):
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellがある: {table.row_location(index)}")
     return table, errors
 
 
@@ -1109,8 +1169,18 @@ def _check_human_action_table(  # pylint: disable=too-many-arguments
     decision_index = table.header.index("採否")
     root_index = table.header.index("根拠")
     for index, row in enumerate(table.rows):
-        if len(row) != len(PLAN_HUMAN_ACTION_TABLE_HEADER) or any(not cell for cell in row):
-            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellまたは列数不一致の行がある: {table.row_location(index)}")
+        if len(row) != len(PLAN_HUMAN_ACTION_TABLE_HEADER):
+            errors.append(
+                _column_count_error(
+                    f"`## {PLAN_H2_ACTION}`の表",
+                    len(PLAN_HUMAN_ACTION_TABLE_HEADER),
+                    row,
+                    table.row_location(index),
+                )
+            )
+            continue
+        if any(not cell for cell in row):
+            errors.append(f"`## {PLAN_H2_ACTION}`の表に空cellがある: {table.row_location(index)}")
             continue
         origin = row[origin_index]
         canonical_origin = canonical_wi_origin(origin)
@@ -1444,7 +1514,14 @@ def progress_log_rows(content: str) -> list[tuple[str, str, str]]:
     for table in tables:
         for index, row in enumerate(table.rows):
             if len(row) != len(PLAN_PROGRESS_TABLE_HEADER):
-                raise ValueError(f"`## {PLAN_H2_PROGRESS}`の表の列数が一致しない: {table.row_location(index)}")
+                raise ValueError(
+                    _column_count_error(
+                        f"`## {PLAN_H2_PROGRESS}`の表",
+                        len(PLAN_PROGRESS_TABLE_HEADER),
+                        row,
+                        table.row_location(index),
+                    )
+                )
             rows.append((row[0], row[1], row[2]))
     return rows
 
@@ -1477,11 +1554,20 @@ def _check_verification_section(
             f"`## {PLAN_H2_VERIFICATION}`は{list(PLAN_VERIFICATION_TABLE_HEADER)}の2列と"
             f"固定2行（{list(PLAN_VERIFICATION_TABLE_ROWS)}）の表にする"
         ]
-    return [
-        f"`## {PLAN_H2_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}"
-        for index, row in enumerate(table.rows)
-        if len(row) != 2 or not row[1]
-    ]
+    errors: list[str] = []
+    for index, row in enumerate(table.rows):
+        if len(row) != len(PLAN_VERIFICATION_TABLE_HEADER):
+            errors.append(
+                _column_count_error(
+                    f"`## {PLAN_H2_VERIFICATION}`の表",
+                    len(PLAN_VERIFICATION_TABLE_HEADER),
+                    row,
+                    table.row_location(index),
+                )
+            )
+        elif not row[1]:
+            errors.append(f"`## {PLAN_H2_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}")
+    return errors
 
 
 def _check_termination_section(
@@ -1786,11 +1872,20 @@ def check_plan_single_file_structure(
                 f"固定2行（{list(PLAN_CURRENT_VERIFICATION_TABLE_ROWS)}）の表にする"
             )
         else:
-            errors.extend(
-                f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}"
-                for index, row in enumerate(table.rows)
-                if len(row) != 2 or not row[1]
-            )
+            for index, row in enumerate(table.rows):
+                if len(row) != len(PLAN_VERIFICATION_TABLE_HEADER):
+                    errors.append(
+                        _column_count_error(
+                            f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表",
+                            len(PLAN_VERIFICATION_TABLE_HEADER),
+                            row,
+                            table.row_location(index),
+                        )
+                    )
+                elif not row[1]:
+                    errors.append(
+                        f"`## {PLAN_H2_CURRENT_VERIFICATION}`の表に空の検証コマンドがある: {table.row_location(index)}"
+                    )
 
     termination_index = find_heading_index(headings, 2, PLAN_H2_TERMINATION)
     errors.extend(_check_termination_section(body, headings, termination_index))

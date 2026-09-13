@@ -2,7 +2,7 @@
 
 各プロジェクトのREADME.md・CLAUDE.md・docs/development/development.mdは章構成・章順を揃える。
 共通化可能な部分（コマンド例・典型節の説明文など）は一字一句揃え、プロジェクト固有部分は無理に揃えず必要な情報を記述する。
-単独プロジェクトでの章追加・章順変更は避け、`/sync-cross-project`スキル実行時に逸脱を検出する。
+単独プロジェクトでの章追加・章順変更は避け、`/ak110-projects-operations`スキル実行時に逸脱を検出する。
 
 ## README.mdの標準章構成
 

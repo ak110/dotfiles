@@ -459,10 +459,13 @@ async def plan_links_html(context: PlansContext, host: str, source_id: str, rel:
     plan_paths = _plan_paths(rel, source_id)
     if not plan_paths:
         return ""
-    existing: list[tuple[str, str]] = []
-    for plan_rel, label in plan_paths:
-        if plan_rel == rel or await _plan_exists(context, host, source_id, plan_rel):
-            existing.append((plan_rel, label))
+    existence = await asyncio.gather(
+        *(
+            asyncio.sleep(0, result=True) if plan_rel == rel else _plan_exists(context, host, source_id, plan_rel)
+            for plan_rel, _label in plan_paths
+        )
+    )
+    existing = [plan for plan, exists in zip(plan_paths, existence, strict=True) if exists]
     if len(existing) < 2:
         return ""
     parts: list[str] = []

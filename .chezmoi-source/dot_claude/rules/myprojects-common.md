@@ -5,6 +5,12 @@
 
 ## AWI処理の開始時の横断同期
 
-個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`sync-cross-project`スキルを起動する。
+個人プロジェクトで`agent-toolkit:process-wi`を起動したときは、pickerの起動より前に`ak110-projects-operations`スキルを起動する。
 同期調査と依存更新の要否の判定結果は、当該セッションの後続の工程へ渡す。
-起動名はClaude Codeでは`/sync-cross-project`、Codexでは`sync-cross-project`とする。
+起動名はClaude Codeでは`/ak110-projects-operations`、Codexでは`ak110-projects-operations`とする。
+
+## 個人プロジェクトのリリース入口
+
+個人プロジェクトでpatch、minor又はmajorのリリースを求められたときは、具体的な公開コマンドを選ぶ前に
+`ak110-projects-operations`スキルを起動し、同スキルの「リリース運用」に従う。
+agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築及びworkflow内部の処理は対象外とする。

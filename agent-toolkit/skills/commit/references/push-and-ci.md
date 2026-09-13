@@ -84,7 +84,8 @@ baseline作成、push、監視の順で実行する。
 5. 証拠取得後に`agent-toolkit:bugfix`を起動し、
    同スキルのCI失敗分析契約で帰属と原因を分類する。
    自セッション帰属または帰属未確定なら、直接的原因の明白さを問わず拡張原因分析経路を適用する
-6. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動する。
+6. CI失敗の修正は、同じbranchへの通常commitとして追加する。push済みcommitへのamend、fixup、rebaseその他の履歴書き換えと、force pushを修正手段にしない
+7. 診断目的で対象jobを再実行した後も、保存済みの同一baselineに対して`wait_ci.py --baseline`を再起動する。
    自作の待機ループへ置き換えない。許容された再実行後も失敗が残る場合はCI未通過を終端状態として確定し、
    完了報告、採否記録及び計画ファイルの`## 進捗ログ`へ未通過であることと帰属判定を記録する。
    対象workflowが同一concurrency groupで`cancel-in-progress: true`を有効にしている場合、

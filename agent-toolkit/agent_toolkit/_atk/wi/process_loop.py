@@ -252,6 +252,8 @@ def _refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
             env=_child_env(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_MISE_INSTALL_TIMEOUT_SEC,
         )
@@ -298,6 +300,8 @@ def _worktree_is_clean(worktree_path: pathlib.Path) -> bool:
         cwd=worktree_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     return untracked.returncode == 0 and not untracked.stdout.strip()
@@ -312,6 +316,8 @@ def _run_worktree_git(args: list[str], cwd: pathlib.Path) -> subprocess.Complete
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError as error:
@@ -583,6 +589,8 @@ def _select_available_orchestrator(
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
         except OSError as error:
             _console_title.set_console_title("atk wi process-loop")
@@ -868,6 +876,8 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             _console_title.set_console_title("atk wi process-loop")
             result = subprocess.run(
@@ -875,6 +885,8 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             _console_title.set_console_title("atk wi process-loop")
         return int(result.stdout.strip()) > 0

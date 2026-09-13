@@ -233,6 +233,9 @@ def test_links_excludes_agent_toolkit_skills() -> None:
 def test_links_contains_dotfiles_skills() -> None:
     """dotfiles固有スキルのリンクは維持する。"""
     assert setup_codex_links._LINKS["skills/refine-prompt"].startswith(".chezmoi-source/")
+    assert setup_codex_links._LINKS["skills/ak110-projects-operations"] == (
+        ".chezmoi-source/dot_claude/skills/ak110-projects-operations"
+    )
 
 
 def test_links_replaces_session_review_skill_with_reference_directory() -> None:

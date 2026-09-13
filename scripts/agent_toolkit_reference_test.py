@@ -22,19 +22,22 @@ _PYTHON_PATH_PATTERN = re.compile(
     r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.py"
 )
 _SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
-_INCIDENTS = pathlib.Path("docs/development/incidents.md")
+_INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-runtime.md")
+_INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-validation.md")
+_INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
 _AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
 _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
 _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
 _PROCESS_LOOP_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_test.py")
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
-    (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS): 1,
-    (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS): 1,
-    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS): 5,
-    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS): 1,
-    (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS): 1,
-    (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS): 1,
-    (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS): 5,
+    (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
+    (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
+    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_VALIDATION): 1,
+    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_WORKFLOWS): 4,
+    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS_WORKFLOWS): 1,
+    (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS_WORKFLOWS): 1,
+    (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS_RUNTIME): 1,
+    (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS_RUNTIME): 5,
     (f"{_PLUGIN_PREFIX}:exit-session", _AUDIT_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
@@ -141,44 +144,59 @@ def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path
     assert not _unresolved_references(tmp_path, [source])
 
 
-def _known_legacy_references() -> list[str]:
-    """事故記録へ保持する既知の失効参照を返す。"""
-    return [
-        f"{_PLUGIN_PREFIX}:agent-standards",
-        f"{_PLUGIN_PREFIX}:feedback-standards",
-        *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 5,
-        f"{_PLUGIN_PREFIX}:reviewee-standards",
-        f"{_PLUGIN_PREFIX}:shell-exec",
-        f"{_PLUGIN_PREFIX}/scripts/hook.py",
-        *[f"{_PLUGIN_PREFIX}:exit-session"] * 5,
-    ]
+def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
+    """分割後の事故記録へ保持する既知の失効参照を返す。"""
+    return {
+        _INCIDENTS_RUNTIME: [
+            f"{_PLUGIN_PREFIX}/scripts/hook.py",
+            *[f"{_PLUGIN_PREFIX}:exit-session"] * 5,
+        ],
+        _INCIDENTS_VALIDATION: [
+            f"{_PLUGIN_PREFIX}:agent-standards",
+            f"{_PLUGIN_PREFIX}:process-feedbacks",
+        ],
+        _INCIDENTS_WORKFLOWS: [
+            f"{_PLUGIN_PREFIX}:feedback-standards",
+            *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 4,
+            f"{_PLUGIN_PREFIX}:reviewee-standards",
+            f"{_PLUGIN_PREFIX}:shell-exec",
+        ],
+    }
 
 
 def test_incident_history_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
     """既知の失効参照を過不足なく保持し、各参照の不足と超過を報告する。"""
-    source = pathlib.Path("docs/development/incidents.md")
-    (tmp_path / source).parent.mkdir(parents=True)
-    references = _known_legacy_references()
-    target = tmp_path / source
-    target.write_text("\n".join(references), encoding="utf-8")
-    assert not _unresolved_references(tmp_path, [source])
+    by_source = _known_legacy_references()
+    for source, references in by_source.items():
+        target = tmp_path / source
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(references), encoding="utf-8")
+    sources = list(by_source)
+    assert not _unresolved_references(tmp_path, sources)
 
-    for legacy in dict.fromkeys(references):
-        missing = references.copy()
-        missing.remove(legacy)
-        target.write_text("\n".join(missing), encoding="utf-8")
-        assert _unresolved_references(tmp_path, [source]) == [(legacy, source)]
+    for source, references in by_source.items():
+        target = tmp_path / source
+        for legacy in dict.fromkeys(references):
+            missing = references.copy()
+            missing.remove(legacy)
+            target.write_text("\n".join(missing), encoding="utf-8")
+            assert _unresolved_references(tmp_path, sources) == [(legacy, source)]
 
-        excessive = [*references, legacy]
-        target.write_text("\n".join(excessive), encoding="utf-8")
-        assert _unresolved_references(tmp_path, [source]) == [(legacy, source)]
+            excessive = [*references, legacy]
+            target.write_text("\n".join(excessive), encoding="utf-8")
+            assert _unresolved_references(tmp_path, sources) == [(legacy, source)]
+        target.write_text("\n".join(references), encoding="utf-8")
 
 
 def test_incident_history_rejects_different_unresolved_references(tmp_path: pathlib.Path) -> None:
     """既知参照を別の失効起動名へ置換し、失効パスも加えた違反を報告する。"""
-    source = pathlib.Path("docs/development/incidents.md")
-    (tmp_path / source).parent.mkdir(parents=True)
-    references = _known_legacy_references()
+    by_source = _known_legacy_references()
+    for current_source, current_references in by_source.items():
+        target = tmp_path / current_source
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(current_references), encoding="utf-8")
+    source = _INCIDENTS_VALIDATION
+    references = by_source[source].copy()
     replaced = references.pop(0)
     missing_invocation = f"{_PLUGIN_PREFIX}:missing"
     missing_path = f"{_PLUGIN_PREFIX}/skills/missing/SKILL.md"
@@ -187,7 +205,7 @@ def test_incident_history_rejects_different_unresolved_references(tmp_path: path
         encoding="utf-8",
     )
 
-    unresolved = _unresolved_references(tmp_path, [source])
+    unresolved = _unresolved_references(tmp_path, list(by_source))
     assert unresolved == [(missing_invocation, source), (missing_path, source), (replaced, source)]
     formatted = _format_unresolved(unresolved)
     assert missing_invocation in formatted

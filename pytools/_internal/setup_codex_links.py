@@ -20,7 +20,7 @@ CODEX_HOME = Path.home() / ".codex"
 _LINKS: dict[str, str] = {
     "skills/export-session": ".chezmoi-source/dot_claude/skills/export-session",
     "skills/refine-prompt": ".chezmoi-source/dot_claude/skills/refine-prompt",
-    "skills/sync-cross-project": ".chezmoi-source/dot_claude/skills/sync-cross-project",
+    "skills/ak110-projects-operations": ".chezmoi-source/dot_claude/skills/ak110-projects-operations",
     "references": ".chezmoi-source/dot_claude/references",
     "agent-toolkit/rules": "agent-toolkit/rules",
 }

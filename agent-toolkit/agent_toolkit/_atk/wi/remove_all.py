@@ -5,18 +5,18 @@ import sys
 import typing
 
 from agent_toolkit._atk.wi.common import (
-    WI_STATE_INBOX,
+    WI_AGENT_REMOVABLE_STATES,
     WI_STATE_PROCESSING,
     WI_STATES,
     WI_TYPES,
+    WI_USER_REMOVABLE_STATES,
     _commit_and_push,
-    _iter_entries,
     _pull,
     _repo_lock,
     _subdir,
     calculate_readiness,
 )
-from agent_toolkit._atk.wi.listing import QueueEntryDisplay, _print_entries
+from agent_toolkit._atk.wi.listing import QueueEntryDisplay, _print_entries, _select_entries
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
 
 
@@ -36,17 +36,26 @@ type CandidateSnapshot = tuple[CandidateKey, ...]
 def _select_candidates(
     private_notes: pathlib.Path,
     target_repo: str,
+    *,
+    status: str,
+    entry_type: str,
+    answered: str,
+    source: str | None,
+    actor_is_agent: bool,
 ) -> list[QueueEntryDisplay]:
-    """未処理と処理中の項目から同じ正規リポジトリと有効な種別を選択する。"""
+    """一覧条件と呼出主体の許可状態がともに一致する項目を選択する。"""
+    removable_states = WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     return [
         entry
-        for entry in _iter_entries(
+        for entry in _select_entries(
             private_notes,
-            (WI_STATE_INBOX, WI_STATE_PROCESSING),
-            target_repo,
-            "all",
+            status=status,
+            target_repo=target_repo,
+            entry_type=entry_type,
+            answered=answered,
+            source=source,
         )
-        if entry[4] in WI_TYPES
+        if entry[3] in removable_states and entry[4] in WI_TYPES
     ]
 
 
@@ -114,6 +123,11 @@ def _remove_confirmed_candidates(
     confirmed: CandidateSnapshot,
     *,
     note: str | None,
+    status: str,
+    entry_type: str,
+    answered: str,
+    source: str | None,
+    actor_is_agent: bool,
 ) -> list[str]:
     """remote同期後の候補を確認済み記録と突合し、内容が変わらない項目だけ削除する。
 
@@ -123,7 +137,15 @@ def _remove_confirmed_candidates(
     confirmed_keys = set(confirmed)
     with _repo_lock(private_notes):
         _pull(private_notes)
-        current = _select_candidates(private_notes, normalized_repo)
+        current = _select_candidates(
+            private_notes,
+            normalized_repo,
+            status=status,
+            entry_type=entry_type,
+            answered=answered,
+            source=source,
+            actor_is_agent=actor_is_agent,
+        )
         current_keys = {_candidate_key(entry) for entry in current}
         removable = [entry for entry in current if _candidate_key(entry) in confirmed_keys]
         changed = [key.name for key in confirmed if key not in current_keys]
@@ -143,6 +165,11 @@ def remove_all_entries(
     force: bool,
     note: str | None,
     skip_pull: bool,
+    status: str,
+    entry_type: str,
+    answered: str,
+    source: str | None,
+    actor_is_agent: bool,
 ) -> list[str]:
     """対象リポジトリのactive項目を一覧表示し、確認後に一括削除する。
 
@@ -153,7 +180,15 @@ def remove_all_entries(
     with _repo_lock(private_notes):
         if not skip_pull:
             _pull(private_notes)
-        candidates = _select_candidates(private_notes, normalized_repo)
+        candidates = _select_candidates(
+            private_notes,
+            normalized_repo,
+            status=status,
+            entry_type=entry_type,
+            answered=answered,
+            source=source,
+            actor_is_agent=actor_is_agent,
+        )
         readiness = calculate_readiness(private_notes, normalized_repo)
         confirmed_snapshot = _snapshot(candidates)
 
@@ -165,4 +200,14 @@ def remove_all_entries(
     if not assume_yes and not _confirm_removal(len(candidates)):
         print("削除を中止しました。")
         return []
-    return _remove_confirmed_candidates(private_notes, normalized_repo, confirmed_snapshot, note=note)
+    return _remove_confirmed_candidates(
+        private_notes,
+        normalized_repo,
+        confirmed_snapshot,
+        note=note,
+        status=status,
+        entry_type=entry_type,
+        answered=answered,
+        source=source,
+        actor_is_agent=actor_is_agent,
+    )

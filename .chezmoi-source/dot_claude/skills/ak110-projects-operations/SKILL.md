@@ -1,15 +1,14 @@
 ---
-name: sync-cross-project
+name: ak110-projects-operations
 description: >
-  作者個人の姉妹プロジェクト群の間でツールチェイン（Makefile、mise、prek、GitHub Actionsなど）や
-  ドキュメント構成を揃える際に必ず使う。gv・lcなど姉妹プロジェクト自体を編集する作業と、
-  推奨ガイド・共有ファイルへの追従作業でも使う。個人プロジェクトのAWI処理への着手時、
-  リリース作業時、lint設定・足回りファイルの変更時も使う。
-  `/sync-cross-project`、「他プロジェクトへの反映」
+  作者個人のプロジェクト群の運用を扱う。姉妹プロジェクト間のツールチェイン（Makefile、mise、prek、
+  GitHub Actionsなど）・ドキュメント構成の同期、gv・lcなど姉妹プロジェクト自体の編集、推奨ガイド・
+  共有ファイルへの追従、個人プロジェクトのAWI処理への着手、リリース、lint設定・足回りファイルの
+  変更時に使う。`/ak110-projects-operations`、「他プロジェクトへの反映」
   「プロジェクト間の同期」などのキーワードで自動トリガーしてよい。プロジェクト固有のアプリケーションロジック変更は対象外
 ---
 
-# 姉妹プロジェクト間のツールチェイン・ドキュメント構成同期
+# 作者個人のプロジェクト運用
 
 ## 前提
 
@@ -117,8 +116,9 @@ Cargoの既定のキャレット要件のように上限が常に存在する記
 
 ## リリース運用
 
-`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは`releaser <patch|minor|major>`で起動する。
-`releaser`は対象リポジトリの`release.yaml`ワークフローを起動するラッパーであり、各リポジトリの`AGENTS.md`が記載する`gh workflow run release.yaml`と同じワークフローを起動する。
+`gv`・`lc`・`glatasks`・`pyfltr`・`pytilpack`のリリースは、通常入口として`releaser <patch|minor|major>`エージェントを起動する。
+`releaser`は対象リポジトリの`AGENTS.md`を読み、同リポジトリが定める公開手順を実行して完了まで検収する。
+`gh workflow run release.yaml`などの低水準コマンドは、`releaser`の内部実装又は人間が手動で補助する場合にだけ用いる。
 引数を省略した`releaser`はヘルプと未リリースコミットの一覧を表示するだけでリリースを起動しないため、未リリース分の確認に使う。
 バージョン区分は次のとおりとする。
 

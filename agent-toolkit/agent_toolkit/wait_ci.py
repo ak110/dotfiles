@@ -854,6 +854,8 @@ def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
             ["git", "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=subprocess_timeout,
         )
@@ -871,6 +873,8 @@ def _is_ancestor_of_ref(ancestor_sha: str, ref: str, subprocess_timeout: float) 
             ["git", "merge-base", "--is-ancestor", ancestor_sha, ref],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=subprocess_timeout,
         )
@@ -886,6 +890,8 @@ def _follow_shas(base_sha: str, ref: str, subprocess_timeout: float) -> list[str
             ["git", "log", f"{base_sha}..{ref}", "--format=%H"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=subprocess_timeout,
         )

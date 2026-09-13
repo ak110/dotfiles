@@ -2604,6 +2604,112 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
 
 
 @pytest.mark.asyncio
+async def test_work_item_filename_link_supports_get_and_shift_click(screen_harness: _ScreenHarness) -> None:
+    """WI名は詳細を復元するGET URLを持ち、Shiftクリックをブラウザーへ委ねる。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    link = page.locator('.entry-select[data-key="inbox/awi.md"]')
+    await link.wait_for(state="visible")
+    href = await link.get_attribute("href")
+    assert href == "/?state=inbox&filename=awi.md"
+
+    await link.click()
+    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    assert urllib.parse.urlsplit(page.url).query == "state=inbox&filename=awi.md"
+
+    await page.go_back()
+    await playwright.async_api.expect(page.get_by_role("dialog", name="詳細")).to_be_hidden()
+    await page.go_forward()
+    await page.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    assert await page.locator("#detail-filename").inner_text() == "awi.md"
+    await page.keyboard.press("Escape")
+
+    async with harness.context.expect_page() as opened:
+        await link.click(modifiers=["Shift"])
+    shifted = await opened.value
+    await shifted.get_by_role("dialog", name="詳細").wait_for(state="visible")
+    assert await shifted.locator("#detail-filename").inner_text() == "awi.md"
+    await shifted.close()
+
+
+@pytest.mark.asyncio
+async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _ScreenHarness) -> None:
+    """計画名はプレビューを復元するGET URLを持ち、Shiftクリックをブラウザーへ委ねる。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/plans")
+    link = page.locator("#files .file").first
+    await link.wait_for(state="visible")
+    href = await link.get_attribute("href")
+    assert href is not None
+    parsed = urllib.parse.urlsplit(href)
+    query = urllib.parse.parse_qs(parsed.query)
+    assert parsed.path == "/plans"
+    assert query["host"] == ["browser-test"]
+    assert query["path"] == ["plan.md"]
+
+    async with harness.context.expect_page() as opened:
+        await link.click(modifiers=["Shift"])
+    shifted = await opened.value
+    await shifted.get_by_role("heading", name="初回").wait_for(state="visible")
+    assert urllib.parse.parse_qs(urllib.parse.urlsplit(shifted.url).query)["path"] == ["plan.md"]
+    await shifted.close()
+
+
+@pytest.mark.asyncio
+async def test_slow_work_item_filter_and_plan_preview_show_delayed_loading(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """WI一覧と計画プレビューは500ms超の最新要求だけ処理中表示を行う。"""
+    harness = screen_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await _open_filters(page)
+
+    async def delay_entries(route: playwright.async_api.Route) -> None:
+        if "status=adopted" in route.request.url:
+            await asyncio.sleep(0.65)
+        await route.continue_()
+
+    await page.route("**/api/entries**", delay_entries)
+    await page.locator("#state-filter").select_option("adopted")
+    await page.wait_for_timeout(550)
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+    await page.locator('.entry-select[data-key="adopted/adopted.md"]').wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
+    await page.unroute("**/api/entries**", delay_entries)
+
+    async def delay_plan(route: playwright.async_api.Route) -> None:
+        await asyncio.sleep(0.65)
+        await route.continue_()
+
+    await page.route("**/api/plans/file?*", delay_plan)
+    await page.goto(harness.base_url + "/plans")
+    await page.locator("#plans-loading-indicator").wait_for(state="visible")
+    await page.get_by_role("heading", name="初回").wait_for(state="visible")
+    await playwright.async_api.expect(page.locator("#plans-loading-indicator")).to_be_hidden()
+
+
+@pytest.mark.asyncio
+async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
+    screen_harness: _ScreenHarness,
+) -> None:
+    """二画面の左幅をそろえ、セッションの先頭詳細をデスクトップで自動表示する。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 1280, "height": 800})
+    await page.goto(screen_harness.base_url + "/plans")
+    plan_width = await page.locator("#screen-plans aside").evaluate("element => element.getBoundingClientRect().width")
+
+    await page.goto(screen_harness.base_url + "/sessions")
+    await page.locator("#detail .event").first.wait_for(state="visible")
+    session_width = await page.locator("#screen-sessions aside").evaluate("element => element.getBoundingClientRect().width")
+
+    assert plan_width == session_width == 320
+    assert await page.locator('#sessions .session-item[aria-current="true"]').count() == 1
+
+
+@pytest.mark.asyncio
 async def test_header_navigation_is_centered_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """ヘッダーの子要素の数が画面ごとに異なっても、3画面ともナビゲーションを画面中央へ置く。"""
     harness = screen_harness
@@ -3205,7 +3311,11 @@ async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarn
     await harness.page.get_by_role("heading", name="初回").wait_for(state="visible")
     for attached in ("plan.detail.md", "plan.bugs.md", "plan.plan-review.tsv", "plan.exec-review.tsv"):
         assert await harness.page.locator("#files").get_by_text(attached, exact=True).count() == 0
-    assert await harness.page.locator('a[data-plan-path="plan.detail.md"]').inner_text() == "詳細"
+    detail_link = harness.page.locator('a[data-plan-path="plan.detail.md"]')
+    assert await detail_link.inner_text() == "詳細"
+    detail_href = await detail_link.get_attribute("href")
+    assert detail_href is not None
+    assert urllib.parse.parse_qs(urllib.parse.urlsplit(detail_href).query)["path"] == ["plan.detail.md"]
 
     await harness.page.locator('a[data-plan-path="plan.detail.md"]').click()
     await harness.page.get_by_role("heading", name="詳細ページ").wait_for(state="visible")

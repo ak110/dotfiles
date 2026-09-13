@@ -62,6 +62,7 @@ def run_script(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         check=False,
         env=env if env is not None else os.environ.copy(),
         cwd=cwd,

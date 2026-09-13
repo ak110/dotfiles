@@ -160,7 +160,7 @@ def test_history_review_rows_reject_empty_columns(empty_column: int) -> None:
         1,
     )
     errors = _plan_format.check_plan_structure(content)
-    assert any("空cellまたは列数不一致" in error for error in errors), errors
+    assert any("表に空cellがある" in error for error in errors), errors
 
 
 def test_permanence_section_accepts_prose_instead_of_table() -> None:

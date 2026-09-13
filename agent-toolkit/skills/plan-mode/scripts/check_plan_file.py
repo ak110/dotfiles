@@ -76,6 +76,8 @@ def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
         ["git", "-C", str(work_dir), "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:

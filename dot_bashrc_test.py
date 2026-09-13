@@ -157,6 +157,45 @@ def test_fixed_paths_are_ordered_and_idempotent(tmp_path: pathlib.Path) -> None:
     assert "" in first.split(":")
 
 
+def test_noninteractive_mise_uses_normal_activation(tmp_path: pathlib.Path) -> None:
+    """非対話シェルでもshim専用モードを使わず、通常のactivateを評価する。"""
+    home = tmp_path / "home"
+    fake_bin = home / "fake-bin"
+    fake_bin.mkdir(parents=True)
+    call_log = home / "mise-calls"
+    mise_stub = fake_bin / "mise"
+    mise_stub.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$MISE_CALL_LOG"\nprintf "export MISE_ACTIVATED=1\\n"\n',
+        encoding="utf-8",
+    )
+    mise_stub.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-c",
+            '. "$1"\nprintf "activated:%s\\n" "${MISE_ACTIVATED-unset}"',
+            "bash",
+            str(BASHRC),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env={
+            "HOME": str(home),
+            "PATH": str(fake_bin),
+            "TERM": "dumb",
+            "MISE_CALL_LOG": str(call_log),
+        },
+    )
+
+    assert call_log.read_text(encoding="utf-8").splitlines() == ["activate bash"]
+    assert completed.stdout.splitlines() == ["activated:1"]
+
+
 def test_enable_pyenv_keeps_existing_path_position(tmp_path: pathlib.Path) -> None:
     """pyenv有効化を2回実行しても既存PATHの位置と件数を保つ。"""
     home = tmp_path / "home"
@@ -347,3 +386,45 @@ printf 'DEBUG:%s\\n' "$(trap -p DEBUG)"
     assert next(line for line in outside_lines if line.startswith("PROMPT:")).endswith("history -a;_show_status;")
     assert next(line for line in outside_lines if line.startswith("DEBUG:")) == "DEBUG:"
     assert not outside_call_log.exists()
+
+
+def test_tmux_command_state_discards_stale_command_hash(tmp_path: pathlib.Path) -> None:
+    """削除済みtmuxのhashを破棄し、現在のPATHにある実体を起動する。"""
+    home = tmp_path / "home"
+    old_bin = home / "old-bin"
+    new_bin = home / "new-bin"
+    old_bin.mkdir(parents=True)
+    new_bin.mkdir()
+    old_tmux = old_bin / "tmux"
+    old_tmux.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+    old_tmux.chmod(0o755)
+    call_log = home / "tmux-calls"
+    new_tmux = new_bin / "tmux"
+    new_tmux.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TMUX_CALL_LOG"\n',
+        encoding="utf-8",
+    )
+    new_tmux.chmod(0o755)
+
+    script = """\
+hash -p "$2" tmux
+/bin/rm "$2"
+. "$1"
+tmux_executable=$(_dotfiles_tmux_executable)
+"$tmux_executable" stale-check
+"""
+    subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-i", "-c", script, "bash", str(BASHRC), str(old_tmux)],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=home,
+        env={
+            "HOME": str(home),
+            "PATH": f"{new_bin}:{old_bin}",
+            "TERM": "dumb",
+            "TMUX_CALL_LOG": str(call_log),
+        },
+    )
+
+    assert call_log.read_text(encoding="utf-8").splitlines() == ["stale-check"]

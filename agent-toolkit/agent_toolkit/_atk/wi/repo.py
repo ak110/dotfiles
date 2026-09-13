@@ -55,6 +55,8 @@ def _resolve_local_worktree(value: str | None) -> pathlib.Path:
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -80,6 +82,8 @@ def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> s
                 ["git", "-C", str(local_path), "remote", "get-url", "origin"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             if result.returncode != 0:
@@ -109,6 +113,8 @@ def _resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None) -> s
         ["git", "-C", str(cwd), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:
@@ -143,6 +149,8 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
             ["git", "-C", str(local_worktree), "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if result.returncode != 0 or result.stdout.strip() != "true":
@@ -159,6 +167,8 @@ def resolve_head_commit(local_worktree: pathlib.Path) -> str:
         ["git", "-C", str(local_worktree), "rev-parse", "--verify", "HEAD^{commit}"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if result.returncode != 0:

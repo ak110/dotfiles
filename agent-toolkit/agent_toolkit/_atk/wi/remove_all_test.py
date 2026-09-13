@@ -30,13 +30,15 @@ def _write_entry(
     target_repo: str = "github.com/example/foo",
     entry_type: str = "awi",
     body: str = "テスト本文",
+    source: str | None = None,
 ) -> pathlib.Path:
     """指定状態へテスト用エントリを書き込む。"""
     directory = notes / state
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
+    source_line = f"source: {source}\n" if source is not None else ""
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: {entry_type}\n---\n\n{body}\n",
+        f"---\ntarget_repo: {target_repo}\ntype: {entry_type}\n{source_line}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -111,6 +113,8 @@ class TestRemoveAllArguments:
             ["wi", "rm"],
             ["wi", "rm", "--yes", "entry.md"],
             ["wi", "rm", "--skip-pull", "entry.md"],
+            ["wi", "rm", "--all", "--state=inbox", "--target-repo", "github.com/example/foo"],
+            ["wi", "rm", "--status=all", "entry.md"],
         ],
     )
     def test_rejects_invalid_combinations(
@@ -157,23 +161,29 @@ class TestRemoveAllConfirmation:
         assert not (notes / "inbox/question.md").exists()
         assert commits == [("chore: remove 2 entries", ["inbox", "processing", "hold", "adopted", "rejected"])]
 
-    def test_excludes_hold_entries(
+    def test_includes_hold_entries_for_user(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """holdは一覧表示上activeでも一括削除の候補にしない。"""
+        """ユーザー環境ではactiveに含まれるholdを削除する。"""
         notes = _setup_notes(tmp_path)
         held = _write_entry(notes, "hold", "held.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
 
-        assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
+        assert (
+            _run_main(
+                ["wi", "rm", "--all", "--yes", "--target-repo", "github.com/example/foo"],
+                tmp_path,
+            )
+            == 0
+        )
 
-        assert held.exists()
-        assert not commits
-        assert "削除対象なし" in capsys.readouterr().out
+        assert not held.exists()
+        assert commits
+        assert "[hold/" in capsys.readouterr().out
 
     def test_restores_missing_state_directories_before_commit(
         self,
@@ -318,6 +328,114 @@ class TestRemoveAllScope:
         assert other_repo.exists()
         assert adopted.exists()
         assert rejected.exists()
+
+    def test_user_can_remove_terminal_states_with_status_all(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """ユーザー環境ではstatus=allで終端状態も削除する。"""
+        notes = _setup_notes(tmp_path)
+        adopted = _write_entry(notes, "adopted", "adopted.md")
+        rejected = _write_entry(notes, "rejected", "rejected.md")
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+
+        assert (
+            _run_main(
+                ["wi", "rm", "--all", "--yes", "--status=all", "--target-repo", "github.com/example/foo"],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert not adopted.exists()
+        assert not rejected.exists()
+
+    def test_filters_use_same_intersection_as_list(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """状態・種別・回答・由来の全条件に一致する項目だけを削除する。"""
+        notes = _setup_notes(tmp_path)
+        matching = _write_entry(
+            notes,
+            "hold",
+            "matching.md",
+            entry_type="uwi",
+            body="## 質問\n\n確認\n\n## 回答\n\n済み",
+            source="session-review",
+        )
+        wrong_source = _write_entry(
+            notes,
+            "hold",
+            "wrong-source.md",
+            entry_type="uwi",
+            body="## 質問\n\n確認\n\n## 回答\n\n済み",
+            source="agent",
+        )
+        unanswered = _write_entry(
+            notes,
+            "hold",
+            "unanswered.md",
+            entry_type="uwi",
+            body="## 質問\n\n確認\n\n## 回答\n",
+            source="session-review",
+        )
+        awi = _write_entry(notes, "hold", "awi.md", source="session-review")
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+
+        assert (
+            _run_main(
+                [
+                    "wi",
+                    "rm",
+                    "--all",
+                    "--yes",
+                    "--status=hold",
+                    "--type=uwi",
+                    "--answered=yes",
+                    "--source=session-review",
+                    "--target-repo",
+                    "github.com/example/foo",
+                ],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert not matching.exists()
+        assert wrong_source.exists()
+        assert unanswered.exists()
+        assert awi.exists()
+
+    def test_agent_environment_limits_all_to_inbox_and_hold(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """エージェント環境ではstatus=allでもinboxとholdだけを削除する。"""
+        notes = _setup_notes(tmp_path)
+        paths = {
+            state: _write_entry(notes, state, f"{state}.md") for state in ("inbox", "processing", "hold", "adopted", "rejected")
+        }
+        commits: list[tuple[str, list[str]]] = []
+        _patch_storage(monkeypatch, commits)
+        monkeypatch.setenv("AI_AGENT", "1")
+
+        assert (
+            _run_main(
+                ["wi", "rm", "--all", "--yes", "--status=all", "--target-repo", "github.com/example/foo"],
+                tmp_path,
+            )
+            == 0
+        )
+
+        assert not paths["inbox"].exists()
+        assert not paths["hold"].exists()
+        assert all(paths[state].exists() for state in ("processing", "adopted", "rejected"))
 
     def test_removes_legacy_path_and_url_forms_together(
         self,

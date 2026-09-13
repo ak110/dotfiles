@@ -20,13 +20,13 @@ textlintの`preset-jtf-style`で検査される項目は同プリセットに従
 
 ## 口語表現チェック
 
-恒久成果物にはpyfltr内蔵の`colloquial-check`を実行する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。
+恒久成果物にはpyfltrの有効な検査定義が持つ`targets`を確認し、対象ファイルの拡張子へ到達するコマンドを選んで実行する。Markdownでは`textlint,colloquial-check`、それ以外の対応拡張子では`colloquial-check`を指定する。次のCLI形式で既定除外を解除し、対象到達性を判定できるJSONLを取得する。
 
 ```sh
-uvx pyfltr run --commands=colloquial-check --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
+uvx pyfltr run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --output-format=jsonl <対象ファイルの絶対パス>
 ```
 
-検査済みと判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、`summary`レコードに`missing_targets`が現れず、`fully_excluded_files`も現れない場合だけとする。終了コード0又は診断0件だけを対象到達済みの根拠にしない。
+検査済みと判定できるのは、単一ファイルを指定したJSONLの`header`レコードの`files`が1であり、指定した検査コマンドのうち対象拡張子を`targets`へ持つものが1件以上あり、当該コマンドの対象ファイル数が1である場合だけとする。`missing_targets`、`fully_excluded_files`、skip、除外が現れる対象は未到達として扱う。終了コード0、診断0件、指摘0件の成功件数は到達後の結果であり、対象到達済みの根拠にしない。
 
 検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とする。Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
 

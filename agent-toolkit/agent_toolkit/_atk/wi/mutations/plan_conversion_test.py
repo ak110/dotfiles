@@ -640,13 +640,13 @@ class TestRmSingle:
         assert "processing状態のファイルは既定で削除を保護します" in captured.err
         assert "fb-001.md" in captured.err
 
-    def test_missing_file_reports_all_editable_states(
+    def test_missing_file_reports_all_user_removable_states(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """編集可能な3状態のいずれにも存在しない場合、その旨を明記してexit 2する。"""
+        """ユーザーが削除できる5状態のいずれにも存在しない場合、その旨を明記してexit 2する。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -655,7 +655,7 @@ class TestRmSingle:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "inbox・processing・holdのいずれにも存在しません" in captured.err
+        assert "processing・inbox・hold・adopted・rejectedのいずれにも存在しません" in captured.err
 
 
 def test_common_edit_and_append_accept_user_comment_change_in_agent_environment(

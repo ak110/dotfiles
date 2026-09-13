@@ -32,6 +32,7 @@ from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.common import (
     TRANSITION_EXPLICIT_STATES,
     WI_PROCESSABLE_STATES,
+    WI_AGENT_REMOVABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_HOLD,
     WI_STATE_INBOX,
@@ -40,6 +41,7 @@ from agent_toolkit._atk.wi.common import (
     WI_STATES,
     WI_TYPE_AWI,
     WI_TYPE_UWI,
+    WI_USER_REMOVABLE_STATES,
     WebInputError,
     _commit_and_push,
     _copy_to_tempfile,
@@ -150,10 +152,22 @@ def _resolve_transition_paths(
     state: str | None,
     *,
     missing_is_conflict: bool,
+    actor_is_agent: bool,
 ) -> list[pathlib.Path]:
     """操作種別と明示状態から対象エントリを解決する。"""
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = _subdir(private_notes, WI_STATE_PROCESSING)
+    removable_states = WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
+    if action == "remove" and state is not None and state not in removable_states:
+        raise WebInputError(f"エージェント環境ではstate={state}の項目を削除できません")
+    if action == "remove" and state is None and actor_is_agent:
+        forbidden_states = tuple(candidate for candidate in WI_USER_REMOVABLE_STATES if candidate not in removable_states)
+        for filename in filenames:
+            if any(_validate_filename(filename, private_notes / candidate).is_file() for candidate in removable_states):
+                continue
+            for candidate in forbidden_states:
+                if _validate_filename(filename, private_notes / candidate).is_file():
+                    raise WebInputError(f"エージェント環境ではstate={candidate}の項目を削除できません")
     if state is not None:
         return _resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
     if action == "start-processing":
@@ -172,6 +186,7 @@ def _resolve_transition_paths(
             inbox_dir,
             processing_dir,
             missing_is_conflict=missing_is_conflict,
+            states=removable_states,
         )
     return _resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
 
@@ -327,10 +342,12 @@ def transition_entries(
     cooldown_days: int | None = None,
     local_worktree: pathlib.Path | None = None,
     skip_push: bool = False,
+    actor_is_agent: bool = False,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移又は削除を実行する。
 
-    `action="remove"`かつ`force=False`（既定）の場合、processing状態のファイルが
+    `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
+    偽の場合は全状態を対象とし、`force=False`（既定）でprocessing状態のファイルが
     対象に含まれるとexit 2で拒否する（`atk wi rm`の既定保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
     """
@@ -354,6 +371,7 @@ def transition_entries(
             filenames,
             state,
             missing_is_conflict=missing_is_conflict,
+            actor_is_agent=actor_is_agent,
         )
         _validate_transition_targets(
             paths,
@@ -513,6 +531,11 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             force=args.force,
             note=args.note,
             skip_pull=args.skip_pull,
+            status=args.status,
+            entry_type=args.type,
+            answered=args.answered,
+            source=args.source,
+            actor_is_agent=is_agent_environment(),
         )
         if filenames:
             print(f"{len(filenames)}件削除: {', '.join(filenames)}")
@@ -527,5 +550,7 @@ def _cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         target_repo=args.target_repo,
         force=args.force,
         note=args.note,
+        state=args.state,
+        actor_is_agent=is_agent_environment(),
     )
     print(f"{len(filenames)}件削除: {', '.join(filenames)}")

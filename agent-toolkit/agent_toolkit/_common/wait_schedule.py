@@ -91,6 +91,8 @@ def _has_valid_subscription_status() -> bool:
             check=False,
             shell=False,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (OSError, UnicodeError, subprocess.TimeoutExpired):

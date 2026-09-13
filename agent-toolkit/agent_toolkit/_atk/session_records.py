@@ -1,4 +1,4 @@
-"""保存済みセッション記録（Claude Code・Codex）の走査・復号・判定を提供する共通モジュール。"""
+"""保存済みセッション記録（Claude Code・Codex）の走査・デコード・判定を提供する共通モジュール。"""
 
 from __future__ import annotations
 

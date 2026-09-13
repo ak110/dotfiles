@@ -1404,26 +1404,6 @@ def _check_bash_recursive_grep_without_exclusion(command: str, cwd: str) -> str 
     return "block"
 
 
-def _check_bash_state_change_command_chaining(command: str) -> str | None:
-    """状態変更コマンドが最後の直列区間でない場合に遮断する。
-
-    最後の区間では当該コマンドの終了コードがシェルの終了コードとなるため対象外とする。
-    代替手段が当該コマンドの単独実行に一意に定まり、同じターンで実行できるため遮断する。
-    """
-    serial_commands = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
-    for serial_command in serial_commands[:-1]:
-        if any(_segment_is_state_changing(segment) for segment in _extract_execution_segments(serial_command)):
-            print(
-                _block_notice(
-                    "block: 状態を変更するコマンドを他のコマンドと同じシェル呼び出しへ連結している。",
-                    fix="当該コマンドを単独で実行し、終了コードと出力を直接観測する。",
-                ),
-                file=sys.stderr,
-            )
-            return "block"
-    return None
-
-
 def _check_bash_help_with_execution(command: str) -> str | None:
     """同じ実行ファイルのヘルプ取得と、同じ実行ファイルのヘルプ取得以外の区間との並置を遮断する。
 

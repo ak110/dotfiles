@@ -71,6 +71,86 @@ def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     assert (notes / "processing/entry.md").is_file()
 
 
+@pytest.mark.parametrize("state", ["processing", "inbox", "hold", "adopted", "rejected"])
+@pytest.mark.parametrize("explicit_state", [False, True], ids=["implicit", "explicit"])
+def test_user_can_remove_individual_entry_from_every_state(
+    state: str,
+    explicit_state: bool,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """人間環境の個別削除は暗黙・明示指定とも全状態を対象にする。"""
+    notes = _setup_notes(tmp_path)
+    source = _write_awi_file(notes, "entry.md")
+    target = notes / state / source.name
+    if source != target:
+        target.parent.mkdir(exist_ok=True)
+        source.replace(target)
+    _disable_transition_git(monkeypatch)
+    args = ["wi", "rm", source.name]
+    if state == "processing":
+        args.append("--force")
+    if explicit_state:
+        args.append(f"--state={state}")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(args, home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("state", ["inbox", "hold"])
+def test_agent_can_remove_individual_entry_from_allowed_state(
+    state: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """エージェント環境の個別削除はinboxとholdを対象にする。"""
+    notes = _setup_notes(tmp_path)
+    source = _write_awi_file(notes, "entry.md")
+    target = notes / state / source.name
+    if source != target:
+        source.replace(target)
+    monkeypatch.setenv("AI_AGENT", "1")
+    _disable_transition_git(monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(["wi", "rm", source.name], home=tmp_path)
+
+    assert exc_info.value.code == 0
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("state", ["processing", "adopted", "rejected"])
+@pytest.mark.parametrize("explicit_state", [False, True], ids=["implicit", "explicit"])
+def test_agent_rejects_individual_entry_from_forbidden_state(
+    state: str,
+    explicit_state: bool,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境では禁止状態を状態名付きで拒否し、対象を保持する。"""
+    notes = _setup_notes(tmp_path)
+    source = _write_awi_file(notes, "entry.md")
+    target = notes / state / source.name
+    target.parent.mkdir(exist_ok=True)
+    source.replace(target)
+    monkeypatch.setenv("AI_AGENT", "1")
+    _disable_transition_git(monkeypatch)
+    args = ["wi", "rm", source.name]
+    if explicit_state:
+        args.append(f"--state={state}")
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(args, home=tmp_path)
+
+    assert exc_info.value.code == 1
+    assert f"state={state}" in capsys.readouterr().err
+    assert target.is_file()
+
+
 def test_transition_restores_missing_state_directories_before_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

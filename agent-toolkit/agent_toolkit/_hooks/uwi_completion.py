@@ -62,6 +62,8 @@ def resolve_target_repo(cwd: str) -> str | None:
             ["git", "-C", cwd, "remote", "get-url", "origin"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_GIT_TIMEOUT_SEC,
         )

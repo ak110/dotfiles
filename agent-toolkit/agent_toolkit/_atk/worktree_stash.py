@@ -22,7 +22,15 @@ _QUEUE_REPOSITORY_ERROR = (
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
     """指定worktreeでgitを実行する。"""
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
 
 
 def _git_output(args: list[str], cwd: pathlib.Path) -> str | None:

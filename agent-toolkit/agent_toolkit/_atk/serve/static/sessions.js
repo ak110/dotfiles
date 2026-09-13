@@ -365,7 +365,11 @@ async function init() {
   document.getElementById("sessions-prev-btn").addEventListener("click", () => navigateRelative(-1));
   document.getElementById("sessions-next-btn").addEventListener("click", () => navigateRelative(1));
   await loadList();
-  setDrawerOpen(window.matchMedia("(max-width: 768px)").matches);
+  const mobile = window.matchMedia("(max-width: 768px)").matches;
+  if (!selected && sessions.length > 0 && !mobile) {
+    await openSession(sessions[0].host, sessions[0].engine, sessions[0].path);
+  }
+  setDrawerOpen(mobile);
   subscribeEvents();
 }
 

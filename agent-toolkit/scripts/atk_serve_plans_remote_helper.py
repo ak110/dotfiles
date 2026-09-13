@@ -156,6 +156,8 @@ def _resolve_private_notes_result() -> tuple[pathlib.Path | None, str | None]:
             [_atk_executable(), "config", "get", "private_notes"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_PRIVATE_NOTES_TIMEOUT_SEC,
             env=_atk_env(),

@@ -61,6 +61,27 @@ def _answered_matches(entry_type: str | None, text: str, answered_filter: str) -
     return answered if answered_filter == "yes" else not answered
 
 
+def _select_entries(
+    private_notes: pathlib.Path,
+    *,
+    status: str,
+    target_repo: str | None,
+    entry_type: str,
+    answered: str,
+    source: str | None,
+) -> list[QueueEntryDisplay]:
+    """一覧系コマンドで共有する5条件の積集合を返す。"""
+    selected: list[QueueEntryDisplay] = []
+    for entry in _iter_entries(private_notes, _resolve_states(status), target_repo, entry_type):
+        _, _, text, _, actual_type = entry
+        if not _answered_matches(actual_type, text, answered):
+            continue
+        if source is not None and not _source_matches(_parse_source(text), source):
+            continue
+        selected.append(entry)
+    return selected
+
+
 def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
     """一覧表示用の状態別着手可否を返す。"""
     if state not in WI_PROCESSABLE_STATES:
@@ -211,14 +232,14 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     filter_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
     readiness = calculate_readiness(private_notes, filter_repo)
 
-    selected: list[QueueEntryDisplay] = []
-    for entry in _iter_entries(private_notes, _resolve_states(args.status), filter_repo, args.type):
-        _, _, text, _, entry_type = entry
-        if not _answered_matches(entry_type, text, args.answered):
-            continue
-        if args.source is not None and not _source_matches(_parse_source(text), args.source):
-            continue
-        selected.append(entry)
+    selected = _select_entries(
+        private_notes,
+        status=args.status,
+        target_repo=filter_repo,
+        entry_type=args.type,
+        answered=args.answered,
+        source=args.source,
+    )
 
     if args.count:
         print(len(selected))
