@@ -113,6 +113,54 @@ def test_generate_and_check_cover_every_candidate(tmp_path: pathlib.Path) -> Non
     assert "main:2" in content and "一次選別で除外" in content
     assert "main:5" in content and "事前検査不足" in content
     assert "候補2件、locator3件、過不足0件、重複0件" in content
+    assert (
+        tuple(line.removeprefix("## ") for line in content.splitlines() if line.startswith("## ")) == report.REPORT_H2_HEADINGS
+    )
+
+
+def test_check_accepts_delegate_authored_section_content(tmp_path: pathlib.Path) -> None:
+    """担当が機械生成部分を維持して各節へ追記した報告を受理する。"""
+    paths = _inputs(tmp_path)
+    assert report.main(_argv(paths, "generate")) == 0
+    content = paths[-1].read_text(encoding="utf-8")
+    content = content.replace("## 対象セッション\n", "## 対象セッション\n\n対象ID: session-1\n", 1)
+    content = content.replace("## 規範適用による停止\n", "## 規範適用による停止\n\n停止なし。\n", 1)
+    paths[-1].write_text(content, encoding="utf-8")
+
+    assert report.main(_argv(paths, "check")) == 0
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda content: content.replace("## 対象セッション\n", "", 1),
+        lambda content: content.replace(
+            "## 対象セッション\n\n## 問題候補の判定記録",
+            "## 問題候補の判定記録\n\n## 対象セッション",
+            1,
+        ),
+        lambda content: content.replace("一次選別で除外", "除外済み", 1),
+    ),
+)
+def test_check_rejects_heading_or_generated_content_changes(tmp_path: pathlib.Path, mutate) -> None:
+    """見出しの欠落・順序違反と機械生成表の改変を拒否する。"""
+    paths = _inputs(tmp_path)
+    assert report.main(_argv(paths, "generate")) == 0
+    paths[-1].write_text(mutate(paths[-1].read_text(encoding="utf-8")), encoding="utf-8")
+
+    assert report.main(_argv(paths, "check")) == 2
+
+
+def test_report_headings_match_delegate_output_contract() -> None:
+    """生成見出しを受信側タスク文書の意味契約へ同期する。"""
+    task_file = pathlib.Path(report.__file__).resolve().parents[3] / "share" / "session-review-delegate.subagent.md"
+    contract_headings = tuple(
+        line.removeprefix("- `## ").removesuffix("`")
+        for line in task_file.read_text(encoding="utf-8").splitlines()
+        if line.startswith("- `## ")
+    )
+
+    assert contract_headings == report.REPORT_H2_HEADINGS
 
 
 def test_numeric_locator_order_generates_and_checks(tmp_path: pathlib.Path) -> None:
