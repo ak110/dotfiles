@@ -401,6 +401,8 @@ class TestReadiness:
             *,
             capture_output: bool,
             text: bool,
+            encoding: str | None = None,
+            errors: str | None = None,
             check: bool,
             timeout: float | None = None,
         ) -> subprocess.CompletedProcess[Any]:
@@ -411,6 +413,8 @@ class TestReadiness:
                 args,
                 capture_output=capture_output,
                 text=text,
+                encoding=encoding,
+                errors=errors,
                 check=check,
                 timeout=timeout,
             )
