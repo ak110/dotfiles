@@ -747,9 +747,9 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """隔離済み状態からも管理root内を指すJunctionを回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-quarantine-junction")
-        destination = tmp_path / "quarantine-destination"
+        destination = target.parent / "quarantine-destination"
         destination.mkdir()
         _make_junction(target / "junction", destination)
         consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
