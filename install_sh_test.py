@@ -15,6 +15,7 @@
 """
 
 import http.server
+import json
 import os
 import pathlib
 import shutil
@@ -54,7 +55,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     shutil.copy2(chezmoi_bin, local_bin / "chezmoi")
     shutil.copy2(uv_bin, local_bin / "uv")
     _write_fake_cli(local_bin / "claude")
-    _write_fake_cli(local_bin / "codex")
+    _write_fake_codex(local_bin / "codex", fake_home, fake_dotfiles)
     _write_fake_npm(local_bin / "npm")
 
     # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHub依存を回避）。
@@ -149,6 +150,28 @@ def _disable_codex_cli_setup(repo: pathlib.Path) -> None:
 def _write_fake_cli(path: pathlib.Path) -> None:
     """外部取得を避けるため、常に成功するCLI代替実行ファイルを配置する。"""
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _write_fake_codex(path: pathlib.Path, fake_home: pathlib.Path, fake_dotfiles: pathlib.Path) -> None:
+    """有効なagent-toolkitを返すCodex CLI代替実行ファイルを配置する。"""
+    plugin_manifest = fake_dotfiles / "agent-toolkit" / ".codex-plugin" / "plugin.json"
+    version = json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"]
+    plugin_root = fake_home / ".codex" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / version
+    plugin_root.parent.mkdir(parents=True)
+    plugin_root.symlink_to(fake_dotfiles / "agent-toolkit", target_is_directory=True)
+    payload = json.dumps(
+        {
+            "installed": [
+                {
+                    "pluginId": "agent-toolkit@ak110-dotfiles",
+                    "enabled": True,
+                    "version": version,
+                }
+            ]
+        }
+    )
+    path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{payload}'\n", encoding="utf-8")
     path.chmod(0o755)
 
 

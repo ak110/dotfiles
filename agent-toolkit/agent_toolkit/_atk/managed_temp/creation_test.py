@@ -117,7 +117,8 @@ def test_session_child_uses_parent_registration_only() -> None:
     child = subject.create_session_temp("work", session_root)
 
     assert child.parent == session_root
-    assert stat.S_IMODE(child.stat().st_mode) == 0o700
+    if os.name == "posix":
+        assert stat.S_IMODE(child.stat().st_mode) == 0o700
     assert not (child / _MARKER_NAME).exists()
     assert [entry["path"] for entry in subject.list_managed_temp()] == [str(session_root)]
     subject.cleanup_managed_temp(session_root)
