@@ -15,7 +15,7 @@ from agent_toolkit._common.file_lock import acquire_lock, release_lock
 @pytest.fixture(autouse=True)
 def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 0)
     monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
 
 
@@ -262,6 +262,45 @@ def test_agents_wait_times_out_without_result(
     assert not captured.err
 
 
+def test_agents_wait_reports_absent_targets_as_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機対象を1件も取得できない状態が上限を超えたら理由を標準エラーへ書いて非0で終わる。
+
+    起動に失敗した委譲先はsessionを登録しないため、当該状態を通常の待機上限まで続けると
+    呼び出し元が起動の失敗を観測できないまま工程が止まる。
+    """
+    assert not wait_environment.exists()
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(state, "EMPTY_WAIT_TIMEOUT_SECONDS", 0.0)
+
+    with pytest.raises(SystemExit, match="10"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "待機対象が1件も登録されないまま上限へ達しました" in captured.err
+
+
+def test_agents_wait_keeps_waiting_once_a_target_is_registered(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機対象を1件でも取得した待機へは対象不在の上限を適用しない。"""
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    monkeypatch.setattr(state, "EMPTY_WAIT_TIMEOUT_SECONDS", 0.0)
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
+    assert not captured.err
+
+
 def test_agents_wait_keeps_absent_projection_nonterminal(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -286,7 +325,7 @@ def test_agents_wait_keeps_captured_session_after_projection_disappears(
     """待機開始後に状態投影が消えても取得済みsessionを非終端として返す。"""
     status_path = _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monotonic_values = iter([0.0, 0.0, 2.0])
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 1.0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 1.0)
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
     monkeypatch.setattr(agents_wait.time, "sleep", lambda _seconds: status_path.unlink())
 
@@ -477,7 +516,7 @@ def test_agents_wait_reissues_for_registered_session_after_notice(
     assert json.loads(capsys.readouterr().out)["status"] == "running"
     status_path.unlink()
 
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(wait_environment))
 
     assert _wait_for_session_1_result(wait_environment) == 0
@@ -596,7 +635,7 @@ def test_agents_wait_keeps_waiting_after_stall_threshold(
     """停滞候補の診断後も待機を続け、次の周回で終端結果を回収する。"""
     _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": "2000-01-01T00:00:00+00:00"}])
     monotonic_values = iter((0.0, 1.0, state.STALL_NOTICE_SECONDS + 1.0))
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", state.STALL_NOTICE_SECONDS + 100.0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", state.STALL_NOTICE_SECONDS + 100.0)
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
 
     monkeypatch.setattr(agents_wait.time, "sleep", _publish_result_on_sleep(wait_environment))
@@ -685,7 +724,7 @@ def test_agents_wait_collects_result_added_after_wait_starts(
 ) -> None:
     """待機開始後に現れたsessionの終端結果も同じ待機処理内で回収する。"""
     _write_own_status(wait_environment, [])
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
     monotonic_values = iter((0.0, 0.0))
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
 
@@ -715,7 +754,7 @@ def test_agents_wait_collects_dynamic_target_under_owner_lock(
 ) -> None:
     """書込主体の単一ロックを保持したまま追加対象を待機集合へ加える。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 10.0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 10.0)
     monotonic_values = iter((0.0, 0.0, 1.0))
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
 

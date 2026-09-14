@@ -4956,7 +4956,7 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
     old_session = subject.SessionState("old-session", str(tmp_path), engine="codex", announced=True)
     manager.sessions[old_session.session_id] = old_session
     writer.flush()
-    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(state, "WAIT_TIMEOUT_SECONDS", 0)
 
     assert (
         agents_wait.wait_for_result(
@@ -5518,3 +5518,23 @@ def test_validate_model_effort_rejects_incomplete_values(model: str | None, effo
     """modelとeffortの片側指定及び空文字列を拒否する。"""
     with pytest.raises(ValueError, match="model and effort must"):
         subject._validate_model_effort(model, effort)
+
+
+def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
+    """初期化の失敗がホストの背景移行閾値より前に確定する。
+
+    当該関係が崩れると、呼び出し元は`start`の失敗を受け取らないまま待機へ進む。
+    上限値を0などへ置換せずに、現行の定数どうしの関係だけを判定する。
+    """
+    failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
+    assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.HOST_BACKGROUND_THRESHOLD_SECONDS
+
+
+def test_empty_wait_limit_outlasts_the_initialization_failure_path() -> None:
+    """対象不在の待機上限が、初期化が失敗し得る最大の経過を上回る。
+
+    当該関係が崩れると、初期化中の委譲先を待つ正常な待機を打ち切る。
+    """
+    failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
+    assert failure_path + subject.START_AVAILABILITY_TIMEOUT < state.EMPTY_WAIT_TIMEOUT_SECONDS
+    assert state.EMPTY_WAIT_TIMEOUT_SECONDS < state.WAIT_TIMEOUT_SECONDS

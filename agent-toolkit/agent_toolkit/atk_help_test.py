@@ -253,3 +253,16 @@ def test_structured_output_commands_state_their_format(command: str, format_name
 
     assert description is not None
     assert format_name in description
+
+
+def test_agents_wait_help_states_absent_target_termination() -> None:
+    """`atk agents wait`の公開説明が、待機対象が不在のまま終わる経路を示す。
+
+    当該経路を説明しないと、待機を発行する主体が非0の終了を再発行すべき実行中通知と取り違える。
+    """
+    commands = {name: parser for name, parser, _summary in _walk_commands()}
+    description = commands["atk agents wait"].description
+
+    assert description is not None
+    assert "待機対象を1件も取得できない状態が続く場合" in description
+    assert "同じコマンドを再発行せず" in description

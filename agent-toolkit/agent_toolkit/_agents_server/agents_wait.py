@@ -15,7 +15,6 @@ from typing import Any
 from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
-_WAIT_TIMEOUT_SECONDS = 3600.0
 _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 
 
@@ -74,6 +73,8 @@ def wait_for_result(
     待機中に開始又は再稼働したsessionも、巡回ごとに取得して対象へ追加する。
     状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
+    対象を1件も取得できない状態が続く場合だけは、起動そのものが失敗した可能性を呼び出し元へ返すため、
+    通常の待機上限とは別の短い上限で理由を標準エラーへ書いて非0で終わる。
     """
     logging_config.configure_logging()
     env = os.environ if environment is None else environment
@@ -119,7 +120,9 @@ def wait_for_result(
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         started_at = time.monotonic()
-        deadline = started_at + _WAIT_TIMEOUT_SECONDS
+        deadline = started_at + state.WAIT_TIMEOUT_SECONDS
+        # 対象を1件でも取得した時点で不在の上限は失効し、以後は通常の待機上限だけが働く。
+        empty_deadline: float | None = None if ordered_ids else started_at + state.EMPTY_WAIT_TIMEOUT_SECONDS
         while True:
             current_origins, target_error = _target_origins(
                 own_status_path,
@@ -167,6 +170,19 @@ def wait_for_result(
                     _LOG.info("wait_return reason=notice-only session_id=%s", session_id)
                     return 0
 
+            now = time.monotonic()
+            if ordered_ids:
+                empty_deadline = None
+            elif empty_deadline is not None and now >= empty_deadline:
+                return _fail(
+                    "待機対象が1件も登録されないまま上限へ達しました。"
+                    "委譲先の起動に失敗した可能性があるため、`atk agents list`と起動側の応答を確認してください: "
+                    f"owner={identity.file_name}, "
+                    f"elapsed={now - started_at:.1f}s, "
+                    f"limit={state.EMPTY_WAIT_TIMEOUT_SECONDS:.0f}s",
+                    10,
+                )
+
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
             selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
             if selected is None and ordered_ids:
@@ -175,7 +191,7 @@ def wait_for_result(
                 selected,
                 {} if selected is None else _session_output_activity(status_paths, selected),
             )
-            remaining = deadline - time.monotonic()
+            remaining = deadline - now
             if remaining <= 0:
                 print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
                 _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
