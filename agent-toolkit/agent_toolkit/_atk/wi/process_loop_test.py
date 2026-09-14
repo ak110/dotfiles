@@ -2486,7 +2486,15 @@ class TestProcessLoopUpdateAndRestart:
         assert execv_calls
         assert execv_calls[0][0] == "/resolved/uv"
         assert pathlib.Path(execv_calls[0][1][0]).name == "uv"
-        assert execv_calls[0][1][1:4] == ["run", "--no-project", "--script"]
+        expected_script = pathlib.Path(sys.argv[0]).resolve()
+        assert execv_calls[0][1][1:7] == [
+            "run",
+            "--project",
+            str(expected_script.parent.parent),
+            "--locked",
+            "--no-default-groups",
+            str(expected_script),
+        ]
         assert _command_was_called(subprocess_calls, "update-dotfiles")
         captured = capsys.readouterr()
         assert "process-loopを再起動します。" in captured.out
