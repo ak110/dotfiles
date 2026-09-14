@@ -228,7 +228,10 @@ def test_legacy_bug_table_predicate_requires_valid_fixed_table() -> None:
             (f"{_plan_fixture.PERMANENCE_ROW}\n", ""),
             "表に1行以上の内容が必要",
         ),
-        ((f"{_plan_fixture.item_row('現状の問題')}\n", ""), "4行表を置く"),
+        (
+            (f"| {' | '.join(_plan_format.PLAN_REFACTORING_TABLE_HEADER)} |", "| 項目 | 内容 |"),
+            "3列表を1件置く",
+        ),
         (("## 実装資料", "## 変更対象"), "固定H2は"),
         (
             (
