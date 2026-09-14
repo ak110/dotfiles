@@ -184,6 +184,23 @@ gh api repos/ak110/dotfiles/git/ref/tags/statusline-v<version> --jq .object.sha
 
 Release run、tag、Release又はassetの検収に失敗した場合は、外部状態、失敗工程、run URL及び再開点を報告する。
 
+## マージ後に到着したレビューの確認
+
+GitHub Copilotのレビューは、対象PRのマージ後、CIの完了を待つ区間に到着する場合がある。
+「マージ後のbranch同期とCI」と「条件付きRelease検収」を終えた時点で、対象PRのCopilot由来のreview本文とreview threadを1回取得する。
+
+取得、判定、GitHubへの記録及び判定済みの記録は
+`agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md`を正本とし、対象を当該PRへ限定して適用する。
+本節では新しいレビューの生成を要求せず、到着を能動的に待機しない。
+当該時点で未到着のレビューは、`agent-toolkit:process-wi`の選定工程が全Pull Requestを対象に実行する監査が次回以降に拾うため、
+本節で取得を繰り返さない。
+
+要修正と分類した指摘は`agent-toolkit/rules/01-agent.md`「完遂と先送り」の判定を適用し、
+同一セッションで是正する指摘と次セッション以降へ回す指摘へ分ける。
+次セッション以降へ回す指摘だけをAWIへ登録する。
+同一セッションで是正する場合は、当該是正を`develop`への通常の変更として扱い、本スキルのマージ工程を再実行しない。
+成立しない指摘は登録せず、判定の根拠を報告へ残す。
+
 ## 完了条件と失敗時の扱い
 
 成功時に次を取得する。
@@ -194,6 +211,7 @@ git status --short
 ```
 
 `origin/develop`と`origin/master`が`MERGE_OID`と一致し、必須CIと必要なRelease検収が成功した場合だけ完了とする。
+あわせて「マージ後に到着したレビューの確認」を1回実施し、取得した指摘の分類と処置を確定していることを完了条件とする。
 ローカル`develop`を同期した場合は、`git rev-parse develop`も`MERGE_OID`と一致することを確認する。
 ローカルの作業ツリーとローカルbranchの状態は完了条件にしない。同期を実施した経路ではローカル`develop`の参照を更新し、同期を省略した経路では本手順がローカルへ書き込まないため、待機中に利用者が加えた変更もそのまま残る。
 `git status --short`の出力は合否判定に使わず、完了報告へ添える現状の情報として扱う。
