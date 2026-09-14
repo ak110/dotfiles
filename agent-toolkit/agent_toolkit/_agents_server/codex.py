@@ -451,11 +451,27 @@ class AppServerManager:
             }
         }
 
+    @staticmethod
+    def _base_thread_config(*, lightweight: bool) -> dict[str, Any]:
+        """thread開始・再開のリクエストへ常に載せる設定を返す。
+
+        `bypass_hook_trust`は、hookの定義が変わった後もcodexが承認済みの記録を要求せずにhookを実行するために渡す。
+        `agents_server`が開始する委譲先は対話UIを持たず、承認要求へ応答する主体が存在しないため、
+        当該キーが無いとプラグインの更新のたびに委譲先が起動しない。
+        当該制約は`launch_kind`に依存しないため、軽量起動と通常の委譲で分けない。
+        当該キーは`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
+        `thread/start`系リクエストの`config`だけが受理する。
+        """
+        config: dict[str, Any] = {"bypass_hook_trust": True}
+        if lightweight:
+            config["project_doc_max_bytes"] = 0
+        return config
+
     def _thread_config(
         self, session_id: str | None = None, *, lightweight: bool
     ) -> tuple[dict[str, Any], str | None, str | None]:
         """thread開始・再開に必要な設定と書込主体を返す。"""
-        config: dict[str, Any] = {"project_doc_max_bytes": 0} if lightweight else {}
+        config = self._base_thread_config(lightweight=lightweight)
         owner_session_id = _plan_file.resolve_owner_session_id()
         if owner_session_id is None:
             return config, None, None
@@ -519,8 +535,7 @@ class AppServerManager:
         if model is not None:
             params["model"] = model
         config, owner_session_id, writer_session_id = self._thread_config(lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
-        if config:
-            params["config"] = config
+        params["config"] = config
         params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}"
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
@@ -768,13 +783,12 @@ class AppServerManager:
         }
         if session.model is not None:
             resume_params["model"] = session.model
-        config: dict[str, Any] = {"project_doc_max_bytes": 0} if session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else {}
+        config = AppServerManager._base_thread_config(lightweight=session.launch_kind in LIGHTWEIGHT_LAUNCH_KINDS)
         owner_session_id = _plan_file.resolve_owner_session_id()
         if owner_session_id is not None:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
-        if config:
-            resume_params["config"] = config
+        resume_params["config"] = config
         resume_params["developerInstructions"] = f"{LAUNCH_SYSTEM_PROMPTS[session.launch_kind]}\n{AUTO_RESUME_NOTICE}"
         resume_response = await client.request("thread/resume", resume_params)
         resumed_thread = resume_response.get("thread")

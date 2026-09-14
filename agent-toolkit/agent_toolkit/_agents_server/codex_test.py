@@ -236,6 +236,20 @@ async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.
     await manager.close()
 
 
+@pytest.mark.parametrize("lightweight", [False, True])
+def test_thread_config_bypasses_hook_trust_for_every_launch(monkeypatch: pytest.MonkeyPatch, lightweight: bool) -> None:
+    """thread開始・再開の設定は、hookの承認状態にかかわらず委譲先が起動できる形で渡す。
+
+    委譲先は対話UIを持たず承認要求へ応答できないため、当該指定は`launch_kind`で分けない。
+    """
+    monkeypatch.setattr(subject._plan_file, "resolve_owner_session_id", lambda: None)
+    manager = subject.AppServerManager()
+
+    config, _owner_session_id, _writer_session_id = manager._thread_config(lightweight=lightweight)
+
+    assert config["bypass_hook_trust"] is True
+
+
 async def _return(value: Any) -> Any:
     return value
 

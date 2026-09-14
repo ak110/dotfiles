@@ -2727,9 +2727,9 @@ async def test_codex_explore_changes_thread_start_only(
 
     normal_thread = normal_client.requests[0][1]
     explore_thread = explore_client.requests[0][1]
-    assert "config" not in normal_thread
+    assert normal_thread["config"] == {"bypass_hook_trust": True}
     assert normal_thread["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
-    assert explore_thread["config"] == {"project_doc_max_bytes": 0}
+    assert explore_thread["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
     assert explore_thread["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
     assert normal_client.requests[1][1] == explore_client.requests[1][1]
 
@@ -2751,7 +2751,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
     await manager.start("make test", str(tmp_path), "model", "high", launch_kind="shell")
 
     thread_params = client.requests[0][1]
-    assert thread_params["config"] == {"project_doc_max_bytes": 0}
+    assert thread_params["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
     assert thread_params["developerInstructions"] == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
 
 
@@ -2772,11 +2772,11 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
     explore_resume = client.requests[1][1]
     shell_resume = client.requests[2][1]
     assert normal_resume["developerInstructions"] == f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
-    assert "config" not in normal_resume
+    assert normal_resume["config"] == {"bypass_hook_trust": True}
     assert explore_resume["developerInstructions"] == f"{state.EXPLORE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
-    assert explore_resume["config"] == {"project_doc_max_bytes": 0}
+    assert explore_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
     assert shell_resume["developerInstructions"] == f"{state.SHELL_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
-    assert shell_resume["config"] == {"project_doc_max_bytes": 0}
+    assert shell_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
 
 
 @pytest.mark.asyncio
@@ -3071,6 +3071,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
             "model": "gpt-test",
+            "config": {"bypass_hook_trust": True},
             "developerInstructions": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
         },
     )
