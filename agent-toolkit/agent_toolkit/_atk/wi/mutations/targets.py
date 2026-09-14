@@ -183,7 +183,7 @@ def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
 
 
 def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
-    """作業ツリーでrevisionをcommitの完全OIDへ解決する。"""
+    """作業ツリーでrevisionをcommitの40桁または64桁OIDへ解決する。"""
     try:
         result = subprocess.run(
             [
@@ -488,7 +488,7 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
 
 
 def _git_head(private_notes: pathlib.Path) -> str:
-    """管理repoのHEADを完全OIDで返す。"""
+    """管理repoのHEADを40桁または64桁OIDで返す。"""
     result = subprocess.run(
         ["git", "rev-parse", "--verify", "HEAD^{commit}"],
         cwd=private_notes,
@@ -500,7 +500,7 @@ def _git_head(private_notes: pathlib.Path) -> str:
     )
     commit = result.stdout.strip()
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
-        raise RuntimeError(f"管理repoのHEADが完全OIDではありません: {commit!r}")
+        raise RuntimeError(f"管理repoのHEADが40桁または64桁OIDではありません: {commit!r}")
     return commit
 
 

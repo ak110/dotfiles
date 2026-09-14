@@ -162,7 +162,7 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
 
 
 def resolve_head_commit(local_worktree: pathlib.Path) -> str:
-    """ローカルworktreeのHEADを完全OIDとして返す。"""
+    """ローカルworktreeのHEADを40桁または64桁OIDとして返す。"""
     result = subprocess.run(
         ["git", "-C", str(local_worktree), "rev-parse", "--verify", "HEAD^{commit}"],
         capture_output=True,
@@ -178,7 +178,7 @@ def resolve_head_commit(local_worktree: pathlib.Path) -> str:
         sys.exit(2)
     commit = result.stdout.strip()
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
-        print(f"HEADコミットが完全OIDではありません: {commit!r}", file=sys.stderr)
+        print(f"HEADコミットが40桁または64桁OIDではありません: {commit!r}", file=sys.stderr)
         sys.exit(2)
     return commit
 

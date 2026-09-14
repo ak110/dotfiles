@@ -443,7 +443,7 @@ def _validate_add_entries(
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください")
     if target_commit is not None and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
-        raise WebInputError("target_commitは40桁または64桁の完全OIDで指定してください")
+        raise WebInputError("target_commitは解決済みの40桁または64桁OIDで指定してください")
     normalized_target_repo: str | None = None
     if target_repo is not None:
         try:

@@ -218,8 +218,8 @@ def _resolve_plan_base_commit(plan_path: pathlib.Path, local_worktree: pathlib.P
     if len(candidates) != 1:
         raise WebInputError("計画メタ情報のベースコミットを一意に特定できません")
     candidate = candidates[0].lower()
-    if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", candidate) is None:
-        raise WebInputError("計画メタ情報のベースコミットは完全OIDで指定してください")
+    if re.fullmatch(r"[0-9a-f]{7,64}", candidate) is None:
+        raise WebInputError("計画メタ情報のベースコミットは7文字以上の一意な短縮OIDで指定してください")
     return _resolve_commit_oid(local_worktree, candidate)
 
 
@@ -266,7 +266,7 @@ def edit_entry_to_plan(
     except OSError as error:
         raise WebInputError(f"plan_fileを検証できません: {plan_file}") from error
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", target_commit) is None:
-        raise WebInputError("target_commitは40桁または64桁の完全OIDで指定してください")
+        raise WebInputError("target_commitは解決済みの40桁または64桁OIDで指定してください")
 
     inbox_dir = private_notes / WI_STATE_INBOX
     _validate_filenames_only([filename, *depends_on], inbox_dir)

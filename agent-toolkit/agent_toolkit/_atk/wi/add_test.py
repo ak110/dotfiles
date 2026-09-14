@@ -525,7 +525,7 @@ def test_flat_add_operation_records_matching_target_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """fallbackと同じtarget_repoの全メッセージへ投入時の完全OIDを記録する。"""
+    """fallbackと同じtarget_repoの全メッセージへ投入時の40文字OIDを記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -604,11 +604,11 @@ def test_flat_add_operation_rejects_non_full_oid(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """共有add操作は40桁または64桁の16進完全OID以外を拒否する。"""
+    """共有add操作は解決済みの40桁または64桁OID以外を拒否する。"""
     notes = tmp_path / "private-notes"
     monkeypatch.setattr(add_module, "_repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
 
-    with pytest.raises(WebInputError, match="完全OID"):
+    with pytest.raises(WebInputError, match="解決済み"):
         add_module.add_entries(
             notes,
             messages=["本文"],

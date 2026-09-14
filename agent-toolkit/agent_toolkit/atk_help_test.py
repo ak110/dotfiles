@@ -222,7 +222,7 @@ def test_review_table_init_help_describes_current_review_tables() -> None:
     help_text = parser.format_help()
 
     assert "<計画stem>.exec-review.tsv" in help_text
-    assert "ci-<起点OID>.exec-review.tsv" in help_text
+    assert "ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv" in help_text
     assert "dlg-" not in help_text
     assert ".plan-review.tsv" not in help_text
 

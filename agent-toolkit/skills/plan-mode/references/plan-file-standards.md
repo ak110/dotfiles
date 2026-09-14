@@ -38,8 +38,8 @@ stemは起動経路ごとに次のとおりとし、`dd`は作成日、`HHmm`は
 自身が所有しない計画はそのまま残す。private-notesの計画ファイルを編集ツールで直接書き換えない。
 
 実行レビュー指摘管理表は計画ファイルと同じディレクトリへ`<計画stem>.exec-review.tsv`（`track`は`exec-review`）として置く。
-計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。`agent-toolkit:fast-process-wi`の直接実装では`fastwi-<処理開始時点の完全OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<起点OID>.exec-review.tsv`とする。
-前者は収束後に削除し、後者は`atk plans commit ci-<起点OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
+計画を持たない実行レビューの表は`~/.claude/plans`直下へ置く。`agent-toolkit:fast-process-wi`の直接実装では`fastwi-<処理開始時点の7文字以上の一意な短縮OID>.exec-review.tsv`、公開工程のCI失敗修正では`ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`とする。短縮OIDは`git rev-parse --short=7 <revision>`が返した値をそのまま用いる。
+前者は収束後に削除し、後者は`atk plans commit ci-<起点commitの7文字以上の一意な短縮OID>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
 
 本書、`agent-toolkit:plan-mode`のSKILL.md及び`${CLAUDE_PLUGIN_ROOT}/share/`配下の計画関連文書は、計画に属するファイルを次の呼称で指す。
 
@@ -233,8 +233,8 @@ H2とH4以深の見出しを置かず、各H3の配下へ2件以外の表を追�
 `## 進捗ログ`は実装工程を中断後に再開できる粗い記録として、`日時`、`完了した工程`、`結果・特記事項`の3列表を置く。
 起草時は内容行を置かず、新規作成では内容行を持つ本文を受理しない。
 実装開始後は、計画を実装する主体がcommitの完了、近接検証の結果、実行レビューの収束及び完了判定を追記する。
-実装開始時は、専用worktreeを用いる経路では絶対パス、専用branch名、作成時のHEAD完全OID、所有主体、回収対象を記録する。
-結果・特記事項にはcommitの完全OID、検証結果、計画との差異、阻害要因を必要な範囲で書く。
+実装開始時は、専用worktreeを用いる経路では絶対パス、専用branch名、作成時HEADの7文字以上の一意な短縮OID、所有主体、回収対象を記録する。
+結果・特記事項にはcommitの7文字以上の一意な短縮OID、検証結果、計画との差異、阻害要因を必要な範囲で書く。
 完了報告を発行する主体は、報告の直前に`## 要件・外部仕様`の完了条件を全文再読し、各条件の充足根拠又は未達理由を進捗ログの最終行へ記録する。
 実装工程を中断後に再開する主体は、進捗ログの最終行に加えて`## 概要`の目的、`## 変更履歴`が保持するユーザー発言の逐語本文、及び`## 要件・外部仕様`の完了条件を読み直してから次の工程を選ぶ。
 

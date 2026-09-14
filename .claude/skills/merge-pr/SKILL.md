@@ -34,7 +34,7 @@ GitHubの設定でhead branchを`develop`だけに制限する操作は行わな
 
 ## マージ前の検査
 
-`git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPRの`headRefOid`が同じ完全OIDであることを確認する。
+`git fetch origin develop master`でremote-tracking refを更新し、`origin/develop`とPR番号から操作直前に取得した`headRefOid`が同じcommitを指すことを確認する。
 PRはopenかつdraftでなく、baseが`master`、headが`develop`で、mergeableが成立していなければならない。
 マージの前提はこれらのリモート側の条件だけとし、作業ツリーのclean、現在branch及びローカル`develop`の位置を前提にしない。
 ローカルの状態を理由にマージを停止しない。
@@ -75,25 +75,25 @@ gh api repos/ak110/dotfiles/pulls/<PR番号>/comments
 次セッション以降へ回す指摘だけをAWIへ登録する。
 成立しない指摘は登録せず、判定の根拠を報告へ残す。
 全指摘の判定、必要な同一セッションの是正及びAWI登録を完了してからマージへ進む。
-同一セッションで是正した場合は、修正後のPR headの完全OIDを新たな検査対象として保持し、「マージ前の検査」を再実行する。
+同一セッションで是正した場合は、PR番号から修正後のPR headを再取得し、新たな検査対象として「マージ前の検査」を再実行する。
 修正前の必須check成功を流用せず、修正後のPR headに対する必須check成功とhead OIDの一致を再検収する。
 
 ## PRのマージ
 
-レビューコメントの確認と必須checkが完了した後にPR headの完全OIDを再取得し、検査対象のOIDと一致することを確認する。
+レビューコメントの確認と必須checkが完了した後にPR番号から`headRefOid`を再取得し、検査対象のcommitと一致することを確認する。
 一致しない場合は外部状態と再開点を報告して停止する。
-一致した完全OIDを`--match-head-commit`へ渡して明示的なマージコミットを作成する。
+一致した`headRefOid`を`--match-head-commit`へ渡して明示的なマージコミットを作成する。
 `--auto`及び`--delete-branch`は指定しない。
 
 ```sh
-gh pr merge <PR番号またはURL> --repo ak110/dotfiles --merge --match-head-commit <PR headの完全OID>
+gh pr merge <PR番号またはURL> --repo ak110/dotfiles --merge --match-head-commit <PR番号から操作直前に取得したheadRefOid>
 ```
 
 マージコマンドが失敗した場合は、出力された失敗理由と再開点を報告する。
 
 ## マージ後のbranch同期とCI
 
-マージ後にPRの`mergeCommit.oid`を取得し、完全OIDを`MERGE_OID`として保持する。
+マージ後にPRの`mergeCommit.oid`を取得し、Git操作中だけ`MERGE_OID`として保持する。
 `origin/master`をfetchして`MERGE_OID`と一致することを確認する。
 
 ```sh
@@ -113,7 +113,7 @@ git fetch origin develop master
 git rev-parse origin/develop origin/master
 ```
 
-`MERGE_OID`、`origin/develop`及び`origin/master`の完全OIDがすべて一致することを確認する。
+`MERGE_OID`、`origin/develop`及び`origin/master`を操作直前に解決し、すべて同じcommitを指すことを確認する。
 マージ前の判定でローカル`develop`の同期を試みるとした場合は、同期を実行する直前に次を再取得する。
 
 ```sh
@@ -133,7 +133,7 @@ git rev-parse develop
 実行後に`git rev-parse develop`が`MERGE_OID`と一致することを確認する。
 再取得した観点のいずれかが成立しない場合は、ローカル`develop`の同期だけを省略し、既存の未コミット差分とローカルbranchを変更せずリモートの完遂を維持する。
 
-develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`の最終完全OID照合は省略しない。master CIの待機を省略できる条件は本節の後段が定める。
+develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。commit不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、`origin/develop`と`origin/master`が同じcommitを指す最終照合は省略しない。master CIの待機を省略できる条件は本節の後段が定める。
 
 ```sh
 # OID一致かつdevelop固有検査なしの条件が成立しない場合だけ実行する。
@@ -144,15 +144,17 @@ uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/agent_
 
 master CIの待機は、次の4つをすべて確認できる場合だけ省略する。いずれか1つでも確認できない場合は省略せず、後段の待機経路をそのまま実行する。
 
-- マージコミットのツリーがPR headのツリーと同一である。`git rev-parse <MERGE_OID>^{tree} <PR headの完全OID>^{tree}`が返す2行が同じ値であり、`git diff --name-only <PR headの完全OID> <MERGE_OID>`の出力が0行であることで判定する
-- PR headの完全OIDを対象とし、`push` eventかつ`develop` head branchであるCI runが`success`で完了している
+- マージコミットのツリーがPR headのツリーと同一である。
+  PR番号から操作直前に`headRefOid`を取得する。
+  `git rev-parse <MERGE_OID>^{tree} <headRefOid>^{tree}`が返す2行が同じ値であり、`git diff --name-only <headRefOid> <MERGE_OID>`の出力が0行であることで判定する
+- PR番号から特定したhead commitを対象とし、`push` eventかつ`develop` head branchであるCI runが`success`で完了している
 - 「条件付きRelease検収」の判定で、マージコミットの第一親との差分に`rust/claude-statusline/`が含まれず、Release検収が不要である
 - 現行CI定義にmaster固有のjob、master向けにだけ実行される追加検査及び外部検査がない
 
 `release-statusline.yaml`はCIの成功を契機に起動し、そのgateは`push` event・`success`・`master` head branchの3条件で対象を絞る。`rust/claude-statusline/`に差分がある場合はmaster CIの成功が後続工程の前提になるため、当該差分がある場合は省略しない。
 現行の`.github/workflows/ci.yaml`は全branchのpushへ共通jobを実行し、master固有jobを持たない。branchで分岐する条件は`develop`から`master`へのpull_requestイベントで一部stepを省く分岐だけであり、`push` eventのjob構成はbranchによらず同一である。CI定義が変化した場合は省略条件を再判定する。
 
-master pushのCIは、完全OID、`push` event及び`master` head branchに一致するrunを一覧から特定する。
+master pushのCIは、`MERGE_OID`、`push` event及び`master` head branchに一致するrunを一覧から特定する。
 runの完全なdatabase IDを取得した後、公式CLIで待機する。
 
 ```sh

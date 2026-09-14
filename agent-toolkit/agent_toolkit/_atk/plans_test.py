@@ -218,8 +218,8 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     remote = tmp_path / "private-notes.git"
     clone = tmp_path / "private-notes-clone"
     _init_remote_notes(notes, remote)
-    first_cause_oid = "0123456789abcdef0123456789abcdef01234567"
-    second_cause_oid = "89abcdef0123456789abcdef0123456789abcdef"
+    first_cause_oid = "0123456"
+    second_cause_oid = "89abcde"
     name = f"ci-{first_cause_oid}.exec-review.tsv"
     working = _plan_file.working_plans_root(home) / name
     working.parent.mkdir(parents=True)
@@ -287,12 +287,13 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     [
         "ci-0123456789abcdef.exec-review.tsv",
         "ci-0123456789ABCDEF0123456789ABCDEF01234567.exec-review.tsv",
+        "ci-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0.exec-review.tsv",
         "other-0123456789abcdef0123456789abcdef01234567.exec-review.tsv",
         "nested/ci-0123456789abcdef0123456789abcdef01234567.exec-review.tsv",
     ],
 )
 def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Path, name: str) -> None:
-    """完全OIDから一意に決まらない独立表名を拒否する。"""
+    """7〜64文字の一意な短縮OIDから決まらない独立表名を拒否する。"""
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
 
@@ -321,6 +322,29 @@ def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.
 
     assert working.is_file()
     assert _atk_plans._read_checkout_record(pathlib.Path(name)) is not None  # pylint: disable=protected-access
+
+
+def test_commit_ci_review_accepts_checked_out_saved_forty_character_name(tmp_path: pathlib.Path) -> None:
+    """保存済み40文字OID名はcheckout記録を条件に再commitできる。"""
+    home = tmp_path / "home"
+    notes = tmp_path / "private-notes"
+    _init_local_notes(notes)
+    name = "ci-fedcba9876543210fedcba9876543210fedcba98.exec-review.tsv"
+    saved_relative = pathlib.Path("ci") / name
+    saved = _plan_file.new_plans_root(notes) / saved_relative
+    saved.parent.mkdir(parents=True)
+    _review_table.init(saved)
+    _git(notes, "add", saved.relative_to(notes).as_posix())
+    _git(notes, "commit", "-m", "add legacy review")
+    (working,) = _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home)
+    _review_table.add(working, "1", "exec-review", "sample.py:1", "保存済み表の更新", "詳細")
+
+    result = _atk_plans.commit_plan(notes, name, home=home, skip_push=True)
+
+    assert result["plan_file"] == saved_relative.as_posix()
+    assert saved.read_bytes() != b""
+    assert not working.exists()
+    assert _atk_plans._read_checkout_record(pathlib.Path(name)) is None  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("conflict", ["working", "record", "missing-main"])

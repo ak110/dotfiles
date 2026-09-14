@@ -1180,14 +1180,14 @@ def test_transition_commit_help_describes_resolution_and_warning(
     subcommand: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """採否のcommit案内が完全OID化と対応不能時の警告継続を説明する。"""
+    """採否のcommit案内が対象リポジトリでの解決と対応不能時の警告継続を説明する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["wi", subcommand, "--help"])
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
     assert "対象リポジトリで解決できるrevision" in output
-    assert "記録時に完全OIDへ解決" in output
+    assert "記録時に対象リポジトリで解決" in output
     assert "対応付けできない場合は警告" in output
 
 
