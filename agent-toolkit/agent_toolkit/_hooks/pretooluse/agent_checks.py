@@ -53,6 +53,10 @@ Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
 
+Agent / Task:
+
+- 汎用の組み込み種別を起動する際の`agents_server`優先経路の案内 (warn)
+
 TaskStop:
 
 - 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
@@ -358,6 +362,25 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
     return _llm_notice(
         "エージェント種別名はSendMessageの到達可能な宛先ではない。"
         "通常の完了報告はツール結果として1回返し、即時通知は実行環境が渡した呼び出し元識別子へだけ送る。",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
+
+
+_GENERIC_AGENT_TYPES = frozenset({"Explore", "general-purpose", "Plan"})
+
+
+def _check_generic_agent_preference(tool_input: dict) -> str | None:
+    """汎用の組み込みAgent種別に`agents_server`の優先経路を案内する。
+
+    PreToolUse入力から`agents_server`の利用可否を判定できないため抑止状態を持たず、
+    対象となる各呼び出しへ案内を返す。
+    """
+    subagent_type = tool_input.get("subagent_type")
+    if not isinstance(subagent_type, str) or subagent_type not in _GENERIC_AGENT_TYPES:
+        return None
+    return _llm_notice(
+        "汎用Agentより`agents_server`を優先する。読み取り専用探索には`start_explore`、自由形式の委譲には`start_custom`を使う。",
         tag=_WARN_TAG,
         removable_cause=True,
     )

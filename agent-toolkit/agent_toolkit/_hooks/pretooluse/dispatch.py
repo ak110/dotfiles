@@ -166,6 +166,7 @@ if TYPE_CHECKING:
         _check_agents_server_continuation_input,
         _check_agents_server_cwd,
         _check_agents_server_list_repeat,
+        _check_generic_agent_preference,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
@@ -375,6 +376,13 @@ def main(payload_text: str) -> int:
 
     if tool_name == "SendMessage":
         notice = _check_sendmessage_agent_type_recipient(tool_input)
+        if notice is not None:
+            pending_notices.append(notice)
+        flush_pending_notices()
+        return 0
+
+    if tool_name in {"Agent", "Task"}:
+        notice = _check_generic_agent_preference(tool_input)
         if notice is not None:
             pending_notices.append(notice)
         flush_pending_notices()

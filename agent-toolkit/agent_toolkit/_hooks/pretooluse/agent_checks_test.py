@@ -860,6 +860,54 @@ class TestAgentNameParameterAccepted:
         assert "`name`" not in result.stderr
 
 
+class TestGenericAgentPreferenceNotice:
+    """汎用Agentより`agents_server`の経路を優先する案内契約を検証する。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize("subagent_type", ["Explore", "general-purpose", "Plan"])
+    def test_generic_agent_type_warns_without_blocking(self, tool_name: str, subagent_type: str) -> None:
+        """新旧のツール名と全汎用種別で、必要な経路を案内して実行を続ける。"""
+        result = _run({"tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}})
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        context = _additional_context(result)
+        assert "`agents_server`" in context
+        assert "`start_explore`" in context
+        assert "`start_custom`" in context
+
+    def test_repeated_launch_warns_every_time(self) -> None:
+        """同じセッションの反復起動にも抑止条件を適用しない。"""
+        payload = {
+            "session_id": "generic-agent-repeat",
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "general-purpose"},
+        }
+
+        first = _run(payload)
+        second = _run(payload)
+
+        assert "`agents_server`" in _additional_context(first)
+        assert "`agents_server`" in _additional_context(second)
+
+    @pytest.mark.parametrize("subagent_type", ["claude-code-guide", "implementation-specialist", "", None, 1])
+    def test_specialized_or_invalid_type_does_not_warn(self, subagent_type: object) -> None:
+        """専用種別、欠落相当及び不正値を案内対象へ広げない。"""
+        result = _run({"tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}})
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout == ""
+
+    def test_missing_type_does_not_warn(self) -> None:
+        """`subagent_type`が欠落した起動には案内を返さない。"""
+        result = _run({"tool_name": "Task", "tool_input": {}})
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout == ""
+
+
 class TestTaskStopBlock:
     """`TaskStop`の初回遮断と再実行窓。
 
