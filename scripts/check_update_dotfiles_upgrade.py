@@ -99,6 +99,7 @@ def _isolated_env(home: pathlib.Path, uv_executable: pathlib.Path, platform_name
             "XDG_STATE_HOME": str(home / ".local" / "state"),
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
+            "PYTHONIOENCODING": "utf-8",
         }
     )
     env["PATH"] = os.pathsep.join((str(uv_target.parent), env.get("PATH", "")))

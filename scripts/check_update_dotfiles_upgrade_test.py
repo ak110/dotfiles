@@ -88,6 +88,18 @@ def test_platform_entrypoint_selects_real_launcher(tmp_path: pathlib.Path, platf
     assert pathlib.Path(upgrade.platform_entrypoint(tmp_path, platform_name)[-1]).name == expected
 
 
+def test_isolated_env_uses_utf8_for_child_python_output(tmp_path: pathlib.Path) -> None:
+    """旧checkout内のPythonも日本語を出力できるようUTF-8を継承する。"""
+    uv_executable = tmp_path / "uv.exe"
+    uv_executable.touch()
+
+    env = upgrade._isolated_env(  # pylint: disable=protected-access  # noqa: SLF001
+        tmp_path / "home", uv_executable, "windows"
+    )
+
+    assert env["PYTHONIOENCODING"] == "utf-8"
+
+
 def test_run_propagates_child_failure(tmp_path: pathlib.Path) -> None:
     """子プロセスの失敗を成功として継続しない。"""
 
