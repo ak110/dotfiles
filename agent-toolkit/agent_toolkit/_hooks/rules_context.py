@@ -88,7 +88,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 session_temp = managed_temp.create_managed_temp(
                     SESSION_TEMP_PREFIX,
                     session_id=session_id,
-                    owner_pid=os.getppid(),
                 )
             except (managed_temp.ManagedTempError, OSError):
                 pass

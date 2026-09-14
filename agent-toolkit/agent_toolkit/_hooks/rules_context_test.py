@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import re
-import sys
 
 import pytest
 
@@ -214,8 +214,11 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     assert len(entries) == 1
     assert entries[0]["path"] in first_output
     assert entries[0]["path"] in second_output
-    if sys.platform.startswith("linux"):
-        assert entries[0]["session_owner"] is not None
+    assert managed_temp.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == []
+    session_root = pathlib.Path(entries[0]["path"])
+    assert session_root.exists()
+    child = managed_temp.create_session_temp("child", session_root)
+    assert child.parent == session_root
 
 
 def test_rules_files_do_not_contain_role_specific_sections() -> None:

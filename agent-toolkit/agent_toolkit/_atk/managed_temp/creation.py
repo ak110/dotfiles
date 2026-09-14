@@ -91,7 +91,6 @@ if TYPE_CHECKING:
         MAX_AGE_DAYS,
         ManagedTempError,
         _awis_are_valid,
-        _capture_process_identity,
         _is_utc_iso8601,
         _load_marker,
         _load_private_json,
@@ -222,15 +221,12 @@ def create_managed_temp(
     root: pathlib.Path | str | None = None,
     awis: tuple[str, ...] = (),
     session_id: str | None = None,
-    owner_pid: int | None = None,
 ) -> pathlib.Path:
     """管理対象一時ディレクトリを指定root直下へ作成し、絶対パスを返す。"""
     if not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
     if not _awis_are_valid(list(awis)):
         raise ManagedTempError("awiはパス区切り文字と制御文字を含まない空でないファイル名で指定する")
-    if owner_pid is not None and session_id is None:
-        raise ManagedTempError("owner_pidはsession_idを指定した管理対象だけに記録できる")
     if session_id is not None:
         existing = list_managed_temp(session_id=session_id)
         if existing:
@@ -291,7 +287,6 @@ def create_managed_temp(
             created_at=datetime.datetime.now(datetime.UTC).isoformat(),
             awis=awis,
             session_id=session_id,
-            session_owner=_capture_process_identity(owner_pid) if owner_pid is not None else None,
             identity=created_identity,
         )
         _validate_root(root_path, explicit=explicit_root, expected=validated_root)

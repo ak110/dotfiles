@@ -210,7 +210,6 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
 
         _replace_records(target, convert_to_v1)
 
@@ -229,7 +228,6 @@ class TestManagedTempPosix:
             record["schema_version"] = 2
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
 
         _replace_records(target, convert_to_v2)
 
@@ -279,7 +277,6 @@ class TestManagedTempPosix:
             record["schema_version"] = 2
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
             if value is None:
                 del record[field]
             else:
@@ -332,7 +329,6 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
         else:
             del record["created_at"]
         changed.write_text(json.dumps(record), encoding="utf-8")
@@ -359,13 +355,11 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
 
         def convert_to_v2(record: dict[str, object]) -> None:
             record["schema_version"] = 2
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
 
         _replace_records(v1_target, convert_to_v1)
         _replace_records(v2_target, convert_to_v2)
@@ -384,7 +378,6 @@ class TestManagedTempPosix:
                 "path": str(v1_target),
                 "prefix": None,
                 "session_id": None,
-                "session_owner": None,
             },
             {
                 "created_at": subject._load_private_json(subject._registry_path(v2_target))["created_at"],
@@ -392,7 +385,6 @@ class TestManagedTempPosix:
                 "path": str(v2_target),
                 "prefix": "publish-group",
                 "session_id": None,
-                "session_owner": None,
             },
             {
                 "created_at": subject._load_private_json(subject._registry_path(v3_target))["created_at"],
@@ -400,7 +392,6 @@ class TestManagedTempPosix:
                 "path": str(v3_target),
                 "prefix": "implementation",
                 "session_id": None,
-                "session_owner": None,
             },
         ]
         assert "warning: 管理対象を列挙できない" in lines.err
@@ -426,7 +417,7 @@ class TestManagedTempPosix:
             del record["created_at"]
             del record["awis"]
             del record["session_id"]
-            del record["session_owner"]
+            record.pop("session_owner", None)
 
         _replace_records(first, set_created_at)
         _replace_records(second, set_created_at)
@@ -465,19 +456,19 @@ class TestManagedTempPosix:
         assert not target.exists()
         assert f"note: 最終更新から7日を超えた管理対象一時領域を削除しました: {target}" in capsys.readouterr().err
 
-    def test_sweep_deletes_a_recent_root_owned_by_a_dead_session(
+    def test_sweep_retains_a_recent_session_root(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """SessionEndを失った領域は経過日数を待たずに次回掃引で回収する。"""
-        monkeypatch.setattr(subject, "_process_start_token", lambda pid: "original" if pid == 321 else "replacement")
-        target = subject.create_managed_temp("session", session_id="session-1", owner_pid=321)
-        monkeypatch.setattr(subject, "_process_start_token", lambda _pid: "replacement")
+        """セッション領域は作成直後の掃引では回収しない。"""
+        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        target = subject.create_managed_temp("session", session_id="session-1")
 
-        assert subject.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == [target]
-        assert not target.exists()
-        assert f"note: 終了したセッションの管理対象一時領域を削除しました: {target}" in capsys.readouterr().err
+        assert subject.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == []
+        assert target.exists()
+        assert capsys.readouterr().err == ""
 
     def test_sweep_continues_after_one_cleanup_failure(
         self,
@@ -648,7 +639,6 @@ class TestManagedTempPosix:
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
                 "awis": [],
                 "session_id": None,
-                "session_owner": None,
             }
         ]
         assert capsys.readouterr().err == ""
@@ -675,7 +665,6 @@ class TestManagedTempPosix:
                 "created_at": subject._load_private_json(subject._registry_path(valid))["created_at"],
                 "awis": [],
                 "session_id": None,
-                "session_owner": None,
             }
         ]
         assert "実体が失われた管理対象の登録を回収しました" in capsys.readouterr().err

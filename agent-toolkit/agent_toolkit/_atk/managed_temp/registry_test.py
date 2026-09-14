@@ -70,7 +70,6 @@ def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.Mo
             "created_at": created_at,
             "awis": [],
             "session_id": None,
-            "session_owner": None,
         }
     ]
 
@@ -83,7 +82,6 @@ def test_schema_4_record_remains_valid(monkeypatch: pytest.MonkeyPatch, tmp_path
     def downgrade(record: dict[str, object]) -> None:
         record["schema_version"] = 4
         record.pop("session_id")
-        record.pop("session_owner")
 
     _replace_records(target, downgrade)
 
@@ -91,23 +89,22 @@ def test_schema_4_record_remains_valid(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert subject.list_managed_temp("schema-four")[0]["session_id"] is None
 
 
-def test_session_owner_uses_pid_and_start_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """セッション所有者はPIDだけでなく開始トークンを組にして記録する。"""
-    monkeypatch.setattr(subject, "_process_start_token", lambda pid: f"started-{pid}")
+def test_schema_6_record_ignores_legacy_session_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """旧schema 6のsession_ownerは内容を解釈対象にしない。"""
+    monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+    target = subject.create_managed_temp("session", session_id="session-1")
 
-    target = subject.create_managed_temp("session", session_id="session-1", owner_pid=321)
+    def add_legacy_session_owner(record: dict[str, object]) -> None:
+        record["session_owner"] = {"legacy": True}
 
+    _replace_records(target, add_legacy_session_owner)
+
+    assert subject.validate_managed_temp(target) == target
     entry = subject.list_managed_temp(session_id="session-1")[0]
-    assert entry["session_owner"] == {"pid": 321, "start_token": "started-321"}
-    assert subject._session_owner_status(entry["session_owner"]) == "alive"
-    subject.cleanup_managed_temp(target)
-
-
-def test_session_owner_detects_reused_pid(monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じPIDの別プロセスを元のセッションが生存中とは判定しない。"""
-    monkeypatch.setattr(subject, "_process_start_token", lambda _pid: "new-start")
-
-    assert subject._session_owner_status({"pid": 321, "start_token": "old-start"}) == "dead"
+    assert "session_owner" not in entry
 
 
 def test_secure_path_does_not_fallback_for_other_open_error(
