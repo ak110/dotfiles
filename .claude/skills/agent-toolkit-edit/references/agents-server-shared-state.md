@@ -37,8 +37,10 @@ Codex CLIが起動するMCPサーバープロセスへは、`codex app-server`�
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify` |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（`start`系応答の`session_id`を共有状態ファイルへ照合する） |
 | MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフックとStop時の助言 | PostToolUseフック |
+| 委譲先CLI自身の診断記録 | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<プロセスID>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成と、保持世代を超えた記録の削除） |
 
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
+診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
 
 索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
 MCPサーバーは`start`系の応答を返す前に起動したsessionを状態ファイルへ同期反映する。PostToolUseフックは応答の`session_id`を状態ファイルへ照合し、一意に得たルートsession識別子を索引へ書く。公開応答へ索引用の内部識別子を加えない。

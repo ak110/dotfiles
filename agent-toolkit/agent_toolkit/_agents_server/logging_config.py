@@ -13,6 +13,11 @@ LOG_MAX_BYTES = 2 * 1024 * 1024
 LOG_BACKUP_COUNT = 3
 
 
+def state_dir() -> pathlib.Path:
+    """agents_serverの診断記録を置く状態ディレクトリを返す。"""
+    return pathlib.Path(user_state_dir("agent-toolkit", appauthor=False))
+
+
 def configure_logging() -> pathlib.Path:
     """標準エラーと永続ファイルへagents_serverの診断ログを出力する。"""
     log_level = os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING")
@@ -26,7 +31,7 @@ def configure_logging() -> pathlib.Path:
         stderr_handler.agents_server_stderr = True  # type: ignore[attr-defined]
         server_logger.addHandler(stderr_handler)
 
-    log_path = pathlib.Path(user_state_dir("agent-toolkit", appauthor=False)) / "agents-server.log"
+    log_path = state_dir() / "agents-server.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     for handler in tuple(server_logger.handlers):
         if not getattr(handler, "agents_server_file", False):

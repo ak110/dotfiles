@@ -3725,7 +3725,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
         "append": f"{state.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
     }
     assert options.setting_sources == ["user", "project"]
-    assert options.permission_mode == "bypassPermissions"
+    assert options.permission_mode == "auto"
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",

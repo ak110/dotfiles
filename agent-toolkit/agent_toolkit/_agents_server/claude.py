@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import logging
 import os
 import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
@@ -47,6 +49,12 @@ _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
+# 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を有界で保持する。
+_INITIALIZATION_MESSAGE_LIMIT = 20
+_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS = 200
+# 委譲先CLIの診断記録を置く場所と、自動削除の対象を決める保持世代数。
+_DEBUG_LOG_DIR_NAME = "delegate-debug"
+_DEBUG_LOG_RETENTION = 20
 
 
 class _InitializationDiagnostic:
@@ -55,7 +63,9 @@ class _InitializationDiagnostic:
     def __init__(self) -> None:
         self.stage = "created"
         self.received_message_types: dict[str, int] = {}
+        self.received_messages: list[str] = []
         self.child_pid: int | None = None
+        self.debug_file: str | None = None
         self.stderr = ""
         self.exception_type: str | None = None
         self.exception_body: str | None = None
@@ -72,6 +82,8 @@ class _InitializationDiagnostic:
     def record_message(self, message: Any) -> None:
         name = _message_name(message)
         self.received_message_types[name] = self.received_message_types.get(name, 0) + 1
+        if len(self.received_messages) < _INITIALIZATION_MESSAGE_LIMIT:
+            self.received_messages.append(f"{name}: {_message_summary(message)}")
 
     def record_exception(self, error: BaseException) -> None:
         self.exception_type = type(error).__name__
@@ -82,11 +94,61 @@ class _InitializationDiagnostic:
             "stage": self.stage,
             "received_message_types": dict(sorted(self.received_message_types.items())),
             "received_message_count": sum(self.received_message_types.values()),
+            "received_messages": list(self.received_messages),
             "child_pid": self.child_pid,
+            "child_processes": _describe_child_processes(self.child_pid),
+            "debug_file": self.debug_file,
             "stderr": self.stderr.strip(),
             "exception_type": self.exception_type,
             "exception_body": self.exception_body,
         }
+
+
+def _message_summary(message: Any) -> str:
+    """受信メッセージを識別できる有界な要約を返す。"""
+    for attribute in ("subtype", "hook_event_name", "event", "name"):
+        value = getattr(message, attribute, None)
+        if isinstance(value, str) and value:
+            return value[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]
+    return repr(message)[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]
+
+
+def _describe_child_processes(pid: int | None) -> list[str]:
+    """委譲先プロセスが起動した子プロセスをPIDと起動コマンドで列挙する。
+
+    `/proc`を持たない実行環境と、列挙の途中で終了したプロセスでは、当該分を空として扱う。
+    診断の付随情報であり、取得できないことを初期化の失敗として扱わない。
+    """
+    if pid is None:
+        return []
+    children: list[str] = []
+    try:
+        task_dir = pathlib.Path(f"/proc/{pid}/task")
+        child_pids = {
+            int(child) for task in task_dir.iterdir() for child in (task / "children").read_text(encoding="utf-8").split()
+        }
+    except (OSError, ValueError):
+        return []
+    for child_pid in sorted(child_pids):
+        try:
+            cmdline = pathlib.Path(f"/proc/{child_pid}/cmdline").read_bytes()
+        except OSError:
+            continue
+        command = " ".join(os.fsdecode(part) for part in cmdline.split(b"\0") if part)
+        children.append(f"{child_pid}: {command[:_INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS]}")
+    return children
+
+
+def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
+    """委譲先CLIの診断記録の保存先を用意し、保持世代を超えた記録を削除する。"""
+    directory = logging_config.state_dir() / _DEBUG_LOG_DIR_NAME
+    directory.mkdir(parents=True, exist_ok=True)
+    existing = sorted(directory.glob("*.log"), key=lambda path: path.stat().st_mtime)
+    for stale in existing[: max(0, len(existing) - _DEBUG_LOG_RETENTION + 1)]:
+        with contextlib.suppress(OSError):
+            stale.unlink()
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f")
+    return directory / f"{stamp}-{os.getpid()}-{launch_kind}.log"
 
 
 def _settings_from_cmdline(cmdline: bytes) -> str | None:
@@ -154,6 +216,7 @@ def _build_options(
     session_id: str | None = None,
     launch_kind: LaunchKind = "delegate",
     stderr: Callable[[str], None] | None = None,
+    debug_file: pathlib.Path | None = None,
 ) -> Any:
     """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
@@ -162,6 +225,11 @@ def _build_options(
     委譲先の計画バンドルを委譲元の所有として記録できるよう、自プロセスで解決した所有セッション識別子も渡す。
     子Claudeが親と同じ設定の下で動くよう、親の`--settings`層を継承する。
     親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
+
+    委譲先の権限モードはbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
+    受信側がbypass系であり送信側が権限モードを申告していない場合に当該メッセージを保留する。
+    委譲元は委譲先の起動直後にメッセージを送るため、bypass系で起動した委譲先は保留のまま
+    初期化を完了できない。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -185,7 +253,7 @@ def _build_options(
         "model": model,
         "effort": cast(_EffortLevel, effort),
         "resume": session_id,
-        "permission_mode": "bypassPermissions",
+        "permission_mode": "bypassPermissions" if lightweight else "auto",
         "env": env,
         "setting_sources": [] if lightweight else ["user", "project"],
         "system_prompt": (
@@ -200,6 +268,8 @@ def _build_options(
     }
     if stderr is not None:
         options["stderr"] = stderr
+    if debug_file is not None:
+        options["extra_args"] = {"debug-file": str(debug_file)}
     if (settings := _parent_settings()) is not None:
         options["settings"] = settings
     if lightweight:
@@ -333,6 +403,8 @@ class ClaudeServerManager:
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
+        debug_file = _prepare_debug_file(launch_kind)
+        diagnostic.debug_file = str(debug_file)
         options = _build_options(
             cwd,
             model,
@@ -340,6 +412,7 @@ class ClaudeServerManager:
             session_id,
             launch_kind=launch_kind,
             stderr=diagnostic.capture_stderr,
+            debug_file=debug_file,
         )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
