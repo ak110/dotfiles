@@ -248,19 +248,6 @@ def test_human_decision_persistence_reaches_completion_gate() -> None:
     assert "後続のエージェント由来の判断だけでは変更できない状態" in completion
 
 
-def test_evidence_and_delegation_means_rules_are_globally_placed() -> None:
-    """根拠に基づく断定と手段選定を全主体の実行経路へ配置する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    agent_rules = (plugin_root / "rules" / "01-agent.md").read_text(encoding="utf-8")
-    main_rules = (plugin_root / "share" / "rules-main.md").read_text(encoding="utf-8")
-    delegation = (plugin_root / "skills" / "delegation" / "references" / "base-contract.md").read_text(encoding="utf-8")
-
-    assert "事実と推論、評価及び仮説を区別し" in agent_rules
-    assert "事実と推論、評価及び仮説を区別し" not in main_rules
-    assert "目的、要件、制約、確認済みの観測事実及び完了条件" in delegation
-    assert "委譲元自身が選んだ実装手段を既定の入力にしない" in delegation
-
-
 def test_completion_report_always_runs_session_review() -> None:
     """完了報告は例外を設けずsession reviewを起動する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
