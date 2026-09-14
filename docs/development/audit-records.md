@@ -110,6 +110,12 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 2026年9月7日から9月8日にかけて、Codexで動く主体が発行した`wait`が`timed out awaiting tools/call after 300s`で失敗する事象を実測した。再検証は、当該上限より長く稼働する委譲先へ`timeout`を省略した`wait`を発行し、当該失敗の有無を確認する。
 
+## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月14日
+
+2026年9月14日、`atk agents wait`が通知だけを返した後に状態投影を削除し、同じコマンドを再発行してから終端結果を公開すると、書込主体別の待機対象登録簿から同じsessionを復元して終端結果を回収することを検体で実測した。結果を保持しない`stop`、session登録簿の`missing`、破損した待機対象登録の各経路で、回収不能と確定した待機対象を解放することも検体で実測した。
+
+再検証では`agents_wait_test.py`の登録簿検体3件と、`agents_server_mcp_test.py`の`test_stop_releases_wait_target_before_waiting_for_new_result`を実行する。通知後の再発行で同じ`session_id`の終端結果が返ることを確認する。明示破棄又は喪失確定後は、旧sessionが待機対象に残らないことも確認する。
+
 ## agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260で次の2点を実測した。終了コード7で終わる`run_in_background=true`のBashについて、起動結果が返した出力ファイルは出力の全量と`[exited with code 7]`を保持した。

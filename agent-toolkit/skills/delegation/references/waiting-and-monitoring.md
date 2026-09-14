@@ -74,11 +74,16 @@
   停滞の確定と巻き取りは「停滞の検知と巻き取り」節に従う
 - `agents_server`は終端結果を経過時間で解放せず、`atk agents wait`が結果本文を受領するまで保持する。完了通知の受領から時間が経った後もCLIは終端状態と結果本文を返す。保持の解放は結果本文の配送後と`stop`による明示的な破棄の後だけとする
 - `atk agents wait`が読む状態ファイルはsession状態の投影であり、当該投影の不在だけでは待機対象が`agents_server`の保持から失われたと判定しない。
+  最初の待機で確定した対象は書込主体別の待機対象登録簿へ保存する。
+  通知又は待機上限による`status: running`の応答後も、終端結果を回収するまで再発行時の対象へ含める。
+  結果を保持しない`stop`と、状態投影及び結果が不在でsession登録簿も`missing`を返した場合は、当該対象を待機対象登録簿から解放する。
+  session登録簿の`unreadable`は喪失の確定ではないため解放しない。
+  待機対象登録自体の解釈に失敗した場合は、破損した登録を解放する。理由は標準エラーへ記録する。その実行は終了コード9で終端し、待機処理を実行しない。
   終端結果と通知がともに無い場合は`status: running`を終了コード3で返すため、同じコマンドを再発行して待機を継続する。
-  真の保持期限切れは、session登録簿を所有する`agents_server`の`show`応答で確認する
-- `atk agents wait`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答では同じ待機手段を再発行する。終端statusの応答は完了報告とともに受領し、応答が返した`session_id`のsessionを未終端の集合から除く。回収した通知は再び返らないため、受領した本文を保持する
+  真の保持期限切れは、session登録簿を所有する`agents_server`の`show`応答で確認する。
+  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月14日」にある
+- `atk agents wait`の応答が`notices`を含む場合は、当該本文を委譲先の実行中の即時報告として受領する。待機を継続するかは`notices`の有無ではなく`status`で判定する。`status`が`running`の応答は終端待機の完了ではないため、同じターン内で同じ待機手段を再発行する。終端statusの応答は完了報告とともに受領し、応答が返した`session_id`のsessionを未終端の集合から除く。回収した通知は再び返らないため、受領した本文を保持する
 - `agents_server`のMCPサーバーが再起動した場合、同じ`session_id`はsession登録簿から遅延解決する。終端が確定している記録だけを同じ識別子の結果観測と会話再開へ用いる。終端が確定していない場合は`error.recovery=turn_unobserved`を受領し、同じ作業を新しい`start`でやり直さず、当該sessionが実行中である可能性を添えて呼び出し元へ返す。`missing`、`unreadable`、`no_resume_info`は当該sessionを失われたものとして扱ってよい
-- 1回のCLI待機で終端前に`status: running`が返った場合は、`atk agents wait`を再実行して待機を継続する
 
 ## 外部サービスの状態変化を待つ場合
 

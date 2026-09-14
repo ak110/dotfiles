@@ -1,4 +1,4 @@
-"""`atk agents list/show`の共有状態診断を検証する。"""
+"""`atk agents list/show/wait`の共有状態診断と公開説明を検証する。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,21 @@ from agent_toolkit import _atk_agents, atk
 from agent_toolkit._atk import config
 
 status_file = _atk_agents.status_file
+
+
+def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureFixture[str]) -> None:
+    """通知だけのrunning応答では同じターンに待機を再発行する説明を返す。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait", "--help"])
+
+    output = capsys.readouterr().out
+    assert "最初の終端結果又は実行中通知" in output
+    assert "最初の待機で起動中sessionと未回収結果を登録簿へ固定" in output
+    assert "通知だけを回収した場合" in output
+    assert "同じターン内に同じコマンドを再発行" in output
+    assert "結果を保持しない`stop`とsession登録簿での喪失確定" in output
+    assert "待機対象登録が破損している場合" in output
+    assert "終端statusでは追加の結果受領操作は不要" in output
 
 
 @pytest.fixture

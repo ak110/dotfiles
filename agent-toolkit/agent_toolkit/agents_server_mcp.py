@@ -650,6 +650,8 @@ class AgentsServerManager:
         session_registry.remove(session_id)
         if self._status_writer is not None:
             try:
+                if not keep_result:
+                    self._status_writer.delete_wait_target(session_id)
                 if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
                     self._status_writer.retain_result(resume_state)
                 elif not keep_result and (result_state == "published" or self._status_writer.result_exists(session_id)):

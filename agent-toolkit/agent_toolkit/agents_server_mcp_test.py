@@ -4762,6 +4762,69 @@ async def test_stop_removes_status_file_projection_and_retained_result(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_stop_releases_wait_target_before_waiting_for_new_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """結果を破棄するstopは旧待機対象を解放し、後続sessionの結果待機を妨げない。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    manager._codex = backend
+    writer.activate()
+    old_session = subject.SessionState("old-session", str(tmp_path), engine="codex", announced=True)
+    manager.sessions[old_session.session_id] = old_session
+    writer.flush()
+    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 0)
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 3
+    )
+    running_response = json.loads(capsys.readouterr().out)
+    assert running_response["session_id"] == "old-session"
+    assert running_response["status"] == "running"
+    _complete(old_session)
+    writer.flush()
+
+    await manager.stop(old_session.session_id)
+    writer.flush()
+
+    retained, error = status_file.read_wait_targets("root-session", "root.json", tmp_path)
+    assert retained == set()
+    assert error is None
+    new_session = subject.SessionState("new-session", str(tmp_path), engine="codex", announced=True)
+    _complete(new_session, message="新しい結果")
+    manager.sessions[new_session.session_id] = new_session
+    writer.flush()
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "session_id": "new-session",
+        "status": "completed",
+        "agent_message": "新しい結果",
+        "turn_seq": 0,
+        "finalized_at": new_session.finalized_at,
+    }
+    await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_stop_republishes_result_after_retain_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

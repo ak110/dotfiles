@@ -11,7 +11,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import state, status_file
+from agent_toolkit._agents_server import session_registry, state, status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 _WAIT_TIMEOUT_SECONDS = 3600.0
@@ -35,7 +35,8 @@ def wait_for_result(
 
     対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
-    対象集合は待機の発行時点で確定し、待機中に開始したsessionを含めない。
+    対象集合は最初の待機の発行時点で登録簿へ保存し、再発行時も同じ集合を引き継ぐ。
+    待機中に開始したsessionは含めない。
     状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     """
@@ -54,10 +55,20 @@ def wait_for_result(
     invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
     if invalid:
         return _fail(f"session_idの形式が不正です: {invalid[0]}", 5)
-    ordered_ids = sorted(
-        {session["session_id"] for session in listed or ()}
-        | _retained_result_session_ids(result_directory, owner_status_file=identity.file_name)
+    listed_ids = {session["session_id"] for session in listed or ()}
+    result_ids = _retained_result_session_ids(result_directory, owner_status_file=identity.file_name)
+    registered_ids, registry_error = status_file.read_wait_targets(
+        root_session_id,
+        identity.file_name,
+        state_root,
     )
+    if registry_error is not None:
+        return _fail(f"待機対象登録簿を読めません: {registry_error}", 9)
+    for session_id in registered_ids - listed_ids - result_ids:
+        if session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.MISSING:
+            status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
+            registered_ids.remove(session_id)
+    ordered_ids = sorted(listed_ids | result_ids | registered_ids)
     lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_files: list[Any] = []
@@ -70,6 +81,7 @@ def wait_for_result(
                 lock_file.close()
                 return _fail(f"同じsessionの待機所有権を別の実行が保持しています: {session_id}", 8)
             lock_files.append(lock_file)
+        status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         started_at = time.monotonic()
         deadline = started_at + _WAIT_TIMEOUT_SECONDS
@@ -87,6 +99,7 @@ def wait_for_result(
                         result["notices"] = notices
                     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
                     result_path.unlink(missing_ok=True)
+                    status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                     return 0
                 if notices:
                     response = _running_response(session_id, _session_output_activity(status_paths, session_id))
