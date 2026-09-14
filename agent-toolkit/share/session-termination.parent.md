@@ -43,10 +43,13 @@
 - 通常公開のCI結果を次の条件で照合する。`検証・CI方針`が`通常`の場合、`ci_result`が`成功`であり、対象リポジトリのCI照会手段が`ci_verified_head`について同じ結論を返す
 - 即時対応方針では、`検証・CI方針`が`即時対応`である
 - 即時対応の返却を次の条件で照合する。`検証・CI方針`が`即時対応`の場合、`overall_verification`が起動時に渡した近接検証の成功を挙げ、`ci_result`が`待機省略`とCIのrun URLを挙げ、`terminal_steps`が省略した全体検査と正式対応AWIを挙げる
-- `ci_verified_head`と`final_branch_head`が異なる場合は、両方を操作直前に対象リポジトリでcommitへ解決する。
-  差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head>`で取得する。
-  当該OIDの集合が、`terminal_steps`が挙げる生成commitを操作直前に解決したOIDの集合と過不足なく一致することを確認する。
-  この場合に`final_branch_head`のCIを照会せず、`final_branch_head`のCIが成功したものとして扱わない
+- `ci_verified_head`と`final_branch_head`が異なり、`final_branch_head`自体のCI成功を前項で検収していない場合は、両方を操作直前に対象リポジトリでcommitへ解決する。
+  `final_branch_head`がマージcommitなら、第1親を`git -C <対象リポジトリの絶対パス> rev-parse <final_branch_head>^1`で解決し、
+  差分commitを`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head> --not <final_branch_head>^1`で取得する。
+  これにより第1親から到達可能なベース側系列を除き、マージcommit本体は集合へ含める。
+  `final_branch_head`がマージcommitでない場合は、従来どおり`git -C <対象リポジトリの絶対パス> rev-list <ci_verified_head>..<final_branch_head>`で取得する。
+  いずれも当該OIDの集合が、`terminal_steps`が挙げる生成commitを操作直前に解決したOIDの集合と過不足なく一致することを確認する。
+  この代替照合を行った場合に`final_branch_head`のCIが成功したものとして扱わない
 - `base_branch_state`が`公開済み`である
   - 続けて`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の「生成物とpush」節を全文読み、同節が定める4つの観測項目を現在のGit状態から再取得して、全て成立することを確認する
   - 終端担当が返した`base_branch_state`を現在状態の再取得に代用しない

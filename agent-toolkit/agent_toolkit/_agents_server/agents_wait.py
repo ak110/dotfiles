@@ -154,6 +154,7 @@ def wait_for_result(
                     return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6, session_id=session_id)
                 notices = status_file.take_notices(root_session_id, session_id, state_root)
                 if result is not None:
+                    result.pop("owner_status_file", None)
                     result["session_id"] = session_id
                     if notices:
                         result["notices"] = notices
@@ -223,7 +224,6 @@ def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]
         return None, str(exc)
     if not isinstance(value, dict):
         return None, "最上位が辞書ではありません"
-    value.pop("owner_status_file", None)
     return value, None
 
 

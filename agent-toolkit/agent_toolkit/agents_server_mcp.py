@@ -595,6 +595,8 @@ class AgentsServerManager:
             )
             if seconds_since_output >= state.STALL_NOTICE_SECONDS:
                 response["stalled"] = True
+        if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
+            response["live_child_session_ids"] = sorted(session.live_child_session_ids)
         if verbose:
             response.update(
                 engine=session.engine,
@@ -1003,7 +1005,7 @@ class AgentsServerManager:
         残るsessionの終端結果は次の呼び出しまで保持する。
         待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
         当該上限へ達した応答は`status`と`elapsed_seconds`を返す。
-        保持中のsessionの最終活動時刻と停滞の印は`list`が返す。待機せずに現状態を確認する場合は`list`を発行する。
+        保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
         呼び出し元のセッションに`/goal`が設定され、未完了の背景タスクが本ツールの背景移行だけになる場合は、
         公開MCP toolではなく、`atk agents wait`を実行ホストの前景又は背景ジョブとして起動する。
@@ -1076,8 +1078,15 @@ class AgentsServerManager:
                         session_id = pending_ids[0]
                         response = self._pending_resume_status(self._pending_resumes[session_id])
                         return {"session_id": session_id, **response}
-                    session = next((candidate for candidate in retained if not candidate.result_delivered), retained[0])
-                    return {"session_id": session.session_id, **self._result_response(session)}
+                    undelivered = next((candidate for candidate in retained if not candidate.result_delivered), None)
+                    if undelivered is not None:
+                        return {"session_id": undelivered.session_id, **self._result_response(undelivered)}
+                    session = retained[0]
+                    timeout_response: dict[str, Any] = {"status": "running", "progress": ""}
+                    elapsed_seconds = _elapsed_seconds(session.started_at)
+                    if elapsed_seconds is not None:
+                        timeout_response["elapsed_seconds"] = elapsed_seconds
+                    return {"session_id": session.session_id, **timeout_response}
                 interval = 0.1 if any(candidate.awaiting_auto_resume for candidate in retained) else 1.0
                 try:
                     await asyncio.wait_for(self._condition.wait(), timeout=min(interval, remaining))
@@ -1966,6 +1975,7 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
 
     既定では起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
+    稼働中の子sessionがある場合は、安定した順序の`live_child_session_ids`も返す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """

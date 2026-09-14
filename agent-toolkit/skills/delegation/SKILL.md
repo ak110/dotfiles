@@ -7,6 +7,8 @@ user-invocable: false
 
 # 委譲
 
+Codexで実行する場合は、委譲、待機、状態確認又は中断へ着手する前に`references/codex-runtime.md`を全文読む。
+
 本スキルは、委譲の開始、経路選択、継続、停滞検知及び複数主体調整の手順を提供する。
 委譲を開始する前に`references/base-contract.md`と`references/mandatory-rules.md`を全文読む。
 受信者が行う用途固有の作業は
@@ -262,7 +264,7 @@ response: <受信者の最小完了報告>
 
 Codexが遅延実行されるツールを介して`atk agents wait`を呼ぶ二層待機では、
 内側のCLIへタスク固有のtimeoutを指定せず、外側の実行セルの再開で応答性を制御する。
-写像の詳細は`${CLAUDE_PLUGIN_ROOT}/share/rules-main.codex.md`「agents_serverの二層待機」節を正本とする。
+写像の詳細は`references/codex-runtime.md`「agents_serverの二層待機」節を正本とする。
 
 - 委譲機能が返す状態・識別子を優先して停滞を検知し、状態を取得できない経路だけ
   `git log`と`git status`を補助的に用いる

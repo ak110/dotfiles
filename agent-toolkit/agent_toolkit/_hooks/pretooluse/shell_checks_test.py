@@ -1245,6 +1245,31 @@ class TestBashHeredocLiteralExclusion:
 
         assert result.returncode == 2
         assert "除外設定を反映しない再帰`grep`" in result.stderr
+        assert "Git管理対象の内容は`git grep`" in result.stderr
+        assert "`rg`には`--hidden`" in result.stderr
+        assert "構造の探索は`find`" in result.stderr
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git grep -F needle -- .claude",
+            "rg --hidden needle .",
+            "find . -name AGENTS.md",
+        ],
+    )
+    def test_recursive_grep_fix_commands_are_not_blocked(self, command: str, tmp_path: pathlib.Path) -> None:
+        """通知が対象性質ごとに示す再実行は同じ検査で遮断しない。"""
+        result = _run(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "session_id": f"recursive-grep-fix-{len(command)}",
+                "cwd": str(tmp_path),
+            },
+            _plan_file_state_env(tmp_path),
+        )
+
+        assert result.returncode == 0
 
 
 class TestStaticSafetyBlocks:

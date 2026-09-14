@@ -117,6 +117,78 @@ def test_agents_wait_does_not_consume_another_writer_result(
     assert foreign_result.exists()
 
 
+def test_root_wait_does_not_consume_delegate_writer_result(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ルート待機は所有者を持つ委譲先の結果を旧形式として回収しない。"""
+    root = status_file.status_directory("root-session", tmp_path)
+    root.mkdir(parents=True)
+    (root / "root.json").write_text(json.dumps({"version": 1, "sessions": []}), encoding="utf-8")
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir()
+    delegate_result = results / "delegate-result.json"
+    delegate_result.write_text(
+        json.dumps({"status": "completed", "owner_status_file": "delegate-session.json"}),
+        encoding="utf-8",
+    )
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
+            state_root=tmp_path,
+        )
+        == 3
+    )
+
+    assert json.loads(capsys.readouterr().out) == {"status": "running"}
+    assert delegate_result.exists()
+
+
+def test_delegate_wait_consumes_own_writer_result(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """委譲先待機は結果ファイルの所有者が自身と一致する結果を回収する。"""
+    root = status_file.status_directory("root-session", tmp_path)
+    root.mkdir(parents=True)
+    (root / "delegate-session.json").write_text(
+        json.dumps({"version": 1, "sessions": []}),
+        encoding="utf-8",
+    )
+    results = status_file.results_directory("root-session", tmp_path)
+    results.mkdir()
+    own_result = results / "delegate-result.json"
+    own_result.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "agent_message": "委譲先の結果",
+                "owner_status_file": "delegate-session.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        agents_wait.wait_for_result(
+            environment={
+                "AGENT_TOOLKIT_OWNER_SESSION": "root-session",
+                "AGENT_TOOLKIT_STATUS_HOST_SESSION": "delegate-session",
+            },
+            state_root=tmp_path,
+        )
+        == 0
+    )
+
+    assert json.loads(capsys.readouterr().out) == {
+        "session_id": "delegate-result",
+        "status": "completed",
+        "agent_message": "委譲先の結果",
+    }
+    assert not own_result.exists()
+
+
 def _wait_lock_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """`session-1`の待機所有権を表すロックの経路を返す。"""
     return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "session-1.lock"

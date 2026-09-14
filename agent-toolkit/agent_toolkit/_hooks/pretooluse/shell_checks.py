@@ -1628,7 +1628,8 @@ def _grep_file_operands(segment: _ExecutionSegment) -> tuple[tuple[str, ...], fr
 
 
 _RECURSIVE_GREP_WITHOUT_EXCLUSION_FIX = (
-    "`.gitignore`とツール固有の除外を反映する`rg`か、Git管理対象へ限定する`git grep`を使う。"
+    "Git管理対象の内容は`git grep`、Git管理外・正規表現・除外設定に従う内容は`rg`を使う。"
+    "隠し対象を母集団に含める`rg`には`--hidden`を付け、属性・ディレクトリ構造の探索は`find`を使う。"
     "`grep`を使う場合は`--include`・`--exclude`・`--exclude-dir`で対象を限定する。"
 )
 

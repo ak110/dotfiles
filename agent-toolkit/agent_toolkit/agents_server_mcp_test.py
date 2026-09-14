@@ -1654,21 +1654,25 @@ async def test_owner_gone_resume_removes_previous_result_file(tmp_path: pathlib.
 
 
 @pytest.mark.asyncio
-async def test_wait_returns_same_terminal_result_without_consuming_state(tmp_path: pathlib.Path) -> None:
-    """waitは終端結果を何度呼んでも同じ本文で返す。"""
+async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path: pathlib.Path) -> None:
+    """配送済み終端結果だけが残る上限応答は本文なしのrunningを返す。"""
     manager, _ = _manager_with_fake("codex")
     session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
     _complete(session, message="最終結果", error={"message": "補足"})
     manager.sessions[session.session_id] = session
     first = await manager.wait()
     second = await manager.wait()
-    assert first == second
     assert first == {
         "session_id": session.session_id,
         "status": "failed",
         "agent_message": "最終結果",
         "error": {"message": "補足"},
     }
+    assert second["session_id"] == session.session_id
+    assert second["status"] == "running"
+    assert second["progress"] == ""
+    assert isinstance(second["elapsed_seconds"], int)
+    assert "agent_message" not in second
     _assert_no_forbidden_keys(first)
 
 
@@ -1759,6 +1763,30 @@ async def test_show_reports_seconds_since_output_and_stall(tmp_path: pathlib.Pat
     response = await manager.wait()
 
     assert {"output_updated_at", "seconds_since_output", "stalled"}.isdisjoint(response)
+
+
+@pytest.mark.asyncio
+async def test_show_reports_sorted_live_child_session_ids_only_for_running_parent(tmp_path: pathlib.Path) -> None:
+    """showは稼働中の親に実在する子識別子がある場合だけ安定順で返す。"""
+    manager, _ = _manager_with_fake("codex")
+    parent = subject.SessionState("parent", str(tmp_path), engine="codex")
+    parent.live_child_session_ids.update({"child-b", "child-a"})
+    no_child = subject.SessionState("no-child", str(tmp_path), engine="codex")
+    terminal = subject.SessionState("terminal", str(tmp_path), engine="codex")
+    terminal.live_child_session_ids.add("child-terminal")
+    _complete(terminal, message="完了")
+    manager.sessions.update(
+        {
+            parent.session_id: parent,
+            no_child.session_id: no_child,
+            terminal.session_id: terminal,
+        }
+    )
+
+    assert manager.show_session(parent.session_id)["live_child_session_ids"] == ["child-a", "child-b"]
+    assert "live_child_session_ids" not in manager.show_session(no_child.session_id)
+    assert "live_child_session_ids" not in manager.show_session(terminal.session_id)
+    await manager.close()
 
 
 @pytest.mark.asyncio
@@ -4409,7 +4437,7 @@ async def test_recovered_session_restores_persisted_result_once(
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "failed")
     writer = status_file.StatusFileWriter(
         {},
-        status_file.StatusFileIdentity("root-session", "current.json", None),
+        status_file.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
     persisted = subject.SessionState(session_id, str(tmp_path), engine="codex")
