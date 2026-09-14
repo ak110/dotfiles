@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import datetime
 import os
 import pathlib
 import re
@@ -49,6 +50,7 @@ _TOKEN_RE = re.compile(r"[0-9a-f]{4}\Z")
 _PORTABLE_REFERENCE_RE = re.compile(re.escape(PORTABLE_PLAN_PREFIX) + r"[^\s`<>\"']+")
 _ADJUNCT_REFERENCE_RE = re.compile(re.escape(PLAN_ADJUNCT_REFERENCE_PREFIX) + r"[^\s`<>\"']*")
 _FORBIDDEN_NAME_CHARACTERS = frozenset('/\\:*?"<>|')
+_PROCESS_LANE_PATTERN = re.compile(r"lane-(?P<number>[0-9]{2})\Z")
 _DEFAULT_MAX_ATTEMPTS = 100
 
 
@@ -69,6 +71,17 @@ def _validate_plan_name(plan_name: str) -> str:
     if plan_name.endswith(".md"):
         raise ValueError("計画名に拡張子を指定できません")
     return plan_name
+
+
+def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | None = None) -> str:
+    """`lane-NN`とUTC時刻からprocess-wi用の正規stemを返す。"""
+    match = _PROCESS_LANE_PATTERN.fullmatch(lane_identifier)
+    if match is None:
+        raise ValueError("レーン識別子は`lane-NN`の2桁形式で指定してください")
+    current = datetime.datetime.now(datetime.UTC) if now is None else now
+    if current.tzinfo is None:
+        raise ValueError("計画名の生成時刻にはタイムゾーンが必要です")
+    return f"{current.astimezone(datetime.UTC):%d-%H%M}_process-wi_レーン{match.group('number')}"
 
 
 def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
@@ -354,15 +367,18 @@ def main(argv: list[str] | None = None) -> int:
     source_group.add_argument("--main-source", dest="main_source", type=pathlib.Path)
     source_group.add_argument("--source", dest="main_source", type=pathlib.Path)
     parser.add_argument("--bugs-source", type=pathlib.Path)
-    parser.add_argument("--name", required=True)
+    name_group = parser.add_mutually_exclusive_group(required=True)
+    name_group.add_argument("--name")
+    name_group.add_argument("--lane")
     parser.add_argument("--private-notes", type=pathlib.Path)
     parser.add_argument("--home", type=pathlib.Path)
     parser.add_argument("--work-dir", type=pathlib.Path, default=pathlib.Path.cwd())
     args = parser.parse_args(argv)
     try:
+        plan_name = args.name if args.name is not None else process_lane_plan_name(args.lane)
         paths = create_plan_files(
             args.main_source,
-            args.name,
+            plan_name,
             bug_source=args.bugs_source,
             private_notes=args.private_notes,
             home=args.home,

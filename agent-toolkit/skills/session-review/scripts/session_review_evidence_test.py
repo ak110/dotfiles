@@ -5196,6 +5196,47 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert [event for event in bundle_events if event["kind"] == "hook-notice"] == []
 
 
+def test_candidates_bound_hook_notice_variants_and_keep_each_emitter() -> None:
+    """block/warn通知は発生源ごとに上位5変種の代表位置へ限定し、発生総数を保持する。"""
+    notices: list[dict] = []
+    line = 1
+    for variant, count in enumerate(range(7, 0, -1)):
+        for _ in range(count):
+            notices.append(
+                {
+                    "kind": "hook-notice",
+                    "record": "main",
+                    "line": line,
+                    "text": f"warn: variant-{variant}",
+                    "hook": "agent-toolkit/pretooluse",
+                    "hook_name": "PreToolUse:Bash" if variant % 2 == 0 else "PostToolUse:Bash",
+                    "tag": "warn",
+                }
+            )
+            line += 1
+    notices.append(
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": line,
+            "text": "block: another-emitter",
+            "hook": "dotfiles/pretooluse",
+            "hook_name": "PreToolUse:Write",
+            "tag": "block",
+        }
+    )
+
+    events = evidence._candidate_events([], [], notices)  # pylint: disable=protected-access
+    candidates = [event for event in events if event["kind"] == "candidate"]
+    first_emitter = [candidate for candidate in candidates if candidate["event_key"][0] == "agent-toolkit/pretooluse"]
+
+    assert [candidate["occurrence_count"] for candidate in first_emitter] == [7, 6, 5, 4, 3]
+    assert all(candidate["count"] == 1 and len(candidate["locators"]) == 1 for candidate in candidates)
+    assert any(candidate["event_key"][0] == "dotfiles/pretooluse" for candidate in candidates)
+    assert events[-1]["included_locator_count"] == 6
+    assert events[-1]["excluded"] == {"hook-notice-detail-budget": 23}
+
+
 def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

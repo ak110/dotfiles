@@ -17,6 +17,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     extract_git_events,
     mask_heredoc_bodies,
     split_bash_segments,
+    without_shell_redirections,
 )
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
@@ -58,6 +59,18 @@ class TestExtractExecutionSegments:
         script = f"/repo/{_TOOLKIT_PREFIX}/scripts/other.py"
         command = f"uv run --no-project --script {script}"
         assert extract_execution_segments(command) == [ExecutionSegment((script,), True, False)]
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (("wi", "list", "--help", ">", "/tmp/help"), ("wi", "list", "--help")),
+        (("wi", "list", "--help", "2>/tmp/error"), ("wi", "list", "--help")),
+        (("wi", "list", "--help", "2>", "/tmp/error"), ("wi", "list", "--help")),
+    ],
+)
+def test_without_shell_redirections(tokens: tuple[str, ...], expected: tuple[str, ...]) -> None:
+    assert without_shell_redirections(tokens) == expected
 
 
 class TestSplitBashSegments:

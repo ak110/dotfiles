@@ -183,6 +183,10 @@ def render(
         else:
             raise ReportError(f"{locator_text}: dispositionが不正である")
         summary = _cell_text(str(candidate.get("text", candidate.get("candidate_kind", "候補"))))
+        occurrence_count = candidate.get("occurrence_count")
+        omitted_locator_count = candidate.get("omitted_locator_count")
+        if isinstance(occurrence_count, int) and isinstance(omitted_locator_count, int):
+            summary += f"（発生{occurrence_count}件、代表位置{len(locators)}件、省略{omitted_locator_count}件）"
         rows.append("| " + " | ".join((f"{locator_text} {summary}", *cells)) + " |")
 
     timing_rows = [f"| {phase} | {_seconds(timings[phase], phase):.3f} |" for phase in PHASES]

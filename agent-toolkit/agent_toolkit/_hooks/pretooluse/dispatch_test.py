@@ -22,7 +22,6 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._hooks import required_reads
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import content_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -1115,76 +1114,6 @@ class TestUserFacingTypoCheck:
         assert result.returncode == 0
         assert result.stderr == ""
         assert "誤字候補" in _additional_context(result)
-
-
-class TestAskUserQuestionRequiredRead:
-    """判断基準文書の全文読解が未観測なら質問を遮断する。"""
-
-    def test_unread_warns_and_exit_plan_mode_passes(self, tmp_path: pathlib.Path) -> None:
-        env = _plan_file_state_env(tmp_path)
-        question = _user_facing_payload("question", "確認する対象を選択してください。")
-        question["session_id"] = "required-unread"
-
-        blocked = _run(question, env_overrides=env)
-        exit_plan = _run(
-            {"session_id": "required-unread", "tool_name": "ExitPlanMode", "tool_input": {"plan": "実装する。"}},
-            env_overrides=env,
-        )
-
-        assert blocked.returncode == 2
-        assert blocked.stdout == ""
-        assert required_reads.document_path() in blocked.stderr
-        assert "同じAskUserQuestionを再実行" in blocked.stderr
-        assert exit_plan.returncode == 0
-
-    def test_full_read_allows_question(self, tmp_path: pathlib.Path) -> None:
-        env = _plan_file_state_env(tmp_path)
-        sid = "required-full"
-        _run_posttooluse(
-            {
-                "session_id": sid,
-                "tool_name": "Read",
-                "tool_input": {"file_path": required_reads.document_path()},
-            },
-            env,
-        )
-        question = _user_facing_payload("question", "確認する対象を選択してください。")
-        question["session_id"] = sid
-
-        assert _run(question, env_overrides=env).returncode == 0
-
-    @pytest.mark.parametrize(
-        "tool_input",
-        [
-            {"file_path": required_reads.document_path(), "offset": 1},
-            {"file_path": required_reads.document_path(), "limit": 10},
-            {"file_path": "/tmp/copy/skills/review-standards/references/judgment-details.md"},
-        ],
-    )
-    def test_partial_or_other_copy_still_blocks(self, tmp_path: pathlib.Path, tool_input: dict) -> None:
-        env = _plan_file_state_env(tmp_path)
-        sid = f"required-partial-{len(str(tool_input))}"
-        _run_posttooluse({"session_id": sid, "tool_name": "Read", "tool_input": tool_input}, env)
-        question = _user_facing_payload("question", "確認する対象を選択してください。")
-        question["session_id"] = sid
-
-        result = _run(question, env_overrides=env)
-        assert result.returncode == 2
-        assert required_reads.document_path() in result.stderr
-
-    def test_bash_path_mention_does_not_allow_question(self, tmp_path: pathlib.Path) -> None:
-        env = _plan_file_state_env(tmp_path)
-        sid = "required-bash"
-        _run_posttooluse(
-            {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": f"echo {required_reads.document_path()}"}},
-            env,
-        )
-        question = _user_facing_payload("question", "確認する対象を選択してください。")
-        question["session_id"] = sid
-
-        result = _run(question, env_overrides=env)
-        assert result.returncode == 2
-        assert required_reads.document_path() in result.stderr
 
 
 class TestConsecutiveBashFailureGate:

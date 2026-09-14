@@ -117,7 +117,6 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks import (
     scratchpad_path as _scratchpad_path,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._hooks import required_reads as _required_reads  # noqa: E402
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
@@ -425,21 +424,6 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
         file=sys.stderr,
     )
     return True
-
-
-def check_required_read_before_ask_user_question(session_id: str) -> str | None:
-    """質問前に判断基準文書の全文読解が未観測なら遮断理由を返す。"""
-    if not session_id:
-        return None
-    recorded = read_state(session_id).get("observed_required_reads")
-    names = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
-    if _required_reads.DOCUMENT_NAME in names:
-        return None
-    path = _required_reads.document_path()
-    return _block_notice(
-        "AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。",
-        fix=f"Readで{path}を全文読解し、同じAskUserQuestionを再実行する。",
-    )
 
 
 def _reset_plan_mode_state(session_id: str) -> None:

@@ -22,7 +22,6 @@ import pytest
 
 from agent_toolkit import agents_server_mcp
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._hooks import required_reads
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
 
@@ -233,7 +232,7 @@ class TestCodexBashStateRecording:
 
 
 class TestAtkHelpObservation:
-    """実行済みヘルプの応答だけを同一セッションの案内抑止へ使う。"""
+    """注入済み又は実行済みヘルプを同一セッションの案内抑止へ使う。"""
 
     @staticmethod
     def _pre_payload(session_id: str) -> dict:
@@ -244,20 +243,17 @@ class TestAtkHelpObservation:
             "cwd": "/repo",
         }
 
-    def test_successful_help_suppresses_next_notice(self, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize(
+        "command", ["atk wi list --help", "atk wi list --help > /tmp/help", "atk wi list --help 2>/tmp/error"]
+    )
+    def test_successful_help_suppresses_next_notice(self, tmp_path: pathlib.Path, command: str) -> None:
         session_id = "atk-help-success"
-        before = _run_pretooluse(self._pre_payload(session_id), tmp_path)
-        before_output = json.loads(before.stdout)
-        assert before.returncode == 0
-        assert "atk wi list: 値なし:" in before_output["hookSpecificOutput"]["additionalContext"]
-        assert "permissionDecision" not in before_output["hookSpecificOutput"]
-
         observed = _run(
             {
                 "session_id": session_id,
                 "tool_name": "Bash",
-                "tool_input": {"command": "atk wi list --help"},
-                "tool_response": {"stdout": "使い方: atk wi list [options]"},
+                "tool_input": {"command": command},
+                "tool_response": {"stdout": ""},
                 "cwd": "/repo",
             },
             state_dir=tmp_path,
@@ -268,22 +264,17 @@ class TestAtkHelpObservation:
         assert after.returncode == 0
         assert after.stdout == ""
 
-    def test_missing_help_response_keeps_notice(self, tmp_path: pathlib.Path) -> None:
-        session_id = "atk-help-failed"
-        _run(
-            {
-                "session_id": session_id,
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk wi list --help"},
-                "cwd": "/repo",
-            },
-            state_dir=tmp_path,
-        )
+    def test_injected_help_is_recorded_before_command_execution(self, tmp_path: pathlib.Path) -> None:
+        session_id = "atk-help-injected"
+        first = _run_pretooluse(self._pre_payload(session_id), tmp_path)
+        second = _run_pretooluse(self._pre_payload(session_id), tmp_path)
 
-        result = _run_pretooluse(self._pre_payload(session_id), tmp_path)
-
-        assert result.returncode == 0
-        assert "additionalContext" in json.loads(result.stdout)["hookSpecificOutput"]
+        first_output = json.loads(first.stdout)
+        assert first.returncode == 0
+        assert "atk wi list: 値なし:" in first_output["hookSpecificOutput"]["additionalContext"]
+        assert "permissionDecision" not in first_output["hookSpecificOutput"]
+        assert second.returncode == 0
+        assert second.stdout == ""
 
 
 class TestTestExecution:
@@ -992,44 +983,6 @@ class TestGitLogChecked:
         assert isinstance(recorded, dict)
         for key in expected_keys:
             assert recorded.get(key) is True, f"{key} not recorded in {recorded}"
-
-
-class TestReadHandlerNoop:
-    """Readは対象文書の全文読取だけを状態へ記録する。"""
-
-    def test_required_full_read_is_recorded(self, tmp_path: pathlib.Path) -> None:
-        sid = "read-required"
-        _run(
-            {"session_id": sid, "tool_name": "Read", "tool_input": {"file_path": required_reads.document_path()}},
-            state_dir=tmp_path,
-        )
-
-        assert _read_state(tmp_path, sid)["observed_required_reads"] == [required_reads.DOCUMENT_NAME]
-
-    @pytest.mark.parametrize(
-        "file_path",
-        [
-            "/home/user/dotfiles/agent-toolkit/skills/writing-standards/references/textlint-violations.md",
-            r"C:\Users\user\dotfiles\agent-toolkit\skills\writing-standards\references\textlint-violations.md",
-            "/tmp/random.txt",
-        ],
-    )
-    def test_read_does_not_set_removed_tracking_flag(
-        self,
-        tmp_path: pathlib.Path,
-        file_path: str,
-    ) -> None:
-        """旧追跡対象と無関係パスのいずれでも撤去済みフラグを記録しない。"""
-        sid = f"read-textlint-{len(file_path)}"
-        _run(
-            {
-                "session_id": sid,
-                "tool_name": "Read",
-                "tool_input": {"file_path": file_path},
-            },
-            state_dir=tmp_path,
-        )
-        assert _read_state(tmp_path, sid).get("textlint_violations_read") is not True
 
 
 class TestPlanFilePostWriteNotice:

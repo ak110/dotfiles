@@ -1002,6 +1002,8 @@ class TestReferenceDocsWarning:
         assert result.returncode == 0
         assert "docs/development/concepts.md" in message
         assert "docs/development/incidents.md" in message
+        assert "without offset or limit" in message
+        assert "another agent's Read does not satisfy" in message
 
     def test_silent_after_both_docs_are_read_in_worktree(self, tmp_path: pathlib.Path):
         sid = "reference-worktree"
@@ -1044,7 +1046,26 @@ class TestReferenceDocsWarning:
             },
             env=self._state_env(tmp_path),
         )
-        assert "reference documents" in _get_additional_context(result)
+        assert "must fully read" in _get_additional_context(result)
+
+    def test_other_session_docs_do_not_suppress_warning(self, tmp_path: pathlib.Path):
+        self._write_state(
+            tmp_path,
+            "reference-other-session",
+            [
+                _DOTFILES_ROOT / "docs" / "development" / "concepts.md",
+                _DOTFILES_ROOT / "docs" / "development" / "incidents.md",
+            ],
+        )
+        result = _run(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(_DOTFILES_ROOT / "AGENTS.md"), "content": "harmless"},
+                "session_id": "reference-current-session",
+            },
+            env=self._state_env(tmp_path),
+        )
+        assert "must fully read" in _get_additional_context(result)
 
     def test_non_dotfiles_repository_is_not_targeted(self, tmp_path: pathlib.Path):
         other = tmp_path / "other"

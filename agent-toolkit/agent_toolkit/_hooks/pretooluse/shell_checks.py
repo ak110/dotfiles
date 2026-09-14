@@ -136,6 +136,7 @@ from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: 
     resolve_cwd_change,
     resolve_execution_segment,
     split_bash_segments,
+    without_shell_redirections,
 )
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -1435,7 +1436,7 @@ def _segment_starts_with(segment: _ExecutionSegment, prefix: tuple[str, ...]) ->
 
 def _segment_is_help_only(segment: _ExecutionSegment) -> bool:
     """区間が`--help`以外のオプションを持たないヘルプ専用呼び出しかを返す。"""
-    arguments = segment.tokens[1:]
+    arguments = without_shell_redirections(segment.tokens[1:])
     return (
         segment.resolved
         and "--" not in arguments
@@ -1500,6 +1501,18 @@ def _check_bash_atk_help_observation(command: str, session_id: str) -> str | Non
             file=sys.stderr,
         )
         return "block"
+    normalized_missing = [" ".join(path) for path in missing]
+
+    def _record_injected_help(current_state: dict) -> dict | None:
+        current = current_state.get(_ATK_HELP_OBSERVED_KEY)
+        values = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
+        additions = [value for value in normalized_missing if value not in values]
+        if not additions:
+            return None
+        current_state[_ATK_HELP_OBSERVED_KEY] = [*values, *additions]
+        return current_state
+
+    update_state(session_id, _record_injected_help)
     bodies = [f"atk {' '.join(path)}: {section}" for path, section in zip(missing, help_sections, strict=True)]
     return _llm_notice(
         "info: 未観測のatkサブコマンドについて、実行前に受理形式を案内する。\n" + "\n".join(bodies),

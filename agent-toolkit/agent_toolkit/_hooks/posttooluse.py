@@ -55,7 +55,6 @@ from agent_toolkit._atk.wi import (
     process_loop_log as _process_loop_log,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._git import status as _git_status  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._hooks import required_reads as _required_reads  # noqa: E402
 from agent_toolkit._hooks import stop_gate as _stop_gate  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -69,6 +68,7 @@ from agent_toolkit._hooks.agent_id import (
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     extract_execution_segments,
     extract_git_events,
+    without_shell_redirections,
 )
 from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _WARN_TAG,
@@ -665,7 +665,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
     help_paths: list[str] = []
     for segment in segments:
         path = _recognized_atk_command_path(segment.tokens)
-        arguments = segment.tokens[1:]
+        arguments = without_shell_redirections(segment.tokens[1:])
         if path is None or "--help" not in arguments:
             continue
         if arguments != (*path, "--help"):
@@ -673,7 +673,7 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
         normalized = " ".join(path)
         if normalized not in help_paths:
             help_paths.append(normalized)
-    if help_paths and any(text.strip() for text in _response_texts(tool_response)):
+    if help_paths:
 
         def _record_help(state: dict) -> dict | None:
             current = state.get(_ATK_HELP_OBSERVED_KEY)
@@ -962,25 +962,6 @@ def _handle_bash_tool(
     update_state(session_id, _apply_bash_updates)
 
 
-def _record_required_read_observation(session_id: str, tool_input: dict) -> None:
-    """部分読取ではない対象文書のReadだけを全文読解として記録する。"""
-    if "offset" in tool_input or "limit" in tool_input:
-        return
-    file_path = tool_input.get("file_path")
-    if not isinstance(file_path, str) or not _required_reads.matches_document(file_path):
-        return
-
-    def _record(state: dict) -> dict | None:
-        recorded = state.get("observed_required_reads")
-        names = [value for value in recorded if isinstance(value, str)] if isinstance(recorded, list) else []
-        if _required_reads.DOCUMENT_NAME in names:
-            return None
-        state["observed_required_reads"] = [*names, _required_reads.DOCUMENT_NAME]
-        return state
-
-    update_state(session_id, _record)
-
-
 def _dispatch(payload_text: str, notices: list[str]) -> int:
     """payloadを解析し、通知本文を`notices`へ蓄積する。終了コードは常に0。"""
     parsed = _parse_hook_payload(payload_text)
@@ -1074,11 +1055,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 owner_agent_id=owner_agent_id,
                 remote_session_id=remote_session_id,
             )
-        return 0
-
-    # Readは対象文書の全文読取だけを状態へ記録する。
-    if tool_name == "Read":
-        _record_required_read_observation(session_id, tool_input)
         return 0
 
     if tool_name == "TaskStop":

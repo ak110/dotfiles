@@ -170,7 +170,6 @@ if TYPE_CHECKING:
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
-        check_required_read_before_ask_user_question,
         _handle_language_check,
         _record_iss_sidechain_probe,
         _reset_plan_mode_state,
@@ -337,7 +336,7 @@ def main(payload_text: str) -> int:
     # 編集中はパス契約だけを補助し、意味と構造の検査は確定前の計画検査とレビューへ委ねる。
 
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, session_id, emit_json, flush_pending_notices))
+        return exit_with(_handle_user_facing_text_tool(tool_name, tool_input, emit_json, flush_pending_notices))
 
     # Skill: plan-mode起動時は計画単位の状態をリセットする。
     if tool_name == "Skill":
@@ -575,7 +574,6 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
 def _handle_user_facing_text_tool(
     tool_name: str,
     tool_input: dict,
-    session_id: str,
     emit_json: Callable[[dict], None],
     flush_warning: Callable[[], None],
 ) -> int:
@@ -587,11 +585,6 @@ def _handle_user_facing_text_tool(
     誤字検査は、検出語が変換誤りかどうかを本文の文脈でしか判定できないため警告に留める。
     """
     warnings: list[str] = []
-    if tool_name == "AskUserQuestion":
-        required_read_block = check_required_read_before_ask_user_question(session_id)
-        if required_read_block is not None:
-            print(required_read_block, file=sys.stderr)
-            return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2

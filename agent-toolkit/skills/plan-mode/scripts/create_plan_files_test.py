@@ -1,5 +1,6 @@
 """現行の1ファイル計画作成処理を検証する。"""
 
+import datetime
 import pathlib
 import subprocess
 
@@ -143,6 +144,49 @@ def test_cli_accepts_source_alias_and_creates_bug_file(
     paths = [pathlib.Path(line) for line in captured.out.splitlines()]
     assert [path.name for path in paths] == ["13-0217_バグ対応.md", "13-0217_バグ対応.bugs.md"]
     assert all(create_plan_files.PLAN_STEM_PLACEHOLDER not in path.read_text(encoding="utf-8") for path in paths)
+
+
+def test_process_lane_plan_name_uses_utc_and_two_digit_lane() -> None:
+    """process-wiのstemをUTC時刻と2桁レーン番号から生成する。"""
+    now = datetime.datetime(2026, 9, 14, 23, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
+
+    assert create_plan_files.process_lane_plan_name("lane-02", now=now) == "14-1405_process-wi_レーン02"
+
+
+@pytest.mark.parametrize("lane", ["lane-2", "lane-002", "02", "lane-aa"])
+def test_process_lane_plan_name_rejects_noncanonical_identifier(lane: str) -> None:
+    """2桁の正規レーン識別子以外を拒否する。"""
+    with pytest.raises(ValueError, match="lane-NN"):
+        create_plan_files.process_lane_plan_name(lane)
+
+
+def test_cli_creates_process_lane_plan_with_generated_name(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLIのlane入力では呼び出し側から自由名を受け取らない。"""
+    source, _bug_source = _source(repo, tmp_path)
+    monkeypatch.setattr(
+        create_plan_files,
+        "process_lane_plan_name",
+        lambda lane: "14-1405_process-wi_レーン02" if lane == "lane-02" else "unexpected",
+    )
+
+    result = create_plan_files.main(
+        [
+            "--source",
+            str(source),
+            "--lane",
+            "lane-02",
+            "--home",
+            str(tmp_path / "home"),
+            "--work-dir",
+            str(repo),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    assert pathlib.Path(captured.out.strip()).name == "14-1405_process-wi_レーン02.md"
 
 
 def test_adds_hex_suffix_only_after_collision(

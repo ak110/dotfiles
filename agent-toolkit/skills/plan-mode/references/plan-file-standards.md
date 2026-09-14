@@ -20,9 +20,11 @@ stemは起動経路ごとに次のとおりとし、`dd`は作成日、`HHmm`は
 
 | 起動経路 | stem |
 | --- | --- |
-| `agent-toolkit:process-wi`のレーン | `dd-HHmm_process-wi_レーン<レーン番号>` |
+| `agent-toolkit:process-wi`のレーン | `dd-HHmm_process-wi_レーンNN` |
 | `agent-toolkit:fast-process-wi` | `dd-HHmm_fast-process-wi` |
 | `agent-toolkit:plan-mode`の直接起動 | `dd-HHmm_<日本語の簡潔な名詞>` |
+
+`agent-toolkit:process-wi`のレーンは、内部作成処理へ`--lane lane-NN`で起動文のレーン識別子を渡す。`NN`は2桁のレーン番号とし、日付、時刻、固定接頭辞及びレーン番号を呼び出し側で組み立てない。
 
 計画本文が参照する計画ファイル（バグ）とレビュー指摘管理表には、固定接頭辞`~/.claude/plans/`とファイル名を使う。
 接頭辞後の値はファイル名1件だけとし、パス区切り文字、`..`、シェル式、Windows区切り文字を含めない。

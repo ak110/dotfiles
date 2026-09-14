@@ -85,8 +85,10 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
   - 記述スタイル・構成・記述量の指針は自作規範を優先する
 - 本リポジトリでは`claude-code-setup:claude-automation-recommender`が推奨する自動化手段の選定を適用対象外とし、
   `agent-toolkit:writing-standards`の振り分け規定と`agent-toolkit-edit`の「フック実装の配置先」に従う
-- コーディングエージェント向け文書を編集する前に、`docs/development/concepts.md`と
-  `docs/development/incidents.md`を読み、確定済みの方針・事故対策との整合を確認する。
+- コーディングエージェント向け文書を編集する実際の主体は、編集前に同じ実行コンテキストで
+  `docs/development/concepts.md`と`docs/development/incidents.md`の全文を読み、
+  確定済みの方針・事故対策との整合を確認する。要約、見出し一覧、部分読取及び別主体の読取結果は、
+  編集主体自身による全文読了の代わりにしない。
   編集中に新たな事故又は確定した意向が生じた場合は、対応する文書を更新する
 - 本リポジトリの文書でagent-toolkit同梱スキルを指す表記は、`agent-toolkit:review-standards`のようにプラグイン名で修飾した完全名で書く。
   修飾のない素のスキル名は、当該名のスキルを探索する無駄な工程を招く。

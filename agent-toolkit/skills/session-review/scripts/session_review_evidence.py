@@ -2566,6 +2566,7 @@ _BUNDLE_LOCATOR_ONLY_KINDS = frozenset({"user"})
 _BUNDLE_BODY_LENGTH = 200
 _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
+_HOOK_NOTICE_VARIANT_LIMIT = 5
 
 
 def _bundle_events(
@@ -2649,9 +2650,27 @@ def _candidate_events(
             key = _candidate_key(candidate_kind, event, normalized_text)
             groups.setdefault(key, []).append(event)
 
+    selected_groups: list[tuple[tuple[str, ...], list[dict[str, Any]], int, int]] = []
+    bounded_hook_groups: dict[tuple[str, ...], list[tuple[tuple[str, ...], list[dict[str, Any]]]]] = {}
+    for key, events in groups.items():
+        if key[0] == "hook-notice" and key[3] in {"block", "warn"}:
+            bounded_hook_groups.setdefault((key[1], key[3]), []).append((key, events))
+        else:
+            selected_groups.append((key, events, len(events), 0))
+    for variants in bounded_hook_groups.values():
+        ranked = sorted(variants, key=lambda item: (-len(item[1]), item[0]))
+        for index, (key, events) in enumerate(ranked):
+            if index >= _HOOK_NOTICE_VARIANT_LIMIT:
+                excluded["hook-notice-detail-budget"] += len(events)
+                continue
+            representative = min(events, key=lambda event: (str(event["record"]), int(event["line"])))
+            omitted_count = len(events) - 1
+            excluded["hook-notice-detail-budget"] += omitted_count
+            selected_groups.append((key, [representative], len(events), omitted_count))
+
     candidates: list[dict[str, Any]] = []
     included_locators: list[dict[str, Any]] = []
-    for key, events in sorted(groups.items()):
+    for key, events, occurrence_count, omitted_locator_count in sorted(selected_groups, key=lambda item: item[0]):
         locators = sorted(
             ({"record": str(event["record"]), "line": int(event["line"])} for event in events),
             key=lambda locator: (locator["record"], locator["line"]),
@@ -2667,6 +2686,9 @@ def _candidate_events(
         text = events[0].get("text")
         if isinstance(text, str):
             candidate["text"] = text
+        if key[0] == "hook-notice" and key[3] in {"block", "warn"}:
+            candidate["occurrence_count"] = occurrence_count
+            candidate["omitted_locator_count"] = omitted_locator_count
         candidates.append(candidate)
     included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
     return [
@@ -2710,11 +2732,12 @@ def _user_candidate_exclusion(
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
     """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。"""
     if candidate_kind == "hook-notice":
+        tag = str(event.get("tag", ""))
         return (
             candidate_kind,
             str(event.get("hook", "")),
-            str(event.get("hook_name", "")),
-            str(event.get("tag", "")),
+            "" if tag in {"block", "warn"} else str(event.get("hook_name", "")),
+            tag,
             normalized_text,
         )
     if candidate_kind == "escalation":

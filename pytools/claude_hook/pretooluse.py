@@ -631,8 +631,9 @@ def _reference_docs_warning(
         return None
     paths = ", ".join(f"`{path}`" for path in missing)
     return (
-        f"read {paths} in this checkout before editing coding-agent documentation."
-        " Continue the edit after using Read on the missing reference documents."
+        f"the editing agent must fully read {paths} in this checkout and this session before editing"
+        " coding-agent documentation. A summary, heading list, partial Read, or another agent's Read does not"
+        " satisfy this requirement. Continue only after using Read without offset or limit on each missing file."
     )
 
 
