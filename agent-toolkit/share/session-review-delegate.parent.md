@@ -16,15 +16,22 @@
 
 ## 起動
 
-- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
-
 起動の前に`atk managed-temp create --prefix session-review-output`を1回実行し、終了コード0と単一行の絶対パスを確認する。当該ディレクトリ直下の`<対象セッションの識別子>.md`を出力先ファイルとし、メインが所有する。
 
 メインは`agent-toolkit:delegation`をSkill機能で起動し、`agents_server`の`start`で通常のサブエージェントを1つ起動する。
 `subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`を解決した絶対パスを渡す。
 `target_repo`が値を持つ場合は`cwd`へ対象リポジトリの絶対パスを渡す。`target_repo`が`null`の場合は、Git worktreeではない`managed_temp`の絶対パスを`cwd`へ渡す。
 
-対象セッションの実行系、対象セッションの識別子、管理対象一時領域、観測境界及び出力先ファイルを`extra_params`の名前付き必須入力として渡す。引き継ぎ記録先は本節冒頭で確定した値を渡す。起動経路は固定タスク契約、抽出器は現行plugin root、対象リポジトリとプロジェクト規範は`cwd`から振り返り担当が解決する。
+`extra_params`の名前付き必須入力は次の6項目とし、値を次のとおり確定する。
+
+- 対象セッションの実行系: 対象セッションを実行しているコーディングエージェントの製品名。Claude Codeでは`Claude Code`、Codexでは`Codex`とする
+- 対象セッションの識別子: Claude Codeでは準備工程が返した`transcript_path`の拡張子を除いたファイル名、Codexでは`codex_thread_id`の値とする
+- 管理対象一時領域: 準備工程が返した`managed_temp`の値とする
+- 観測境界: 準備工程が返した`observation_boundary`の値とする
+- 出力先ファイル: 本節冒頭で確定した出力先ファイルの絶対パスとする
+- 引き継ぎ記録先: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
+
+起動経路は固定タスク契約、抽出器は現行plugin root、対象リポジトリとプロジェクト規範は`cwd`から振り返り担当が解決するため、いずれも名前付き入力へ渡さない。
 
 メインは2つの領域の絶対パスを保持し、保持、進捗記録及び回収のいずれもメインが担う。
 
