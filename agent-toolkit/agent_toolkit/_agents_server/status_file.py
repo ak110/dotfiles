@@ -22,6 +22,7 @@ import contextlib
 import dataclasses
 import datetime
 import json
+import logging
 import pathlib
 import re
 from collections.abc import Mapping
@@ -37,6 +38,8 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 HEARTBEAT_INTERVAL_SECONDS = 30
@@ -454,12 +457,22 @@ class StatusFileWriter:
         ):
             self._write_terminal_result(session)
 
-    def delete_result(self, session_id: str) -> None:
+    def delete_result(self, session_id: str, *, collector: str) -> None:
         """回収済み又は所有解除するsessionの終端結果を削除する。"""
         if not valid_session_id(session_id):
             raise ValueError(f"invalid session_id: {session_id}")
         path = results_directory(self._identity.root_session_id, self._state_root) / f"{session_id}.json"
-        path.unlink(missing_ok=True)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        else:
+            _LOG.info(
+                "result_deleted session_id=%s writer=%s collector=%s",
+                session_id,
+                self._identity.file_name,
+                collector,
+            )
         self._published_results.discard(session_id)
 
     def delete_wait_target(self, session_id: str) -> None:
@@ -505,7 +518,7 @@ class StatusFileWriter:
     def _write_terminal_results(self) -> None:
         for session in self._sessions.values():
             if session.result_delivered:
-                self.delete_result(session.session_id)
+                self.delete_result(session.session_id, collector="status-sync")
                 continue
             if not session.result_available:
                 continue
@@ -523,6 +536,7 @@ class StatusFileWriter:
         directory = results_directory(self._identity.root_session_id, self._state_root)
         atomic_write(directory / f"{session.session_id}.json", json.dumps(payload, ensure_ascii=False) + "\n")
         self._published_results.add(session.session_id)
+        _LOG.info("result_written session_id=%s writer=%s", session.session_id, self._identity.file_name)
 
     def _remove_owned_and_expired_files(self) -> None:
         """自身の状態ファイルと保持期限を超えた通知だけを削除する。"""

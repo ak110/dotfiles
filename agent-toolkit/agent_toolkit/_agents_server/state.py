@@ -6,12 +6,15 @@ import asyncio
 import dataclasses
 import datetime
 import json
+import logging
 import pathlib
 import typing
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Literal
 
 from agent_toolkit._agents_server import session_registry
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
 RESULT_RETENTION_SECONDS = 1800.0
 # 自動再開の待機上限は終端結果の保持期限とは目的が異なる。本計画の起草時点では
@@ -362,6 +365,12 @@ class SessionState:
             self._terminal_notified = False
         elif not self._terminal_notified:
             self._terminal_notified = True
+            _LOG.info(
+                "session_transition event=terminal session_id=%s writer=state status=%s turn_seq=%d",
+                self.session_id,
+                self.status,
+                self.turn_seq,
+            )
             for terminal_listener in tuple(_TERMINAL_LISTENERS):
                 terminal_listener(self)
         for listener in tuple(_TOUCH_LISTENERS):

@@ -1,4 +1,8 @@
-"""agents_server共有プロンプトの読込契約を検証する。"""
+"""agents_server共有プロンプトと状態遷移の契約を検証する。"""
+
+import logging
+
+import pytest
 
 from agent_toolkit._agents_server import state
 
@@ -78,3 +82,20 @@ def test_claude_delegate_adds_claude_specific_subagent_rules() -> None:
     """Claude通常起動だけがClaude固有の委譲先規範を追加する。"""
     assert state.CLAUDE_CODE_SUBAGENT_RULES not in state.DELEGATE_SYSTEM_PROMPT
     assert state.CLAUDE_DELEGATE_SYSTEM_PROMPT.endswith(state.CLAUDE_CODE_SUBAGENT_RULES)
+
+
+@pytest.mark.asyncio
+async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptureFixture) -> None:
+    """turn終端を一度だけ記録し、結果本文を含めない。"""
+    session = state.SessionState("session-1", "/tmp")
+    session.status = "completed"
+    session.agent_message = "秘密の結果本文"
+    session.turn_completed = True
+
+    with caplog.at_level(logging.INFO, logger="agent-toolkit.agents-server.state"):
+        session.touch()
+        session.touch()
+
+    assert caplog.text.count("session_transition event=terminal") == 1
+    assert "session_id=session-1 writer=state status=completed turn_seq=0" in caplog.text
+    assert "秘密の結果本文" not in caplog.text

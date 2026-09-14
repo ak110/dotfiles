@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import os
 import pathlib
 import sys
@@ -11,19 +12,53 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import session_registry, state, status_file
+from agent_toolkit._agents_server import logging_config, session_registry, state, status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 _WAIT_TIMEOUT_SECONDS = 3600.0
+_LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 
 
-def _fail(message: str, code: int) -> int:
+def _fail(message: str, code: int, *, session_id: str | None = None) -> int:
     """標準エラーへ理由を出力してから非0の終了コードで異常終了する。
 
     理由を伴わない異常終了をこの経路では表現できないよう、`message`を必須の引数とする。
     """
+    _LOG.info("wait_return reason=abnormal code=%d session_id=%s", code, session_id or "none")
     print(message, file=sys.stderr)
     return code
+
+
+def _target_origins(
+    own_status_path: pathlib.Path,
+    result_directory: pathlib.Path,
+    root_session_id: str,
+    owner_status_file: str,
+    state_root: pathlib.Path | None,
+) -> tuple[dict[str, set[str]], tuple[str, int] | None]:
+    """現行の待機対象と由来を返し、解釈不能な入力は診断へ変換する。"""
+    listed = _read_sessions(own_status_path)
+    invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
+    if invalid:
+        return {}, (f"session_idの形式が不正です: {invalid[0]}", 5)
+    listed_ids = {session["session_id"] for session in listed or ()}
+    result_ids = _retained_result_session_ids(result_directory, owner_status_file=owner_status_file)
+    registered_ids, registry_error = status_file.read_wait_targets(root_session_id, owner_status_file, state_root)
+    if registry_error is not None:
+        return {}, (f"待機対象登録簿を読めません: {registry_error}", 9)
+    for session_id in set(registered_ids) - listed_ids - result_ids:
+        if session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.MISSING:
+            status_file.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
+            registered_ids.remove(session_id)
+    origins: dict[str, set[str]] = {}
+    for origin, identifiers in (
+        ("status", listed_ids),
+        ("result", result_ids),
+        ("registered", registered_ids),
+    ):
+        for session_id in identifiers:
+            origins.setdefault(session_id, set()).add(origin)
+    return origins, None
 
 
 def wait_for_result(
@@ -36,10 +71,11 @@ def wait_for_result(
     対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
     対象集合は最初の待機の発行時点で登録簿へ保存し、再発行時も同じ集合を引き継ぐ。
-    待機中に開始したsessionは含めない。
+    待機中に開始又は再稼働したsessionも、巡回ごとに取得して対象へ追加する。
     状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     """
+    logging_config.configure_logging()
     env = os.environ if environment is None else environment
     root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
     identity = status_file.resolve_status_file_identity(env)
@@ -51,27 +87,24 @@ def wait_for_result(
         return _fail(message, 4)
     own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
     result_directory = status_file.results_directory(root_session_id, state_root)
-    listed = _read_sessions(own_status_path)
-    invalid = [session["session_id"] for session in listed or () if not status_file.valid_session_id(session["session_id"])]
-    if invalid:
-        return _fail(f"session_idの形式が不正です: {invalid[0]}", 5)
-    listed_ids = {session["session_id"] for session in listed or ()}
-    result_ids = _retained_result_session_ids(result_directory, owner_status_file=identity.file_name)
-    registered_ids, registry_error = status_file.read_wait_targets(
+    origins, target_error = _target_origins(
+        own_status_path,
+        result_directory,
         root_session_id,
         identity.file_name,
         state_root,
     )
-    if registry_error is not None:
-        return _fail(f"待機対象登録簿を読めません: {registry_error}", 9)
-    for session_id in registered_ids - listed_ids - result_ids:
-        if session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.MISSING:
-            status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
-            registered_ids.remove(session_id)
-    ordered_ids = sorted(listed_ids | result_ids | registered_ids)
+    if target_error is not None:
+        return _fail(*target_error)
+    ordered_ids = sorted(origins)
+    _LOG.info(
+        "wait_start targets=%s origins=%s",
+        ",".join(ordered_ids) or "none",
+        ";".join(f"{session_id}:{','.join(sorted(origins[session_id]))}" for session_id in ordered_ids) or "none",
+    )
     lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
-    lock_files: list[Any] = []
+    lock_files: dict[str, Any] = {}
     try:
         for session_id in ordered_ids:
             lock_file = (lock_directory / f"{session_id}.lock").open("a+b")
@@ -79,19 +112,46 @@ def wait_for_result(
                 acquire_lock(lock_file, blocking=False)
             except OSError:
                 lock_file.close()
-                return _fail(f"同じsessionの待機所有権を別の実行が保持しています: {session_id}", 8)
-            lock_files.append(lock_file)
+                _LOG.info("wait_lock_failed phase=initial session_id=%s", session_id)
+                return _fail(f"同じsessionの待機所有権を別の実行が保持しています: {session_id}", 8, session_id=session_id)
+            lock_files[session_id] = lock_file
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         started_at = time.monotonic()
         deadline = started_at + _WAIT_TIMEOUT_SECONDS
         while True:
+            current_origins, target_error = _target_origins(
+                own_status_path,
+                result_directory,
+                root_session_id,
+                identity.file_name,
+                state_root,
+            )
+            if target_error is not None:
+                return _fail(*target_error)
+            for session_id in sorted(set(current_origins) - set(lock_files)):
+                lock_file = (lock_directory / f"{session_id}.lock").open("a+b")
+                try:
+                    acquire_lock(lock_file, blocking=False)
+                except OSError:
+                    lock_file.close()
+                    _LOG.info("wait_lock_failed phase=dynamic session_id=%s", session_id)
+                    continue
+                lock_files[session_id] = lock_file
+                ordered_ids.append(session_id)
+                ordered_ids.sort()
+                status_file.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
+                _LOG.info(
+                    "wait_target_added session_id=%s origins=%s",
+                    session_id,
+                    ",".join(sorted(current_origins[session_id])),
+                )
             status_paths = status_file.list_status_files(root_session_id, state_root)
             for session_id in ordered_ids:
                 result_path = result_directory / f"{session_id}.json"
                 result, read_error = _read_result(result_path)
                 if read_error is not None:
-                    return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
+                    return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6, session_id=session_id)
                 notices = status_file.take_notices(root_session_id, session_id, state_root)
                 if result is not None:
                     result["session_id"] = session_id
@@ -99,12 +159,15 @@ def wait_for_result(
                         result["notices"] = notices
                     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
                     result_path.unlink(missing_ok=True)
+                    _LOG.info("result_deleted session_id=%s writer=wait collector=atk-agents-wait", session_id)
                     status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
+                    _LOG.info("wait_return reason=terminal-result session_id=%s", session_id)
                     return 0
                 if notices:
                     response = _running_response(session_id, _session_output_activity(status_paths, session_id))
                     response["notices"] = notices
                     print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+                    _LOG.info("wait_return reason=notice-only session_id=%s", session_id)
                     return 0
 
             retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
@@ -118,10 +181,11 @@ def wait_for_result(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
+                _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
                 return 3
             time.sleep(min(1.0, remaining))
     finally:
-        for lock_file in reversed(lock_files):
+        for lock_file in reversed(tuple(lock_files.values())):
             release_lock(lock_file)
             lock_file.close()
 

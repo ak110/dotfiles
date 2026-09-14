@@ -6,6 +6,7 @@
 import asyncio
 import datetime
 import json
+import logging
 import os
 import pathlib
 import typing
@@ -21,6 +22,32 @@ async def _wait_now(manager: agents_server_mcp.AgentsServerManager) -> dict[str,
     """待機せずに現在の終端状態を返すwaitを発行する。"""
     manager._wait_timeouts["main"] = 0.0  # pylint: disable=protected-access
     return await manager.wait()
+
+
+@pytest.mark.asyncio
+async def test_writer_logs_result_write_and_delete_without_body(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """result操作へsessionと書込主体を記録し、結果本文を含めない。"""
+    session = state.SessionState("session-1", str(tmp_path))
+    session.status = "completed"
+    session.agent_message = "秘密の結果本文"
+    session.turn_completed = True
+    session.touch()
+    writer = subject.StatusFileWriter(
+        {session.session_id: session},
+        subject.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+
+    with caplog.at_level(logging.INFO, logger="agent-toolkit.agents-server.status-file"):
+        writer.retain_result(session)
+        writer.delete_result(session.session_id, collector="mcp-wait")
+
+    assert "result_written session_id=session-1 writer=root.json" in caplog.text
+    assert "result_deleted session_id=session-1 writer=root.json collector=mcp-wait" in caplog.text
+    assert "秘密の結果本文" not in caplog.text
 
 
 def test_serialize_session_includes_updated_at(tmp_path: pathlib.Path) -> None:

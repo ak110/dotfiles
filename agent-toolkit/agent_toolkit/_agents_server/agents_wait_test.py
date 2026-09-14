@@ -2,20 +2,22 @@
 
 import json
 import pathlib
+import typing
 from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import agents_wait, session_registry, state, status_file
+from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 
 @pytest.fixture(autouse=True)
-def _short_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
     monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 0)
+    monkeypatch.setattr(logging_config, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "logs"))
 
 
 @pytest.fixture(name="wait_environment")
@@ -582,3 +584,93 @@ def test_agents_wait_adds_notices_to_terminal_result(
     assert json.loads(capsys.readouterr().out) == payload
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())
+
+
+def test_agents_wait_logs_targets_and_collection_without_result_body(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機対象の由来と回収主体を記録し、結果本文をログへ含めない。"""
+    wait_environment.mkdir(parents=True)
+    payload = {"status": "completed", "agent_message": "秘密の結果本文"}
+    (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    assert _wait_for_session_1_result(wait_environment) == 0
+
+    assert json.loads(capsys.readouterr().out)["agent_message"] == "秘密の結果本文"
+    log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
+    assert "wait_start targets=session-1 origins=session-1:result" in log_text
+    assert "collector=atk-agents-wait" in log_text
+    assert "reason=terminal-result session_id=session-1" in log_text
+    assert "秘密の結果本文" not in log_text
+
+
+def test_agents_wait_collects_result_added_after_wait_starts(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機開始後に現れたsessionの終端結果も同じ待機処理内で回収する。"""
+    _write_own_status(wait_environment, [])
+    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 10.0)
+    monotonic_values = iter((0.0, 0.0))
+    monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
+
+    def publish_late_result(_seconds: float) -> None:
+        _write_own_status(wait_environment, [{"session_id": "late-session"}])
+        wait_environment.mkdir(parents=True, exist_ok=True)
+        (wait_environment / "late-session.json").write_text(
+            json.dumps({"status": "completed", "agent_message": "遅延結果"}),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(agents_wait.time, "sleep", publish_late_result)
+
+    assert _wait_for_session_1_result(wait_environment) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "completed",
+        "agent_message": "遅延結果",
+        "session_id": "late-session",
+    }
+    assert not (wait_environment / "late-session.json").exists()
+
+
+def test_agents_wait_retries_dynamic_target_after_lock_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """追加対象のロック競合は既存対象の待機を止めず、次巡回で再取得する。"""
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 10.0)
+    monotonic_values = iter((0.0, 0.0, 1.0))
+    monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
+    external_locks: list[typing.IO[bytes]] = []
+
+    def change_targets(_seconds: float) -> None:
+        if not external_locks:
+            _write_own_status(wait_environment, [{"session_id": "session-1"}, {"session_id": "session-2"}])
+            wait_environment.mkdir(parents=True, exist_ok=True)
+            (wait_environment / "session-2.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+            lock_path = wait_environment.parent / "wait-locks" / "session-2.lock"
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_file = lock_path.open("a+b")
+            acquire_lock(lock_file, blocking=False)
+            external_locks.append(lock_file)
+            return
+        lock_file = external_locks.pop()
+        release_lock(lock_file)
+        lock_file.close()
+
+    monkeypatch.setattr(agents_wait.time, "sleep", change_targets)
+    try:
+        assert _wait_for_session_1_result(wait_environment) == 0
+    finally:
+        for lock_file in external_locks:
+            release_lock(lock_file)
+            lock_file.close()
+
+    assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-2"}
+    log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
+    assert "wait_lock_failed phase=dynamic session_id=session-2" in log_text
+    assert "wait_target_added session_id=session-2" in log_text
