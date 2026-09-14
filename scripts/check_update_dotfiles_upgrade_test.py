@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import pathlib
 import subprocess
+import sys
 import types
 
 import pytest
@@ -21,6 +23,22 @@ def _load_module() -> types.ModuleType:
 
 
 upgrade = _load_module()
+
+
+def test_cli_outputs_japanese_when_default_stream_encoding_is_not_utf8() -> None:
+    """非UTF-8の既定ストリームでも日本語のCLI出力を維持する。"""
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp1252"
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPT), "--help"],
+        check=False,
+        capture_output=True,
+        env=env,
+    )
+    assert result.returncode == 0
+    assert isinstance(result.stdout, bytes)
+    assert result.stdout.decode("utf-8").find("約3日前のdotfiles") >= 0
+    assert not result.stderr
 
 
 def test_resolve_old_commit_uses_head_timestamp_minus_72_hours(tmp_path: pathlib.Path) -> None:

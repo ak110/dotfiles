@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import pathlib
 import shutil
@@ -25,6 +26,14 @@ class UpgradeCheckError(RuntimeError):
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+
+
+def _configure_standard_streams() -> None:
+    """標準出力と標準エラーをUTF-8へ統一する。"""
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def _run(
@@ -141,6 +150,7 @@ def run_upgrade_check(source_repo: pathlib.Path, platform_name: str, *, runner: 
 
 def main() -> int:
     """コマンドライン引数を解析して検証する。"""
+    _configure_standard_streams()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux", "windows"), required=True)
     parser.add_argument("--repo", type=pathlib.Path, default=pathlib.Path.cwd())
