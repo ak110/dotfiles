@@ -222,7 +222,7 @@ Claude Code 2.1.251で実測した。
 
 Claude Codeで未完了の委譲又は背景処理を待つ実行主体は、機械的な完了通知を待機解除の既定手段としたまま、`CronCreate`、`CronList`及び`CronDelete`が現在の実行主体へ公開される場合だけ定期再確認を併用する。一般の委譲待機では`/loop`専用の`ScheduleWakeup`を使用しない。
 
-定期再確認を開始する直前に、メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行し、標準出力のcron式を変更せず`CronCreate`へ渡す。待機対象を一意に識別できる保持済みIDをpromptへ含め、`recur=true`で1件だけ作成する。作成結果のtask IDを保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合はpromptの対象集合と現行のtaskを照合し、必要な場合だけ保持taskを削除して1件を再作成する。
+定期再確認を開始する直前に、メインは`atk wait-schedule --request-bucket main`、サブエージェントは`atk wait-schedule --request-bucket subagent`を1回実行し、標準出力のcron式を変更せず`CronCreate`へ渡す。promptには当該実行主体の定期再確認であることを示す固定の役割標識を含める。待機対象を正本から列挙する手段、対象ごとの成果物を決める方法及び動的に解決したパスを渡す`atk watch`のコマンド形も含める。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程をpromptへ埋め込まず、`recur=true`で1件だけ作成する。作成結果のtask IDはprompt外で保持し、同じ実行主体に未完了対象が1件以上ある間は同じtaskを再利用する。新しい待機対象が加わった場合も同じtaskを再利用する。
 
 5フィールドのcron式は作成時刻からの相対周期ではなく壁時計を基準とし、REPLがidleのときだけ発火して実行中のクエリへ割り込まない。再帰taskは7日で自動失効し、発火時刻には決定論的なjitterが加わり得る。これらの制約は`CronCreate`のtool定義で確認する。
 
@@ -230,7 +230,7 @@ Claude Codeで未完了の委譲又は背景処理を待つ実行主体は、機
 
 定期再確認を装着する時点で、当該セッションに適用される定期報告、cooldown解除、期限監視などの経過時間起動の義務を列挙し、各義務の経過を実測するコマンドと判定閾値を定期promptへ含める。該当する義務が無い場合は含めない。
 
-会話のresume又はcompaction後は、保持したtask IDを`CronList`の実在taskへ照合する。IDを保持していない場合は、promptに含めた待機対象IDの完全一致から所有taskを一意に確認できる場合だけ再利用か削除する。一意に確認できないtaskを推測して操作せず、新しいtaskも重複作成しない。
+会話のresume又はcompaction後は、保持したtask IDを`CronList`の実在taskへ照合する。IDを保持していない場合は、promptに含めた固定の役割標識の完全一致から所有taskを一意に確認できる場合だけ再利用か削除へ進む。一意に確認できないtaskを推測して操作せず、新しいtaskも重複作成しない。
 
 待機する全対象の終端を確認した時点で、保持したtask IDを`CronDelete`へ渡して削除を確認する。`CronCreate`、`CronList`若しくは`CronDelete`が未公開・拒否・無効、又は`atk wait-schedule`が失敗した場合は、シェルの`sleep`や背景タイマーへ切り替えず、機械的な完了通知を待つ既存経路を維持する。
 

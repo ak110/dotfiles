@@ -226,6 +226,7 @@ def test_rules_files_do_not_contain_role_specific_sections() -> None:
     for value in ("## ユーザー向け発話ルール", "### ユーザー発話の解釈", "process_wi_skill_invoked"):
         assert value not in common
     assert "## ユーザー向け発話ルール" in rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8")
+    assert "記録済みの暫定回避策" in rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8")
     assert "## 確認事項の差し戻し" in rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8")
 
 
