@@ -41,8 +41,10 @@ from agent_toolkit._atk.wi.repo import _resolve_repo_id
 type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 
 
-def _resolve_states(statuses: Iterable[str]) -> tuple[str, ...]:
+def _resolve_states(statuses: str | Iterable[str]) -> tuple[str, ...]:
     """状態フィルターを走査対象へ変換する。"""
+    if isinstance(statuses, str):
+        statuses = (statuses,)
     selected: set[str] = set()
     for status in statuses:
         if status == "active":
@@ -56,8 +58,10 @@ def _resolve_states(statuses: Iterable[str]) -> tuple[str, ...]:
     return tuple(state for state in WI_STATES if state in selected)
 
 
-def _answered_matches(entry_type: str | None, text: str, answered_filters: Iterable[str]) -> bool:
+def _answered_matches(entry_type: str | None, text: str, answered_filters: str | Iterable[str]) -> bool:
     """回答状況フィルターとの一致を返す。"""
+    if isinstance(answered_filters, str):
+        answered_filters = (answered_filters,)
     filters = set(answered_filters)
     if "all" in filters:
         return True
