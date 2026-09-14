@@ -9,6 +9,7 @@ import json
 import pathlib
 import shutil
 import sys
+from collections.abc import Iterable
 
 from agent_toolkit._atk.wi.common import (
     WI_ACTIVE_STATES,
@@ -40,35 +41,40 @@ from agent_toolkit._atk.wi.repo import _resolve_repo_id
 type QueueEntryDisplay = tuple[pathlib.Path, str, str, str, str | None]
 
 
-def _resolve_states(status: str) -> tuple[str, ...]:
+def _resolve_states(statuses: Iterable[str]) -> tuple[str, ...]:
     """状態フィルターを走査対象へ変換する。"""
-    if status == "active":
-        return WI_ACTIVE_STATES
-    if status == "processable":
-        return WI_PROCESSABLE_STATES
-    if status == "all":
-        return WI_STATES
-    return (status,)
+    selected: set[str] = set()
+    for status in statuses:
+        if status == "active":
+            selected.update(WI_ACTIVE_STATES)
+        elif status == "processable":
+            selected.update(WI_PROCESSABLE_STATES)
+        elif status == "all":
+            selected.update(WI_STATES)
+        else:
+            selected.add(status)
+    return tuple(state for state in WI_STATES if state in selected)
 
 
-def _answered_matches(entry_type: str | None, text: str, answered_filter: str) -> bool:
+def _answered_matches(entry_type: str | None, text: str, answered_filters: Iterable[str]) -> bool:
     """回答状況フィルターとの一致を返す。"""
-    if answered_filter == "all":
+    filters = set(answered_filters)
+    if "all" in filters:
         return True
     if entry_type != WI_TYPE_UWI:
         return False
     answered = _is_uwi_answered(text)
-    return answered if answered_filter == "yes" else not answered
+    return (answered and "yes" in filters) or (not answered and "no" in filters)
 
 
 def _select_entries(
     private_notes: pathlib.Path,
     *,
-    status: str,
-    target_repo: str | None,
-    entry_type: str,
-    answered: str,
-    source: str | None,
+    status: Iterable[str],
+    target_repo: Iterable[str] | None,
+    entry_type: Iterable[str],
+    answered: Iterable[str],
+    source: Iterable[str] | None,
 ) -> list[QueueEntryDisplay]:
     """一覧系コマンドで共有する5条件の積集合を返す。"""
     selected: list[QueueEntryDisplay] = []
@@ -76,7 +82,7 @@ def _select_entries(
         _, _, text, _, actual_type = entry
         if not _answered_matches(actual_type, text, answered):
             continue
-        if source is not None and not _source_matches(_parse_source(text), source):
+        if source is not None and not any(_source_matches(_parse_source(text), value) for value in source):
             continue
         selected.append(entry)
     return selected
@@ -104,9 +110,9 @@ def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
         not args.count
         and not getattr(args, "summary_only", False)
         and not emits_json
-        and args.type in ("all", WI_TYPE_UWI)
-        and args.status in ("all", "active", "processable")
-        and args.answered in ("all", "no")
+        and ("all" in args.type or WI_TYPE_UWI in args.type)
+        and set(WI_PROCESSABLE_STATES).issubset(_resolve_states(args.status))
+        and ("all" in args.answered or "no" in args.answered)
         and args.source is None
     )
 
@@ -229,13 +235,14 @@ def _cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.skip_pull:
         with _repo_lock(private_notes):
             _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
-    filter_repo = _resolve_repo_id(args.target_repo) if args.target_repo is not None else None
-    readiness = calculate_readiness(private_notes, filter_repo)
+    resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in (args.target_repo or ())))
+    readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
+    readiness = calculate_readiness(private_notes, readiness_target)
 
     selected = _select_entries(
         private_notes,
         status=args.status,
-        target_repo=filter_repo,
+        target_repo=resolved_repos or None,
         entry_type=args.type,
         answered=args.answered,
         source=args.source,

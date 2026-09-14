@@ -408,7 +408,7 @@ def test_codex_plugin_validator_reports_only_known_schema_deviations() -> None:
     expected = {
         "plugin.json field `hooks` is not accepted by plugin validation",
         "plugin.json field `mcpServers` must resolve to `.mcp.json`",
-        "skill `add-awi` frontmatter field `disable-model-invocation` must be false",
+        "skill `add-awi-by-user` frontmatter field `disable-model-invocation` must be false",
         "skill `fast-process-wi` frontmatter field `disable-model-invocation` must be false",
     }
     details = f"終了コード: {result.returncode}\n標準出力:\n{result.stdout}\n標準エラー:\n{result.stderr}"

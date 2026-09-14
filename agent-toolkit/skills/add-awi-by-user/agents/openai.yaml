@@ -1,5 +1,5 @@
 interface:
-  display_name: "add-awi"
+  display_name: "add-awi-by-user"
   short_description: "裏付けと対話確定を経てエージェント作業項目を登録する"
 
 policy:

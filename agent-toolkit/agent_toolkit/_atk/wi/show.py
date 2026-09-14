@@ -9,7 +9,6 @@ import pathlib
 import sys
 
 from agent_toolkit._atk.wi.common import (
-    WI_ACTIVE_STATES,
     WI_PROCESSABLE_STATES,
     WI_STATES,
     WI_TYPE_UWI,
@@ -17,13 +16,13 @@ from agent_toolkit._atk.wi.common import (
     _canonical_repo,
     _dedup_positional_filenames,
     _is_uwi_answered,
-    _iter_entries,
     _pull_with_recent_reuse,
     _repo_lock,
     _require_type,
     _validate_filename,
 )
 from agent_toolkit._atk.wi.formatters import _parse_source, _parse_target_repo, _source_matches
+from agent_toolkit._atk.wi.listing import _resolve_states, _select_entries
 from agent_toolkit._atk.wi.repo import _resolve_repo_id
 
 
@@ -40,9 +39,9 @@ def _covers_unanswered_uwis(args: argparse.Namespace) -> bool:
     return (
         not args.filenames
         and args.all
-        and args.type in ("all", WI_TYPE_UWI)
-        and args.status in ("all", "active")
-        and args.answered in ("all", "no")
+        and ("all" in args.type or WI_TYPE_UWI in args.type)
+        and set(WI_PROCESSABLE_STATES).issubset(_resolve_states(args.status))
+        and ("all" in args.answered or "no" in args.answered)
         and args.source is None
     )
 
@@ -97,9 +96,7 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if not args.skip_pull:
         with _repo_lock(private_notes):
             _pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
-    filter_repo: str | None = None
-    if args.target_repo is not None:
-        filter_repo = _resolve_repo_id(args.target_repo)
+    resolved_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in (args.target_repo or ())))
 
     if validated_filenames:
         resolver_cache: dict[str, str | None] = {}
@@ -113,12 +110,12 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     continue
                 text = path.read_text(encoding="utf-8")
                 kind = _require_type(path, text)
-                if args.type not in ("all", kind):
+                if "all" not in args.type and kind not in args.type:
                     continue
                 target_repo = _parse_target_repo(text)
-                if filter_repo is not None and _canonical_repo(target_repo, resolver_cache) != filter_repo:
+                if resolved_repos and _canonical_repo(target_repo, resolver_cache) not in resolved_repos:
                     continue
-                if args.source is not None and not _source_matches(_parse_source(text), args.source):
+                if args.source is not None and not any(_source_matches(_parse_source(text), source) for source in args.source):
                     continue
                 selected_entry = (path, target_repo, text, state, kind)
                 break
@@ -142,28 +139,20 @@ def _cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 print()
         return
 
-    states = (
-        WI_ACTIVE_STATES
-        if args.status == "active"
-        else WI_PROCESSABLE_STATES
-        if args.status == "processable"
-        else WI_STATES
-        if args.status == "all"
-        else (args.status,)
+    selected = _select_entries(
+        private_notes,
+        status=args.status,
+        target_repo=resolved_repos or None,
+        entry_type=args.type,
+        answered=args.answered,
+        source=args.source,
     )
-    selected = list(_iter_entries(private_notes, states, filter_repo, args.type))
     for header_type in WI_TYPES:
         entries: dict[str, list[tuple[str, str, str]]] = {}
         for path, target_repo, text, state, entry_type in selected:
             if entry_type != header_type:
                 continue
             answered = _is_uwi_answered(text)
-            if args.answered == "yes" and (entry_type != WI_TYPE_UWI or not answered):
-                continue
-            if args.answered == "no" and (entry_type != WI_TYPE_UWI or answered):
-                continue
-            if args.source is not None and not _source_matches(_parse_source(text), args.source):
-                continue
             entries.setdefault(target_repo, []).append((path.name, text, state))
         if entries:
             print(f"# {header_type}")

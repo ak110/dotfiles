@@ -1055,6 +1055,34 @@ class TestStartProcessingMultiple:
         assert not (notes / "processing" / "fb-001.md").exists()
         assert not (notes / "processing" / "fb-002.md").exists()
 
+    def test_individual_remove_accepts_multiple_target_repositories(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """個別削除は各項目がいずれかの指定リポジトリに属する場合に一括実行する。"""
+        notes = _setup_notes(tmp_path)
+        _write_awi_file(notes, "foo.md", target_repo="github.com/example/foo")
+        _write_awi_file(notes, "bar.md", target_repo="github.com/example/bar")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+        with pytest.raises(SystemExit) as exc_info:
+            atk.main(
+                [
+                    "wi",
+                    "rm",
+                    "foo.md",
+                    "bar.md",
+                    "--target-repo=github.com/example/foo",
+                    "--target-repo=github.com/example/bar",
+                ],
+                home=tmp_path,
+            )
+
+        assert exc_info.value.code == 0
+        assert not (notes / "inbox/foo.md").exists()
+        assert not (notes / "inbox/bar.md").exists()
+
     def test_missing_member_rejects_entire_batch_before_moving(
         self,
         monkeypatch: pytest.MonkeyPatch,

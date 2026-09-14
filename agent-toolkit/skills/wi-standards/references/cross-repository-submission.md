@@ -18,4 +18,4 @@
 - 通常の`atk wi add`はfrontmatterの`target_repo`をCLI値で置き換えず、frontmatterの値を優先する
 - `alert_keys`などの非予約frontmatterは元項目の値を保持する
 - source欄がない場合はsourceを指定しない。指定済みsourceがある場合は同じ値を渡す
-- 登録の成功後だけ、`atk wi rm <元項目ファイル名> --force --note=<移管先リポジトリと移管先ファイル名>`で元項目を除去する
+- 登録の成功後だけ、移管先リポジトリと移管先ファイル名を記載したUTF-8ファイルを用意し、`atk wi rm <元項目ファイル名> --force --note-file=<当該ファイルの絶対パス>`で元項目を除去する

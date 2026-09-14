@@ -40,6 +40,54 @@ def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+def test_repeatable_filters_use_or_within_kind_and_and_across_kinds(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同種の複数値は和集合、異種の条件は積集合として一度だけ出力する。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "foo.md", target_repo="github.com/example/foo", source="agent")
+    held = _write_uwi_file(
+        notes,
+        "bar.md",
+        target_repo="github.com/example/bar",
+        answer="承認する",
+        source="human",
+    )
+    held.rename(notes / "hold/bar.md")
+    _write_awi_file(notes, "excluded.md", target_repo="github.com/example/baz", source="agent")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "wi",
+                "list",
+                "--skip-pull",
+                "--target-repo=github.com/example/foo",
+                "--target-repo=github.com/example/bar",
+                "--target-repo=github.com/example/foo",
+                "--type=awi",
+                "--type=uwi",
+                "--status=inbox",
+                "--status=hold",
+                "--answered=all",
+                "--answered=yes",
+                "--source=agent",
+                "--source=human",
+                "--no-json",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert output.count("foo.md:") == 1
+    assert output.count("bar.md:") == 1
+    assert "excluded.md:" not in output
+
+
 class TestListEmpty:
     """listサブコマンド: inbox空の場合は何も出力しない。"""
 

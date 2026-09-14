@@ -67,17 +67,17 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
-        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`又は`--note-file`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
         "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
     "atk wi reject": {
         "summary": "不採用として終端し理由を記録する",
-        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。",
+        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox又はprocessingからrejectedへファイルを移動する。`--note`又は`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。",
         "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
     "atk wi rm": {
         "summary": "指定項目またはフィルターに一致する項目を削除する",
-        "description": "目的: 指定した項目、又は対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`及び`--source`で候補を限定し、削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
+        "description": "目的: 指定した項目、又は対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`及び`--source`で候補を限定し、削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目は既定で保護し、削除するには`--force`を指定する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合は当該commitから復元する。",
         "epilog": "実行例:\n\n  atk wi rm 20260901-072734-001.md",
     },
     "atk wi edit": {
@@ -99,6 +99,11 @@ HELP: dict[str, dict[str, str]] = {
         "summary": "外部編集後の未コミット変更を確定してpushする",
         "description": "目的: 外部のエディターなどで直接編集したprivate-notesの未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルや保存済みの計画ファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesの作業ツリーの変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk wi commit",
+    },
+    "atk wi pull": {
+        "summary": "private-notesを明示的に同期する",
+        "description": "目的: private-notesをupstreamと明示的に同期する。\n利用場面: キュー本文を表示せず、後続操作の前に最新状態だけを取得するとき。\n対象と出力: private-notesへfast-forward同期と既存のlegacy予約移行を適用し、成功時は同期対象の絶対パスを1行だけ表示する。キュー項目の本文は表示しない。\n前提: private-notesが有効なGitリポジトリで、upstreamとfast-forward同期できること。\n復元・後始末: fast-forwardで取得した履歴は通常のGit履歴として残る。失敗時は既存のGit回復手順に従う。",
+        "epilog": "実行例:\n\n  atk wi pull",
     },
     "atk wi process-loop": {
         "summary": "AWI消化の常駐処理を開始する",
@@ -262,12 +267,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: 行を一意に特定できる列を指定して、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、対応の内容か対応が不要である理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方について、送信した本文との一致判定`body_match`だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: `round`、`track`、`location`、`issue`のうち、行を一意に特定できる列を指定する。本文は対応するファイル指定オプションで渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
-        "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --response-needed=yes --response-file=/tmp/response.md",
+        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの採否と対応内容を更新する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方について、送信した本文との一致判定`body_match`だけを標準出力へ書く。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換経路として利用できる。本文は対応するファイル指定オプションで渡す。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-needed=yes --response-file=/tmp/response.md",
     },
     "atk review-table show": {
         "summary": "レビュー表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は各セルをJSON文字列として保存したraw TSV、`jsonl`はデコード済みのJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は各セルをJSON文字列として保存した1行1レコードのraw TSV、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定すると当該trackの行だけを、`--round`を指定すると当該ラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: レビュー指摘管理表を保存順のまま表示する。`--format`は`tsv`と`jsonl`を受理し、`tsv`は`row-id`を先頭に付けた9フィールドの表示形式、`jsonl`は`row-id`とデコード済みの各列を持つJSON Linesを出力する。\n利用場面: 未解消の指摘と対応の状況を確認するとき。\n対象と出力: 指定した表を読み取り、標準出力へ書く。`--format=tsv`は保存済み8列TSVの各行の先頭へ整数の`row-id`を付けた9フィールドの表示形式、`--format=jsonl`は1行1レコードのJSON Linesを出力する。`--output-file`を指定した場合は標準出力の内容を当該ファイルへ保存し、標準出力へ保存先パスと行数だけを書く。ファイルは変更しない。\n前提: `--track`を指定すると当該trackの行だけを、`--round`を指定すると当該ラウンドの行だけを表示する。両者は併用できる。存在しないラウンドを指定した場合は何も出力せず終了コード0で終わる。デコード済みの値が必要な場合は`--format=jsonl`を用いる。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-table validate": {

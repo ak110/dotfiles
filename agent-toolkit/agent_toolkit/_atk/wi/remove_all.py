@@ -3,6 +3,7 @@
 import pathlib
 import sys
 import typing
+from collections.abc import Iterable
 
 from agent_toolkit._atk.wi.common import (
     WI_AGENT_REMOVABLE_STATES,
@@ -35,12 +36,12 @@ type CandidateSnapshot = tuple[CandidateKey, ...]
 
 def _select_candidates(
     private_notes: pathlib.Path,
-    target_repo: str,
+    target_repo: Iterable[str],
     *,
-    status: str,
-    entry_type: str,
-    answered: str,
-    source: str | None,
+    status: Iterable[str],
+    entry_type: Iterable[str],
+    answered: Iterable[str],
+    source: Iterable[str] | None,
     actor_is_agent: bool,
 ) -> list[QueueEntryDisplay]:
     """一覧条件と呼出主体の許可状態がともに一致する項目を選択する。"""
@@ -119,14 +120,14 @@ def _remove_candidates(
 
 def _remove_confirmed_candidates(
     private_notes: pathlib.Path,
-    normalized_repo: str,
+    normalized_repos: tuple[str, ...],
     confirmed: CandidateSnapshot,
     *,
     note: str | None,
-    status: str,
-    entry_type: str,
-    answered: str,
-    source: str | None,
+    status: Iterable[str],
+    entry_type: Iterable[str],
+    answered: Iterable[str],
+    source: Iterable[str] | None,
     actor_is_agent: bool,
 ) -> list[str]:
     """remote同期後の候補を確認済み記録と突合し、内容が変わらない項目だけ削除する。
@@ -139,7 +140,7 @@ def _remove_confirmed_candidates(
         _pull(private_notes)
         current = _select_candidates(
             private_notes,
-            normalized_repo,
+            normalized_repos,
             status=status,
             entry_type=entry_type,
             answered=answered,
@@ -152,7 +153,7 @@ def _remove_confirmed_candidates(
         if changed:
             print(f"確認後に変更されたため削除しません: {', '.join(changed)}")
         if not removable:
-            print(f"削除対象なし: {normalized_repo}")
+            print(f"削除対象なし: {', '.join(normalized_repos)}")
             return []
         return _remove_candidates(private_notes, removable, note=note)
 
@@ -160,15 +161,15 @@ def _remove_confirmed_candidates(
 def remove_all_entries(
     private_notes: pathlib.Path,
     *,
-    target_repo: str,
+    target_repo: Iterable[str],
     assume_yes: bool,
     force: bool,
     note: str | None,
     skip_pull: bool,
-    status: str,
-    entry_type: str,
-    answered: str,
-    source: str | None,
+    status: Iterable[str],
+    entry_type: Iterable[str],
+    answered: Iterable[str],
+    source: Iterable[str] | None,
     actor_is_agent: bool,
 ) -> list[str]:
     """対象リポジトリのactive項目を一覧表示し、確認後に一括削除する。
@@ -176,25 +177,25 @@ def remove_all_entries(
     `skip_pull`が真の場合は候補選定・一覧表示・確認をローカル状態で行う。
     削除直前は`skip_pull`によらずremote同期し、確認済みで内容が変わらない項目だけを削除する。
     """
-    normalized_repo = _resolve_repo_id(target_repo)
+    normalized_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in target_repo))
     with _repo_lock(private_notes):
         if not skip_pull:
             _pull(private_notes)
         candidates = _select_candidates(
             private_notes,
-            normalized_repo,
+            normalized_repos,
             status=status,
             entry_type=entry_type,
             answered=answered,
             source=source,
             actor_is_agent=actor_is_agent,
         )
-        readiness = calculate_readiness(private_notes, normalized_repo)
+        readiness = calculate_readiness(private_notes, normalized_repos[0] if len(normalized_repos) == 1 else None)
         confirmed_snapshot = _snapshot(candidates)
 
     _print_entries(candidates, readiness)
     if not candidates:
-        print(f"削除対象なし: {normalized_repo}")
+        print(f"削除対象なし: {', '.join(normalized_repos)}")
         return []
     _ensure_processing_is_explicit(candidates, force=force)
     if not assume_yes and not _confirm_removal(len(candidates)):
@@ -202,7 +203,7 @@ def remove_all_entries(
         return []
     return _remove_confirmed_candidates(
         private_notes,
-        normalized_repo,
+        normalized_repos,
         confirmed_snapshot,
         note=note,
         status=status,

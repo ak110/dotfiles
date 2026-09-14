@@ -287,6 +287,17 @@ def _response_value(raw: str) -> str:
     raise ValueError("対応要否はyesまたはnoを指定する")
 
 
+def _row_id(raw: str) -> int:
+    """1始まりの行識別子を検証する。"""
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("row-idは1以上の整数で指定する") from error
+    if value < 1:
+        raise argparse.ArgumentTypeError("row-idは1以上の整数で指定する")
+    return value
+
+
 def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], matches: list[int]) -> str:
     """一意に解決できない部分キーとデコード済み候補行を整形する。"""
     requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
@@ -313,6 +324,7 @@ def respond(
     response_needed: str,
     response: str,
     no_response_reason: str,
+    row_id: int | None = None,
 ) -> int:
     """レビューイーの応答欄だけを部分キーで更新する。
 
@@ -335,14 +347,23 @@ def respond(
     given = [
         (index, _normalized(value)) for index, value in enumerate((round_value, track, location, issue)) if _normalized(value)
     ]
+    if row_id is not None and row_id < 1:
+        raise ValueError("row-idは1以上の整数で指定する")
+    if row_id is not None and given:
+        raise ValueError("row-idはround・track・location・issueと同時に指定できない")
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
-        matches = [
-            row_index
-            for row_index, row in enumerate(rows)
-            if all(_normalized(row[column_index]) == value for column_index, value in given)
-        ]
+        if row_id is not None:
+            matches = [row_id - 1] if row_id <= len(rows) else []
+        else:
+            matches = [
+                row_index
+                for row_index, row in enumerate(rows)
+                if all(_normalized(row[column_index]) == value for column_index, value in given)
+            ]
         if len(matches) != 1:
+            if row_id is not None:
+                raise ValueError(f"row-idが範囲外である: {row_id}（行数: {len(rows)}）")
             diagnostic = _format_key_diagnostic(rows, given, matches)
             raise ValueError(f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}")
         updated = [*rows]
@@ -350,7 +371,12 @@ def respond(
         return updated
 
     _locked_update(target, updater)
-    saved_rows = [row for row in _read(target) if all(_normalized(row[column_index]) == value for column_index, value in given)]
+    current_rows = _read(target)
+    saved_rows = (
+        [current_rows[row_id - 1]]
+        if row_id is not None and 1 <= row_id <= len(current_rows)
+        else [row for row in current_rows if all(_normalized(row[column_index]) == value for column_index, value in given)]
+    )
     if len(saved_rows) != 1:
         raise ValueError(f"更新した行を保存済みの表から一意に解決できない: {len(saved_rows)}件")
     saved_row = saved_rows[0]
@@ -385,15 +411,15 @@ def show(
         raise ValueError(f"trackが正規値ではない。{_RECOVERY_GUIDANCE}")
     track = _normalize_track(track) if track is not None else None
     selected = [
-        (raw_line, row)
-        for raw_line, row in rows
+        (row_id, raw_line, row)
+        for row_id, (raw_line, row) in enumerate(rows, start=1)
         if (track is None or row[1] == track) and (round_value is None or row[0] == str(round_value))
     ]
     if output_format == "tsv":
-        print("".join(raw_line for raw_line, _ in selected), end="")
+        print("".join(f"{row_id}\t{raw_line}" for row_id, raw_line, _ in selected), end="")
         return 0
-    for _, row in selected:
-        print(json.dumps(dict(zip(COLUMNS, row, strict=True)), ensure_ascii=False))
+    for row_id, _, row in selected:
+        print(json.dumps({"row-id": row_id, **dict(zip(COLUMNS, row, strict=True))}, ensure_ascii=False))
     return 0
 
 
@@ -488,6 +514,11 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     )
     respond_parser.add_argument("path", help=path_help)
     respond_parser.add_argument(
+        "--row-id",
+        type=_row_id,
+        help="showが出力した1始まりの行識別子。round・track・location・issueとは併用できない。",
+    )
+    respond_parser.add_argument(
         "--round",
         help="更新する行を特定するラウンド番号。省略すると他の列だけで行を特定する。",
     )
@@ -525,7 +556,7 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         "--format",
         choices=("tsv", "jsonl"),
         default="tsv",
-        help="出力形式。tsvは保存済みのraw TSV、jsonlはデコード済みのJSON Linesを表示する。",
+        help="出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Linesを表示する。",
     )
     _output_file.add_output_file_arg(show_parser)
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
@@ -558,8 +589,10 @@ def dispatch(args: argparse.Namespace) -> int:
         track = args.track or ""
         location = _cell_value(args, "location")
         issue = _cell_value(args, "issue")
-        if not any((round_value, track, location, issue)):
-            raise ValueError("round・track・location・issueのいずれかを指定する")
+        if args.row_id is not None and any((round_value, track, location, issue)):
+            raise ValueError("row-idはround・track・location・issueと同時に指定できない")
+        if args.row_id is None and not any((round_value, track, location, issue)):
+            raise ValueError("row-id・round・track・location・issueのいずれかを指定する")
         return respond(
             args.path,
             round_value,
@@ -569,6 +602,7 @@ def dispatch(args: argparse.Namespace) -> int:
             args.response_needed,
             _cell_value(args, "response"),
             _cell_value(args, "no_response_reason"),
+            args.row_id,
         )
     raise ValueError(f"未知のreview-tableサブコマンド: {command}")
 

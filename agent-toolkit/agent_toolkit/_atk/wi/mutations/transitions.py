@@ -196,7 +196,7 @@ def _validate_transition_targets(
     paths: list[pathlib.Path],
     *,
     action: str,
-    target_repo: str | None,
+    target_repo: str | typing.Iterable[str] | None,
     expected_content: str | None,
     cooldown_days: int | None,
     force: bool,
@@ -210,7 +210,8 @@ def _validate_transition_targets(
             raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
         if current_content != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
-    normalized_target_repo = _resolve_repo_id(target_repo) if target_repo is not None else None
+    raw_target_repos = (target_repo,) if isinstance(target_repo, str) else tuple(target_repo or ())
+    normalized_target_repos = tuple(dict.fromkeys(_resolve_repo_id(repo) for repo in raw_target_repos))
     for path in paths:
         content = current_content if current_content is not None else path.read_text(encoding="utf-8")
         if action == "start-processing":
@@ -219,7 +220,16 @@ def _validate_transition_targets(
             # `--target-repo`未指定でもtarget_repo欠落とfrontmatter解析不能を拒否するため、
             # 不一致判定を`_verify_target_repo_content`へ委ねる一方でこの必須検査は残す。
             _entry_target_repo(path, content)
-        _verify_target_repo_content(path, content, normalized_target_repo)
+        if len(normalized_target_repos) <= 1:
+            _verify_target_repo_content(path, content, normalized_target_repos[0] if normalized_target_repos else None)
+        else:
+            actual_target_repo = _entry_target_repo(path, content)
+            if actual_target_repo not in normalized_target_repos:
+                print(
+                    f"target_repo不一致: 期待={', '.join(normalized_target_repos)} 実際={actual_target_repo} ファイル={path}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
     if cooldown_days is not None:
         non_awi = [path.name for path in paths if _require_type(path, path.read_text(encoding="utf-8")) != WI_TYPE_AWI]
         if non_awi:
@@ -333,7 +343,7 @@ def transition_entries(
     action: str,
     filenames: list[str],
     now: datetime.datetime,
-    target_repo: str | None = None,
+    target_repo: str | typing.Iterable[str] | None = None,
     note: str | None = None,
     commit: str | None = None,
     lock_timeout: float = -1,

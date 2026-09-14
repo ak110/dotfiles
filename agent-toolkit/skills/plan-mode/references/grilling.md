@@ -1,6 +1,6 @@
 # grilling
 
-`agent-toolkit:plan-mode`の直接起動で実装前の共通理解へ到達し、`agent-toolkit:add-awi`の起動でAWI投入前の共通理解へ到達するためのユーザー確認手順。
+`agent-toolkit:plan-mode`の直接起動で実装前の共通理解へ到達し、`agent-toolkit:add-awi-by-user`の起動でAWI投入前の共通理解へ到達するためのユーザー確認手順。
 `agent-toolkit:process-wi`経路では本書を適用しない。当該経路とレーン担当としての起動における確認事項の扱いは`../SKILL.md`が定める。
 
 ## 確認対象
@@ -37,5 +37,5 @@
   - **最有力の対案**: <選ばなかった中で最も有力だった案>
 ````
 
-この報告は承認を求めるものではないため、追加承認を待たず次の工程へ進む。次の工程は、`agent-toolkit:plan-mode`では計画ファイルの起草、`agent-toolkit:add-awi`ではAWI本文の起草とする。
+この報告は承認を求めるものではないため、追加承認を待たず次の工程へ進む。次の工程は、`agent-toolkit:plan-mode`では計画ファイルの起草、`agent-toolkit:add-awi-by-user`ではAWI本文の起草とする。
 ユーザーが後から異論を示した場合は、その判断と依存する後続判断を更新する。

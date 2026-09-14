@@ -155,7 +155,7 @@ AWIはユーザーとエージェントが非同期に共有する人間向け�
   UWI本文は、冒頭の疑問文と判断を変える事実を順に置く。`choice`と`yes-no`では疑問文の後に選択肢と各選択肢の帰結を置き、回答方法の説明を書かない。
   `free-form`では自由記述で回答できる問いとし、返信形式を指定する必要がある場合だけ回答方法を書く
   （2026年9月8日、利用者指示。本文が長く、UWIでは何を問われているかが読み取りにくいという指摘に由来する）
-- `agent-toolkit:add-awi`は、`agent-toolkit:plan-mode`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
+- `agent-toolkit:add-awi-by-user`は、`agent-toolkit:plan-mode`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
   解消した後に、保存する本文の全文を提示して可否の回答を得てから投入する
   （2026年9月8日、利用者指示。確認が不十分なままAWIが投入される事故に由来する）
 
@@ -181,9 +181,9 @@ processing、UWI、終端項目と人間由来の項目はユーザーコメン�
 sourceがある場合は同じ値を渡す。
 `alert_keys`などの非予約frontmatterは元項目の値を保持する。
 移管先ファイル名を記録して元項目を終端する。
-`agent-toolkit:add-awi`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
+`agent-toolkit:add-awi-by-user`と`agent-toolkit:process-wi`を起動したセッションの同一主題に対する追加指示は、各`SKILL.md`が定める当該経路の成果物へ反映する。
 主題が継続するか、AWI投入と直接実装の境界が不明な場合は、変更・投入の前に確認する。
-`agent-toolkit:add-awi`が新規項目を起票する場合は、利用者発話を原文とする手動起動を含めて`source: add-awi`を`atk wi add --source`へ必ず渡す。別リポジトリ項目の移管では、移管元に保存済みのsourceがある場合に同じ値を保持する。
+`agent-toolkit:add-awi-by-user`が新規項目を起票する場合は、利用者発話を原文とする手動起動を含めて`source: add-awi-by-user`を`atk wi add --source`へ必ず渡す。別リポジトリ項目の移管では、移管元に保存済みのsourceがある場合に同じ値を保持する。
 
 ## 計画ファイルの体裁の扱い
 
