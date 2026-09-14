@@ -193,7 +193,7 @@ Codexの二層待機で外側の実行セルがyieldした事象は、内側の`
 
 ## 実装担当とworktree
 
-- 1つのworktreeへ書き込む主体を1つに保つ規定は`agent-toolkit/rules/02-agent-operations.md`「委譲時の厳守事項」が定める
+- 1つのworktreeへ書き込む主体を1つに保つ規定は`references/mandatory-rules.md`が定める
 - レーン担当の起動前に上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確認する。
   新規レビュー修正担当を起動する場合はレーン担当の終端確認後に修正引継ぎ記録と現行のdirty差分を照合して渡す。同一threadを継続する場合は書込主体が変わらないため終端確認を要さない
 - 作業ディレクトリの絶対パスは起動APIの`cwd`へ渡す。実装担当は現在のworktree、Git共通dir及びlinked worktreeを`cwd`から解決し、複製元リポジトリのファイルを編集しない

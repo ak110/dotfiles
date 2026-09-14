@@ -439,6 +439,23 @@ def _check_secrets(tool_name: str, file_path: str) -> bool:
     return False
 
 
+def _check_secret_read(file_path: str) -> bool:
+    """Claude CodeのReadによる`.env`系ファイルの内容取得を遮断する。"""
+    if not file_path:
+        return False
+    normalized = file_path.replace("\\", "/")
+    if normalized.endswith(_SECRETS_EXEMPT_SUFFIXES) or not _ENV_FILE_PATTERN.search(normalized):
+        return False
+    print(
+        _block_notice(
+            f"blocked: Readによる`.env`系ファイルの全文又は範囲読取は禁止されている。対象: {file_path}",
+            fix="Bashで必要なキーの値だけを抽出する。",
+        ),
+        file=sys.stderr,
+    )
+    return True
+
+
 # --- manifest手編集check (warn) ---
 
 _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (

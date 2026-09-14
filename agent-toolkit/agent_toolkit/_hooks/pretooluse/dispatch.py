@@ -39,6 +39,9 @@ list:
 
 Bash:
 
+- 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
+- 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
+- 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の補正又は遮断 (auto-fix/block)
@@ -60,14 +63,14 @@ Skill:
 
 TaskStop:
 
-- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の初回遮断 (block)
+- 停滞検知完了記録又は自セッション起動記録との対象一致による通過と、それ以外の遮断 (block)
 
-Write / Edit / MultiEdit / apply_patch:
+Read / Write / Edit / MultiEdit / apply_patch:
 
 - 文字化け（U+FFFD）検出 (block)
 - `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
 - lockfile / 生成物ディレクトリの直接編集 (block)
-- シークレット / 鍵ファイルの直接編集 (block)
+- `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
@@ -182,6 +185,7 @@ if TYPE_CHECKING:
         _check_foreign_script_mixin,
         _check_mojibake,
         _check_plan_mode_skill_first,
+        _check_secret_read,
         _collect_edit_operation_warnings,
         check_user_facing_typo,
     )
@@ -198,7 +202,12 @@ if TYPE_CHECKING:
         _autofix_bash_command,
         _check_bash_codex_exec,
         _check_bash_atk_help_observation,
+        _check_bash_atk_options,
+        _check_bash_explicit_path_exists,
         _check_bash_help_with_execution,
+        _check_bash_heredoc_chain,
+        _check_bash_env_full_read,
+        _check_bash_nested_code_string,
         _check_bash_output_status_after_truncation,
         _check_bash_output_truncation,
         _check_bash_process_kill_by_pattern,
@@ -388,8 +397,10 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
-    # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
+        file_path = tool_input.get("file_path", "")
+        if isinstance(file_path, str) and _check_secret_read(file_path):
+            return exit_with(2)
         flush_pending_notices()
         return 0
 
@@ -472,6 +483,14 @@ def _handle_bash_tool(
     if truncation_result == "block":
         return 2
     if _check_bash_help_with_execution(command) == "block":
+        return 2
+    if (
+        _check_bash_nested_code_string(command)
+        or _check_bash_heredoc_chain(command)
+        or _check_bash_env_full_read(command)
+        or _check_bash_explicit_path_exists(command, cwd)
+        or _check_bash_atk_options(command)
+    ):
         return 2
     recursive_grep_result = _check_bash_recursive_grep_without_exclusion(command, cwd)
     if recursive_grep_result == "block":

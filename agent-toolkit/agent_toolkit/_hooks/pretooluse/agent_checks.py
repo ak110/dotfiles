@@ -388,11 +388,9 @@ def _check_generic_agent_preference(tool_input: dict) -> str | None:
 
 # --- TaskStop: 初回遮断と再実行窓 ---
 
-_TASK_STOP_RETRY_WINDOW_SECONDS = 300
-
 
 def _check_task_stop(session_id: str, tool_input: dict) -> bool:
-    """根拠記録の無い`TaskStop`を初回遮断し、再実行窓内なら通過させる。
+    """自セッションの所有記録又は対象別の停滞検知完了記録がある`TaskStop`だけを許可する。
 
     停止対象が状態キー`background_task_ids`へ記録済みの場合は遮断しない。
     当該キーは、PostToolUse(Bash)が`run_in_background`指定の応答から取得したタスクIDを
@@ -402,14 +400,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     `stall_detection_completed_at_by_task`に5分以内の一致記録がある場合も遮断しない。
     当該記録は待機手順を完了した主体が対象別に作成し、成功したPostToolUse(TaskStop)が消費する。
 
-    それ以外は状態キー`task_stop_blocked_at`（`float`。セッション単位で1つだけ持つ、
-    直近の遮断時刻のPOSIX秒）で判定する。値が存在し現在時刻との差が
-    `_TASK_STOP_RETRY_WINDOW_SECONDS`以下なら通過（偽を返す）し、それ以外は値を
-    現在時刻へ更新して遮断（真を返す）する。
-
-    ここで保存する時刻は再実行許可窓の判定にのみ用いる値であり、状態ファイル自体の
-    回収期限（`_session_state.STALE_STATE_MAX_AGE_SECONDS`によるmtime基準の14日）とは
-    別の寿命を持つ。
+    いずれの記録も無い対象は、再実行回数にかかわらず遮断する。
     """
     now = time.time()
     state = read_state(session_id)
@@ -418,18 +409,10 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
     targets = target_ids(tool_input)
     if targets & recorded_ids or has_recent_completion(session_id, targets, now=now):
         return False
-    blocked_at = state.get("task_stop_blocked_at")
-    if isinstance(blocked_at, (int, float)) and now - blocked_at <= _TASK_STOP_RETRY_WINDOW_SECONDS:
-        return False
-
-    def _mark_blocked(current: dict) -> dict | None:
-        current["task_stop_blocked_at"] = now
-        return current
-
-    update_state(session_id, _mark_blocked)
     print(
         _block_notice(
-            "blocked: TaskStop。背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
+            "blocked: TaskStop。現在のセッションには、指定した対象の所有記録も停滞検知完了記録も無い。"
+            "背景タスクの停止は、ユーザーの明示的な即時停止要求があるか、"
             "停滞検知の手順を完了した場合に限る。"
             "当該手順の完了条件は`agent-toolkit:delegation`の"
             "`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節が定める。"
@@ -438,7 +421,11 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
             "ユーザーの介入があった場合は、既定では稼働中の委譲先へ追加指示を送る。"
             "停止するのは、当該介入が委譲範囲または前提を無効にし、継続すると誤った成果物が確定する場合に限る。"
             "詳細は`agent-toolkit:delegation`「継続と新規起動」が定める。",
-            fix="停止の根拠を確認済みであれば、5分以内にTaskStopを再実行すると続行できる。",
+            fix=(
+                "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
+                "その他の対象は`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節に従い、"
+                "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
+            ),
         ),
         file=sys.stderr,
     )

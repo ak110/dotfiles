@@ -12,6 +12,8 @@ UWIの本文、投入、状態及び依存関係の形式は`agent-toolkit:wi-st
 
 ## 確認要否の判定
 
+確認要否を判定する前に`references/approval-scope.md`を全文読む。
+
 候補ごとに次の順で判定する。
 
 候補の比較へ進む前に`agent-toolkit:review-standards`を起動し、`review-standards/references/judgment-details.md`を全文読む。

@@ -1162,19 +1162,19 @@ class TestBashHeredocLiteralExclusion:
         ("command", "detected_text"),
         [
             (
-                "cat <<'EOF' > /tmp/doc.md\n待機例: echo start; sleep 300; echo done\nEOF",
+                "cat <<'EOF'\n待機例: echo start; sleep 300; echo done\nEOF",
                 "foreground sleep",
             ),
             (
-                "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5\nEOF",
+                "cat <<'EOF'\npytest -q | tail -5\nEOF",
                 "truncating it",
             ),
             (
-                "cat <<'EOF' > /tmp/doc.md\nrg keyword ~/.local\nEOF",
+                "cat <<'EOF'\nrg keyword ~/.local\nEOF",
                 "high-capacity user directory",
             ),
             (
-                "cat <<'EOF' > /tmp/doc.md\ncodex exec 'draft the plan'\nEOF",
+                "cat <<'EOF'\ncodex exec 'draft the plan'\nEOF",
                 "running codex exec",
             ),
         ],
@@ -1198,7 +1198,7 @@ class TestBashHeredocLiteralExclusion:
         result = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\nkillall は所有権を確認できない\nEOF"},
+                "tool_input": {"command": "cat <<'EOF'\nkillall は所有権を確認できない\nEOF"},
                 "session_id": "heredoc-pattern-kill",
             },
             _plan_file_state_env(tmp_path),
@@ -1222,7 +1222,7 @@ class TestBashHeredocLiteralExclusion:
         result = _run(
             {
                 "tool_name": "Bash",
-                "tool_input": {"command": "cat <<'EOF' > /tmp/doc.md\npytest -q | tail -5; echo \"$?\"\nEOF"},
+                "tool_input": {"command": "cat <<'EOF'\npytest -q | tail -5; echo \"$?\"\nEOF"},
                 "session_id": "output-status-after-truncation-heredoc",
             },
             _plan_file_state_env(tmp_path),
@@ -1245,3 +1245,55 @@ class TestBashHeredocLiteralExclusion:
 
         assert result.returncode == 2
         assert "除外設定を反映しない再帰`grep`" in result.stderr
+
+
+class TestStaticSafetyBlocks:
+    """静的に一意判定できる多段シェル、heredoc及び秘密情報読取を遮断する。"""
+
+    @pytest.mark.parametrize("command", ["sh -c 'echo ok'", "docker exec app sh -c 'echo ok'", "su -c 'echo ok'"])
+    def test_nested_code_string_is_blocked(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert "コード文字列" in result.stderr
+
+    def test_heredoc_with_output_redirection_is_blocked(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "cat <<'EOF' > out.txt\ntext\nEOF"}})
+        assert result.returncode == 2
+        assert "heredoc" in result.stderr
+
+    @pytest.mark.parametrize("command", ["cat .env", "head -n 1 config/.env.local", "xxd .env.production"])
+    def test_env_content_output_is_blocked(self, command: str) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert result.returncode == 2
+        assert ".env" in result.stderr
+
+    def test_env_example_and_key_extraction_are_allowed(self) -> None:
+        for command in ("cat .env.example", "grep '^TOKEN=' .env"):
+            result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+            assert result.returncode == 0
+
+    def test_read_env_is_blocked(self) -> None:
+        result = _run({"tool_name": "Read", "tool_input": {"file_path": "/tmp/.env"}})
+        assert result.returncode == 2
+        assert ".env" in result.stderr
+
+    def test_missing_explicit_path_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "rg needle absent.txt"}, "cwd": str(tmp_path)})
+        assert result.returncode == 2
+        assert "absent.txt" in result.stderr
+
+    def test_existing_explicit_path_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        target = tmp_path / "present.txt"
+        target.write_text("needle", encoding="utf-8")
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "rg needle present.txt"}, "cwd": str(tmp_path)})
+        assert result.returncode == 0
+
+    def test_git_grep_trailing_option_is_moved(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "git grep needle --ignore-case"}})
+        assert result.returncode == 0
+        assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
+
+    def test_atk_unknown_option_is_blocked(self) -> None:
+        result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
+        assert result.returncode == 2
+        assert "--not-supported" in result.stderr

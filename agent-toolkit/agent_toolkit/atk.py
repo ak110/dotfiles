@@ -859,6 +859,44 @@ def format_command_help(command_path: tuple[str, ...]) -> str | None:
     return parser.format_help()
 
 
+def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]] | None:
+    """公開サブコマンドのargparse定義から値なし・値付きオプションと位置引数名を返す。"""
+    parser = _build_parser()
+    for name in command_path:
+        choices = next(
+            (action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)),
+            None,
+        )
+        if choices is None or name not in choices:
+            return None
+        parser = choices[name]
+    flags: set[str] = set()
+    valued: set[str] = set()
+    positionals: list[str] = []
+    for action in parser._actions:
+        if action.option_strings:
+            target = flags if action.nargs == 0 else valued
+            target.update(action.option_strings)
+        elif not isinstance(action, argparse._SubParsersAction):
+            metavar = action.metavar or action.dest.upper()
+            positionals.append(" ".join(metavar) if isinstance(metavar, tuple) else str(metavar))
+    return frozenset(flags), frozenset(valued), tuple(positionals)
+
+
+def format_command_contract(command_path: tuple[str, ...]) -> str | None:
+    """実行前案内用に最下層サブコマンドの簡潔な受理形式を返す。"""
+    contract = command_option_contract(command_path)
+    if contract is None:
+        return None
+    flags, valued, positionals = contract
+    fields = [
+        "値なし: " + (", ".join(sorted(flags)) or "なし"),
+        "値付き: " + (", ".join(sorted(valued)) or "なし"),
+        "位置引数: " + (", ".join(positionals) or "なし"),
+    ]
+    return " / ".join(fields)
+
+
 def _validate_rm_args(args: argparse.Namespace) -> None:
     """`wi rm`の個別指定と一括指定が排他的であることを検証する。"""
     if args.command != "wi" or args.wi_subcommand != "rm":
