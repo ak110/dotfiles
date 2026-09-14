@@ -170,7 +170,7 @@ def test_cli_creates_process_lane_plan_with_generated_name(
 
     result = create_plan_files.main(
         [
-            "--source",
+            "--main-source",
             str(source),
             "--lane",
             "lane-02",
@@ -184,6 +184,53 @@ def test_cli_creates_process_lane_plan_with_generated_name(
     captured = capsys.readouterr()
     assert result == 0, captured.err
     assert pathlib.Path(captured.out.strip()).name == "14-1405_process-wi_レーン02.md"
+
+
+def _lane_plan_creation_step() -> str:
+    """レーン担当が読む計画作成手順の本文を返す。"""
+    task_path = pathlib.Path(__file__).resolve().parents[3] / "share/exec.subagent.md"
+    content = task_path.read_text(encoding="utf-8")
+    step_start = content.index("\n4. ") + 1
+    step_end = content.index("\n5. ", step_start)
+    return content[step_start:step_end]
+
+
+def test_process_lane_task_prepares_sources_before_creation() -> None:
+    """レーン手順は本文の保存を作成処理より前へ置く。"""
+    step = _lane_plan_creation_step()
+
+    assert step.index("管理対象一時領域のファイルへ保存する") < step.index("create_plan_files.py")
+
+
+@pytest.mark.parametrize("bug", [False, True])
+def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    bug: bool,
+) -> None:
+    """手順4が指示する引数名を現行CLIへそのまま渡して受理されることを確認する。"""
+    step = _lane_plan_creation_step()
+    source, bug_source = _source(repo, tmp_path, bug=bug)
+    placeholders = {
+        "--main-source": str(source),
+        "--lane": "lane-02",
+    }
+    if bug:
+        placeholders["--bugs-source"] = str(bug_source)
+    argv: list[str] = []
+    for option, value in placeholders.items():
+        assert f"{option} <" in step, f"手順4が{option}を指示していない"
+        argv.extend([option, value])
+    argv.extend(["--home", str(tmp_path / "home"), "--work-dir", str(repo)])
+
+    result = create_plan_files.main(argv)
+
+    captured = capsys.readouterr()
+    assert result == 0, captured.err
+    created = [pathlib.Path(line) for line in captured.out.splitlines() if line]
+    assert len(created) == (2 if bug else 1)
+    assert all(path.exists() for path in created)
 
 
 def test_adds_hex_suffix_only_after_collision(
