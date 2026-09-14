@@ -2574,6 +2574,8 @@ _BUNDLE_BODY_LENGTH = 200
 _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 _HOOK_NOTICE_VARIANT_LIMIT = 5
+_CANDIDATE_EVIDENCE_LENGTH = 2000
+_CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE = 1
 
 
 def _bundle_events(
@@ -2753,59 +2755,71 @@ def _candidate_evidence_events(
     for candidate in candidates:
         if candidate.get("kind") != "candidate":
             continue
+        budget = _DetailBudget(_CANDIDATE_EVIDENCE_LENGTH)
         details: list[dict[str, Any]] = []
+        source_chars = 0
         for locator in candidate["locators"]:
             key = (str(locator["record"]), int(locator["line"]))
             raw_entry = raw_entries.get(key)
             if raw_entry is not None:
-                details.extend({"record": key[0], **event} for event in _entry_detail_events(key[1], raw_entry))
-            for event in indexed.get(key, ()):  # 同一位置の別走査結果も保持する。
-                detail = {
-                    "kind": str(event.get("kind", "")),
-                    "record": key[0],
-                    "line": key[1],
-                }
-                for field in ("tool", "hook", "hook_name", "tag"):
-                    if field in event:
-                        detail[field] = event[field]
-                if isinstance(event.get("text"), str):
-                    detail["text"] = _clip(event["text"], 2000)
-                details.append(detail)
+                source_chars += len(json.dumps(raw_entry, ensure_ascii=False))
+                details.extend(
+                    _clip_structure({"record": key[0], **event}, budget) for event in _entry_detail_events(key[1], raw_entry)
+                )
+            else:
+                for event in indexed.get(key, ()):  # 同一位置の別走査結果も保持する。
+                    detail = {"kind": str(event.get("kind", "")), "record": key[0], "line": key[1]}
+                    for field in ("tool", "hook", "hook_name", "tag"):
+                        if field in event:
+                            detail[field] = event[field]
+                    if isinstance(event.get("text"), str):
+                        source_chars += len(event["text"])
+                        detail["text"] = budget.clip(event["text"])
+                    details.append(detail)
             user_context = [
                 event
                 for event in timeline
                 if event.get("kind") == "user" and event.get("record") == key[0] and isinstance(event.get("line"), int)
             ]
-            neighbors = sorted(user_context, key=lambda event: (abs(int(event["line"]) - key[1]), int(event["line"])))[:2]
-            for event in neighbors:
-                if int(event["line"]) == key[1]:
-                    continue
-                details.append(
-                    {
-                        "kind": "user-context",
-                        "record": key[0],
-                        "line": int(event["line"]),
-                        "text": _clip(str(event.get("text", "")), 1000),
-                    }
-                )
+            before = sorted(
+                (event for event in user_context if int(event["line"]) < key[1]), key=lambda event: -int(event["line"])
+            )
+            after = sorted(
+                (event for event in user_context if int(event["line"]) > key[1]), key=lambda event: int(event["line"])
+            )
+            for direction, neighbors in (("before", before), ("after", after)):
+                for event in neighbors[:_CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE]:
+                    details.append(
+                        {
+                            "kind": "user-context",
+                            "direction": direction,
+                            "record": key[0],
+                            "line": int(event["line"]),
+                            "text": budget.clip(str(event.get("text", ""))),
+                        }
+                    )
         if not details:
             details.append(
                 {
                     "kind": str(candidate["candidate_kind"]),
                     "record": str(candidate["locators"][0]["record"]),
                     "line": int(candidate["locators"][0]["line"]),
-                    "text": _clip(str(candidate.get("text", "")), 2000),
+                    "text": budget.clip(str(candidate.get("text", ""))),
                 }
             )
-        evidence.append(
-            {
-                "kind": "candidate-evidence",
-                "candidate_id": candidate["candidate_id"],
-                "analysis_group_hint": candidate["analysis_group_hint"],
-                "locators": candidate["locators"],
-                "events": details,
-            }
-        )
+        item = {
+            "kind": "candidate-evidence",
+            "candidate_id": candidate["candidate_id"],
+            "analysis_group_hint": candidate["analysis_group_hint"],
+            "locators": candidate["locators"],
+            "source_chars": source_chars,
+            "text_limit": _CANDIDATE_EVIDENCE_LENGTH,
+            "user_context_limit_per_side": _CANDIDATE_USER_CONTEXT_LIMIT_PER_SIDE,
+            "events": details,
+        }
+        if budget.omitted:
+            item["omitted"] = True
+        evidence.append(item)
     return evidence
 
 

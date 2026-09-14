@@ -5151,6 +5151,8 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     assert [item["candidate_id"] for item in candidate_evidence] == ["c0001", "c0002"]
     assert [item["locators"] for item in candidate_evidence] == [item["locators"] for item in candidate_items]
     assert all(item["events"] for item in candidate_evidence)
+    assert all(item["text_limit"] == 2000 and item["user_context_limit_per_side"] == 1 for item in candidate_evidence)
+    assert all(item["source_chars"] > 0 for item in candidate_evidence)
     assert {
         "kind": "bundle-file",
         "path": str((bundle_dir / "candidate-evidence.jsonl").resolve()),
@@ -5281,6 +5283,45 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
             "samples": [{"record": "main", "line": 2}, {"record": "main", "line": 3}, {"record": "main", "line": 4}],
         }
     ]
+
+
+def test_bundle_keeps_user_intervention_on_both_sides_of_candidate(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """候補の直前と直後の双方に利用者介入がある場合、両側をそれぞれ上限まで証拠へ残す。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "message": {"role": "user", "content": "最初の依頼"}},
+            {"type": "user", "message": {"role": "user", "content": "直前の介入"}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "call-1", "is_error": True, "content": "失敗"}],
+                },
+            },
+            {"type": "user", "message": {"role": "user", "content": "直後の介入"}},
+        ],
+    )
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+
+    assert evidence.main([str(transcript), "--bundle", str(bundle_dir)]) == 0
+
+    capsys.readouterr()
+    candidate_evidence = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    contexts = [
+        (event["direction"], event["line"], event["text"])
+        for item in candidate_evidence
+        for event in item["events"]
+        if event["kind"] == "user-context"
+    ]
+    assert ("before", 2, "直前の介入") in contexts
+    assert ("after", 4, "直後の介入") in contexts
 
 
 def test_bundle_stdout_excludes_saved_stats_and_hook_notices(
