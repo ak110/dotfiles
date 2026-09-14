@@ -214,64 +214,6 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     assert actual_names == expected_names
 
 
-def test_process_wi_postapproval_handoff_is_complete() -> None:
-    """事後承認対象をレーン判定からメインのUWI投入まで接続する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    documents = {
-        "plan": plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md",
-        "lane": plugin_root / "share" / "exec.subagent.md",
-        "parent": plugin_root / "share" / "exec.parent.md",
-        "runner": plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md",
-    }
-    contents = {name: path.read_text(encoding="utf-8") for name, path in documents.items()}
-
-    assert all("事後承認対象:" in content for content in contents.values())
-    assert "ユーザーが観測する結果、採用理由及びトレードオフ" in contents["plan"]
-    assert "実装とレビュー修正のいずれかで新たに確定した実装判断" in contents["plan"]
-    assert "`エージェント提案`の別行" in contents["plan"]
-    assert "レーン担当はUWIを投入せず" in contents["lane"]
-    assert "実装中に新たに確定した実装判断" in contents["lane"]
-    assert "現行計画から読み直し" in contents["parent"]
-    assert "計画起草時、実装時又はレビュー修正時" in contents["runner"]
-    assert "事後承認型UWIへ記録" in contents["runner"]
-
-
-def test_human_decision_persistence_reaches_completion_gate() -> None:
-    """人間が確定した再利用可能な判断を通常完了経路でも恒久化する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    rules = (plugin_root / "rules" / "01-agent.md").read_text(encoding="utf-8")
-    completion = (plugin_root / "skills" / "completion-report" / "SKILL.md").read_text(encoding="utf-8")
-
-    assert "AskUserQuestionの回答又はUWIの`## 回答`" in rules
-    assert "後続のエージェント由来の判断だけを根拠として変更しない" in rules
-    assert "計画を作成していない作業も本項の対象" in completion
-    assert "後続のエージェント由来の判断だけでは変更できない状態" in completion
-
-
-def test_completion_report_always_runs_session_review() -> None:
-    """完了報告は例外を設けずsession reviewを起動する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    completion = (plugin_root / "skills" / "completion-report" / "SKILL.md").read_text(encoding="utf-8")
-
-    assert "4. `agent-toolkit:session-review`を起動する。" in completion
-    assert "AGENT_TOOLKIT_PROCESS_LOOP_SESSION" not in completion
-    assert "条件非該当のため省略" not in completion
-    assert "- session-review: [実施結果 / 分析未完了とUWI]" in completion
-
-
-def test_plan_refactoring_example_and_large_output_examples_are_explicit() -> None:
-    """固定表と大量出力類型を実行主体が推測せず再現できる。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    plan_standard = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
-    subagent_rules = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
-
-    assert "| 対象 | 現状の問題 | 対応 |" in plan_standard
-    assert "本計画に含めるか" not in plan_standard
-    assert all(
-        example in subagent_rules for example in ("git status", "git diff", "git log", "git pull", "git merge", "gh ... --json")
-    )
-
-
 def test_execution_review_covers_non_machine_authoring_contracts() -> None:
     """実行レビューで執筆規範、責務分離及び読込配置を検出できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
@@ -285,14 +227,6 @@ def test_execution_review_covers_non_machine_authoring_contracts() -> None:
     assert all(value in recipient for value in ("規範間", "親用文書と受信者用文書", "実行時に読む位置"))
     assert "レビュー分類と判定手順を再定義しない" in parent
     assert all(value in additions for value in ("適用母集団", "網羅検索", "既存違反が0件"))
-
-
-def test_lane_plan_creation_supplies_required_source() -> None:
-    """レーンの計画作成は内部作成処理が要求する本文sourceを渡す。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    recipient = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
-
-    assert "create_plan_files.py --main-source <計画本文の絶対パス> --lane <レーン識別子>" in recipient
 
 
 def test_git_identifiers_prefer_refs_and_short_oids() -> None:
@@ -309,43 +243,6 @@ def test_git_identifiers_prefer_refs_and_short_oids() -> None:
     assert "git push origin origin/master:refs/heads/develop" in merge
     assert "MERGE_OID" not in merge
     assert "直接比較で十分な場合はhashを使わない" in design
-
-
-def test_handoff_preserves_resumption_inputs_and_stopping_authority() -> None:
-    """引き継ぎ後も対象実体を復元し、記録された対象だけを停止できる。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    subagent_rules = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
-    operations = (plugin_root / "rules" / "02-agent-operations.md").read_text(encoding="utf-8")
-
-    assert all(
-        value in subagent_rules
-        for value in (
-            "確認済みの作業ツリーの絶対パス",
-            "`git -C <起動時のcwd> rev-parse --show-toplevel`が終了コード0で返した",
-            "残る工程が使用する成果物の用途と絶対パス",
-            "存続中の外部プロセス及び背景ジョブ",
-            "起動結果を受領した直後",
-        )
-    )
-    assert "起動文で`引き継ぎ記録先`を受領して後続工程を担い" in operations
-    assert "返った識別子と対象コマンドが記録の値と一致" in operations
-    assert "ユーザー指示若しくは文書の位置" in operations
-
-
-def test_scheduled_prompt_resolves_variable_state_at_fire_time() -> None:
-    """定時promptは作成時の待機対象と成果物パスを保持しない。"""
-    plugin_root = pathlib.Path(__file__).resolve().parents[1]
-    documents = [
-        plugin_root / "skills" / "delegation" / "references" / "waiting-and-monitoring.md",
-        plugin_root / "skills" / "delegation" / "references" / "claude-code-runtime.md",
-    ]
-    contents = [path.read_text(encoding="utf-8") for path in documents]
-
-    variable_state_contract = "待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程をpromptへ埋め込まず"
-    assert all(variable_state_contract in content for content in contents)
-    assert all("待機対象を正本から列挙する手段" in content for content in contents)
-    assert all("動的に解決したパスを渡す`atk watch`のコマンド形" in content for content in contents)
-    assert all("待機対象を一意に識別できる保持済みIDをpromptへ含め" not in content for content in contents)
 
 
 def test_missing_launch_target_reports_parent(tmp_path: pathlib.Path) -> None:

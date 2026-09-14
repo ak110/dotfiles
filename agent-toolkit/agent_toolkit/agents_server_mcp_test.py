@@ -4834,6 +4834,107 @@ async def test_result_deletion_logs_actual_mcp_actor(
     await manager.close()
 
 
+def _writer_backed_manager(tmp_path: pathlib.Path) -> tuple[subject.AgentsServerManager, status_file.StatusFileWriter]:
+    """共有結果ファイルを公開するMCPマネージャーを既存のfake backendで組む。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = subject.AgentsServerManager(writer)
+    manager._codex = FakeBackend(manager.sessions, "codex")
+    writer.activate()
+    return manager, writer
+
+
+@pytest.mark.asyncio
+async def test_mcp_wait_skips_result_already_collected_by_cli(tmp_path: pathlib.Path) -> None:
+    """共有結果ファイルをCLI待機が回収済みの場合、MCP待機は同じ結果を再配送しない。"""
+    manager, writer = _writer_backed_manager(tmp_path)
+    collected = subject.SessionState("terminal", str(tmp_path), engine="codex")
+    running = subject.SessionState("running", str(tmp_path), engine="codex")
+    _complete(collected, message="回収済み本文")
+    manager.sessions.update({collected.session_id: collected, running.session_id: running})
+    writer.flush()
+
+    claimed, error = status_file.take_result(
+        "root-session",
+        collected.session_id,
+        "root.json",
+        collector="atk-agents-wait",
+        state_root=tmp_path,
+    )
+    assert error is None
+    assert claimed is not None and claimed["agent_message"] == "回収済み本文"
+
+    response = await manager.wait()
+
+    assert response["session_id"] == running.session_id
+    assert "agent_message" not in response
+    assert collected.result_delivered is True
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_take_result_rejects_collection_by_another_writer(tmp_path: pathlib.Path) -> None:
+    """公開した書込主体と異なる所有者の回収は、結果を返さず結果ファイルも削除しない。"""
+    manager, writer = _writer_backed_manager(tmp_path)
+    session = subject.SessionState("terminal", str(tmp_path), engine="codex")
+    _complete(session, message="所有者本文")
+    manager.sessions[session.session_id] = session
+    writer.flush()
+
+    other, other_error = status_file.take_result(
+        "root-session",
+        session.session_id,
+        "other-writer.json",
+        collector="atk-agents-wait",
+        state_root=tmp_path,
+    )
+
+    assert other is None
+    assert other_error is None
+    assert writer.result_state(session.session_id) == "published"
+
+    response = await manager.wait()
+
+    assert response["session_id"] == session.session_id
+    assert response["agent_message"] == "所有者本文"
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_mcp_wait_collects_shared_result_exactly_once(tmp_path: pathlib.Path) -> None:
+    """MCP待機は共有結果ファイルを1回だけ回収し、同じ結果を後続の回収経路へ残さない。"""
+    manager, writer = _writer_backed_manager(tmp_path)
+    session = subject.SessionState("terminal", str(tmp_path), engine="codex")
+    _complete(session, message="一度だけの本文")
+    manager.sessions[session.session_id] = session
+    writer.flush()
+    result_path = status_file.results_directory("root-session", tmp_path) / f"{session.session_id}.json"
+    assert result_path.exists()
+
+    first = await manager.wait()
+
+    assert first["session_id"] == session.session_id
+    assert first["agent_message"] == "一度だけの本文"
+    assert not result_path.exists()
+    assert writer.result_state(session.session_id) == "unpublished"
+
+    again, again_error = status_file.take_result(
+        "root-session",
+        session.session_id,
+        "root.json",
+        collector="atk-agents-wait",
+        state_root=tmp_path,
+    )
+
+    assert again is None
+    assert again_error is None
+    await manager.close()
+
+
 @pytest.mark.asyncio
 async def test_stop_releases_wait_target_before_waiting_for_new_result(
     monkeypatch: pytest.MonkeyPatch,

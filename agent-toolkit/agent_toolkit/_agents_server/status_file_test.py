@@ -930,3 +930,43 @@ class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
 
     async def close(self) -> None:
         await asyncio.gather(*self._pending)
+
+
+def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> None:
+    """異なる書込主体は結果を取得できず、正しい主体への配送は1回だけ成立する。"""
+    directory = subject.results_directory("root-session", tmp_path)
+    directory.mkdir(parents=True)
+    result_path = directory / "child-session.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "agent_message": "完了",
+                "owner_status_file": "delegate.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert subject.take_result(
+        "root-session",
+        "child-session",
+        "root.json",
+        collector="test",
+        state_root=tmp_path,
+    ) == (None, None)
+    assert result_path.exists()
+    assert subject.take_result(
+        "root-session",
+        "child-session",
+        "delegate.json",
+        collector="test",
+        state_root=tmp_path,
+    ) == ({"status": "completed", "agent_message": "完了"}, None)
+    assert subject.take_result(
+        "root-session",
+        "child-session",
+        "delegate.json",
+        collector="test",
+        state_root=tmp_path,
+    ) == (None, None)

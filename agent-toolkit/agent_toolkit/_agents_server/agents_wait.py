@@ -104,17 +104,18 @@ def wait_for_result(
     )
     lock_directory = status_file.status_directory(root_session_id, state_root) / "wait-locks"
     lock_directory.mkdir(parents=True, exist_ok=True)
-    lock_files: dict[str, Any] = {}
+    lock_path = lock_directory / f"{identity.file_name}.lock"
+    lock_file = lock_path.open("a+b")
     try:
-        for session_id in ordered_ids:
-            lock_file = (lock_directory / f"{session_id}.lock").open("a+b")
-            try:
-                acquire_lock(lock_file, blocking=False)
-            except OSError:
-                lock_file.close()
-                _LOG.info("wait_lock_failed phase=initial session_id=%s", session_id)
-                return _fail(f"同じsessionの待機所有権を別の実行が保持しています: {session_id}", 8, session_id=session_id)
-            lock_files[session_id] = lock_file
+        try:
+            acquire_lock(lock_file, blocking=False)
+        except OSError:
+            _LOG.info("wait_lock_failed owner=%s targets=%s", identity.file_name, ",".join(ordered_ids) or "none")
+            return _fail(
+                "同じ書込主体の待機を別の実行が保持しています。先行する`atk agents wait`の終了を待ってから再実行してください: "
+                f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
+                8,
+            )
         status_file.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
         started_at = time.monotonic()
@@ -129,15 +130,7 @@ def wait_for_result(
             )
             if target_error is not None:
                 return _fail(*target_error)
-            for session_id in sorted(set(current_origins) - set(lock_files)):
-                lock_file = (lock_directory / f"{session_id}.lock").open("a+b")
-                try:
-                    acquire_lock(lock_file, blocking=False)
-                except OSError:
-                    lock_file.close()
-                    _LOG.info("wait_lock_failed phase=dynamic session_id=%s", session_id)
-                    continue
-                lock_files[session_id] = lock_file
+            for session_id in sorted(set(current_origins) - set(ordered_ids)):
                 ordered_ids.append(session_id)
                 ordered_ids.sort()
                 status_file.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
@@ -149,18 +142,21 @@ def wait_for_result(
             status_paths = status_file.list_status_files(root_session_id, state_root)
             for session_id in ordered_ids:
                 result_path = result_directory / f"{session_id}.json"
-                result, read_error = _read_result(result_path)
+                result, read_error = status_file.take_result(
+                    root_session_id,
+                    session_id,
+                    identity.file_name,
+                    collector="atk-agents-wait",
+                    state_root=state_root,
+                )
                 if read_error is not None:
                     return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6, session_id=session_id)
                 notices = status_file.take_notices(root_session_id, session_id, state_root)
                 if result is not None:
-                    result.pop("owner_status_file", None)
                     result["session_id"] = session_id
                     if notices:
                         result["notices"] = notices
                     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-                    result_path.unlink(missing_ok=True)
-                    _LOG.info("result_deleted session_id=%s writer=wait collector=atk-agents-wait", session_id)
                     status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                     _LOG.info("wait_return reason=terminal-result session_id=%s", session_id)
                     return 0
@@ -186,7 +182,7 @@ def wait_for_result(
                 return 3
             time.sleep(min(1.0, remaining))
     finally:
-        for lock_file in reversed(tuple(lock_files.values())):
+        if not lock_file.closed:
             release_lock(lock_file)
             lock_file.close()
 

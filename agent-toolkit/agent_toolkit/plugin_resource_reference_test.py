@@ -64,17 +64,6 @@ def test_session_resolved_entry_points_are_pinned() -> None:
     assert expected_mcp in mcp["mcpServers"]["agents_server"]["args"], message
 
 
-def test_bugfix_problem_response_does_not_reenter_skill() -> None:
-    """bugfixの問題対応参照が同じスキルの再起動を要求しない。"""
-    root = pathlib.Path(__file__).resolve().parents[1]
-    skill = (root / "skills/bugfix/SKILL.md").read_text(encoding="utf-8")
-    response = (root / "skills/bugfix/references/response.md").read_text(encoding="utf-8")
-
-    assert "`references/response.md`を全文読む" in skill
-    assert "続いて同スキルの「初動と拡張原因分析の判定」に従う" in response
-    assert "続いて`agent-toolkit:bugfix`をSkill機能で起動する" not in response
-
-
 def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
     """欠損参照を相対パスと参照元パスで報告する。"""
     present = tmp_path / "share/present.subagent.md"

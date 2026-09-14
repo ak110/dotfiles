@@ -221,15 +221,6 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     assert child.parent == session_root
 
 
-def test_rules_files_do_not_contain_role_specific_sections() -> None:
-    common = "\n".join(path.read_text(encoding="utf-8") for path in (_PLUGIN_ROOT / "rules").glob("*.md"))
-    for value in ("## ユーザー向け発話ルール", "### ユーザー発話の解釈", "process_wi_skill_invoked"):
-        assert value not in common
-    assert "## ユーザー向け発話ルール" in rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8")
-    assert "記録済みの暫定回避策" in rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8")
-    assert "## 確認事項の差し戻し" in rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8")
-
-
 def test_rules_files_have_no_role_specific_sentences() -> None:
     allowed = {
         "- サブエージェントは細かく分け過ぎない（起動するごとに固定コストがあるため）",

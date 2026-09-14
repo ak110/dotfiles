@@ -1043,16 +1043,24 @@ class AgentsServerManager:
                 for session_id in ordered_ids:
                     candidate = self.sessions.get(session_id)
                     if candidate is not None and candidate.result_available and not candidate.result_delivered:
+                        if self._status_writer is not None and self._status_writer.result_state(session_id) == "consumed":
+                            candidate.result_delivered = True
+                            continue
                         terminal.append(candidate)
                 terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
                 if terminal:
                     session = terminal[0]
+                    if self._status_writer is not None and self._status_writer.result_state(session.session_id) == "published":
+                        claimed, claim_error = self._status_writer.take_result(session.session_id, collector="mcp-wait")
+                        if claim_error is not None:
+                            raise RuntimeError(f"終端結果を回収できません: {session.session_id}: {claim_error}")
+                        if claimed is None:
+                            session.result_delivered = True
+                            continue
                     _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
                     response = self._response_with_notices(
                         self._result_response(session), self._take_notices(session.session_id)
                     )
-                    if self._status_writer is not None:
-                        self._status_writer.delete_result(session.session_id, collector="mcp-wait")
                     return {"session_id": session.session_id, **response}
 
                 for session_id in ordered_ids:

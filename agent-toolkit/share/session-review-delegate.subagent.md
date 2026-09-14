@@ -26,13 +26,13 @@
 
 ## 抽出器の実行
 
-`--bundle`へ管理対象一時領域を渡した集約実行を1回行い、必要な`--grep`と`--detail`をそれぞれ1回へまとめる。全実行へ`--observation-boundary`と`--output-file`を付け、実行ごとに異なる領域内ファイルへ保存する。Codexのthread IDでは`--codex-thread-id`を用いる。候補を限定するまで要約を読み、必要な全量ファイルだけを読む。
+`--bundle`へ管理対象一時領域を渡した集約実行を1回行い、`candidates.jsonl`と`candidate-evidence.jsonl`を読む。`candidate-evidence.jsonl`が完全分析に不足する候補だけ、必要な`--grep`と`--detail`をそれぞれ1回へまとめる。全実行へ`--observation-boundary`と`--output-file`を付け、実行ごとに異なる領域内ファイルへ保存する。Codexのthread IDでは`--codex-thread-id`を用いる。全量ファイルの読取を既定にしない。
 
 ## 問題候補の判別
 
-抽出器が`candidates.jsonl`へ生成した集約候補を単位として一次選別する。各候補の`locators`を判定へそのまま保持する。block又はwarnのhook通知は抽出器が発生源ごとに上位5種と代表位置へ限定し、`occurrence_count`と`omitted_locator_count`へ総数を保持する。ユーザー介入、エスカレーション及び未解決証拠は限定しない。除外する候補には観測根拠を付け、不確かな候補は完全分析へ送る。
+抽出器が`candidates.jsonl`へ生成した集約候補を単位として一次選別する。各候補の`locators`を判定へそのまま保持する。infoタグとnoticeタグのhook通知は情報提示だけなので抽出器が機械除外する。block又はwarnのhook通知は発生源ごとに上位5種と代表位置へ限定し、`occurrence_count`と`omitted_locator_count`へ総数を保持する。ユーザー介入、エスカレーション及び未解決証拠は限定しない。除外する候補には観測根拠を付け、不確かな候補は完全分析へ送る。
 一次選別の結果の和集合が全候補と一致し、各候補の`locators`を平坦化した集合が`candidate-summary`の`included_locators`と一致することを`session_review_report.py`で機械検査してから、完全分析する候補の詳細取得を1回へまとめる。`candidate-summary`の`excluded`は種類別の除外件数として報告する。
-同じ原因と対策の変更単位を持つ候補は分析を共有し、元のlocatorを全て保持する。
+各候補の`candidate_id`と`analysis_group_hint`を起点に、同じ原因と対策の変更単位を持つ候補は1つの`analysis_id`を共有する。候補ごとの判定表には全locatorと`analysis_id`を残し、原因と処置は分析表へ`analysis_id`ごとに1回だけ書く。
 block又はwarnを1回以上発火した各発生源には、欠陥判定にかかわらず、規範・判定条件・フック撤去のいずれかの改善提案を最低1件対応付ける。
 抽出器が識別した非ユーザーイベントと同一イベントの重複を除き、対象セッションの前半を走査対象から外さない。
 対象セッション自身の常駐処理、再開機構、実行環境が生成した定時promptは、role、イベント種別と起動経路で識別して利用者入力から除く。

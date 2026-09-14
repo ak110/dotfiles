@@ -259,7 +259,14 @@ class JsonRpcProcess:
                 self.process.stdin.write(encoded)
                 await self.process.stdin.drain()
             except (BrokenPipeError, ConnectionError) as exc:
-                raise AppServerError(f"failed to write to Codex App Server: {exc}") from exc
+                diagnostic = self.initialization_diagnostic()
+                _LOG.error(
+                    "Codex App Serverへの書込失敗: exception_type=%s exception=%s diagnostic=%s",
+                    type(exc).__name__,
+                    exc,
+                    diagnostic,
+                )
+                raise AppServerError(f"failed to write to Codex App Server: {exc}; diagnostic={diagnostic}") from exc
 
     @property
     def closed(self) -> bool:

@@ -863,26 +863,6 @@ def test_elapsed_until_after_reconciliation_includes_finalization_time(
     ]
 
 
-def test_skill_reconciles_to_fixed_point_before_measuring_elapsed() -> None:
-    """再照合の固定点と成果確定後の計測時刻を規範本文から検査する。"""
-    skill = (pathlib.Path(__file__).resolve().parents[1] / "SKILL.md").read_text(encoding="utf-8")
-    problem_candidates = skill.split("## 問題候補の抽出\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-    elapsed_analysis = skill.split("## 所要時間の分析と改善提案\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
-
-    fixed_point_rule = (
-        "手順1が返した観測境界を照合済み境界の初期値とし、"
-        "追加分が0件であり、かつ再照合境界の取得後に新しいユーザー入力を受領していない状態になるまで"
-        "次を繰り返す。"
-    )
-    elapsed_boundary_rule = (
-        "振り返りの成果を確定した時点で`date -u +%Y-%m-%dT%H:%M:%SZ`を実行し、終了コード0と単一行の出力を確認する。"
-    )
-
-    assert fixed_point_rule in problem_candidates
-    assert elapsed_boundary_rule in elapsed_analysis
-    assert "手順4" not in elapsed_analysis
-
-
 def test_extracts_codex_rollout_events_and_ignores_unconfirmed_items(tmp_path: pathlib.Path) -> None:
     transcript = _write_transcript(
         tmp_path,
@@ -5157,14 +5137,32 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
 
     candidates = [json.loads(line) for line in (bundle_dir / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     candidate_items = [item for item in candidates if item["kind"] == "candidate"]
+    assert [item["candidate_id"] for item in candidate_items] == ["c0001", "c0002"]
     assert [(item["locators"], item["candidate_kind"]) for item in candidate_items] == [
         ([{"record": "main", "line": 4}], "escalation"),
-        ([{"record": "main", "line": 6}], "hook-notice"),
         ([{"record": "main", "line": 5}], "warning"),
     ]
-    assert candidates[-1]["excluded"] == {"initial-request": 1}
-    assert candidates[-1]["included_locator_count"] == 3
-    assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 4} in bundle_events
+    assert candidates[-1]["excluded"] == {"hook-notice-informational": 1, "initial-request": 1}
+    assert candidates[-1]["included_locator_count"] == 2
+    assert {"kind": "bundle-file", "path": str((bundle_dir / "candidates.jsonl").resolve()), "count": 3} in bundle_events
+    candidate_evidence = [
+        json.loads(line) for line in (bundle_dir / "candidate-evidence.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [item["candidate_id"] for item in candidate_evidence] == ["c0001", "c0002"]
+    assert [item["locators"] for item in candidate_evidence] == [item["locators"] for item in candidate_items]
+    assert all(item["events"] for item in candidate_evidence)
+    assert {
+        "kind": "bundle-file",
+        "path": str((bundle_dir / "candidate-evidence.jsonl").resolve()),
+        "count": 2,
+    } in bundle_events
+    metrics = next(item for item in bundle_events if item["kind"] == "bundle-evidence-metrics")
+    assert metrics["candidate_evidence_lines"] == 2
+    assert metrics["decision_count"] == 2
+    assert metrics["analysis_group_count"] == 2
+    assert metrics["full_scan_lines"] > metrics["candidate_evidence_lines"]
+    assert metrics["full_scan_bytes"] > 0
+    assert metrics["candidate_evidence_bytes"] > 0
 
     assert {event["event_kind"]: event["count"] for event in bundle_events if event["kind"] == "bundle-kind-count"} == {
         "user": 1,

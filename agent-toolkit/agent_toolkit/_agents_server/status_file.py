@@ -38,6 +38,7 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 
@@ -194,6 +195,48 @@ def valid_session_id(session_id: str) -> bool:
 def results_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
     """ルートsessionの終端結果ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "results"
+
+
+def take_result(
+    root_session_id: str,
+    session_id: str,
+    owner_status_file: str,
+    *,
+    collector: str,
+    state_root: pathlib.Path | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """所有者を照合し、終端結果を1つの排他区間で読み取って回収する。"""
+    if not valid_session_id(session_id):
+        raise ValueError(f"invalid session_id: {session_id}")
+    directory = results_directory(root_session_id, state_root)
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / f".{session_id}.claim.lock"
+    with lock_path.open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=True)
+        try:
+            path = directory / f"{session_id}.json"
+            try:
+                payload: Any = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return None, None
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                return None, str(exc)
+            if not isinstance(payload, dict):
+                return None, "最上位が辞書ではありません"
+            recorded_owner = payload.get("owner_status_file")
+            if recorded_owner != owner_status_file and not (recorded_owner is None and owner_status_file == "root.json"):
+                return None, None
+            path.unlink()
+            _LOG.info(
+                "result_deleted session_id=%s writer=%s collector=%s",
+                session_id,
+                owner_status_file,
+                collector,
+            )
+            payload.pop("owner_status_file", None)
+            return payload, None
+        finally:
+            release_lock(lock_file)
 
 
 def wait_targets_directory(
@@ -504,6 +547,19 @@ class StatusFileWriter:
         ):
             return None
         return payload
+
+    def take_result(self, session_id: str, *, collector: str) -> tuple[dict[str, Any] | None, str | None]:
+        """自身が公開した終端結果を一度だけ回収する。"""
+        result = take_result(
+            self.root_session_id,
+            session_id,
+            self._identity.file_name,
+            collector=collector,
+            state_root=self._state_root,
+        )
+        if result[0] is not None:
+            self._published_results.discard(session_id)
+        return result
 
     def result_state(self, session_id: str) -> str:
         """自プロセスが公開した終端結果の公開状態を返す。"""

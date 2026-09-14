@@ -2560,7 +2560,14 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
     return events, 0
 
 
-_BUNDLE_SCAN_FILENAMES = ("timeline.jsonl", "warnings.jsonl", "stats.jsonl", "hook-notices.jsonl", "candidates.jsonl")
+_BUNDLE_SCAN_FILENAMES = (
+    "timeline.jsonl",
+    "warnings.jsonl",
+    "stats.jsonl",
+    "hook-notices.jsonl",
+    "candidates.jsonl",
+    "candidate-evidence.jsonl",
+)
 _BUNDLE_BODY_KINDS = frozenset({"failed-tool", "agent-completion", "final-result"})
 _BUNDLE_LOCATOR_ONLY_KINDS = frozenset({"user"})
 _BUNDLE_BODY_LENGTH = 200
@@ -2594,8 +2601,9 @@ def _bundle_events(
     hook_notices = _hook_notice_events([record for item in collected for record in item.records])
     candidates = _candidate_events(timeline, warnings, _hook_notice_candidate_events(collected))
 
+    candidate_evidence = _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
     events: list[dict[str, Any]] = []
-    scans = (timeline, warnings, stats, hook_notices, candidates)
+    scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence)
     for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
         path = resolved / filename
         path.write_text(
@@ -2603,6 +2611,22 @@ def _bundle_events(
             encoding="utf-8",
         )
         events.append({"kind": "bundle-file", "path": str(path), "count": len(scan_events)})
+    candidate_items = [item for item in candidates if item.get("kind") == "candidate"]
+    events.append(
+        {
+            "kind": "bundle-evidence-metrics",
+            "full_scan_lines": len(timeline) + len(warnings) + len(hook_notices),
+            "full_scan_bytes": sum(
+                (resolved / filename).stat().st_size for filename in ("timeline.jsonl", "warnings.jsonl", "hook-notices.jsonl")
+            ),
+            "candidate_evidence_lines": len(candidate_evidence),
+            "candidate_evidence_bytes": (resolved / "candidate-evidence.jsonl").stat().st_size,
+            "decision_count": len(candidate_items),
+            "analysis_group_count": len(
+                {json.dumps(item["analysis_group_hint"], ensure_ascii=False) for item in candidate_items}
+            ),
+        }
+    )
     events.extend(_bundle_timeline_events(timeline))
     events.extend(_bundle_warning_events(warnings))
     events.extend(_unresolved_events(unresolved))
@@ -2647,13 +2671,16 @@ def _candidate_events(
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
+            if candidate_kind == "hook-notice" and event.get("tag") in {"info", "notice"}:
+                excluded["hook-notice-informational"] += 1
+                continue
             key = _candidate_key(candidate_kind, event, normalized_text)
             groups.setdefault(key, []).append(event)
 
     selected_groups: list[tuple[tuple[str, ...], list[dict[str, Any]], int, int]] = []
     bounded_hook_groups: dict[tuple[str, ...], list[tuple[tuple[str, ...], list[dict[str, Any]]]]] = {}
     for key, events in groups.items():
-        if key[0] == "hook-notice" and key[3] in {"block", "warn"}:
+        if len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}:
             bounded_hook_groups.setdefault((key[1], key[3]), []).append((key, events))
         else:
             selected_groups.append((key, events, len(events), 0))
@@ -2670,7 +2697,10 @@ def _candidate_events(
 
     candidates: list[dict[str, Any]] = []
     included_locators: list[dict[str, Any]] = []
-    for key, events, occurrence_count, omitted_locator_count in sorted(selected_groups, key=lambda item: item[0]):
+    for index, (key, events, occurrence_count, omitted_locator_count) in enumerate(
+        sorted(selected_groups, key=lambda item: item[0]),
+        start=1,
+    ):
         locators = sorted(
             ({"record": str(event["record"]), "line": int(event["line"])} for event in events),
             key=lambda locator: (locator["record"], locator["line"]),
@@ -2678,7 +2708,9 @@ def _candidate_events(
         included_locators.extend(locators)
         candidate: dict[str, Any] = {
             "kind": "candidate",
+            "candidate_id": f"c{index:04d}",
             "candidate_kind": key[0],
+            "analysis_group_hint": list(key[1:-1] if len(key) > 2 else key[1:]),
             "event_key": list(key[1:]),
             "count": len(locators),
             "locators": locators,
@@ -2686,7 +2718,7 @@ def _candidate_events(
         text = events[0].get("text")
         if isinstance(text, str):
             candidate["text"] = text
-        if key[0] == "hook-notice" and key[3] in {"block", "warn"}:
+        if len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}:
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
         candidates.append(candidate)
@@ -2701,6 +2733,80 @@ def _candidate_events(
             "excluded": dict(sorted(excluded.items())),
         },
     ]
+
+
+def _candidate_evidence_events(
+    collected: list[_CollectedRecord],
+    candidates: list[dict[str, Any]],
+    timeline: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    hook_notices: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """候補ごとに完全分析へ必要な位置付き証拠を有界な本文で束ねる。"""
+    raw_entries = {(record.record_id, entry.line): entry.entry for record in collected for entry in record.records}
+    indexed: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for event in (*timeline, *warnings, *hook_notices):
+        record, line = event.get("record"), event.get("line")
+        if isinstance(record, str) and isinstance(line, int):
+            indexed.setdefault((record, line), []).append(event)
+    evidence: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if candidate.get("kind") != "candidate":
+            continue
+        details: list[dict[str, Any]] = []
+        for locator in candidate["locators"]:
+            key = (str(locator["record"]), int(locator["line"]))
+            raw_entry = raw_entries.get(key)
+            if raw_entry is not None:
+                details.extend({"record": key[0], **event} for event in _entry_detail_events(key[1], raw_entry))
+            for event in indexed.get(key, ()):  # 同一位置の別走査結果も保持する。
+                detail = {
+                    "kind": str(event.get("kind", "")),
+                    "record": key[0],
+                    "line": key[1],
+                }
+                for field in ("tool", "hook", "hook_name", "tag"):
+                    if field in event:
+                        detail[field] = event[field]
+                if isinstance(event.get("text"), str):
+                    detail["text"] = _clip(event["text"], 2000)
+                details.append(detail)
+            user_context = [
+                event
+                for event in timeline
+                if event.get("kind") == "user" and event.get("record") == key[0] and isinstance(event.get("line"), int)
+            ]
+            neighbors = sorted(user_context, key=lambda event: (abs(int(event["line"]) - key[1]), int(event["line"])))[:2]
+            for event in neighbors:
+                if int(event["line"]) == key[1]:
+                    continue
+                details.append(
+                    {
+                        "kind": "user-context",
+                        "record": key[0],
+                        "line": int(event["line"]),
+                        "text": _clip(str(event.get("text", "")), 1000),
+                    }
+                )
+        if not details:
+            details.append(
+                {
+                    "kind": str(candidate["candidate_kind"]),
+                    "record": str(candidate["locators"][0]["record"]),
+                    "line": int(candidate["locators"][0]["line"]),
+                    "text": _clip(str(candidate.get("text", "")), 2000),
+                }
+            )
+        evidence.append(
+            {
+                "kind": "candidate-evidence",
+                "candidate_id": candidate["candidate_id"],
+                "analysis_group_hint": candidate["analysis_group_hint"],
+                "locators": candidate["locators"],
+                "events": details,
+            }
+        )
+    return evidence
 
 
 def _user_candidate_exclusion(

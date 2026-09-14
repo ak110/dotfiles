@@ -2,7 +2,6 @@
 
 import json
 import pathlib
-import typing
 from collections.abc import Callable
 
 import pytest
@@ -190,12 +189,12 @@ def test_delegate_wait_consumes_own_writer_result(
 
 
 def _wait_lock_path(tmp_path: pathlib.Path) -> pathlib.Path:
-    """`session-1`の待機所有権を表すロックの経路を返す。"""
-    return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "session-1.lock"
+    """root書込主体の待機所有権を表すロックの経路を返す。"""
+    return status_file.status_directory("root-session", tmp_path) / "wait-locks" / "root.json.lock"
 
 
-def _wait_while_session_1_is_locked(tmp_path: pathlib.Path, own_session_id: str) -> int:
-    """別主体が`session-1`の待機所有権を保持する状態で待機を発行し終了コードを返す。"""
+def _wait_while_owner_is_locked(tmp_path: pathlib.Path, own_session_id: str) -> int:
+    """別実行が同じ書込主体の待機所有権を保持する状態で待機を発行する。"""
     _write_own_status(status_file.results_directory("root-session", tmp_path), [{"session_id": own_session_id}])
     lock_path = _wait_lock_path(tmp_path)
     lock_path.parent.mkdir(parents=True)
@@ -211,16 +210,18 @@ def _wait_while_session_1_is_locked(tmp_path: pathlib.Path, own_session_id: str)
 
 
 def test_agents_wait_rejects_overlapping_owner(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """同じsessionの待機所有権を保持する後発は理由と対象sessionを添えて終了コード8で拒否する。"""
-    assert _wait_while_session_1_is_locked(tmp_path, "session-1") == 8
+    """同じ書込主体の後発待機は再実行条件と対象を添えて終了コード8で拒否する。"""
+    assert _wait_while_owner_is_locked(tmp_path, "session-1") == 8
 
     assert _wait_lock_path(tmp_path).exists()
-    assert "session-1" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "先行する`atk agents wait`の終了を待ってから再実行" in error
+    assert "targets=session-1" in error
 
 
-def test_agents_wait_allows_disjoint_sets(tmp_path: pathlib.Path) -> None:
-    """別sessionの待機所有権は互いに競合しない。"""
-    assert _wait_while_session_1_is_locked(tmp_path, "session-2") == 3
+def test_agents_wait_rejects_disjoint_sets_for_same_owner(tmp_path: pathlib.Path) -> None:
+    """対象集合が別でも同じ書込主体の重複待機を許可しない。"""
+    assert _wait_while_owner_is_locked(tmp_path, "session-2") == 8
 
 
 def test_agents_wait_resolves_changed_conversation_session(
@@ -707,42 +708,25 @@ def test_agents_wait_collects_result_added_after_wait_starts(
     assert not (wait_environment / "late-session.json").exists()
 
 
-def test_agents_wait_retries_dynamic_target_after_lock_conflict(
+def test_agents_wait_collects_dynamic_target_under_owner_lock(
     monkeypatch: pytest.MonkeyPatch,
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """追加対象のロック競合は既存対象の待機を止めず、次巡回で再取得する。"""
+    """書込主体の単一ロックを保持したまま追加対象を待機集合へ加える。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 10.0)
     monotonic_values = iter((0.0, 0.0, 1.0))
     monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
-    external_locks: list[typing.IO[bytes]] = []
 
     def change_targets(_seconds: float) -> None:
-        if not external_locks:
-            _write_own_status(wait_environment, [{"session_id": "session-1"}, {"session_id": "session-2"}])
-            wait_environment.mkdir(parents=True, exist_ok=True)
-            (wait_environment / "session-2.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
-            lock_path = wait_environment.parent / "wait-locks" / "session-2.lock"
-            lock_path.parent.mkdir(parents=True, exist_ok=True)
-            lock_file = lock_path.open("a+b")
-            acquire_lock(lock_file, blocking=False)
-            external_locks.append(lock_file)
-            return
-        lock_file = external_locks.pop()
-        release_lock(lock_file)
-        lock_file.close()
+        _write_own_status(wait_environment, [{"session_id": "session-1"}, {"session_id": "session-2"}])
+        wait_environment.mkdir(parents=True, exist_ok=True)
+        (wait_environment / "session-2.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
 
     monkeypatch.setattr(agents_wait.time, "sleep", change_targets)
-    try:
-        assert _wait_for_session_1_result(wait_environment) == 0
-    finally:
-        for lock_file in external_locks:
-            release_lock(lock_file)
-            lock_file.close()
+    assert _wait_for_session_1_result(wait_environment) == 0
 
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-2"}
     log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
-    assert "wait_lock_failed phase=dynamic session_id=session-2" in log_text
     assert "wait_target_added session_id=session-2" in log_text
