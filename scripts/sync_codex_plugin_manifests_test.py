@@ -234,7 +234,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": subject.CODEX_RULES_CONTEXT_COMMAND,
+                            "command": subject.CODEX_RULES_CONTEXT_CODEX_COMMAND,
                             "additionalContextLimit": 0,
                         }
                     ]
@@ -244,6 +244,17 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     }
     assert len(generated_hooks["hooks"]) == 8
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
+
+
+def test_sync_ignores_tracked_file_deleted_from_worktree(manifest_root: Path) -> None:
+    """commit前の追跡ファイル削除をCodex pluginの原本集合から除く。"""
+    deleted = manifest_root / "agent-toolkit/deleted.md"
+    deleted.write_text("deleted\n", encoding="utf-8")
+    subprocess.run(["git", "add", "agent-toolkit/deleted.md"], cwd=manifest_root, check=True)
+    deleted.unlink()
+
+    assert subject.sync(manifest_root) is True
+    assert not (manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET / "deleted.md").exists()
 
 
 def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:

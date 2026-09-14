@@ -37,6 +37,9 @@ _TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
 _SESSION_TITLE_KEY = "last_hook_session_title"
 _INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
 _WARN_NOTICE_COUNTS_KEY = "warn_notice_counts"
+_BASH_OUTPUT_TRUNCATION_AUTOFIX_COUNT_KEY = "bash_output_truncation_autofix_count"
+_BASH_FAILURE_STREAK_KEY = "bash_failure_streak"
+_BASH_FAILURE_GATE_KEY = "bash_failure_gate"
 _TRANSCRIPT_SESSION_ID_KEYS = ("sessionId", "session_id")
 
 STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
@@ -263,6 +266,59 @@ def increment_warn_notice_count(session_id: str, key: str) -> int:
 
     update_state(session_id, _increment)
     return count
+
+
+def claim_bash_output_truncation_autofix(session_id: str) -> bool:
+    """単純なBash出力切り詰めの初回補正だけを許可する。"""
+    claimed = False
+
+    def _claim(current: dict) -> dict:
+        nonlocal claimed
+        previous = current.get(_BASH_OUTPUT_TRUNCATION_AUTOFIX_COUNT_KEY)
+        count = previous if isinstance(previous, int) and previous >= 0 else 0
+        claimed = count == 0
+        current[_BASH_OUTPUT_TRUNCATION_AUTOFIX_COUNT_KEY] = count + 1
+        return current
+
+    update_state(session_id, _claim)
+    return claimed
+
+
+def record_bash_failure(session_id: str, exit_code: int) -> bool:
+    """Bashの同一終了コードの連続失敗を記録し、2回目以降なら実行を遮断する。"""
+    gate_activated = False
+
+    def _record(current: dict) -> dict:
+        nonlocal gate_activated
+        previous = current.get(_BASH_FAILURE_STREAK_KEY)
+        previous_count = previous.get("count") if isinstance(previous, dict) else None
+        same_class = isinstance(previous, dict) and previous.get("exit_code") == exit_code
+        count = previous_count + 1 if same_class and isinstance(previous_count, int) else 1
+        current[_BASH_FAILURE_STREAK_KEY] = {"exit_code": exit_code, "count": count}
+        if count >= 2:
+            current[_BASH_FAILURE_GATE_KEY] = True
+            gate_activated = True
+        return current
+
+    update_state(session_id, _record)
+    return gate_activated
+
+
+def reset_bash_failure_sequence(session_id: str, *, clear_gate: bool = False) -> None:
+    """Bashの連続失敗を解除し、指定時は直接実行ゲートも解除する。"""
+
+    def _reset(current: dict) -> dict | None:
+        changed = current.pop(_BASH_FAILURE_STREAK_KEY, None) is not None
+        if clear_gate and current.pop(_BASH_FAILURE_GATE_KEY, None) is not None:
+            changed = True
+        return current if changed else None
+
+    update_state(session_id, _reset)
+
+
+def bash_failure_gate_is_active(session_id: str) -> bool:
+    """連続失敗後の直接Bash実行ゲートが有効なら真を返す。"""
+    return read_state(session_id).get(_BASH_FAILURE_GATE_KEY) is True
 
 
 def claim_session_title(session_id: str, title: str) -> bool:

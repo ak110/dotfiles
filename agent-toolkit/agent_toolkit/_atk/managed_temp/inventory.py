@@ -432,10 +432,10 @@ def list_managed_temp(
             if _registry_name(path) != registry_path.name:
                 raise ManagedTempError(f"登録ファイル名が管理情報のpathと対応しない: {path}")
             schema_version = record.get("schema_version")
-            item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5) else None
-            created_at = record.get("created_at") if schema_version in (2, 3, 4, 5) else None
-            awis = record.get("awis") if schema_version in (4, 5) else record.get("feedbacks") if schema_version == 3 else []
-            item_session_id = record.get("session_id") if schema_version == 5 else None
+            item_prefix = record.get("prefix") if schema_version in (2, 3, 4, 5, 6) else None
+            created_at = record.get("created_at") if schema_version in (2, 3, 4, 5, 6) else None
+            awis = record.get("awis") if schema_version in (4, 5, 6) else record.get("feedbacks") if schema_version == 3 else []
+            item_session_id = record.get("session_id") if schema_version in (5, 6) else None
             if (
                 not (item_prefix is None or isinstance(item_prefix, str))
                 or not (created_at is None or isinstance(created_at, str))

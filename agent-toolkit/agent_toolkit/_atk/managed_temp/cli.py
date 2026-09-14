@@ -37,6 +37,7 @@ if TYPE_CHECKING:
         _validate_posix,
         _validate_windows,
         create_managed_temp,
+        create_session_temp,
         is_valid_prefix,
         prefix_violation,
         validate_managed_temp,
@@ -180,10 +181,16 @@ def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "comman
         + "。".join(description for description, _satisfied in _PREFIX_RULES)
         + "。",
     )
-    create_parser.add_argument(
+    create_location = create_parser.add_mutually_exclusive_group()
+    create_location.add_argument(
         "--root",
         type=pathlib.Path,
         help=("作成先の一時root。別のnamespaceからも同じ絶対パスで到達できる既存ディレクトリを指定する場合だけ使う。"),
+    )
+    create_location.add_argument(
+        "--session-root",
+        type=pathlib.Path,
+        help="SessionStartが通知した管理対象一時領域。直下へ個別登録を持たない子領域を作成する。",
     )
     create_parser.add_argument(
         "--awi",
@@ -227,20 +234,25 @@ def dispatch(args: argparse.Namespace, *, command_dest: str = "command") -> int:
     """解析済み引数に対応する操作を実行し、終了状態を返す。"""
     try:
         if getattr(args, command_dest) == "create":
-            created = (
-                create_managed_temp(
-                    args.prefix,
-                    getattr(args, "root", None),
-                    tuple(getattr(args, "awi", None) or ()),
+            if args.session_root is not None:
+                if args.awi or args.session_id is not None:
+                    raise ManagedTempError("--session-rootは--awi又は--session-idと同時に指定できない")
+                created = create_session_temp(args.prefix, args.session_root)
+            else:
+                created = (
+                    create_managed_temp(
+                        args.prefix,
+                        getattr(args, "root", None),
+                        tuple(getattr(args, "awi", None) or ()),
+                    )
+                    if args.session_id is None
+                    else create_managed_temp(
+                        args.prefix,
+                        getattr(args, "root", None),
+                        tuple(getattr(args, "awi", None) or ()),
+                        session_id=args.session_id,
+                    )
                 )
-                if args.session_id is None
-                else create_managed_temp(
-                    args.prefix,
-                    getattr(args, "root", None),
-                    tuple(getattr(args, "awi", None) or ()),
-                    session_id=args.session_id,
-                )
-            )
             print(created)
         elif getattr(args, command_dest) == "cleanup":
             if args.path is None and args.session_id is None:

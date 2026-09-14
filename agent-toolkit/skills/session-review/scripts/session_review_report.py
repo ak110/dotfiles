@@ -19,10 +19,28 @@ PHASES = (
     "構造検査",
 )
 ANALYSIS_FIELDS = ("direct_cause", "root_cause", "rule_gap", "action")
+SUMMARY_MAX_CHARS = 200
+REPORT_H2_HEADINGS = (
+    "対象セッション",
+    "問題候補の判定記録",
+    "規範適用による停止",
+    "所要時間の内訳と改善提案",
+    "登録したキュー項目",
+    "未確認範囲",
+)
+_GENERATED_SECTION_HEADINGS = ("問題候補の判定記録", "所要時間の内訳と改善提案")
 
 
 class ReportError(ValueError):
     """入力又は報告構造が契約を満たさない。"""
+
+
+def _cell_text(text: str) -> str:
+    """表のセルへ収まる1行の要約を返す。"""
+    collapsed = " ".join(text.split()).replace("|", "\\|")
+    if len(collapsed) > SUMMARY_MAX_CHARS:
+        collapsed = collapsed[:SUMMARY_MAX_CHARS] + "…"
+    return collapsed
 
 
 def _load_json(path: pathlib.Path) -> Any:
@@ -66,6 +84,32 @@ def _seconds(value: dict[str, Any], phase: str) -> float:
     if seconds < 0:
         raise ReportError(f"{phase}の終了時刻が開始時刻より前である")
     return seconds
+
+
+def _section_body(content: str, heading: str) -> str:
+    """指定したH2の本文を次のH2直前まで返す。"""
+    lines = content.splitlines()
+    marker = f"## {heading}"
+    try:
+        start = lines.index(marker) + 1
+    except ValueError as error:
+        raise ReportError(f"報告に見出しがない: {marker}") from error
+    end = next((index for index in range(start, len(lines)) if lines[index].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end]).strip()
+
+
+def _check_rendered_report(content: str, expected: str) -> None:
+    """6節の順序と機械生成部分を検査し、各節への担当記述を許容する。"""
+    lines = content.splitlines()
+    if not lines or lines[0] != "# セッション振り返り":
+        raise ReportError("報告のH1が不正である")
+    headings = tuple(line.removeprefix("## ") for line in lines if line.startswith("## "))
+    if headings != REPORT_H2_HEADINGS:
+        raise ReportError(f"報告のH2が規定の順序と一致しない: {headings!r}")
+    for heading in _GENERATED_SECTION_HEADINGS:
+        expected_body = _section_body(expected, heading)
+        if expected_body not in _section_body(content, heading):
+            raise ReportError(f"機械生成部分が入力と一致しない: ## {heading}")
 
 
 def render(
@@ -138,12 +182,7 @@ def render(
             )
         else:
             raise ReportError(f"{locator_text}: dispositionが不正である")
-        summary = (
-            str(candidate.get("text", candidate.get("candidate_kind", "候補")))
-            .replace("\r\n", "\n")
-            .replace("\r", "\n")
-            .replace("|", "\\|")
-        )
+        summary = _cell_text(str(candidate.get("text", candidate.get("candidate_kind", "候補"))))
         rows.append("| " + " | ".join((f"{locator_text} {summary}", *cells)) + " |")
 
     timing_rows = [f"| {phase} | {_seconds(timings[phase], phase):.3f} |" for phase in PHASES]
@@ -151,19 +190,27 @@ def render(
         [
             "# セッション振り返り",
             "",
-            "## 候補別の判定記録",
+            "## 対象セッション",
+            "",
+            "## 問題候補の判定記録",
             "",
             "| 候補 | 欠陥判定 | 直接的原因 | 根本原因 | 既存規範が適用されなかった理由 | 処置 |",
             "| --- | --- | --- | --- | --- | --- |",
             *rows,
             "",
-            "## 工程別所要時間",
+            f"構造検査: 候補{len(candidate_items)}件、locator{len(flattened)}件、過不足0件、重複0件",
+            "",
+            "## 規範適用による停止",
+            "",
+            "## 所要時間の内訳と改善提案",
             "",
             "| 工程 | 秒 |",
             "| --- | ---: |",
             *timing_rows,
             "",
-            f"構造検査: 候補{len(candidate_items)}件、locator{len(flattened)}件、過不足0件、重複0件",
+            "## 登録したキュー項目",
+            "",
+            "## 未確認範囲",
             "",
         ]
     )
@@ -192,8 +239,10 @@ def main(argv: list[str] | None = None) -> int:
         content = render(_load_jsonl(args.candidates), decisions, analyses, timings)
         if args.mode == "generate":
             args.output.write_text(content, encoding="utf-8")
-        elif not args.output.is_file() or args.output.read_text(encoding="utf-8") != content:
-            raise ReportError("報告が入力から再生成した構造と一致しない")
+        elif not args.output.is_file():
+            raise ReportError("報告ファイルが存在しない")
+        else:
+            _check_rendered_report(args.output.read_text(encoding="utf-8"), content)
     except (OSError, json.JSONDecodeError, ReportError) as error:
         print(error, file=sys.stderr)
         return 2

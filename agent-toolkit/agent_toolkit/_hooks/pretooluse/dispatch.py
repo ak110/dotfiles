@@ -145,6 +145,7 @@ from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id  # noq
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    bash_failure_gate_is_active,
     read_state,
     update_state,
 )
@@ -165,6 +166,7 @@ if TYPE_CHECKING:
         _check_agents_server_continuation_input,
         _check_agents_server_cwd,
         _check_agents_server_list_repeat,
+        _check_generic_agent_preference,
         _check_sendmessage_agent_type_recipient,
         _check_task_stop,
         _check_webfetch_verbatim_request,
@@ -202,6 +204,7 @@ if TYPE_CHECKING:
         _check_bash_process_kill_by_pattern,
         _check_bash_recursive_grep_without_exclusion,
         _check_bash_recursive_home_search,
+        _check_repeated_bash_output_truncation,
         _check_bash_sleep_poll_pattern,
         _check_bash_unbounded_home_traversal,
         _check_bash_uv_run_python,
@@ -215,6 +218,7 @@ _is_python_token = _bash_command_parser.is_python_token
 
 # U+FFFD（REPLACEMENT CHARACTER）: UTF-8デコード失敗時の代替文字
 _REPLACEMENT_CHAR = "\ufffd"
+_bash_failure_block_notice = _block_notice_formatter("agent-toolkit/pretooluse")
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
@@ -377,6 +381,13 @@ def main(payload_text: str) -> int:
         flush_pending_notices()
         return 0
 
+    if tool_name in {"Agent", "Task"}:
+        notice = _check_generic_agent_preference(tool_input)
+        if notice is not None:
+            pending_notices.append(notice)
+        flush_pending_notices()
+        return 0
+
     # Readは変更を伴わないため、個別の事前検査を行わない。
     if tool_name == "Read":
         flush_pending_notices()
@@ -427,12 +438,23 @@ def _handle_bash_tool(
         return 0
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
+    if bash_failure_gate_is_active(session_id):
+        print(
+            _bash_failure_block_notice(
+                "同じ終了コードによるBash失敗が連続したため、直接のBash実行を遮断している。",
+                fix="原因調査と次のコマンド実行をagents_serverのstart_shellへ分離する。成功後に直接実行を再開できる。",
+            ),
+            file=sys.stderr,
+        )
+        return 2
     warnings: list[str] = []
     sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))
     if sleep_poll_result == "block":
         return 2
     if sleep_poll_result is not None:
         warnings.append(sleep_poll_result)
+    if _check_repeated_bash_output_truncation(command, session_id):
+        return 2
     auto_fix = _autofix_bash_command(command, cwd, session_id)
     if auto_fix is not None:
         command, auto_fix_notice = auto_fix
@@ -541,9 +563,10 @@ def _handle_user_facing_text_tool(
     """
     warnings: list[str] = []
     if tool_name == "AskUserQuestion":
-        required_read_warning = check_required_read_before_ask_user_question(session_id)
-        if required_read_warning is not None:
-            warnings.append(required_read_warning)
+        required_read_block = check_required_read_before_ask_user_question(session_id)
+        if required_read_block is not None:
+            print(required_read_block, file=sys.stderr)
+            return 2
     fields = _user_facing_text_fields(tool_name, tool_input)
     if _check_mojibake(tool_name, fields) or _check_foreign_script_mixin(tool_name, fields):
         return 2

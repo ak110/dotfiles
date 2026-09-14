@@ -33,6 +33,7 @@ SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
 MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
 SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
+SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 SESSION_TEMP_PREFIX = "session"
 
@@ -54,9 +55,12 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     return "\n\n".join(parts) or None
 
 
-def compose_subagent_start() -> str:
+def compose_subagent_start(*, host: str) -> str:
     """SubagentStartへ追加する本文を返す。"""
-    return SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")
+    parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
+    if host == "claude":
+        parts.append(SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
+    return "\n\n".join(parts)
 
 
 def _parse_payload(payload_text: str) -> dict[str, Any]:
@@ -91,7 +95,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 temp_context = f"このセッションの管理対象一時領域: {session_temp}"
                 content = f"{content}\n\n{temp_context}" if content else temp_context
     elif event_name == "SubagentStart":
-        content = compose_subagent_start()
+        content = compose_subagent_start(host=host)
     else:
         raise ValueError("hook_event_nameはSessionStart又はSubagentStartである必要がある")
 

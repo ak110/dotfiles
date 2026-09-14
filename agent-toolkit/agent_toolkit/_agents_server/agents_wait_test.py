@@ -165,19 +165,39 @@ def test_agents_wait_times_out_without_result(
     assert not captured.err
 
 
-def test_agents_wait_returns_expired_when_session_is_absent_from_root(
+def test_agents_wait_keeps_absent_projection_nonterminal(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """終端結果と通知が無いまま対象が消失した場合を待機上限より前に返す。"""
+    """空の状態投影だけではsessionの期限切れを判定しない。"""
     _write_own_status(wait_environment, [])
 
-    with pytest.raises(SystemExit, match="7"):
+    with pytest.raises(SystemExit, match="3"):
         atk.main(["agents", "wait"])
 
     captured = capsys.readouterr()
-    assert json.loads(captured.out) == {"status": "expired"}
+    assert json.loads(captured.out) == {"status": "running"}
     assert captured.out.count("\n") == 1
+    assert not captured.err
+
+
+def test_agents_wait_keeps_captured_session_after_projection_disappears(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """待機開始後に状態投影が消えても取得済みsessionを非終端として返す。"""
+    status_path = _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    monotonic_values = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(agents_wait, "_WAIT_TIMEOUT_SECONDS", 1.0)
+    monkeypatch.setattr(agents_wait.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(agents_wait.time, "sleep", lambda _seconds: status_path.unlink())
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"session_id": "session-1", "status": "running"}
     assert not captured.err
 
 

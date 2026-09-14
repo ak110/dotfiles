@@ -6,6 +6,7 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import os
 import pathlib
 import re
@@ -13,6 +14,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from logging.handlers import RotatingFileHandler
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -793,9 +795,9 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
     """実運用で観測した7種類の最小起動文が必須入力検査を通過する。"""
     task_document = subject._SHARE_DIRECTORY / task_name
-    prompt = "\n".join([f"{task_document}の手順を実行せよ。", *_observed_input_lines(task_name, tmp_path)])
+    extra_params = _observed_input_params(task_name, tmp_path)
 
-    assert subject._validate_required_prompt_inputs(prompt) is None
+    assert subject._validate_required_prompt_inputs(task_document, extra_params) is None
 
 
 @pytest.mark.asyncio
@@ -822,11 +824,12 @@ async def test_start_rejects_exec_prompt_without_handoff_path(monkeypatch: pytes
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_task_document_without_required_input_marker(
+async def test_start_warns_and_continues_without_required_input_marker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """必須入力名を取得できないタスク文書はbackend起動前に拒否する。"""
+    """必須入力名を取得できないタスク文書は警告してbackendを起動する。"""
     task_document = tmp_path / "share" / "task.subagent.md"
     (tmp_path / ".claude-plugin").mkdir(parents=True)
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -834,13 +837,16 @@ async def test_start_rejects_task_document_without_required_input_marker(
     task_document.write_text("# タスク\n\n## 入力\n\n- 対象\n", encoding="utf-8")
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
-        return {"status": "running"}
+        return {"session_id": "session", "status": "running"}
 
     monkeypatch.setattr(subject, "_MANAGER", SimpleNamespace(start=fake_start))
     monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
 
-    with pytest.raises(ValueError, match="必須入力検査を実施できません"):
-        await subject.start(str(task_document), {}, str(tmp_path))
+    with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
+        response = await subject.start(str(task_document), {}, str(tmp_path))
+
+    assert response == {"session_id": "session", "status": "running"}
+    assert "必須入力検査を実施できません" in caplog.text
 
 
 def test_progress_excerpt_normalizes_newline_and_keeps_tail() -> None:
@@ -2636,11 +2642,11 @@ def test_explore_system_prompt_contains_delegate_notice() -> None:
     assert state.EXPLORE_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
 
 
-def test_delegate_system_prompt_appends_subagent_rules() -> None:
-    rules = state.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip()
-    assert state.DELEGATE_SYSTEM_PROMPT.endswith(rules)
-    assert rules not in state.EXPLORE_SYSTEM_PROMPT
-    assert rules not in state.SHELL_SYSTEM_PROMPT
+def test_subagent_rules_reach_only_normal_delegation() -> None:
+    """委譲先規範は通常起動の指示だけへ連結し、軽量起動の指示へは入らない。"""
+    assert state.DELEGATE_SYSTEM_PROMPT.endswith(state.SUBAGENT_RULES)
+    assert state.SUBAGENT_RULES not in state.EXPLORE_SYSTEM_PROMPT
+    assert state.SUBAGENT_RULES not in state.SHELL_SYSTEM_PROMPT
     assert state.SHELL_SYSTEM_PROMPT.startswith(state.DELEGATE_NOTICE)
     assert "あなたはメインエージェントでも最上位セッションでもない。" in state.DELEGATE_NOTICE
     assert "呼び出し元エージェントの配送" in state.DELEGATE_NOTICE
@@ -3690,7 +3696,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.system_prompt == {
         "type": "preset",
         "preset": "claude_code",
-        "append": f"{state.DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
+        "append": f"{state.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}",
     }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "bypassPermissions"
@@ -3820,6 +3826,24 @@ def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(claude_backend, "check_dependencies", fail_check)
     with pytest.raises(ImportError, match="claude-agent-sdk is unavailable"):
         subject.main(["--check-dependencies"])
+
+
+def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """依存検査を含む起動初期の診断を状態ディレクトリへ永続化する。"""
+    monkeypatch.setattr(subject, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    monkeypatch.setattr(claude_backend, "check_dependencies", lambda: None)
+
+    assert subject.main(["--check-dependencies"]) == 0
+
+    log_path = tmp_path / "agents-server.log"
+    content = log_path.read_text(encoding="utf-8")
+    assert "agents_serverを起動します: mode=check-dependencies" in content
+    assert "agents_serverが正常終了しました: mode=check-dependencies" in content
+    handlers = logging.getLogger("agent-toolkit.agents-server").handlers
+    file_handler = next(handler for handler in handlers if getattr(handler, "agents_server_file", False))
+    assert isinstance(file_handler, RotatingFileHandler)
+    assert file_handler.maxBytes == subject._LOG_MAX_BYTES
+    assert file_handler.backupCount == subject._LOG_BACKUP_COUNT
 
 
 @pytest.mark.asyncio
@@ -5069,12 +5093,63 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     assert "必須入力の行は`<項目名>:`で始める" in message
 
 
-def test_validate_required_prompt_inputs_shows_first_line_format() -> None:
-    """1行目からタスク文書を取得できない場合は受理する書式を警告へ添える。"""
-    warning = subject._validate_required_prompt_inputs("対象: /repo\n手順を実行せよ。")
-    assert warning is not None
-    assert "起動文の1行目からタスク文書の絶対パスを取得できません" in warning
-    assert "`.subagent.md`で終わるタスク文書の絶対パスで始める" in warning
+@pytest.mark.asyncio
+async def test_start_accepts_task_document_path_with_spaces(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """startは表示用プロンプトへ直列化したパスを再解析しない。"""
+    task_document = tmp_path / "plugin root" / "share" / "task.subagent.md"
+    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document.parent.mkdir()
+    task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+
+    response = await subject.start(str(task_document), {"対象": "値"}, str(tmp_path))
+
+    assert response == {"session_id": "session", "status": "running"}
+    manager.start.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_start_warns_and_continues_when_task_document_cannot_be_read(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """実在確認後に読取不能となった文書は警告してbackendを起動する。"""
+    task_document = tmp_path / "plugin" / "share" / "task.subagent.md"
+    manifest = task_document.parent.parent / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document.parent.mkdir()
+    task_document.write_text("## 入力\n", encoding="utf-8")
+    original_read_text = pathlib.Path.read_text
+
+    def read_text(
+        path: pathlib.Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> str:
+        if path == task_document:
+            raise OSError("read failed")
+        return original_read_text(path, encoding=encoding, errors=errors, newline=newline)
+
+    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": "running"}))
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
+    monkeypatch.setattr(subject, "_MANAGER", manager)
+    monkeypatch.setitem(subject._TASK_MODEL_TYPES, task_document.name, "execute")
+
+    with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
+        response = await subject.start(str(task_document), {}, str(tmp_path))
+
+    assert response == {"session_id": "session", "status": "running"}
+    assert "タスク文書をUTF-8で読めません" in caplog.text
 
 
 def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_path: pathlib.Path) -> None:
@@ -5083,7 +5158,7 @@ def test_start_rejects_task_document_under_share_without_plugin_manifest(tmp_pat
     task_document.parent.mkdir()
     task_document.write_text("## 入力\n", encoding="utf-8")
 
-    warning = subject._validate_required_prompt_inputs(f"{task_document} の手順を実行せよ。")
+    warning = subject._validate_required_prompt_inputs(task_document, {})
     assert warning is not None
     assert "タスク文書がshare配下ではありません" in warning
 
@@ -5097,7 +5172,7 @@ def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_p
     task_document.parent.mkdir()
     task_document.write_text("## 入力\n", encoding="utf-8")
 
-    warning = subject._validate_required_prompt_inputs(f"{task_document} の手順を実行せよ。")
+    warning = subject._validate_required_prompt_inputs(task_document, {})
     assert warning is not None
     assert "タスク文書がshare配下ではありません" in warning
 

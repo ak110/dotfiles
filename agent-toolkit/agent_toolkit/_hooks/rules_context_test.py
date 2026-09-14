@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import re
@@ -81,7 +82,7 @@ def test_session_start_codex_excludes_claude_code_rules(
 
 @pytest.mark.parametrize("agent_type", ["Explore", "Plan", "general-purpose", "plan-reviewer"])
 @pytest.mark.parametrize("environment", [None, "delegated", "owner"])
-def test_subagent_start_includes_subagent_rules_only(
+def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
     agent_type: str, environment: str | None, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -93,7 +94,16 @@ def test_subagent_start_includes_subagent_rules_only(
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": agent_type}))
     output = _output(capsys)
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
+
+
+def test_subagent_start_codex_excludes_claude_code_rules(capsys: pytest.CaptureFixture[str]) -> None:
+    """CodexのSubagentStartへClaude固有規範を追加しない。"""
+    rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
+    output = _output(capsys)
+    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
 
 
 def test_hooks_json_registers_rules_context_without_matcher() -> None:
@@ -125,11 +135,17 @@ def test_session_start_context_fits_claude_code_cap(
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr(managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
     output = _output(capsys)
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
+
+
+def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixture[str]) -> None:
+    """Claude固有規範を含むSubagentStart本文がhook上限へ収まる。"""
+    rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))
+    assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
 
 def test_session_start_length_report_shows_overage_and_breakdown() -> None:
@@ -185,7 +201,7 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     tmp_path: pathlib.Path,
 ) -> None:
     """同じsession_idの全SessionStartで1件の領域と同じ絶対パスを渡す。"""
-    monkeypatch.setattr(managed_temp.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(managed_temp, "_state_root_path", lambda: tmp_path / "external-state")
     payload = json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": "session-1"})
 
@@ -198,6 +214,11 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     assert len(entries) == 1
     assert entries[0]["path"] in first_output
     assert entries[0]["path"] in second_output
+    assert managed_temp.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC)) == []
+    session_root = pathlib.Path(entries[0]["path"])
+    assert session_root.exists()
+    child = managed_temp.create_session_temp("child", session_root)
+    assert child.parent == session_root
 
 
 def test_rules_files_do_not_contain_role_specific_sections() -> None:

@@ -214,9 +214,9 @@ class TestManagedTempWindows:
         directory: bool,
     ) -> None:
         """管理root内を指すfile・directory symlinkはリンク先を保持して回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-symlink")
-        destination = tmp_path / "symlink-destination"
+        destination = target.parent / "symlink-destination"
         if directory:
             destination.mkdir()
         else:
@@ -644,9 +644,9 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """管理root内を指すJunctionはリンク先を保持して回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-junction")
-        destination = tmp_path / "junction-destination"
+        destination = target.parent / "junction-destination"
         destination.mkdir()
         sentinel = destination / "keep.txt"
         sentinel.write_text("keep", encoding="utf-8")
@@ -665,10 +665,10 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """多階層のJunctionを深い順に解除し、列挙順へ依存しない。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-nested-junctions")
-        first_destination = tmp_path / "z-destination"
-        second_destination = tmp_path / "a-destination"
+        first_destination = target.parent / "z-destination"
+        second_destination = target.parent / "a-destination"
         first_destination.mkdir()
         second_destination.mkdir()
         nested = target / "nested" / "deeper"
@@ -688,11 +688,9 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """格納値だけを検証し、到達不能なリンク先へ削除を波及させない。"""
-        managed_root = tmp_path / "managed-root"
-        managed_root.mkdir()
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(managed_root))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-broken-junction")
-        destination = managed_root / "removed-destination"
+        destination = target.parent / "removed-destination"
         destination.mkdir()
         junction = target / "junction"
         _make_junction(junction, destination)
@@ -749,9 +747,9 @@ class TestManagedTempWindows:
         tmp_path: pathlib.Path,
     ) -> None:
         """隔離済み状態からも管理root内を指すJunctionを回収する。"""
-        monkeypatch.setattr(subject.tempfile, "gettempdir", lambda: str(tmp_path))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-quarantine-junction")
-        destination = tmp_path / "quarantine-destination"
+        destination = target.parent / "quarantine-destination"
         destination.mkdir()
         _make_junction(target / "junction", destination)
         consuming, quarantine = _interrupt_cleanup(target, quarantine=True)

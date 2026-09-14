@@ -67,7 +67,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
-        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitを記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--commit`で指定するrevisionは対象リポジトリで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの作成者日時・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。\n対象と出力: private-notesのinbox又はprocessingからadoptedへファイルを移動する。`--note`の内容と、`--commit`で指定したcommitの作成者日時・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinboxかprocessingにあること。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合はprivate-notesのGit履歴から復元する。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
         "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
     "atk wi reject": {
@@ -289,11 +289,6 @@ HELP: dict[str, dict[str, str]] = {
         "summary": "判定済みreviewの識別子を記録する",
         "description": "目的: 分類を確定したreview識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済み又は根拠付き対応不要と分類したreview本文を記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、更新後の当該リポジトリの識別子を昇順で標準出力へ書く。記録済みの識別子は重複させない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へ正の整数の識別子を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
         "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 987654321",
-    },
-    "atk session-review-target": {
-        "summary": "前のセッションの振り返り対象を特定する",
-        "description": "目的: 対象リポジトリで`agent-toolkit:process-wi`を起動した自身以外の本体セッションのうち、更新時刻が最新の1件を振り返りの対象として返す。\n利用場面: process-wiの選定工程で前のセッションの振り返りを開始するとき。\n対象と出力: Claude CodeとCodexの保存済みセッション記録を読み取り、該当する1件の実行系とセッション識別子をJSONで標準出力へ書く。該当が無い場合は何も書かない。記録は変更しない。\n前提: `--transcript`又は`--codex-thread-id`の一方へ自身の識別子を指定する。対象リポジトリを省略した場合はカレント作業ディレクトリから解決する。\n復元・後始末: 読み取りだけを行うため不要。",
-        "epilog": "実行例:\n\n  atk session-review-target --transcript=/home/user/.claude/projects/example/session.jsonl",
     },
 }
 

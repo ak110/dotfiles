@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import ctypes
 import datetime
 import enum
 import hashlib
@@ -23,8 +22,9 @@ import sys
 import tempfile
 import typing
 import unicodedata
-from ctypes import wintypes
 from typing import TYPE_CHECKING
+
+import platformdirs
 
 from agent_toolkit._atk import help_text as _atk_help
 
@@ -103,7 +103,7 @@ if TYPE_CHECKING:
     )
 
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 _PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _PREFIX_RULES = (
     ("空にできない", lambda value: value != ""),
@@ -193,15 +193,34 @@ class _ValidatedRoot(typing.NamedTuple):
     security: typing.Any = None
 
 
+def _temp_root_path() -> pathlib.Path:
+    """OS別のユーザーキャッシュ領域に置く既定rootを返す。"""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA")
+        if not base:
+            raise ManagedTempError("LOCALAPPDATAが設定されていない")
+        return pathlib.Path(base) / "agent-toolkit" / "managed-temp"
+    return pathlib.Path(platformdirs.user_cache_dir("agent-toolkit", appauthor=False)) / "managed-temp"
+
+
 def _temp_root() -> pathlib.Path:
+    root = _temp_root_path()
     try:
-        root = pathlib.Path(tempfile.gettempdir()).resolve(strict=True)
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name == "posix":
+            metadata = root.lstat()
+            if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid():
+                raise ManagedTempError(f"一時ディレクトリのルートの所有者または種別が不正: {root}")
+            root.chmod(0o700)
+            if stat.S_IMODE(root.stat().st_mode) != 0o700:
+                raise ManagedTempError(f"一時ディレクトリのルートの権限が不正: {root}")
+        elif os.name == "nt":
+            _windows_secure_path(root, directory=True)
+            _validate_windows_security(root)
+        else:
+            raise ManagedTempError(f"未対応platform: {os.name}")
     except OSError as error:
-        raise ManagedTempError(f"一時ディレクトリのルートを解決できない: {error}") from error
-    if not root.is_dir():
-        raise ManagedTempError(f"一時ディレクトリのルートがディレクトリではない: {root}")
-    if os.name == "nt" and getattr(root.lstat(), "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-        raise ManagedTempError(f"一時ディレクトリのルートがreparse pointである: {root}")
+        raise ManagedTempError(f"一時ディレクトリのルートを準備できない: {root}: {error}") from error
     return root
 
 
@@ -490,7 +509,7 @@ def _records_match(
         expected["schema_version"] = schema_version
         if schema_version == 3:
             expected["feedbacks"] = expected.pop("awis")
-    elif schema_version == 5:
+    elif schema_version in (5, 6):
         prefix = registry.get("prefix")
         created_at = registry.get("created_at")
         awis = registry.get("awis")
@@ -512,13 +531,15 @@ def _records_match(
             session_id=session_id,
             identity=identity,
         )
+        if schema_version == 5:
+            expected["schema_version"] = 5
     else:
         return False
     return (
         isinstance(nonce, str)
         and re.fullmatch(r"[0-9a-f]{64}", nonce) is not None
         and marker == registry
-        and registry == expected
+        and {key: value for key, value in registry.items() if key != "session_owner"} == expected
     )
 
 

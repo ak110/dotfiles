@@ -52,7 +52,6 @@ from agent_toolkit._atk import output_file as _output_file  # noqa: E402
 from agent_toolkit._atk import plans as _plans  # noqa: E402
 from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
 from agent_toolkit._atk import review_table as _review_table  # noqa: E402
-from agent_toolkit._atk import session_review_target as _session_review_target  # noqa: E402
 from agent_toolkit._atk import watch as _watch  # noqa: E402
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 from agent_toolkit._atk.wi import add as _add  # noqa: E402
@@ -843,7 +842,6 @@ def _build_parser() -> argparse.ArgumentParser:
     _watch.build_parser(watch)
     _review_table.build_parser(top)
     _review_audit.build_parser(top)
-    _session_review_target.build_parser(top)
     return parser
 
 
@@ -1061,12 +1059,6 @@ def main(
     if args.command == "review-audit":
         try:
             sys.exit(_review_audit.dispatch(args))
-        except ValueError as error:
-            print(f"操作を拒否しました: {error}", file=sys.stderr)
-            sys.exit(1)
-    if args.command == "session-review-target":
-        try:
-            sys.exit(_session_review_target.dispatch(args))
         except ValueError as error:
             print(f"操作を拒否しました: {error}", file=sys.stderr)
             sys.exit(1)

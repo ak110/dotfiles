@@ -486,12 +486,12 @@ def test_add_reloads_saved_details_while_holding_lock(
     assert saved_details[generated[0]]["body_match"] == "一致"
 
 
-def test_cli_add_does_not_output_saved_bodies(
+def test_cli_add_does_not_output_body_verification_details(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数件投入でも一致判定だけを出力し、保存本文を再掲しない。"""
+    """複数件投入でも本文照合の内部情報を出力しない。"""
     _setup_notes(tmp_path)
     messages = [
         '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
@@ -513,7 +513,7 @@ def test_cli_add_does_not_output_saved_bodies(
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    assert output.count("    body_match: 一致\n") == 2
+    assert "body_match" not in output
     assert "saved_body" not in output
     assert messages[0] not in output
     assert messages[1] not in output
@@ -2403,15 +2403,15 @@ def test_add_reports_body_match_for_crlf_inputs(
     assert saved_details[generated[0]]["body_match"] == "一致"
 
 
-def test_cli_add_outputs_body_match_without_saved_body(
+def test_cli_add_omits_body_verification_details(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """投入の出力は一致判定だけを書き、保存本文を再掲しない。"""
+    """投入の出力は一致判定と保存本文を再掲しない。"""
     _invoke_add_body_file(monkeypatch, tmp_path, "投入本文")
     output = capsys.readouterr().out
-    assert "    body_match: 一致\n" in output
+    assert "body_match" not in output
     assert "saved_body" not in output
     assert "投入本文" not in output
 

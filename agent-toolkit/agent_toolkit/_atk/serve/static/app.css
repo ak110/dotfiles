@@ -1221,6 +1221,9 @@ main > .toolbar {
   border-radius: 6px;
 }
 #screen-plans .file {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   padding: 10px 12px;
   border-bottom: 1px solid #e6e6e6;
   color: inherit;

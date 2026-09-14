@@ -4,7 +4,7 @@ r"""多段終了手順の起動順をStopフックで検査する。
 本体の作業を終える際に固定の終了工程列（`agent-toolkit:completion-report`、
 `agent-toolkit:process-wi`だけはこれに続けて`atk agents-exit-session`）を順に実行する契約を持つ。
 本フックは対象スキルの最新の起動以後に、要求される終了工程が要求順で実行されたかを
-transcriptのSkill及びBashツール起動記録（`tool_use`ブロック）から判定する。
+transcriptのSkillの成功結果とBashツール起動記録から判定する。
 
 対象スキルの起動が無いセッションは検査対象外として常時approveする。
 最新の対象スキル起動より前の終了スキル起動は充足の判定へ流用しない。
@@ -28,6 +28,7 @@ import pathlib
 from agent_toolkit._hooks.bash_command_parser import extract_execution_segments
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 from agent_toolkit._hooks.stop_gate import (
+    _entry_in_scan_scope,  # noqa: E402  # pylint: disable=protected-access
     _iter_assistant_blocks,  # noqa: E402  # pylint: disable=protected-access
     append_stop_log,
     is_pending_async_work,
@@ -67,8 +68,28 @@ def _approve() -> None:
     print(json.dumps({}, ensure_ascii=False))
 
 
+def _successful_tool_use_ids(entries: list[dict]) -> set[str]:
+    """非sidechainのuserエントリから成功したツール起動IDを返す。"""
+    successful_ids: set[str] = set()
+    for entry in entries:
+        if entry.get("type") != "user" or not _entry_in_scan_scope(entry, include_sidechain=False):
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_use_id = block.get("tool_use_id")
+            if isinstance(tool_use_id, str) and block.get("is_error") is not True:
+                successful_ids.add(tool_use_id)
+    return successful_ids
+
+
 def _skill_invocations(entries: list[dict]) -> list[str]:
-    """非sidechainのassistantエントリから終了工程の起動を時系列順で返す。"""
+    """成功したSkillとBash終了工程の起動を時系列順で返す。"""
+    successful_ids = _successful_tool_use_ids(entries)
     invocations: list[str] = []
     for block in _iter_assistant_blocks(entries):
         if block.get("type") != "tool_use":
@@ -77,6 +98,9 @@ def _skill_invocations(entries: list[dict]) -> list[str]:
         if not isinstance(tool_input, dict):
             continue
         if block.get("name") == "Skill":
+            tool_use_id = block.get("id")
+            if not isinstance(tool_use_id, str) or tool_use_id not in successful_ids:
+                continue
             skill_name = tool_input.get("skill")
             if isinstance(skill_name, str) and skill_name:
                 invocations.append(skill_name)

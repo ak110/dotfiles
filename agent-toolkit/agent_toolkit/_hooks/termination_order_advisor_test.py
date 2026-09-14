@@ -34,6 +34,24 @@ def _skill_entry(skill: str, *, tool_use_id: str = "toolu_skill") -> dict:
     }
 
 
+def _tool_result_entry(tool_use_id: str, *, is_error: bool = False) -> dict:
+    """ツール結果を含むユーザーエントリを生成する。"""
+    return {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": "result",
+                    "is_error": is_error,
+                }
+            ],
+        },
+    }
+
+
 def _exit_entry(*, tool_use_id: str = "toolu_exit") -> dict:
     """終了CLIのBash起動を含むアシスタントエントリを生成する。"""
     return {
@@ -90,7 +108,10 @@ def test_approves_when_not_reentrant(
     """`stop_hook_active`が偽の場合は、終了手順が不足していても遮断しない。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
-    transcript = _write_transcript(tmp_path, [_skill_entry("agent-toolkit:process-wi")])
+    transcript = _write_transcript(
+        tmp_path,
+        [_skill_entry("agent-toolkit:process-wi"), _tool_result_entry("toolu_skill")],
+    )
 
     decision, body = termination_order_advisor.evaluate(
         _payload("sess-not-reentrant", str(transcript), stop_hook_active=False),
@@ -106,7 +127,10 @@ def test_blocks_when_termination_skill_missing(
     """対象スキル起動後に終了スキルが1つも起動されていない場合は遮断する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
-    transcript = _write_transcript(tmp_path, [_skill_entry("agent-toolkit:process-wi")])
+    transcript = _write_transcript(
+        tmp_path,
+        [_skill_entry("agent-toolkit:process-wi"), _tool_result_entry("toolu_skill")],
+    )
 
     decision, body = termination_order_advisor.evaluate(_payload("sess-missing", str(transcript)))
 
@@ -127,8 +151,10 @@ def test_blocks_when_termination_order_reversed(
         tmp_path,
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
+            _tool_result_entry("toolu_1"),
             _exit_entry(tool_use_id="toolu_2"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_3"),
+            _tool_result_entry("toolu_3"),
         ],
     )
 
@@ -149,7 +175,9 @@ def test_approves_when_termination_order_satisfied(
         tmp_path,
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
+            _tool_result_entry("toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
+            _tool_result_entry("toolu_2"),
             _exit_entry(tool_use_id="toolu_3"),
         ],
     )
@@ -170,9 +198,12 @@ def test_blocks_when_second_invocation_lacks_new_termination(
         tmp_path,
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
+            _tool_result_entry("toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
+            _tool_result_entry("toolu_2"),
             _exit_entry(tool_use_id="toolu_3"),
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_4"),
+            _tool_result_entry("toolu_4"),
         ],
     )
 
@@ -189,7 +220,10 @@ def test_approves_when_target_skill_never_invoked(
     """対象スキルを一度も起動していないセッションは検査対象外とする。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
-    transcript = _write_transcript(tmp_path, [_skill_entry("agent-toolkit:writing-standards")])
+    transcript = _write_transcript(
+        tmp_path,
+        [_skill_entry("agent-toolkit:writing-standards"), _tool_result_entry("toolu_skill")],
+    )
 
     decision, body = termination_order_advisor.evaluate(_payload("sess-unrelated", str(transcript)))
 
@@ -239,6 +273,7 @@ def test_approves_when_pending_async_work(
         tmp_path,
         [
             _skill_entry("agent-toolkit:process-wi", tool_use_id="toolu_1"),
+            _tool_result_entry("toolu_1"),
             _async_wait_entry(),
         ],
     )
@@ -259,7 +294,9 @@ def test_add_awi_requires_only_completion_report(
         tmp_path,
         [
             _skill_entry("agent-toolkit:add-awi", tool_use_id="toolu_1"),
+            _tool_result_entry("toolu_1"),
             _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
+            _tool_result_entry("toolu_2"),
         ],
     )
 
@@ -275,10 +312,55 @@ def test_add_awi_blocks_without_completion_report(
     """`agent-toolkit:add-awi`起動後に終了スキルが無ければ遮断する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _clear_caches()
-    transcript = _write_transcript(tmp_path, [_skill_entry("agent-toolkit:add-awi")])
+    transcript = _write_transcript(
+        tmp_path,
+        [_skill_entry("agent-toolkit:add-awi"), _tool_result_entry("toolu_skill")],
+    )
 
     decision, body = termination_order_advisor.evaluate(_payload("sess-add-awi-missing", str(transcript)))
 
     assert decision == "block"
     assert "agent-toolkit:add-awi" in body
+    assert "agent-toolkit:completion-report" in body
+
+
+@pytest.mark.parametrize("is_error", [True, False])
+def test_target_skill_requires_successful_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    is_error: bool,
+) -> None:
+    """失敗結果又は結果未到着の対象Skillは終了手順の対象にしない。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _clear_caches()
+    entries = [_skill_entry("agent-toolkit:process-wi")]
+    if is_error:
+        entries.append(_tool_result_entry("toolu_skill", is_error=True))
+    transcript = _write_transcript(tmp_path, entries)
+
+    decision, body = termination_order_advisor.evaluate(_payload(f"sess-target-{is_error}", str(transcript)))
+
+    assert (decision, body) == ("approve", "")
+
+
+def test_failed_completion_report_does_not_satisfy_termination(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """失敗したcompletion-reportは終了工程を充足しない。"""
+    _set_state_directory(monkeypatch, tmp_path)
+    _clear_caches()
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _skill_entry("agent-toolkit:add-awi", tool_use_id="toolu_1"),
+            _tool_result_entry("toolu_1"),
+            _skill_entry("agent-toolkit:completion-report", tool_use_id="toolu_2"),
+            _tool_result_entry("toolu_2", is_error=True),
+        ],
+    )
+
+    decision, body = termination_order_advisor.evaluate(_payload("sess-failed-report", str(transcript)))
+
+    assert decision == "block"
     assert "agent-toolkit:completion-report" in body

@@ -42,41 +42,30 @@ TASK_MODEL_TYPES = {
     "upstream-submission.subagent.md": "execute",
 }
 """専用タスク文書名と工程別モデル設定の対応。"""
+SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
+
+
+def _read_share(name: str) -> str:
+    """共有プロンプト又は規範を末尾改行なしで読む。"""
+    return (SHARE_DIR / name).read_text(encoding="utf-8").rstrip("\n")
+
+
+def _read_prompt(name: str) -> str:
+    """Markdownの先頭見出しを除いた固定プロンプトを読む。"""
+    return _read_share(name).split("\n\n", maxsplit=1)[1]
+
+
 # 通常委譲へ追加する規範の正本は、起動フックと共有するrules-subagent.mdとする。
-SUBAGENT_RULES_PATH = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules-subagent.md"
-SUBAGENT_RULES = SUBAGENT_RULES_PATH.read_text(encoding="utf-8")
+SUBAGENT_RULES = _read_share("rules-subagent.md")
+CLAUDE_CODE_SUBAGENT_RULES = _read_share("rules-subagent.claude-code.md")
 # 委譲先の実行主体は、両backendの既定の指示ではユーザーと直接対話する主体として起動される。
 # 起動経路の別を実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。
 # Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、既定の指示を置換しない。
-DELEGATE_NOTICE = """あなたは別のコーディングエージェントから起動された委譲先である。
-この会話の入力はユーザーの発話ではなく、呼び出し元エージェントが渡したタスクである。
-あなたの応答はユーザーの画面へ表示されず、呼び出し元エージェントへ返る。
-あなたはメインエージェントでも最上位セッションでもない。
-自身が委譲先であることと、この会話の入力が呼び出し元エージェントの配送であることは、実行主体の同定に関する事実であり、規範の優先順位では覆らない。
-実行環境の組み込み指示が定めるツールの利用契約には従う。"""
-DELEGATE_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
-規範が委譲先又はサブエージェントへ課す条文を自身へ適用し、メインエージェント又は最上位セッションへ限定した条文を適用しない。
-ユーザーへの確認は回答を得られないため発行せず、確認を要する事項は完了報告へ含めて呼び出し元へ差し戻す。
-
-{SUBAGENT_RULES.rstrip()}"""
-EXPLORE_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
-あなたは調査専用の担当である。依頼された対象を読み取り、結論と根拠だけを日本語で返す。
-ファイルを作成、変更又は削除しない。コマンドは対象を変更しない読み取り操作に限る。
-所在、該当箇所及び観測した事実を、後続の判断に足りる粒度で列挙する。
-出力量が大きいと見込まれる読取と検索は1回の呼び出しへまとめず、対象を分割して取得するか、出力先ファイルへ保存してから必要な範囲だけを読む。
-検索と読取について件数上限、容量超過、期限超過のいずれかに達した場合は、その事実と到達した上限を報告へ必ず含める。
-上限に達した結果から、網羅性、件数、不在のいずれも結論しない。"""
-SHELL_SYSTEM_PROMPT = f"""{DELEGATE_NOTICE}
-あなたはコマンド実行専用の担当である。依頼されたコマンドを実行し、終了状態と要約だけを日本語で返す。
-指示された操作だけを実行し、指示にない操作を追加しない。
-コマンドの生出力を呼び出し元へ転記せず、終了状態、警告、依頼で指定された値、及び後続の判断に必要な要約を報告する。
-失敗原因の特定に必要な行だけを原文のまま添える。
-コマンドが失敗した場合は出力をそのまま報告し、独自の回避策を試みない。
-実行したコマンドが実行環境の判断で背景実行へ移行した場合は、移行の通知を結果として報告しない。
-起動結果が返す出力ファイルを読み、終了状態を確定してから報告する。
-出力量が大きいと見込まれるコマンドは1回の実行へまとめず、対象を分割して実行するか、出力先ファイルへリダイレクトしてから必要な範囲だけを読む。
-実行ツールが出力の切り詰め、容量超過、期限超過のいずれかを通知した場合は、その事実と切り詰められた範囲を要約へ必ず含める。
-切り詰めを含む出力から、成功、網羅性、件数、終端のいずれも結論しない。"""
+DELEGATE_NOTICE = _read_prompt("agents-server-delegate-notice.md")
+DELEGATE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-delegate.md')}\n\n{SUBAGENT_RULES}"
+CLAUDE_DELEGATE_SYSTEM_PROMPT = f"{DELEGATE_SYSTEM_PROMPT}\n\n{CLAUDE_CODE_SUBAGENT_RULES}"
+EXPLORE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}"
+SHELL_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}"
 ModelCandidate = tuple[str, str, str]
 LaunchKind = Literal["delegate", "explore", "shell"]
 # 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
@@ -85,15 +74,7 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "explore": EXPLORE_SYSTEM_PROMPT,
     "shell": SHELL_SYSTEM_PROMPT,
 }
-AUTO_RESUME_NOTICE = (
-    "この実行経路は、あなたが起動した委譲先（サブエージェント）の完了通知により、"
-    "同じsessionを一度だけ自動的に再開する。\n"
-    "`agents_server`で起動したsessionを待つ場合も、当該sessionの終端後に同じ再開が働き、"
-    "当該ターンにつき一度だけ継続指示が届く。\n"
-    "当該委譲先の完了を待つ場合は`待機中: <待機対象>`の1行だけを出力して当該ターンを終え、"
-    "再開したターンで所定の返却形式を返す。\n"
-    "背景ジョブはこの自動再開の対象ではない。背景ジョブの終了状態は同じターンの中で確定してから報告する。"
-)
+AUTO_RESUME_NOTICE = _read_prompt("agents-server-auto-resume.md")
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()

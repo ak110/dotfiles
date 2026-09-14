@@ -44,7 +44,7 @@ _STDERR_FD = 2
 """標準エラー出力のファイルディスクリプタ。シグナルハンドラーからの再入しない書き込みに使う。"""
 
 _MAX_CONSECUTIVE_SNAPSHOT_FAILURES = 3
-_GH_JSON_FIELDS = "name,status,conclusion,url,databaseId,headSha,createdAt"
+_GH_JSON_FIELDS = "name,workflowName,event,status,conclusion,url,databaseId,headSha,createdAt"
 _BASELINE_VERSION = 2
 
 RunRecord = dict[str, Any]
@@ -519,7 +519,7 @@ def _fetch_snapshot(
     """baselineを除いたrunと対応ジョブを不可分なpollスナップショットとして取得する。"""
     candidates = run_list_fn(sha)
     _run_ids(candidates)
-    new_runs = [run for run in candidates if run["databaseId"] not in excluded_ids]
+    new_runs = [run for run in candidates if run["databaseId"] not in excluded_ids and not _is_dynamic_dependabot_run(run)]
     runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
     jobs = [job for run in runs for job in job_list_fn(run)]
     return runs, jobs
@@ -535,10 +535,19 @@ def _fetch_follow_snapshot(
     """全後続SHAのrun・ジョブ一覧を不可分なpollスナップショットとして取得する。"""
     candidates = [run for follow_sha in follow_shas for run in run_list_fn(follow_sha)]
     _run_ids(candidates)
-    new_runs = [run for run in candidates if run.get("headSha") in follow_shas and run["databaseId"] not in excluded_ids]
+    new_runs = [
+        run
+        for run in candidates
+        if run.get("headSha") in follow_shas and run["databaseId"] not in excluded_ids and not _is_dynamic_dependabot_run(run)
+    ]
     runs = new_runs if expected_ids is None else [run for run in new_runs if run["databaseId"] in expected_ids]
     jobs = [job for run in runs for job in job_list_fn(run)]
     return runs, jobs
+
+
+def _is_dynamic_dependabot_run(run: RunRecord) -> bool:
+    """pushへ帰属しないDependabotの動的更新runかを返す。"""
+    return run.get("event") == "dynamic" and run.get("workflowName") == "Dependabot Updates"
 
 
 def _run_ids(runs: list[RunRecord]) -> set[int]:

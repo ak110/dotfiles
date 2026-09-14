@@ -612,8 +612,9 @@ def _disable_plugin(plugin_id: str) -> bool:
 def _read_enabled_plugins_from_file() -> dict[str, bool] | None:
     """`settings.json` の `enabledPlugins` を直読みして `<id> -> bool` 辞書で返す。
 
-    ファイル不在・解析失敗・`enabledPlugins` が非dictの場合は `None` を返し、
-    呼び出し元では「情報なし」（デフォルト有効扱いと同等）として扱う。
+    ファイル不在・解析失敗・`enabledPlugins` が非dictの場合は、有効・無効の状態を
+    実体から取得できなかったことを表す `None` を返す。`None` の扱いは呼び出し元ごとに異なり、
+    自動無効化と推奨コマンド算出は既定有効として扱い、install後の状態検証は未確認として失敗扱いとする。
     """
     data = claude_common.load_json_dict(claude_common.SETTINGS_JSON_PATH)
     if data is None:

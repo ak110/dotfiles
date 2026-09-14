@@ -322,6 +322,73 @@ def create_managed_temp(
                 os.close(root_descriptor)
 
 
+def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathlib.Path:
+    """登録済みセッションroot直下へ、個別登録を持たない子領域を作成する。"""
+    if not is_valid_prefix(prefix):
+        raise _invalid_prefix_error(prefix)
+    root_argument = pathlib.Path(session_root)
+    if os.name == "posix":
+        validated = _validate_posix(root_argument)
+    elif os.name == "nt":
+        validated = _validate_windows(root_argument)
+    else:
+        raise ManagedTempError(f"未対応platform: {os.name}")
+    if not isinstance(validated.record.get("session_id"), str) or not validated.record["session_id"]:
+        raise ManagedTempError(f"session_rootはセッション識別子を持つ管理対象である必要がある: {validated.path}")
+    path: pathlib.Path | None = None
+    root_descriptor: int | None = None
+    created_identity: tuple[int, int] | None = None
+    try:
+        if os.name == "posix":
+            root_descriptor = os.open(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            opened_root = os.fstat(root_descriptor)
+            if (opened_root.st_dev, opened_root.st_ino) != (validated.device, validated.inode):
+                raise ManagedTempError(f"session_rootが作成中に置換された: {validated.path}")
+        path = pathlib.Path(tempfile.mkdtemp(prefix=f"{prefix}-", dir=validated.path))
+        if os.name == "posix":
+            assert root_descriptor is not None
+            created = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(created.st_mode):
+                raise ManagedTempError(f"セッション内管理対象が通常ディレクトリではない: {path}")
+            created_identity = (created.st_dev, created.st_ino)
+            descriptor = os.open(
+                path.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=root_descriptor,
+            )
+            try:
+                opened = os.fstat(descriptor)
+                if created_identity != (opened.st_dev, opened.st_ino):
+                    raise ManagedTempError(f"セッション内管理対象が作成中に置換された: {path}")
+                os.fchmod(descriptor, 0o700)
+            finally:
+                os.close(descriptor)
+        elif os.name == "nt":
+            _windows_secure_path(path, directory=True)
+            created_identity = _windows_identity(path)
+        else:
+            raise ManagedTempError(f"未対応platform: {os.name}")
+        current = _validate_posix(validated.path) if os.name == "posix" else _validate_windows(validated.path)
+        if (current.device, current.inode) != (validated.device, validated.inode):
+            raise ManagedTempError(f"session_rootが作成中に置換された: {validated.path}")
+        return path
+    except (ManagedTempError, OSError) as error:
+        if path is not None:
+            _remove_created_target(
+                path,
+                root_descriptor=root_descriptor,
+                target_descriptor=None,
+                created_identity=created_identity,
+            )
+        if isinstance(error, ManagedTempError):
+            raise
+        raise ManagedTempError(f"セッション内管理対象を作成できない: {error}") from error
+    finally:
+        if root_descriptor is not None:
+            with contextlib.suppress(OSError):
+                os.close(root_descriptor)
+
+
 def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     if not path_arg.is_absolute():
         raise ManagedTempError(f"pathは絶対パスで指定する: {path_arg}")

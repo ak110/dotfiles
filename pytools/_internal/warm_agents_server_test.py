@@ -101,8 +101,8 @@ def test_missing_target_is_logged_and_not_warmed(
     assert f"対象が存在しないため除外: {missing}" in caplog.text
 
 
-def test_no_existing_target_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """参照先がすべて不在ならウォームアップを行わない。"""
+def test_no_existing_target_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """参照先がすべて不在なら更新段階へ失敗を伝播する。"""
     calls = _setup(monkeypatch, tmp_path)
     (tmp_path / "claude" / "agent_toolkit" / "agents_server_mcp.py").unlink()
     (
@@ -117,12 +117,13 @@ def test_no_existing_target_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
         / "agents_server_mcp.py"
     ).unlink()
 
-    assert _warmup.run() is False
+    with pytest.raises(RuntimeError, match="対象スクリプトが見つからず"):
+        _warmup.run()
     assert not [cmd for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
 
 
-def test_missing_uv_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """uv不在時は外部コマンドを実行しない。"""
+def test_missing_uv_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """uv不在時は外部コマンドを実行せず更新段階へ失敗を伝播する。"""
     calls = _setup(monkeypatch, tmp_path)
     monkeypatch.setattr(
         _claude_common,
@@ -130,12 +131,17 @@ def test_missing_uv_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pat
         lambda name, **_kwargs: None if name == "uv" else pathlib.Path(name),
     )
 
-    assert _warmup.run() is False
+    with pytest.raises(RuntimeError, match="uv CLI が見つからず"):
+        _warmup.run()
     assert not calls
 
 
-def test_warmup_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """個別のuv失敗を後処理全体へ伝播させない。"""
+def test_warmup_failure_raises_with_exit_code_and_duration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """個別のuv失敗を終了コードと所要時間付きで更新段階へ伝播する。"""
     calls = _setup(monkeypatch, tmp_path)
 
     def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
@@ -145,4 +151,23 @@ def test_warmup_failure_does_not_raise(monkeypatch: pytest.MonkeyPatch, tmp_path
         return _FakeResult(returncode=1)
 
     monkeypatch.setattr(_claude_common, "run_subprocess", fake_run)
-    assert _warmup.run() is False
+    monotonic_values = iter([10.0, 12.5])
+    monkeypatch.setattr(_warmup.plugin_warmup.time, "monotonic", lambda: next(monotonic_values))
+    caplog.set_level(logging.WARNING, logger=_warmup.plugin_warmup.__name__)
+
+    with pytest.raises(RuntimeError, match=r"exit 1、2\.5秒"):
+        _warmup.run()
+
+    assert "環境構築が異常終了 (exit 1、2.5秒)" in caplog.text
+
+
+def test_warmup_launch_failure_raises_without_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """timeout又は起動不能で結果が無い場合も更新段階へ失敗を伝播する。"""
+    _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(_claude_common, "run_subprocess", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(RuntimeError, match="exit codeなし"):
+        _warmup.run()

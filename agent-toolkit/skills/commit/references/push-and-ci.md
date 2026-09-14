@@ -40,8 +40,10 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 
    明示経路ではremote、source、完全なdestination refを省略しない。
    いずれの経路でも拒否または失敗予定のrefがある場合はpushしない
-4. `atk managed-temp create --prefix ci-evidence`を単独で実行する。
-   標準出力の絶対パスを保持し、pushごとに別の領域を使う
+4. SessionStartが管理対象一時領域を通知している場合は、
+   `atk managed-temp create --prefix ci-evidence --session-root <通知された絶対パス>`を単独で実行する。
+   通知が無い場合は`atk managed-temp create --prefix ci-evidence`を単独で実行する。
+   標準出力の絶対パスと独立登録の有無を保持し、pushごとに別の領域を使う
 5. 削除refを除き、更新refごとにsource refを1件確定する。
    手順3で確定したrefspecの左辺`<source>`を、そのままbaselineの`--source-ref`へ渡す。
    refspecの右辺`<destination>`、destination ref、remote-tracking refを代用しない。
@@ -52,7 +54,7 @@ push前に対象プロジェクトのCI定義を読み、ローカルで実行�
 6. 読み込んだ本文書の絶対パスからplugin rootを確定する。
    確定した各`(destination ref, source ref)`について、push前に`uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py`を
    `--write-baseline <手順4で保持した領域の絶対パス>/<呼び出し側が更新refごとに決めた一意なファイル名>.json`付きで実行し、baseline JSONを保存する。
-   `wait_ci.py`は確定した`<plugin-root>/scripts/`にあり、
+   `wait_ci.py`は直前のコマンドで確定したパスにあり、
    `<plugin-root>/skills/commit/scripts/`には無い
 
 baseline作成、push、監視の順で実行する。
@@ -75,6 +77,8 @@ baseline作成、push、監視の順で実行する。
    終了コードの意味は後掲の表に従う。
    出力が空の場合や成功完了マーカーが無い場合は未判定として実測へ切り替える。
    判定対象はbaselineへ保存した完全長SHAに対する実行であり、source refがpush後に進んでも再解決しない。
+   GitHubでは、`event`が`dynamic`かつworkflow名が`Dependabot Updates`である実行だけを、pushへ帰属しない自動更新として除外する。
+   同名workflowの手動実行と、他workflowの`dynamic`実行は判定対象へ含める。
    登録猶予の終了後に登録された実行も判定対象に含む。
    登録猶予は、実行が1件も登録されないまま終わる場合を切り分けるための待機であり、
    判定対象を確定する期限ではない
@@ -111,8 +115,9 @@ baseline作成、push、監視の順で実行する。
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
-保持した各領域に対し、plan mode外で次を単独実行し、終了コード0を確認する。
+独立登録した各領域に対し、plan mode外で次を単独実行し、終了コード0を確認する。
 終了コード0は対象パスの除去完了を含意するため、別コマンドによる不在確認を追加しない。
+セッションrootの子領域は個別にcleanupせず、セッション終了時の回収へ委ねる。
 
 ```text
 atk managed-temp cleanup --path <保持した絶対パス>

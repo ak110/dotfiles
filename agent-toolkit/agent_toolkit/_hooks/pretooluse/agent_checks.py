@@ -53,6 +53,10 @@ Skill:
 
 - `agent-toolkit:plan-mode`起動時の計画単位の状態リセット (side-effect)
 
+Agent / Task:
+
+- 汎用の組み込み種別を起動する際の`agents_server`優先経路の案内 (warn)
+
 TaskStop:
 
 - 初回呼び出しのブロックと、直近ブロックから一定時間内の再実行の通過 (block)
@@ -363,6 +367,25 @@ def _check_sendmessage_agent_type_recipient(tool_input: dict) -> str | None:
     )
 
 
+_GENERIC_AGENT_TYPES = frozenset({"Explore", "general-purpose", "Plan"})
+
+
+def _check_generic_agent_preference(tool_input: dict) -> str | None:
+    """汎用の組み込みAgent種別に`agents_server`の優先経路を案内する。
+
+    PreToolUse入力から`agents_server`の利用可否を判定できないため抑止状態を持たず、
+    対象となる各呼び出しへ案内を返す。
+    """
+    subagent_type = tool_input.get("subagent_type")
+    if not isinstance(subagent_type, str) or subagent_type not in _GENERIC_AGENT_TYPES:
+        return None
+    return _llm_notice(
+        "汎用Agentより`agents_server`を優先する。読み取り専用探索には`start_explore`、自由形式の委譲には`start_custom`を使う。",
+        tag=_WARN_TAG,
+        removable_cause=True,
+    )
+
+
 # --- TaskStop: 初回遮断と再実行窓 ---
 
 _TASK_STOP_RETRY_WINDOW_SECONDS = 300
@@ -423,18 +446,17 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
 
 
 def check_required_read_before_ask_user_question(session_id: str) -> str | None:
-    """質問前に判断基準文書の全文読解が未観測なら警告する。"""
+    """質問前に判断基準文書の全文読解が未観測なら遮断理由を返す。"""
     if not session_id:
         return None
     recorded = read_state(session_id).get("observed_required_reads")
     names = {value for value in recorded if isinstance(value, str)} if isinstance(recorded, list) else set()
     if _required_reads.DOCUMENT_NAME in names:
         return None
-    return _llm_notice(
-        "warn: AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。"
-        f"複雑な判断を伴う場合は{_required_reads.document_path()}を全文読解する。",
-        tag=_WARN_TAG,
-        removable_cause=True,
+    path = _required_reads.document_path()
+    return _block_notice(
+        "AskUserQuestionの判断基準となる詳細資料の全文読解を観測していない。",
+        fix=f"Readで{path}を全文読解し、同じAskUserQuestionを再実行する。",
     )
 
 

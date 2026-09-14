@@ -43,7 +43,7 @@ def _read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict
     """保存済みエントリを再読込し、一致判定とユーザーが照合するメタデータを返す。
 
     `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存経路で本文が欠落又は改変されて
-    いないことを、呼び出し元が終了コードと出力だけで確定できるようにする。
+    いないことを、呼び出し元が終了状態で確定できるようにする。
     """
     saved_body = _frontmatter.decode_entry_text(path.read_bytes())
     parsed = _frontmatter.parse_frontmatter(saved_body)
@@ -91,7 +91,6 @@ def _print_entry_details(details: dict[str, object | None]) -> None:
         else "なし"
     )
     print(f"    extra_frontmatter: {rendered_extra_frontmatter}")
-    print(f"    body_match: {details['body_match']}")
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:

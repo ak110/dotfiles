@@ -142,6 +142,7 @@ from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_bash_output_truncation_autofix,
     read_state,
     update_state,
 )
@@ -272,6 +273,23 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
     if rewritten == command:
         return None
     return rewritten, notices
+
+
+def _check_repeated_bash_output_truncation(command: str, session_id: str) -> bool:
+    """同一セッションで2回目以降の切り詰め補正なら遮断する。"""
+    segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
+    if not session_id or not any(_split_simple_truncation(segment) is not None for segment in segments):
+        return False
+    if claim_bash_output_truncation_autofix(session_id):
+        return False
+    print(
+        _block_notice(
+            "同一セッションでBash出力の切り詰め補正が繰り返された。",
+            fix="読み取り専用の探索はagents_serverのstart_explore、コマンド実行はstart_shellへ分離する。",
+        ),
+        file=sys.stderr,
+    )
+    return True
 
 
 def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str, str] | None:

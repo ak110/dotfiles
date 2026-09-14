@@ -57,18 +57,30 @@ def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path
     return cache_root / version / relative_path
 
 
-def run(targets: Callable[[], list[Path]], *, tag: str, arguments: Sequence[str] = ()) -> bool:
+def run(
+    targets: Callable[[], list[Path]],
+    *,
+    tag: str,
+    arguments: Sequence[str] = (),
+    fail_on_error: bool = False,
+) -> bool:
     """実在する入口群のuv環境を構築し、設定変更なしを表すFalseを返す。"""
     uv = claude_common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
     if uv is None:
-        logger.info(log_format.format_status(tag, "uv CLI が見つからずスキップ"))
+        message = "uv CLI が見つからず環境構築を開始できない"
+        logger.warning(log_format.format_status(tag, message))
+        if fail_on_error:
+            raise RuntimeError(message)
         return False
     resolved = targets()
     if not resolved:
-        logger.info(log_format.format_status(tag, "対象スクリプトが見つからずスキップ"))
+        message = "対象スクリプトが見つからず環境構築を開始できない"
+        logger.warning(log_format.format_status(tag, message))
+        if fail_on_error:
+            raise RuntimeError(message)
         return False
     for target in resolved:
-        warmup(target, uv, tag=tag, arguments=arguments)
+        warmup(target, uv, tag=tag, arguments=arguments, fail_on_error=fail_on_error)
     return False
 
 
@@ -114,7 +126,14 @@ def claude_plugin_scripts(
     ]
 
 
-def warmup(path: Path, uv: Path, *, tag: str, arguments: Sequence[str] = ()) -> None:
+def warmup(
+    path: Path,
+    uv: Path,
+    *,
+    tag: str,
+    arguments: Sequence[str] = (),
+    fail_on_error: bool = False,
+) -> None:
     """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。"""
     started = time.monotonic()
     result = claude_common.run_subprocess(
@@ -134,9 +153,15 @@ def warmup(path: Path, uv: Path, *, tag: str, arguments: Sequence[str] = ()) -> 
     elapsed = time.monotonic() - started
     short = log_format.home_short(path)
     if result is None:
-        logger.warning(log_format.format_status(tag, f"環境構築に失敗: {short}"))
+        message = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {short}"
+        logger.warning(log_format.format_status(tag, message))
+        if fail_on_error:
+            raise RuntimeError(message)
         return
     if result.returncode != 0:
-        logger.warning(log_format.format_status(tag, f"環境構築が異常終了 (exit {result.returncode}): {short}"))
+        message = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {short}"
+        logger.warning(log_format.format_status(tag, message))
+        if fail_on_error:
+            raise RuntimeError(message)
         return
-    logger.info(log_format.format_status(tag, f"環境構築を確認 ({elapsed:.1f}秒): {short}"))
+    logger.info(log_format.format_status(tag, f"環境構築を確認 (exit 0、{elapsed:.1f}秒): {short}"))

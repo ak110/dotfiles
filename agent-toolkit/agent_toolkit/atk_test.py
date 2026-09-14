@@ -64,10 +64,9 @@ def _isolate_agent_and_managed_temp_environment(
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    temp_root = tmp_path / "temp"
-    temp_root.mkdir()
-    monkeypatch.setattr(_managed_temp.tempfile, "gettempdir", lambda: str(temp_root))
 
 
 @pytest.mark.parametrize(
@@ -500,7 +499,7 @@ class TestWaitScheduleParser:
 
         cleanup_path = target
         if path_form == "parent-reference":
-            anchor = tmp_path / "anchor"
+            anchor = target.parent / "anchor"
             anchor.mkdir()
             cleanup_path = anchor / ".." / target.name
 

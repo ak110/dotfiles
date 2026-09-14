@@ -256,8 +256,8 @@ class TestBashOutputTruncationWarning:
         assert result.returncode == 2
         assert "uv run python" in result.stderr
 
-    def test_output_truncation_is_auto_fixed_on_each_detection(self, tmp_path: pathlib.Path) -> None:
-        """同一セッションで反復しても単純な切り詰めを毎回補正する。"""
+    def test_repeated_output_truncation_is_blocked(self, tmp_path: pathlib.Path) -> None:
+        """同一セッションの2回目は補正せず、分離実行を要求する。"""
         session_id = "output-truncation-repeat"
         env = _plan_file_state_env(tmp_path)
         first = _run(
@@ -277,10 +277,10 @@ class TestBashOutputTruncationWarning:
             },
             env,
         )
-        assert second.returncode == 0
-        output = json.loads(second.stdout)["hookSpecificOutput"]
-        assert output["updatedInput"]["command"].startswith("uvx pyfltr run-for-agent > ")
-        assert "標準出力全量の保存先" in output["additionalContext"]
+        assert second.returncode == 2
+        assert second.stdout == ""
+        assert "start_explore" in second.stderr
+        assert "start_shell" in second.stderr
 
     def test_status_reference_after_truncation_is_safely_fixed(self, tmp_path: pathlib.Path) -> None:
         """切り詰め除去後の終了状態参照がproducerを指す入力へ補正する。"""
@@ -858,6 +858,54 @@ class TestAgentNameParameterAccepted:
         )
         assert result.returncode == 0
         assert "`name`" not in result.stderr
+
+
+class TestGenericAgentPreferenceNotice:
+    """汎用Agentより`agents_server`の経路を優先する案内契約を検証する。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize("subagent_type", ["Explore", "general-purpose", "Plan"])
+    def test_generic_agent_type_warns_without_blocking(self, tool_name: str, subagent_type: str) -> None:
+        """新旧のツール名と全汎用種別で、必要な経路を案内して実行を続ける。"""
+        result = _run({"tool_name": tool_name, "tool_input": {"subagent_type": subagent_type}})
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        context = _additional_context(result)
+        assert "`agents_server`" in context
+        assert "`start_explore`" in context
+        assert "`start_custom`" in context
+
+    def test_repeated_launch_warns_every_time(self) -> None:
+        """同じセッションの反復起動にも抑止条件を適用しない。"""
+        payload = {
+            "session_id": "generic-agent-repeat",
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "general-purpose"},
+        }
+
+        first = _run(payload)
+        second = _run(payload)
+
+        assert "`agents_server`" in _additional_context(first)
+        assert "`agents_server`" in _additional_context(second)
+
+    @pytest.mark.parametrize("subagent_type", ["claude-code-guide", "implementation-specialist", "", None, 1])
+    def test_specialized_or_invalid_type_does_not_warn(self, subagent_type: object) -> None:
+        """専用種別、欠落相当及び不正値を案内対象へ広げない。"""
+        result = _run({"tool_name": "Agent", "tool_input": {"subagent_type": subagent_type}})
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout == ""
+
+    def test_missing_type_does_not_warn(self) -> None:
+        """`subagent_type`が欠落した起動には案内を返さない。"""
+        result = _run({"tool_name": "Task", "tool_input": {}})
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert result.stdout == ""
 
 
 class TestTaskStopBlock:

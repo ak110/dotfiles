@@ -104,7 +104,11 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
         output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
         additional_context_limit=0,
     ),
-    "SubagentStart": CodexHookProjection((CODEX_RULES_CONTEXT_COMMAND,), additional_context_limit=0),
+    "SubagentStart": CodexHookProjection(
+        (CODEX_RULES_CONTEXT_COMMAND,),
+        output_command=CODEX_RULES_CONTEXT_CODEX_COMMAND,
+        additional_context_limit=0,
+    ),
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
         matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
@@ -335,6 +339,8 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
     source_paths = (Path(item.decode()) for item in result.stdout.split(b"\0") if item)
     for source_path in source_paths:
         source = root / source_path
+        if not source.exists():
+            continue
         if not source.is_file():
             raise ValueError(f"Codex plugin原本が通常ファイルではない: {source_path}")
         relative = source.relative_to(source_root)

@@ -666,10 +666,11 @@ class TestDefaultSteps:
         assert names.index("claude-statusline バイナリの取得") == names.index("libarchive (Windows)") + 1
 
     def test_codex_plugin_step_order(self):
-        """Codex pluginはリンクとClaude pluginの後、旧User scope移行の前に導入する。"""
+        """Codex pluginは正本からsnapshotを生成した後に導入する。"""
         names = [step.name for step in post_apply._DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
         assert names.index("Codex リンクの同期") < names.index("Codex plugin のインストール")
-        assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin のインストール")
+        assert names.index("Claude Code plugin のインストール") < names.index("Codex plugin snapshot の生成")
+        assert names.index("Codex plugin snapshot の生成") + 1 == names.index("Codex plugin のインストール")
         assert names.index("Codex plugin のインストール") < names.index("旧Codex User scope MCP登録の移行")
         assert names.index("旧Codex User scope MCP登録の移行") < names.index("Claude 設定")
 
@@ -696,6 +697,7 @@ class TestDefaultSteps:
             "agent-toolkit ルールの同期",
             "Codex リンクの同期",
             "Claude Code plugin のインストール",
+            "Codex plugin snapshot の生成",
             "Codex plugin のインストール",
             "agents_serverのuv環境ウォームアップ",
             "旧Codex User scope MCP登録の移行",

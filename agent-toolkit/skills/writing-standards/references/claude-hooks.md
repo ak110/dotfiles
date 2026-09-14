@@ -94,7 +94,7 @@ Codexは公式ドキュメント<https://learn.chatgpt.com/docs/hooks>を一次�
 したがって`SubagentStop`の判別へ当該環境変数を用いない。
 実行できない処置を求める判定は、`Stop`では当該環境変数、`SubagentStop`では`agent_id`を条件として対象から除く。
 最上位セッションだけが実行できる処置は`SubagentStop`へ登録しない。
-区分の詳細は`agent-toolkit/rules/99-claude-code.md`の「役割上の区分と実行環境上の区分」を正本とする。
+区分の詳細は`agent-toolkit:delegation`の`references/claude-code-runtime.md`「実行時能力と通信scope」を正本とする。
 
 実行を遮断しない`warn`区分の通知は、同一セッション内で同じ`hook_id`と同じ原因の通知が3件目に達した時点から、反復している旨と当該セッションの累積件数を本文へ含める。
 原因は通知を生成する検査ごとに一意な識別子で区別し、累積件数はセッション状態ファイルの`warn_notice_counts`が保持する。
@@ -196,8 +196,10 @@ Claude Codeでは`AskUserQuestion`の質問本文・見出し・選択肢の各�
 `agents_server`では`engine`に応じたバックエンドをMCPサーバーが選択する。承認、ユーザー入力、認証更新及び一覧操作は公開せず、実行中turnの明示的な中断だけをsession単位の`kill`として公開する。
 PreToolUseは開始ツール（`start`・`start_explore`）の絶対`cwd`と`send_message`・`kill`の保存済みsessionを検査するだけで、入力の実行権限値を自動補正しない。
 `wait`は新しいturnを開始せず既存sessionの現在の状態を返すだけで、誤った作業ディレクトリでの実行を招かないため、PreToolUseの検査対象へ含めず通過させる。
-PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。失敗時は状態を変更せず、既存の開始点用
-`PostToolUseFailure` matcherを拡張しない。
+PostToolUseは成功した開始ツール（`start`・`start_explore`）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する。
+PostToolUseFailureはBashだけを追加対象とする。`is_interrupt`が偽で、`error`の先頭行が`Exit code N`と一致する失敗を終了コードで分類する。
+同じ終了コードの2回連続を検出した場合は次の直接Bash実行を遮断し、成功した`start_shell`まで遮断を維持する。
+成功したBash、異なる終了コード、中断、分類不能なエラーのいずれかを観測した時点で連続性を解除する。他ツールの成否はBashの連続性へ影響させない。
 旧blocking MCPの入力例 `` `sandbox: danger-full-access` `` は移行説明と保護対象の識別にだけ残し、新経路へ渡さない。
 
 エージェントへ特定の行動・引数を要求するblockを新設する場合は、要求する要件を実行主体が事前に読み得る規範文書（常時ロードのルール、または当該作業で起動されるスキルの本文・参照文書）へ明示する。遮断メッセージだけを要件の初出にしない。

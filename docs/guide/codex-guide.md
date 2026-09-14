@@ -42,6 +42,9 @@ dotfilesはClaude Code・Agent Plugins向けの`agent-toolkit/`を正本とし�
 Codex専用rootは、Agent Plugins用の直下`plugin.json`と`mcp.json`を除き、`.codex-plugin/plugin.json`、hook、skill、Python実装、lockfileその他の実行資源を通常ファイルとして含む。
 Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、専用rootは相対シンボリックリンクを含めない。
 `.agents/plugins/marketplace.json`だけが`./agent-toolkit-codex`を参照し、Claude CodeとAgent Pluginsは引き続き`agent-toolkit/`を参照する。
+`agent-toolkit-codex/`はGitで追跡せず、`update-dotfiles`のpost-applyがCodex plugin導入の直前に生成する。
+手動で再生成する場合は`scripts/sync_codex_plugin_manifests.py`を実行し、`--check`で正本との一致を確認する。
+生成に失敗した場合はpost-applyが非0で終了し、失敗したstep名と詳細を更新logへ記録する。
 
 `update-dotfiles`は未導入、disabled又はversion不一致の場合に`codex plugin add`を実行し、導入後のversionと有効状態を再検査する。
 ローカルまたは外部のプラグインを実際に追加または更新した場合と、公開インストーラーで`codex plugin add`前後のversionまたはenabledが変化した場合、daemonの稼働状態を確認する。
@@ -54,11 +57,28 @@ codex app-server daemon restart
 公開インストーラーでは、プラグイン追加または`atk`配置が失敗した場合も、エラーの後の最終行へ
 必要な再起動コマンドを表示し、非0の終了状態を維持する。`agents_server` MCPの登録や
 `~/.claude.json`のUser scope設定は行わない。
-進行中のセッションを保護するため、app-server daemonは自動再起動しない。
+既定では進行中のセッションを保護するため、app-server daemonを自動再起動しない。
+`update-dotfiles`によるagent-toolkitの追加・更新後に稼働中daemonを自動再起動する場合は、実行環境へ次の設定を明示する。
+
+```bash
+DOTFILES_CODEX_DAEMON_AUTO_RESTART=1 update-dotfiles
+```
+
+PowerShellでは同じ実行に対して次のように設定する。
+
+```powershell
+$env:DOTFILES_CODEX_DAEMON_AUTO_RESTART = "1"
+update-dotfiles
+```
+
+自動再起動は、pluginの追加又は更新、導入済みversionと有効状態、hook状態の確認がすべて完了した後に1回だけ実行する。
+daemonが停止中の場合、pluginが無変更の場合及びmarketplace登録だけが変化した場合は実行しない。
+再起動に失敗した場合は終了コードをupdate-dotfilesログへ記録し、手動再起動の案内へ戻る。
+自動再起動により、Codex plugin又はremote-controlを利用する実行中セッションの接続が切断される可能性があるため、当該セッションを終了できる時点でだけ有効にする。
 
 プラグインの実体導入とversion別cacheの管理はCodex公式CLIへ委ねる。
 インストーラーは`codex plugin add`後に導入済みversionと有効状態を検証し、旧version名のリンクや互換台帳を独自に作成しない。
-更新中のセッションは作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
+既定動作では更新中のセッションを作業完了後に終了し、再起動案内が表示された場合はdaemonを再起動して新versionを利用する。
 
 再起動案内は、ローカルと外部のいずれかのプラグインを実際に追加または更新し、daemonの稼働状態を確認できた場合だけ表示される。
 daemonの未起動、状態確認の失敗、マーケットプレイスの登録だけの変化、公開インストーラーでの導入前後の状態の一致、
@@ -142,7 +162,6 @@ WindowsでCodexが実行中の場合は停止せず、導入、更新、旧版�
 配布内容は以下の構成とする。
 
 - `~/.codex/AGENTS.md`: Codex向けの基本記述と、agent-toolkitの基本原則・製品横断の実行運用を埋め込む
-- `~/.codex/agent-toolkit/rules/99-claude-code.md`: リンク先には配置するが、Claude Code固有規範のためCodex向けAGENTS.mdへ埋め込まない
 - `~/.codex/agent-toolkit/rules`: Claude Code側のagent-toolkitルール原本へのシンボリックリンク
 - `~/.codex/skills/*`: `.chezmoi-source/dot_claude/skills/*`のうちdotfiles固有のグローバルスキルへのシンボリックリンク。agent-toolkit skillsはCodex plugin marketplace経由で配布する
 - プロジェクト直下の`.agents/skills`: プロジェクト専用スキルディレクトリへのシンボリックリンク

@@ -21,7 +21,6 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     session = parser.add_mutually_exclusive_group(required=True)
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
-    session.add_argument("--claude-session-id", metavar="ID", help="Claude CodeのセッションID。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
     parser.add_argument("--target-repo", metavar="PATH", help="振り返り対象のリポジトリ。")
     return parser
@@ -70,11 +69,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         return _missing("report_script")
 
     transcript_path = pathlib.Path(args.transcript).expanduser().resolve() if args.transcript is not None else None
-    if args.claude_session_id is not None:
-        matches = list((pathlib.Path.home() / ".claude" / "projects").glob(f"**/{args.claude_session_id}.jsonl"))
-        if len(matches) != 1:
-            return _missing("transcript_path")
-        transcript_path = matches[0].resolve()
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
 

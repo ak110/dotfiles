@@ -118,6 +118,28 @@ def test_cleanup_rejects_path_with_session_id(tmp_path: pathlib.Path) -> None:
     assert captured.value.code == 2
 
 
+def test_create_with_session_root_returns_unregistered_child() -> None:
+    """`--session-root`は親の配下へ個別登録を持たない子領域を作成する。"""
+    session_root = subject.create_managed_temp("session", session_id="session-1")
+
+    assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root)]) == 0
+
+    entries = subject.list_managed_temp()
+    assert len(entries) == 1
+    assert entries[0]["path"] == str(session_root)
+    subject.cleanup_managed_temp(session_root)
+
+
+@pytest.mark.parametrize("conflict", ["--awi=20260913-221409-001.md", "--session-id=session-2"])
+def test_create_with_session_root_rejects_registration_options(conflict: str) -> None:
+    """セッション内の子領域へ個別登録用の引数を併用しない。"""
+    session_root = subject.create_managed_temp("session", session_id="session-1")
+
+    assert subject.main(["create", "--prefix", "work", "--session-root", str(session_root), conflict]) == 2
+
+    subject.cleanup_managed_temp(session_root)
+
+
 @pytest.mark.parametrize(
     ("directory", "existing_owner", "full_open_error", "expected_handle", "owner_changed"),
     [

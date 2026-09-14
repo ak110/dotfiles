@@ -44,7 +44,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Agent|Task",
+        "matcher": "Agent|Task|Bash",
         "hooks": [
           {
             "type": "command",

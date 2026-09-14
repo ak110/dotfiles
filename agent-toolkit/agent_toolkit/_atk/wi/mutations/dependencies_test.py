@@ -436,15 +436,15 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
     assert not (notes / "inbox/uwi.md").exists()
 
 
-class TestAdoptStampWithNoteAndCommit:
-    """adopt: --note・--commit指定時に`## 処理結果`節へ全項目が追記される。"""
+class TestAdoptStampWithNote:
+    """adopt: --note指定時に`## 処理結果`節へメモが追記される。"""
 
     def test_stamp_written_with_all_fields(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--note・--commit指定時、adopted/配下のファイル末尾に採否・処理日時・対応commit・メモが追記される。"""
+        """--note指定時、adopted/配下のファイル末尾に採否・処理日時・メモが追記される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="元本文")
         git_calls: list[_GitCall] = []
@@ -452,7 +452,7 @@ class TestAdoptStampWithNoteAndCommit:
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(
-                ["wi", "adopt", "fb-001.md", "--note", "採用理由サマリー", "--commit", "abc1234"],
+                ["wi", "adopt", "fb-001.md", "--note", "採用理由サマリー"],
                 home=tmp_path,
             )
 
@@ -461,7 +461,6 @@ class TestAdoptStampWithNoteAndCommit:
         assert "## 処理結果" in adopted_text
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
-        assert "- 対応commit: abc1234" in adopted_text
         assert "- メモ: 採用理由サマリー" in adopted_text
 
 
@@ -573,13 +572,13 @@ def test_agent_environment_rejects_add_with_user_comment(
 
 
 @pytest.mark.parametrize("route", ("message", "editor", "append"))
-def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
+def test_cli_edit_omits_body_verification_details_for_each_write_route(
     route: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各編集経路が一致判定だけを出力し、保存本文を再掲しない。"""
+    """各編集経路が一致判定と保存本文を再掲しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
@@ -607,7 +606,7 @@ def test_cli_edit_outputs_match_without_saved_body_for_each_write_route(
 
     assert exc_info.value.code == 0
     output = capsys.readouterr().out
-    assert output.count("    body_match: 一致\n") == 1
+    assert "body_match" not in output
     assert "saved_body" not in output
     assert message not in output
 
