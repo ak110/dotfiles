@@ -160,6 +160,15 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 
 本節の記述は2026年9月3日に`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`の`_latest_claude_usages`と`_stats_summary_data`を読んで確認した。再検証は同じ2つの関数を読む。
 
+## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：autoflushと問い合わせ順序：2026年9月14日
+
+2026年9月14日、SQLAlchemy 2.0.52の公式文書で、既定構成の`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
+2026年9月13日のAWIは、SQLAlchemy 2.0.51を使うアプリケーションで、保留中のUPDATEが一意制約へ違反する経路と、保留中のINSERTが`NOT NULL`制約へ違反する経路を実測した記録を持つ。
+同記録では、autoflushの無効化が同じ処理単位で追加した設定を読む検体を失敗させ、入力検証前の無条件な問い合わせが`Session`未開始の検体を失敗させた。
+再検証では、SQLAlchemy 2.0系の公式文書にある`Session Basics`の`Flushing`節と`Session.flush()`のAPI説明を確認する。
+あわせて、保留中のUPDATEとINSERTの後にORMへ問い合わせる検体で、問い合わせ前に各制約違反が送出されることを確認する。
+問い合わせを属性代入前かつ入力検証後へ移し、保留変更の反映が必要な箇所だけ明示的にflushした状態で、入力エラーと同じ処理単位の読み取りを対にして確認する。
+
 ## agent-toolkit/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日
 
 2026年9月10日、pyfltr 3.17.9のtextlintと本リポジトリの`.textlintrc.yaml`（`preset-jtf-style`の`1.1.3.箇条書き`を`shouldUsePoint: false`で運用する設定）で実測した。

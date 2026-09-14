@@ -67,6 +67,7 @@ description: >
 | `tailwindcss`（v4系） | `references/tailwindcss.md` |
 | `alpinejs`（v3系。`<script>`読み込みを含む） | `references/alpinejs.md` |
 | `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` |
+| `sqlalchemy`（2.0系） | `references/sqlalchemy.md` |
 | `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` |
 | `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` |
 

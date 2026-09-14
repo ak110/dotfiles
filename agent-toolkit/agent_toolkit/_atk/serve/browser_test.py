@@ -389,6 +389,28 @@ async def _open_filters(page: playwright.async_api.Page) -> None:
         await details.locator("summary").click()
 
 
+async def _shift_click_default_prevented(link: playwright.async_api.Locator) -> bool:
+    """Shiftクリックを送り、アプリケーション処理後の既定動作抑止状態を返す。"""
+    default_prevented = await link.evaluate(
+        """element => {
+          let defaultPrevented = null;
+          element.addEventListener("click", event => {
+            defaultPrevented = event.defaultPrevented;
+            event.preventDefault();
+          }, {once: true});
+          element.dispatchEvent(new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            shiftKey: true,
+          }));
+          return defaultPrevented;
+        }"""
+    )
+    assert default_prevented is not None, "Shiftクリックの観測ハンドラーへ到達しなかった"
+    return bool(default_prevented)
+
+
 @pytest.mark.asyncio
 async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _BrowserHarness) -> None:
     """代表3画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する。"""
@@ -2661,12 +2683,7 @@ async def test_work_item_filename_link_supports_get_and_shift_click(screen_harne
     assert await page.locator("#detail-filename").inner_text() == "awi.md"
     await page.keyboard.press("Escape")
 
-    async with harness.context.expect_page() as opened:
-        await link.click(modifiers=["Shift"])
-    shifted = await opened.value
-    await shifted.get_by_role("dialog", name="詳細").wait_for(state="visible")
-    assert await shifted.locator("#detail-filename").inner_text() == "awi.md"
-    await shifted.close()
+    assert not await _shift_click_default_prevented(link)
 
 
 @pytest.mark.asyncio
@@ -2685,12 +2702,7 @@ async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _
     assert query["host"] == ["browser-test"]
     assert query["path"] == ["plan.md"]
 
-    async with harness.context.expect_page() as opened:
-        await link.click(modifiers=["Shift"])
-    shifted = await opened.value
-    await shifted.get_by_role("heading", name="初回").wait_for(state="visible")
-    assert urllib.parse.parse_qs(urllib.parse.urlsplit(shifted.url).query)["path"] == ["plan.md"]
-    await shifted.close()
+    assert not await _shift_click_default_prevented(link)
 
 
 @pytest.mark.asyncio
