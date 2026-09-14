@@ -1064,7 +1064,7 @@ def test_add_operation_ignores_annotated_base_commit(
     notes = _prepare_notes(tmp_path, monkeypatch)
     plan = tmp_path / "plan.md"
     plan.write_text(
-        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 40}`（`git rev-parse HEAD`で実測）\n",
+        f"## 実装契約\n\n### 計画メタ情報\n\n- ベースコミット: `{'a' * 7}`（`git rev-parse --short=7 HEAD`で実測）\n",
         encoding="utf-8",
     )
 

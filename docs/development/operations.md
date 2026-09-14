@@ -333,7 +333,7 @@ dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開�
 次の条件がともに成立する場合に実施する。
 
 - 選定工程で処理対象へ固定した集合のうち、`atk wi list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力に残る項目が、`hold`のものと依存関係の未解決により`inbox`へ戻したものだけである
-- `git rev-parse origin/develop origin/master`が返す完全OIDが互いに異なる
+- `git rev-parse --short=7 origin/develop origin/master`が返す一意な短縮OIDが互いに異なる
 
 条件が成立しない場合は、成立しなかった条件と残る項目を報告し、PRを作成しない。
 公開工程の開始後に登録された項目は判定の対象へ含めず、次回セッションで扱う。

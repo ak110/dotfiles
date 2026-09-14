@@ -265,11 +265,50 @@ def test_plan_refactoring_example_and_large_output_examples_are_explicit() -> No
     plan_standard = (plugin_root / "skills" / "plan-mode" / "references" / "plan-file-standards.md").read_text(encoding="utf-8")
     subagent_rules = (plugin_root / "share" / "rules-subagent.md").read_text(encoding="utf-8")
 
-    assert "| 項目 | 内容 |" in plan_standard
-    assert all(f"| {name} |" in plan_standard for name in ("対象", "現状の問題", "対応", "本計画に含めるか"))
+    assert "| 対象 | 現状の問題 | 対応 |" in plan_standard
+    assert "本計画に含めるか" not in plan_standard
     assert all(
         example in subagent_rules for example in ("git status", "git diff", "git log", "git pull", "git merge", "gh ... --json")
     )
+
+
+def test_execution_review_covers_non_machine_authoring_contracts() -> None:
+    """実行レビューで執筆規範、責務分離及び読込配置を検出できる。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    recipient = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
+    parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
+    additions = (plugin_root / "skills" / "writing-standards" / "references" / "agent-documents-additions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "適用中の執筆規範又はプロジェクト規範に違反" in recipient
+    assert all(value in recipient for value in ("規範間", "親用文書と受信者用文書", "実行時に読む位置"))
+    assert "レビュー分類と判定手順を再定義しない" in parent
+    assert all(value in additions for value in ("適用母集団", "網羅検索", "既存違反が0件"))
+
+
+def test_lane_plan_creation_supplies_required_source() -> None:
+    """レーンの計画作成は内部作成処理が要求する本文sourceを渡す。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    recipient = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+
+    assert "create_plan_files.py --main-source <計画本文の絶対パス> --lane <レーン識別子>" in recipient
+
+
+def test_git_identifiers_prefer_refs_and_short_oids() -> None:
+    """Git識別子はrefを優先し、完全OIDを外部要求の一時値へ限定する。"""
+    plugin_root = pathlib.Path(__file__).resolve().parents[1]
+    repository_root = plugin_root.parent
+    operations = (plugin_root / "rules" / "02-agent-operations.md").read_text(encoding="utf-8")
+    termination = (plugin_root / "share" / "session-termination.parent.md").read_text(encoding="utf-8")
+    merge = (repository_root / ".claude" / "skills" / "merge-pr" / "SKILL.md").read_text(encoding="utf-8")
+    design = (plugin_root / "skills" / "writing-standards" / "references" / "design-time.md").read_text(encoding="utf-8")
+
+    assert "外部インターフェースが40桁か64桁のOIDを要求しないGit操作" in operations
+    assert "rev-parse --short=7 <ベースbranch名>" in termination
+    assert "git push origin origin/master:refs/heads/develop" in merge
+    assert "MERGE_OID" not in merge
+    assert "直接比較で十分な場合はhashを使わない" in design
 
 
 def test_handoff_preserves_resumption_inputs_and_stopping_authority() -> None:

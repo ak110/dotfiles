@@ -485,7 +485,7 @@ pickerの出力は、対象リポジトリのプロジェクト規範が選定�
 工程ごとに適した委譲先が異なり、用途を定めたキーの適用範囲を越えるため採用しない。
 公開工程の工程をメインが自ら実行する案は、終端担当が自ら行うCI修正を含む工程全体がメインのコンテキストを消費し、ユーザー判断への応答余地を狭めるため採用しない。
 終端担当へ専用の設定キーを新設する案も、当該工程の判断量が実装と同等であり`execute_model`の適用範囲に収まるため採用しない。
-レーンの終端操作をメインへ残す案は、レーンの最後の作業担当が同じ資源と完全OIDを保持しており、メインへ戻すと同じ値の受け渡しと再照合が増えるため採用しない。
+レーンの終端操作をメインへ残す案は、レーンの最後の作業担当が同じ資源とref又は7文字以上の一意な短縮OIDを保持しており、メインへ戻すと同じ値の受け渡しと再照合が増えるため採用しない。
 統合担当を実装担当のタスク文書へ担当種別として同居させる案は、同書の冒頭がコミット単位の実装を責務とし、必須入力へ実装するコミット単位を要求し、実装手順が計画ファイルの編集を禁じているため採用しない。同居させると、実装しない統合担当に対して同じ行為の義務と禁止が並存する。
 新しい委譲境界へ呼び元用文書と呼び先用文書のペアを設けない案も、委譲先が読む恒常手順が起動文の本文だけになり、起動のたびに手順を複製することになるため採用しない。
 
@@ -628,7 +628,7 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 委譲元は完了報告、報告されたツール終了結果又は実行識別子、`TaskStop`の結果及び実行時に公開され呼び出しに成功した`ListAgents`の状態を知り、
 同じworktreeへ実装担当を引き継ぐ場合に終了確認の成立を検収する。
 通常の実装モードでレビュー修正を委譲する場合は、メインが元の実装入力、レビュー表及び対象worktreeの絶対パスを修正担当へ渡す。
-修正担当は公開契約と承認済み変更を正本から確認し、レビュー表の指摘を採否判断して、採用指摘を実装単位commitの完全OIDへ対応付ける。
+修正担当は公開契約と承認済み変更を正本から確認し、レビュー表の指摘を採否判断して、採用指摘を実装単位commitの7文字以上の一意な短縮OIDへ対応付ける。
 対応付け不能、計画間衝突又は認可上限超過の場合は、履歴と作業ツリーを変更せず`needs_escalation`で返す。
 成立する場合は未pushの実装単位履歴へ修正を統合し、詳細をレビュー表と成果物へ記録して工程完了だけを返す。
 最終単位だけは修正・近接検証・stage後に`amend` phaseで再判定し、成功後にamendする。過去単位だけは各fixup作成前とautosquash直前に再判定し、fixupとautosquashを実行する。両方が対象の場合は過去単位だけを先に実装してautosquashし、最終単位を実装・近接検証・stageした後、amend直前の再判定後にamendする。レビュー修正専用commitを残さないことは努力目標とする。対象OIDの不一致、対象commitのpush済み、複数単位へ不可分にまたがる修正、各中間commitの公開契約を維持できない修正のいずれかでは履歴書換えを開始せず通常commitを選ぶ。履歴書換えを開始した後に失敗した場合は新規commitへ切り替えず、`agent-toolkit/skills/commit/references/history-rewrite.md`の`## 失敗時の扱い`に従う。
@@ -637,7 +637,7 @@ sourceによる由来境界の判定と利用者認可の確認を分け、sourc
 remote広告refの直積証跡・replace ref・graft・shallow複製への追加防御は、対応する観測事象を得るまで導入しない（確認への回答に由来）。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。専用の`pre_fixup` phaseを先頭に、各再判定phase（`fixup:<単位順>`、`autosquash`、`amend`）を独立した反復配列要素として記録する。
 `rewrite_guard`のphaseは通常の計画実行モードのレビュー修正だけに記録し、それ以外では`not_applicable`とする。
-実装担当は履歴書換え前の完全OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容と現行Git実体を照合して回復する。準備中の証拠しかない場合又は実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。メインへの中間受渡しと成果物・Git・検証結果の再検収は設けない。
+実装担当は履歴書換え前の7文字以上の一意な短縮OIDと`rewrite_guard`をレビュー表の対象指摘へ保存し、履歴統合後に変更前後OID対応と全phaseの結果へ更新する。同じ担当の会話履歴が欠落した場合は、レビュー表の完了内容と現行Git実体を照合して回復する。準備中の証拠しかない場合又は実体を確定できない場合は`needs_escalation`で返し、無指定reflogから旧OIDを復元しない。メインへの中間受渡しと成果物・Git・検証結果の再検収は設けない。
 初回実装担当のrouteと実効`engine`・`model`・`effort`を保持し、レビュー修正の起動直前に解決した今回routeの実効3値と組み合わせて引継ぎを確定する。同じ担当へ同じタスクの未完了作業・指摘への対応・再レビューを返し、実効3値がすべて一致する場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新しい実装担当を起動し、元の実装入力と正本の絶対パスを開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
 再判定不能や対象OIDのpush済み検出を含む履歴書換え開始後の失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
@@ -840,7 +840,7 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 採用案そのものを選び直せる主体はメインだけであり、要件と仕様に関わる指摘をレーン内で局所修正すると反復が止まらないためである。
 レビュー収束後、メインはレーンへマージを許可する。許可後のrebase、競合記録、必要な再レビュー、ffマージ、対象項目の`adopt`ならびに所有資源回収は最後の作業担当が完了する。上流要求と対象リポジトリ側の要求が混在する項目は`adopt`せず、所有資源を回収して固定の完了報告を返した後にメインが依存を更新して`inbox`へ戻す。
 マージ許可は当該レーンが`統合完了`を返すまで有効とし、競合解消と再レビューを経た再収束では許可を再発行しない。収束ごとに許可を失効させると、許可の再発行と統合完了が交差して、完了済みのレーンへ同じ統合指示が届くためである。
-実行レビュー担当へ渡す開始時点の完全OIDは、渡す直前に対象worktreeで解決できることを実測してから渡す。範囲起点の誤りはレビュー対象範囲の取り違えと担当側の実行失敗を生むため、記憶と転記で識別子を組み立てない。
+実行レビュー担当へ渡す開始時点の7文字以上の一意な短縮OIDは、渡す直前に対象worktreeで解決できることを実測してから渡す。範囲起点の誤りはレビュー対象範囲の取り違えと担当側の実行失敗を生むため、記憶と転記で識別子を組み立てない。
 
 外部可視の変更を伴うことを担当AWIの本文から起草前に判定できる場合は、メインが承認を取得してから計画担当を起動し、承認した操作、対象、影響範囲と承認の出所を起動文へ渡す。
 承認の回答を得られない場合はUWIを登録して依存を追加し、承認を得るまで当該計画担当を起動しない。
@@ -853,7 +853,7 @@ Claude Codeは現在のtranscript絶対パスを通常サブエージェント�
 詳細な被覆報告とメインによる成果物再検収は、作業担当とレビュー担当の責務を重複させるため採用しない。
 
 計画担当は要求と調査根拠を知り、実装者が再現できる判断を計画へ残す。
-メインは全実装単位と最終検証の完了後、初回実行レビューの起動直前に、計画の既存節、開始時点の完全OIDで特定した実体及び計画外の明示入力から`review_contract`を生成する。
+メインは全実装単位と最終検証の完了後、初回実行レビューの起動直前に、計画の既存節、開始時点の7文字以上の一意な短縮OIDで特定した実体及び計画外の明示入力から`review_contract`を生成する。
 各条項は独立して成否を判定できる粒度とし、契約本文又は一意な参照先と出典を起動プロンプトへ直接含める。専用成果物と計画ファイルの固定H2は設けない。
 実行レビュー担当は計画と差分、生成済みの`review_contract`を受け取り、計画照合を終えた後に同じコンテキストで`review_contract`へ照合する。
 第2段階では計画の採用案だけでなく、正規化した目的、公開契約、境界条件及び安全性を評価する。
@@ -884,9 +884,9 @@ fixupの作成条件は、対象コミット件名が範囲内で一意であり
 この事前判定後も、autosquash直前の再判定をTOCTOU対策として実行する。
 各fixup作成後は、対象OIDから得た統合先件名と形式に応じた制御件名（`fixup!`または`amend!`）の完全一致を`git log -1 --format=%s`で確認する。
 初回実装担当と今回routeの実効`engine`、`model`及び`effort`がすべて一致し、同じ担当へ同じタスクの未完了作業、指摘への対応又は再レビューを返す場合だけ元の実装担当threadを継続する。いずれかの実効値が異なる場合を含むそれ以外は旧担当の終端確認後に今回routeで新規起動し、検収済み状態を開始前に1回だけ渡す。開始後は同じ実装担当が再判定からamendまでを完結する。
-autosquash成功後は実装担当が`git rev-parse HEAD`で取得した書換え後HEADの完全OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
+autosquash成功後は実装担当が`git rev-parse --short=7 HEAD`で取得した書換え後HEADの一意な短縮OIDへautosquash成功後の2回目のpush済み判定対象を置換する。
 `rewrite_guard`は`phase`・`target_oids`・`published_decision`・各Gitコマンドの終了コード・エラー要約へ縮小する。
-実装担当は履歴書換え前後の完全OID対応とphaseごとの`rewrite_guard`反復証跡をレビュー表へ保存し、統合前に現行Git実体へ照合する。
+実装担当は履歴書換え前後の7文字以上の一意な短縮OID対応とphaseごとの`rewrite_guard`反復証跡をレビュー表へ保存し、統合前に現行Git実体へ照合する。
 汎用判定と制御件名検査を含む各phaseの失敗は、`history-rewrite.md`の`## 失敗時の扱い`に従う。
 詳細な操作手順（fixup・autosquash・amendの順序、phase名、判定コマンド）は`history-rewrite.md`を正本とし、本書へ転記しない。
 
@@ -1354,7 +1354,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 `test-linux`と`test-windows`は全履歴を取得し、現行HEADの時刻から約72時間前の祖先を選ぶ。
 管理一時ディレクトリ内へローカルbare remote、旧版checkout及び隔離HOMEを構成し、旧版をchezmoiで適用する。
 その後、同じbranchのremote refだけを現行HEADへ進め、旧版checkout内の`bin/update-dotfiles`又は
-`bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの完全OIDが
+`bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
 検証開始時の現行HEADと一致した場合だけ成功とする。利用者HOMEと外部remoteは変更対象にしない。
 
 | イベント | head repository | head branch | base branch | 共通6 jobの実処理所有者 | 表示名 |
@@ -1400,19 +1400,19 @@ ruleset一覧には個別ref条件が含まれないため、同名候補の完�
 GitHubのruleset API仕様は、2026年8月26日時点の[Rulesets REST API](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10)を参照する。
 workflowの`workflow_run`入力境界は、同日時点の[workflow_runイベント仕様](https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#workflow_run)を参照する。
 
-PRマージ後は、マージコミットの完全OIDを取得して`origin/master`と照合する。
-その後にpush前のCI baselineを保存し、マージコミットの完全OIDと宛先refを明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
-develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットの完全OIDが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。OID不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終完全OID照合は省略しない。
-同期push後に`git fetch origin develop master`する。`git rev-parse origin/develop origin/master`で`origin/develop`と`origin/master`の完全OIDを比較し、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse develop`も同じ完全OIDであることを確認する。現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であり、develop固有検査には含めない。CI定義が変化した場合は省略条件を再判定する。
+PRマージ後は、`origin/master`をマージコミットの正本として保持し、`git rev-parse --short=7 origin/master`で人間可読の識別子を取得する。
+その後にpush前のCI baselineを保存し、`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
+develop CIの待機は、masterで検収したマージコミットとdevelopへ同期したコミットが同一であり、現行CI定義にdevelop固有job、branchで分岐する追加検査、外部検査がないことを確認できる場合だけ省略する。commit不一致、CI構成の判定不能、固有検査の存在又はrun識別の曖昧さがある場合は、develop push前のbaselineを用いる既存の待機経路へ戻す。master CI、必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commit照合は省略しない。
+同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop origin/master`で`origin/develop`と`origin/master`の一意な短縮OIDを比較し、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。現行の`.github/workflows/ci.yaml`は全branchのpushに共通jobを実行し、develop固有jobを持たない。`audit.yaml`はschedule／manual、`release-statusline.yaml`はmaster CI後のRelease検収であり、develop固有検査には含めない。CI定義が変化した場合は省略条件を再判定する。
 待機する場合、runが登録される前は読み取りだけを継続し、自作のshell sleep loopを追加しない。
 
-マージコミットの第一親との差分にstatuslineが含まれる場合は、同じ完全OIDの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。
+`origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub Release及びLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
 statuslineの差分がない場合はRelease成果物を検収しない。
-成功時は`origin/develop`と`origin/master`がマージコミットと同じ完全OIDであることを確認する。ローカル`develop`の同期は、同期を実行する直前に作業ツリーのclean、現在branchが`develop`であること、マージコミットへのfast-forward可能性を再取得し、すべて成立した場合だけ実施して、リリースの成立条件から分離する。現在branchを更新するコマンドを事前判定の結果だけで実行しない。同期を実施した経路ではローカル`develop`の参照を更新し、条件が成立せず同期を省略した経路では本手順がローカルの作業ツリーとローカルbranchへ書き込まない。いずれの経路でも、待機中に生じた変更を含めてローカルの状態をリリースの成否判定に用いない。
-ローカルの同期状態をリリースの成立条件へ含める案は、公開対象が完全OIDで固定された後も無関係な作業中の差分でリリースを停止させるため採用しない。
+成功時は`origin/develop`と`origin/master`がマージコミットと同じcommitであることを7文字以上の一意な短縮OIDで確認する。ローカル`develop`の同期は、同期を実行する直前に作業ツリーのclean、現在branchが`develop`であること、マージコミットへのfast-forward可能性を再取得し、すべて成立した場合だけ実施して、リリースの成立条件から分離する。現在branchを更新するコマンドを事前判定の結果だけで実行しない。同期を実施した経路ではローカル`develop`の参照を更新し、条件が成立せず同期を省略した経路では本手順がローカルの作業ツリーとローカルbranchへ書き込まない。いずれの経路でも、待機中に生じた変更を含めてローカルの状態をリリースの成否判定に用いない。
+ローカルの同期状態をリリースの成立条件へ含める案は、公開対象がrefで固定された後も無関係な作業中の差分でリリースを停止させるため採用しない。
 
 初回branch初期化は1回だけ実行する。
-実装済みHEADの完全OIDからローカル`develop`を作成して公開し、developのCIを確認する。
+実装済みHEADのrefからローカル`develop`を作成して公開し、developのCIを確認する。
 `origin/master`の移行前OIDを保存し、初回リリースPRを作成しない。
 ローカル`develop`と`origin/develop`のOID一致を確認した後、ローカル`master`の削除直前OIDを記録して削除する。
 公開又はCIが失敗した場合はローカル`master`を削除せず、成立済みの外部状態と再開点を報告する。
@@ -1484,7 +1484,7 @@ plan-modeの内部作成経路が作業rootで計画ファイルを準備し、s
 失敗時は作業側を保持し、保存先が同内容なら再実行でcommit・pushを再開し、異内容なら上書きせず停止する。
 保存時はメイン計画ファイルの作成日から年月を取得し、stemを変えずに`private-notes/plans/yyyy/MM/`へ移動する。
 原因commitに対応する計画契約がない場合は、新しい計画を作成せず、計画作業root直下の`ci-<起点OID>.exec-review.tsv`を用いる。
-最初の原因commit完全OIDを起点OIDとし、同じ再帰的CI失敗処理では原因commitが変わっても同じ表を継続する。
+最初の原因commitの7文字以上の一意な短縮OIDを起点OIDとし、同じ再帰的CI失敗処理では原因commitが変わっても同じ表を継続する。
 `atk plans commit`は当該表だけを`private-notes/plans/ci/`へcommit・pushする。
 既存の日付階層の作業計画と過去に保存された絶対パスは読み書き互換として扱い、直下の正規作業バンドルは旧形式移行から除外する。
 

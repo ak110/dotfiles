@@ -521,8 +521,11 @@ PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS: tuple[str, ...] = (
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
 """通常変更の恒久化表の固定4列。バグ対応はバグ調査表を正本とする。"""
 
-PLAN_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
-"""`### リファクタリング`が対象ごとに置く固定4行。対象が無い場合は表を置かず地の文とする。"""
+PLAN_REFACTORING_TABLE_HEADER: tuple[str, ...] = ("対象", "現状の問題", "対応")
+"""`### リファクタリング`が持つ現行3列。対象が無い場合は表を置かず地の文とする。"""
+
+PLAN_LEGACY_REFACTORING_TABLE_ROWS: tuple[str, ...] = ("対象", "現状の問題", "対応", "本計画に含めるか")
+"""旧2列リファクタリング表の固定4行。既存計画の読み取り互換にだけ用いる。"""
 
 PLAN_PLACEHOLDER_WORDS: frozenset[str] = frozenset({"なし", "不要", "該当なし", "特になし"})
 """検討結果として成立しない結論語。これだけの記載は検討の省略として拒否する。"""

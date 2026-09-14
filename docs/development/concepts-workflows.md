@@ -41,7 +41,7 @@ statusline（`rust/claude-statusline/`配下）を変更した場合は、その
 初回移行では初回リリースPRを作成しない。
 実装済みHEADを`develop`として公開し、`origin/master`が移行前OIDであることを確認する。
 ローカル`master`は、ローカル`develop`と`origin/develop`のOID一致を確認した後にだけ削除する。
-branchの公開又はCIが失敗した場合は`master`を保持し、同じ完全OIDを再確認してから再開する。
+branchの公開又はCIが失敗した場合は`master`を保持し、同じcommitをref又は7文字以上の一意な短縮OIDで再確認してから再開する。
 
 ## WIキューの運用
 
