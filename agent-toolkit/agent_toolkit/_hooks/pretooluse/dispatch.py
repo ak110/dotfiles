@@ -24,14 +24,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_write / start_shell / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
-
-wait:
-
-- 既存sessionの観測として通過 (pass-through)
 
 list:
 
@@ -42,6 +38,7 @@ Bash:
 - 多段シェルへのコード文字列、heredocと後段制御演算子の併用、`.env`内容出力の遮断 (block)
 - 単純な明示パスの不存在と`atk`未対応オプションの遮断 (block)
 - 単純な`git grep`後方オプションの受理位置への移動 (auto-fix)
+- 350行を超える通常ファイルの静的に確定できる全文取得の遮断 (block)
 - 長い固定`sleep`の後に別コマンドを連結する前景待機の検出 (warn/block)
 - 高容量のユーザー領域を無限定に再帰検索する実行位置の検出 (warn)
 - 検証コマンド又は保存本文を返すコマンドの出力を`tail`・`head`で切り詰める指定の補正又は遮断 (auto-fix/block)
@@ -197,6 +194,7 @@ if TYPE_CHECKING:
         _check_bash_git_log_decorate,
         _check_bash_git_push_after_amend_with_dirty_status,
     )
+    from agent_toolkit._hooks.pretooluse.large_reads import check_large_bash_read, check_large_read
     from agent_toolkit._hooks.pretooluse.notices import _llm_notice
     from agent_toolkit._hooks.pretooluse.shell_checks import (
         _autofix_bash_command,
@@ -401,6 +399,10 @@ def main(payload_text: str) -> int:
         file_path = tool_input.get("file_path", "")
         if isinstance(file_path, str) and _check_secret_read(file_path):
             return exit_with(2)
+        large_read_notice = check_large_read(tool_input, cwd)
+        if large_read_notice is not None:
+            print(large_read_notice, file=sys.stderr)
+            return exit_with(2)
         flush_pending_notices()
         return 0
 
@@ -457,6 +459,10 @@ def _handle_bash_tool(
             ),
             file=sys.stderr,
         )
+        return 2
+    large_read_notice = check_large_bash_read(command, cwd)
+    if large_read_notice is not None:
+        print(large_read_notice, file=sys.stderr)
         return 2
     warnings: list[str] = []
     sleep_poll_result = _check_bash_sleep_poll_pattern(command, session_id, bool(tool_input.get("run_in_background")))

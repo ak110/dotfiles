@@ -110,22 +110,20 @@ Codexの委譲待機では、ホストが提供する`wait_agent`を使って終
 
 ### agents_serverの二層待機
 
-Codexが`functions.exec`のように遅延実行されるツールを介して`agents_server`の`wait`を呼ぶ場合、内側の`wait`と外側の実行セルは独立した待機である。
+Codexが`functions.exec`のように遅延実行されるツールを介して`atk agents wait`を実行する場合、内側のCLIプロセスと外側の実行セルは独立した待機である。
 
-- 内側の`agents_server.wait`は引数を受け取らず、待機上限をサーバーが導出する。この扱いは`agent-toolkit:delegation`が定めるtimeout省略の原則をCodexの二層構造へ写像したものである
-- 外側の実行が終端前にyieldして`cell_id`を返した場合は、外側のyieldだけを理由とする進捗発話を行わず、`functions.wait`へ同じ`cell_id`を渡す。
-  内側の`wait`は継続しているため、同じ待機を新たに発行しない。
-  新しい成果、異常又は判断を要する事実の報告と、ホストの上位指示による発話は、それぞれの契約に従う
-- 外側の進捗通知の周期と実行セルのyieldは、内側の`agents_server.wait`のタスク固有timeoutとして扱わない。応答性の制御は外側のyieldと再開で成立する
-- 内側の`agents_server.wait`がCodexの1回のツール呼び出しの上限で失敗した場合も、待機対象のsessionは終端せず実行を続ける。`agents_server`の`list`で当該sessionの`status`を確認し、`wait`を再発行する。当該`wait`は引数を受け取らないため、上限を避けるための指定を渡す経路も無い
+- 内側の`atk agents wait`へタスク固有のtimeoutを渡さず、CLIが定める待機上限を使う
+- 外側の実行が終端前に`cell_id`を返した場合は、外側のyieldだけを理由とする進捗発話を行わず、`functions.wait`へ同じ`cell_id`を渡す。CLIプロセスは継続しているため、同じ待機を新たに発行しない
+- 外側の進捗通知の周期と実行セルのyieldをCLIのタスク固有timeoutとして扱わない。応答性は外側のyieldと再開で制御する
+- CLIが待機上限へ達した場合は、返されたsession識別子とstatusを確認し、対象が未終端なら同じ経路で新しい`atk agents wait`を開始する
 
 順序の例を次に示す。
 
 1. `agents_server.start`でsessionを開始し、`session_id`を保持する。
-2. 遅延実行されるツールの中で`agents_server.wait`を引数なしで呼ぶ。
-3. 外側の実行が終端前にyieldして`cell_id`を返した場合は、外側のyieldだけを理由とする進捗発話を行わず、`functions.wait`へ同じ`cell_id`を渡す。内側の`wait`は継続しているため、`agents_server.wait`を再度呼ばない。
-4. 外側の実行セルが再開して終わった時点で、内側の`wait`が返した終端結果を同じ応答から受け取る。
-5. `cell_id`を得られない実行環境では、外側のyieldが起きないため、内側の`wait`の戻り値をそのまま受け取る。
+2. 遅延実行されるツールの中で`atk agents wait`を実行する。
+3. 外側の実行が終端前に`cell_id`を返した場合は、`functions.wait`へ同じ`cell_id`を渡す。`atk agents wait`を再度起動しない。
+4. 外側の実行セルが再開して終わった時点で、CLIが返した終端結果又は通知を同じ応答から受け取る。
+5. `cell_id`を得られない実行環境では、CLIの戻り値をそのまま受け取る。
 
 独立した複数のツール呼び出しは、Codexホストと各ツールの契約がともに許可する場合だけ同一応答内で並列化する。
 個別ツールが逐次呼び出しを要求する場合は、その契約を優先する。
@@ -161,7 +159,7 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | `TaskStop` | 実際の別主体へ委譲した経路の中断操作を使い、返された識別子で停止を確認する |
 | `ToolSearch` | 実行時に公開されたツール一覧又は検索機能を確認し、利用可能な個別ツールへ分解する。必須能力が公開されない場合は差し戻す |
 | サブエージェントの完了待機・稼働確認・中断 | 実際の別主体へ委譲した経路が返す識別子と`wait`・状態確認・中断操作を使う |
-| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_shell`・`mcp__agents_server__wait`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`・`mcp__agents_server__list`・`mcp__agents_server__stop`（agents_serverの委譲・探索委譲・シェル実行委譲・観測・継続・中断・一覧・破棄） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う |
+| `mcp__agents_server__start`・`mcp__agents_server__start_explore`・`mcp__agents_server__start_write`・`mcp__agents_server__start_shell`・`mcp__agents_server__send_message`・`mcp__agents_server__kill`・`mcp__agents_server__list`・`mcp__agents_server__stop`（agents_serverの委譲・探索委譲・軽量書込委譲・シェル実行委譲・継続・中断・一覧・破棄） | 実際の別主体へ委譲する場合は、`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路と各ツールのスキーマに従う。結果の待機と受領には`atk agents wait`を使う |
 | `Monitor` | 実際の別主体へ委譲した経路の状態確認と待機結果を用いて対象を観測する |
 | `AskUserQuestion` | Plan modeで`request_user_input`が公開される場合は構造化質問を使い、Default modeでは「ユーザー確認の提示形式」節の固定テンプレートでユーザーへ直接質問する |
 | `Skill`（スキル呼び出し） | 明示起動又はdescription一致による暗黙起動でスキルを選択し、選択後に対応する`SKILL.md`を全文読む。frontmatterに`context: fork`を持つスキルも分離コンテキストでは起動されず本文が現在のコンテキストへ展開されるため、出力の隔離が目的の場合は`agent-toolkit:delegation`の`references/runtime-routing.md`の`agents_server`経路へ委譲して要約だけを受け取る |
@@ -171,7 +169,7 @@ Codexで実行するときは、次の対応表に従って読み替える。
 | `EnterPlanMode`・`ExitPlanMode` | `plan modeの扱い`節を参照 |
 | `ScheduleWakeup`・`CronCreate`・`CronList`・`CronDelete` | 現行セッションで公開された能力を確認できない場合は、手動運用又はユーザーへの依頼へ切り替える |
 
-Claude Code側の`agents_server`は、`start`・`start_explore`・`start_shell`・`wait`・`send_message`・`kill`・`list`・`stop`の8ツールでCodexまたはClaudeへ委譲し、当該sessionを管理する。
+Claude Code側の`agents_server`は、`start`・`start_explore`・`start_write`・`start_shell`・`send_message`・`kill`・`list`・`stop`の8ツールでCodexまたはClaudeへ委譲し、当該sessionを管理する。結果の待機と受領は`atk agents wait`が担う。
 `start`は工程別モデル設定の`model_type`を受け取り、engine、model及びeffortを設定の候補列の先頭から解決する。engineの可用性で起動できない候補は、サーバーが除外集合へ加えて次候補で起動する。`start`が可用性の失敗を返すのは全候補が起動不能な場合だけであり、この失敗へ呼び出し側が再起動を重ねない。起動後の実行中に可用性の失敗を観測した場合だけ、同じ`model_type`で`start`を呼び直す。可用性を理由として終端したsessionの採用候補をサーバーが起動条件ごとに保持して次の起動から除外するため、呼び出し側はsession識別子を渡さない。
 `start_explore`は調査専用の軽量な起動条件でthreadを開始し、Codex backendではプロジェクト指示の読込を省く。`start_shell`は同じ軽量な起動条件でコマンドを実行し、終了状態と要約だけを返す。どちらも委譲と直接実行の分岐を、各ツールの説明が示す採算の目安で判定する。
 Codex側の`send_message`は実行中turnへのsteerと終端後のreply開始を担い、`kill`は実行中turnへ中断を要求する。CodexからClaudeへ追加指示を返す場合も、同じsessionへ`send_message`を使う。

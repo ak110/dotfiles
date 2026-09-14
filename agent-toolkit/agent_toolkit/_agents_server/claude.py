@@ -29,6 +29,7 @@ from agent_toolkit._agents_server.state import (
     SessionInitializationTimeoutError,
     SessionOwnerGoneError,
     SessionState,
+    _append_bounded,
     _begin_reply,
 )
 from agent_toolkit._plan import locations as _plan_file
@@ -41,9 +42,51 @@ _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
     "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
     "shell": ["Bash", "Read"],
+    "write": ["Read", "Write", "Edit", "Glob", "Grep"],
 }
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
+_INITIALIZATION_STDERR_LIMIT_CHARS = 4000
+
+
+class _InitializationDiagnostic:
+    """Claude SDK初期化の到達点と有界な観測値を保持する。"""
+
+    def __init__(self) -> None:
+        self.stage = "created"
+        self.received_message_types: dict[str, int] = {}
+        self.child_pid: int | None = None
+        self.stderr = ""
+        self.exception_type: str | None = None
+        self.exception_body: str | None = None
+
+    def capture_stderr(self, text: str) -> None:
+        self.stderr = _append_bounded(self.stderr, text, _INITIALIZATION_STDERR_LIMIT_CHARS)
+
+    def capture_client(self, client: Any) -> None:
+        transport = getattr(client, "_transport", None)
+        process = getattr(transport, "_process", None)
+        pid = getattr(process, "pid", None)
+        self.child_pid = pid if isinstance(pid, int) else None
+
+    def record_message(self, message: Any) -> None:
+        name = _message_name(message)
+        self.received_message_types[name] = self.received_message_types.get(name, 0) + 1
+
+    def record_exception(self, error: BaseException) -> None:
+        self.exception_type = type(error).__name__
+        self.exception_body = str(error) or self.exception_type
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "received_message_types": dict(sorted(self.received_message_types.items())),
+            "received_message_count": sum(self.received_message_types.values()),
+            "child_pid": self.child_pid,
+            "stderr": self.stderr.strip(),
+            "exception_type": self.exception_type,
+            "exception_body": self.exception_body,
+        }
 
 
 def _settings_from_cmdline(cmdline: bytes) -> str | None:
@@ -110,6 +153,7 @@ def _build_options(
     effort: str | None,
     session_id: str | None = None,
     launch_kind: LaunchKind = "delegate",
+    stderr: Callable[[str], None] | None = None,
 ) -> Any:
     """Claude Code既定のシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
@@ -154,6 +198,8 @@ def _build_options(
             }
         ),
     }
+    if stderr is not None:
+        options["stderr"] = stderr
     if (settings := _parent_settings()) is not None:
         options["settings"] = settings
     if lightweight:
@@ -286,7 +332,15 @@ class ClaudeServerManager:
         turn_seq: int,
     ) -> SessionState:
         """新規又は保存済みsessionを所有する長命タスクを開始する。"""
-        options = _build_options(cwd, model, effort, session_id, launch_kind=launch_kind)
+        diagnostic = _InitializationDiagnostic()
+        options = _build_options(
+            cwd,
+            model,
+            effort,
+            session_id,
+            launch_kind=launch_kind,
+            stderr=diagnostic.capture_stderr,
+        )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
         task: asyncio.Task[Any] = asyncio.create_task(
@@ -302,6 +356,7 @@ class ClaudeServerManager:
                 launch_kind=launch_kind,
                 excluded_candidates=excluded_candidates,
                 turn_seq=turn_seq,
+                diagnostic=diagnostic,
             )
         )
         self._tasks.add(task)
@@ -311,12 +366,16 @@ class ClaudeServerManager:
         except TimeoutError as exc:
             # SDKがinitを届けないまま接続を保つ場合、当該待機は所有タスクの失敗経路では解消しない。
             await self._release_unstarted_task(task)
+            diagnostic.record_exception(exc)
+            _LOG.error("Claude session初期化timeout: diagnostic=%s", diagnostic.public())
             raise SessionInitializationTimeoutError(
                 f"Claude session did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
+                f"cwd={cwd}, launch_kind={launch_kind}, model={model}; diagnostic={diagnostic.public()}"
             ) from exc
-        except BaseException:
+        except BaseException as exc:
             await self._release_unstarted_task(task)
+            diagnostic.record_exception(exc)
+            _LOG.error("Claude session初期化失敗: diagnostic=%s", diagnostic.public())
             raise
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
@@ -402,6 +461,7 @@ class ClaudeServerManager:
         launch_kind: LaunchKind,
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
+        diagnostic: _InitializationDiagnostic,
     ) -> None:
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
 
@@ -414,13 +474,19 @@ class ClaudeServerManager:
         retrieved: _Command | None = None
         active_future: asyncio.Future[_DeliveryResult] | None = None
         try:
+            diagnostic.stage = "creating_client"
             client = self._client_factory(options)
+            diagnostic.stage = "connecting"
             await client.connect()
+            diagnostic.capture_client(client)
+            diagnostic.stage = "connected"
             if isinstance(prompt, ResumePrompt):
                 await prompt.deliver(client.query)
             else:
                 await client.query(prompt)
+            diagnostic.stage = "query_sent"
             iterator = aiter(client.receive_messages())
+            diagnostic.stage = "receiving_messages"
             while True:
                 loop = asyncio.get_running_loop()
                 now = loop.time()
@@ -485,6 +551,7 @@ class ClaudeServerManager:
                         else:
                             raise RuntimeError("Claude Agent SDK message stream ended before ResultMessage") from None
                     else:
+                        diagnostic.record_message(message)
                         name = _message_name(message)
                         if name == "SystemMessage" and getattr(message, "subtype", None) == "init":
                             data = getattr(message, "data", {})
@@ -498,6 +565,8 @@ class ClaudeServerManager:
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
                             # turnごとにinitが再送されても再生成しない。
                             if session is None:
+                                diagnostic.stage = "initialized"
+                                _LOG.info("Claude session初期化完了: diagnostic=%s", diagnostic.public())
                                 session = SessionState(
                                     session_id=session_id,
                                     cwd=cwd,
@@ -568,7 +637,10 @@ class ClaudeServerManager:
                         message_task = None
                     iterator = await self._handle_command(client, session, command, iterator)
                     active_future = None
-        except Exception as exc:
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            diagnostic.record_exception(exc)
             if session is None:
                 if not initialized.done():
                     initialized.set_exception(exc)

@@ -320,7 +320,7 @@ def test_missing_state_dir_reports_alternative(
     captured = capsys.readouterr()
     assert not captured.out
     assert "状態ディレクトリを解決できません" in captured.err
-    assert "`agents_server`の`list`と`wait`" in captured.err
+    assert "`atk agents list`と`atk agents wait`" in captured.err
 
 
 def test_agents_wait_returns_notices_while_running(
@@ -353,20 +353,25 @@ def test_agents_wait_returns_notices_while_running(
     assert not any(notices.iterdir())
 
 
-def test_agents_wait_reports_seconds_since_update_on_timeout(
+def test_agents_wait_reports_seconds_since_output_on_timeout(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """待機上限の応答はsessionの最終活動時刻を返す。"""
-    updated_at = "2026-09-09T00:00:00+00:00"
-    _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": updated_at}])
+    """待機上限の応答はsessionの最新テキスト出力時刻を返す。"""
+    output_updated_at = "2026-09-09T00:00:00+00:00"
+    _write_own_status(
+        wait_environment,
+        [{"session_id": "session-1", "output_updated_at": output_updated_at, "updated_at": "2099-01-01T00:00:00+00:00"}],
+    )
 
     with pytest.raises(SystemExit, match="3"):
         atk.main(["agents", "wait"])
 
     response = json.loads(capsys.readouterr().out)
-    assert response["updated_at"] == updated_at
-    assert isinstance(response["seconds_since_update"], float)
+    assert response["output_updated_at"] == output_updated_at
+    assert isinstance(response["seconds_since_output"], int)
+    assert "updated_at" not in response
+    assert "seconds_since_update" not in response
 
 
 @pytest.mark.parametrize(
@@ -374,19 +379,19 @@ def test_agents_wait_reports_seconds_since_update_on_timeout(
     [
         ([None], {"status": "running"}),
         (
-            [{"session_id": "session-1", "updated_at": "2026-09-09T00:00:00"}],
+            [{"session_id": "session-1", "started_at": "2026-09-09T00:00:00"}],
             {"session_id": "session-1", "status": "running"},
         ),
     ],
-    ids=["non-dict-session", "naive-updated-at"],
+    ids=["non-dict-session", "naive-started-at"],
 )
-def test_agents_wait_omits_unreadable_session_updated_at_on_timeout(
+def test_agents_wait_omits_unreadable_output_activity_on_timeout(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     sessions: list[object],
     expected: dict[str, str],
 ) -> None:
-    """解釈不能な共有状態では更新時刻を省略してrunning応答を返す。"""
+    """解釈不能な共有状態では出力活動を省略してrunning応答を返す。"""
     _write_own_status(wait_environment, sessions)
 
     with pytest.raises(SystemExit, match="3"):
@@ -399,13 +404,18 @@ def test_agents_wait_returns_stall_notice_after_threshold(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """長時間更新されないsessionは待機上限応答へ停滞候補を付ける。"""
-    _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": "2000-01-01T00:00:00+00:00"}])
+    """長時間出力されないsessionは待機上限応答へ停滞候補を付ける。"""
+    _write_own_status(
+        wait_environment,
+        [{"session_id": "session-1", "started_at": "2000-01-01T00:00:00+00:00", "output_updated_at": None}],
+    )
 
     with pytest.raises(SystemExit, match="3"):
         atk.main(["agents", "wait"])
 
-    assert json.loads(capsys.readouterr().out)["stalled"] is True
+    response = json.loads(capsys.readouterr().out)
+    assert response["output_updated_at"] is None
+    assert response["stalled"] is True
 
 
 def test_agents_wait_keeps_waiting_after_stall_threshold(
@@ -437,17 +447,20 @@ def test_agents_wait_keeps_waiting_after_stall_threshold(
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-1"}
 
 
-def test_agents_wait_notices_response_reports_seconds_since_update(
+def test_agents_wait_notices_response_reports_seconds_since_output(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通知だけを回収する非終端応答にも最終活動時刻を付ける。"""
-    updated_at = "2026-09-09T00:00:00+00:00"
-    _write_own_status(wait_environment, [{"session_id": "session-1", "updated_at": updated_at}])
+    """通知だけを回収する非終端応答にも最新テキスト出力時刻を付ける。"""
+    output_updated_at = "2026-09-09T00:00:00+00:00"
+    _write_own_status(
+        wait_environment,
+        [{"session_id": "session-1", "output_updated_at": output_updated_at, "updated_at": "2099-01-01T00:00:00+00:00"}],
+    )
     notices = wait_environment.parent / "notices"
     notices.mkdir()
     (notices / "session-1.1.json").write_text(
-        json.dumps({"version": 1, "session_id": "session-1", "sent_at": updated_at, "body": "通知"}),
+        json.dumps({"version": 1, "session_id": "session-1", "sent_at": output_updated_at, "body": "通知"}),
         encoding="utf-8",
     )
 
@@ -455,8 +468,10 @@ def test_agents_wait_notices_response_reports_seconds_since_update(
         atk.main(["agents", "wait"])
 
     response = json.loads(capsys.readouterr().out)
-    assert response["updated_at"] == updated_at
-    assert isinstance(response["seconds_since_update"], float)
+    assert response["output_updated_at"] == output_updated_at
+    assert isinstance(response["seconds_since_output"], int)
+    assert "updated_at" not in response
+    assert "seconds_since_update" not in response
 
 
 def test_agents_wait_adds_notices_to_terminal_result(

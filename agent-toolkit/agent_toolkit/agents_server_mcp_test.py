@@ -373,8 +373,8 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
         "start",
         "start_custom",
         "start_explore",
+        "start_write",
         "start_shell",
-        "wait",
         "send_message",
         "kill",
         "list",
@@ -396,6 +396,9 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
     shell_tool = subject.mcp._tool_manager.get_tool("start_shell")
     assert shell_tool is not None
     assert {"command", "cwd", "summary_policy"} == shell_tool.parameters["properties"].keys()
+    write_tool = subject.mcp._tool_manager.get_tool("start_write")
+    assert write_tool is not None
+    assert {"prompt", "cwd"} == write_tool.parameters["properties"].keys()
     for tool in (start_tool, custom_tool, explore_tool):
         assert "engineの利用上限などで起動できない候補はサーバーが自動的に除外し、残る候補で起動する" in tool.description
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
@@ -408,11 +411,11 @@ def test_public_tools_separate_task_document_and_custom_start() -> None:
 
 def test_start_tool_descriptions_require_same_turn_observation() -> None:
     """開始ツールの公開説明が返却sessionを同じ応答内で観測させる。"""
-    for tool_name in ("start", "start_custom", "start_explore", "start_shell"):
+    for tool_name in ("start", "start_custom", "start_explore", "start_write", "start_shell"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         assert "返した`session_id`" in tool.description
-        assert "同じ応答の中で`wait`を発行して観測する" in tool.description
+        assert "`atk agents wait`" in tool.description
         assert "結果が不要なら`kill`で破棄する" in tool.description
 
 
@@ -420,7 +423,7 @@ def test_server_instructions_carry_standalone_contract() -> None:
     """サーバー説明だけを読む主体へ観測の義務とモデル解決の主体を示す。"""
     instructions = subject.mcp.instructions
     assert instructions is not None
-    assert "同じ応答の中で`wait`を発行して観測する" in instructions
+    assert "実行ホストで`atk agents wait`を発行して観測する" in instructions
     assert "結果が不要なら`kill`で破棄する" in instructions
     assert "engine、model及びeffortは" in instructions
 
@@ -428,7 +431,7 @@ def test_server_instructions_carry_standalone_contract() -> None:
 def test_tool_descriptions_carry_standalone_contract() -> None:
     """各ツールの公開説明だけで候補枯渇と継続不能の応答を判別できる。"""
     tools = {}
-    for tool_name in ("start", "start_explore", "start_shell", "wait", "send_message", "kill", "list"):
+    for tool_name in ("start", "start_explore", "start_write", "start_shell", "send_message", "kill", "list"):
         tool = subject.mcp._tool_manager.get_tool(tool_name)
         assert tool is not None
         tools[tool_name] = tool
@@ -436,7 +439,7 @@ def test_tool_descriptions_carry_standalone_contract() -> None:
     assert "最後の例外を送出する" in tools["start"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_explore"].description
     assert "explore_fast_model" in tools["start_explore"].parameters["properties"]["fast"]["description"]
-    assert "最初の呼び出しで受領するまで保持" in tools["wait"].description
+    assert "ファイルの読取・検索・作成・編集だけを許可" in tools["start_write"].description
     assert "起動時に確定したengine・model・effortで継続する" in tools["send_message"].description
     assert "unknown session" in tools["send_message"].description
     assert "候補が尽きた場合の扱いは`start`と同じ" in tools["start_shell"].description
@@ -580,22 +583,11 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert subject.DEFAULT_KILL_TIMEOUT == 270.0
     assert subject.DEFAULT_SEND_MESSAGE_TIMEOUT == 270.0
     assert codex_backend.DEFAULT_WAIT_TIMEOUT == 300.0
-    wait_tool = subject.mcp._tool_manager.get_tool("wait")
     send_tool = subject.mcp._tool_manager.get_tool("send_message")
     kill_tool = subject.mcp._tool_manager.get_tool("kill")
-    assert wait_tool is not None
     assert send_tool is not None
     assert kill_tool is not None
 
-    assert wait_tool.parameters["properties"] == {}
-    assert wait_tool.parameters.get("required", []) == []
-    assert "引数を受け取らない" in wait_tool.description
-    assert "プロンプトキャッシュの保持期間から導出した値" in wait_tool.description
-    assert "委譲先として起動されたセッションでは240秒を上限とする" in wait_tool.description
-    assert "`status`と`elapsed_seconds`を返す" in wait_tool.description
-    assert "最初に終端した1件の結果を返す" in wait_tool.description
-    assert "最終活動時刻と停滞の印は`show`が返す" in wait_tool.description
-    assert "本ツールを前景で発行する" in wait_tool.description
     send_timeout = send_tool.parameters["properties"]["timeout"]
     assert send_timeout["default"] == 270.0
     assert send_timeout["description"] == (
@@ -606,7 +598,7 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
     assert "固有のtimeout要件がなければ引数を省略して通常既定を使う" in send_tool.description
     assert "待つのは継続要求の配送結果が確定するまで" in send_tool.description
     assert "委譲先の応答生成の完了ではない" in send_tool.description
-    assert "上限に達した場合は配送の成否が確定しないため、`wait`で状態を確認する" in send_tool.description
+    assert "上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する" in send_tool.description
     kill_timeout = kill_tool.parameters["properties"]["timeout"]
     assert kill_timeout["default"] == 270.0
     assert kill_timeout["description"] == (
@@ -621,17 +613,13 @@ def test_public_timeout_schemas_expose_unified_defaults() -> None:
 def test_public_descriptions_expose_agents_wait_handoff() -> None:
     """公開ツール説明が目標評価を避ける待機引継ぎを示す。"""
     start_tool = subject.mcp._tool_manager.get_tool("start")
-    wait_tool = subject.mcp._tool_manager.get_tool("wait")
     send_tool = subject.mcp._tool_manager.get_tool("send_message")
     assert start_tool is not None
-    assert wait_tool is not None
     assert send_tool is not None
 
     assert "`session_id`と`status`" in start_tool.description
     assert "`--" + "turn`へそのまま渡す" not in start_tool.description
-    assert "`/goal`が設定され" in wait_tool.description
-    assert "`atk agents wait`を実行ホストの背景ジョブとして起動" in wait_tool.description
-    assert "完了通知を受領した後に本ツールを1回発行" in wait_tool.description
+    assert "`atk agents wait`" in start_tool.description
     assert "`delivery`" in send_tool.description
     assert "`previous_result`" not in send_tool.description
     assert "`--" + "turn`へそのまま渡す" not in send_tool.description
@@ -708,6 +696,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     manager = SimpleNamespace(
         start=AsyncMock(return_value=response),
         start_explore=AsyncMock(return_value=response),
+        start_write=AsyncMock(return_value=response),
         start_shell=AsyncMock(return_value=response),
         send_message=AsyncMock(return_value={"delivery": "replied", "previous_result": {"status": "completed"}}),
     )
@@ -718,6 +707,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "status": "running",
     }
     assert await subject.start_explore("探索", str(tmp_path)) == {"session_id": "session", "status": "running"}
+    assert await subject.start_write("定型変更", str(tmp_path)) == {"session_id": "session", "status": "running"}
     assert await subject.start_shell("make test", str(tmp_path), "終了状態") == {
         "session_id": "session",
         "status": "running",
@@ -902,10 +892,12 @@ async def test_success_response_key_sets_for_all_tools(
 
     started = await manager.start("plan", "調査", str(tmp_path))
     explored = await manager.start_explore(True, "探索", str(tmp_path))
+    written = await manager.start_write("定型変更", str(tmp_path))
     shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
     start_keys = {"session_id", "status", "engine", "model", "effort", "model_type", "root_session_id"}
     assert started.keys() == start_keys
     assert explored.keys() == start_keys
+    assert written.keys() == start_keys
     assert shelled.keys() == start_keys
 
     session_id = str(started["session_id"])
@@ -1064,14 +1056,17 @@ async def test_start_raises_when_every_initialization_attempt_times_out(
         **_kwargs: Any,
     ) -> subject.SessionState:
         calls.append(model)
-        raise state.SessionInitializationTimeoutError("initialization timed out")
+        raise state.SessionInitializationTimeoutError(f"diagnostic-{len(calls)}")
 
     monkeypatch.setattr(backend, "start", always_timeout)
 
-    with pytest.raises(state.SessionInitializationTimeoutError, match="timed out on every attempt"):
+    with pytest.raises(state.SessionInitializationTimeoutError, match="timed out on every attempt") as exc_info:
         await manager.start("plan", "調査", str(tmp_path))
 
     assert calls == ["first", "first", "first"]
+    assert "attempt=1: diagnostic-1" in str(exc_info.value)
+    assert "attempt=2: diagnostic-2" in str(exc_info.value)
+    assert "attempt=3: diagnostic-3" in str(exc_info.value)
     assert not manager.sessions
 
 
@@ -1741,26 +1736,26 @@ async def test_wait_does_not_return_unfinished_result(tmp_path: pathlib.Path) ->
 
 
 @pytest.mark.asyncio
-async def test_show_reports_seconds_since_update_and_stall(tmp_path: pathlib.Path) -> None:
-    """showは最終活動時刻と経過秒数を返し、閾値超過へ停滞の印を付ける。"""
+async def test_show_reports_seconds_since_output_and_stall(tmp_path: pathlib.Path) -> None:
+    """showは最新テキスト出力時刻と経過秒数を返し、閾値超過へ停滞の印を付ける。"""
     manager, _ = _manager_with_fake("codex")
     fresh = subject.SessionState("thread-fresh", str(tmp_path), engine="codex")
     stalled = subject.SessionState("thread-stalled", str(tmp_path), engine="codex")
-    stalled.updated_at = "2000-01-01T00:00:00+00:00"
+    stalled.output_updated_at = "2000-01-01T00:00:00+00:00"
     manager.sessions.update({fresh.session_id: fresh, stalled.session_id: stalled})
 
     fresh_detail = manager.show_session(fresh.session_id)
     stalled_detail = manager.show_session(stalled.session_id)
 
-    assert fresh_detail["updated_at"] == fresh.updated_at
-    assert isinstance(fresh_detail["seconds_since_update"], int)
+    assert fresh_detail["output_updated_at"] is None
+    assert isinstance(fresh_detail["seconds_since_output"], int)
     assert "stalled" not in fresh_detail
-    assert stalled_detail["updated_at"] == stalled.updated_at
+    assert stalled_detail["output_updated_at"] == stalled.output_updated_at
     assert stalled_detail["stalled"] is True
 
     response = await manager.wait()
 
-    assert {"updated_at", "seconds_since_update", "stalled"}.isdisjoint(response)
+    assert {"output_updated_at", "seconds_since_output", "stalled"}.isdisjoint(response)
 
 
 @pytest.mark.asyncio
@@ -3733,6 +3728,16 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
 
 
 @pytest.mark.usefixtures("_owner_session_environment")
+def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: pathlib.Path) -> None:
+    """Claude軽量書込は汎用コマンドを許可せず、固定プロンプトと編集toolだけを使う。"""
+    options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="write")
+    assert options.setting_sources == []
+    assert options.skills == []
+    assert options.system_prompt == f"{state.WRITE_SYSTEM_PROMPT}\n{state.AUTO_RESUME_NOTICE}"
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Write", "Edit"}
+
+
+@pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_path: pathlib.Path) -> None:
     """Claudeのシェル実行起動は探索と同じ軽量条件を共有し、実行用toolと指示を選ぶ。"""
     options = claude_backend._build_options(str(tmp_path), "model", "high", launch_kind="shell")
@@ -3844,6 +3849,73 @@ def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPa
     assert isinstance(file_handler, RotatingFileHandler)
     assert file_handler.maxBytes == subject._LOG_MAX_BYTES
     assert file_handler.backupCount == subject._LOG_BACKUP_COUNT
+
+
+def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """stdio起動でinitializeの受信、応答完了及び失敗を永続化する。"""
+    monkeypatch.setattr(subject, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+
+    def run(**_kwargs: Any) -> None:
+        def message(root: SimpleNamespace) -> subject.SessionMessage:
+            return cast(subject.SessionMessage, SimpleNamespace(message=SimpleNamespace(root=root)))
+
+        tracker = subject._InitializationLogTracker()
+        tracker.receive(message(SimpleNamespace(method="initialize", id=1)))
+        tracker.sent(message(SimpleNamespace(id=1, error=None)))
+        tracker.receive(message(SimpleNamespace(method="initialize", id=2)))
+        tracker.sent(message(SimpleNamespace(id=2, error=ValueError("invalid initialize"))))
+
+    monkeypatch.setattr(subject.mcp, "run", run)
+
+    assert subject.main([]) == 0
+
+    content = (tmp_path / "agents-server.log").read_text(encoding="utf-8")
+    assert "FastMCP initializeを受信しました: request_id=1" in content
+    assert "FastMCP initialize応答が完了しました: request_id=1" in content
+    assert "FastMCP initialize応答が失敗しました: request_id=2" in content
+    assert "exception_type=ValueError exception=invalid initialize" in content
+
+
+@pytest.mark.asyncio
+async def test_mcp_lifespan_persists_activate_and_close_milestones(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """managerのactivate前後とclose前後を永続化する。"""
+    monkeypatch.setattr(subject, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    subject._configure_logging()
+    monkeypatch.setattr(subject._MANAGER, "activate", lambda: None)
+    monkeypatch.setattr(subject._MANAGER, "close", AsyncMock())
+
+    async with subject._mcp_lifespan(subject.mcp):
+        pass
+
+    content = (tmp_path / "agents-server.log").read_text(encoding="utf-8")
+    assert "manager activateを開始します" in content
+    assert "manager activateが完了しました" in content
+    assert "manager closeを開始します" in content
+    assert "manager closeが完了しました" in content
+
+
+@pytest.mark.asyncio
+async def test_mcp_lifespan_persists_activate_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """manager activateの開始と失敗を例外診断とともに永続化する。"""
+    monkeypatch.setattr(subject, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path))
+    subject._configure_logging()
+
+    def fail_activate() -> None:
+        raise RuntimeError("activate failed")
+
+    monkeypatch.setattr(subject._MANAGER, "activate", fail_activate)
+
+    with pytest.raises(RuntimeError, match="activate failed"):
+        async with subject._mcp_lifespan(subject.mcp):
+            pytest.fail("activate失敗後にlifespanへ入ってはいけない")
+
+    content = (tmp_path / "agents-server.log").read_text(encoding="utf-8")
+    assert "manager activateを開始します" in content
+    assert "manager activateに失敗しました: stage=manager_activate" in content
+    assert "RuntimeError: activate failed" in content
 
 
 @pytest.mark.asyncio
@@ -4961,7 +5033,7 @@ async def test_kill_stop_retains_result_for_agents_wait(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """stop=trueで破棄した結果をatk agents-waitからも回収できる。"""
+    """stop=trueで破棄した結果をatk agents waitからも回収できる。"""
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("root-session", "root.json", None),

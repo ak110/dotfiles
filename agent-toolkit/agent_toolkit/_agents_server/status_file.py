@@ -100,19 +100,24 @@ def list_status_files(root_session_id: str, state_root: pathlib.Path | None = No
     return sorted(paths)
 
 
+def list_root_session_ids(state_root: pathlib.Path | None = None) -> list[str]:
+    """共有状態に存在する有効なルートsession識別子を安定順で返す。"""
+    root = _atk_config.state_dir() if state_root is None else state_root
+    base = root / "agents-server"
+    try:
+        identifiers = [path.name for path in base.iterdir() if path.is_dir() and valid_session_id(path.name)]
+    except OSError:
+        return []
+    return sorted(identifiers)
+
+
 def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path | None = None) -> str | None:
     """共有状態から指定sessionを保持する一意なルートsession識別子を返す。"""
     if not valid_session_id(session_id):
         return None
-    root = _atk_config.state_dir() if state_root is None else state_root
-    base = root / "agents-server"
-    try:
-        root_directories = tuple(path for path in base.iterdir() if path.is_dir() and valid_session_id(path.name))
-    except OSError:
-        return None
     matches: list[str] = []
-    for directory in root_directories:
-        for path in list_status_files(directory.name, state_root):
+    for root_session_id in list_root_session_ids(state_root):
+        for path in list_status_files(root_session_id, state_root):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, json.JSONDecodeError):
@@ -121,7 +126,7 @@ def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path |
             if isinstance(sessions, list) and any(
                 isinstance(session, dict) and session.get("session_id") == session_id for session in sessions
             ):
-                matches.append(directory.name)
+                matches.append(root_session_id)
                 break
     unique = set(matches)
     return matches[0] if len(unique) == 1 else None
@@ -527,6 +532,7 @@ def _serialize_session(session: SessionState) -> dict[str, Any]:
         "label": session.label,
         "started_at": session.started_at,
         "updated_at": session.updated_at,
+        "output_updated_at": session.output_updated_at,
     }
 
 

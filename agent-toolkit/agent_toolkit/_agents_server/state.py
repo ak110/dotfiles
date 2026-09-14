@@ -66,17 +66,19 @@ DELEGATE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-deleg
 CLAUDE_DELEGATE_SYSTEM_PROMPT = f"{DELEGATE_SYSTEM_PROMPT}\n\n{CLAUDE_CODE_SUBAGENT_RULES}"
 EXPLORE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}"
 SHELL_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}"
+WRITE_SYSTEM_PROMPT = f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}"
 ModelCandidate = tuple[str, str, str]
-LaunchKind = Literal["delegate", "explore", "shell"]
+LaunchKind = Literal["delegate", "explore", "shell", "write"]
 # 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
 LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "delegate": DELEGATE_SYSTEM_PROMPT,
     "explore": EXPLORE_SYSTEM_PROMPT,
     "shell": SHELL_SYSTEM_PROMPT,
+    "write": WRITE_SYSTEM_PROMPT,
 }
 AUTO_RESUME_NOTICE = _read_prompt("agents-server-auto-resume.md")
 # プロジェクト指示と設定の読込を省く軽量な起動条件を共有する種別。
-LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell"})
+LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
 _TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
 
@@ -276,6 +278,7 @@ class SessionState:
     pending_result: dict[str, Any] | None = None
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=_utc_now)
+    output_updated_at: str | None = None
     # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
@@ -306,12 +309,15 @@ class SessionState:
     def set_progress(self, text: str) -> None:
         """最新テキスト出力を更新する。"""
         self._progress_text = text
+        if text.strip():
+            self.output_updated_at = _utc_now()
         self.touch()
 
     def reset_progress(self) -> None:
         """現在turnの進捗を初期化する。"""
         self._progress_text = ""
         self.progress_items.clear()
+        self.output_updated_at = None
 
     def touch(self) -> None:
         """状態の更新時刻を現在時刻へ更新する。
@@ -400,6 +406,7 @@ class SessionResumeState:
     prompt: str = ""
     started_at: str = dataclasses.field(default_factory=_utc_now)
     updated_at: str = dataclasses.field(default_factory=_utc_now)
+    output_updated_at: str | None = None
     turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     status: str = ""
@@ -421,6 +428,7 @@ class SessionResumeState:
             prompt=session.prompt,
             started_at=session.started_at,
             updated_at=session.updated_at,
+            output_updated_at=session.output_updated_at,
             turn_seq=session.turn_seq,
             excluded_candidates=session.excluded_candidates,
             model=session.model,
@@ -541,12 +549,12 @@ def consume_agents_server_tool_result(
 ) -> None:
     """agents_serverツールの結果を孫session集合へ反映する。"""
     normalized = _agents_server_tool_name(tool_name)
-    if normalized in {"start", "start_explore", "start_shell"}:
+    if normalized in {"start", "start_explore", "start_shell", "start_write"}:
         session_id = result.get("session_id")
         if isinstance(session_id, str) and session_id:
             session.live_child_session_ids.add(session_id)
         return
-    if normalized not in {"wait", "kill"}:
+    if normalized != "kill":
         return
     session_id = arguments.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -607,7 +615,7 @@ def _agents_server_tool_name(tool_name: str) -> str | None:
     prefix = "mcp__agents_server__"
     if tool_name.startswith(prefix):
         return tool_name.removeprefix(prefix)
-    if tool_name in {"start", "start_explore", "start_shell", "wait", "kill"}:
+    if tool_name in {"start", "start_explore", "start_shell", "start_write", "kill"}:
         return tool_name
     return None
 

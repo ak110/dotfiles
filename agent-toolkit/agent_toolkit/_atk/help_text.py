@@ -182,12 +182,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents": {
         "summary": "委譲sessionの待機・通知・一覧・詳細表示を行う",
-        "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知又は診断する。\n利用場面: 背景ジョブでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`と`notify`はMCPの補助経路、`list`と`show`は共有状態ファイルの診断経路として動作する。\n前提: 対象sessionと同じルートセッションで実行する。\n復元・後始末: `wait`が回収した通知ファイルは削除される。結果本文の配送記録は更新しないため、受領後にMCPの`wait`を1回発行する。",
+        "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知又は診断する。\n利用場面: 背景ジョブでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`は結果受領の正規経路、`notify`は実行中通知、`list`と`show`は共有状態ファイルの診断経路として動作する。\n前提: `wait`と`notify`は対象sessionと同じルートセッションで実行する。直接端末の`list`は有効な全ルートを統合し、`show`はsession IDが一意な場合に所有ルートを解決する。\n復元・後始末: `wait`が回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
         "epilog": "実行例:\n\n  atk agents wait\n  atk agents list\n  atk agents show <session_id>",
     },
     "atk agents wait": {
         "summary": "委譲先sessionの終端結果を待って1行で出力する",
-        "description": "目的: `agents_server`が出力する終端結果ファイルを待ち、その内容を標準出力へ1行で書く。\n利用場面: 委譲先の完了を背景ジョブとして待ち、目標評価の発動を延期するとき。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、単一のJSON文書を1行で書く。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。\n復元・後始末: 回収した通知ファイルは削除される。結果本文の配送記録は更新しないため、受領後にMCPの`wait`を1回発行する。",
+        "description": "目的: `agents_server`が出力する終端結果ファイルを待ち、その内容を標準出力へ1行で書く。\n利用場面: 委譲先の完了を前景又は背景ジョブで待ち、結果又は実行中通知を受領するとき。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、単一のJSON文書を1行で書く。待機開始時の起動中sessionと未回収結果を固定し、対象ごとの待機所有権を保持する。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。\n復元・後始末: 回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
         "epilog": "実行例:\n\n  atk agents wait",
     },
     "atk agents notify": {

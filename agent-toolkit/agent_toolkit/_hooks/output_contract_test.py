@@ -76,7 +76,13 @@ def _build_fixture(
             }
         )
     elif fixture_name == "posttooluse":
-        payload["tool_name"] = "mcp__plugin_agent-toolkit_agents_server__wait"
+        payload.update(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
+                "tool_input": {"session_id": "missing"},
+                "tool_response": {},
+            }
+        )
     elif fixture_name == "stop":
         payload["background_tasks"] = []
         payload["transcript_path"] = str(_write_transcript(tmp_path, []))

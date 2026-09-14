@@ -271,18 +271,13 @@ _AGENTS_SERVER_NAMESPACES = (
 _AGENTS_SERVER_START_TOOLS = frozenset(
     f"{namespace}{tool}"
     for namespace in _AGENTS_SERVER_NAMESPACES
-    for tool in ("start", "start_custom", "start_explore", "start_shell")
+    for tool in ("start", "start_custom", "start_explore", "start_write", "start_shell")
 )
-_AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_STOP_TOOLS = frozenset(f"{namespace}stop" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS
-    | _AGENTS_SERVER_WAIT_TOOLS
-    | _AGENTS_SERVER_SEND_TOOLS
-    | _AGENTS_SERVER_KILL_TOOLS
-    | _AGENTS_SERVER_STOP_TOOLS
+    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_STOP_TOOLS
 )
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
 
@@ -381,7 +376,7 @@ def _is_nonempty_absolute_cwd(value: object) -> bool:
 
 def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
     """操作ごとの正本から委譲先session識別子を返す。"""
-    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS else tool_input
+    source = structured if tool_name in _AGENTS_SERVER_START_TOOLS else tool_input
     value = source.get("session_id") if isinstance(source, dict) else None
     return value if isinstance(value, str) and value else None
 
@@ -410,7 +405,7 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
         return model_type if isinstance(model_type, str) else None
     if operation == "start_explore":
         return "explore_fast" if tool_input.get("fast", True) else "explore"
-    if operation == "start_shell":
+    if operation in {"start_write", "start_shell"}:
         return "explore_fast"
     return None
 
@@ -476,7 +471,7 @@ def _record_agents_server_session_state(
         record.update({"session_id": remote_session_id, "status": status})
         if model_type is not None:
             record["model_type"] = model_type
-        if operation in {"start", "start_custom", "start_explore", "start_shell"}:
+        if operation in {"start", "start_custom", "start_explore", "start_write", "start_shell"}:
             record["pending_observation"] = True
             record["owner_agent_id"] = owner_agent_id
         elif operation == "send_message":
@@ -485,7 +480,7 @@ def _record_agents_server_session_state(
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
-        elif operation in {"wait", "kill"}:
+        elif operation == "kill":
             record["pending_observation"] = False
         kill_requested = structured.get("kill_requested")
         if isinstance(kill_requested, bool):
@@ -584,21 +579,16 @@ def _record_agents_server_observation_attempt(
     tool_input: dict,
     *,
     operation: str,
-    owner_agent_id: str,
 ) -> None:
-    """背景タスクへ移った`wait`・`kill`の移行通知から観測の試みだけを記録する。
+    """背景タスクへ移った`kill`の移行通知から観測の試みだけを記録する。
 
     実行環境が呼び出しを背景タスクへ移すと構造化応答が返らないため、応答の`session_id`と
     `status`を入力とする`_record_agents_server_session_state`は何も更新せずに戻る。
     呼び出しの受理をもって観測を試みたものとして扱い、応答境界へ到達しない経路でも
-    `pending_observation`を偽にする。`wait`は対象sessionを入力に持たないため呼出主体が所有する
-    記録の全件を対象とし、`kill`は`tool_input`の`session_id`で解決した既存記録に限る。
-    いずれも記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
+    `pending_observation`を偽にする。`tool_input`の`session_id`で解決した既存記録に限り、
+    記録が無いsessionへ新規の記録を作成しない。`status`・`turn_id`・`kill_requested`などの
     公開状態は移行通知から確定できないため更新しない。
     """
-    if operation == "wait":
-        _clear_agents_server_pending_observation(session_id, owner_agent_id)
-        return
     if operation != "kill":
         return
     remote_session_id = tool_input.get("session_id")
@@ -1043,13 +1033,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
         moved_to_background = _stop_gate.background_task_id_from_notice(tool_response) is not None
         operation = tool_name.rsplit("__", 1)[-1]
         owner_agent_id = resolve_hook_agent_id(payload)
-        if operation == "wait":
-            _record_agents_server_observation_attempt(
-                session_id,
-                tool_input,
-                operation=operation,
-                owner_agent_id=owner_agent_id,
-            )
         if tool_name in _AGENTS_SERVER_DIAGNOSTIC_TOOLS and not moved_to_background:
             missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
             if missing:
@@ -1061,7 +1044,6 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
                 session_id,
                 tool_input,
                 operation=operation,
-                owner_agent_id=owner_agent_id,
             )
             return 0
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)

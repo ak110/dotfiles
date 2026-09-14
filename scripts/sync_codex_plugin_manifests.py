@@ -111,11 +111,11 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     ),
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
-        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_write|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
-        matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_shell|mcp__agents_server__wait|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop",
+        matcher="Edit|Write|mcp__agents_server__start|mcp__agents_server__start_custom|mcp__agents_server__start_explore|mcp__agents_server__start_write|mcp__agents_server__start_shell|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop",
     ),
     "PermissionRequest": CodexHookProjection(
         (_hook_command("permissionrequest"),),

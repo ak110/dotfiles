@@ -131,11 +131,25 @@ class JsonRpcProcess:
         self._closed = False
         self._reader_failure: BaseException | None = None
         self._stderr_text = ""
+        self._initialization_stage = "created"
+        self._received_message_types: dict[str, int] = {}
+
+    def initialization_diagnostic(self) -> dict[str, Any]:
+        """初期化の到達段階と子プロセスの有界な診断値を返す。"""
+        process = self.process
+        return {
+            "stage": self._initialization_stage,
+            "received_message_types": dict(sorted(self._received_message_types.items())),
+            "received_message_count": sum(self._received_message_types.values()),
+            "child_pid": None if process is None else process.pid,
+            "stderr": self._stderr_text.strip(),
+        }
 
     async def start(self) -> None:
         """子プロセスを起動し、initialize/initializedを完了する。"""
         if self.process is not None:
             return
+        self._initialization_stage = "starting_process"
         try:
             environment = os.environ.copy()
             environment.pop("AGENT_TOOLKIT_DELEGATED_SESSION", None)
@@ -162,9 +176,12 @@ class JsonRpcProcess:
         )
         self._reader_task = asyncio.create_task(self._read_stdout())
         self._stderr_task = asyncio.create_task(self._read_stderr())
+        self._initialization_stage = "process_started"
+        _LOG.info("Codex App Server初期化段階: %s", self.initialization_diagnostic())
         try:
             # 子プロセスが応答を返さないまま生存する場合、要求の応答futureは読取taskの失敗経路では解消しない。
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                self._initialization_stage = "initialize_requested"
                 initialize_result = await self.request(
                     "initialize",
                     {
@@ -172,15 +189,26 @@ class JsonRpcProcess:
                         "capabilities": {},
                     },
                 )
+                self._initialization_stage = "initialize_received"
                 _LOG.info("Codex App Serverのinitialize応答を受信しました: keys=%s", sorted(initialize_result))
                 await self.notify("initialized", {})
+                self._initialization_stage = "initialized_sent"
+                _LOG.info("Codex App Server初期化完了: %s", self.initialization_diagnostic())
         except TimeoutError as exc:
+            diagnostic = self.initialization_diagnostic()
+            _LOG.error("Codex App Server初期化timeout: diagnostic=%s", diagnostic)
             await self.close()
             raise SessionInitializationTimeoutError(
                 f"Codex App Server did not complete initialize within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"command={' '.join(APP_SERVER_COMMAND)}"
+                f"command={' '.join(APP_SERVER_COMMAND)}; diagnostic={diagnostic}"
             ) from exc
-        except Exception:
+        except Exception as exc:
+            _LOG.error(
+                "Codex App Server初期化失敗: exception_type=%s exception=%s diagnostic=%s",
+                type(exc).__name__,
+                exc,
+                self.initialization_diagnostic(),
+            )
             await self.close()
             raise
 
@@ -262,6 +290,13 @@ class JsonRpcProcess:
                     raise AppServerError(f"invalid Codex App Server JSON line: {exc}") from exc
                 if not isinstance(message, dict):
                     continue
+                if "id" in message and ("result" in message or "error" in message):
+                    message_type = "response"
+                elif "id" in message and isinstance(message.get("method"), str):
+                    message_type = "server_request"
+                else:
+                    message_type = str(message.get("method", "notification"))
+                self._received_message_types[message_type] = self._received_message_types.get(message_type, 0) + 1
                 if "id" in message and ("result" in message or "error" in message):
                     request_id = message.get("id")
                     future = self._pending.get(request_id) if isinstance(request_id, int) else None
@@ -484,9 +519,16 @@ class AppServerManager:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
                 thread_response = await client.request("thread/start", params)
         except TimeoutError as exc:
+            diagnostic_method = getattr(client, "initialization_diagnostic", None)
+            diagnostic = (
+                diagnostic_method()
+                if callable(diagnostic_method)
+                else {"stage": "thread_start_response_wait", "pid": "unavailable"}
+            )
+            _LOG.error("Codex thread/start初期化timeout: diagnostic=%s", diagnostic)
             raise SessionInitializationTimeoutError(
                 f"Codex thread/start did not return within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"cwd={cwd}, launch_kind={launch_kind}"
+                f"cwd={cwd}, launch_kind={launch_kind}; diagnostic={diagnostic}"
             ) from exc
         thread = thread_response.get("thread")
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -10,7 +11,7 @@ import sys
 from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import agents_wait, status_file
+from agent_toolkit._agents_server import agents_wait, state, status_file
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk_agents_notify import send_notification
 
@@ -48,18 +49,29 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         return send_notification(body)
     env = os.environ if environment is None else environment
     root_session_id = status_file.resolve_conversation_root_session_id(env)
-    if root_session_id is None:
-        print("agents_serverの状態ディレクトリを解決できません。", file=sys.stderr)
-        return 4
-    sessions = _load_sessions(root_session_id)
     if args.agents_subcommand == "list":
+        sessions = (
+            _load_sessions(root_session_id)
+            if root_session_id is not None
+            else _load_all_sessions(status_file.list_root_session_ids())
+        )
         if not args.include_terminated:
             sessions = [
                 session for session in sessions if session.get("status") == "running" or session.get("result_available") is True
             ]
         print(json.dumps({"sessions": sessions}, ensure_ascii=False, separators=(",", ":")))
         return 0
+    if root_session_id is None:
+        root_session_id = status_file.find_root_session_id_for_session(args.session_id)
+    sessions = [] if root_session_id is None else _load_sessions(root_session_id)
     selected = next((session for session in sessions if session.get("session_id") == args.session_id), None)
+    if selected is None:
+        resolved = status_file.find_root_session_id_for_session(args.session_id)
+        if resolved is not None and resolved != root_session_id:
+            selected = next(
+                (session for session in _load_sessions(resolved) if session.get("session_id") == args.session_id),
+                None,
+            )
     if selected is None:
         print(f"unknown session: {args.session_id}", file=sys.stderr)
         return 2
@@ -76,6 +88,8 @@ def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             continue
+        if not _status_payload_is_current(payload):
+            continue
         raw_sessions = payload.get("sessions") if isinstance(payload, dict) else None
         if not isinstance(raw_sessions, list):
             continue
@@ -85,7 +99,53 @@ def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
             session = dict(raw)
             session["owner_status_file"] = path.name
             session["result_available"] = (results / f"{session['session_id']}.json").is_file()
+            _add_output_activity(session)
             previous = by_id.get(session["session_id"])
             if previous is None or str(previous.get("updated_at", "")) <= str(session.get("updated_at", "")):
                 by_id[session["session_id"]] = session
     return sorted(by_id.values(), key=lambda session: str(session.get("started_at", "")))
+
+
+def _load_all_sessions(root_session_ids: list[str]) -> list[dict[str, Any]]:
+    """複数のルート状態をsession識別子ごとの最新版へ統合する。"""
+    by_id: dict[str, dict[str, Any]] = {}
+    for root_session_id in root_session_ids:
+        for session in _load_sessions(root_session_id):
+            previous = by_id.get(session["session_id"])
+            if previous is None or str(previous.get("updated_at", "")) <= str(session.get("updated_at", "")):
+                by_id[session["session_id"]] = session
+    return sorted(by_id.values(), key=lambda session: str(session.get("started_at", "")))
+
+
+def _status_payload_is_current(payload: Any) -> bool:
+    """heartbeatを持つ状態が有効期限内であるかを返す。"""
+    heartbeat_at = payload.get("heartbeat_at") if isinstance(payload, dict) else None
+    if not isinstance(heartbeat_at, str):
+        return True
+    try:
+        heartbeat = datetime.datetime.fromisoformat(heartbeat_at)
+    except ValueError:
+        return False
+    if heartbeat.tzinfo is None:
+        return False
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=status_file.HEARTBEAT_EXPIRY_SECONDS)
+    return heartbeat >= cutoff
+
+
+def _add_output_activity(session: dict[str, Any]) -> None:
+    """最新テキスト出力からの経過秒と停滞印を公開射影へ加える。"""
+    output_updated_at = session.get("output_updated_at")
+    reference = output_updated_at if isinstance(output_updated_at, str) else session.get("started_at")
+    if not isinstance(reference, str):
+        return
+    try:
+        timestamp = datetime.datetime.fromisoformat(reference)
+    except ValueError:
+        return
+    if timestamp.tzinfo is None:
+        return
+    elapsed = max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
+    session["output_updated_at"] = output_updated_at if isinstance(output_updated_at, str) else None
+    session["seconds_since_output"] = elapsed
+    if session.get("status") == "running" and elapsed >= state.STALL_NOTICE_SECONDS:
+        session["stalled"] = True

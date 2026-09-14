@@ -24,14 +24,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 `agent-toolkit/skills/plan-mode/scripts/check_plan_file.py`が担うため
 本フックでは扱わない。
 
-mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / send_message / kill:
+mcp__plugin_agent-toolkit_agents_server__start / start_explore / start_shell / start_write / send_message / kill:
 
 - 委譲先へ渡す絶対`cwd`と`send_message`・`kill`のprompt/sessionの検査 (block)
 - 全チェック通過時の強制承認 (auto-approve)
-
-wait:
-
-- 既存sessionの観測として通過 (pass-through)
 
 Bash:
 
@@ -253,15 +249,14 @@ _AGENTS_SERVER_NAMESPACES = (
     "mcp__agents_server__",
 )
 _AGENTS_SERVER_START_TOOLS = frozenset(
-    f"{namespace}{tool}" for namespace in _AGENTS_SERVER_NAMESPACES for tool in ("start", "start_explore", "start_shell")
+    f"{namespace}{tool}"
+    for namespace in _AGENTS_SERVER_NAMESPACES
+    for tool in ("start", "start_explore", "start_shell", "start_write")
 )
-_AGENTS_SERVER_WAIT_TOOLS = frozenset(f"{namespace}wait" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_SEND_TOOLS = frozenset(f"{namespace}send_message" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_KILL_TOOLS = frozenset(f"{namespace}kill" for namespace in _AGENTS_SERVER_NAMESPACES)
 _AGENTS_SERVER_LIST_TOOLS = frozenset(f"{namespace}list" for namespace in _AGENTS_SERVER_NAMESPACES)
-_AGENTS_SERVER_TOOL_NAMES = (
-    _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_WAIT_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
-)
+_AGENTS_SERVER_TOOL_NAMES = _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS
 
 # hooks.json・hooks.codex.jsonのPreToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 一致検査（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
@@ -277,7 +272,7 @@ def _check_agents_server_list_repeat(session_id: str) -> bool:
     状態キー`agents_server_sessions`をキー順JSONへ正規化した指紋で前回の`list`からの
     変化を判定する。直近の遮断から5分以内の再実行は、記録できない状態変化がある経路で
     恒久的に停止しないよう通過させる。遮断する場合は、前回の結果を再利用する代替手段を
-    同じターンで実行できるためblockを返す。あわせて、状態を進める`wait`と`stop`の
+    同じターンで実行できるためblockを返す。あわせて、状態を進める`atk agents wait`と`stop`の
     呼び出し形を通知本文へ示す。
     """
     if not session_id:
@@ -313,7 +308,7 @@ def _check_agents_server_list_repeat(session_id: str) -> bool:
         _block_notice(
             "blocked: 前回の`list`から`agents_server`の状態が変化していないため、同じ結果が返る。"
             "前回の`list`の結果を再利用する。"
-            "状態を進める操作は`list`ではない。終端を待つ場合は引数を取らない`wait`を、"
+            "状態を進める操作は`list`ではない。終端を待つ場合は実行ホストで`atk agents wait`を、"
             "終端済みの委譲先を一覧から除く場合は`stop(session_id)`を発行する。"
             "これらは状態を変えるため、続けて発行する`list`は遮断されない。",
             fix="完了通知の受領後など再取得が必要な場合は、5分以内に同じ`list`を再実行すると続行できる。",

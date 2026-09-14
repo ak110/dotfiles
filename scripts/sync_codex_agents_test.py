@@ -99,13 +99,12 @@ def test_two_layer_wait_contract_is_structurally_synced() -> None:
     steps = _ordered_steps(source_section)
 
     assert {"`agents_server.start`", "`session_id`"} <= set(re.findall(r"`[^`]+`", steps[0]))
-    assert {"`agents_server.wait`"} <= set(re.findall(r"`[^`]+`", steps[1]))
-    assert "引数なし" in steps[1]
+    assert {"`atk agents wait`"} <= set(re.findall(r"`[^`]+`", steps[1]))
     assert "timeout" not in steps[1]
-    assert {"`cell_id`", "`functions.wait`", "`agents_server.wait`"} <= set(re.findall(r"`[^`]+`", steps[2]))
-    assert "再度呼ばない" in steps[2]
+    assert {"`cell_id`", "`functions.wait`", "`atk agents wait`"} <= set(re.findall(r"`[^`]+`", steps[2]))
+    assert "再度起動しない" in steps[2]
     assert "終端結果" in steps[3] and "同じ応答" in steps[3]
-    assert {"`cell_id`", "`wait`"} <= set(re.findall(r"`[^`]+`", steps[4]))
+    assert {"`cell_id`"} <= set(re.findall(r"`[^`]+`", steps[4]))
     assert "戻り値をそのまま" in steps[4]
 
 

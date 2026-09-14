@@ -52,7 +52,8 @@ def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str
         atk.main(["agents", "list"])
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["sessions"][0] == {
+    session = payload["sessions"][0]
+    assert session == {
         "session_id": "session-1",
         "status": "running",
         "cwd": "/worktree",
@@ -63,7 +64,11 @@ def test_agents_list_returns_diagnostic_fields(capsys: pytest.CaptureFixture[str
         "updated_at": "2026-09-13T00:01:00+00:00",
         "owner_status_file": "root.json",
         "result_available": False,
+        "output_updated_at": None,
+        "seconds_since_output": session["seconds_since_output"],
+        "stalled": True,
     }
+    assert isinstance(session["seconds_since_output"], int)
 
 
 @pytest.mark.usefixtures("session_environment")
@@ -84,3 +89,39 @@ def test_agents_show_rejects_unknown_session(capsys: pytest.CaptureFixture[str])
         atk.main(["agents", "show", "missing"])
 
     assert capsys.readouterr().err == "unknown session: missing\n"
+
+
+def test_agents_list_from_terminal_merges_all_root_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """会話識別子のない直接端末では有効な全rootのsessionを統合する。"""
+    for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(config, "state_dir", lambda: tmp_path)
+    for root_session_id, remote_session_id in (("root-a", "session-a"), ("root-b", "session-b")):
+        directory = status_file.status_directory(root_session_id, tmp_path)
+        directory.mkdir(parents=True)
+        (directory / "root.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sessions": [
+                        {
+                            "session_id": remote_session_id,
+                            "status": "running",
+                            "started_at": "2026-09-14T00:00:00+00:00",
+                            "updated_at": "2026-09-14T00:00:00+00:00",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert {session["session_id"] for session in payload["sessions"]} == {"session-a", "session-b"}

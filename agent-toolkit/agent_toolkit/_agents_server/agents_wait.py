@@ -43,10 +43,11 @@ def wait_for_result(
     root_session_id = status_file.resolve_conversation_root_session_id(env, state_root)
     identity = status_file.resolve_status_file_identity(env)
     if root_session_id is None or identity is None:
-        return _fail(
-            "agents_serverの状態ディレクトリを解決できません。同じsessionを`agents_server`の`list`と`wait`で観測してください。",
-            4,
+        message = (
+            "agents_serverの状態ディレクトリを解決できません。"
+            "同じsessionで`atk agents list`と`atk agents wait`を実行してください。"
         )
+        return _fail(message, 4)
     own_status_path = status_file.status_directory(root_session_id, state_root) / identity.file_name
     result_directory = status_file.results_directory(root_session_id, state_root)
     listed = _read_sessions(own_status_path)
@@ -88,7 +89,7 @@ def wait_for_result(
                     result_path.unlink(missing_ok=True)
                     return 0
                 if notices:
-                    response = _running_response(session_id, _session_updated_at(status_paths, session_id))
+                    response = _running_response(session_id, _session_output_activity(status_paths, session_id))
                     response["notices"] = notices
                     print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
                     return 0
@@ -97,7 +98,10 @@ def wait_for_result(
             selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
             if selected is None and ordered_ids:
                 selected = ordered_ids[0]
-            response = _running_response(selected, None if selected is None else _session_updated_at(status_paths, selected))
+            response = _running_response(
+                selected,
+                {} if selected is None else _session_output_activity(status_paths, selected),
+            )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
@@ -159,8 +163,8 @@ def _session_is_retained(paths: list[pathlib.Path], session_id: str) -> bool | N
     return False if parsed else None
 
 
-def _session_updated_at(paths: list[pathlib.Path], session_id: str) -> str | None:
-    """状態ファイルから保持中sessionの最終活動時刻を返す。"""
+def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict[str, Any]:
+    """状態ファイルから保持中sessionの最新テキスト出力活動を返す。"""
     for path in paths:
         sessions = _read_sessions(path)
         if sessions is None:
@@ -168,17 +172,25 @@ def _session_updated_at(paths: list[pathlib.Path], session_id: str) -> str | Non
         for session in sessions:
             if session["session_id"] != session_id:
                 continue
-            updated_at = session.get("updated_at")
-            if not isinstance(updated_at, str):
-                return None
+            output_updated_at = session.get("output_updated_at")
+            reference = output_updated_at if isinstance(output_updated_at, str) else session.get("started_at")
+            if not isinstance(reference, str):
+                return {}
             try:
-                parsed_updated_at = datetime.datetime.fromisoformat(updated_at)
+                timestamp = datetime.datetime.fromisoformat(reference)
             except ValueError:
-                return None
-            if parsed_updated_at.utcoffset() is None:
-                return None
-            return updated_at
-    return None
+                return {}
+            if timestamp.utcoffset() is None:
+                return {}
+            elapsed = max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
+            activity: dict[str, Any] = {
+                "output_updated_at": output_updated_at if isinstance(output_updated_at, str) else None,
+                "seconds_since_output": elapsed,
+            }
+            if elapsed >= state.STALL_NOTICE_SECONDS:
+                activity["stalled"] = True
+            return activity
+    return {}
 
 
 def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
@@ -195,25 +207,13 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
     return sessions
 
 
-def _running_response(session_id: str | None, updated_at: str | None) -> dict[str, Any]:
-    """非終端の待機応答へ最終活動時刻の観測値を加える。
+def _running_response(session_id: str | None, output_activity: Mapping[str, Any]) -> dict[str, Any]:
+    """非終端の待機応答へ最新テキスト出力活動の観測値を加える。
 
     対象を1件も解決できない場合は`session_id`を省き、`status`だけを返す。
     """
     response: dict[str, Any] = {"status": "running"}
     if session_id is not None:
         response = {"session_id": session_id, "status": "running"}
-    if updated_at is None:
-        return response
-    try:
-        parsed_updated_at = datetime.datetime.fromisoformat(updated_at)
-        if parsed_updated_at.utcoffset() is None:
-            return response
-        elapsed = (datetime.datetime.now(datetime.UTC) - parsed_updated_at).total_seconds()
-    except (TypeError, ValueError):
-        return response
-    response["updated_at"] = updated_at
-    response["seconds_since_update"] = elapsed
-    if elapsed >= state.STALL_NOTICE_SECONDS:
-        response["stalled"] = True
+    response.update(output_activity)
     return response
