@@ -226,10 +226,10 @@ def _build_options(
     子Claudeが親と同じ設定の下で動くよう、親の`--settings`層を継承する。
     親cmdlineを取得できない実行環境では継承せず、従来の設定層を維持する。
 
-    委譲先の権限モードはbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
+    起動区分によらず権限モードをbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
     受信側がbypass系であり送信側が権限モードを申告していない場合に当該メッセージを保留する。
-    委譲元は委譲先の起動直後にメッセージを送るため、bypass系で起動した委譲先は保留のまま
-    初期化を完了できない。
+    委譲元は起動直後にメッセージを送るため、bypass系で起動したセッションは保留のまま
+    初期化を完了できない。当該保留は起動区分に依存しない。
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
@@ -253,7 +253,7 @@ def _build_options(
         "model": model,
         "effort": cast(_EffortLevel, effort),
         "resume": session_id,
-        "permission_mode": "bypassPermissions" if lightweight else "auto",
+        "permission_mode": "auto",
         "env": env,
         "setting_sources": [] if lightweight else ["user", "project"],
         "system_prompt": (

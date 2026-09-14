@@ -99,29 +99,20 @@ def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     return captured
 
 
-@pytest.mark.parametrize(
-    ("launch_kind", "expected"),
-    [
-        ("delegate", "auto"),
-        ("explore", "bypassPermissions"),
-        ("shell", "bypassPermissions"),
-        ("write", "bypassPermissions"),
-    ],
-)
-def test_build_options_keeps_delegate_out_of_bypass_modes(
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+def test_build_options_keeps_every_launch_out_of_bypass_modes(
     monkeypatch: pytest.MonkeyPatch,
     launch_kind: str,
-    expected: str,
 ) -> None:
-    """委譲先はbypass系以外で起動し、軽量起動は現行の権限モードを保つ。
+    """起動区分によらずbypass系以外の権限モードで起動する。
 
-    bypass系の受信側はセッション間メッセージを保留するため、委譲先が初期化を完了できない。
+    bypass系の受信側はセッション間メッセージを保留するため、起動したセッションが初期化を完了できない。
     """
     captured = _capture_options(monkeypatch)
 
     claude._build_options("/tmp", "model", "medium", launch_kind=launch_kind)  # type: ignore[arg-type]  # pylint: disable=protected-access
 
-    assert captured["permission_mode"] == expected
+    assert captured["permission_mode"] == "auto"
 
 
 def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

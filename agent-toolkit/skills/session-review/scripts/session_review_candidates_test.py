@@ -18,7 +18,9 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
     assert candidates[:-1] == [
         {
             "kind": "candidate",
+            "candidate_id": "c0001",
             "candidate_kind": "user-intervention",
+            "analysis_group_hint": ["実際の是正要求"],
             "event_key": ["実際の是正要求"],
             "count": 1,
             "locators": [{"record": "main", "line": 4}],
@@ -51,12 +53,21 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
             "text": "警告 A",
             "hook": "agent-toolkit/pretooluse",
             "hook_name": "PreToolUse:Bash",
-            "tag": "notice",
+            "tag": "block",
         },
         {
             "kind": "hook-notice",
             "record": "main",
             "line": 9,
+            "text": "遮断",
+            "hook": "agent-toolkit/pretooluse",
+            "hook_name": "PreToolUse:Bash",
+            "tag": "block",
+        },
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": 10,
             "text": "通知",
             "hook": "agent-toolkit/pretooluse",
             "hook_name": "PreToolUse:Bash",
@@ -75,3 +86,4 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
     assert by_kind["warning"]["count"] == 2
     assert by_kind["hook-notice"]["locators"] == [{"record": "main", "line": 9}]
     assert candidates[-1]["included_locator_count"] == 5
+    assert candidates[-1]["excluded"]["hook-notice-informational"] == 1
