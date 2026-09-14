@@ -34,6 +34,83 @@ _INTERNAL_MISE_REFRESHED_ARG = _process_loop._INTERNAL_MISE_REFRESHED_ARG  # pyl
 _INTERNAL_DOTFILES_UPDATED_ARG = _process_loop._INTERNAL_DOTFILES_UPDATED_ARG  # pylint: disable=protected-access
 
 
+def _run_posix_launcher(
+    tmp_path: pathlib.Path,
+    top_level: str,
+    subcommand: str,
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    """決定論的なuv代用品でPOSIXランチャーを実行する。"""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    call_log = tmp_path / "uv-calls"
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        """#!/usr/bin/env python3
+import os
+import pathlib
+import sys
+
+log = pathlib.Path(os.environ["FAKE_UV_LOG"])
+calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+calls.append(" ".join(sys.argv[1:]))
+log.write_text("\\n".join(calls) + "\\n", encoding="utf-8")
+spec = os.environ.get("AGENT_TOOLKIT_RESTART_SPEC")
+if spec and len(calls) == 1:
+    pathlib.Path(spec).write_text("\\n".join(sys.argv[-3:]) + "\\n", encoding="utf-8")
+    raise SystemExit(75)
+""",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join((str(fake_bin), env["PATH"]))
+    env["FAKE_UV_LOG"] = str(call_log)
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "bin" / "atk"
+    result = subprocess.run(
+        [str(launcher), top_level, subcommand],
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    return result, call_log.read_text(encoding="utf-8").splitlines()
+
+
+@pytest.mark.parametrize(
+    ("top_level", "subcommand", "expected_call_count"),
+    [
+        ("wi", "process-loop", 2),
+        ("mq", "process-loop", 2),
+        ("wi", "list", 1),
+        ("plans", "process-loop", 1),
+    ],
+)
+def test_posix_launcher_restarts_only_process_loop_aliases(
+    tmp_path: pathlib.Path,
+    top_level: str,
+    subcommand: str,
+    expected_call_count: int,
+) -> None:
+    """POSIXランチャーはwiと旧mqのprocess-loopだけを再起動対象にする。"""
+    result, uv_calls = _run_posix_launcher(tmp_path, top_level, subcommand)
+
+    assert result.returncode == 0, result.stderr
+    assert len(uv_calls) == expected_call_count
+
+
+def test_windows_launcher_routes_same_process_loop_aliases() -> None:
+    """WindowsランチャーもPOSIX版と同じ2つのトップレベル名を受理する。"""
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "bin" / "atk.cmd"
+    data = launcher.read_bytes()
+    text = data.decode("cp932")
+
+    assert b"\n" not in data.replace(b"\r\n", b"")
+    assert 'if not "%~1"=="wi" if not "%~1"=="mq" goto :run_once' in text
+    assert 'if not "%~2"=="process-loop" goto :run_once' in text
+
+
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンド・Claude設定・管理対象一時領域の登録簿をユーザー環境から分離する。"""
@@ -465,6 +542,8 @@ def test_restart_writes_spec_and_exits_when_launcher_env_is_set(
 def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """受け渡しファイルの指定が無い直接起動では実体を置き換える。"""
     calls: list[tuple[str, list[str]]] = []
+    project_root = tmp_path / "plugin"
+    script = project_root / "agent_toolkit" / "atk.py"
 
     def record(path: str, argv: list[str]) -> None:
         calls.append((path, argv))
@@ -472,12 +551,22 @@ def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(os, "execv", record)
     with pytest.raises(SystemExit):
-        _restart_process_loop([str(tmp_path / "atk.py"), "wi", "process-loop"])
+        _restart_process_loop([str(script), "wi", "process-loop"])
 
     assert calls == [
         (
             "/resolved/uv",
-            ["/resolved/uv", "run", "--no-project", "--script", str((tmp_path / "atk.py").resolve()), "wi", "process-loop"],
+            [
+                "/resolved/uv",
+                "run",
+                "--project",
+                str(project_root),
+                "--locked",
+                "--no-default-groups",
+                str(script.resolve()),
+                "wi",
+                "process-loop",
+            ],
         )
     ]
 
