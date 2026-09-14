@@ -45,7 +45,10 @@ def _run(
 ) -> subprocess.CompletedProcess[str]:
     """子プロセスを実行し、失敗時は診断出力を保った例外を送出する。"""
     command = [os.fspath(argument) for argument in arguments]
-    result = runner(command, cwd=cwd, env=env, check=False, capture_output=True, text=True, encoding="utf-8")
+    try:
+        result = runner(command, cwd=cwd, env=env, check=False, capture_output=True, text=True, encoding="utf-8")
+    except OSError as error:
+        raise UpgradeCheckError(f"子プロセスを起動できなかった: {command!r}: {error}") from error
     if result.returncode == 0:
         return result
     if result.stdout:

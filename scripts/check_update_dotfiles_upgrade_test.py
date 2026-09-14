@@ -65,6 +65,20 @@ def test_resolve_old_commit_rejects_missing_history(tmp_path: pathlib.Path) -> N
         upgrade.resolve_old_commit(tmp_path, "current-oid", runner=runner)
 
 
+def test_resolve_old_commit_reports_command_when_process_cannot_start(tmp_path: pathlib.Path) -> None:
+    """子プロセスの起動前失敗へ実行コマンドを付加する。"""
+
+    def runner(arguments, **_kwargs):
+        raise FileNotFoundError(2, "No such file or directory", arguments[0])
+
+    with pytest.raises(upgrade.UpgradeCheckError, match="子プロセスを起動できなかった") as exc_info:
+        upgrade.resolve_old_commit(tmp_path, "current-oid", runner=runner)
+
+    expected = ["git", "-C", str(tmp_path), "show", "-s", "--format=%ct", "current-oid"]
+    assert repr(expected) in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, FileNotFoundError)
+
+
 @pytest.mark.parametrize(
     ("platform_name", "expected"),
     (("linux", "update-dotfiles"), ("windows", "update-dotfiles.cmd")),
