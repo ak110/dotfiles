@@ -20,6 +20,7 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 _HOOK_ID = "agent-toolkit/rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
+RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書く。"
 QUALITY_CHECKPOINT_NOTICE = (
     "目的・利用場面を明示し、最小設計を選ぶ。会話限定指示を成果物へ混入させない。"
     "要件未達と無根拠な代替・旧・互換経路を拒み、規範を正本とする。"
@@ -39,11 +40,18 @@ SESSION_TEMP_PREFIX = "session"
 
 
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
-    """SessionStartへ追加する本文を構成する。"""
+    """SessionStartへ追加する本文を構成する。
+
+    使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、当該条文は本文の末尾寄りに
+    位置するため、最初の応答を生成する時点では冒頭の記述より参照から漏れやすい。同じ規定を冒頭の1文へ
+    置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先は当該規定の対象外のため追加しない。
+    """
     parts: list[str] = []
+    normative_parts: list[str] = []
+    if not delegated:
+        parts.append(RESPONSE_LANGUAGE_NOTICE)
     if source == "compact":
         parts.append(QUALITY_CHECKPOINT_NOTICE)
-    normative_parts: list[str] = []
     if not delegated:
         parts.append(ASK_USER_QUESTION_CHECKLIST)
         normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
