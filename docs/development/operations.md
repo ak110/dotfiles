@@ -327,16 +327,21 @@ uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/skills
 
 ## 日次リリースの自動実施
 
-dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開工程のpushとCI成功を確認した後に、`develop`から`master`へのリリースPRを作成してマージまで実施するかを判定する。
+dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを、次の2条件で判定する。
 判定と実施はメインが担う。
 
-次の条件がともに成立する場合に実施する。
+- 第1条件: 選定工程の完了時点の`atk wi list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力を判定の入力とする。当該セッションが処理対象へ固定した集合の項目を除いた残りが、`state`が`hold`の項目と、`state`が`inbox`かつ`ready`が偽の項目だけである
+- 第2条件: 公開工程のpushとCI成功を確認した後に`git rev-parse --short=7 origin/develop origin/master`を実行し、返る一意な短縮OIDが互いに異なる
 
-- 選定工程で処理対象へ固定した集合のうち、`atk wi list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力に残る項目が、`hold`のものと依存関係の未解決により`inbox`へ戻したものだけである
-- `git rev-parse --short=7 origin/develop origin/master`が返す一意な短縮OIDが互いに異なる
+第1条件は選定工程の完了時点で評価する。
+メインは選定工程の完了でAWIの状態を照合するために実行する`atk wi list`の出力をそのまま判定へ用い、判定専用の実行を追加しない。
+判定結果と、判定に用いた出力に残った項目のファイル名、`state`及び`ready`を、当該セッションの管理対象一時領域直下の`daily-release-condition1.txt`へ記録する。
+公開工程では当該ファイルを読んで第1条件の判定結果とし、`atk wi list`を再実行しない。
+当該ファイルが無い場合は第1条件を不成立として扱う。
+選定工程の判定時点より後に登録された項目は判定の対象へ含めず、次回セッションで扱う。
 
-条件が成立しない場合は、成立しなかった条件と残る項目を報告し、PRを作成しない。
-公開工程の開始後に登録された項目は判定の対象へ含めず、次回セッションで扱う。
+両方の条件が成立する場合に実施する。
+成立しない場合は、成立しなかった条件と、第1条件が不成立のときは`daily-release-condition1.txt`に残る項目を報告し、PRを作成しない。
 
 実施する場合は次の順で進める。
 

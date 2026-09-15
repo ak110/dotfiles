@@ -32,7 +32,7 @@
     - `XDG_STATE_HOME`などで状態ディレクトリを差し替えた隔離環境では、検査へ与えるのと同じ環境変数を与えて`mise trust`を実行する
     - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
 - 通常開発は`develop`で行い、リリースは`master`向けのPRで行う。`master`は必須CIを通過したマージコミットだけで更新する
-  - `agent-toolkit:process-wi`の終端では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)の判定に従ってリリースPRを作成し、マージまで実施する
+  - `agent-toolkit:process-wi`では、[日次リリースの自動実施](docs/development/operations.md#日次リリースの自動実施)に従い、選定工程の完了時点で第1条件を評価して記録し、終端でリリースPRを作成してマージまで実施する
   - それ以外の経路では、リリースPRの作成を手動で行う。PRのマージ後は`.claude/skills/merge-pr`の手順で同期、CI及び必要なReleaseを検収する
   - statusline（`rust/claude-statusline/`配下）を変更した場合は、`develop`をpushする時点までに`rust/claude-statusline/Cargo.toml`の`version`を更新する。この更新はリリース経路によらず必要であり、更新漏れは`develop`へのpushで実行されるCIの`statusline-version` jobが検出する
   - branch初期化、GitHubの保護設定及びマージ後の詳細手順は[developとmasterのリリース運用](docs/development/concepts.md#developとmasterのリリース運用)、[branchとリリースの設計](docs/development/design.md#developとmasterのbranchリリース設計)を参照する
