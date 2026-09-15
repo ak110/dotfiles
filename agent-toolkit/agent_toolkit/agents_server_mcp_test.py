@@ -1766,11 +1766,16 @@ async def test_show_reports_seconds_since_output_and_stall(tmp_path: pathlib.Pat
 
 
 @pytest.mark.asyncio
-async def test_show_reports_sorted_live_child_session_ids_only_for_running_parent(tmp_path: pathlib.Path) -> None:
+async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
     """showは稼働中の親に実在する子識別子がある場合だけ安定順で返す。"""
+    _publish_recovered_session(monkeypatch, tmp_path, "child-a", "completed")
+    _publish_recovered_session(monkeypatch, tmp_path, "child-b", "completed")
     manager, _ = _manager_with_fake("codex")
     parent = subject.SessionState("parent", str(tmp_path), engine="codex")
-    parent.live_child_session_ids.update({"child-b", "child-a"})
+    parent.live_child_session_ids.update({"child-b", "child-a", "child-unknown"})
     no_child = subject.SessionState("no-child", str(tmp_path), engine="codex")
     terminal = subject.SessionState("terminal", str(tmp_path), engine="codex")
     terminal.live_child_session_ids.add("child-terminal")
@@ -1783,9 +1788,15 @@ async def test_show_reports_sorted_live_child_session_ids_only_for_running_paren
         }
     )
 
-    assert manager.show_session(parent.session_id)["live_child_session_ids"] == ["child-a", "child-b"]
-    assert "live_child_session_ids" not in manager.show_session(no_child.session_id)
-    assert "live_child_session_ids" not in manager.show_session(terminal.session_id)
+    parent_detail = manager.show_session(parent.session_id)
+
+    assert parent_detail["live_child_sessions"] == [
+        {"session_id": "child-a", "cwd": str(tmp_path)},
+        {"session_id": "child-b", "cwd": str(tmp_path)},
+    ]
+    assert parent_detail["live_child_session_ids_without_cwd"] == ["child-unknown"]
+    assert "live_child_sessions" not in manager.show_session(no_child.session_id)
+    assert "live_child_sessions" not in manager.show_session(terminal.session_id)
     await manager.close()
 
 

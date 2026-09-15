@@ -2736,6 +2736,8 @@ def _git_object_exists(oid: str, cwd: str) -> bool | None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
@@ -2996,6 +2998,8 @@ def _external_command_option_contract(path: tuple[str, ...], session_id: str) ->
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):

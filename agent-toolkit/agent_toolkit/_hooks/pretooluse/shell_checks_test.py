@@ -1626,7 +1626,15 @@ class TestNormViolatingArgumentForms:
 
     def test_rg_unknown_option_warns(self, tmp_path: pathlib.Path) -> None:
         """`rg`の受理しないオプションは、受理集合とともに実行前に差し戻す。"""
-        result = self._invoke("rg --not-supported needle .", tmp_path, session_id="rg-option-contract")
+        session_id = "rg-option-contract"
+        # 受理集合は`rg --help`から取得して保持する。
+        # 実行環境への`rg`の導入有無で結果が変わらないよう、保持済みの状態として与える。
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"external_command_option_contracts": {"rg": {"flags": ["--files-with-matches"], "valued": ["--regexp"]}}},
+        )
+        result = self._invoke("rg --not-supported needle .", tmp_path, session_id=session_id)
         assert result.returncode == 0
         messages = _agent_messages(result)
         assert "--not-supported" in messages
