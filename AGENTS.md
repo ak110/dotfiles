@@ -107,6 +107,9 @@ Codexでは`~/.codex/references/session-review-dotfiles.md`とする。
 `agent-toolkit:process-wi`のセッションでは、選定工程のpickerが処理対象のAWIごとに`project_notes`を書く。
 `project_notes`の受け渡し形式は`agent-toolkit/share/pick-wi.subagent.md`が定める。
 本節の適用対象となる規範を変更するAWIには、当該変更の対象ファイルのリポジトリ相対パスを書く。変更しないAWIは`なし`とする。
+反映先に本リポジトリのコーディングエージェント向け文書を含むAWIには、`docs/development/concepts.md`と`docs/development/incidents.md`を編集主体自身が同じセッションで全文読む要求も書く。
+対象かどうかの判定は、当該AWIが挙げる反映先のパスを`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真とするかで行う。
+レーン担当は選定工程の固定出力ファイルから自レーンの`project_notes`を読むため、メインの起動プロンプトへ当該要求を再掲しない。
 メインは、`project_notes`が`なし`以外である項目を担当するレーンの起動プロンプトへ、当該項目のファイル名と対象ファイルのパスを渡す。
 当該レーンで規範の変更を確定した主体は、同じレーンの以降の委譲先の起動プロンプトへ変更後の文面を明示して渡す。並行する他のレーンは当該変更を統合前に取得できないため、レーンをまたぐ伝播は本節の対象としない。
 

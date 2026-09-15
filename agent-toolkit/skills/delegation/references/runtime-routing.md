@@ -55,7 +55,7 @@ session未生成かつ元担当不在を実測確認できない場合は、こ�
 | キー | 対応工程 | 起動直前に解決する主体 | `codex`経路 | `claude`経路 |
 | --- | --- | --- | --- | --- |
 | `pick_wi_model` | WIの選定とレーン分け | `agent-toolkit:process-wi`のメイン | `agents_server` MCP | `agents_server` MCP |
-| `execute_model` | 計画起草、実装、近接検証、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入及び`agent-toolkit:process-wi`の公開工程の終端工程 | レーン担当、レビュー修正担当、CI修正担当、即時対応、マージなしの統合、上流AWI投入又は公開工程の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
+| `execute_model` | 計画起草、実装、近接検証、レビュー修正、CI失敗修正、即時対応の修正、マージなしの統合、上流AWI投入、`agent-toolkit:process-wi`の自動コードレビュー監査及び同スキルの公開工程の終端工程 | レーン担当、レビュー修正担当、CI修正担当、即時対応、マージなしの統合、上流AWI投入、自動コードレビュー監査又は公開工程の終端工程を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `execute_review_model` | 実装後の実行レビュー | 実行レビュー担当を委譲するメイン | `agents_server` MCP | `agents_server` MCP |
 | `session_review_model` | セッション振り返りの問題候補の抽出と振り返り全体 | `agent-toolkit:session-review`を起動したメイン | `agents_server` MCP | `agents_server` MCP |
 

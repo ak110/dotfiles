@@ -10,6 +10,8 @@ process-wiのメインが、処理対象の選定、処理開始及び自動コ�
 
 pickerと並行して、対象がGitHub上にある場合は`skills/process-wi/references/github-copilot-review-audit.md`に従って自動コードレビューを1回取得する。監査の返却と処置確定を公開工程の開始条件とし、新しいレビューを待機しない。監査担当は対象リポジトリの成果物を変更しない。
 
+監査担当は`agents_server`の`start_custom`で1件起動し、`model_type`へ`execute`を渡す。`cwd`には対象リポジトリの絶対パスを渡し、`prompt`には同書に従って監査を実施する指示と返却する項目を書く。
+
 ## 起動
 
 メインはキュー一覧とAWI本文を自ら取得せず、`agents_server`の`start`でpickerを1件起動する。

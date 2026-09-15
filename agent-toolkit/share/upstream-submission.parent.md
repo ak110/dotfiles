@@ -20,7 +20,7 @@ pickerが項目ごとの`upstream_target_repo`と`upstream_request`を確定し�
 ## 渡す入力
 
 - `元項目と投入先の組`: 元項目と投入先の組ごとの、元項目のAWIファイル名、1件の`upstream_target_repo`及びpickerが返した`upstream_request`
-- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
+- `引き継ぎ記録先`: `atk managed-temp create --prefix=handoff`で作成した領域の直下のファイルの絶対パス。セッションの管理対象一時領域が通知されている場合は`--session-root <通知された絶対パス>`を付けて作成し、当該子領域は個別に回収せずセッション終了時の回収へ委ねる。独立して作成した領域だけを、当該委譲の全工程の完了後に`atk managed-temp cleanup --path <当該領域の絶対パス>`で回収する
 - 投入先を受領した値へ固定し、自ら決定しないこと
 - 完了報告と成果物を日本語で書くこと
 
