@@ -185,21 +185,20 @@ class TestBlockCondition:
         assert decision.get("decision") == "block"
         reason = decision.get("reason")
         assert isinstance(reason, str)
-        assert "agent-toolkit:process-wi" in reason
-        assert "agent-toolkit:completion-report" in reason
         assert "atk agents-exit-session" in reason
         assert "Fix: " in reason
         assert "agent-toolkit/autonomous_exit" in reason
 
-    def test_reason_body_orders_completion_report_before_exit_session(self, tmp_path: pathlib.Path) -> None:
-        """完了報告を終える前にexit-sessionへ進まないよう順序を明示する。"""
+    def test_reason_body_states_the_evaluated_input(self, tmp_path: pathlib.Path) -> None:
+        """本hookが実際に判定した入力だけを述べ、未完了工程を列挙しない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {"session_id": "scope", "transcript_path": str(transcript)},
             state_dir=tmp_path,
         )
         reason = _parse_decision(result)["reason"]
-        assert reason.index("agent-toolkit:completion-report") < reason.index("atk agents-exit-session")
+        assert "本判定の入力は" in reason
+        assert "どの工程が未完了かは判定していない" in reason
 
     def test_legacy_process_loop_env_blocks(self, tmp_path: pathlib.Path):
         """旧process-loopの移行互換名だけが設定された場合もblockする。"""

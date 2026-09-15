@@ -649,6 +649,9 @@ class TestBashGitLogDecorate:
         updated = data["hookSpecificOutput"]["updatedInput"]["command"]
         assert "--decorate" in updated
         assert "systemMessage" not in data
+        # 入力を書き換えた補正は、書き換えた旨と挿入したオプションを通知する。
+        context = data["hookSpecificOutput"]["additionalContext"]
+        assert "`--decorate`を挿入して入力を書き換えた" in context
 
     def test_skips_when_decorate_present(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git log --oneline --decorate -5"}})

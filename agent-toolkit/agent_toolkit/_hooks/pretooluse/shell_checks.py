@@ -13,10 +13,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 任意ツール:
 
-- メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
+- メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
+- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
-- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
+- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続の警告 (warn)
 
 固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
 計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
@@ -47,7 +47,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は警告 (auto-fix/warn)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
@@ -64,16 +64,16 @@ TaskStop:
 
 Read / Write / Edit / MultiEdit / apply_patch:
 
-- 文字化け（U+FFFD）検出 (block)
-- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
-- lockfile / 生成物ディレクトリの直接編集 (block)
+- 文字化け（U+FFFD）検出 (warn。ユーザーが直接読む本文はblock)
+- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
+- lockfile / 生成物ディレクトリの直接編集 (warn)
 - `.env`系のReadとシークレット・鍵ファイルの直接編集 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
 - 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
-- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
+- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (warn。ユーザーが直接読む本文はblock)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
@@ -327,8 +327,12 @@ def _split_simple_truncation(command: str) -> tuple[str, str] | None:
     return None
 
 
-def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str]] | None:
-    """1つの直列区間にある競合しない補正を適用する。"""
+def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str, list[str], str | None] | None:
+    """1つの直列区間にある競合しない補正を適用する。
+
+    戻り値の3つ目は、切り詰めを補正した場合の保存先の絶対パスとする。
+    切り詰めの通知は呼び出し全体の構成に依存するため、本関数では組み立てず`_autofix_bash_command`が生成する。
+    """
     truncation = _split_simple_truncation(command)
     producer = truncation[0] if truncation is not None else command
     rewritten = _rewrite_simple_uv_script(producer, cwd) or producer
@@ -339,6 +343,7 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
     if git_grep_rewritten is not None:
         rewritten = git_grep_rewritten
         notices.append("`git grep`のパターン後方にある既知オプションを受理位置へ移した。")
+    log_path: str | None = None
     if truncation is not None:
         if not session_id:
             return None
@@ -346,24 +351,47 @@ def _autofix_bash_segment(command: str, cwd: str, session_id: str) -> tuple[str,
             session_temp = managed_temp.create_managed_temp("session", session_id=session_id)
         except (managed_temp.ManagedTempError, OSError):
             return None
-        log_path = session_temp / f"bash-output-{time.time_ns()}.log"
-        rewritten = f"{rewritten} > {shlex.quote(str(log_path))}"
-        notices.append(f"切り詰め処理を除去し、標準出力全量の保存先を`{log_path}`へ補正した。")
+        log_path = str(session_temp / f"bash-output-{time.time_ns()}.log")
+        rewritten = f"{rewritten} > {shlex.quote(log_path)}"
     if rewritten == command:
         return None
-    return rewritten, notices
+    return rewritten, notices, log_path
+
+
+def _format_truncation_autofix_notice(saved: list[tuple[str, str]], *, total_segments: int) -> str:
+    """切り詰め補正の通知本文を、補正対象の直列区間と保存先の対応として組み立てる。
+
+    実行主体が受け取る結果の変化を本文へ示す。
+    全ての直列区間を保存した場合と一部だけを保存した場合で、標準出力に残る内容の案内を切り替える。
+    """
+    lines = [f"- `{segment}` の標準出力を`{log_path}`へ保存した" for segment, log_path in saved]
+    if len(saved) >= total_segments:
+        remaining = "当該呼び出しは標準出力を返さない。"
+    else:
+        remaining = "切り詰めを含まない直列区間の標準出力は当該呼び出しの結果へ残る。"
+    return "\n".join(
+        [
+            "切り詰め処理を除去し、標準出力の全量を保存先へ補正した。",
+            *lines,
+            remaining,
+            "保存先から必要な範囲だけを行数指定又は構造化条件で読む操作が残っている。",
+            "同一セッションで同じ構造のBash呼び出しを再び発行した場合は、補正ではなく遮断になる。",
+        ]
+    )
 
 
 _REPEATED_OUTPUT_TRUNCATION_FIX = (
-    "標準出力をファイルへリダイレクトして全量を保存し、保存済みファイルから必要な範囲だけを"
-    "行数指定又は構造化条件で読む。"
+    "当該コマンド自身が提供する対象の限定、件数指定、要約指定又は構造化条件で出力量を制御する。"
+    "制御できない場合は標準出力をファイルへリダイレクトして全量を保存し、"
+    "保存済みファイルから必要な範囲だけを行数指定又は構造化条件で読む。"
     "分離実行を利用できる場合は、読み取り専用の探索をagents_serverのstart_explore、"
     "コマンド実行をstart_shellへ分離してもよい。"
+    "判定条件の正本は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」とする。"
 )
 """切り詰め補正の反復に対する解消手段。
 
-保存と再読の形はこの検査の判定条件に一致しないため、分離実行を利用できない実行主体も
-当該本文だけで遮断されない形へ到達できる。
+保存と再読の形と、コマンド自身の限定指定はこの検査の判定条件に一致しないため、
+分離実行を利用できない実行主体も当該本文だけで遮断されない形へ到達できる。
 """
 
 
@@ -395,6 +423,7 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
     segments = _split_serial_shell_commands(command, separators=_STATUS_SHELL_SEPARATORS)
     replacements: list[tuple[int, int, str]] = []
     notices: list[str] = []
+    saved: list[tuple[str, str]] = []
     position = 0
     for segment in segments:
         start = command.find(segment, position)
@@ -404,19 +433,31 @@ def _autofix_bash_command(command: str, cwd: str, session_id: str) -> tuple[str,
         fixed = _autofix_bash_segment(segment, cwd, session_id)
         if fixed is None:
             continue
-        rewritten, segment_notices = fixed
+        rewritten, segment_notices, log_path = fixed
         replacements.append((start, position, rewritten))
         notices.extend(segment_notices)
+        if log_path is not None:
+            saved.append((segment, log_path))
     if not replacements:
         return None
     rewritten_command = command
     for start, end, replacement in reversed(replacements):
         rewritten_command = rewritten_command[:start] + replacement + rewritten_command[end:]
     unique_notices = list(dict.fromkeys(notices))
-    return rewritten_command, _llm_notice(" ".join(unique_notices), tag=_WARN_TAG, removable_cause=True)
+    body = " ".join(unique_notices)
+    if saved:
+        truncation_notice = _format_truncation_autofix_notice(saved, total_segments=len(segments))
+        body = f"{body}\n{truncation_notice}" if body else truncation_notice
+    return rewritten_command, _llm_notice(body, tag=_WARN_TAG, removable_cause=True)
 
 
-_EDIT_TOOL_SAVE_PHRASE = "実行環境が提供する編集ツール（Claude Codeでは`Write`、Codexでは`apply_patch`）でファイルへ保存する"
+_EDIT_TOOL_SAVE_PHRASE = (
+    "実行環境が提供する編集ツール（Claude Codeでは`Write`、Codexでは`apply_patch`）で管理対象一時領域のファイルへ保存する"
+)
+_FILE_LAUNCH_FORM_PHRASE = (
+    "保存したファイルは、ファイルを実行対象として渡す起動形（`bash <ファイル>`、`python3 <ファイル>`、"
+    "`powershell -File <ファイル>`など）で起動する。"
+)
 """解消手段としてファイルの書込を案内する場合に用いる保存手段の名指し。
 
 保存手段を名指ししない案内は、`cat > <ファイル> <<'EOF'`の形を選ばせてheredocの判定へ当たる。
@@ -447,7 +488,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: 別のシェルへ`-c`でコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを対象シェルへ渡す。",
+                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
                 ),
                 file=sys.stderr,
             )
@@ -456,7 +497,7 @@ def _check_bash_nested_code_string(command: str) -> bool:
             print(
                 _block_notice(
                     "blocked: `su -c`へコード文字列を渡す入力は、引用を2段以上で解釈する。",
-                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを`su`の対象シェルへ渡す。",
+                    fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。{_FILE_LAUNCH_FORM_PHRASE}",
                 ),
                 file=sys.stderr,
             )
@@ -465,7 +506,9 @@ def _check_bash_nested_code_string(command: str) -> bool:
         print(
             _block_notice(
                 "blocked: `ssh`へ引用したコード文字列を渡す入力は、ローカルと接続先で引用を解釈する。",
-                fix=f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを転送し、接続先ではそのファイルを実行する。",
+                fix=(
+                    f"実行するコードを{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを接続先へ転送する。{_FILE_LAUNCH_FORM_PHRASE}"
+                ),
             ),
             file=sys.stderr,
         )
@@ -491,6 +534,7 @@ def _check_bash_heredoc_chain(command: str) -> bool:
             "blocked: heredocと本文外のパイプ又は追加リダイレクトを同じコマンドチェーンで併用している。",
             fix=(
                 f"スクリプト又は本文を{_EDIT_TOOL_SAVE_PHRASE}。保存したファイルを後続のコマンドの入力にする。"
+                f"{_FILE_LAUNCH_FORM_PHRASE}"
                 "本文を標準入力へ渡すだけであれば、パイプとリダイレクトを伴わないheredoc単独の実行にする。"
             ),
         ),
@@ -1101,7 +1145,9 @@ def _check_bash_sleep_poll_pattern(
 
     already_detected = _record_repeat_detection(session_id, "sleep_poll_detected")
     guidance = (
-        "完了通知を受領するか、背景ジョブの機械可読な完了標識を使うか、`atk watch`で委譲作業を観測し、\n"
+        "待機対象の終了状態を返す公開機能で待つ。委譲先には`atk agents wait`、CIには`atk wait-ci`を使う。\n"
+        "当該公開機能が無い場合は、完了通知を受領するか、背景ジョブの機械可読な完了標識を使うか、"
+        "`atk watch`で委譲作業を観測し、\n"
         "待機状態を示してターンを終了する。"
     )
     if already_detected:
@@ -1595,9 +1641,11 @@ def _check_bash_atk_options(command: str) -> str | None:
             ):
                 pass
             elif token.startswith("-") and not re.fullmatch(r"-\d+(?:\.\d+)?", token):
+                accepted = ", ".join(sorted(flags | valued)) or "なし"
                 return _llm_notice(
                     f"`atk {' '.join(path)}`が受理しないオプションである。対象: {token}\n"
-                    "対処: 実行前案内に示された受理オプションへ修正するか、`--help`を単独で確認する。",
+                    f"当該サブコマンドが受理するオプション: {accepted}\n"
+                    "対処: 上記の受理オプションへ修正するか、`--help`を単独で確認する。",
                     tag=_WARN_TAG,
                     removable_cause=True,
                 )

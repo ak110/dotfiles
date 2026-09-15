@@ -1332,10 +1332,16 @@ class TestStaticSafetyBlocks:
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
 
     def test_atk_unknown_option_is_warned(self) -> None:
-        """未受理オプションは実行しても`atk`が終了するだけで復元できるため警告で返す。"""
+        """未受理オプションは実行しても`atk`が終了するだけで復元できるため警告で返す。
+
+        通知本文は、判定の時点で保持している受理オプションの集合を列挙する。
+        """
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
         assert result.returncode == 0
-        assert "--not-supported" in _agent_messages(result)
+        messages = _agent_messages(result)
+        assert "--not-supported" in messages
+        assert "当該サブコマンドが受理するオプション: " in messages
+        assert "--target-repo" in messages
 
     def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
         """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""
