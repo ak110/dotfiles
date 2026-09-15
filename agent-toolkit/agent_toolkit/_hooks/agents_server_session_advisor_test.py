@@ -269,17 +269,65 @@ def test_agents_wait_resolves_pending_observation_for_all_owned_sessions(tmp_pat
     assert _run_stop(tmp_path, local_session_id) == ""
 
 
+def _status_directory(state_directory: pathlib.Path, local_session_id: str) -> pathlib.Path:
+    """当該ルートsessionの状態ディレクトリを返す。"""
+    return state_directory / "agent-toolkit" / "agents-server" / local_session_id
+
+
+def _register_wait_target(state_directory: pathlib.Path, local_session_id: str, owner: str, remote_session_id: str) -> None:
+    """待機主体の待機対象登録簿へ対象を書く。"""
+    directory = _status_directory(state_directory, local_session_id) / "wait-targets" / owner
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{remote_session_id}.json").write_text(
+        json.dumps({"version": 1, "session_id": remote_session_id}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _owner_wait_lock_path(state_directory: pathlib.Path, local_session_id: str, owner: str) -> pathlib.Path:
+    """待機主体の待機所有権ロックのパスを返す。"""
+    lock_directory = _status_directory(state_directory, local_session_id) / "wait-locks"
+    lock_directory.mkdir(parents=True, exist_ok=True)
+    return lock_directory / f"{owner}.lock"
+
+
 def test_running_agents_wait_lock_satisfies_observation(tmp_path: pathlib.Path) -> None:
-    """背景待機が対象sessionの所有権を保持する間は警告しない。"""
+    """待機主体がロックを保持し、対象を登録簿へ残している間は警告しない。"""
     local_session_id = "agents-wait-running"
     remote_session_id = "remote-running"
+    owner = "root.json"
     _record_start(tmp_path, local_session_id, remote_session_id)
-    lock_directory = tmp_path / "agent-toolkit" / "agents-server" / local_session_id / "wait-locks"
-    lock_directory.mkdir(parents=True)
-    with (lock_directory / f"{remote_session_id}.lock").open("a+b") as lock_file:
+    _register_wait_target(tmp_path, local_session_id, owner, remote_session_id)
+    with _owner_wait_lock_path(tmp_path, local_session_id, owner).open("a+b") as lock_file:
         acquire_lock(lock_file, blocking=False)
         try:
             assert _run_stop(tmp_path, local_session_id) == ""
+        finally:
+            release_lock(lock_file)
+
+
+def test_wait_target_without_held_lock_still_warns(tmp_path: pathlib.Path) -> None:
+    """登録簿に対象が残っていても、待機主体のロックが解放されていれば警告する。"""
+    local_session_id = "agents-wait-released"
+    remote_session_id = "remote-released"
+    owner = "root.json"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+    _register_wait_target(tmp_path, local_session_id, owner, remote_session_id)
+    _owner_wait_lock_path(tmp_path, local_session_id, owner).touch()
+
+    assert _WARNING_BODY in _run_stop(tmp_path, local_session_id)
+
+
+def test_held_lock_without_registered_target_still_warns(tmp_path: pathlib.Path) -> None:
+    """待機主体がロックを保持していても、対象が登録簿に無ければ警告する。"""
+    local_session_id = "agents-wait-unregistered"
+    remote_session_id = "remote-unregistered"
+    owner = "root.json"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+    with _owner_wait_lock_path(tmp_path, local_session_id, owner).open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=False)
+        try:
+            assert _WARNING_BODY in _run_stop(tmp_path, local_session_id)
         finally:
             release_lock(lock_file)
 

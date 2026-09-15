@@ -6,7 +6,7 @@ PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
 判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
-`atk agents wait`が対象sessionの待機所有権を保持する間は観測中として扱う。
+`atk agents wait`が待機所有権を保持し、当該sessionを待機対象として登録している間は観測中として扱う。
 同コマンドの終了後はPostToolUseが`pending_observation`を解消し、`kill`は結果を意図的に破棄するため同じ状態を解消する。
 実行環境が待機・中断を背景タスクへ移し、
 構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
@@ -63,25 +63,57 @@ def _pending_session_ids(state: dict, owner_agent_id: str) -> list[str]:
 
 
 def _actively_waited_session_ids(session_ids: list[str]) -> set[str]:
-    """別プロセスが待機所有権を保持するsession識別子を返す。"""
+    """待機中の主体が待機対象としているsession識別子を返す。
+
+    待機所有権は待機主体を単位とし、`atk agents wait`は
+    `wait-locks/<待機主体のstatusファイル名>.lock`を保持して
+    `wait-targets/<待機主体のstatusファイル名>/<対象session識別子>.json`へ対象を登録する。
+    判定側も同じ単位で読み、対象session識別子を名前とするロックを探さない。
+    """
     root_session_id = status_file.resolve_conversation_root_session_id(os.environ)
     if root_session_id is None:
         return set()
-    lock_directory = status_file.status_directory(root_session_id) / "wait-locks"
+    targets = set(session_ids)
+    if not targets:
+        return set()
     active: set[str] = set()
-    for session_id in session_ids:
-        lock_path = lock_directory / f"{session_id}.lock"
+    for owner_status_file in _held_wait_lock_owners(root_session_id):
+        active |= targets & _registered_wait_targets(root_session_id, owner_status_file)
+    return active
+
+
+def _held_wait_lock_owners(root_session_id: str) -> list[str]:
+    """待機所有権のロックを別プロセスが保持している待機主体を返す。"""
+    lock_directory = status_file.status_directory(root_session_id) / "wait-locks"
+    try:
+        lock_paths = sorted(lock_directory.glob("*.lock"))
+    except OSError:
+        return []
+    owners: list[str] = []
+    for lock_path in lock_paths:
         try:
             with lock_path.open("r+b") as lock_file:
                 try:
                     acquire_lock(lock_file, blocking=False)
                 except OSError:
-                    active.add(session_id)
+                    owners.append(lock_path.name.removesuffix(".lock"))
                 else:
                     release_lock(lock_file)
         except OSError:
             continue
-    return active
+    return owners
+
+
+def _registered_wait_targets(root_session_id: str, owner_status_file: str) -> set[str]:
+    """待機主体の登録簿に残る待機対象のsession識別子を返す。
+
+    当該登録簿は`atk agents wait`が所有するため、本フックは読むだけで内容を変更しない。
+    """
+    directory = status_file.wait_targets_directory(root_session_id, owner_status_file)
+    try:
+        return {path.stem for path in directory.glob("*.json")}
+    except OSError:
+        return set()
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
