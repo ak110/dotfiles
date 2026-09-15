@@ -60,26 +60,82 @@ def _wait_for_session_1_result(results_directory: pathlib.Path) -> int:
     )
 
 
-def test_agents_wait_outputs_matching_result(
+def test_agents_wait_outputs_every_retained_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """識別子順の最初の終端結果だけを1行JSONで返し、残る結果を保持する。"""
+    """未回収の終端結果を識別子順のJSON Linesで全件返し、回収した結果ファイルを残さない。"""
     wait_environment.mkdir(parents=True)
-    payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
-    (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
-    other_result = wait_environment / "session-2.json"
-    other_result.write_text(json.dumps({"session_id": "session-2", "status": "failed"}), encoding="utf-8")
+    first = {"session_id": "session-1", "status": "completed", "turn_seq": 2}
+    second = {"session_id": "session-2", "status": "failed"}
+    (wait_environment / "session-1.json").write_text(json.dumps(first), encoding="utf-8")
+    (wait_environment / "session-2.json").write_text(json.dumps(second), encoding="utf-8")
 
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
 
     captured = capsys.readouterr()
-    assert json.loads(captured.out) == payload
-    assert captured.out.count("\n") == 1
+    assert [json.loads(line) for line in captured.out.splitlines()] == [first, second]
     assert not captured.err
     assert not (wait_environment / "session-1.json").exists()
-    assert other_result.exists()
+    assert not (wait_environment / "session-2.json").exists()
+
+
+def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """解釈できない結果ファイルがある巡回でも、回収済みの本文を保持したまま配送する。"""
+    wait_environment.mkdir(parents=True)
+    payload = {"session_id": "session-1", "status": "completed"}
+    (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
+    unreadable = wait_environment / "session-2.json"
+    unreadable.write_text("{不正なJSON", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert [json.loads(line) for line in captured.out.splitlines()] == [payload]
+    assert not captured.err
+    assert not (wait_environment / "session-1.json").exists()
+    assert unreadable.exists()
+
+    assert _wait_for_session_1_result(wait_environment) == 6
+    assert "終端結果ファイルを読めません" in capsys.readouterr().err
+
+
+def test_agents_wait_outputs_terminal_result_with_notice_only_session(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """終端結果を持つsessionと通知だけを持つsessionが同時にある場合は双方の行を返す。"""
+    wait_environment.mkdir(parents=True)
+    terminal = {"session_id": "session-1", "status": "completed"}
+    (wait_environment / "session-1.json").write_text(json.dumps(terminal), encoding="utf-8")
+    _write_own_status(wait_environment, [{"session_id": "session-2"}])
+    notices = wait_environment.parent / "notices"
+    notices.mkdir(parents=True)
+    sent_at = "2026-09-15T00:00:01+00:00"
+    (notices / "session-2.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-2", "sent_at": sent_at, "body": "検査コマンドが未導入"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert [json.loads(line) for line in captured.out.splitlines()] == [
+        terminal,
+        {
+            "session_id": "session-2",
+            "status": "running",
+            "notices": [{"sent_at": sent_at, "body": "検査コマンドが未導入"}],
+        },
+    ]
+    assert not (wait_environment / "session-1.json").exists()
+    assert not any(notices.iterdir())
 
 
 def test_agents_wait_does_not_consume_another_writer_result(
@@ -713,7 +769,7 @@ def test_agents_wait_logs_targets_and_collection_without_result_body(
     log_text = (wait_environment.parents[2] / "logs" / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_start targets=session-1 origins=session-1:result" in log_text
     assert "collector=atk-agents-wait" in log_text
-    assert "reason=terminal-result session_id=session-1" in log_text
+    assert "reason=collected count=1 session_ids=session-1" in log_text
     assert "秘密の結果本文" not in log_text
 
 

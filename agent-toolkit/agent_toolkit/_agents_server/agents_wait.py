@@ -65,7 +65,13 @@ def wait_for_result(
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
 ) -> int:
-    """自身が保持するsessionの最初の終端結果又は通知を1件返す。
+    """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
+
+    回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
+    残っている間は呼び出し元が当該結果を消化する回数だけ起動を繰り返さないと、稼働中のsessionへ到達できない。
+    回収の途中で終端結果の読取に失敗した場合は、同じ巡回で回収済みの本文を先に配送してから終わる。
+    回収は結果ファイルと通知ファイルの削除を伴うため、当該失敗を理由に配送を取りやめると回収済みの本文が失われる。
+    読取の失敗は次の起動でも同じ状態で現れるため、当該起動の診断を1回遅らせても失われない。
 
     対象は、自身の書込主体の状態ファイルへ載るsessionと、終端結果ファイルが残るsessionの
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
@@ -143,6 +149,9 @@ def wait_for_result(
                     ",".join(sorted(current_origins[session_id])),
                 )
             status_paths = status_file.list_status_files(root_session_id, state_root)
+            collected: list[dict[str, Any]] = []
+            read_failure: tuple[str, int] | None = None
+            failed_session_id: str | None = None
             for session_id in ordered_ids:
                 result_path = result_directory / f"{session_id}.json"
                 result, read_error = status_file.take_result(
@@ -153,22 +162,31 @@ def wait_for_result(
                     state_root=state_root,
                 )
                 if read_error is not None:
-                    return _fail(f"終端結果ファイルを読めません: {result_path}: {read_error}", 6, session_id=session_id)
+                    read_failure = (f"終端結果ファイルを読めません: {result_path}: {read_error}", 6)
+                    failed_session_id = session_id
+                    break
                 notices = status_file.take_notices(root_session_id, session_id, state_root)
                 if result is not None:
                     result["session_id"] = session_id
                     if notices:
                         result["notices"] = notices
-                    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+                    collected.append(result)
                     status_file.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
-                    _LOG.info("wait_return reason=terminal-result session_id=%s", session_id)
-                    return 0
+                    continue
                 if notices:
                     response = _running_response(session_id, _session_output_activity(status_paths, session_id))
                     response["notices"] = notices
-                    print(json.dumps(response, ensure_ascii=False, separators=(",", ":")))
-                    _LOG.info("wait_return reason=notice-only session_id=%s", session_id)
-                    return 0
+                    collected.append(response)
+            if collected:
+                print("\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected))
+                _LOG.info(
+                    "wait_return reason=collected count=%d session_ids=%s",
+                    len(collected),
+                    ",".join(str(item["session_id"]) for item in collected),
+                )
+                return 0
+            if read_failure is not None:
+                return _fail(*read_failure, session_id=failed_session_id)
 
             now = time.monotonic()
             if ordered_ids:

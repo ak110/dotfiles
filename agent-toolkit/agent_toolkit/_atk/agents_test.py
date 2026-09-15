@@ -14,14 +14,16 @@ status_file = _atk_agents.status_file
 
 
 def test_agents_wait_help_requires_reissue_after_running(capsys: pytest.CaptureFixture[str]) -> None:
-    """通知だけのrunning応答では同じターンに待機を再発行する説明を返す。"""
+    """回収できた全件の出力形式と、待機の成立判定および再発行の条件を説明する。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait", "--help"])
 
     output = capsys.readouterr().out
-    assert "最初の終端結果又は実行中通知" in output
+    assert "1回の巡回で回収できた全件" in output
+    assert "1件1行のJSON Lines" in output
     assert "最初の待機で起動中sessionと未回収結果を登録簿へ固定" in output
     assert "通知だけを回収した場合" in output
+    assert "待機対象の行が現れない応答は当該対象が未終端であることを示す" in output
     assert "同じターン内に同じコマンドを再発行" in output
     assert "結果を保持しない`stop`とsession登録簿での喪失確定" in output
     assert "待機対象登録が破損している場合" in output

@@ -241,7 +241,7 @@ def test_removed_plan_commands_are_absent_from_help() -> None:
     [
         ("atk wi list", "JSON Lines"),
         ("atk plans list", "TSV"),
-        ("atk agents wait", "単一のJSON文書"),
+        ("atk agents wait", "JSON Lines"),
         ("atk managed-temp list", "JSON Lines"),
         ("atk review-table show", "`row-id`を先頭に付けた9フィールドの表示形式"),
     ],
