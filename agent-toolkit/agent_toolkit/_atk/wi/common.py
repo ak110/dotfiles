@@ -36,6 +36,7 @@ import filelock
 import platformdirs
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import legacy as _atk_wi_legacy
 from agent_toolkit._atk.wi.constants import (
     TRANSITION_EXPLICIT_STATES,
@@ -90,15 +91,8 @@ __all__ = [
     "ReadinessResult",
     "_count_pending_entries",
     "calculate_readiness",
+    "is_agent_environment",
 ]
-
-
-_AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
-"""コーディングエージェントの実行環境を示す環境変数。
-
-いずれか1つでも設定されていればエージェント環境とみなす。
-`atk wi list`の既定出力形式と、UWI回答・ユーザーコメントの書き込み拒否が同じ判定を使う。
-"""
 
 
 _SPACE_SEPARATED_OPTION_SUBCOMMANDS: dict[str, frozenset[str]] = {
@@ -114,11 +108,6 @@ class _CommitMetadata:
 
     author_date: str
     subject: str
-
-
-def is_agent_environment() -> bool:
-    """コーディングエージェントの実行環境から起動されたかを返す。"""
-    return any(name in os.environ for name in _AGENT_ENVIRONMENT_VARIABLES)
 
 
 def is_existing_dir(path: pathlib.Path) -> bool:

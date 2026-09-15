@@ -13,6 +13,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import agents_wait, state, status_file
 from agent_toolkit._atk import help_text as _help
+from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk_agents_notify import send_notification
 
 
@@ -29,6 +30,17 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     list_.add_argument("--include-terminated", action="store_true", help="未回収結果を持たない終端済みsessionも含める。")
     show = _help.add_command(sub, "show", **_help.HELP["atk agents show"])
     show.add_argument("session_id", help="表示するsession識別子。")
+
+
+def _dump(payload: Any, environment: Mapping[str, str]) -> str:
+    """エージェント環境では区切り文字だけの1行、人間が読む環境では字下げしたJSONを返す。
+
+    エージェント環境では出力量がそのままトークン消費になるため空白を含めず、
+    人間が端末で読む環境では字下げした形にする。値そのものはいずれでも変えない。
+    """
+    if is_agent_environment(environment):
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
@@ -59,7 +71,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             sessions = [
                 session for session in sessions if session.get("status") == "running" or session.get("result_available") is True
             ]
-        print(json.dumps({"sessions": sessions}, ensure_ascii=False, separators=(",", ":")))
+        print(_dump({"sessions": sessions}, env))
         return 0
     if root_session_id is None:
         root_session_id = status_file.find_root_session_id_for_session(args.session_id)
@@ -75,7 +87,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     if selected is None:
         print(f"unknown session: {args.session_id}", file=sys.stderr)
         return 2
-    print(json.dumps(selected, ensure_ascii=False, separators=(",", ":")))
+    print(_dump(selected, env))
     return 0
 
 

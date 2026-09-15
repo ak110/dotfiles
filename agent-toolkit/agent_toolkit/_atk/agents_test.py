@@ -8,7 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit import _atk_agents, atk
-from agent_toolkit._atk import config
+from agent_toolkit._atk import config, environment
 
 status_file = _atk_agents.status_file
 
@@ -97,6 +97,47 @@ def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> 
     payload = json.loads(capsys.readouterr().out)
     assert payload["session_id"] == "session-1"
     assert payload["prompt"] == "調査せよ"
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_list_indents_output_outside_agent_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """人間が読む環境では一覧を字下げしたJSONで書き、非ASCII文字をそのまま残す。"""
+    for name in environment.AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "list"])
+
+    output = capsys.readouterr().out
+    assert len(output.splitlines()) > 1
+    assert '"session_id": "session-1"' in output
+    assert "調査せよ" in output
+    assert json.loads(output)["sessions"][0]["session_id"] == "session-1"
+
+
+@pytest.mark.parametrize("environment_name", environment.AGENT_ENVIRONMENT_VARIABLES)
+@pytest.mark.usefixtures("session_environment")
+def test_agents_show_keeps_single_line_in_agent_environment(
+    environment_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """エージェント環境では1件の状態を空白を含めない1行で書き、非ASCII文字をそのまま残す。"""
+    for name in environment.AGENT_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(environment_name, "")
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", "session-1"])
+
+    output = capsys.readouterr().out
+    assert len(output.splitlines()) == 1
+    assert '"session_id":"session-1"' in output
+    assert "調査せよ" in output
+    assert json.loads(output)["prompt"] == "調査せよ"
 
 
 @pytest.mark.usefixtures("session_environment")
