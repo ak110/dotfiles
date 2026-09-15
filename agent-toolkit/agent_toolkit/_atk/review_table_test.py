@@ -943,7 +943,7 @@ def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv
 @pytest.mark.parametrize(
     ("relative_path", "marker", "subcommand"),
     (
-        ("review-standards/references/reviewer.md", "レビュー指摘管理表への記録は", "add"),
+        ("review-standards/references/reviewer.md", "`atk review-table add", "add"),
         ("review-standards/references/reviewee.md", "応答は`atk review-table respond", "respond"),
     ),
 )
