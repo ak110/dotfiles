@@ -327,37 +327,14 @@ uv run --project agent-toolkit --locked --no-default-groups agent-toolkit/skills
 
 ## 日次リリースの自動実施
 
-dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施するかを、次の2条件で判定する。
-判定と実施はメインが担う。
+dotfilesリポジトリを対象とする`agent-toolkit:process-wi`は、公開工程で`develop`から`master`へのリリースPRを作成してマージまで実施する。
+実行時の正本は[AGENTS.md](../../AGENTS.md)の「開発手順」であり、判定条件、評価の時点、記録先及び実施手順は同節が定める。
+本節は当該運用を導入した経緯と根拠を記録する。
 
-- 第1条件: 選定工程の完了時点の`atk wi list --status active --target-repo <対象リポジトリの絶対パス>`の標準出力を判定の入力とする。当該セッションが処理対象へ固定した集合の項目を除いた残りが、`state`が`hold`の項目と、`state`が`inbox`かつ`ready`が偽の項目だけである
-- 第2条件: 公開工程のpushとCI成功を確認した後に`git rev-parse --short=7 origin/develop origin/master`を実行し、返る一意な短縮OIDが互いに異なる
+第1条件を選定工程の完了時点で評価する扱いは、2026年9月15日の利用者指示による。
+公開工程で評価すると、`agent-toolkit:session-review`が終盤に投入する項目と並行セッションが投入する項目により条件が成立せず、`develop`が`master`より進み続けたためである。
+判定結果を`daily-release-condition1.txt`へ記録するのは、選定工程と公開工程が同じセッションの別の時点であり、公開工程の時点では当該判定の入力を再取得できないためである。
 
-第1条件は選定工程の完了時点で評価する。
-メインは選定工程の完了でAWIの状態を照合するために実行する`atk wi list`の出力をそのまま判定へ用い、判定専用の実行を追加しない。
-判定結果と、判定に用いた出力に残った項目のファイル名、`state`及び`ready`を、当該セッションの管理対象一時領域直下の`daily-release-condition1.txt`へ記録する。
-公開工程では当該ファイルを読んで第1条件の判定結果とし、`atk wi list`を再実行しない。
-当該ファイルが無い場合は第1条件を不成立として扱う。
-選定工程の判定時点より後に登録された項目は判定の対象へ含めず、次回セッションで扱う。
+判定の入力を選定工程の照合と同じ`atk wi list`の出力に限るのは、同じ状態を別の実行で取得し直すと、2回の実行の間に登録された項目が判定へ混入するためである。
 
-両方の条件が成立する場合に実施する。
-成立しない場合は、成立しなかった条件と、第1条件が不成立のときは`daily-release-condition1.txt`に残る項目を報告し、PRを作成しない。
-
-実施する場合は次の順で進める。
-
-1. 同じheadとbaseのopen PRを次のコマンドで最大2件取得する。
-
-   ```sh
-   gh pr list --repo ak110/dotfiles --base master --head develop --state open --limit 2 --json number,url,title,headRefName,baseRefName,state
-   ```
-
-   1件ならそのPRを再利用して次へ進む。0件なら管理対象一時領域へPR本文のファイルを作成し、次のコマンドでPRを作成する。
-
-   ```sh
-   gh pr create --repo ak110/dotfiles --base master --head develop --title <タイトル> --body-file <PR本文ファイルの絶対パス>
-   ```
-
-   タイトルには当該セッションで反映した変更の主題を1文で書く。本文には反映したAWIの正本ファイル名と1行要約を列挙する。2件取得した場合は対象を推測せず、両PRの番号とURLを報告して停止する
-2. 既存又は新規PRの完全なURLを指定して`.claude/skills/merge-pr`をSkill機能で起動し、同スキルの手順でマージ、branch同期、CI及び必要なReleaseの検収まで完遂する
-
-PRの作成又はマージが失敗した場合は、自動再試行とrollbackを行わず、外部状態、失敗工程、run URL及び再開点を報告する。
+auto-merge、マージ失敗後の自動再試行及び自動rollbackを導入しない扱いは、[developとmasterのリリース運用](concepts.md#developとmasterのリリース運用)が記録する利用者指示による。
