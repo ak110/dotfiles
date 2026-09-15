@@ -670,7 +670,10 @@ class TestBashGitLogDecorate:
         [
             ('echo "git log"', None),
             ("cat <<'EOF'\ngit log\nEOF", None),
-            ('grep -rn "git log" docs && git log -3', 'grep -rn "git log" docs && git log --decorate -3'),
+            (
+                'grep -rn --exclude-dir=.git "git log" docs && git log -3',
+                'grep -rn --exclude-dir=.git "git log" docs && git log --decorate -3',
+            ),
             (
                 'git show --format="git log" && git log -3',
                 'git show --format="git log" && git log --decorate -3',
