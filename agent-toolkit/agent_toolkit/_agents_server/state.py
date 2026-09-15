@@ -239,6 +239,34 @@ def _progress_excerpt(text: str) -> str:
     return f"…{normalized[-80:]}"
 
 
+# ツール呼び出しの入力を1行へ要約するときの上限文字数。
+# statuslineは受け取った説明を表示幅で切り詰めるため、上限は`show`の応答が
+# 停滞の切り分けに足りる長さとして定める。
+_ACTION_DETAIL_LIMIT = 200
+
+
+def _action_detail(payload: Any, exclude: tuple[str, ...] = ()) -> str:
+    """ツール呼び出しの入力を、keyの受信順を保った1行の要約へ変換する。
+
+    各項目を`<key>=<値>`の形で並べ、文字列以外の値は区切りに空白を含めないJSONへ直列化する。
+    `exclude`には、呼び出し元が別の項目として既に公開しているkeyを渡す。
+    引数、コマンド文字列及びパッチ内容を含めるのは、同じツール名を繰り返す区間では
+    ツール名だけの表示が変化せず、稼働中と停止中を区別できないためである。
+    """
+    if not isinstance(payload, Mapping):
+        return ""
+    parts: list[str] = []
+    for key, value in payload.items():
+        if key in exclude:
+            continue
+        rendered = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        parts.append(f"{key}={rendered}")
+    normalized = " ".join(" ".join(parts).split())
+    if len(normalized) <= _ACTION_DETAIL_LIMIT:
+        return normalized
+    return f"{normalized[:_ACTION_DETAIL_LIMIT]}…"
+
+
 def elapsed_seconds(value: str | None) -> int | None:
     """ISO 8601のタイムゾーン付き時刻から現在までの経過秒を返す。
 
@@ -336,10 +364,10 @@ class SessionState:
     live_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     terminal_child_session_ids: set[str] = dataclasses.field(default_factory=set)
     child_tool_uses: dict[str, tuple[str, dict[str, Any]]] = dataclasses.field(default_factory=dict, repr=False)
-    # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名と当該ブロックを受信した時刻の対とする。
+    # 未完了のツール呼び出し。キーは`tool_use_id`、値はツール名、当該ブロックを受信した時刻及び入力の1行要約の組とする。
     # `child_tool_uses`は`agents_server`のツール呼び出しの引数を孫session追跡のために保持する別の責務を持つため統合しない。
-    pending_tool_uses: dict[str, tuple[str, str]] = dataclasses.field(default_factory=dict, repr=False)
-    # 最後に観測した行動。assistantのテキスト出力ではその抜粋、ツール呼び出しではツール名又はitem種別を持つ。
+    pending_tool_uses: dict[str, tuple[str, str, str]] = dataclasses.field(default_factory=dict, repr=False)
+    # 最後に観測した行動。assistantのテキスト出力ではその抜粋、ツール呼び出しではツール名又はitem種別と入力の1行要約を持つ。
     # statuslineが、テキスト出力の無い区間でも稼働を表示するための射影元とする。
     last_action: str = ""
     awaiting_auto_resume: bool = False
@@ -387,17 +415,18 @@ class SessionState:
             self.last_action = _progress_excerpt(text)
         self.touch()
 
-    def record_tool_use_start(self, tool_use_id: str, tool_name: str) -> None:
-        """未完了のツール呼び出しを記録し、最後の行動をツール名で更新する。"""
-        self.pending_tool_uses[tool_use_id] = (tool_name, _utc_now())
-        self.last_action = tool_name
+    def record_tool_use_start(self, tool_use_id: str, tool_name: str, tool_input: Any = None) -> None:
+        """未完了のツール呼び出しを記録し、最後の行動をツール名と入力の要約で更新する。"""
+        detail = _action_detail(tool_input)
+        self.pending_tool_uses[tool_use_id] = (tool_name, _utc_now(), detail)
+        self.last_action = f"{tool_name}: {detail}" if detail else tool_name
 
     def record_tool_use_end(self, tool_use_id: str) -> None:
         """完了したツール呼び出しを未完了の記録から除く。"""
         self.pending_tool_uses.pop(tool_use_id, None)
 
     def record_current_item_start(self, item: dict[str, Any] | None) -> None:
-        """Codex backendの進行中itemと受信時刻を記録し、最後の行動をitem種別で更新する。"""
+        """Codex backendの進行中itemと受信時刻を記録し、最後の行動をitem種別と入力の要約で更新する。"""
         self.current_item = item
         if item is None:
             self.current_item_started_at = None
@@ -405,7 +434,8 @@ class SessionState:
         self.current_item_started_at = _utc_now()
         item_type = item.get("type")
         if isinstance(item_type, str) and item_type:
-            self.last_action = item_type
+            detail = _action_detail(item, exclude=("type", "id"))
+            self.last_action = f"{item_type}: {detail}" if detail else item_type
 
     def active_tool_uses(self) -> list[dict[str, str]]:
         """未完了のツール呼び出しを、開始時刻の昇順で公開項目へ射影する。
@@ -414,8 +444,8 @@ class SessionState:
         1回の照会で切り分けられるようにする。
         Claude backendは`tool_use`ブロックの記録から、Codex backendは進行中itemから射影する。
         1つのsessionはいずれか一方のbackendだけを使うため、両者を同じ項目で返す。
-        引数、コマンド文字列、パッチ内容その他の本文は載せない。
-        当該本文には秘匿値が含まれ得るため、呼び出し元の応答へ渡さない。
+        入力の1行要約は`detail`として載せ、要約が空の場合だけ当該keyを置かない。
+        どのコマンド又はどのファイルで止まっているかは、ツール名とitem種別だけでは判別できないためである。
         """
         if self.current_item is not None and self.current_item_started_at is not None:
             entry: dict[str, str] = {"started_at": self.current_item_started_at}
@@ -423,9 +453,18 @@ class SessionState:
                 value = self.current_item.get(key)
                 if isinstance(value, str) and value:
                     entry[key] = value
+            detail = _action_detail(self.current_item, exclude=("type", "id"))
+            if detail:
+                entry["detail"] = detail
             return [entry]
         ordered = sorted(self.pending_tool_uses.items(), key=lambda item: (item[1][1], item[0]))
-        return [{"name": tool_name, "started_at": started_at} for _, (tool_name, started_at) in ordered]
+        entries: list[dict[str, str]] = []
+        for _, (tool_name, started_at, detail) in ordered:
+            entry = {"name": tool_name, "started_at": started_at}
+            if detail:
+                entry["detail"] = detail
+            entries.append(entry)
+        return entries
 
     def reset_progress(self) -> None:
         """現在turnの進捗を初期化する。"""
@@ -652,7 +691,7 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
         tool_name = _block_value(block, "name")
         tool_input = _block_value(block, "input")
         if isinstance(tool_use_id, str) and isinstance(tool_name, str):
-            session.record_tool_use_start(tool_use_id, tool_name)
+            session.record_tool_use_start(tool_use_id, tool_name, tool_input)
             normalized = _agents_server_tool_name(tool_name)
             if normalized is not None:
                 arguments = dict(tool_input) if isinstance(tool_input, Mapping) else {}

@@ -1849,17 +1849,17 @@ async def test_four_observation_paths_share_the_same_stall_judgement(
 
 
 @pytest.mark.asyncio
-async def test_show_reports_active_tool_uses_without_arguments(tmp_path: pathlib.Path) -> None:
-    """showは未完了のツール呼び出しをツール名と開始時刻で返し、引数を載せない。"""
+async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib.Path) -> None:
+    """showは未完了のツール呼び出しをツール名、開始時刻及び入力の要約で返す。"""
     manager, _ = _manager_with_fake("codex")
     running = subject.SessionState("thread-running", str(tmp_path), engine="claude")
-    running.pending_tool_uses["toolu_1"] = ("Bash", "2026-09-15T00:00:01+00:00")
+    running.pending_tool_uses["toolu_1"] = ("Bash", "2026-09-15T00:00:01+00:00", "command=git status")
     idle = subject.SessionState("thread-idle", str(tmp_path), engine="claude")
     terminal = subject.SessionState("thread-terminal", str(tmp_path), engine="claude")
-    terminal.pending_tool_uses["toolu_2"] = ("Read", "2026-09-15T00:00:02+00:00")
+    terminal.pending_tool_uses["toolu_2"] = ("Read", "2026-09-15T00:00:02+00:00", "file_path=/tmp/a.py")
     _complete(terminal, message="完了")
     codex_running = subject.SessionState("thread-codex", str(tmp_path), engine="codex")
-    codex_running.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "secret"})
+    codex_running.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "git status"})
     manager.sessions.update(
         {
             running.session_id: running,
@@ -1872,10 +1872,12 @@ async def test_show_reports_active_tool_uses_without_arguments(tmp_path: pathlib
     running_detail = manager.show_session(running.session_id)
     codex_detail = manager.show_session(codex_running.session_id)
 
-    assert running_detail["active_tool_uses"] == [{"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00"}]
+    assert running_detail["active_tool_uses"] == [
+        {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00", "detail": "command=git status"}
+    ]
     assert codex_detail["active_tool_uses"][0]["type"] == "commandExecution"
     assert codex_detail["active_tool_uses"][0]["id"] == "item-1"
-    assert "command" not in codex_detail["active_tool_uses"][0]
+    assert codex_detail["active_tool_uses"][0]["detail"] == "command=git status"
     assert "active_tool_uses" not in manager.show_session(idle.session_id)
     assert "active_tool_uses" not in manager.show_session(terminal.session_id)
 

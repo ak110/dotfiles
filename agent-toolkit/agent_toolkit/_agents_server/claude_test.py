@@ -171,8 +171,9 @@ def test_assistant_message_without_text_advances_activity_time() -> None:
 
     assert session.updated_at != "2000-01-01T00:00:00+00:00"
     assert session.output_updated_at is None
-    assert [entry["name"] for entry in session.active_tool_uses()] == ["Bash"]
-    assert session.last_action == "Bash"
+    assert session.active_tool_uses()[0]["name"] == "Bash"
+    assert session.active_tool_uses()[0]["detail"] == "command=ls"
+    assert session.last_action == "Bash: command=ls"
 
 
 def test_assistant_message_with_text_updates_both_activity_and_output() -> None:

@@ -118,42 +118,45 @@ def test_pending_tool_uses_track_tools_outside_agents_server() -> None:
         {"content": [{"tool_use_id": "toolu_1", "content": "done"}]},
     )
 
-    assert session.active_tool_uses() == []
+    assert not session.active_tool_uses()
 
 
-def test_active_tool_uses_omit_arguments_and_sort_by_start() -> None:
-    """未完了のツール呼び出しは開始時刻の昇順で返し、引数を載せない。"""
+def test_active_tool_uses_include_input_detail_and_sort_by_start() -> None:
+    """未完了のツール呼び出しは開始時刻の昇順で返し、入力の1行要約を`detail`として載せる。"""
     session = state.SessionState("parent-1", "/tmp")
     session.pending_tool_uses.update(
         {
-            "toolu_2": ("Read", "2026-09-15T00:00:02+00:00"),
-            "toolu_1": ("Bash", "2026-09-15T00:00:01+00:00"),
+            "toolu_2": ("Read", "2026-09-15T00:00:02+00:00", "file_path=/tmp/a.py"),
+            "toolu_1": ("Bash", "2026-09-15T00:00:01+00:00", "command=rg -n foo"),
+            "toolu_3": ("TodoWrite", "2026-09-15T00:00:03+00:00", ""),
         }
     )
 
     assert session.active_tool_uses() == [
-        {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00"},
-        {"name": "Read", "started_at": "2026-09-15T00:00:02+00:00"},
+        {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00", "detail": "command=rg -n foo"},
+        {"name": "Read", "started_at": "2026-09-15T00:00:02+00:00", "detail": "file_path=/tmp/a.py"},
+        {"name": "TodoWrite", "started_at": "2026-09-15T00:00:03+00:00"},
     ]
 
 
 def test_current_item_is_projected_as_active_tool_use() -> None:
-    """Codex backendの進行中itemを、同じ項目で`type`・`id`・開始時刻として返す。"""
+    """Codex backendの進行中itemを、`type`・`id`・開始時刻と入力の要約として返す。"""
     session = state.SessionState("thread-1", "/tmp", engine="codex")
 
-    session.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "secret --token=abc"})
+    session.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "rg -n foo"})
     entries = session.active_tool_uses()
 
     assert len(entries) == 1
     assert entries[0]["type"] == "commandExecution"
     assert entries[0]["id"] == "item-1"
-    assert "command" not in entries[0]
+    # `type`と`id`は別の項目として既に返すため、要約からは除く。
+    assert entries[0]["detail"] == "command=rg -n foo"
     assert entries[0]["started_at"]
-    assert session.last_action == "commandExecution"
+    assert session.last_action == "commandExecution: command=rg -n foo"
 
     session.record_current_item_start(None)
 
-    assert session.active_tool_uses() == []
+    assert not session.active_tool_uses()
 
 
 def test_last_action_prefers_tool_use_issued_after_text() -> None:
@@ -167,6 +170,38 @@ def test_last_action_prefers_tool_use_issued_after_text() -> None:
     )
 
     assert session.last_action == "Bash"
+
+
+def test_last_action_changes_between_repeated_calls_of_the_same_tool() -> None:
+    """同じツール名を繰り返す区間でも、入力が異なれば最後の行動の値が変わる。"""
+    session = state.SessionState("parent-1", "/tmp")
+
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_1", "name": "Bash", "input": {"command": "git status"}}]},
+    )
+    first = session.last_action
+    state.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "git diff"}}]},
+    )
+
+    assert first == "Bash: command=git status"
+    assert session.last_action == "Bash: command=git diff"
+
+
+def test_action_detail_collapses_whitespace_and_truncates_at_limit() -> None:
+    """入力の要約は改行と連続空白を1個へ畳み、上限を超えた分を省略記号で切り詰める。"""
+    session = state.SessionState("parent-1", "/tmp")
+
+    session.record_tool_use_start("toolu_1", "Write", {"path": "a.py", "content": "x\r\ny  z", "line": 12})
+
+    assert session.last_action == "Write: path=a.py content=x y z line=12"
+
+    session.record_tool_use_start("toolu_2", "Write", {"content": "y" * 300})
+    detail = session.active_tool_uses()[-1]["detail"]
+
+    assert detail == f"content={'y' * 192}…"
 
 
 def test_activity_projection_decides_stall_by_activity_time() -> None:
