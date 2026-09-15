@@ -33,10 +33,11 @@
 
 ## テストコード（xUnit）
 
-- テストフレームワークは`xUnit`を優先する（.NETのデファクト）
+- テストフレームワークは、対象プロジェクトが既に採用するものへそろえる。
+  新規に選ぶ場合は、`dotnet test`で実行でき、並列実行とデータ駆動テストを標準で持つものを選ぶ（`xUnit`など）
 - 非同期処理の完了待ちは`ManualResetEventSlim`／`CountdownEvent`／`TaskCompletionSource`等のイベント駆動同期を使う
   - `Thread.Sleep`／`Task.Delay`による固定待機は避ける
-- モック／スタブには`NSubstitute`または`Moq`を使う
+- モック／スタブは、インターフェースからテスト用の実装を生成でき、呼び出し引数を検証できるライブラリを使う（`NSubstitute`・`Moq`など）
   - 外部依存はインターフェース経由で注入し、テスト時に差し替える
 - 時刻は`TimeProvider`（.NET 8以降）を注入し、テストでは`FakeTimeProvider`で固定する
 - ファイルI/Oのテストには一意な一時ディレクトリ（`Path.GetTempPath()` + `Guid.NewGuid()`）を使い、

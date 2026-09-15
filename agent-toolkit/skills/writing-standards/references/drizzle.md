@@ -2,6 +2,7 @@
 
 本書は、Drizzle ORMとDrizzle Kitを用いる実装の記述スタイル基準を定める。
 対象バージョン: drizzle-orm/drizzle-kit 0.x系（参考実利用バージョン: drizzle-orm 0.45・drizzle-kit 0.31）。公式ドキュメントは<https://orm.drizzle.team/docs/overview>を参照する。
+参考実利用バージョンの監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/drizzle.md：H1直下：2026年9月16日」にある。
 
 ## スキーマ定義
 
