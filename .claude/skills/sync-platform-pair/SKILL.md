@@ -10,7 +10,7 @@ description: >
 
 ## 適用条件
 
-`~/dotfiles/` でLinux/Windowsのペアファイルのいずれかを編集するときに適用する。
+本リポジトリでLinux/Windowsのペアファイルのいずれかを編集するときに適用する。該当の判定は後掲のファイル名規則で行う。
 片方のみ変更すると配布経路の一方が不整合になる。
 
 ## ペアファイルの判別
@@ -51,7 +51,7 @@ CIが`claude-plugin-validate`を無効化する点だけが異なる。
 - `test-linux`ジョブ: `install.sh`とchezmoiの実適用
 - `python-lint (3.13)`ジョブ: Python 3.13でのpytest
 - `rust-lint`ジョブ: `rust/claude-statusline/`のcargo検査
-- `python-lint (3.14)`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
+- `browser-e2e`ジョブの実ブラウザーテスト: ローカルでは`make test-browser`で実行する
 
 Linux側とWindows側で分岐するコードを変更した場合、Windows側の分岐は`make test`では検証されない。
 `agent-toolkit:writing-standards`の`references/testing.md`「プラットフォーム分岐の検証」に従い、OS判定に使う値を引数で受け取るヘルパーへ集約し、分岐値をパラメーター化テストで両方通す。

@@ -12,7 +12,7 @@ inline commentもreview threadも伴わずreview本文だけが到着する場�
 Copilot由来のinline commentとreview threadは、未解決のreview threadを持つPull Requestだけを対象に取得する。
 本監査は是正済みと根拠付き対応不要の未解決threadを解決するため、解決済みのthreadだけを持つPull Requestは当該時点で未処置のinline commentを持たない。
 要修正としてAWIへ記録した指摘のthreadは未解決のまま残り、以降も対象に入り続ける。
-authorのloginに`copilot`を大文字小文字を区別せず含むことをCopilot由来の判定条件とする。
+Copilot由来の判定条件は、authorの`__typename`が`Bot`であることと、authorのloginに`copilot`を大文字小文字を区別せず含むことの双方が成立することとする。login名だけで判定すると、当該文字列を含む人間のアカウントの指摘へ自動返信と解決を書き込む。
 
 ## 取得
 
