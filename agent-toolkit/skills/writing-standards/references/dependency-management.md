@@ -18,8 +18,6 @@
 - 依存追加・更新コマンドの出力警告を見逃さない。
   パッケージマネージャーの仕様変更・非推奨化が警告で告知されることがあり、放置すると設定が無効化される
 
-待機期間の目安の監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日」にある。
-
 ## 脆弱性の確認
 
 - SCAツールで定期的に脆弱性を確認する（`pip-audit`/`pnpm audit`/`cargo-audit`等）
@@ -35,8 +33,6 @@
 
 - `pnpm/action-setup` v6は`packageManager`フィールドにSHAハッシュがないとlockfile解析エラーになる場合がある
   - `corepack use pnpm@<version>`でSHAハッシュ付きに更新する
-- pnpmは`NPM_CONFIG_*`環境変数を読み取らない場合がある（`pnpm config get`がenv varを無視する）
+- pnpmの最新版では`NPM_CONFIG_*`環境変数の読み取りが不安定（`pnpm config get`がenv varを無視するケースがある）
   - env var経由の設定反映テストには`npm config get`を使う
 - `pnpm-workspace.yaml`の設定は`NPM_CONFIG_*`環境変数より優先される
-
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日」にある。

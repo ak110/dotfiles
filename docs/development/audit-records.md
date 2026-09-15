@@ -198,15 +198,3 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 ## agent-toolkit/skills/writing-standards/references/claude-hooks.md：Bash失敗の分類：2026年9月14日
 
 2026年9月14日、Claude Code 2.1.270のPostToolUseFailure入力で、失敗ツール名を`tool_name`、中断状態を`is_interrupt`、エラー本文を`error`として取得できることを確認した。Bashの非ゼロ終了では`error`の先頭行が`Exit code N`となる。再検証は同版以降で終了コードを変えたBash失敗と中断を発生させ、PostToolUseFailureへ渡る3項目と先頭行を記録して確認する。
-
-## agent-toolkit/skills/writing-standards/references/dependency-management.md：バージョン指定と更新：2026年9月16日
-
-2026年9月16日、公開直後の新バージョンを待つ期間の目安が、本リポジトリが配布するuvの設定値に由来することを実測した。`.chezmoi-source/dot_config/uv/uv.toml`第2行は`exclude-newer = "1 day"`である。条文の「目安1日」は当該配布設定の現行値であり、パッケージの公開から安全と判定するまでの期間を独立に測定した値ではない。再検証は、`git grep -n -F 'exclude-newer' -- .chezmoi-source/dot_config/uv/uv.toml`で現行値を取得し、条文の目安と一致することを確認する。値を変える場合は同じ改訂で条文の目安も改める。
-
-## agent-toolkit/skills/writing-standards/references/dependency-management.md：pnpm：2026年9月16日
-
-2026年9月16日、pnpm 11.25.0とnpm 11.19.0で`NPM_CONFIG_*`環境変数の読み取りを実測した。管理対象一時領域の空ディレクトリで`NPM_CONFIG_REGISTRY=https://example.invalid/ pnpm config get registry`は`https://registry.npmjs.org/`を返し、環境変数を反映しなかった。同じ環境変数を与えた`npm config get registry`は`https://example.invalid/`を返した。環境変数を与えない`pnpm config get registry`も`https://registry.npmjs.org/`を返した。再検証は、空ディレクトリで同じ3コマンドを実行し、pnpmが環境変数を無視しnpmが反映することを確認する。`pnpm/action-setup` v6のlockfile解析エラーは、hashを持たない`packageManager`でのCI実行を要するため本記録の対象に含めない。
-
-## agent-toolkit/skills/writing-standards/references/drizzle.md：H1直下：2026年9月16日
-
-2026年9月16日、参考実利用バージョンの典拠を実測した。`~/glatasks/package.json`は`drizzle-orm`を`^0.45.2`、`drizzle-kit`を`^0.31.10`で宣言する。条文の`drizzle-orm 0.45`・`drizzle-kit 0.31`は当該宣言のminor系列である。再検証は、同ファイルの当該2つの宣言を読み、条文のminor系列と一致することを確認する。
