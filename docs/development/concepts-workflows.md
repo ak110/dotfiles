@@ -159,6 +159,10 @@ AWIはユーザーとエージェントが非同期に共有する人間向け�
 - `agent-toolkit:add-awi-by-user`は、`agent-toolkit:plan-mode`の`references/grilling.md`が定める質問ラウンドで、ユーザーの選好に依存する未確定判断を解消する。
   解消した後に、保存する本文の全文を提示して可否の回答を得てから投入する
   （2026年9月8日、利用者指示。確認が不十分なままAWIが投入される事故に由来する）
+- `agent-toolkit:process-wi`のpickerは選定結果へ要求単位の由来を書かず、レーン担当が計画起草時にAWI本文とfrontmatterから判定する。
+  選定結果が持つのは消費側が実測で参照する項目だけとし、委譲先が到達できる正本から判定できる属性を載せない。
+  項目数がWI件数に比例して増える一方、レーン担当は計画起草時にAWI原文を取得するためである（2026年9月15日、利用者指摘）。
+  現行の正本は`agent-toolkit/share/pick-wi.subagent.md`と`agent-toolkit/share/exec.subagent.md`にある
 
 通常型AWIを複数件処理する場合、ファイル単位の終端、通常レーン及びキュー操作の責務境界は
 `agent-toolkit/share/pick-wi.parent.md`と`agent-toolkit/share/pick-wi.subagent.md`を正本とする。
