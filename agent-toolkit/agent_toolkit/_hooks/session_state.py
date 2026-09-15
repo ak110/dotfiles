@@ -333,6 +333,25 @@ def bash_failure_gate_is_active(session_id: str) -> bool:
     return read_state(session_id).get(_BASH_FAILURE_GATE_KEY) is True
 
 
+def mark_plan_written(session_id: str) -> None:
+    """計画ファイルの作成を記録し、`agent-toolkit`配下の直接編集の連続カウンタをリセットする。"""
+
+    def _mark(current: dict) -> dict | None:
+        changed = False
+        if not current.get("plan_file_written", False):
+            current["plan_file_written"] = True
+            changed = True
+        if current.get("direct_agent_toolkit_edit_count", 0) != 0:
+            current["direct_agent_toolkit_edit_count"] = 0
+            changed = True
+        if current.get("last_agent_toolkit_edit_path") is not None:
+            current["last_agent_toolkit_edit_path"] = None
+            changed = True
+        return current if changed else None
+
+    update_state(session_id, _mark)
+
+
 def claim_session_title(session_id: str, title: str) -> bool:
     """計画名を未記録のセッションへ一度だけ保存する。"""
     if not isinstance(session_id, str) or not session_id or not isinstance(title, str) or not title:

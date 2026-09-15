@@ -140,6 +140,7 @@ from agent_toolkit._hooks.notice import _WARN_TAG  # noqa: E402
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter  # noqa: E402
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    mark_plan_written,
     read_state,
     update_state,
 )
@@ -1091,21 +1092,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
 
     # 各計画ファイルの編集時は`plan_file_written`を真にしカウンタをリセットする。
     if _is_plan_file_or_adjunct(file_path_raw):
-
-        def _mark_plan_written(current: dict) -> dict | None:
-            changed = False
-            if not current.get("plan_file_written", False):
-                current["plan_file_written"] = True
-                changed = True
-            if current.get("direct_agent_toolkit_edit_count", 0) != 0:
-                current["direct_agent_toolkit_edit_count"] = 0
-                changed = True
-            if current.get("last_agent_toolkit_edit_path") is not None:
-                current["last_agent_toolkit_edit_path"] = None
-                changed = True
-            return current if changed else None
-
-        update_state(session_id, _mark_plan_written)
+        mark_plan_written(session_id)
         return False, None
 
     # 計画ファイルが既に作成済みの場合は本checkの対象外。
@@ -1131,7 +1118,7 @@ def _check_direct_agent_toolkit_edits_after_plan_mode(
         return False, None
 
     # 並列edit時のlost update回避のため、都度ロック内で加算する。
-    # `_mark_plan_written`・`_reset_counter`と同様、`update_state`のmutator内で
+    # `mark_plan_written`・`_reset_counter`と同様、`update_state`のmutator内で
     # 現在値を再取得してから+1する。呼び出し元へは結果値を`captured`辞書経由で返す。
     captured: dict[str, int] = {"count": 0}
 

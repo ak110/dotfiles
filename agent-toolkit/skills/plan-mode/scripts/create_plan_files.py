@@ -241,7 +241,7 @@ def _record_plan_written_state() -> None:
     当該検査は`plan_file_written`が偽である間だけ`agent-toolkit`配下への連続した直接編集を数え、
     3件目を遮断する。正規の計画作成経路である本処理が当該項目を設定しないと、
     手順どおり計画を作成した実行主体が3ファイル目の編集で遮断される。
-    設定する3項目と値は`agent_toolkit._hooks.pretooluse.content_checks`の完了記録とそろえる。
+    設定する3項目と値は、当該検査と共有する`_session_state.mark_plan_written()`が定める。
 
     セッション識別子は`CLAUDE_CODE_SESSION_ID`だけを読む。
     `_plan_file.resolve_owner_session_id()`は`AGENT_TOOLKIT_OWNER_SESSION`を優先するため、
@@ -252,20 +252,7 @@ def _record_plan_written_state() -> None:
     if not session_id:
         return
 
-    def _mark_plan_written(current: dict) -> dict | None:
-        changed = False
-        if not current.get("plan_file_written", False):
-            current["plan_file_written"] = True
-            changed = True
-        if current.get("direct_agent_toolkit_edit_count", 0) != 0:
-            current["direct_agent_toolkit_edit_count"] = 0
-            changed = True
-        if current.get("last_agent_toolkit_edit_path") is not None:
-            current["last_agent_toolkit_edit_path"] = None
-            changed = True
-        return current if changed else None
-
-    _session_state.update_state(session_id, _mark_plan_written)
+    _session_state.mark_plan_written(session_id)
 
 
 def _finalize_candidate(
