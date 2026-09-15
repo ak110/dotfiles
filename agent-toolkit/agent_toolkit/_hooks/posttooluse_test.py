@@ -708,6 +708,50 @@ class TestCurrentPlanFilePathTracking:
         state = _read_state(tmp_path, sid)
         assert state.get("current_plan_file_path") == str(plan_path)
 
+    def test_create_plan_files_bash_records_current_plan_file_path(self, tmp_path: pathlib.Path) -> None:
+        """`create_plan_files.py`のBash標準出力からも現在の計画パスを記録する。"""
+        home = tmp_path / "home"
+        plans_dir = home / ".claude" / "plans"
+        plans_dir.mkdir(parents=True)
+        plan_path = plans_dir / "15-0713_process-wi_レーン01.md"
+        sid = "plan-path-bash"
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": "uv run --project /plugin /plugin/skills/plan-mode/scripts/create_plan_files.py"},
+                "tool_response": {"stdout": f"{plan_path}\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        state = _read_state(tmp_path, sid)
+        assert state.get("current_plan_file_path") == str(plan_path)
+
+    @pytest.mark.parametrize("scenario", ["other-command", "no-plan-path"])
+    def test_bash_without_plan_output_keeps_current_plan_file_path(self, tmp_path: pathlib.Path, scenario: str) -> None:
+        """`create_plan_files.py`を含まない実行と、計画ファイルを出力しない実行では記録を変えない。"""
+        home = tmp_path / "home"
+        (home / ".claude" / "plans").mkdir(parents=True)
+        sid = f"plan-path-bash-{scenario}"
+        command = (
+            "echo done"
+            if scenario == "other-command"
+            else "uv run --project /plugin /plugin/skills/plan-mode/scripts/create_plan_files.py"
+        )
+        _run(
+            {
+                "session_id": sid,
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "tool_response": {"stdout": "計画ファイルを作成できません\n"},
+            },
+            state_dir=tmp_path,
+            home_dir=home,
+        )
+        state = _read_state(tmp_path, sid)
+        assert "current_plan_file_path" not in state
+
     def test_private_notes_write_records_current_plan_file_path(self, tmp_path: pathlib.Path) -> None:
         """新しいprivate-notes計画rootのWriteも現在の計画パスとして記録する。"""
         private_notes = tmp_path / "private-notes"
@@ -1615,6 +1659,30 @@ class TestAgentsServerSessionState:
         assert state["agents_server_cwd_by_session"] == {"thread-start": str(tmp_path)}
         assert "cwd" not in state["agents_server_sessions"]["thread-start"]
         assert state["agents_server_sessions"]["thread-start"]["owner_agent_id"] == "main"
+
+    def test_show_records_live_child_session_cwds(self, tmp_path: pathlib.Path) -> None:
+        """`show`の応答が返す子sessionの識別子と`cwd`の対を、続行判定が読むキーへ記録する。"""
+        sid = "show-child-cwd"
+        result = _run(
+            {
+                "session_id": sid,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__show",
+                "tool_input": {"session_id": "thread-parent"},
+                "tool_response": {
+                    "structuredContent": {
+                        "session_id": "thread-parent",
+                        "status": "running",
+                        "live_child_sessions": [{"session_id": "thread-child", "cwd": str(tmp_path)}],
+                        "live_child_session_ids_without_cwd": ["thread-unknown"],
+                    }
+                },
+            },
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        state = _read_state(tmp_path, sid)
+        assert state["agents_server_cwd_by_session"] == {"thread-child": str(tmp_path)}
+        assert "agents_server_sessions" not in state
 
     @pytest.mark.parametrize("tool_name", ("send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:

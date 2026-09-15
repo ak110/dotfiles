@@ -619,7 +619,20 @@ class AgentsServerManager:
             if seconds_since_output >= state.STALL_NOTICE_SECONDS:
                 response["stalled"] = True
         if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
-            response["live_child_session_ids"] = sorted(session.live_child_session_ids)
+            # 呼び出し元が当該識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
+            # `cwd`を解決できない識別子は、対を持たない側の項目として区別できる形で返す。
+            resolved: list[dict[str, str]] = []
+            unresolved: list[str] = []
+            for child_session_id in sorted(session.live_child_session_ids):
+                resume_info = session_registry.resolve(child_session_id).resume_info
+                child_cwd = resume_info.cwd if resume_info is not None else ""
+                if child_cwd:
+                    resolved.append({"session_id": child_session_id, "cwd": child_cwd})
+                else:
+                    unresolved.append(child_session_id)
+            response["live_child_sessions"] = resolved
+            if unresolved:
+                response["live_child_session_ids_without_cwd"] = unresolved
         if verbose:
             response.update(
                 engine=session.engine,
@@ -2006,7 +2019,8 @@ async def show_session(session_id: str, verbose: bool = False) -> dict[str, Any]
     """1件のsessionについて、文脈復旧又はトラブルシューティング用の詳細を返す。
 
     既定では起動prompt、cwd、種別、model_type、status、結果の有無及び進行中の停滞診断を返す。
-    稼働中の子sessionがある場合は、安定した順序の`live_child_session_ids`も返す。
+    稼働中の子sessionがある場合は、安定した順序の`live_child_sessions`（`session_id`と`cwd`の対）も返す。
+    `cwd`を解決できない識別子は`live_child_session_ids_without_cwd`へ分けて返し、当該識別子へは追送と打ち切りを発行できない。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号及び解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
