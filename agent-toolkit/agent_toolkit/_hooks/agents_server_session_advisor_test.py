@@ -63,11 +63,14 @@ def _run_stop(
     *,
     stop_hook_active: bool = False,
     agent_id: str | None = None,
+    last_assistant_message: str | None = None,
 ) -> str:
     """指定セッションでStopフックを実行しstdoutを返す。"""
     payload: dict[str, object] = {"session_id": local_session_id, "stop_hook_active": stop_hook_active}
     if agent_id is not None:
         payload["agent_id"] = agent_id
+    if last_assistant_message is not None:
+        payload["last_assistant_message"] = last_assistant_message
     environment = _environment(state_directory)
     environment["CLAUDE_CODE_SESSION_ID"] = local_session_id
     environment["XDG_STATE_HOME"] = str(state_directory)
@@ -330,6 +333,43 @@ def test_held_lock_without_registered_target_still_warns(tmp_path: pathlib.Path)
             assert _WARNING_BODY in _run_stop(tmp_path, local_session_id)
         finally:
             release_lock(lock_file)
+
+
+def test_waiting_declaration_for_the_session_satisfies_observation(tmp_path: pathlib.Path) -> None:
+    """直前の応答が当該sessionを指す待機表明である場合は警告しない。"""
+    local_session_id = "waiting-declared"
+    remote_session_id = "remote-waiting-declared"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+
+    assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}") == ""
+
+
+def test_waiting_declaration_for_another_session_still_warns(tmp_path: pathlib.Path) -> None:
+    """待機表明が別のsessionを指す場合は未観測のsessionを警告する。"""
+    local_session_id = "waiting-other"
+    remote_session_id = "remote-waiting-other"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+
+    output = _run_stop(tmp_path, local_session_id, last_assistant_message="待機中: remote-waiting-other-2")
+
+    assert _WARNING_BODY in output
+    assert f"対象session: {remote_session_id}" in output
+
+
+def test_response_without_waiting_declaration_still_warns(tmp_path: pathlib.Path) -> None:
+    """待機表明を持たない応答では未観測のsessionを警告する。"""
+    local_session_id = "waiting-absent"
+    remote_session_id = "remote-waiting-absent"
+    _record_start(tmp_path, local_session_id, remote_session_id)
+
+    output = _run_stop(
+        tmp_path,
+        local_session_id,
+        last_assistant_message="実装完了\n検証結果: 終了コード0、警告なし",
+    )
+
+    assert _WARNING_BODY in output
+    assert f"対象session: {remote_session_id}" in output
 
 
 def test_wait_response_resolves_pending_observation_for_unselected_sessions(tmp_path: pathlib.Path) -> None:

@@ -6,8 +6,14 @@ PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し
 本フックは`pending_observation`が真で、呼出主体が一致する記録だけを警告対象にする。
 
 判定対象は結果の回収状態ではなく、観測を試みていない作業の有無である。
-`atk agents wait`が待機所有権を保持し、当該sessionを待機対象として登録している間は観測中として扱う。
-同コマンドの終了後はPostToolUseが`pending_observation`を解消し、`kill`は結果を意図的に破棄するため同じ状態を解消する。
+観測義務を解消する条件は次の4つとする。
+第1に、`atk agents wait`が待機所有権を保持し、当該sessionを待機対象として登録している間は観測中として扱う。
+第2に、同コマンドの終了後はPostToolUseが`pending_observation`を解消する。
+第3に、`kill`は結果を意図的に破棄するため同じ状態を解消する。
+第4に、直前の応答が`待機中: <当該session識別子>`の形で当該sessionを待機対象として指す場合は、
+自動再開が当該sessionの結果を受け取る経路が成立しているため解消する。
+この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終端として許容する形を被覆する契約を持つ。
+当該規範が許容する終端の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
 実行環境が待機・中断を背景タスクへ移し、
 構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
 一度解消したsessionでも、
@@ -22,6 +28,7 @@ PostToolUseが当該応答と呼出主体を`agents_server_sessions`へ記録し
 
 import json
 import os
+import re
 
 from agent_toolkit._agents_server import status_file
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -41,6 +48,13 @@ _WARNING_BODY = (
 )
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
+
+# 待機表明の1行。行頭が`待機中:`である行のコロン以降を待機対象の記述とする。
+_WAITING_DECLARATION_PATTERN = re.compile(r"^待機中:(?P<targets>.*)$", re.MULTILINE)
+
+# session識別子に現れない文字。待機対象の記述を識別子の語へ区切る。
+# 前方一致での照合は別のsessionを指す待機表明で当該sessionの警告まで抑止するため用いない。
+_TARGET_SEPARATOR_PATTERN = re.compile(r"[^0-9A-Za-z_-]+")
 
 
 def _approve() -> None:
@@ -116,6 +130,20 @@ def _registered_wait_targets(root_session_id: str, owner_status_file: str) -> se
         return set()
 
 
+def _declared_waiting_target_ids(last_assistant_message: object) -> set[str]:
+    """直前の応答の待機表明が待機対象として指す識別子を返す。
+
+    Stop payloadの`last_assistant_message`をそのまま受け取る。
+    文字列でない場合と待機表明が無い場合は空集合を返す。
+    """
+    if not isinstance(last_assistant_message, str):
+        return set()
+    targets: set[str] = set()
+    for match in _WAITING_DECLARATION_PATTERN.finditer(last_assistant_message):
+        targets.update(token for token in _TARGET_SEPARATOR_PATTERN.split(match.group("targets")) if token)
+    return targets
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """未観測作業の判定結果と、警告する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
@@ -128,8 +156,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     owner_agent_id = resolve_hook_agent_id(payload)
     pending_session_ids = _pending_session_ids(read_state(session_id), owner_agent_id)
-    actively_waited = _actively_waited_session_ids(pending_session_ids)
-    pending_session_ids = [item for item in pending_session_ids if item not in actively_waited]
+    observed = _actively_waited_session_ids(pending_session_ids)
+    observed |= _declared_waiting_target_ids(payload.get("last_assistant_message"))
+    pending_session_ids = [item for item in pending_session_ids if item not in observed]
     if not pending_session_ids:
         return "approve", ""
 
