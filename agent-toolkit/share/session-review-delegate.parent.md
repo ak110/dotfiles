@@ -37,7 +37,7 @@
 
 ## 受領
 
-振り返り担当は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`が定める形式で返す。メインは`output_file`が起動文の絶対パスと一致することを確認し、当該ファイルを読む。`completed`の場合は、同書`## 出力`が定める全節を検収する。
+振り返り担当は`${CLAUDE_PLUGIN_ROOT}/share/session-review-delegate.subagent.md`が定める形式で返す。メインは`output_file`が起動文の絶対パスと一致することを確認し、当該ファイルを読む。`completed`の場合は、成果ファイルの`## 対象セッション`、`## 問題候補の判定記録`、`## 規範適用による停止`、`## 所要時間の内訳と改善提案`、`## 登録したキュー項目`及び`## 未確認範囲`の全節を検収する。
 
 `needs_escalation`の場合は、返された確認事項を確認し、回答を得られない場合はUWIを登録する。
 回答を得た場合は回答を、得られない場合はUWIの正本ファイル名を同じsessionへ配送する。

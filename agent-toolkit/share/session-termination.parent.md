@@ -18,7 +18,7 @@
 
 全レーンの終端を確認し、対象リポジトリの主作業ツリーへ書き込む主体が自身だけであることを確定してから起動する。
 起動時の`cwd`が対象リポジトリの主作業ツリーであり、現在branchが公開対象のベースbranchであることも確認する。
-`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の`## 入力`が列挙する必須入力が起動文にそろっていることと、絶対パスで示す入力が実在することを確認する。
+必須入力の項目名は`bump種別`、`検証・CI方針`、`近接検証結果`、`正式対応AWI`及び`引き継ぎ記録先`とする。これらが起動文にそろっていることと、絶対パスで示す入力が実在することを確認する。
 
 ## 渡す入力
 
@@ -51,7 +51,7 @@
   いずれも当該OIDの集合が、`terminal_steps`が挙げる生成commitを操作直前に解決したOIDの集合と過不足なく一致することを確認する。
   この代替照合を行った場合に`final_branch_head`のCIが成功したものとして扱わない
 - `base_branch_state`が`公開済み`である
-  - 続けて`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の「生成物とpush」節を全文読み、同節が定める4つの観測項目を現在のGit状態から再取得して、全て成立することを確認する
+  - 続けて次の4つの観測項目を現在のGit状態から再取得し、全て成立することを確認する。現在branchがベースbranchであること、作業ツリーがcleanであること、ベースbranchがリモート追跡refよりaheadでないこと、及びrebase・merge・cherry-pickの中断状態が無いことの4つとする
   - 終端担当が返した`base_branch_state`を現在状態の再取得に代用しない
   - 同じ終端担当への差し戻しでも`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`の「セッション終了」節が定めるUWIの登録へ送る
 - `version`が`bump不要`でない場合は、対象リポジトリの版数規範が定める正本ファイルの版数が当該値と一致する
