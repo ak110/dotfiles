@@ -379,6 +379,15 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _is_runtime_generated(entry: dict[str, Any]) -> bool:
+    """実行環境が生成したエントリであるかを構造上の標識で返す。
+
+    実行環境は、画像の寸法や出力の切り詰めを伝える注記を利用者のロールを持つエントリへ書き込む。
+    当該注記は本文の形からは利用者の発話と区別できないため、`isMeta`と`turnCompanion`の標識で判別する。
+    """
+    return entry.get("isMeta") is True or entry.get("turnCompanion") is True
+
+
 def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
     """記録全体が1件のサブエージェントの会話かを返す。"""
     conversation = [entry for entry in entries if entry.get("type") in {"user", "assistant"}]
@@ -450,9 +459,12 @@ def _claude_entry_events(
     if isinstance(message, dict):
         role = message.get("role")
         if entry_type == "user" and role == "user":
+            runtime_generated = _is_runtime_generated(entry)
             for text in user_texts or ():
                 event = _event("user", text)
                 if event and not event["text"].startswith("<task-notification>"):
+                    if runtime_generated:
+                        event["runtime_generated"] = True
                     events.append(event)
             answer_event = _claude_answers_event(result, message.get("content"), pending_question_lines)
             if answer_event:
@@ -2686,13 +2698,15 @@ def _candidate_events(
             text = event.get("text")
             normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
             if candidate_kind == "user-intervention":
-                exclusion = _user_candidate_exclusion(record, line, normalized_text, first_main_user)
+                exclusion = _user_candidate_exclusion(event, record, line, normalized_text, first_main_user)
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
-            if candidate_kind == "hook-notice" and event.get("tag") in {"info", "notice"}:
-                excluded["hook-notice-informational"] += 1
-                continue
+            if candidate_kind == "hook-notice":
+                exclusion = _hook_notice_candidate_exclusion(event.get("tag"))
+                if exclusion is not None:
+                    excluded[exclusion] += 1
+                    continue
             key = _candidate_key(candidate_kind, event, normalized_text)
             groups.setdefault(key, []).append(event)
 
@@ -2840,7 +2854,22 @@ def _candidate_evidence_events(
     return evidence
 
 
+def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
+    """是正を求めない区分のhook通知を問題候補から除く場合に、除外の種別名を返す。
+
+    区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
+    この判定は、是正を求める通知が`block`又は`warn`の区分を必ず持つという前提へ依存する。
+    当該前提が崩れると、是正を求める通知が候補集合から漏れる。
+    """
+    if tag in {"info", "notice"}:
+        return "hook-notice-informational"
+    if tag is None:
+        return "hook-notice-untagged"
+    return None
+
+
 def _user_candidate_exclusion(
+    event: dict[str, Any],
     record: str,
     line: int,
     text: str,
@@ -2851,9 +2880,13 @@ def _user_candidate_exclusion(
     接頭辞は、実行環境が利用者のメッセージへ挿入する本文、常駐処理の通知、及び定時promptの
     先頭に現れる固定文字列を実記録から採取したものとする。これらは利用者の発話ではないため、
     残すと利用者介入の候補が実際の介入件数を超える。
+    接頭辞を持たない実行環境の生成は本文の形からは判別できないため、`_is_runtime_generated`が
+    付けた標識で分類する。
     """
     if record != "main":
         return "delegated-record"
+    if event.get("runtime_generated") is True:
+        return "runtime-meta"
     if text.startswith(
         (
             "<system-reminder>",

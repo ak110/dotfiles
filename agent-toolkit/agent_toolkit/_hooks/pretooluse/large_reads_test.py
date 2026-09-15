@@ -28,6 +28,22 @@ def test_read_allows_explicit_range_and_mandatory_document(tmp_path: pathlib.Pat
     assert check_large_read({"file_path": str(instructions)}, str(tmp_path)) is None
 
 
+def test_read_allows_non_line_oriented_formats(tmp_path: pathlib.Path) -> None:
+    image = _large_file(tmp_path, "capture.PNG")
+    document = _large_file(tmp_path, "manual.pdf")
+    text = _large_file(tmp_path, "notes.txt")
+
+    assert check_large_read({"file_path": str(image)}, str(tmp_path)) is None
+    assert check_large_read({"file_path": str(document)}, str(tmp_path)) is None
+    assert check_large_read({"file_path": str(text)}, str(tmp_path)) is not None
+
+
+def test_bash_blocks_non_line_oriented_full_reads(tmp_path: pathlib.Path) -> None:
+    image = _large_file(tmp_path, "capture.png")
+
+    assert check_large_bash_read(f"cat {image}", str(tmp_path)) is not None
+
+
 def test_bash_blocks_only_direct_static_full_reads(tmp_path: pathlib.Path) -> None:
     path = _large_file(tmp_path)
 

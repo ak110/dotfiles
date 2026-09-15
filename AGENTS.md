@@ -24,7 +24,9 @@
     CLIフォールバックでは`--commands=mypy,ruff-check`を使う（最終検証はCIに委ねる前提）
   - pyfltrの実行時間を比較する場合は、実行後に`uv run --frozen pyfltr list-runs`でrun一覧を取得し、対象runの識別子を確認してから
     `uv run --frozen pyfltr show-run <run_id>`で変更前後の所要時間を参照する。run識別子を記憶や短縮形から組み立てない
-  - 検証は変更ファイルに対応する近接検査を先に実行する。公開前の全体検査はCIへ委ね、ローカルではCIが実行しない`claude-plugin-validate`を`uv run --frozen pyfltr run --commands=claude-plugin-validate`で実行する。CIの成功を確認して全体検査の結論を確定する
+  - 検証は変更ファイルに対応する近接検査を先に実行する。公開前の全体検査はCIへ委ね、ローカルでは次の2件を実行する。CIの成功を確認して全体検査の結論を確定する
+    - CIが実行しない検査: `uv run --frozen pyfltr run --commands=claude-plugin-validate`
+    - 複数の書込主体の成果を統合した後にだけ成立する検査: `uv run --frozen pyfltr run --commands=arid`。レーンをまたぐ重複実装は個々のレーンの近接検査では検出できないため、全体検査をCIへ委ねる判定が成立する場合も公開工程のpush前に1回実行する
   - ユーザーが局所変更の即時公開と、次回の`agent-toolkit:process-wi`での正式対応の両方を同じ指示で明示した場合だけ、即時公開では近接検査の成功と正式対応AWIの登録を条件として、全体検査とCI成功の待機を省略できる。push後はCIの起動とrun URLを確認し、省略した検査、未確定のCI、run URL及び正式対応AWIを報告する。次回の正式対応では通常どおり全体検査とCI成功を確認し、即時公開済みであることを検査の代替にしない
   - 複製元と異なる絶対パスで`mise.toml`を解決する作業場所と、既定と異なる状態ディレクトリでmiseを起動する作業場所は、当該作業場所を作成した主体が検査の起動前に`mise trust`を完了させる。miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下の`trusted-configs`に保持されるため、複製元の登録は別パスの複製と別の状態ディレクトリへ及ばない
     - linked worktreeでは複製元リポジトリルートの`mise.toml`へ`mise trust`を1回実行する。miseは複製元の信頼をlinked worktreeへ共有するため、worktreeごとの登録はしない

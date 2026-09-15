@@ -232,7 +232,11 @@ def _check_structure(
         reject_progress_log_rows=True,
     )
     if errors:
-        raise PlanCreationError("計画構造検査に失敗しました: " + " / ".join(errors))
+        raise PlanCreationError(
+            "計画構造検査に失敗しました: "
+            + " / ".join(errors)
+            + " / 判定条件の正本: agent-toolkit/skills/plan-mode/references/plan-file-standards.md"
+        )
 
 
 def _record_plan_written_state() -> None:

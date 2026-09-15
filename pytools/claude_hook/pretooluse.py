@@ -7,12 +7,15 @@
 統合しているチェック:
 
 1. `~/.claude/`配下への直接編集警告（warn、非ブロック）
-2. PowerShellスクリプトの必須ディレクティブ欠落ブロック（block、Writeのみ）
+2. PowerShellスクリプトの必須ディレクティブ欠落警告（warn、Writeのみ）
 3. 個人用/ローカル専用ファイル言及検出（warn、非ブロック）
-4. agent-toolkit配布物へのdotfiles固有名混入検出（block + warn）
+4. agent-toolkit配布物へのdotfiles固有名混入検出（warn）
 5. `agent-toolkit/`配下編集時の`agent-toolkit-edit`スキル未起動警告（warn、非ブロック）
 6. コーディングエージェント向け文書の編集前における参照文書の未読警告（warn、非ブロック）
-7. 本リポジトリが配布するコマンドを解決できない起動形で書く記述の検出（block）
+7. 本リポジトリが配布するコマンドを解決できない起動形で書く記述の検出（warn）
+
+本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できるため遮断を用いない。
+判定基準は`agent-toolkit:writing-standards`の`references/claude-hooks.md`「遮断・警告フックの成立条件」が定める。
 各チェックの詳細仕様は対応する実装関数のdocstringを参照する。
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
@@ -29,12 +32,8 @@ import contextlib
 import json
 import pathlib
 import re
-import sys
 import tomllib
 
-from agent_toolkit._hooks.notice import (
-    block_formatter as _block_notice_formatter,
-)
 from agent_toolkit._hooks.notice import (
     formatter as _notice_formatter,
 )
@@ -52,11 +51,10 @@ _CLAUDE_LOCAL_MD = "CLAUDE.local.md"
 
 
 _llm_notice = _notice_formatter(_HOOK_ID)
-_block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def main(payload_text: str) -> int:
-    """エントリポイント。exit code を返す（0 または 2）。"""
+    """エントリポイント。exit code を返す（常に0）。"""
     try:
         payload = json.loads(payload_text)
     except (json.JSONDecodeError, ValueError):
@@ -80,31 +78,22 @@ def main(payload_text: str) -> int:
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     dotfiles_root = pathlib.Path(__file__).resolve().parents[2]
 
-    # --- block 系 check（最初の違反で exit 2）---
-    if _check_ps1_directives(tool_name, fields, file_path):
-        return 2
-    dotfiles_block, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
-    if dotfiles_block is not None:
-        print(
-            _block_notice(
-                dotfiles_block,
-                fix="Replace the identifiers with generalized wording before editing the distribution file again.",
-            ),
-            file=sys.stderr,
-        )
-        return 2
-    launch_form_block = _check_pytools_command_launch_form(tool_name, fields, file_path, dotfiles_root)
-    if launch_form_block is not None:
-        print(
-            _block_notice(
-                launch_form_block,
-                fix="Drop the runner prefix and call the installed command name directly.",
-            ),
-            file=sys.stderr,
-        )
-        return 2
     # --- warn 系 check ---
+    # 本フックが扱う検査は、いずれも書き込んだファイルの再編集で結果を復元できる。
+    # `agent-toolkit:writing-standards`の`references/claude-hooks.md`
+    # 「遮断・警告フックの成立条件」の第1段が復元できる結果へ警告を求めるため、遮断を用いない。
     warnings: list[str] = []
+    ps1_directives_warning = _check_ps1_directives(tool_name, fields, file_path)
+    if ps1_directives_warning is not None:
+        warnings.append(ps1_directives_warning)
+    dotfiles_detected, dotfiles_warn = _check_dotfiles_specific_names(tool_name, fields, file_path)
+    if dotfiles_detected is not None:
+        warnings.append(
+            f"{dotfiles_detected} Replace the identifiers with generalized wording before editing the distribution file again."
+        )
+    launch_form_detected = _check_pytools_command_launch_form(tool_name, fields, file_path, dotfiles_root)
+    if launch_form_detected is not None:
+        warnings.append(f"{launch_form_detected} Drop the runner prefix and call the installed command name directly.")
     home_claude_warning = _home_claude_edit_warning(tool_name, file_path)
     if home_claude_warning is not None:
         warnings.append(home_claude_warning)
@@ -143,11 +132,11 @@ def main(payload_text: str) -> int:
     return 0
 
 
-# --- PowerShell 必須ディレクティブ check (block) ---
+# --- PowerShell 必須ディレクティブ check (warn) ---
 
-# 冒頭付近に必須のディレクティブ。両方が揃わなければブロックする。
+# 冒頭付近に必須のディレクティブ。両方が揃わなければ警告する。
 # 行頭厳格マッチ（インデント不可）にすることで「コメント内に文字列が含まれるだけ」や
-# 「関数/条件ブロック内に書かれている（＝スクリプト全体には適用されない）」ケースをブロックする。
+# 「関数/条件ブロック内に書かれている（＝スクリプト全体には適用されない）」ケースを検出する。
 _PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"^Set-StrictMode\s+-Version\s+Latest\b", re.MULTILINE),
@@ -169,33 +158,27 @@ def _is_ps1(file_path: str) -> bool:
     return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
 
-def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> bool:
-    """PowerShell スクリプトの冒頭ディレクティブ欠落を検出したら True を返す。
+def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_path: str) -> str | None:
+    """PowerShell スクリプトの冒頭ディレクティブ欠落を検出したら警告本文を返す。
 
     Edit / MultiEdit の `new_string` はファイル先頭を含まないことが多いため Write のみを対象とする。
     LF/CRLF 改行のチェックは `agent-toolkit` プラグイン側で実施しているため重複させない。
     """
     if tool_name != "Write" or not _is_ps1(file_path):
-        return False
+        return None
     for field, value in fields:
         # BOM（U+FEFF）は chezmoi テンプレートで使われることがあるため除去してから判定する。
         normalized = value.lstrip("﻿")
         head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
-            print(
-                _block_notice(
-                    f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}",
-                    fix=(
-                        "For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
-                        f" and `$ErrorActionPreference = 'Stop'` near the top"
-                        f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
-                    ),
-                ),
-                file=sys.stderr,
+            return (
+                f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}"
+                " For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
+                " and `$ErrorActionPreference = 'Stop'` near the top"
+                f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start)."
             )
-            return True
-    return False
+    return None
 
 
 # --- ~/.claude/ 配下の直接編集 check (warn) ---

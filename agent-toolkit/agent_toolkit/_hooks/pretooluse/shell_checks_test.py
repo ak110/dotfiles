@@ -23,6 +23,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from agent_toolkit import hook
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
+from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._hooks.pretooluse.test_support_test import *  # noqa: F403
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -91,13 +92,14 @@ class TestBashUvRunPythonBlock:
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
         assert result.returncode == 0
 
-    def test_nearest_non_python_project_blocks_ancestor_project(self, tmp_path: pathlib.Path) -> None:
-        """直近が`[tool.uv]`のみなら祖先に`[project]`があっても遮断する。"""
+    def test_nearest_non_python_project_warns_despite_ancestor_project(self, tmp_path: pathlib.Path) -> None:
+        """直近が`[tool.uv]`のみなら祖先に`[project]`があっても検出する。"""
         self._make_python_project(tmp_path)
         cwd = self._make_child_directory(tmp_path)
         self._make_non_python_project(cwd)
         result = self._invoke("uv run python -c 'print(1)'", str(cwd))
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_non_python_project_script_is_auto_fixed(self, tmp_path: pathlib.Path) -> None:
         """単純なスクリプトパス形を`uv run --script`へ補正する。"""
@@ -107,13 +109,17 @@ class TestBashUvRunPythonBlock:
         output = json.loads(result.stdout)["hookSpecificOutput"]
         assert output["updatedInput"]["command"] == "uv run --script /tmp/foo.py --flag 'two words'"
 
-    def test_non_python_project_inline_code_is_blocked(self, tmp_path: pathlib.Path) -> None:
-        """安全にスクリプト形へ直せないインラインコード形は遮断する。"""
+    def test_non_python_project_inline_code_is_warned(self, tmp_path: pathlib.Path) -> None:
+        """安全にスクリプト形へ直せないインラインコード形は警告する。
+
+        通した場合の結果はプロジェクト解決の失敗による終了に限り、復元できる。
+        """
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python -c 'print(1)'", cwd)
-        assert result.returncode == 2
-        assert "[auto-generated: agent-toolkit/pretooluse]" in result.stderr
-        assert "uv run python" in result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "[auto-generated: agent-toolkit/pretooluse]" in messages
+        assert "uv run python" in messages
 
     def test_no_pyproject_script_is_auto_fixed(self, tmp_path: pathlib.Path):
         """pyproject.tomlが無いcwdでも単純なスクリプトパス形を補正する。"""
@@ -121,17 +127,19 @@ class TestBashUvRunPythonBlock:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == "uv run --script /tmp/foo.py"
 
-    def test_script_after_python_blocked(self, tmp_path: pathlib.Path):
+    def test_script_after_python_warned(self, tmp_path: pathlib.Path):
         """`uv run python --script s.py`は`--script`がpythonの引数となるため例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --script s.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_no_project_after_python_blocked(self, tmp_path: pathlib.Path):
+    def test_no_project_after_python_warned(self, tmp_path: pathlib.Path):
         """`uv run python --no-project s.py`は同上の理由で例外扱いしない。"""
         cwd = self._make_non_python_project(tmp_path)
         result = self._invoke("uv run python --no-project s.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_cd_to_python_project_allowed(self, tmp_path: pathlib.Path) -> None:
         """静的に解決できる`cd`先がPythonプロジェクトなら許容する。"""
@@ -169,33 +177,38 @@ class TestBashUvRunPythonBlock:
             f"cd {target} && uv run --script /tmp/foo.py"
         )
 
-    def test_unresolved_cd_blocks(self, tmp_path: pathlib.Path) -> None:
-        """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも遮断する。"""
+    def test_unresolved_cd_warns(self, tmp_path: pathlib.Path) -> None:
+        """shell展開を含む`cd`は、payload cwdがPythonプロジェクトでも検出する。"""
         payload_cwd = self._make_python_project(tmp_path)
         result = self._invoke('cd "$TARGET" && uv run python /tmp/foo.py', payload_cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_pushd_then_uv_run_blocked(self, tmp_path: pathlib.Path):
+    def test_pushd_then_uv_run_warned(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("pushd /tmp && uv run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_uv_directory_option_blocked(self, tmp_path: pathlib.Path):
-        """`uv --directory`はプロジェクト解決対象をpayload cwdから外すためblock。"""
+    def test_uv_directory_option_warned(self, tmp_path: pathlib.Path):
+        """`uv --directory`はプロジェクト解決対象をpayload cwdから外すため検出対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --directory /tmp run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_uv_project_global_option_blocked(self, tmp_path: pathlib.Path):
+    def test_uv_project_global_option_warned(self, tmp_path: pathlib.Path):
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv --project /tmp run python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
-    def test_uv_run_project_option_blocked(self, tmp_path: pathlib.Path):
-        """runサブコマンドオプション位置の`--project=`もblock対象。"""
+    def test_uv_run_project_option_warned(self, tmp_path: pathlib.Path):
+        """runサブコマンドオプション位置の`--project=`も検出対象。"""
         cwd = self._make_python_project(tmp_path)
         result = self._invoke("uv run --project=/tmp python /tmp/foo.py", cwd)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert "uv run python" in _agent_messages(result)
 
     def test_cd_with_no_project_allowed(self, tmp_path: pathlib.Path):
         """cwd変更があっても`--no-project`例外が優先するため許容する。"""
@@ -1006,6 +1019,31 @@ class TestBashAgentToolkitVersionBump:
         assert result.returncode == 0
         assert self._has_version_bump_warning(result)
 
+    def test_linked_worktree_no_warn(self, tmp_path: pathlib.Path):
+        """linked worktreeからのcommitでは警告しない。当該作業ツリーはbumpを実行しない。"""
+        repo = self._make_repo(tmp_path)
+        worktree = tmp_path / "lane"
+        subprocess.run(
+            ["git", "worktree", "add", "-b", "lane-branch", str(worktree)],
+            cwd=str(repo),
+            capture_output=True,
+            check=True,
+        )
+        target = worktree / "agent-toolkit" / "skills" / "x" / "SKILL.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# x\n")
+        subprocess.run(
+            ["git", "add", "agent-toolkit/skills/x/SKILL.md"],
+            cwd=str(worktree),
+            capture_output=True,
+            check=True,
+        )
+
+        result = self._invoke("git commit -m 'skill'", str(worktree))
+
+        assert result.returncode == 0
+        assert not self._has_version_bump_warning(result)
+
     def test_commit_string_in_argument_position_no_warn(self, tmp_path: pathlib.Path):
         """`git commit`を検索語として含むだけの読み取り操作は警告しない。"""
         repo = self._make_repo(tmp_path, {"agent-toolkit/skills/x/SKILL.md": "# x\n"})
@@ -1302,10 +1340,11 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 2
         assert ".env" in result.stderr
 
-    def test_missing_explicit_path_is_blocked(self, tmp_path: pathlib.Path) -> None:
+    def test_missing_explicit_path_is_warned(self, tmp_path: pathlib.Path) -> None:
+        """不在のパスは実行してもコマンドが失敗するだけで復元できるため警告で返す。"""
         result = _run({"tool_name": "Bash", "tool_input": {"command": "rg needle absent.txt"}, "cwd": str(tmp_path)})
-        assert result.returncode == 2
-        assert "absent.txt" in result.stderr
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
 
     def test_existing_explicit_path_is_allowed(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "present.txt"
@@ -1318,10 +1357,17 @@ class TestStaticSafetyBlocks:
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] == ("git grep --ignore-case needle")
 
-    def test_atk_unknown_option_is_blocked(self) -> None:
+    def test_atk_unknown_option_is_warned(self) -> None:
+        """未受理オプションは実行しても`atk`が終了するだけで復元できるため警告で返す。
+
+        通知本文は、判定の時点で保持している受理オプションの集合を列挙する。
+        """
         result = _run({"tool_name": "Bash", "tool_input": {"command": "atk wi list --not-supported"}})
-        assert result.returncode == 2
-        assert "--not-supported" in result.stderr
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "--not-supported" in messages
+        assert "当該サブコマンドが受理するオプション: " in messages
+        assert "--target-repo" in messages
 
     def test_heredoc_block_notice_names_a_save_means_that_passes_the_same_check(self) -> None:
         """heredoc遮断の解消手段が、同じ判定へ当たらない形を名指しする。"""
@@ -1376,6 +1422,32 @@ class TestBashOutputTruncationRepetition:
         assert result.returncode == 2
         assert "ファイルへリダイレクト" in result.stderr
         assert "保存済みファイルから必要な範囲だけを" in result.stderr
+
+    def test_autofix_notice_predicts_the_block_and_shows_how_to_avoid_it(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知が、次に同じ形を書くと遮断されることと、遮断を避ける書き方の双方を示す。"""
+        session_id = "truncation-autofix-body"
+
+        result = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "補正ではなく遮断になる" in context
+        assert "遮断を避ける書き方" in context
+        assert "ファイルへリダイレクト" in context
+        assert "保存済みファイルから必要な範囲だけを" in context
+
+    def test_autofix_and_block_share_the_same_avoidance_body(self, tmp_path: pathlib.Path) -> None:
+        """補正の通知と遮断の通知が、同じ解消手段の本文を持つ。"""
+        session_id = "truncation-shared-body"
+        autofix = self._invoke("ls -1 /tmp | head -5", session_id, tmp_path)
+        blocked = self._invoke("ls -1 /var | head -5", session_id, tmp_path)
+
+        assert autofix.returncode == 0
+        assert blocked.returncode == 2
+        context = json.loads(autofix.stdout)["hookSpecificOutput"]["additionalContext"]
+        avoidance = shell_checks._OUTPUT_TRUNCATION_AVOIDANCE  # pylint: disable=protected-access  # noqa: SLF001
+        assert avoidance in context
+        assert avoidance in blocked.stderr
 
 
 class TestBashRecursiveGrepTargetJudgement:
@@ -1448,3 +1520,174 @@ class TestBashUnboundedRootTraversal:
 
         assert result.returncode == 0
         assert "大容量のユーザーディレクトリ" in _additional_context(result)
+
+
+class TestNormViolatingArgumentForms:
+    """規範が明文で禁じる引数の形の実行前検出。
+
+    いずれも通した場合の結果は当該コマンドの失敗に限り復元できるため、応答水準は警告とする。
+    """
+
+    @staticmethod
+    def _invoke(command: str, cwd: pathlib.Path, session_id: str = "arg-forms") -> subprocess.CompletedProcess[str]:
+        return _run(
+            {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd), "session_id": session_id},
+            _plan_file_state_env(cwd),
+        )
+
+    def test_missing_paths_are_listed_together(self, tmp_path: pathlib.Path) -> None:
+        """不在のパスは実行位置ごとに全件を列挙する。"""
+        result = self._invoke("rg needle absent-a.txt absent-b.txt", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "absent-a.txt" in messages
+        assert "absent-b.txt" in messages
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "sed -n '1,5p' absent.txt",
+            "ls -l absent.txt",
+            "cp absent.txt copied.txt",
+            "find absent.txt -name x",
+            "wc -l absent.txt",
+            "grep -n needle absent.txt",
+            "cat absent.txt | wc -l",
+        ],
+    )
+    def test_missing_path_in_extended_commands(self, command: str, tmp_path: pathlib.Path) -> None:
+        """対象コマンドとパイプを含む呼び出しでも不在のパスを検出する。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "absent.txt" in _agent_messages(result)
+
+    def test_existing_relative_and_absolute_paths_are_silent(self, tmp_path: pathlib.Path) -> None:
+        """実在するパスは相対と絶対のいずれでも検出しない。"""
+        target = tmp_path / "present.txt"
+        target.write_text("needle\n", encoding="utf-8")
+        for command in (f"wc -l {target}", "wc -l present.txt"):
+            result = self._invoke(command, tmp_path)
+            assert result.returncode == 0
+            assert "明示された検索・読取パスが存在しない" not in _agent_messages(result)
+
+    def test_git_grep_without_pattern_type_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke("git grep needle", tmp_path)
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" in _agent_messages(result)
+
+    @pytest.mark.parametrize("command", ["git grep -F needle", "git grep -nE needle", "git grep -P needle"])
+    def test_git_grep_with_pattern_type_is_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "いずれの種別も指定していない" not in _agent_messages(result)
+
+    def test_word_embedded_parenthesis_warns(self, tmp_path: pathlib.Path) -> None:
+        """語の内側の丸括弧は引用の崩れとして検出する。"""
+        result = self._invoke("wc -l report(1).txt", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "引用されていないシェルメタ文字" in messages
+        assert "ANSI-Cクォート" in messages
+
+    @pytest.mark.parametrize("command", ["(cd /tmp && ls)", "echo $(date)", "wc -l 'report(1).txt'"])
+    def test_legitimate_parenthesis_forms_are_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "引用されていないシェルメタ文字" not in _agent_messages(result)
+
+    def test_unresolved_git_object_warns(self, tmp_path: pathlib.Path) -> None:
+        """対象リポジトリで解決できないOIDを検出する。"""
+        repository = tmp_path / "repo"
+        repository.mkdir()
+        subprocess.run(["git", "init", "-q", str(repository)], check=True, capture_output=True)
+        result = self._invoke("git log deadbeefdeadbeef..cafebabecafebabe", repository)
+        assert result.returncode == 0
+        assert "deadbeefdeadbeef" in _agent_messages(result)
+
+    def test_option_terminator_missing_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke("rg needle -weird.txt", tmp_path)
+        assert result.returncode == 0
+        assert "オプション終端" in _agent_messages(result)
+
+    def test_option_terminator_missing_warns_for_revision_subcommand(self, tmp_path: pathlib.Path) -> None:
+        """revisionを位置引数として受け取る`git`サブコマンドは対象とする。"""
+        result = self._invoke("git log -weird.txt", tmp_path)
+        assert result.returncode == 0
+        assert "オプション終端" in _agent_messages(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        ["git commit -m -weird.txt", "git config -weird.txt", "git push -weird.txt"],
+    )
+    def test_option_terminator_is_silent_for_non_revision_subcommand(self, command: str, tmp_path: pathlib.Path) -> None:
+        """revisionを受け取らない`git`サブコマンドは対象外とする。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "オプション終端" not in _agent_messages(result)
+
+    def test_rg_newline_pattern_without_multiline_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(r"rg 'a\nb' .", tmp_path)
+        assert result.returncode == 0
+        assert "複数行モード" in _agent_messages(result)
+
+    def test_rg_newline_pattern_with_multiline_is_silent(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke(r"rg -U 'a\nb' .", tmp_path)
+        assert result.returncode == 0
+        assert "複数行モード" not in _agent_messages(result)
+
+    def test_unknown_atk_subcommand_warns(self, tmp_path: pathlib.Path) -> None:
+        """実在しないサブコマンドでは、親コマンドが受理する一覧と要約を示す。"""
+        result = self._invoke("atk not-a-subcommand", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "実在しないサブコマンド" in messages
+        assert "- wi: " in messages
+
+    def test_atk_subcommand_without_positionals_warns(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理しないサブコマンドへ引数を付けた実行を検出する。"""
+        result = self._invoke("atk wi list 20260101-000000-001.md", tmp_path)
+        assert result.returncode == 0
+        assert "位置引数を受理しない" in _agent_messages(result)
+
+    def test_atk_subcommand_with_positionals_is_silent(self, tmp_path: pathlib.Path) -> None:
+        """位置引数を受理するサブコマンドの正常な実行は検出しない。"""
+        result = self._invoke("atk wi show 20260101-000000-001.md", tmp_path)
+        assert result.returncode == 0
+        assert "位置引数を受理しない" not in _agent_messages(result)
+
+    def test_redirect_to_missing_parent_warns(self, tmp_path: pathlib.Path) -> None:
+        result = self._invoke("wc -l /etc/hostname > absent-dir/out.txt", tmp_path)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "親ディレクトリが存在しない" in messages
+        assert "absent-dir" in messages
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "wc -l /etc/hostname > out.txt",
+            'wc -l /etc/hostname > "$LOG_DIR"/out.txt',
+            "mkdir -p new-dir && wc -l /etc/hostname > new-dir/out.txt",
+        ],
+    )
+    def test_redirect_targets_without_violation_are_silent(self, command: str, tmp_path: pathlib.Path) -> None:
+        """存在する親、動的な出力先、先行作成を含む入力は検出しない。"""
+        result = self._invoke(command, tmp_path)
+        assert result.returncode == 0
+        assert "親ディレクトリが存在しない" not in _agent_messages(result)
+
+    def test_rg_unknown_option_warns(self, tmp_path: pathlib.Path) -> None:
+        """`rg`の受理しないオプションは、受理集合とともに実行前に差し戻す。"""
+        session_id = "rg-option-contract"
+        # 受理集合は`rg --help`から取得して保持する。
+        # 実行環境への`rg`の導入有無で結果が変わらないよう、保持済みの状態として与える。
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"external_command_option_contracts": {"rg": {"flags": ["--files-with-matches"], "valued": ["--regexp"]}}},
+        )
+        result = self._invoke("rg --not-supported needle .", tmp_path, session_id=session_id)
+        assert result.returncode == 0
+        messages = _agent_messages(result)
+        assert "--not-supported" in messages
+        assert "当該コマンドが受理するオプション" in messages

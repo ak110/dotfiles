@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 import logging
 import os
@@ -271,7 +270,7 @@ def _session_is_retained(paths: list[pathlib.Path], session_id: str) -> bool | N
 
 
 def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict[str, Any]:
-    """状態ファイルから保持中sessionの最新テキスト出力活動を返す。"""
+    """状態ファイルから保持中sessionの活動とテキスト出力の観測値を返す。"""
     for path in paths:
         sessions = _read_sessions(path)
         if sessions is None:
@@ -279,24 +278,14 @@ def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict
         for session in sessions:
             if session["session_id"] != session_id:
                 continue
+            updated_at = session.get("updated_at")
             output_updated_at = session.get("output_updated_at")
-            reference = output_updated_at if isinstance(output_updated_at, str) else session.get("started_at")
-            if not isinstance(reference, str):
-                return {}
-            try:
-                timestamp = datetime.datetime.fromisoformat(reference)
-            except ValueError:
-                return {}
-            if timestamp.utcoffset() is None:
-                return {}
-            elapsed = max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
-            activity: dict[str, Any] = {
-                "output_updated_at": output_updated_at if isinstance(output_updated_at, str) else None,
-                "seconds_since_output": elapsed,
-            }
-            if elapsed >= state.STALL_NOTICE_SECONDS:
-                activity["stalled"] = True
-            return activity
+            started_at = session.get("started_at")
+            return state.activity_projection(
+                updated_at=updated_at if isinstance(updated_at, str) else None,
+                output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
+                started_at=started_at if isinstance(started_at, str) else None,
+            )
     return {}
 
 
@@ -315,7 +304,7 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
 
 
 def _running_response(session_id: str | None, output_activity: Mapping[str, Any]) -> dict[str, Any]:
-    """非終端の待機応答へ最新テキスト出力活動の観測値を加える。
+    """非終端の待機応答へ活動とテキスト出力の観測値を加える。
 
     対象を1件も解決できない場合は`session_id`を省き、`status`だけを返す。
     """

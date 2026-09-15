@@ -13,10 +13,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 任意ツール:
 
-- メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
+- メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
+- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
-- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
+- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続の警告 (warn)
 
 固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
 計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
@@ -42,7 +42,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は警告 (auto-fix/warn)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
@@ -59,16 +59,16 @@ TaskStop:
 
 Write / Edit / MultiEdit / apply_patch:
 
-- 文字化け（U+FFFD）検出 (block)
-- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
-- lockfile / 生成物ディレクトリの直接編集 (block)
+- 文字化け（U+FFFD）検出 (warn。ユーザーが直接読む本文はblock)
+- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
+- lockfile / 生成物ディレクトリの直接編集 (warn)
 - シークレット / 鍵ファイルの直接編集 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
 - 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
-- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
+- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (warn。ユーザーが直接読む本文はblock)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
@@ -590,6 +590,21 @@ _AGENT_TOOLKIT_TEST_SUFFIX = "_test.py"
 _AGENT_TOOLKIT_SCRIPTS_PREFIX = "agent-toolkit/scripts/"
 
 
+def _is_linked_worktree(cwd: str) -> bool:
+    """作業ツリーがlinked worktreeであるかを返す。
+
+    `--git-dir`はlinked worktreeで`<共通dir>/worktrees/<名前>`を指し、主作業ツリーでは
+    `--git-common-dir`と同じ値になる。両者の相違でlinked worktreeを判定する。
+    Gitへ問い合わせられない場合は判定不能として偽を返し、呼び出し元を警告側へ倒す。
+    """
+    resolved = _git_status.run_git_lines(["git", "rev-parse", "--git-dir", "--git-common-dir"], cwd)
+    if resolved is None or len(resolved) != 2:
+        return False
+    # `rev-parse`は相対パスを返し得る。基準はコマンドを実行した作業ディレクトリである。
+    base = pathlib.Path(cwd)
+    return (base / resolved[0]).resolve() != (base / resolved[1]).resolve()
+
+
 def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None:
     """agent-toolkit/配下の変更をコミットする際にversion bump漏れを警告する。
 
@@ -607,7 +622,12 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
        （上流未設定・追跡先削除済みの`gone`状態）は、構成済みリモートの既定ブランチ
        （`refs/remotes/<remote>/HEAD`）との比較へフォールバックする。フォールバックも
        解決できない場合は警告側へ倒す
-    5. 上記いずれにも該当しない場合、warn JSONを返す
+    5. commitを行う作業ツリーがlinked worktreeの場合は警告しない。
+       複数レーンを並列実装する作業では、version bumpを各レーンではなく全レーンのマージ後に
+       1回だけ実行する運用であり、レーン用の作業ツリーから当該処置を実行できない。
+       公開工程は主作業ツリーで行うため、bumpの漏れは当該工程で検出できる。
+       判定できない場合は警告側へ倒す
+    6. 上記いずれにも該当しない場合、warn JSONを返す
     """
     commit_events = [event for event in extract_git_events(command, cwd) if event.subcommand == "commit"]
     if not commit_events or any(not event.cwd_resolved for event in commit_events):
@@ -644,6 +664,8 @@ def _check_bash_agent_toolkit_version_bump(command: str, cwd: str) -> str | None
                 effective_cwd,
             )
     if unpushed:
+        return None
+    if _is_linked_worktree(effective_cwd):
         return None
 
     return _llm_notice(
@@ -751,6 +773,11 @@ def _check_bash_git_log_decorate(command: str, tool_input: dict) -> dict | None:
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
                 "updatedInput": updated_input,
+                "additionalContext": _llm_notice(
+                    "`git log`へ`--decorate`を挿入して入力を書き換えた。"
+                    "当該呼び出しの出力は、渡した入力の出力へref名の装飾が加わった内容になる。",
+                    tag="notice",
+                ),
             },
         }
     return None

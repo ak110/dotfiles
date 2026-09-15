@@ -311,7 +311,8 @@ def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], 
     return (
         f"指定された部分キー: {requested}\n"
         f"候補行（デコード済み）:\n{candidates}\n"
-        "レビュー表のセルはJSON文字列として保存されるため、キーにはデコード後の値を指定する。"
+        "レビュー表のセルはJSON文字列として保存されるため、キーにはデコード後の値を指定する。\n"
+        "改行・記号を含む`location`は、シェルの引用で崩れないよう`--location-file <絶対パス>`で渡す。"
     )
 
 

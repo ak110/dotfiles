@@ -38,6 +38,20 @@ def test_git_log_decorate_is_inserted_after_heredoc() -> None:
     assert updated == "cat <<'EOF'\ngit log in body\nEOF\ngit log --decorate -3"
 
 
+def test_is_linked_worktree_is_false_when_the_git_query_fails(tmp_path: pathlib.Path) -> None:
+    """作業ツリー種別を照会できない場合は偽を返し、version bump漏れ警告を抑止しない。
+
+    `_check_bash_agent_toolkit_version_bump`は本関数が偽の場合に警告を出力するため、
+    照会の失敗を真として扱う退行が入ると、当該環境からのcommitで警告が失われる。
+    """
+    unreachable = tmp_path / "missing"
+
+    is_linked_worktree = pretooluse._is_linked_worktree  # pylint: disable=protected-access  # noqa: SLF001
+
+    assert is_linked_worktree(str(unreachable)) is False
+    assert is_linked_worktree("") is False
+
+
 class TestGitCommitVerificationNotice:
     """commit前の未検証警告が、委譲先セッションの検証記録を判定の入力に含めることを検証する。"""
 

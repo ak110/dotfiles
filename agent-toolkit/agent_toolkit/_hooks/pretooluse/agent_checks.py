@@ -13,10 +13,10 @@ auto-fix種別のcheckは`updatedInput`でツール入力を自動書き換え�
 
 任意ツール:
 
-- メインエージェント応答の日本語文字比率が閾値未満の場合の警告/ブロック (warn/block)
-- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (warn/block)
+- メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
+- ユーザーが直接読む質問本文・計画本文の文字化け、他言語文字、口語表現の検査 (block)
 - plan-modeスキル未起動のままのplan file編集（Write/Edit/MultiEdit）の警告 (warn)
-- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続のブロック (warn/block)
+- plan-modeスキル起動後、計画ファイル未作成のままagent-toolkit配下の直接編集連続の警告 (warn)
 
 固定見出し（新形式と旧形式の互換別名）と固定表の構造、素材表・要求表・素材参照、
 計画メタ情報の4項目と記法、計画単位のエージェント提案詳細表（5項目）を含む
@@ -38,7 +38,7 @@ Bash:
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - git amend / rebase直前に`git log`未確認のブロック (block)
 - git push実行時のamend後dirty状態のブロック (block)
-- 非Pythonプロジェクトでの`uv run python <path>`形式起動のブロック (block)
+- 非Pythonプロジェクトでの`uv run python <path>`形式起動の補正又は警告 (auto-fix/warn)
 - `git commit`未検証警告 (warn)
 - `agent-toolkit/`配下のコミット時のversion bump漏れ警告 (warn)
 - `git log --decorate`の自動付与 (auto-fix)
@@ -59,16 +59,16 @@ TaskStop:
 
 Write / Edit / MultiEdit / apply_patch:
 
-- 文字化け（U+FFFD）検出 (block)
-- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (block)
-- lockfile / 生成物ディレクトリの直接編集 (block)
+- 文字化け（U+FFFD）検出 (warn。ユーザーが直接読む本文はblock)
+- `.ps1` / `.ps1.tmpl`へのLF-only書き込み検出 (warn)
+- lockfile / 生成物ディレクトリの直接編集 (warn)
 - シークレット / 鍵ファイルの直接編集 (block)
 - manifestファイルの手編集 (warn)
 - ホームディレクトリの絶対パス混入 (warn)
 - 口語的な日本語表現の混入 (warn)
 - 「Xを根拠にYしない」「Xを理由にYしない」形式のメタ規範文言の増加 (warn)
 - .md規範文書のWrite/Edit/MultiEditでfrontmatter同期注記の本体該当語句の実在検証warn (warn)
-- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (block)
+- 日本語を含む書き込み文字列へのハングル・キリル文字の混入 (warn。ユーザーが直接読む本文はblock)
 - .md規範文書の本文中にある他ファイルの節参照の実在検証 (warn)
 
 各チェックの詳細仕様（対象パターン・エラー文言・例外条件）は対応する実装関数のdocstringを参照する。
@@ -156,34 +156,35 @@ if TYPE_CHECKING:
     from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
-def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, str | None]:
+def _handle_language_check(payload: dict, session_id: str) -> str | None:
     """直前メインエージェント応答の言語検査を実行し、セッション状態でエスカレーションを管理する。
 
     agents_serverが起動した委譲先セッションでは、作業途中の文章を呼び出し元もユーザーも読まないため検査しない。
 
     Returns:
-        (exit code, 警告本文)のタプル。
-        exit code 2: ブロック（stderrに出力済み）。
-        exit code None + 本文あり: 警告（呼び出し側でadditionalContextに追記）。
-        exit code None + 本文None: 対象外。
+        通知本文。対象外の場合はNone。
+
+    検出した回の応答は既にユーザーへ届いており、当該ツール呼び出しを止めても当該応答は戻らない。
+    以降の応答を日本語へ切り替えることで是正できるため、
+    `references/claude-hooks.md`「遮断・警告フックの成立条件」の第1段により遮断しない。
 
     セッション状態キー:
     - english_warning_count: 連続英語ターンのカウンタ（int）
     - english_warning_msg_id: 前回検出時のmessage ID（str）
 
     エスカレーションロジック:
-    - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2でブロック
-    - PASS・SKIP: カウンタを0にリセットする。ブロック本文が「2ターン連続」と宣言するため、
-      英語主体でないと判定した回を経た後は、1回の検出だけではブロックしない
-    - ブロック後はカウンタを1に設定する（日本語に切り替わるまで毎ターンブロックを継続）
+    - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2で強い本文へ切り替える
+    - PASS・SKIP: カウンタを0にリセットする。強い本文が「2ターン連続」と宣言するため、
+      英語主体でないと判定した回を経た後は、1回の検出だけでは当該本文へ切り替えない
+    - 切り替え後はカウンタを1に設定する（日本語に切り替わるまで毎ターン当該本文を返す）
     """
     transcript_path = payload.get("transcript_path", "")
     if not isinstance(transcript_path, str) or not transcript_path:
-        return (None, None)
+        return None
     if payload.get("isSidechain") is True:
-        return (None, None)
+        return None
     if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1":
-        return (None, None)
+        return None
 
     outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)
 
@@ -200,11 +201,11 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
                 return current
 
             update_state(session_id, _reset_count)
-        return (None, None)
+        return None
 
     # WARN
     if not session_id:
-        return (None, body)
+        return body
 
     # update_stateがOSErrorで失敗した場合、_incrementは実行されずcountは初期値0のまま残る。
     # この場合はブロックしない方向（安全側）にフォールバックする。
@@ -227,7 +228,7 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
     update_state(session_id, _increment)
 
     if duplicate:
-        return (None, None)
+        return None
 
     if count >= 2:
 
@@ -236,13 +237,9 @@ def _handle_language_check(payload: dict, session_id: str) -> tuple[int | None, 
             return current
 
         update_state(session_id, _set_threshold)
-        print(
-            _llm_notice(_response_language_check.BLOCK_BODY, tag=_WARN_TAG, removable_cause=True),
-            file=sys.stderr,
-        )
-        return (2, None)
+        return _response_language_check.BLOCK_BODY
 
-    return (None, body)
+    return body
 
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
@@ -337,8 +334,7 @@ def _check_webfetch_verbatim_request(tool_input: dict) -> str | None:
         "WebFetchは要約モデルを経由するため、その出力は逐語引用の根拠にならない。"
         "逐語で引用する場合は、同じURLの生データをagent-toolkitの管理対象一時領域へ保存し、"
         "保存した本文から該当箇所だけを引用する。",
-        tag=_WARN_TAG,
-        removable_cause=True,
+        tag="notice",
     )
 
 
@@ -375,8 +371,7 @@ def _check_generic_agent_preference(tool_input: dict) -> str | None:
         return None
     return _llm_notice(
         "汎用Agentより`agents_server`を優先する。読み取り専用探索には`start_explore`、自由形式の委譲には`start_custom`を使う。",
-        tag=_WARN_TAG,
-        removable_cause=True,
+        tag="notice",
     )
 
 
@@ -419,6 +414,10 @@ def _check_task_stop(session_id: str, tool_input: dict) -> bool:
                 "自セッションが起動した対象は所有記録に一致する識別子を指定する。"
                 "その他の対象は`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」節に従い、"
                 "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
+                '記録は`uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
+                '"${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py" '
+                "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
+                "終了コード0を返した対象だけを5分以内に停止する。"
             ),
         ),
         file=sys.stderr,
@@ -536,7 +535,11 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
         print(
             _block_notice(
                 f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
-                fix="当該セッションを続行せず、絶対`cwd`を指定したagents_serverのstartで新しいセッションを開始する。",
+                fix=(
+                    "対象が自身の起動した対象でない場合は、当該対象を起動した委譲先へ`send_message`で追送し、"
+                    "当該委譲先に当該対象を打ち切らせる。"
+                    "自身が所有する作業を続ける場合は、絶対`cwd`を指定したagents_serverのstartで新しいセッションを開始する。"
+                ),
             ),
             file=sys.stderr,
         )

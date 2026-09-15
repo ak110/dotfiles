@@ -233,12 +233,12 @@ def test_git_identifiers_prefer_refs_and_short_oids() -> None:
     """Git識別子はrefを優先し、完全OIDを外部要求の一時値へ限定する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[1]
     repository_root = plugin_root.parent
-    operations = (plugin_root / "rules" / "02-agent-operations.md").read_text(encoding="utf-8")
+    identifier = (plugin_root / "skills" / "commit" / "references" / "git-identifier.md").read_text(encoding="utf-8")
     termination = (plugin_root / "share" / "session-termination.parent.md").read_text(encoding="utf-8")
     merge = (repository_root / ".claude" / "skills" / "merge-pr" / "SKILL.md").read_text(encoding="utf-8")
     design = (plugin_root / "skills" / "writing-standards" / "references" / "design-time.md").read_text(encoding="utf-8")
 
-    assert "外部インターフェースが40桁か64桁のOIDを要求しないGit操作" in operations
+    assert "外部インターフェースが40桁か64桁のOIDを要求しないGit操作" in identifier
     assert "rev-parse --short=7 <ベースbranch名>" in termination
     assert "git push origin origin/master:refs/heads/develop" in merge
     assert "MERGE_OID" not in merge

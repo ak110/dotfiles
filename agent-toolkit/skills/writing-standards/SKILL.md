@@ -83,6 +83,9 @@ description: >
 - テストコードを書く時: `references/testing.md`
 - 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化等）: `references/encoding.md`
 - 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボード等）の作成・修正時: `references/independent-html.md`
+- 管理対象一時領域を扱う時: `references/managed-temp.md`
+- リポジトリ内を検索する時: `references/search.md`
+- 秘匿値ファイルを扱う時: `references/security.md`
 
 ## コーディングエージェント向け文書の編集時に読む資料
 

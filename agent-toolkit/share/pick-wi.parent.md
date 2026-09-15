@@ -17,17 +17,17 @@ pickerと並行して、対象がGitHub上にある場合は`skills/process-wi/r
 メインはキュー一覧とAWI本文を自ら取得せず、`agents_server`の`start`でpickerを1件起動する。
 `subagent_md_path`には`${CLAUDE_PLUGIN_ROOT}/share/pick-wi.subagent.md`を解決した絶対パスを渡す。
 `extra_params`には次の名前付き入力、`cwd`には対象リポジトリの絶対パスを渡す。
-`atk managed-temp create --prefix pick-wi`で作成した領域の`pick-wi.txt`を出力先とする。
+`atk managed-temp create --prefix pick-wi`で作成した領域の`pick-wi.yaml`を出力先とする。
 
 - `選定結果の出力先ファイル`: 絶対パス
 - `引き継ぎ記録先`: 管理対象一時領域内の絶対パス
 - ユーザーが処理対象を明示した場合は当該ファイル名一覧
 
-ユーザー指定がある場合もpickerを省略しない。本文取得、依存順、レーン分け、再開位置及び確認境界はpickerが担う。
+ユーザー指定がある場合もpickerを省略しない。本文取得、依存順、レーン分け及び再開位置はpickerが担う。
 
 ## 出力の受領
 
-pickerから`status`、`output_file`及び`lines`の3行を受領し、出力先が起動時の絶対パスと一致することを確認して本文を読む。各decisionのファイル名、選定時状態、要求単位の由来、区分、レーン、再開位置、確認境界、固有順序、`project_notes`、上流投入情報を検収する。
+pickerから`status`、`output_file`及び`lines`の3行を受領し、出力先が起動時の絶対パスと一致することを確認して本文を読む。各decisionのファイル名、レーン、再開位置、固有順序、`project_notes`、上流投入情報を検収する。
 
 固定形式に適合する出力を受領した時点で選定結果を検証し、監査の終端を待たずに選定工程の完了とレーン起動へ進む。受領済みのpickerを再び待機又は起動しない。監査はレーンと並行して継続し、`## 自動コードレビュー監査`が定める公開工程の開始条件として検収する。
 

@@ -54,8 +54,8 @@ class TestDistributionPath:
             assert result.returncode == 0, result.stderr
             assert "Traceback" not in result.stderr
 
-    def test_powershell_directive_check_blocks(self):
-        """必須ディレクティブを欠くPowerShellの書き込みが終了コード2で拒否される。"""
+    def test_powershell_directive_check_warns(self):
+        """必須ディレクティブを欠くPowerShellの書き込みが、終了コード0のまま警告を返す。"""
         result = _run_hook(
             "pretooluse",
             {
@@ -66,7 +66,8 @@ class TestDistributionPath:
                 },
             },
         )
-        assert result.returncode == 2, result.stderr
+        assert result.returncode == 0, result.stderr
+        assert "Set-StrictMode" in result.stdout
         assert "Traceback" not in result.stderr
 
     def test_plain_write_passes(self):

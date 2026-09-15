@@ -45,6 +45,10 @@ override-dependencies = ["mcp>=1.28.1,<2"]
 [tool.pyfltr]
 preset = "latest"
 python = true
+# pyfltrは`agent-toolkit/`をsubprojectとして分離し、subprojectの設定をリポジトリ直下の`pyproject.toml`とは
+# 独立に解決する。そのため直下の同キーは本subprojectへ届かず、既定の600秒が適用される。
+# Python 3.14は本subprojectのテストsuiteが600秒の境界を超えるため、直下と同じ値をここでも指定する。
+command-timeout = 900
 lychee-exclude = ["agent_toolkit/_atk/serve/static/index.html"]
 # pyfltrは`agent-toolkit/`をsubprojectとして分離し、本ファイルの`[tool.pyfltr]`を用いてtextlintを起動する。
 # リポジトリ直下の`.textlintrc.yaml`が参照するruleのうち、利用中のpyfltrの既定の

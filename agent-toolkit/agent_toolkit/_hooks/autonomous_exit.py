@@ -52,13 +52,12 @@ _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 # セッション状態へ記録するフラグ名。
 _STATE_KEY = "autonomous_exit_invoked"
 
-# 発火判定が観測する環境変数印だけを根拠として適用範囲を断定する再促文。
-# 起動元のCLIや起動時のスキル名は判定していないため、本文では例示として扱わない。
+# 本hookが実際に判定した入力だけを述べる再促文。
+# 起動元のCLIや起動時のスキル名、個々の工程の完了状態は判定していないため本文へ書かない。
 _REASON_BODY = """\
 このセッションには常駐ループの終了保証が適用される。
-`agent-toolkit:process-wi`の全工程を完了し、`agent-toolkit:completion-report`で完了報告した後に、
-`atk agents-exit-session`を実行する。
-未完了の工程がある場合は、その工程へ戻ってから終了を再検討する。"""
+本判定の入力は、`atk agents-exit-session`の実行をセッション状態へ記録していないことだけである。
+どの工程が未完了かは判定していない。"""
 
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
@@ -103,7 +102,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
         _REASON_BODY,
-        fix="列挙した前提工程をすべて完了してから、`atk agents-exit-session`を単独で実行する。",
+        fix="`atk agents-exit-session`を単独で実行する。当該実行の記録が本判定を通過させる。",
     )
     return "block", reason
 

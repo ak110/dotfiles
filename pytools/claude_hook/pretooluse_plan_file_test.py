@@ -33,7 +33,8 @@ class TestPlanFileDotfilesNamesCheck:
         assert result.returncode == 0
 
     def test_non_plan_file_still_uses_distribution_check(self) -> None:
-        """実ファイル編集時の既存固有名検査は維持する。"""
+        """実ファイル編集時の既存固有名検査は維持する（応答水準は警告）。"""
         target = str(_DOTFILES_ROOT / "agent-toolkit" / "skills" / "example" / "SKILL.md")
         result = self._write(target, self._BLOCK_SCRIPT)
-        assert result.returncode == 2
+        assert result.returncode == 0
+        assert self._BLOCK_SCRIPT in result.stdout

@@ -41,6 +41,20 @@ _github_ci_configured = wait_ci._github_ci_configured  # pylint: disable=protect
 _FULL_SHA = "a" * 40
 
 
+@pytest.fixture(autouse=True)
+def _restore_signal_handlers():
+    """`main`が登録するSIGINT/SIGTERMハンドラをテストごとに元へ戻す。
+
+    `wait_ci.main`は冒頭でプロセス全体のシグナルdispositionを差し替える。
+    テストは同一プロセスで`main`を呼ぶため、復元しないと以降の全テストが
+    `wait_ci`のハンドラを保持し、割り込み時に無関係なテストが`SystemExit`で失敗する。
+    """
+    saved = {name: signal.getsignal(name) for name in (signal.SIGINT, signal.SIGTERM)}
+    yield
+    for name, handler in saved.items():
+        signal.signal(name, handler)
+
+
 def _write_test_baseline(
     path: pathlib.Path,
     *,

@@ -679,6 +679,7 @@ def _serialize_session(session: SessionState) -> dict[str, Any]:
         "prompt": session.prompt,
         "status": session.status,
         "progress": session.progress,
+        "last_action": session.last_action,
         "label": session.label,
         "started_at": session.started_at,
         "updated_at": session.updated_at,

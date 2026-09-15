@@ -52,6 +52,49 @@ def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
     assert candidates[-1]["excluded"]["runtime-inserted"] == 4
 
 
+def test_candidate_events_excludes_runtime_generated_user_records() -> None:
+    """実行環境が生成した標識を持つ利用者イベントを候補から除き、除外種類別へ計上する。"""
+    timeline = [
+        {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
+        {"kind": "user", "record": "main", "line": 2, "text": "注記", "runtime_generated": True},
+        {"kind": "user", "record": "main", "line": 3, "text": "実際の是正要求"},
+    ]
+
+    candidates = evidence._candidate_events(timeline, [], [])  # pylint: disable=protected-access
+
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 3}]]
+    assert candidates[-1]["excluded"]["runtime-meta"] == 1
+
+
+def test_candidate_events_excludes_hook_notices_without_tag() -> None:
+    """区分を持たないhook通知を候補から除き、区分を持つ通知の扱いを変えない。"""
+    hook_notices = [
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": 1,
+            "text": "規範本文の配送",
+            "hook": None,
+            "hook_name": "SessionStart",
+            "tag": None,
+        },
+        {
+            "kind": "hook-notice",
+            "record": "main",
+            "line": 2,
+            "text": "遮断",
+            "hook": "agent-toolkit/pretooluse",
+            "hook_name": "PreToolUse:Bash",
+            "tag": "block",
+        },
+    ]
+
+    candidates = evidence._candidate_events([], [], hook_notices)  # pylint: disable=protected-access
+
+    assert [candidate["locators"] for candidate in candidates[:-1]] == [[{"record": "main", "line": 2}]]
+    assert candidates[-1]["excluded"]["hook-notice-untagged"] == 1
+
+
 def test_candidate_events_groups_failures_sharing_a_cause_across_tool_calls() -> None:
     """呼び出しごとに一意な識別子が異なっても、同じ原因の失敗を1候補へ集約する。"""
     timeline = [

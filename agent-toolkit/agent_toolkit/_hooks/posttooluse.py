@@ -67,10 +67,12 @@ from agent_toolkit._hooks import (
 from agent_toolkit._hooks import (
     uwi_completion as _uwi_completion,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
-from agent_toolkit._hooks.agent_id import (
-    resolve_hook_agent_id,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._hooks.agent_id import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    is_main_agent_context,
+    resolve_hook_agent_id,
 )
 from agent_toolkit._hooks.bash_command_parser import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    ExecutionSegment,
     extract_execution_segments,
     extract_git_events,
     without_shell_redirections,
@@ -84,6 +86,7 @@ from agent_toolkit._hooks.notice import (  # noqa: E402  # pylint: disable=wrong
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     read_state,
+    record_atk_help_paths,
     record_bash_failure,
     reset_bash_failure_sequence,
     update_state,
@@ -282,10 +285,12 @@ _AGENTS_SERVER_TOOL_NAMES = (
     _AGENTS_SERVER_START_TOOLS | _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS | _AGENTS_SERVER_STOP_TOOLS
 )
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES
+# `show`は稼働中の子sessionの識別子と`cwd`の対を返すため、当該対の記録だけを目的として受信する。
+_AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENTS_SERVER_NAMESPACES)
 
 # hooks.json・hooks.codex.jsonのPostToolUse matcherが被覆すべきagents_serverツール名の全体。
 # 一致検査（posttooluse_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
-AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
+AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_SHOW_TOOLS
 
 _AGENTS_SERVER_SESSION_CWD_KEY = "agents_server_cwd_by_session"
 _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
@@ -440,6 +445,40 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
     return missing
 
 
+def _live_child_session_cwds(structured: dict) -> list[tuple[str, str]]:
+    """agents_serverの応答が返す稼働中の子sessionの識別子と`cwd`の対を取り出す。"""
+    entries = structured.get("live_child_sessions")
+    if not isinstance(entries, list):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        child_session_id = entry.get("session_id")
+        child_cwd = entry.get("cwd")
+        if isinstance(child_session_id, str) and child_session_id and isinstance(child_cwd, str) and child_cwd:
+            pairs.append((child_session_id, child_cwd))
+    return pairs
+
+
+def _record_child_session_cwds(session_id: str, structured: dict) -> None:
+    """応答が返した稼働中の子sessionの識別子と`cwd`の対を、続行判定が読むキーへ記録する。"""
+    pairs = _live_child_session_cwds(structured)
+    if not pairs:
+        return
+
+    def _mutator(state: dict) -> dict | None:
+        cwd_map = state.setdefault(_AGENTS_SERVER_SESSION_CWD_KEY, {})
+        changed = False
+        for child_session_id, child_cwd in pairs:
+            if cwd_map.get(child_session_id) != child_cwd:
+                cwd_map[child_session_id] = child_cwd
+                changed = True
+        return state if changed else None
+
+    update_state(session_id, _mutator)
+
+
 def _record_agents_server_session_state(
     session_id: str,
     structured: dict,
@@ -499,10 +538,15 @@ def _record_agents_server_session_state(
         changed = sessions.get(remote_session_id) != record
         if changed:
             sessions[remote_session_id] = record
-        if isinstance(cwd, str) and cwd:
-            cwd_map = state.setdefault(_AGENTS_SERVER_SESSION_CWD_KEY, {})
-            if cwd_map.get(remote_session_id) != cwd:
-                cwd_map[remote_session_id] = cwd
+        cwd_map = state.setdefault(_AGENTS_SERVER_SESSION_CWD_KEY, {})
+        if isinstance(cwd, str) and cwd and cwd_map.get(remote_session_id) != cwd:
+            cwd_map[remote_session_id] = cwd
+            changed = True
+        # 応答が返した稼働中の子sessionも、識別子と同じ経路で`cwd`を記録する。
+        # 返却する識別子の集合と、追送・打ち切りの許可判定の入力の集合を一致させるためである。
+        for child_session_id, child_cwd in _live_child_session_cwds(structured):
+            if cwd_map.get(child_session_id) != child_cwd:
+                cwd_map[child_session_id] = child_cwd
                 changed = True
         return state if changed else None
 
@@ -618,9 +662,6 @@ def _is_agents_wait_invocation(tokens: tuple[str, ...]) -> bool:
     return executable.rsplit("/", 1)[-1] in {"atk", "atk.py"} and tokens[1:3] == ("agents", "wait")
 
 
-_ATK_HELP_OBSERVED_KEY = "atk_help_observed"
-
-
 def _recognized_atk_command_path(tokens: tuple[str, ...]) -> tuple[str, ...] | None:
     """実行トークン列から公開済みの最下層`atk`サブコマンド経路を返す。"""
     if len(tokens) < 2 or pathlib.PurePath(tokens[0]).name not in {"atk", "atk.py"}:
@@ -676,23 +717,38 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
         if normalized not in help_paths:
             help_paths.append(normalized)
     if help_paths:
-
-        def _record_help(state: dict) -> dict | None:
-            current = state.get(_ATK_HELP_OBSERVED_KEY)
-            observed = [value for value in current if isinstance(value, str)] if isinstance(current, list) else []
-            additions = [value for value in help_paths if value not in observed]
-            if not additions:
-                return None
-            state[_ATK_HELP_OBSERVED_KEY] = [*observed, *additions]
-            return state
-
-        update_state(session_id, _record_help)
+        record_atk_help_paths(session_id, help_paths)
     exit_invoked = any(
         pathlib.PurePath(segment.tokens[0]).name in {"atk", "atk.py"} and segment.tokens[1:] == ("agents-exit-session",)
         for segment in segments
     )
     if exit_invoked and _response_has_exit_invocation(tool_response):
         update_state(session_id, _record_exit_session_invoked)
+    _record_created_plan_file(session_id, segments, tool_response)
+
+
+_PLAN_CREATION_SCRIPT_NAME = "create_plan_files.py"
+
+
+def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
+    """`create_plan_files.py`の標準出力から計画ファイル（メイン）の絶対パスを記録する。
+
+    当該スクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
+    該当が無い場合は記録せず、PostToolUseの応答を変えない。
+    """
+    if not any(
+        _PLAN_CREATION_SCRIPT_NAME in token
+        for segment in segments
+        for token in getattr(segment, "tokens", ())
+        if isinstance(token, str)
+    ):
+        return
+    for text in _response_texts(tool_response):
+        for line in text.splitlines():
+            candidate = line.strip()
+            if candidate and is_plan_component_file(candidate):
+                _record_plan_file(session_id, candidate)
+                return
 
 
 def _record_agents_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
@@ -1002,7 +1058,9 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # 対象リポジトリで新たに回答されたUWIファイルがある場合に通知する。
     # ツール種別に依らず検査し、ユーザーの回答から通知までの遅延を抑える。
-    if cwd:
+    # 当該通知が指示する反映と依存作業の再開はメインが所有するため、
+    # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
+    if cwd and is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id, cwd, resolve_hook_agent_id(payload))
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
@@ -1020,6 +1078,13 @@ def _dispatch(payload_text: str, notices: list[str]) -> int:
 
     # AgentとTask: 後続の分岐が対象としないツールのため、記録せずに終了する
     if tool_name in ("Agent", "Task"):
+        return 0
+
+    # showの応答が返す稼働中の子sessionは、識別子と`cwd`の対だけを記録する。
+    # session記録そのものは当該sessionを起動した主体が持つため、ここでは更新しない。
+    if tool_name in _AGENTS_SERVER_SHOW_TOOLS:
+        structured = _extract_agents_server_structured_response(payload.get("tool_response", {}))
+        _record_child_session_cwds(session_id, structured)
         return 0
 
     # agents_server応答からsession_id→cwdを保存し、session状態を更新する。

@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import agent_toolkit._atk_agents as atk_agents
 import agent_toolkit.agents_server_mcp as subject
 from agent_toolkit._agents_server import agents_wait, logging_config, session_registry, state, status_file
 from agent_toolkit._agents_server import claude as claude_backend
@@ -762,6 +763,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path) -> list[str]:
         ]
     if task_name == "upstream-submission.subagent.md":
         return ["元項目と投入先の組: 20260101-000000-001.md=/upstream", handoff]
+    if task_name == "add-wi.subagent.md":
+        return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
     raise ValueError(f"未対応のタスク文書: {task_name}")
 
 
@@ -773,6 +776,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
 @pytest.mark.parametrize(
     "task_name",
     [
+        "add-wi.subagent.md",
         "exec-review.subagent.md",
         "exec.subagent.md",
         "lane-integration.subagent.md",
@@ -783,7 +787,7 @@ def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
-    """実運用で観測した7種類の最小起動文が必須入力検査を通過する。"""
+    """実運用で観測した最小起動文が必須入力検査を通過する。"""
     task_document = subject._SHARE_DIRECTORY / task_name
     extra_params = _observed_input_params(task_name, tmp_path)
 
@@ -1743,34 +1747,152 @@ async def test_wait_does_not_return_unfinished_result(tmp_path: pathlib.Path) ->
 
 
 @pytest.mark.asyncio
-async def test_show_reports_seconds_since_output_and_stall(tmp_path: pathlib.Path) -> None:
-    """showは最新テキスト出力時刻と経過秒数を返し、閾値超過へ停滞の印を付ける。"""
+async def test_show_reports_activity_and_output_elapsed_with_activity_based_stall(tmp_path: pathlib.Path) -> None:
+    """showは活動時刻とテキスト出力時刻を別項目で返し、停滞の印を活動の経過だけで決める。"""
     manager, _ = _manager_with_fake("codex")
     fresh = subject.SessionState("thread-fresh", str(tmp_path), engine="codex")
-    stalled = subject.SessionState("thread-stalled", str(tmp_path), engine="codex")
-    stalled.output_updated_at = "2000-01-01T00:00:00+00:00"
-    manager.sessions.update({fresh.session_id: fresh, stalled.session_id: stalled})
+    text_silent = subject.SessionState("thread-text-silent", str(tmp_path), engine="codex")
+    text_silent.output_updated_at = "2000-01-01T00:00:00+00:00"
+    inactive = subject.SessionState("thread-inactive", str(tmp_path), engine="codex")
+    inactive.updated_at = "2000-01-01T00:00:00+00:00"
+    manager.sessions.update(
+        {
+            fresh.session_id: fresh,
+            text_silent.session_id: text_silent,
+            inactive.session_id: inactive,
+        }
+    )
 
     fresh_detail = manager.show_session(fresh.session_id)
-    stalled_detail = manager.show_session(stalled.session_id)
+    text_silent_detail = manager.show_session(text_silent.session_id)
+    inactive_detail = manager.show_session(inactive.session_id)
 
     assert fresh_detail["output_updated_at"] is None
     assert isinstance(fresh_detail["seconds_since_output"], int)
+    assert fresh_detail["updated_at"] == fresh.updated_at
+    assert isinstance(fresh_detail["seconds_since_activity"], int)
     assert "stalled" not in fresh_detail
-    assert stalled_detail["output_updated_at"] == stalled.output_updated_at
-    assert stalled_detail["stalled"] is True
+    # テキスト出力だけが閾値を超えて止まっている状態は停滞と判定しない。
+    assert text_silent_detail["output_updated_at"] == text_silent.output_updated_at
+    assert text_silent_detail["seconds_since_output"] >= subject.state.STALL_NOTICE_SECONDS
+    assert "stalled" not in text_silent_detail
+    assert inactive_detail["stalled"] is True
 
     response = await manager.wait()
 
-    assert {"output_updated_at", "seconds_since_output", "stalled"}.isdisjoint(response)
+    assert {
+        "output_updated_at",
+        "seconds_since_output",
+        "updated_at",
+        "seconds_since_activity",
+        "stalled",
+    }.isdisjoint(response)
 
 
 @pytest.mark.asyncio
-async def test_show_reports_sorted_live_child_session_ids_only_for_running_parent(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    ("updated_at", "expected_stalled"),
+    [("2000-01-01T00:00:00+00:00", True), ("2099-01-01T00:00:00+00:00", False)],
+    ids=["inactive", "active"],
+)
+async def test_four_observation_paths_share_the_same_stall_judgement(
+    tmp_path: pathlib.Path,
+    updated_at: str,
+    expected_stalled: bool,
+) -> None:
+    """`show`・`list`・待機CLI・`atk agents list`が、同じ入力へ同じ停滞の印を返す。
+
+    いずれかの経路が共通の射影から外れて独自の判定入力へ戻る退行を検出する。
+    テキスト出力時刻は常に閾値を超えた値とし、活動時刻だけで結果が分かれることを確認する。
+    """
+    started_at = "2000-01-01T00:00:00+00:00"
+    output_updated_at = "2000-01-01T00:00:00+00:00"
+    manager, _ = _manager_with_fake("codex")
+    session = subject.SessionState("thread-1", str(tmp_path), engine="codex")
+    session.started_at = started_at
+    session.output_updated_at = output_updated_at
+    session.updated_at = updated_at
+    manager.sessions[session.session_id] = session
+    serialized = {
+        "session_id": session.session_id,
+        "status": "running",
+        "started_at": started_at,
+        "output_updated_at": output_updated_at,
+        "updated_at": updated_at,
+    }
+    status_path = tmp_path / "root.json"
+    status_path.write_text(
+        json.dumps({"version": 1, "sessions": [dict(serialized)]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    listed_by_cli = dict(serialized)
+    atk_agents._add_output_activity(listed_by_cli)  # pylint: disable=protected-access  # noqa: SLF001
+
+    flags = [
+        "stalled" in manager.show_session(session.session_id),
+        "stalled"
+        in manager._listed_session(  # pylint: disable=protected-access  # noqa: SLF001
+            session,
+            status="running",
+            progress="",
+            result_available=False,
+        ),
+        "stalled"
+        in agents_wait._session_output_activity(  # pylint: disable=protected-access  # noqa: SLF001
+            [status_path],
+            session.session_id,
+        ),
+        "stalled" in listed_by_cli,
+    ]
+
+    assert flags == [expected_stalled] * 4
+
+
+@pytest.mark.asyncio
+async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib.Path) -> None:
+    """showは未完了のツール呼び出しをツール名、開始時刻及び入力の要約で返す。"""
+    manager, _ = _manager_with_fake("codex")
+    running = subject.SessionState("thread-running", str(tmp_path), engine="claude")
+    running.pending_tool_uses["toolu_1"] = ("Bash", "2026-09-15T00:00:01+00:00", "command=git status")
+    idle = subject.SessionState("thread-idle", str(tmp_path), engine="claude")
+    terminal = subject.SessionState("thread-terminal", str(tmp_path), engine="claude")
+    terminal.pending_tool_uses["toolu_2"] = ("Read", "2026-09-15T00:00:02+00:00", "file_path=/tmp/a.py")
+    _complete(terminal, message="完了")
+    codex_running = subject.SessionState("thread-codex", str(tmp_path), engine="codex")
+    codex_running.record_current_item_start({"type": "commandExecution", "id": "item-1", "command": "git status"})
+    manager.sessions.update(
+        {
+            running.session_id: running,
+            idle.session_id: idle,
+            terminal.session_id: terminal,
+            codex_running.session_id: codex_running,
+        }
+    )
+
+    running_detail = manager.show_session(running.session_id)
+    codex_detail = manager.show_session(codex_running.session_id)
+
+    assert running_detail["active_tool_uses"] == [
+        {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00", "detail": "command=git status"}
+    ]
+    assert codex_detail["active_tool_uses"][0]["type"] == "commandExecution"
+    assert codex_detail["active_tool_uses"][0]["id"] == "item-1"
+    assert codex_detail["active_tool_uses"][0]["detail"] == "command=git status"
+    assert "active_tool_uses" not in manager.show_session(idle.session_id)
+    assert "active_tool_uses" not in manager.show_session(terminal.session_id)
+
+
+@pytest.mark.asyncio
+async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
     """showは稼働中の親に実在する子識別子がある場合だけ安定順で返す。"""
+    _publish_recovered_session(monkeypatch, tmp_path, "child-a", "completed")
+    _publish_recovered_session(monkeypatch, tmp_path, "child-b", "completed")
     manager, _ = _manager_with_fake("codex")
     parent = subject.SessionState("parent", str(tmp_path), engine="codex")
-    parent.live_child_session_ids.update({"child-b", "child-a"})
+    parent.live_child_session_ids.update({"child-b", "child-a", "child-unknown"})
     no_child = subject.SessionState("no-child", str(tmp_path), engine="codex")
     terminal = subject.SessionState("terminal", str(tmp_path), engine="codex")
     terminal.live_child_session_ids.add("child-terminal")
@@ -1783,9 +1905,15 @@ async def test_show_reports_sorted_live_child_session_ids_only_for_running_paren
         }
     )
 
-    assert manager.show_session(parent.session_id)["live_child_session_ids"] == ["child-a", "child-b"]
-    assert "live_child_session_ids" not in manager.show_session(no_child.session_id)
-    assert "live_child_session_ids" not in manager.show_session(terminal.session_id)
+    parent_detail = manager.show_session(parent.session_id)
+
+    assert parent_detail["live_child_sessions"] == [
+        {"session_id": "child-a", "cwd": str(tmp_path)},
+        {"session_id": "child-b", "cwd": str(tmp_path)},
+    ]
+    assert parent_detail["live_child_session_ids_without_cwd"] == ["child-unknown"]
+    assert "live_child_sessions" not in manager.show_session(no_child.session_id)
+    assert "live_child_sessions" not in manager.show_session(terminal.session_id)
     await manager.close()
 
 

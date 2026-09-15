@@ -5,6 +5,7 @@
 
 import asyncio
 import pathlib
+import shutil
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -248,6 +249,82 @@ def test_thread_config_bypasses_hook_trust_for_every_launch(monkeypatch: pytest.
     config, _owner_session_id, _writer_session_id = manager._thread_config(lightweight=lightweight)
 
     assert config["bypass_hook_trust"] is True
+
+
+def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool) -> pathlib.Path:
+    """`plugin.json`を持つ配布物rootを、版別ディレクトリの有無を変えて作成する。"""
+    root = base / version / "agent-toolkit" if versioned else base / "checkout" / "agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text(f'{{"version": "{version}"}}\n', encoding="utf-8")
+    (root / "agent_toolkit").mkdir()
+    (root / "agent_toolkit" / "agents_server_mcp.py").write_text("# entry\n", encoding="utf-8")
+    (root / ".venv").mkdir()
+    (root / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+    return root
+
+
+@pytest.fixture(autouse=True)
+def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """複製先の記録と管理対象一時領域の作成先をテストごとに分離する。"""
+    monkeypatch.setattr(subject, "_stable_plugin_roots", {})
+    monkeypatch.setattr(subject._managed_temp, "_state_root_path", lambda: tmp_path / "managed-temp-state")
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "managed-temp"))
+    (tmp_path / "managed-temp").mkdir()
+
+
+def test_versioned_plugin_root_is_copied_to_a_stable_location(tmp_path: pathlib.Path) -> None:
+    """版別ディレクトリ配下の配布物rootは、複製元を失っても解決できる実体へ写す。"""
+    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
+
+    resolved = subject.resolve_stable_plugin_root(source)
+
+    assert resolved != source
+    shutil.rmtree(source)
+    assert (resolved / "agent_toolkit" / "agents_server_mcp.py").is_file()
+    assert not (resolved / ".venv").exists()
+
+
+def test_versioned_plugin_root_is_copied_once_per_source(tmp_path: pathlib.Path) -> None:
+    """同じ複製元への解決を繰り返しても複製先は変わらない。"""
+    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
+
+    first = subject.resolve_stable_plugin_root(source)
+    second = subject.resolve_stable_plugin_root(source)
+
+    assert first == second
+    assert first != source
+    assert [entry.name for entry in first.parent.parent.iterdir() if entry.is_dir()] == [first.parent.name]
+
+
+def test_plain_plugin_root_is_used_as_is(tmp_path: pathlib.Path) -> None:
+    """版別ディレクトリに当たらない配布物rootは複製せずそのまま使う。"""
+    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=False)
+
+    assert subject.resolve_stable_plugin_root(source) == source
+
+
+def test_copy_failure_falls_back_to_the_resolved_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """複製に失敗しても例外を伝播させず、解決したrootで委譲の起動を成立させる。"""
+    source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
+
+    def _fail(*_args: Any, **_kwargs: Any) -> pathlib.Path:
+        raise subject._managed_temp.ManagedTempError("一時領域を作成できない")
+
+    monkeypatch.setattr(subject._managed_temp, "create_managed_temp", _fail)
+
+    assert subject.resolve_stable_plugin_root(source) == source
+
+
+def test_agents_server_config_uses_the_stable_plugin_root() -> None:
+    """内側MCPサーバーの起動コマンドは、安定した配布物rootの実体だけを指す。"""
+    config = subject.AppServerManager._agents_server_config("owner", "writer")
+
+    args = config["mcp_servers"]["agents_server"]["args"]
+    expected_root = subject.resolve_stable_plugin_root()
+    assert args[1] == "--project"
+    assert args[2] == str(expected_root)
+    assert args[-1] == str(expected_root / "agent_toolkit" / "agents_server_mcp.py")
+    assert pathlib.Path(args[-1]).is_file()
 
 
 async def _return(value: Any) -> Any:
