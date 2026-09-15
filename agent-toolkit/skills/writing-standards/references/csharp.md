@@ -9,7 +9,7 @@
   - プロジェクト設定では`<Nullable>enable</Nullable>`と`<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`を有効にする
 - 非同期処理
   - `async void`は使わない（例外が捕捉できないため）
-    - 例外としてWinForms／WPFのイベントハンドラのみ許容し、その場合はハンドラ内で必ず例外をキャッチする
+    - 例外としてWinForms／WPFのイベントハンドラのみ許容し、その場合はハンドラ内で例外をキャッチする（捕捉しない例外がプロセスを終了させるため）
   - `ConfigureAwait(false)`はUIに依存しないライブラリ・ユーティリティ層で付ける
     - WinForms／WPF／Blazor等のSynchronizationContextに依存するアプリケーション層では付けない
 - 例外処理

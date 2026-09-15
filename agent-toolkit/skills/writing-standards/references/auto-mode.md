@@ -27,12 +27,12 @@ auto modeは次の4区分でルールを判定する。
 拒否・許可ルールを確認する。対象は`/etc/claude-code/managed-settings.json`・
 `~/.claude/settings.json`・リポジトリ直下の`.claude/settings.json`・`.claude/settings.local.json`とする。
 評価はdeny・ask・allowの順で最初の一致が結果を決めるため、
-拒否ルールに該当する対象は許可・参照範囲の追加では解消しない（努力目標）。
+拒否ルールに該当する対象は許可・参照範囲の追加では解消しない。
 権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）→作業ディレクトリ内編集等の自動承認→
 auto mode classifierの順で行われる。
 PreToolUseフックの`permissionDecision: "allow"`はpermissions評価を迂回しない。
 auto modeの拒否ではなくpermissions設定による確認ダイアログが対象の場合は本節の対象外とし、
-従来の確認ダイアログの自動許可は`claude-hooks.md`の「PermissionRequest」が扱い、本節の対象としない。
+確認ダイアログの自動許可は`claude-hooks.md`の「PermissionRequest」が扱い、本節の対象としない。
 
 ## カスタムルール追加のワークフロー
 

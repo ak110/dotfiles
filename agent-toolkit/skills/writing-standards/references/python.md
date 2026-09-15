@@ -38,7 +38,6 @@
 - 例外の再送出は`raise`（引数なし）を使い、`raise e`は使わない（スタックトレースが書き換わるため）
 - インターフェースの都合上未使用の引数がある場合は、関数先頭で`del xxx # noqa`のように書く（lint対策）
 - `typing.Literal`の分岐は`typing.assert_never`で網羅性を担保（`else: typing.assert_never(x)`）
-- SQLAlchemyのNULLチェックは`.is_(None)`を使う
 - `isinstance(x, int)`は`bool`値も真と判定する（`bool`は`int`のサブクラス）
   - 数値型を厳格に限定するときは`type(x) is int`または`isinstance(x, int) and not isinstance(x, bool)`で除外する
   - `isinstance(value, type(reference))`形式の型一致チェックでも、`reference`が`int`値のときに`bool`が素通りする
