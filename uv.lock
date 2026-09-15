@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.13, <4.0"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version == '3.14.*' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform != 'win32'",
@@ -33,6 +33,7 @@ dependencies = [
     { name = "mcp" },
     { name = "mdit-py-plugins" },
     { name = "platformdirs" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "pyfltr" },
     { name = "pytilpack", extra = ["quart"] },
@@ -49,6 +50,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.28.1,<2" },
     { name = "mdit-py-plugins", specifier = ">=0.6" },
     { name = "platformdirs", specifier = ">=4.0" },
+    { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyfltr", specifier = ">=3.17.7" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
