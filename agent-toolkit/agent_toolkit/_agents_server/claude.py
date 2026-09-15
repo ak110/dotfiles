@@ -18,7 +18,7 @@ import pathlib
 from collections.abc import Callable
 from typing import Any, Literal, cast
 
-from agent_toolkit._agents_server import logging_config
+from agent_toolkit._agents_server import logging_config, process_tree
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.state import (
     AUTO_RESUME_NOTICE,
@@ -732,7 +732,14 @@ class ClaudeServerManager:
             if active_future is not None and not active_future.done():
                 active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
             if client is not None:
+                # 子孫の列挙は切断より前に行う。切断で委譲先プロセスが終了すると子孫の親が変わり、
+                # 保持しているPIDを起点に辿れなくなるためである。
+                descendants = process_tree.collect_descendants(diagnostic.child_pid)
                 await self._disconnect_client(client)
+                residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+                process_tree.log_residual(
+                    residual, context=f"claude session_id={None if session is None else session.session_id}"
+                )
             if session is not None:
                 self._channels.pop(session.session_id, None)
             channel.close()

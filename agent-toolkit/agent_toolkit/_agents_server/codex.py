@@ -22,6 +22,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     compaction_metrics,  # pylint: disable=wrong-import-position
+    process_tree,  # pylint: disable=wrong-import-position
     status_file,  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
@@ -372,11 +373,18 @@ class JsonRpcProcess:
         return AppServerError(message)
 
     async def close(self) -> None:
-        """自身が起動した子プロセスだけを終了し、関連taskを回収する。"""
+        """自身が起動した子プロセスと、その子孫プロセスを終了し、関連taskを回収する。
+
+        対象は自身が起動したプロセスからの子孫関係だけで特定する。
+        子孫の回収に失敗しても終端自体は完了させ、回収できなかった対象は診断へ残す。
+        """
         if self._closed and self.process is None:
             return
         self._closed = True
         process = self.process
+        # 子孫の列挙は終了要求より前に行う。App Serverが終了すると子孫の親が変わり、
+        # 保持しているPIDを起点に辿れなくなるためである。
+        descendants = process_tree.collect_descendants(None if process is None else process.pid)
         tasks = tuple(
             task for task in (self._reader_task, self._stderr_task) if task is not None and task is not asyncio.current_task()
         )
@@ -401,6 +409,8 @@ class JsonRpcProcess:
             await asyncio.gather(*tasks, return_exceptions=True)
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
+        residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+        process_tree.log_residual(residual, context="codex app-server")
         self.process = None
         error = AppServerError("Codex App Server client closed")
         for future in tuple(self._pending.values()):
